@@ -2446,6 +2446,7 @@ describe('Nested Operations - Access Control and Hooks', () => {
                 type: 'virtual',
                 virtual: true,
                 outputType: 'string',
+                needs: ['firstName', 'lastName'],
                 hooks: {
                   resolveOutput: asyncVirtualHook,
                 },

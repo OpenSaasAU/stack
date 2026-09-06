@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
-import { defineFragment } from '../src/query/index.js'
 import { virtual } from '../src/fields/index.js'
 import {
   AccessScopeDepthExceededError,
@@ -1279,22 +1278,6 @@ describe('getContext', () => {
         expect(result).toEqual(mockUser)
       })
 
-      it('narrows the result through a query fragment with a unique where', async () => {
-        const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-        mockPrisma.User.findFirst.mockResolvedValue(mockUser)
-
-        const fragment = defineFragment<{ id: string; name: string; email: string }>()({
-          id: true,
-          name: true,
-        } as const)
-
-        const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.User.findUnique({ where: { id: '1' }, query: fragment })
-
-        // Fragment narrows the result to only the requested fields (email omitted)
-        expect(result).toEqual({ id: '1', name: 'John' })
-      })
-
       it('THROWS on a non-unique where (caller-shape error, not a silent null)', async () => {
         mockPrisma.User.findFirst.mockResolvedValue({ id: '1', name: 'John' })
 
@@ -1457,25 +1440,6 @@ describe('getContext', () => {
         // Denied query short-circuits before hitting prisma — exactly like findMany
         expect(result).toBeNull()
         expect(mockPrisma.User.findMany).not.toHaveBeenCalled()
-      })
-
-      it('should respect a query fragment, narrowing the returned single result', async () => {
-        const mockUsers = [
-          { id: '1', name: 'John', email: 'john@example.com' },
-          { id: '2', name: 'Jane', email: 'jane@example.com' },
-        ]
-        mockPrisma.User.findMany.mockResolvedValue(mockUsers)
-
-        const fragment = defineFragment<{ id: string; name: string; email: string }>()({
-          id: true,
-          name: true,
-        } as const)
-
-        const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.User.findFirst({ query: fragment })
-
-        // Fragment narrows the result to only the requested fields (email omitted)
-        expect(result).toEqual({ id: '1', name: 'John' })
       })
     })
 
@@ -2374,162 +2338,6 @@ describe('getContext', () => {
         )
       })
 
-      it('query fragment path carries the access filter, same as the include: path (#1088)', async () => {
-        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
-
-        const postsFragment = defineFragment<{ id: string; title: string }>()({
-          title: true,
-        } as const)
-        const fragment = defineFragment<{ id: string; name: string; posts: unknown }>()({
-          id: true,
-          name: true,
-          posts: postsFragment,
-        } as const)
-
-        const context = await getContext(relConfig, relPrisma, null)
-        await context.db.Author.findMany({ query: fragment })
-
-        const call = relPrisma.Author.findMany.mock.calls[0][0]
-        // The fragment-built include now runs through the same scoping walk as
-        // an explicit caller `include`, so `posts` carries Post's access where
-        // (matching the `include: { posts: true }` test above) instead of a
-        // bare, unfiltered `true`.
-        expect(call.include).toEqual({ posts: { where: { status: { equals: 'published' } } } })
-      })
-
-      it('drops a relation whose query access is false when named in a query fragment', async () => {
-        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
-
-        const secretsFragment = defineFragment<{ id: string; value: string }>()({
-          value: true,
-        } as const)
-        const fragment = defineFragment<{ id: string; name: string; secrets: unknown }>()({
-          id: true,
-          name: true,
-          secrets: secretsFragment,
-        } as const)
-
-        const context = await getContext(relConfig, relPrisma, null)
-        await context.db.Author.findMany({ query: fragment })
-
-        const call = relPrisma.Author.findMany.mock.calls[0][0]
-        // `Secret`'s query access is `() => false` — the denied relation is
-        // dropped from the include entirely, same as the `include:` path.
-        expect(call.include.secrets).toBeUndefined()
-      })
-
-      it('a fragment nesting past the depth cap raises the same depth error a caller include does', async () => {
-        const chainLength = READ_INCLUDE_MAX_DEPTH + 2
-        const chainConfig: OpenSaasConfig = {
-          db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-          lists: {},
-        }
-        for (let i = 0; i < chainLength; i++) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
-          const fields: Record<string, any> = { name: { type: 'text' } }
-          if (i < chainLength - 1) fields.next = { type: 'relationship', ref: `D${i + 1}.prev` }
-          if (i > 0) fields.prev = { type: 'relationship', ref: `D${i - 1}.next` }
-          chainConfig.lists[`D${i}`] = { fields, access: { operation: { query: () => true } } }
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const chainPrisma: any = {}
-        for (let i = 0; i < chainLength; i++) {
-          chainPrisma[`D${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
-        }
-
-        // A fragment selecting `next` recursively, `hops` levels deep.
-        function nestedFragmentFields(hops: number): Record<string, unknown> {
-          if (hops <= 0) return { name: true }
-          return {
-            name: true,
-            next: defineFragment<Record<string, unknown>>()(nestedFragmentFields(hops - 1)),
-          }
-        }
-        const deepFragment = defineFragment<Record<string, unknown>>()(
-          nestedFragmentFields(READ_INCLUDE_MAX_DEPTH + 1),
-        )
-
-        const context = await getContext(chainConfig, chainPrisma, null)
-
-        await expect(context.db.D0.findMany({ query: deepFragment })).rejects.toThrow(
-          AccessScopeDepthExceededError,
-        )
-        expect(chainPrisma.D0.findMany).not.toHaveBeenCalled()
-      })
-
-      it('sudo query fragment reads stay unscoped (behaviour preserved)', async () => {
-        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
-
-        const secretsFragment = defineFragment<{ id: string; value: string }>()({
-          value: true,
-        } as const)
-        const fragment = defineFragment<{ id: string; name: string; secrets: unknown }>()({
-          id: true,
-          name: true,
-          secrets: secretsFragment,
-        } as const)
-
-        const context = await getContext(relConfig, relPrisma, null).sudo()
-        await context.db.Author.findMany({ query: fragment })
-
-        // Under sudo, the fragment-built include is used as-is: the denied
-        // `Secret` relation is fetched unfiltered, matching sudo's existing
-        // include: behaviour.
-        expect(relPrisma.Author.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({ include: { secrets: true } }),
-        )
-      })
-
-      it('a fragment read on a to-one relation nulls out a row its related list denies, matching include: (#974)', async () => {
-        // `Comment.post` is a to-one relation onto `Post`, whose query access
-        // is a row filter (`status: published`) rather than a plain boolean —
-        // Prisma can't carry that as a `where` on a to-one include, so it's
-        // resolved via the post-query existence check instead.
-        const postFragment = defineFragment<{ id: string; title: string }>()({
-          title: true,
-        } as const)
-        const fragment = defineFragment<{ id: string; body: string; post: unknown }>()({
-          id: true,
-          body: true,
-          post: postFragment,
-        } as const)
-
-        relPrisma.Comment.findMany.mockResolvedValue([
-          { id: 'c1', body: 'hi', post: { id: 'p1', title: 'Draft' } },
-        ])
-        // The batched existence check queries the raw Post model directly;
-        // an empty result means `p1` does not satisfy Post's access filter.
-        relPrisma.Post.findMany.mockResolvedValue([])
-
-        const context = await getContext(relConfig, relPrisma, null)
-        const result = await context.db.Comment.findMany({ query: fragment })
-
-        expect(result[0].post).toBeNull()
-      })
-
-      it('a fragment read and an equivalent include: read produce the same access-scoped include', async () => {
-        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
-
-        const postsFragment = defineFragment<{ id: string; title: string }>()({
-          title: true,
-        } as const)
-        const fragment = defineFragment<{ id: string; name: string; posts: unknown }>()({
-          id: true,
-          name: true,
-          posts: postsFragment,
-        } as const)
-
-        const context = await getContext(relConfig, relPrisma, null)
-        await context.db.Author.findMany({ query: fragment })
-        const fragmentInclude = relPrisma.Author.findMany.mock.calls[0][0].include
-
-        relPrisma.Author.findMany.mockClear()
-        await context.db.Author.findMany({ include: { posts: true } })
-        const callerInclude = relPrisma.Author.findMany.mock.calls[0][0].include
-
-        expect(fragmentInclude).toEqual(callerInclude)
-      })
-
       // Core new guarantee introduced by #852 / ADR-0026: naming one relation
       // no longer walks (and access-checks) every other relationship of the
       // list. Before this fix, `include: { posts: true }` would ALSO evaluate
@@ -2769,6 +2577,7 @@ describe('getContext', () => {
                   ...relConfig.lists.Author.fields,
                   displayName: virtual({
                     type: 'string',
+                    needs: ['name'],
                     hooks: {
                       resolveOutput: ({ item }) => `Author: ${item.name}`,
                     },

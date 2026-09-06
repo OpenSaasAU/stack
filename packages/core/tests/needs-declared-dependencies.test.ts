@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, integer, relationship, virtual } from '../src/fields/index.js'
-import { defineFragment } from '../src/query/index.js'
 import { validateNeedsDeclarations } from '../src/validation/needs-closure.js'
 
 /**
@@ -258,7 +257,7 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     expect(result[0]).not.toHaveProperty('lineItems')
   })
 
-  it('a field-level read denial on the declared relation also still lets the field compute', async () => {
+  it('a declaration outranks a field-level read denial: the hook sees the relation, the caller does not', async () => {
     const testConfig = await buildTestConfig({ lineItemsFieldAccess: () => false })
     const mockPrisma = createMockPrisma()
     mockPrisma.Order.findMany.mockResolvedValue([
@@ -268,190 +267,12 @@ describe('a computed field declares the relations it needs (#850, ADR-0025)', ()
     const context = getContext(testConfig, mockPrisma, null)
     const result = await context.db.Order.findMany({})
 
-    expect(result[0].total).toBe(0)
+    // ADR-0051: a `read` rule governs what the CALLER receives, and the strip
+    // already guarantees they receive nothing. Letting it beat the
+    // declaration would make adding a rule elsewhere silently change this
+    // field's value.
+    expect(result[0].total).toBe(10)
     expect(result[0]).not.toHaveProperty('lineItems')
-  })
-
-  it('holds for fragment (query) reads too: the fold feeds the hook, the fragment projection still governs what returns', async () => {
-    const testConfig = await buildTestConfig()
-    const mockPrisma = createMockPrisma()
-    mockPrisma.Order.findFirst.mockResolvedValue({
-      id: 'o1',
-      title: 'Order 1',
-      lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orderFragment = defineFragment<any>()({ title: true, total: true } as const)
-
-    const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.Order.findUnique({
-      where: { id: 'o1' },
-      query: orderFragment,
-    })
-
-    expect(result?.total).toBe(10)
-    expect(result).not.toHaveProperty('lineItems')
-    expect(result).toHaveProperty('title')
-  })
-
-  it('a declared stored column reaches the hook under a fragment that did not select it, and stays out of the result (ADR-0051)', async () => {
-    const productConfig = await config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Product: list({
-          fields: {
-            name: text(),
-            price: integer(),
-            doubled: virtual({
-              type: 'number',
-              needs: ['price'],
-              hooks: {
-                resolveOutput: ({ item }) => {
-                  const typedItem = item as { price?: number }
-                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
-                },
-              },
-            }),
-          },
-          access: { operation: { query: () => true } },
-        }),
-      },
-    })
-    const mockPrisma = createMockPrisma()
-    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const productFragment = defineFragment<any>()({ doubled: true } as const)
-
-    const context = getContext(productConfig, mockPrisma, null)
-    const result = await context.db.Product.findUnique({
-      where: { id: 'p1' },
-      query: productFragment,
-    })
-
-    expect(result?.doubled).toBe(20)
-    expect(result).not.toHaveProperty('price')
-    expect(result).not.toHaveProperty('name')
-    // A column is already on every row — nothing to include for it.
-    const callArgs = mockPrisma.Product.findFirst.mock.calls[0][0]
-    expect(callArgs.include).toBeUndefined()
-  })
-
-  it('reads the sets from the table the generated bundle emitted, not from the config', async () => {
-    // The same fragment read as above, but the config carries `_tables` the
-    // way the generated context supplies it (ADR-0051). The emitted table is
-    // authoritative: it declares nothing for `doubled`, so `price` is not
-    // carried onto the hook's `item` even though the config's `needs` names
-    // it — proof the engine is reading the emitted fact rather than walking
-    // the config.
-    const productConfig = await config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Product: list({
-          fields: {
-            name: text(),
-            price: integer(),
-            doubled: virtual({
-              type: 'number',
-              needs: ['price'],
-              hooks: {
-                resolveOutput: ({ item }) => {
-                  const typedItem = item as { price?: number }
-                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
-                },
-              },
-            }),
-          },
-          access: { operation: { query: () => true } },
-        }),
-      },
-    })
-    const mockPrisma = createMockPrisma()
-    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', name: 'Widget', price: 10 })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const productFragment = defineFragment<any>()({ doubled: true } as const)
-
-    const emptyTables = await getContext(
-      {
-        ...productConfig,
-        _tables: {
-          dependencies: {
-            Product: { systemFields: ['id'], fields: { doubled: { columns: [], relations: [] } } },
-          },
-          constraints: {},
-        },
-      },
-      mockPrisma,
-      null,
-    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
-
-    expect(emptyTables?.doubled).toBe('no price')
-
-    // With the emitted table naming the column, the hook sees it again.
-    const withColumn = await getContext(
-      {
-        ...productConfig,
-        _tables: {
-          dependencies: {
-            Product: {
-              systemFields: ['id'],
-              fields: { doubled: { columns: ['price'], relations: [] } },
-            },
-          },
-          constraints: {},
-        },
-      },
-      mockPrisma,
-      null,
-    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
-
-    expect(withColumn?.doubled).toBe(20)
-    expect(withColumn).not.toHaveProperty('price')
-  })
-
-  it('falls back to the config for a list a stale emitted table does not describe', async () => {
-    // The bundle predates the list — regenerated for someone else's change, or
-    // not regenerated at all. An empty row would silently stop `price`
-    // reaching the hook; deriving that one list's row keeps the pre-emission
-    // answer instead.
-    const productConfig = await config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Product: list({
-          fields: {
-            price: integer(),
-            doubled: virtual({
-              type: 'number',
-              needs: ['price'],
-              hooks: {
-                resolveOutput: ({ item }) => {
-                  const typedItem = item as { price?: number }
-                  return typedItem.price === undefined ? 'no price' : typedItem.price * 2
-                },
-              },
-            }),
-          },
-          access: { operation: { query: () => true } },
-        }),
-      },
-    })
-
-    const mockPrisma = createMockPrisma()
-    mockPrisma.Product.findFirst.mockResolvedValue({ id: 'p1', price: 10 })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const productFragment = defineFragment<any>()({ doubled: true } as const)
-
-    const result = await getContext(
-      { ...productConfig, _tables: { dependencies: {}, constraints: {} } },
-      mockPrisma,
-      null,
-    ).db.Product.findUnique({ where: { id: 'p1' }, query: productFragment })
-
-    expect(result?.doubled).toBe(20)
-    expect(result).not.toHaveProperty('price')
   })
 
   it('widens the read for a relation the emitted table names, and strips it again', async () => {

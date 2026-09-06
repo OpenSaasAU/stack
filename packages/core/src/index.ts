@@ -302,15 +302,6 @@ export type {
   UniqueConstraint,
 } from './contract/dependencies.js'
 
-// Fragment-based query API — composable, type-safe reads that mirror
-// Keystone's GraphQL fragments without a GraphQL runtime. The migration
-// guide, CHANGELOG, and migrate-context-calls skill all advertise importing
-// these from the root entry point. The internal runtime helpers (isFragment,
-// buildInclude, pickFields) and the Fragment/FieldSelection types stay off the
-// root surface — those live on '@opensaas/stack-core/internal'.
-export { defineFragment, runQuery, runQueryOne } from './query/index.js'
-export type { ResultOf, RelationSelector, QueryArgs } from './query/index.js'
-
 // Relationship-options read primitive — bounded, projected fetch for
 // relationship editors. Backs the `relationshipOptions` context.serverAction
 // op; also callable directly wherever a full context is already in hand.

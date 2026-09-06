@@ -18,13 +18,7 @@ export type {
   AccessControlledDB,
   AccessControlledDelegate,
   StorageUtils,
-  AugmentedFindMany,
-  AugmentedFindUnique,
-  FindManyQueryArgs,
 } from './access/types.js'
-
-// Typed-query internals (Fragment/FieldSelection appear in generated types)
-export type { Fragment, FieldSelection } from './query/index.js'
 
 // Password hashing internals (the password field emits HashedPassword into generated types)
 export {

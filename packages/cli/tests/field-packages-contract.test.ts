@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest'
 import { deriveContract } from '../../core/src/contract/index.js'
 import { deriveGeneratedTables } from '../../core/src/contract/dependencies.js'
 import { filterReadableFields } from '../../core/src/access/field-visibility.js'
-import { buildFieldSelectionScope, defineFragment } from '../../core/src/query/index.js'
 import type { AccessContext } from '../../core/src/access/types.js'
 import type { ContractModel } from '../../core/src/contract/types.js'
 import type { FieldConfig, OpenSaasConfig } from '../../core/src/config/types.js'
@@ -154,10 +153,10 @@ describe('the TypeScript face', () => {
 })
 
 /**
- * ADR-0041's exact `.select()` terminal is spec 3's work and is not on this
- * branch. `defineFragment` + `buildFieldSelectionScope` is the projection
- * mechanism that exists — the same path #1131/#1137 tested — so this is where a
- * read that names only the logical field is exercised.
+ * The projection a `.select()` resolves to, as Field Visibility receives it
+ * (ADR-0041). Asserted here against `filterReadableFields` directly, because
+ * what this file is about is the multi-column field's assembly under a
+ * projection rather than the terminal that produced one.
  */
 describe('a projection naming only the logical field', () => {
   function accessContext(): AccessContext {
@@ -169,7 +168,7 @@ describe('a projection naming only the logical field', () => {
     title: { type: 'text' } as FieldConfig,
   }
 
-  const heroOnly = defineFragment<{ hero: unknown }>()({ hero: true })
+  const heroOnly = { fields: new Set(['hero']), nested: {} }
 
   test('assembles the metadata from the physical columns and leaves them out of the result', async () => {
     const row = {
@@ -192,7 +191,7 @@ describe('a projection naming only the logical field', () => {
       0,
       'Legacy',
       undefined,
-      buildFieldSelectionScope(heroOnly._fields),
+      heroOnly,
     )
 
     expect(result).toEqual({

@@ -17,6 +17,7 @@ import {
 } from '../access/index.js'
 import type {
   DependencyAdditions,
+  FieldSelectionScope,
   ToOneAccessFilterTree,
   CountAccessDenialTree,
 } from '../access/index.js'
@@ -33,8 +34,6 @@ import {
   type UnsafeTransactionScope,
 } from '../unsafe.js'
 import type { StackContext } from '../types/context.js'
-import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
-import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -128,7 +127,7 @@ function warnIfSelectIgnored(
   console.warn(
     `[@opensaas/stack-core] \`select\` is ignored by context.db.${listName}.${operation}() ` +
       `and the full (access-filtered) record is returned. ` +
-      `Narrow a read with \`include\` or a fragment \`query\` instead. ` +
+      `Narrow a read with \`include\`, or with \`.select()\` on the secured surface, instead. ` +
       `See https://stack.opensaas.au/docs/concepts/queries`,
   )
 }
@@ -1016,6 +1015,7 @@ export function populateDbDelegate(
       operations.where = read.where
       operations.orderBy = read.orderBy
       operations.include = read.include
+      operations.select = read.select
       operations.all = read.all
       operations.first = read.first
       operations.nearest = read.nearest
@@ -1042,37 +1042,31 @@ export function buildDbDelegate(
 
 /**
  * Resolve the `include` (and declared-dependency provenance) a read should
- * use, preserving each existing path's exact shape — fragment / sudo /
- * caller include / bare (ADR-0024) — while folding declared dependencies
- * (`needs`, ADR-0025) into whichever of those the read is already using.
+ * use, preserving each existing path's exact shape — sudo / caller include /
+ * bare (ADR-0024) — while folding declared dependencies (`needs`, ADR-0025)
+ * into whichever of those the read is already using.
  *
- * A non-sudo fragment's own `include` and a non-sudo caller's `include` are
- * both folded and then scoped by `buildAccessScopedInclude` (ADR-0026) —
- * caller-directed, so a relation named nowhere in the folded tree never has
- * its list's `query` access evaluated at all (issue #1088: a fragment read
- * used to skip this walk entirely). A sudo caller's `include` (fragment or
- * not) is folded and used as-is, unscoped — sudo is unaffected. A bare read
- * stays on the exact ADR-0024 path — `include: undefined`, no related
- * `query` access evaluated — unless folding actually added something, which
- * only happens when a field on this list declares `needs`.
+ * A non-sudo caller's `include` is folded and then scoped by
+ * `buildAccessScopedInclude` (ADR-0026) — caller-directed, so a relation named
+ * nowhere in the folded tree never has its list's `query` access evaluated at
+ * all. A sudo caller's `include` is folded and used as-is, unscoped — sudo is
+ * unaffected. A bare read stays on the exact ADR-0024 path — `include:
+ * undefined`, no related `query` access evaluated — unless folding actually
+ * added something, which only happens when a field on this list declares
+ * `needs`.
  *
- * Also returns the `FieldSelectionScope` a fragment's own field selection
- * produces (ADR-0027), so the caller can pass it to `filterReadableFields`
- * and make computation itself projection-aware, not only the fold above.
- * `undefined` for every non-fragment path: a caller `include` (sudo or not)
- * and a bare read both mean "compute every field," matching what they
- * already fetch.
+ * `selection` is always `undefined` here: this surface has no projection, so
+ * every read on it computes every field. The secured surface's `.select()`
+ * (`secured/select.ts`) is what produces a restricted one (ADR-0041).
  *
  * Also returns `toOneAccessFilters` — the to-one relations `buildAccessScopedInclude`
  * flagged as needing a post-query existence check rather than a Prisma-side
- * `where` (issue #974). Only a non-sudo fragment or caller-include read can
- * produce a non-empty tree: those are the only paths that evaluate a related
- * list's `query` access at all. A sudo read and a bare read always return an
- * empty tree.
+ * `where` (issue #974). Only a non-sudo caller-include read can produce a
+ * non-empty tree: it is the only path that evaluates a related list's `query`
+ * access at all. A sudo read and a bare read always return an empty tree.
  */
 async function resolveReadInclude(
   callerInclude: Record<string, unknown> | undefined,
-  fragmentFields: FieldSelection<unknown> | undefined,
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
@@ -1085,42 +1079,6 @@ async function resolveReadInclude(
   toOneAccessFilters: ToOneAccessFilterTree
   countDenials: CountAccessDenialTree
 }> {
-  if (fragmentFields !== undefined) {
-    const fragmentInclude = buildInclude(fragmentFields) ?? undefined
-    const selection = buildFieldSelectionScope(fragmentFields)
-    const widened = widenIncludeForDependencies(
-      fragmentInclude,
-      listConfig.fields,
-      config,
-      listName,
-      selection,
-    )
-
-    if (context._isSudo || !widened.include) {
-      return {
-        ...widened,
-        selection,
-        toOneAccessFilters: emptyToOneAccessFilterTree(),
-        countDenials: emptyCountAccessDenialTree(),
-      }
-    }
-
-    const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-      widened.include,
-      listConfig.fields,
-      { session: context.session, context },
-      config,
-      listName,
-    )
-    return {
-      include,
-      additions: widened.additions,
-      selection,
-      toOneAccessFilters,
-      countDenials,
-    }
-  }
-
   if (context._isSudo) {
     const widened = widenIncludeForDependencies(callerInclude, listConfig.fields, config, listName)
     return {
@@ -1204,30 +1162,19 @@ function createFindUnique(
       where = mergedWhere
     }
 
-    // Access control still runs via filterReadableFields even though a
-    // fragment drives `include`; the fragment only narrows which fields come back.
-    const fragment = isFragment(args.query) ? args.query : null
-
     // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
+    // ADR-0025) in alongside whatever the caller/sudo/bare path already
+    // produces — see `resolveReadInclude`'s doc comment.
     let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
+      await resolveReadInclude(args.include, listName, listConfig, context, config)
 
     // Virtual fields have no database column. Whichever path produced
-    // `include` (fragment, access-controlled merge, or sudo passthrough), a
+    // `include` (access-controlled merge, or sudo passthrough), a
     // virtual key must never reach Prisma — it would throw "Unknown field"
     // (#628). Below, `filterReadableFields` computes a virtual field's value
     // exactly when `selection` says the read is going to return it (ADR-0027)
-    // — every one of them for a bare/`include`-based read (`selection` is
-    // `undefined`), only the ones a fragment named otherwise.
+    // — every one of them on this surface, whose `selection` is always
+    // `undefined`.
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
@@ -1265,10 +1212,6 @@ function createFindUnique(
       toOneVisibility,
       countDenials,
     )
-
-    if (fragment) {
-      return pickFields(filtered, fragment._fields)
-    }
 
     return filtered
   }
@@ -1368,20 +1311,11 @@ function createFindMany(
       where = mergedWhere
     }
 
-    const fragment = isFragment(args?.query) ? args.query : null
-
     // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
+    // ADR-0025) in alongside whatever the caller/sudo/bare path already
+    // produces — see `resolveReadInclude`'s doc comment.
     let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args?.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
+      await resolveReadInclude(args?.include, listName, listConfig, context, config)
 
     // Strips virtual keys from `include` before the Prisma call — see the
     // `createFindUnique` comment above for why (#628, ADR-0027).
@@ -1426,10 +1360,6 @@ function createFindMany(
         ),
       ),
     )
-
-    if (fragment) {
-      return filtered.map((item: Record<string, unknown>) => pickFields(item, fragment._fields))
-    }
 
     return filtered
   }
@@ -1695,22 +1625,11 @@ function createGet(
       }
     }
 
-    // Access control still runs via filterReadableFields even though a
-    // fragment drives `include`; the fragment only narrows which fields come back.
-    const fragment = isFragment(args?.query) ? args.query : null
-
     // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
+    // ADR-0025) in alongside whatever the caller/sudo/bare path already
+    // produces — see `resolveReadInclude`'s doc comment.
     let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args?.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
+      await resolveReadInclude(args?.include, listName, listConfig, context, config)
 
     // Virtual fields have no database column and must never reach Prisma (#628).
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
@@ -1745,9 +1664,6 @@ function createGet(
         toOneVisibility,
         countDenials,
       )
-      if (fragment) {
-        return pickFields(filtered, fragment._fields)
-      }
       return filtered
     }
 

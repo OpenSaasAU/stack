@@ -136,7 +136,7 @@ export const navigation: NavItem[] = [
         href: '/docs/concepts/field-types',
       },
       {
-        title: 'Queries & Fragments',
+        title: 'Queries & projections',
         href: '/docs/concepts/queries',
       },
       {

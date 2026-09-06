@@ -1,188 +1,106 @@
-# Queries & Fragments
+# Queries & projections
 
-Stack has **no GraphQL layer**. Instead of `context.graphql.run()`, it provides first-class, type-safe query utilities that give you the same benefits KeystoneJS users relied on — fragment reuse, composability, and inferred result types — without GraphQL at runtime.
+Stack has **no GraphQL layer**. A read is composed on `context.db.<List>` — an
+immutable query value — and narrowed with `.select()`, which the engine honours
+exactly. There is no fragment to declare, no codegen step, and no result type to
+infer by hand: the generated types give each list's surface its own shape.
 
-The building blocks are:
+```typescript
+const summaries = await context.db.Post.where({ published: { equals: true } })
+  .orderBy({ createdAt: 'desc' })
+  .select('title', 'excerpt')
+  .all()
+```
 
-- **`defineFragment`** — declare a reusable, composable field selection for a model.
-- **`runQuery` / `runQueryOne`** — standalone helpers that execute a fragment against a list.
-- **`ResultOf`** — a type utility that infers the exact result shape from a fragment (no codegen step).
-
-All fragment queries run through `context.db` under the hood, so your [access control](/docs/concepts/access-control) rules are always enforced.
+Everything below runs through the same secured terminals, so your
+[access control](/docs/concepts/access-control) rules are always enforced.
 
 {% callout type="info" %}
-Migrating from Keystone? See the [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide and the [`context.graphql.run` quick reference](/docs/how-to/migrate#migrating-contextgraphqlrun) for a side-by-side translation table.
+Migrating from Keystone? See the [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide for a side-by-side translation table.
 {% /callout %}
 
-## `defineFragment`
+## `.select()`
 
-`defineFragment` creates a reusable field-selection descriptor for a model type. It is curried so TypeScript can infer both the model type (from the type parameter) and the field selection (from the argument).
-
-Each key in the selection maps to:
-
-- `true` — include the scalar field as-is.
-- A `Fragment` — include a relationship and recurse (shorthand).
-- A `RelationSelector` — include a relationship with optional Prisma `where`/`orderBy`/`take`/`skip`.
+`.select()` names the fields of **this list** you want back. It replaces any
+previous call rather than accumulating, and the result matches it exactly.
 
 ```typescript
-import type { User, Post } from '@/.opensaas/prisma-client/client'
-import { defineFragment } from '@opensaas/stack-core'
-
-export const userFragment = defineFragment<User>()({
-  id: true,
-  name: true,
-  email: true,
-} as const)
-
-// Compose fragments by referencing one inside another
-export const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  publishedAt: true,
-  author: userFragment, // nested — access-controlled include
-} as const)
+// Exactly these keys, plus the list's system fields
+const rows = await context.db.Post.select('title', 'excerpt').all()
 ```
 
-{% callout type="info" %}
-Always close the selection object with `as const`. This preserves the literal field selection so `ResultOf` can narrow the result type precisely.
-{% /callout %}
-
-## `ResultOf`
-
-`ResultOf` infers the TypeScript result type from a fragment — analogous to `gql.tada`'s `ResultOf`, but built-in and with no codegen step.
-
-- Scalar fields selected with `true` keep their original Prisma type.
-- Relationship fields selected with a nested fragment are recursively narrowed.
-- Nullability and array wrappers from the original model are preserved.
+A computed field is selectable like any other. Selecting one returns it whether
+or not you named the columns it is computed from:
 
 ```typescript
-import { type ResultOf } from '@opensaas/stack-core'
-
-type UserData = ResultOf<typeof userFragment>
-// → { id: string; name: string; email: string }
-
-type PostData = ResultOf<typeof postFragment>
-// → { id: string; title: string; publishedAt: Date | null;
-//     author: { id: string; name: string; email: string } | null }
+// `wordCount` declares `needs: ['body']`. The engine reads `body`, computes
+// the field, and `body` is not in the result — you did not ask for it.
+const rows = await context.db.Post.select('wordCount').all()
 ```
 
-## Running queries
+That is the whole rule: the engine **widens** the query for what it needs — the
+declared dependency sets of the computed fields it will return, and any field
+`read` rule that has to see a row to answer — and then **strips** everything it
+added back out, at every nesting level.
 
-There are two equivalent ways to execute a fragment.
+### Relations are reached with `.include()`, not `.select()`
 
-### Via `context.db` (primary API)
-
-Pass the fragment to any `context.db` read operation as the `query` argument:
+`.select()` narrows this list's own columns; a relation arrives because a read
+named it. The two compose, and naming a relation in `.select()` is refused:
 
 ```typescript
-// List query with where / orderBy / pagination
-const posts = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-  orderBy: { publishedAt: 'desc' },
-  take: 10,
-})
-// posts: PostData[]
-
-// Single record — null means "not found OR access denied"
-const post = await context.db.post.findUnique({
-  where: { id: postId },
-  query: postFragment,
-})
-if (!post) return notFound()
-// post: PostData
+const rows = await context.db.Post.select('title')
+  .include('author', (author) => author.select('name'))
+  .all()
+// → [{ id, createdAt, updatedAt, title, author: { id, createdAt, updatedAt, name } }]
 ```
 
-{% callout type="warning" %}
-`context.db` reads do **not** honour Prisma's `select` argument. Narrow a read with `include` (for relationships) or a fragment `query` instead. Passing `select` to `findUnique`/`findMany` is a no-op: it logs a runtime warning and the full, access-filtered record is still returned (field-level visibility is always enforced by [access control](/docs/concepts/access-control), regardless of `select`).
-{% /callout %}
+A refinement takes its own `.select()`, so a projection is exact at every level.
 
-{% callout type="info" %}
-A `context.db` read with **no** `include` and **no** fragment `query` returns the row's own columns and virtual fields only — never relations, matching Prisma's own default. `post.author` is `undefined` on a bare `findUnique`/`findMany` unless you name it via `include` or a fragment. This also applies to a `virtual` field's `resolveOutput` hook issuing its own bare `context.db` read — it won't see relations either, so read through `context.db` for what you need or pass an `include`.
+## What a `resolveOutput` hook sees
 
-The same rule holds one hop at a time inside an `include`: naming a relation fetches that relation's own columns and stops. `include: { author: true }` returns `author`'s scalar fields, not `author`'s own relations — reaching further means nesting further: `include: { author: { include: { organization: true } } }`.
-{% /callout %}
-
-### Via `runQuery` / `runQueryOne` (standalone helpers)
-
-When you don't have direct access to `context.db` (for example inside a hook or a shared utility), use the standalone helpers. They take the `context`, the PascalCase list key, the fragment, and query args:
+A computed field's hook is handed **exactly its own declared dependencies plus
+the list's system fields** — never what the caller happened to select.
 
 ```typescript
-import { runQuery, runQueryOne } from '@opensaas/stack-core'
-
-// Equivalent to context.db.post.findMany({ query: postFragment, where, ... })
-const posts = await runQuery(context, 'Post', postFragment, {
-  where: { published: true },
-  orderBy: { publishedAt: 'desc' },
-  take: 10,
-})
-// posts: ResultOf<typeof postFragment>[]
-
-// Equivalent to context.db.post.findFirst({ where: { id }, query: postFragment })
-const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
-// post: ResultOf<typeof postFragment> | null
-if (!post) return notFound()
-```
-
-Both forms produce the same result and enforce the same access control.
-
-## Nested relationship filtering with `RelationSelector`
-
-To filter, sort, or paginate a nested relationship **within the same query**, use a `RelationSelector` object — `{ query, where?, orderBy?, take?, skip? }` — instead of a plain fragment:
-
-```typescript
-import type { Post, Comment } from '@/.opensaas/prisma-client/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
-
-const postWithApprovedComments = defineFragment<Post>()({
-  id: true,
-  title: true,
-  comments: {
-    query: commentFragment, // nested fragment
-    where: { approved: true }, // Prisma filter on the relationship
-    orderBy: { createdAt: 'desc' },
-    take: 5,
+Post: list({
+  fields: {
+    body: text(),
+    wordCount: virtual({
+      type: 'number',
+      needs: ['body'],
+      hooks: {
+        // `item` is { id, createdAt, updatedAt, body } — on every read,
+        // whatever the call site selected.
+        resolveOutput: ({ item }) => item.body.split(/\s+/).length,
+      },
+    }),
   },
-} as const)
-
-type PostWithComments = ResultOf<typeof postWithApprovedComments>
-// → { id: string; title: string; comments: { id: string; body: string }[] }
-
-const posts = await context.db.post.findMany({ query: postWithApprovedComments })
-```
-
-## Variables via factory functions
-
-Fragments are plain objects, so for runtime filter values just wrap `defineFragment` in a factory function and infer the type from its return:
-
-```typescript
-function makePostFragment(status: string) {
-  return defineFragment<Post>()({
-    id: true,
-    title: true,
-    comments: { query: commentFragment, where: { status } },
-  } as const)
-}
-
-type PostData = ResultOf<ReturnType<typeof makePostFragment>>
-
-const posts = await context.db.post.findMany({
-  query: makePostFragment('approved'),
-  where: { published: true },
 })
 ```
 
-## Coming from `context.graphql.run`?
+This is what keeps a field's value the same from every call site. A hook that
+reads something it did not declare finds nothing there — declaring it is what
+earns the data. See [`needs`](/docs/reference/config-api) and
+[ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md).
 
-| Keystone                                             | Stack                                                              |
-| ---------------------------------------------------- | ------------------------------------------------------------------ |
-| GraphQL fragment string                              | `defineFragment<T>()(fields)`                                      |
-| `ResultOf<typeof query>` (codegen)                   | `ResultOf<typeof fragment>` (built-in)                             |
-| `context.graphql.run({ query, variables })` — list   | `context.db.post.findMany({ query: fragment, where?, ... })`       |
-| `context.graphql.run({ query, variables })` — single | `context.db.post.findUnique({ where: { id }, query: fragment })`   |
-| Standalone GraphQL client call                       | `runQuery(context, listKey, fragment, args)` / `runQueryOne(...)`  |
-| Nested relationship filtering                        | `RelationSelector`: `{ query: fragment, where?, orderBy?, take? }` |
+A declaration also outranks a caller-facing `read` denial on the same column or
+relation: the value reaches the hook, and is still stripped before the caller
+sees it. Adding a `read` rule elsewhere therefore cannot silently change a
+computed field's value — but it also means `needs: ['passwordHash']` is a
+deliberate, greppable way to surface a denied column's derived value. Own it.
 
-For the complete set of migration recipes (deeply nested fragments, many-to-many, reuse across parents), see [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) and the [Migrating context.graphql.run](/docs/how-to/migrate#migrating-contextgraphqlrun) section of the Migration Guide.
+## A read with no projection
+
+A read that names no `.select()` returns the row's own columns plus its computed
+fields — **never its relations**, matching the ORM's own semantics for the same
+call. Naming a relation fetches that relation's own columns and stops; reaching
+further means naming further. See
+[ADR-0024](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0024-a-read-with-no-include-fetches-scalars-not-relations.md).
+
+## Denial is silent
+
+A denied read returns the empty value of its type — `[]` from `.all()`, `null`
+from `.first()` — rather than throwing, whether the rows do not exist or the
+session may not see them. A projection changes nothing about that: the denial is
+resolved before the query is built.
