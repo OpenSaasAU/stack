@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createAdapterFactory } from 'better-auth/adapters'
 import { codecOf, param } from '@prisma/orm-postgres/relational-core'
 import type {
@@ -153,6 +154,20 @@ function renameKeys(
  *   database stops two concurrent sign-ins through the same issuer identity
  *   from creating two accounts; better-auth's own existence check is all that
  *   stands between them.
+ * - **A `databaseHooks` `before` hook runs outside the transaction.**
+ *   better-auth swaps the transaction-bound adapter in only through its
+ *   AsyncLocalStorage store (`runWithTransaction` → `als.run({ adapter: trx })`,
+ *   read back by `getCurrentAdapter`). The `AuthContext` those hooks receive
+ *   comes from `getCurrentAuthContext()`, and its `.adapter` is still the root
+ *   instance on the outer lane. So a hook that awaits
+ *   `context.adapter.findOne(...)` queries the outer lane while the sign-up
+ *   transaction holds a connection: on the Dev database that is the only
+ *   connection (ADR-0063), so the hook waits out Prisma's acquire timeout and
+ *   sign-up hangs; on pooled Postgres it reads outside the transaction and
+ *   survives the rollback the rest of sign-up gets. Inherited from
+ *   better-auth's ALS routing — its own Kysely and Prisma adapters split the
+ *   same way — and tracked in
+ *   [#1252](https://github.com/OpenSaasAU/stack/issues/1252).
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */
@@ -171,7 +186,7 @@ export function opensaasAuthAdapter(
   }
 
   function factoryOn(
-    surface: UnsafeSurface,
+    laneOf: () => UnsafeSurface,
     bracket: AuthTransactionBracket,
     factoryTransaction: AdapterFactoryConfig['transaction'],
   ): AdapterFactory<BetterAuthOptions> {
@@ -205,7 +220,7 @@ export function opensaasAuthAdapter(
       }): CustomAdapter => {
         const at = (model: string): ModelCoordinate => coordinate(model, getDefaultModelName)
 
-        const collectionFor = (model: string, lane: UnsafeSurface = surface): AuthCollection => {
+        const collectionFor = (model: string, lane: UnsafeSurface = laneOf()): AuthCollection => {
           const { namespace, listKey } = at(model)
           return authCollection(lane, namespace, listKey)
         }
@@ -254,7 +269,7 @@ export function opensaasAuthAdapter(
         const narrow = (
           model: string,
           where: readonly CleanedWhere[],
-          lane: UnsafeSurface = surface,
+          lane: UnsafeSurface = laneOf(),
         ): AuthCollection => applyOrmWhere(collectionFor(model, lane), where, resolveField(model))
 
         /**
@@ -384,6 +399,7 @@ export function opensaasAuthAdapter(
             // `.where()`, so the unconditional delete better-auth's own test
             // cleanup issues has to be the typed-SQL statement instead.
             const { namespace, table } = at(model)
+            const surface = laneOf()
             const stats = await surface.execute(
               authSqlTable(surface, namespace, table).delete().build(),
             )
@@ -428,6 +444,7 @@ export function opensaasAuthAdapter(
 
           async incrementOne({ model, where, increment, set }) {
             const { namespace, table } = at(model)
+            const surface = laneOf()
             const plan = authSqlTable(surface, namespace, table)
               .update((fields: AuthSqlFieldProxy, fns: AuthSqlFunctions) => {
                 const assignments: Record<string, Expression<ScopeField>> = {}
@@ -467,15 +484,27 @@ export function opensaasAuthAdapter(
     })
   }
 
+  // The lane is the only thing a transaction-bound instance varies, so it
+  // travels in an AsyncLocalStorage store rather than being closed over: the
+  // bound instance is then built once per adapter, outside the transaction,
+  // instead of on every sign-up and sign-in. Concurrent transactions each read
+  // their own store; outside one there is none, and the outer lane answers.
+  const boundLane = new AsyncLocalStorage<UnsafeSurface>()
+  const laneOf = (): UnsafeSurface => boundLane.getStore() ?? unsafe
+
   // A transaction-bound instance ships the factory option off and brackets
   // `consumeOne` on the lane it already holds: Postgres has no nested
   // transaction to open, and better-auth never calls `transaction` on the
   // adapter it hands a callback (`DBTransactionAdapter` omits it).
-  const bound = (lane: UnsafeSurface): AdapterFactory<BetterAuthOptions> =>
-    factoryOn(lane, (body) => body(lane), false)
+  const bound = factoryOn(laneOf, (body) => body(laneOf()), false)
 
-  return (betterAuthOptions) =>
-    factoryOn(unsafe, transaction, (callback) =>
-      transaction(async (lane) => await callback(bound(lane)(betterAuthOptions))),
+  return (betterAuthOptions) => {
+    const boundAdapter = bound(betterAuthOptions)
+    return factoryOn(
+      () => unsafe,
+      transaction,
+      (callback) =>
+        transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
     )(betterAuthOptions)
+  }
 }

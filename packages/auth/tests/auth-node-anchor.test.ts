@@ -33,7 +33,12 @@ import { authPlugin } from '../src/config/plugin.js'
 import { getAuthListRegistry } from '../src/lists/index.js'
 import type { NormalizedAuthConfig } from '../src/config/types.js'
 
-const BOOT = 240_000
+const CHILD_TIMEOUT = 120_000
+// `beforeAll` boots the Dev database and then runs both children in series. The
+// budget has to clear the sum of their own SIGKILL timers with room to spare:
+// if the hook expires first, `probe.output` — the only diagnostic this anchor
+// produces — is never assigned, and a slow runner reports a bare hook timeout.
+const BOOT = 2 * CHILD_TIMEOUT + 120_000
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fixtureConfig = path.join(
@@ -105,7 +110,7 @@ function run(
     child.stderr.setEncoding('utf-8')
     child.stdout.on('data', (chunk: string) => (output += chunk))
     child.stderr.on('data', (chunk: string) => (output += chunk))
-    const timer = setTimeout(() => child.kill('SIGKILL'), 120_000)
+    const timer = setTimeout(() => child.kill('SIGKILL'), CHILD_TIMEOUT)
     child.on('error', (error) => {
       clearTimeout(timer)
       reject(error)

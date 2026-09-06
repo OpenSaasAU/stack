@@ -183,6 +183,17 @@ refused in `assertNoUnsupportedPassthroughKeys`), no `createSchema` (so
 better-auth's CLI is unsupported — the generator emits the contract), and no
 error normalisation (the Unsafe surface is excluded, ADR-0042).
 
+One more, newly reachable now that the transaction option is implemented: a
+`databaseHooks.<model>.create.before` hook receives the `AuthContext`, whose
+`.adapter` better-auth never swaps — only its AsyncLocalStorage store carries
+the transaction-bound adapter. A hook that awaits `context.adapter.findOne(...)`
+therefore runs on the **outer** lane while the sign-up transaction holds a
+connection: on the Dev database that is the only connection (ADR-0063), so
+sign-up hangs to the acquire timeout; on pooled Postgres the read happens
+outside the transaction and survives its rollback. Inherited from better-auth
+(its Kysely and Prisma adapters split the same way);
+[#1252](https://github.com/OpenSaasAU/stack/issues/1252) tracks it.
+
 Conformance is better-auth's own suites — `@better-auth/test-utils`' normal,
 uuid, caseInsensitive, transactions and authFlow — over the Test context in
 `tests/adapter-conformance.test.ts`. numberId and joins are skipped and the
@@ -205,7 +216,8 @@ takes precedence over `access.user` when both are set — `createUserList` in
 `derive-auth-lists.ts` resolves `userConfig.access || accessConfig.user`.
 
 better-auth's own sign-in/sign-up/session flows are unaffected: they write
-through the Auth adapter over the Unsafe surface (see below), marked as
+through the Auth adapter over the Unsafe surface (see "The Auth adapter
+(ADR-0060)" above), marked as
 intentionally unscoped and bypassing access control entirely. The runtime `getUser`/`getCurrentUser` helpers resolve through the
 `sudo` argument core passes to `plugin.runtime(context, sudo)` for the same
 reason — "who is this session" must not depend on the application's User
