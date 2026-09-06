@@ -9,13 +9,13 @@ import type { AccessContext } from '@opensaas/stack-core'
 // Helper to create mock context
 function createMockContext(
   dbOverrides: Record<string, unknown> = {},
-  prisma: Record<string, unknown> = {},
+  ormHandle: Record<string, unknown> = {},
 ): AccessContext {
   return {
     db: dbOverrides,
     session: null,
     sudo: vi.fn(),
-    prisma,
+    ormHandle,
     storage: {} as unknown,
     plugins: {},
     _isSudo: false,
@@ -531,15 +531,15 @@ describe('Vector Storage', () => {
 
     it('runs the raw query against the client, not a detached method', async () => {
       const storage = new PgVectorStorage({ type: 'pgvector' })
-      const prisma = createRawQueryClient([{ id: '1', distance: '0' }])
+      const ormHandle = createRawQueryClient([{ id: '1', distance: '0' }])
       const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
-      const context = createMockContext({ article: { findMany } }, prisma)
+      const context = createMockContext({ article: { findMany } }, ormHandle)
 
       const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], { context })
 
-      expect(prisma.queries).toHaveLength(1)
-      expect(prisma.queries[0]).toContain('FROM "Article"')
-      expect(prisma.queries[0]).toContain('<=>')
+      expect(ormHandle.queries).toHaveLength(1)
+      expect(ormHandle.queries[0]).toContain('FROM "Article"')
+      expect(ormHandle.queries[0]).toContain('<=>')
       expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['1'] } } })
       expect(results).toHaveLength(1)
       expect((results[0].item as { id: string }).id).toBe('1')
@@ -548,12 +548,12 @@ describe('Vector Storage', () => {
 
     it('drops rows below minScore before refetching', async () => {
       const storage = new PgVectorStorage({ type: 'pgvector' })
-      const prisma = createRawQueryClient([
+      const ormHandle = createRawQueryClient([
         { id: '1', distance: '0' },
         { id: '2', distance: '0.9' },
       ])
       const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
-      const context = createMockContext({ article: { findMany } }, prisma)
+      const context = createMockContext({ article: { findMany } }, ormHandle)
 
       const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], {
         context,

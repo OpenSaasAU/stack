@@ -30,7 +30,7 @@ function makeContext(): AccessContext {
   return {
     session: { userId: 'u1' },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma: {} as any,
+    ormHandle: {} as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: {} as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

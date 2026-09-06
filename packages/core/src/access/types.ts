@@ -63,7 +63,7 @@ export type PrismaModelDelegate = {
  * The index signature's `unknown` is deliberate, and is the one place the
  * repo's "never expose `unknown` externally" rule is relaxed. It replaced
  * `PrismaClientLike = any`: `unknown` forces every consumer to narrow before
- * calling — which is what {@link ormModel} does, once — where `any` let a
+ * calling — which is what `ormModel()` does, once — where `any` let a
  * mistyped call compile. What would replace it is a per-model type, and that
  * cannot live here: model keys come from the config's list names, so the
  * typed surface is the generated bundle's `DB`, instantiated from the emitted
@@ -98,8 +98,8 @@ export type OrmOperationArgs = Record<string, unknown>
 export type OrmRow = Record<string, unknown>
 
 /**
- * One model's operations on {@link OrmClient}. Reached through
- * {@link isOrmModelDelegate}, never by assuming the key is present.
+ * One model's operations on {@link OrmClient}. Reached through `ormModel()`,
+ * which narrows the key rather than assuming it is present.
  */
 export interface OrmModelDelegate {
   findUnique: (args: OrmOperationArgs) => Promise<OrmRow | null>
@@ -311,12 +311,18 @@ export type StorageUtils = {
 export interface AccessContext {
   session: Session | null
   /**
-   * The engine's own ORM handle, reached through {@link ormModel}. Internal
-   * plumbing rather than the application's escape hatch, which is `unsafe` on
-   * the request context (`StackBaseContext.unsafe`) and is not a member of
-   * this type.
+   * The engine's own ORM handle: the client `db`'s terminals, the Write
+   * Pipeline and the access filter run their queries through, narrowed to one
+   * model by `ormModel()`. It is engine plumbing, not an application seam —
+   * the engine applies the Access Filter, Field Visibility and hooks *around*
+   * it, so the handle itself enforces none of them.
+   *
+   * The application's deliberate bypass is a different thing under a different
+   * name: `unsafe` on the request context (`StackBaseContext.unsafe`), which
+   * is Prisma's own query lanes with every execution marked intentionally
+   * unscoped, and is not a member of this type.
    */
-  prisma: OrmClient
+  ormHandle: OrmClient
   db: AccessControlledDB
   storage: StorageUtils
   plugins: Record<string, unknown>

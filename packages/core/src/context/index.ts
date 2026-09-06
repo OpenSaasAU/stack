@@ -435,7 +435,7 @@ async function settleTransactionOwner<T>(
 
 export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   session: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
@@ -466,7 +466,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
   const context: AccessContext = {
     session,
-    prisma,
+    ormHandle,
     db: db as AccessControlledDB,
     storage: storage ?? {
       uploadFile: async () => {
@@ -498,7 +498,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _transactionOwner,
   }
 
-  populateDbDelegate(db, config, prisma, context)
+  populateDbDelegate(db, config, ormHandle, context)
 
   // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
   // any side effects they carry — run exactly once per top-level context.
@@ -837,7 +837,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
   function sudo(): StackContext<AccessControlledDB> {
     return getContext(
       config,
-      prisma,
+      ormHandle,
       session,
       context.storage,
       true,
@@ -855,7 +855,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
   function withSession(newSession: Session | null): StackContext<AccessControlledDB> {
     return getContext(
       config,
-      prisma,
+      ormHandle,
       newSession,
       context.storage,
       _isSudo,
@@ -888,7 +888,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     const registry = new TransactionRegistry()
-    const ormClient = prisma as unknown as TransactionCapable
+    const ormClient = ormHandle as unknown as TransactionCapable
 
     const settled = runTransactionBody(fn, registry, ormClient, options)
 
@@ -951,7 +951,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // or a context already inside one. Run directly — hook and access
     // semantics are identical and atomicity comes from the enclosing
     // transaction.
-    return fn(child(prisma, _unsafeTransaction))
+    return fn(child(ormHandle, _unsafeTransaction))
   }
 
   const returned: StackContext<AccessControlledDB> = {
@@ -971,40 +971,40 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
 /**
  * Populate `target` with the access-controlled CRUD operations for every list,
- * each bound to `prisma` and `context`. Used both by {@link getContext} (at
+ * each bound to `ormHandle` and `context`. Used both by {@link getContext} (at
  * request setup) and by the Write Pipeline to rebuild a `db` delegate against a
  * transaction client (ADR-0010), so a hook's `context.db` write participates in
  * the same transaction.
  *
- * The operations capture `prisma` at construction, so rebinding to a different
+ * The operations capture `ormHandle` at construction, so rebinding to a different
  * client (e.g. a transaction `tx`) requires rebuilding the delegate — which is
  * exactly what this function enables.
  */
 export function populateDbDelegate(
   target: Record<string, unknown>,
   config: OpenSaasConfig,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const dbKey = getDbKey(listName)
 
-    const createOp = createCreate(listName, listConfig, prisma, context, config)
-    const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
-    const updateOp = createUpdate(listName, listConfig, prisma, context, config)
+    const createOp = createCreate(listName, listConfig, ormHandle, context, config)
+    const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
+    const updateOp = createUpdate(listName, listConfig, ormHandle, context, config)
     const operations: Record<string, unknown> = {
-      findUnique: createFindUnique(listName, listConfig, prisma, context, config),
+      findUnique: createFindUnique(listName, listConfig, ormHandle, context, config),
       findMany: findManyOp,
       findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
-      delete: createDelete(listName, listConfig, prisma, context, config),
-      count: createCount(listName, listConfig, prisma, context, config),
-      createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
+      delete: createDelete(listName, listConfig, ormHandle, context, config),
+      count: createCount(listName, listConfig, ormHandle, context, config),
+      createMany: createCreateMany(listName, listConfig, ormHandle, context, config, createOp),
       updateMany: createUpdateMany(
         listName,
         listConfig,
-        prisma,
+        ormHandle,
         context,
         config,
         findManyOp,
@@ -1013,7 +1013,7 @@ export function populateDbDelegate(
     }
 
     if (isSingletonList(listConfig)) {
-      operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
+      operations.get = createGet(listName, listConfig, ormHandle, context, config, createOp)
     }
 
     target[dbKey] = operations
@@ -1021,17 +1021,17 @@ export function populateDbDelegate(
 }
 
 /**
- * Build a fresh access-controlled `db` delegate bound to `prisma` and `context`.
+ * Build a fresh access-controlled `db` delegate bound to `ormHandle` and `context`.
  * Convenience wrapper over {@link populateDbDelegate} returning a new object,
  * used by the Write Pipeline to rebind `db` to a transaction client.
  */
 export function buildDbDelegate(
   config: OpenSaasConfig,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
 ): AccessControlledDB {
   const db: Record<string, unknown> = {}
-  populateDbDelegate(db, config, prisma, context)
+  populateDbDelegate(db, config, ormHandle, context)
   return db as AccessControlledDB
 }
 
@@ -1156,7 +1156,7 @@ function createFindUnique(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1226,7 +1226,7 @@ function createFindUnique(
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(prisma, listName)
+    const model = ormModel(ormHandle, listName)
     const item = await model.findFirst({
       where,
       include,
@@ -1273,7 +1273,7 @@ function createFindMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1383,7 +1383,7 @@ function createFindMany(
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(prisma, listName)
+    const model = ormModel(ormHandle, listName)
     const items = await model.findMany({
       where,
       orderBy: args?.orderBy,
@@ -1459,7 +1459,7 @@ function createCreate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1469,7 +1469,7 @@ function createCreate(
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: args.data,
@@ -1484,7 +1484,7 @@ function createCreateMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1506,7 +1506,7 @@ function createUpdate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1516,7 +1516,7 @@ function createUpdate(
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: args.data,
@@ -1531,7 +1531,7 @@ function createUpdateMany(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1556,7 +1556,7 @@ function createDelete(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1566,7 +1566,7 @@ function createDelete(
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: undefined,
@@ -1579,7 +1579,7 @@ function createCount(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
 ) {
@@ -1643,7 +1643,7 @@ function createCount(
     }
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(prisma, listName)
+    const model = ormModel(ormHandle, listName)
     const count = await model.count({
       where,
     })
@@ -1656,7 +1656,7 @@ function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   context: AccessContext,
   config: OpenSaasConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1711,7 +1711,7 @@ function createGet(
     include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
 
     // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(prisma, listName)
+    const model = ormModel(ormHandle, listName)
     const item = await model.findFirst({
       where,
       include,

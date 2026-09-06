@@ -72,7 +72,7 @@ function makeFakePrisma(overrides?: {
     }),
   }
 
-  return { prisma: { post } as unknown as OrmClient, post }
+  return { ormHandle: { post } as unknown as OrmClient, post }
 }
 
 /**
@@ -82,7 +82,7 @@ function makeContext(opts?: { isSudo?: boolean }): AccessContext {
   return {
     session: { userId: 'u1' },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma: {} as any,
+    ormHandle: {} as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     db: {} as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -168,14 +168,14 @@ beforeEach(() => {
 
 describe('Write Pipeline — phase order', () => {
   it('runs create phases in the documented order (resolveInput → validate → beforeOp → DB → afterOp → Field Visibility)', async () => {
-    const { prisma, post } = makeFakePrisma({ created: { id: '1', title: 'hi' } })
+    const { ormHandle, post } = makeFakePrisma({ created: { id: '1', title: 'hi' } })
     const listConfig = makeListConfig()
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'hi' },
@@ -204,14 +204,14 @@ describe('Write Pipeline — phase order', () => {
 
   it('runs update phases in the documented order, fetching the target first', async () => {
     const existing = { id: '1', title: 'old' }
-    const { prisma, post } = makeFakePrisma({ existing, updated: { id: '1', title: 'new' } })
+    const { ormHandle, post } = makeFakePrisma({ existing, updated: { id: '1', title: 'new' } })
     const listConfig = makeListConfig()
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -236,14 +236,14 @@ describe('Write Pipeline — phase order', () => {
 
   it('runs delete phases in the documented order, SKIPPING the input-shaping phases', async () => {
     const existing = { id: '1', title: 'doomed' }
-    const { prisma, post } = makeFakePrisma({ existing, deleted: existing })
+    const { ormHandle, post } = makeFakePrisma({ existing, deleted: existing })
     const listConfig = makeListConfig()
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: undefined,
@@ -270,14 +270,14 @@ describe('Write Pipeline — phase order', () => {
 
 describe('Write Pipeline — short-circuit to null (silent failure)', () => {
   it('create: access denied short-circuits to null before DB and before beforeOperation', async () => {
-    const { prisma, post } = makeFakePrisma()
+    const { ormHandle, post } = makeFakePrisma()
     const listConfig = makeListConfig({ operationAccess: { create: () => false } })
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'hi' },
@@ -295,7 +295,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
   // (unlike update/delete, which do). Before this fix the only test was
   // `=== false`, so a filter fell through and was silently treated as allow.
   it('create: access control returning a filter throws InvalidCreateAccessResultError, before DB and before beforeOperation', async () => {
-    const { prisma, post } = makeFakePrisma()
+    const { ormHandle, post } = makeFakePrisma()
     const listConfig = makeListConfig({
       operationAccess: { create: () => ({ authorId: 'someone' }) },
     })
@@ -305,7 +305,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
       runWritePipeline({
         listName: 'Post',
         listConfig,
-        prisma,
+        ormHandle,
         context,
         config: makeConfig(listConfig),
         inputData: { title: 'hi' },
@@ -319,14 +319,14 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
   })
 
   it('update: missing target short-circuits to null before access, hooks, and DB', async () => {
-    const { prisma, post } = makeFakePrisma({ existing: null })
+    const { ormHandle, post } = makeFakePrisma({ existing: null })
     const listConfig = makeListConfig()
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -341,7 +341,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
   it('update: filter non-match short-circuits to null before DB and beforeOperation', async () => {
     const existing = { id: '1', title: 'old' }
     // filterMatch null => the access filter does not match the target row.
-    const { prisma, post } = makeFakePrisma({ existing, filterMatch: null })
+    const { ormHandle, post } = makeFakePrisma({ existing, filterMatch: null })
     const listConfig = makeListConfig({
       operationAccess: { update: () => ({ authorId: 'someone-else' }) },
     })
@@ -350,7 +350,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -365,7 +365,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
 
   it('update: a filter that matches the target proceeds through the full pipeline', async () => {
     const existing = { id: '1', title: 'old' }
-    const { prisma, post } = makeFakePrisma({
+    const { ormHandle, post } = makeFakePrisma({
       existing,
       filterMatch: existing,
       updated: { id: '1', title: 'new' },
@@ -378,7 +378,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -392,14 +392,14 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
 
   it('delete: access denied short-circuits to null before DB', async () => {
     const existing = { id: '1', title: 'x' }
-    const { prisma, post } = makeFakePrisma({ existing })
+    const { ormHandle, post } = makeFakePrisma({ existing })
     const listConfig = makeListConfig({ operationAccess: { delete: () => false } })
     const context = makeContext()
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: undefined,
@@ -414,7 +414,7 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
 
 describe('Write Pipeline — validation throws (NOT silent)', () => {
   it('create: a missing required field throws ValidationError and never reaches the DB', async () => {
-    const { prisma, post } = makeFakePrisma()
+    const { ormHandle, post } = makeFakePrisma()
     const listConfig = makeListConfig()
     const context = makeContext()
 
@@ -422,7 +422,7 @@ describe('Write Pipeline — validation throws (NOT silent)', () => {
       runWritePipeline({
         listName: 'Post',
         listConfig,
-        prisma,
+        ormHandle,
         context,
         config: makeConfig(listConfig),
         inputData: {}, // title is required but absent
@@ -440,14 +440,14 @@ describe('Write Pipeline — validation throws (NOT silent)', () => {
 describe('Write Pipeline — sudo mode', () => {
   it('create: sudo skips operation-level access checks', async () => {
     const accessSpy = vi.fn(() => false)
-    const { prisma, post } = makeFakePrisma({ created: { id: '1', title: 'hi' } })
+    const { ormHandle, post } = makeFakePrisma({ created: { id: '1', title: 'hi' } })
     const listConfig = makeListConfig({ operationAccess: { create: accessSpy } })
     const context = makeContext({ isSudo: true })
 
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'hi' },
@@ -463,7 +463,7 @@ describe('Write Pipeline — sudo mode', () => {
   it('update: sudo skips access and skips the filter re-check', async () => {
     const accessSpy = vi.fn(() => ({ authorId: 'someone-else' }))
     const existing = { id: '1', title: 'old' }
-    const { prisma, post } = makeFakePrisma({
+    const { ormHandle, post } = makeFakePrisma({
       existing,
       filterMatch: null,
       updated: { id: '1', title: 'new' },
@@ -474,7 +474,7 @@ describe('Write Pipeline — sudo mode', () => {
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -502,7 +502,7 @@ describe('Write Pipeline — sudo mode', () => {
       update: vi.fn(),
       delete: vi.fn(),
     }
-    const prisma = { post } as unknown as OrmClient
+    const ormHandle = { post } as unknown as OrmClient
 
     const listConfig = {
       fields: {
@@ -517,7 +517,7 @@ describe('Write Pipeline — sudo mode', () => {
     const result = await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'hi', locked: 'secret' },
@@ -532,7 +532,7 @@ describe('Write Pipeline — sudo mode', () => {
 describe('Write Pipeline — afterOperation originalItem', () => {
   it('create: afterOperation receives the persisted row and undefined originalItem', async () => {
     const persisted = { id: '1', title: 'hi' }
-    const { prisma } = makeFakePrisma({ created: persisted })
+    const { ormHandle } = makeFakePrisma({ created: persisted })
     const afterOp = vi.fn()
     const listConfig = {
       fields: { title: { type: 'text' } },
@@ -545,7 +545,7 @@ describe('Write Pipeline — afterOperation originalItem', () => {
     await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'hi' },
@@ -562,7 +562,7 @@ describe('Write Pipeline — afterOperation originalItem', () => {
   it('update: afterOperation receives the persisted row and the original row as originalItem', async () => {
     const existing = { id: '1', title: 'old' }
     const updated = { id: '1', title: 'new' }
-    const { prisma } = makeFakePrisma({ existing, updated })
+    const { ormHandle } = makeFakePrisma({ existing, updated })
     const afterOp = vi.fn()
     const listConfig = {
       fields: { title: { type: 'text' } },
@@ -575,7 +575,7 @@ describe('Write Pipeline — afterOperation originalItem', () => {
     await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
@@ -590,7 +590,7 @@ describe('Write Pipeline — afterOperation originalItem', () => {
 
   it('delete: afterOperation receives the original row as originalItem', async () => {
     const existing = { id: '1', title: 'doomed' }
-    const { prisma } = makeFakePrisma({ existing, deleted: existing })
+    const { ormHandle } = makeFakePrisma({ existing, deleted: existing })
     const afterOp = vi.fn()
     const listConfig = {
       fields: { title: { type: 'text' } },
@@ -603,7 +603,7 @@ describe('Write Pipeline — afterOperation originalItem', () => {
     await runWritePipeline({
       listName: 'Post',
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config: makeConfig(listConfig),
       inputData: undefined,

@@ -39,7 +39,7 @@ function makeContext(counts: Record<string, number>): {
   const context = {
     db,
     session: null,
-    prisma: {},
+    ormHandle: {},
     storage: {},
     plugins: {},
     _isSudo: false,
@@ -164,7 +164,7 @@ describe('resolveNavCounts', () => {
         comment: { count: async () => 4 },
       },
       session: null,
-      prisma: {},
+      ormHandle: {},
       storage: {},
       plugins: {},
       _isSudo: false,

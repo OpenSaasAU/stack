@@ -57,18 +57,18 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = { ping: makeModel(), pong: makeModel() }
-    prisma.ping.findMany.mockResolvedValue([{ id: 'p1' }])
-    prisma.pong.findMany.mockResolvedValue([{ id: 'q1' }])
+    const ormHandle: any = { ping: makeModel(), pong: makeModel() }
+    ormHandle.ping.findMany.mockResolvedValue([{ id: 'p1' }])
+    ormHandle.pong.findMany.mockResolvedValue([{ id: 'q1' }])
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
 
     await expect(context.db.ping.findMany({})).rejects.toThrow(ResolveOutputCycleError)
 
     // The cycle must be caught within a handful of hops, never left to grow
     // toward the hundreds of queries the un-bounded chain produced (#844).
     const totalCalls =
-      prisma.ping.findMany.mock.calls.length + prisma.pong.findMany.mock.calls.length
+      ormHandle.ping.findMany.mock.calls.length + ormHandle.pong.findMany.mock.calls.length
     expect(totalCalls).toBeLessThan(10)
   })
 
@@ -108,11 +108,11 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = { ping: makeModel(), pong: makeModel() }
-    prisma.ping.findMany.mockResolvedValue([{ id: 'p1' }])
-    prisma.pong.findMany.mockResolvedValue([{ id: 'q1' }])
+    const ormHandle: any = { ping: makeModel(), pong: makeModel() }
+    ormHandle.ping.findMany.mockResolvedValue([{ id: 'p1' }])
+    ormHandle.pong.findMany.mockResolvedValue([{ id: 'q1' }])
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
 
     let caught: unknown
     try {
@@ -192,14 +192,14 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = { user: makeModel(), account: makeModel(), student: makeModel() }
-    prisma.user.findMany.mockResolvedValue([{ id: 'u1' }])
+    const ormHandle: any = { user: makeModel(), account: makeModel(), student: makeModel() }
+    ormHandle.user.findMany.mockResolvedValue([{ id: 'u1' }])
     // Mirrors real Prisma semantics: a relation key is only present on the
     // returned row when the caller actually asked for it via `include`. The
     // hook's read never does, so `students` (and `user`) never appear here —
     // that is the mechanism that breaks the cycle under ADR-0024.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma.account.findMany.mockImplementation((args: any = {}) => {
+    ormHandle.account.findMany.mockImplementation((args: any = {}) => {
       const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
       if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
       if (args.include?.user) row.user = { id: 'u1' }
@@ -209,14 +209,14 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     // `findFirst` (see `createFindUnique` in `context/index.ts`), not its
     // `findUnique` — mock the method actually called.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma.account.findFirst.mockImplementation((args: any = {}) => {
+    ormHandle.account.findFirst.mockImplementation((args: any = {}) => {
       const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
       if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
       if (args.include?.user) row.user = { id: 'u1' }
       return Promise.resolve(row)
     })
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
 
     // Must settle (not hang or throw) — the bare hook-issued read never
     // fetches `students`, so `Student.label` never fires and there is no
@@ -226,9 +226,9 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
 
     // Only the two reads the hook actually issues — no unbounded recursion.
     const totalCalls =
-      prisma.user.findMany.mock.calls.length +
-      prisma.account.findMany.mock.calls.length +
-      prisma.account.findFirst.mock.calls.length
+      ormHandle.user.findMany.mock.calls.length +
+      ormHandle.account.findMany.mock.calls.length +
+      ormHandle.account.findFirst.mock.calls.length
     expect(totalCalls).toBe(2)
   })
 })
@@ -243,7 +243,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
     const listCount = RESOLVE_CHAIN_MAX_LENGTH + 3
     const lists: OpenSaasConfig['lists'] = {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = {}
+    const ormHandle: any = {}
     for (let i = 0; i < listCount; i++) {
       const listKey = `L${i}`
       const dbKey = `l${i}`
@@ -266,8 +266,8 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
         },
         access: { operation: { query: () => true } },
       }
-      prisma[dbKey] = makeModel()
-      prisma[dbKey].findMany.mockResolvedValue([{ id: `${dbKey}-row` }])
+      ormHandle[dbKey] = makeModel()
+      ormHandle[dbKey].findMany.mockResolvedValue([{ id: `${dbKey}-row` }])
     }
 
     const config: OpenSaasConfig = {
@@ -275,7 +275,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
       lists,
     }
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
 
     // Does NOT throw — a cap hit is a cost limit, never a correctness denial.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -287,7 +287,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
 
     // Nothing past the cap is ever queried — the chain simply stops growing.
     for (let i = RESOLVE_CHAIN_MAX_LENGTH + 1; i < listCount; i++) {
-      expect(prisma[`l${i}`].findMany).not.toHaveBeenCalled()
+      expect(ormHandle[`l${i}`].findMany).not.toHaveBeenCalled()
     }
 
     warnSpy.mockRestore()
@@ -322,10 +322,10 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = { widget: makeModel() }
-    prisma.widget.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }])
+    const ormHandle: any = { widget: makeModel() }
+    ormHandle.widget.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }])
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
     await context.db.widget.findMany({})
 
     expect(observedLengths.sort()).toEqual([1, 1, 1])
@@ -375,11 +375,11 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prisma: any = { slow: makeModel(), fast: makeModel() }
-    prisma.slow.findMany.mockResolvedValue([{ id: 'sl1' }])
-    prisma.fast.findMany.mockResolvedValue([{ id: 'f1' }])
+    const ormHandle: any = { slow: makeModel(), fast: makeModel() }
+    ormHandle.slow.findMany.mockResolvedValue([{ id: 'sl1' }])
+    ormHandle.fast.findMany.mockResolvedValue([{ id: 'f1' }])
 
-    const context = await getContext(config, prisma, null)
+    const context = await getContext(config, ormHandle, null)
 
     // Start the slow read — it blocks inside Slow.tag's hook until released.
     const slowPromise = context.db.slow.findMany({})
@@ -404,7 +404,7 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     // far as ITS OWN request named, unaffected by a totally different read's
     // hook being in flight concurrently — no shared, leaking context state
     // between the two.
-    expect(prisma.fast.findMany.mock.calls[0][0].include).toEqual({
+    expect(ormHandle.fast.findMany.mock.calls[0][0].include).toEqual({
       child: { include: { grandchild: true } },
     })
   })

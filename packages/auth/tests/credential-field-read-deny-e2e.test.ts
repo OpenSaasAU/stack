@@ -271,7 +271,7 @@ describe.skipIf(!prerequisitesPresent)(
         })
         expect(signInAfterReset.status).toBe(200)
 
-        await context.prisma.$disconnect()
+        await context.ormHandle.$disconnect()
       } finally {
         await cleanupProject(dir)
       }

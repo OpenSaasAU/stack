@@ -16,7 +16,7 @@ import { ValidationError } from '../src/hooks/index.js'
 describe('Access Control', () => {
   const mockContext: AccessContext = {
     session: null,
-    prisma: {},
+    ormHandle: {},
     db: {},
   }
 

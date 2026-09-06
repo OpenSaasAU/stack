@@ -32,8 +32,8 @@ function isDelegate(value: unknown): value is OrmModelDelegate {
  * rather than assumed — this is the single place that step happens, and the
  * reason {@link OrmClient} needs no per-model type.
  */
-export function ormModel(prisma: OrmClient, listName: string): OrmModelDelegate {
-  const delegate = prisma[getDbKey(listName)]
+export function ormModel(ormHandle: OrmClient, listName: string): OrmModelDelegate {
+  const delegate = ormHandle[getDbKey(listName)]
   if (!isDelegate(delegate)) {
     throw new OrmModelMissingError(listName)
   }

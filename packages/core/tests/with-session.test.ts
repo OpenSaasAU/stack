@@ -133,7 +133,7 @@ describe('withSession', () => {
     const original = getContext(testConfig, mockPrisma, { userId: '1', role: 'user' })
     const derived = original.withSession({ userId: '2', role: 'admin' })
 
-    expect(derived.prisma).toBe(original.prisma)
+    expect(derived.ormHandle).toBe(original.ormHandle)
   })
 
   it('reuses the receiver storage', () => {

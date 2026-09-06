@@ -164,7 +164,7 @@ describe.skipIf(!prerequisitesPresent)(
       try {
         const { auth, context } = await createAuthInstanceForProject(dir)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the temp project's own generated Prisma Client, not a type this package can import
-        const prisma = context.prisma as any
+        const ormHandle = context.ormHandle as any
 
         const { headers: deletedHeaders } = await auth.api.signUpEmail({
           body: { email: 'deleted@example.com', password: 'password1234', name: 'Deleted User' },
@@ -196,7 +196,7 @@ describe.skipIf(!prerequisitesPresent)(
           ['deleted', deletedUserId],
           ['survivor', survivorUserId],
         ]) {
-          await prisma.oauthClient.create({
+          await ormHandle.oauthClient.create({
             data: {
               name: `App ${suffix}`,
               clientId: `client-${suffix}`,
@@ -204,7 +204,7 @@ describe.skipIf(!prerequisitesPresent)(
               userId,
             },
           })
-          await prisma.oauthAccessToken.create({
+          await ormHandle.oauthAccessToken.create({
             data: {
               token: `access-${suffix}`,
               clientId: `client-${suffix}`,
@@ -219,14 +219,14 @@ describe.skipIf(!prerequisitesPresent)(
               userId,
             },
           })
-          await prisma.oauthConsent.create({
+          await ormHandle.oauthConsent.create({
             data: { clientId: `client-${suffix}`, scopes: 'openid', userId },
           })
         }
 
-        expect(await prisma.oauthClient.count()).toBe(2)
-        expect(await prisma.oauthAccessToken.count()).toBe(2)
-        expect(await prisma.oauthConsent.count()).toBe(2)
+        expect(await ormHandle.oauthClient.count()).toBe(2)
+        expect(await ormHandle.oauthAccessToken.count()).toBe(2)
+        expect(await ormHandle.oauthConsent.count()).toBe(2)
 
         const deleteResult = await auth.api.deleteUser({
           body: {},
@@ -234,24 +234,28 @@ describe.skipIf(!prerequisitesPresent)(
         })
         expect(deleteResult).toEqual({ success: true, message: 'User deleted' })
 
-        expect(await prisma.user.findUnique({ where: { id: deletedUserId } })).toBeNull()
+        expect(await ormHandle.user.findUnique({ where: { id: deletedUserId } })).toBeNull()
 
         // No orphans: every row belonging to the deleted user is gone via the
         // database cascade, not just the user row itself.
-        expect(await prisma.oauthClient.findFirst({ where: { userId: deletedUserId } })).toBeNull()
         expect(
-          await prisma.oauthAccessToken.findFirst({ where: { userId: deletedUserId } }),
+          await ormHandle.oauthClient.findFirst({ where: { userId: deletedUserId } }),
         ).toBeNull()
-        expect(await prisma.oauthConsent.findFirst({ where: { userId: deletedUserId } })).toBeNull()
+        expect(
+          await ormHandle.oauthAccessToken.findFirst({ where: { userId: deletedUserId } }),
+        ).toBeNull()
+        expect(
+          await ormHandle.oauthConsent.findFirst({ where: { userId: deletedUserId } }),
+        ).toBeNull()
 
         // The other user's rows are untouched — the cascade is scoped to the
         // deleted user's own foreign key, not a wholesale table wipe.
-        expect(await prisma.user.findUnique({ where: { id: survivorUserId } })).not.toBeNull()
-        expect(await prisma.oauthClient.count()).toBe(1)
-        expect(await prisma.oauthAccessToken.count()).toBe(1)
-        expect(await prisma.oauthConsent.count()).toBe(1)
+        expect(await ormHandle.user.findUnique({ where: { id: survivorUserId } })).not.toBeNull()
+        expect(await ormHandle.oauthClient.count()).toBe(1)
+        expect(await ormHandle.oauthAccessToken.count()).toBe(1)
+        expect(await ormHandle.oauthConsent.count()).toBe(1)
 
-        await context.prisma.$disconnect()
+        await context.ormHandle.$disconnect()
       } finally {
         await cleanupProject(dir)
       }

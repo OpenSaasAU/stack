@@ -213,7 +213,7 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
               if (operation === 'query' && !logReads) return
 
               // Create audit log entry
-              await ctx.prisma.auditLog.create({
+              await ctx.ormHandle.auditLog.create({
                 data: {
                   listName,
                   itemId: item?.id || '',
@@ -235,7 +235,7 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
     runtime: (context) => ({
       // Provide utility to query audit logs
       getAuditTrail: async (listName: string, itemId: string) => {
-        return context.prisma.auditLog.findMany({
+        return context.ormHandle.auditLog.findMany({
           where: { listName, itemId },
           orderBy: { timestamp: 'desc' },
         })
@@ -244,6 +244,32 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
   }
 }
 ```
+
+#### Which database handle does a plugin get?
+
+The `context` a hook or a `runtime()` factory receives is an `AccessContext`, and
+it carries two database surfaces:
+
+- **`context.db`** — the secured surface. Access control, field visibility and
+  hooks all apply. Reach for this by default.
+- **`context.ormHandle`** — the engine's own ORM handle, the client `context.db`
+  runs its queries through. It enforces **nothing**: no access control, no field
+  visibility, no hooks, no error normalisation. The audit plugin above uses it
+  deliberately: an audit trail that the audited session's own access rules can
+  scope away is not an audit trail.
+
+The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, so the
+two are always in the same transaction state as each other. Do not rely on that
+state being a transaction: on `prisma-8` no write currently opens one, so
+database work a `beforeOperation`/`afterOperation` hook does through either
+handle is **not** rolled back when the write fails (#1205). Every write running
+in a transaction is the intended end state, restored by #1124 — it is not
+today's behaviour.
+
+`context.ormHandle` is not the same thing as `context.unsafe`, the application's
+documented bypass on the request context (`StackBaseContext`). An `AccessContext`
+has no `unsafe` member; `ormHandle` is what a plugin gets, and it bypasses just
+as much — say why at the call site.
 
 ### Using the Audit Plugin
 

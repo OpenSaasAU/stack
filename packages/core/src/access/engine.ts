@@ -148,7 +148,7 @@ export function listSyntheticReverseRelationNames(
  * })
  * const where = mergeFilters(callerWhere, result)
  * if (where === null) return [] // denied — Silent failure
- * const rows = await prisma.post.findMany({ where })
+ * const rows = await ormModel(context.ormHandle, 'Post').findMany({ where })
  * ```
  */
 export async function checkAccess<T = Record<string, unknown>>(

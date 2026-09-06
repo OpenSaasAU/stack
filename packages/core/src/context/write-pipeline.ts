@@ -130,14 +130,14 @@ interface TransactionCapable {
  * explicit `ctx.scope` signal (#1036).
  */
 async function runInTransaction(
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   fn: (tx: OrmClient) => Promise<Record<string, unknown> | null>,
 ): Promise<Record<string, unknown> | null> {
-  const client = prisma as unknown as TransactionCapable
+  const client = ormHandle as unknown as TransactionCapable
   if (typeof client.$transaction === 'function') {
     return (await client.$transaction(async (tx) => fn(tx))) as Record<string, unknown> | null
   }
-  return fn(prisma)
+  return fn(ormHandle)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -149,7 +149,7 @@ export interface WritePipelineArgs {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
-  prisma: OrmClient
+  ormHandle: OrmClient
   context: AccessContext
   config: OpenSaasConfig
   /** The original input data for the write (create/update). `undefined` for delete. */
@@ -180,7 +180,7 @@ export interface WritePipelineArgs {
 export async function runWritePipeline(
   args: WritePipelineArgs,
 ): Promise<Record<string, unknown> | null> {
-  const { prisma, listName, listConfig, context, config, inputData, strategy } = args
+  const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
 
   // ── Pre-transaction access gate (#590) ──────────────────────────────────────
   // Resolves the top-level target + access OUTSIDE the transaction so a denied
@@ -189,7 +189,7 @@ export async function runWritePipeline(
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(ormModel(prisma, listName))
+  const gate = await strategy.resolveTarget(ormModel(ormHandle, listName))
   if (gate.status === 'denied') {
     return null
   }
@@ -206,12 +206,12 @@ export async function runWritePipeline(
 
   // ── Transaction ownership for the transaction-boundary hooks (ADR-0028) ────
   // A context carrying `_transactionOwner` is JOINING an enclosing transaction
-  // it did not open — defer to that owner even if `prisma` here still exposes
+  // it did not open — defer to that owner even if `ormHandle` here still exposes
   // `$transaction`. Otherwise this write becomes the owner: the registry every
   // joined write below it enqueues into.
   const existingOwner = context._transactionOwner
   const opensOwnTransaction =
-    !existingOwner && typeof (prisma as TransactionCapable).$transaction === 'function'
+    !existingOwner && typeof (ormHandle as TransactionCapable).$transaction === 'function'
   const ownedRegistry = opensOwnTransaction ? new TransactionRegistry() : undefined
   const transactionOwnerForBody = existingOwner ?? ownedRegistry
 
@@ -225,13 +225,13 @@ export async function runWritePipeline(
     ownedRegistry,
     runTransaction: () =>
       // ADR-0010: parent + nested writes share `tx` as their persistence target.
-      runInTransaction(prisma, (tx) =>
+      runInTransaction(ormHandle, (tx) =>
         runWriteInTransaction({
           ...args,
-          prisma: tx,
+          ormHandle: tx,
           // Reuse the pre-transaction target resolution (#569 call-count semantics).
           preResolvedTarget: gate,
-          // Rebind context.db/prisma to `tx` (ADR-0010 atomicity) and carry the
+          // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
           // transaction owner (ADR-0028) — see bindContextToTransaction below.
           context: bindContextToTransaction(args, tx, transactionOwnerForBody),
         }),
@@ -240,12 +240,12 @@ export async function runWritePipeline(
 }
 
 /**
- * Build an {@link AccessContext} whose `db`/`prisma` target the transaction
+ * Build an {@link AccessContext} whose `db`/`ormHandle` target the transaction
  * client `tx`, so a `context.db` write a hook performs runs inside — and rolls
  * back with — this write's transaction (ADR-0010).
  *
  * The access-controlled `db` delegates capture their Prisma client at
- * construction, so swapping `context.prisma` alone would not rebind `db` — we
+ * construction, so swapping `context.ormHandle` alone would not rebind `db` — we
  * rebuild the delegates against `tx` via {@link buildDbDelegate}, reusing the
  * request context's `session`, `storage`, `plugins`, `_isSudo`, and
  * `_resolveOutputChain` as-is (so a write from inside a `resolveOutput` hook
@@ -263,7 +263,7 @@ function bindContextToTransaction(
   const { context, config } = args
   const txContext: AccessContext = {
     session: context.session,
-    prisma: tx,
+    ormHandle: tx,
     db: context.db,
     storage: context.storage,
     plugins: context.plugins,
@@ -279,14 +279,14 @@ function bindContextToTransaction(
 
 /**
  * The body of one secured write, executed against the transaction client `tx`
- * (passed in as `args.prisma`). Returns `null` for the silent-failure cases and
+ * (passed in as `args.ormHandle`). Returns `null` for the silent-failure cases and
  * the Field-Visibility-filtered row otherwise. Any throw here propagates out of
  * `runInTransaction` and rolls the transaction back.
  */
 async function runWriteInTransaction(
   args: WritePipelineArgs,
 ): Promise<Record<string, unknown> | null> {
-  const { listName, listConfig, prisma: tx, context, config, inputData, strategy } = args
+  const { listName, listConfig, ormHandle: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
   const model = ormModel(tx, listName)
 
@@ -342,7 +342,7 @@ async function runWriteInTransaction(
     filteredData,
     listConfig.fields,
     config,
-    { ...context, prisma: tx },
+    { ...context, ormHandle: tx },
     writeOp,
     listName,
     originalItem,

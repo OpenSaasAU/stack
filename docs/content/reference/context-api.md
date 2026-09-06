@@ -21,7 +21,7 @@ Creates an access-controlled context for database operations.
 ```typescript
 import { getContext } from '@opensaas/stack-core/context'
 
-const context = await getContext(config, prisma, session, storage)
+const context = await getContext(config, ormHandle, session, storage)
 ```
 
 **Type Signature:**
@@ -29,14 +29,14 @@ const context = await getContext(config, prisma, session, storage)
 ```typescript
 function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
-  prisma: OrmClient,
+  ormHandle: OrmClient,
   session: Session,
   storage?: StorageUtils,
   _isSudo?: boolean,
 ): {
   db: AccessControlledDB
   session: Session
-  prisma: OrmClient
+  ormHandle: OrmClient
   storage: StorageUtils
   serverAction: (props: ServerActionProps) => Promise<unknown>
   sudo: () => Context
@@ -63,14 +63,19 @@ Your OpenSaaS configuration object.
 ```typescript
 import config from './opensaas.config'
 
-const context = await getContext(config, prisma, session)
+const context = await getContext(config, ormHandle, session)
 ```
 
-##### `prisma` (required)
+##### `ormHandle` (required)
 
 The ORM client. The generated `.opensaas/context.ts` constructs it from the
 committed `contract.json` and passes it for you, so an application calls
 `getContext(session)` from that module rather than this function directly.
+
+It is surfaced back on the context as `context.ormHandle` — the engine's own
+handle, which `db` runs its queries through and which enforces nothing on its
+own. It is not `context.unsafe`, the application's documented bypass; see
+[`unsafe`](#unsafe) if that is what you want.
 
 **Type:** `OrmClient`
 
@@ -94,10 +99,10 @@ type Session = {
 ```typescript
 // With authentication
 const session = { userId: 'user-123', role: 'admin' }
-const context = await getContext(config, prisma, session)
+const context = await getContext(config, ormHandle, session)
 
 // Anonymous (no authentication)
-const context = await getContext(config, prisma, null)
+const context = await getContext(config, ormHandle, null)
 ```
 
 ##### `storage` (optional)
@@ -114,7 +119,7 @@ Storage utilities for file/image uploads.
 import { createStorageUtils } from '@opensaas/stack-storage'
 
 const storage = createStorageUtils(config.storage)
-const context = await getContext(config, prisma, session, storage)
+const context = await getContext(config, ormHandle, session, storage)
 ```
 
 ##### `_isSudo` (optional, internal)
@@ -173,6 +178,16 @@ if (context.session?.userId) {
   console.log('User is authenticated:', context.session.userId)
 }
 ```
+
+##### `ormHandle`
+
+The engine's own ORM handle — the client `db` runs its queries through, and the same value passed in as the `ormHandle` parameter.
+
+**Type:** `OrmClient`
+
+**Warning:** It is engine plumbing, not a secured surface. Access control, field visibility and hooks are applied by the engine _around_ it; the handle itself applies none of them. The Write Pipeline rebinds it wherever it rebinds `context.db`, so the two are always in the same transaction state as each other — but on `prisma-8` no write currently opens a transaction at all, so work done through either handle is not rolled back when the write fails (#1205). Every write running in a transaction is the intended end state, restored by #1124.
+
+This is what a hook or a plugin `runtime()` factory reaches, since both are handed an `AccessContext` — which has no `unsafe` member. It is a different object from [`unsafe`](#unsafe) below, with the same absence of protection.
 
 ##### `unsafe`
 
@@ -250,7 +265,7 @@ type ServerActionProps =
 'use server'
 
 async function handleAction(formData: FormData) {
-  const context = await getContext(config, prisma, session)
+  const context = await getContext(config, ormHandle, session)
 
   return await context.serverAction({
     listKey: 'Post',

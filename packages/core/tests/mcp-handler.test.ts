@@ -61,7 +61,7 @@ describe('MCP Handler', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       db: mockPrisma as any,
       session: session || null,
-      prisma: mockPrisma,
+      ormHandle: mockPrisma,
     }))
 
     // Mock session provider
@@ -897,7 +897,7 @@ describe('MCP Handler', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         db: mockPrisma as any,
         session: session || null,
-        prisma: mockPrisma,
+        ormHandle: mockPrisma,
       }))
 
       mockPrisma.post.findMany.mockResolvedValue([])
@@ -1024,7 +1024,7 @@ describe('MCP Handler — fields projection (#851)', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       db: mockPrisma as any,
       session: session || null,
-      prisma: mockPrisma,
+      ormHandle: mockPrisma,
     }))
 
     mockGetSession = vi.fn(async () => ({ userId: 'user-123' }))

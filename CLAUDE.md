@@ -766,7 +766,7 @@ The generated context will use your custom constructor to instantiate PrismaClie
 
 **Getting the ORM client outside a request (module-init-time consumers):** There is no synchronous, framework-provided accessor for the configured Prisma client — config resolution is async (plugins can contribute config asynchronously), so the generated context's singleton client cannot be built without an `await`. Depending on what your consumer needs, pick one of:
 
-- **Can `await`:** use `getContext()` / `context.prisma` as shown above. This is the framework's singleton — no second connection.
+- **Can `await`:** use `getContext()` / `context.ormHandle` as shown above. This is the framework's singleton — no second connection.
 - **Must construct synchronously at module scope, but only needs to defer method calls** (e.g. a library whose calls you can lazily forward): pass the generated `rawOpensaasContext` promise to a lazy `Proxy` that awaits it on first access, the same pattern `@opensaas/stack-auth`'s `createAuth()` uses for better-auth's Prisma adapter (`packages/auth/src/server/index.ts`):
 
   ```typescript

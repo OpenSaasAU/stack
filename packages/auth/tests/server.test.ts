@@ -66,7 +66,7 @@ function makeOpensaasConfig(authConfig: NormalizedAuthConfig): OpenSaasConfig {
 
 function makeContext(): AccessContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal test fixture
-  return { prisma: { __mockPrisma: true } } as any
+  return { ormHandle: { __mockPrisma: true } } as any
 }
 
 async function buildBetterAuthConfig(authConfig: NormalizedAuthConfig): Promise<BetterAuthOptions> {
