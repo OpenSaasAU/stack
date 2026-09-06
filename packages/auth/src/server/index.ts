@@ -51,7 +51,8 @@ function assertPluginTupleMatchesResolved(
 }
 
 /**
- * Thrown when the context handed to `createAuth` carries no Unsafe surface.
+ * Thrown when the context handed to `createAuth` carries no Unsafe surface, or
+ * cannot open the transaction `consumeOne` runs in.
  *
  * `AccessContext` deliberately does not name `unsafe` — the engine's own
  * handle and the application's deliberate bypass are different things under
@@ -74,7 +75,27 @@ function isUnsafeSurface(value: unknown): value is UnsafeSurface {
   if (typeof value !== 'object' || value === null) return false
   return (
     typeof Reflect.get(value, 'query') === 'function' &&
-    typeof Reflect.get(value, 'execute') === 'function'
+    typeof Reflect.get(value, 'execute') === 'function' &&
+    Reflect.get(value, 'orm') !== undefined &&
+    Reflect.get(value, 'sql') !== undefined
+  )
+}
+
+/**
+ * The context's own interactive transaction, read structurally for the same
+ * reason `unsafe` is: `AccessContext` names neither (ADR-0038), and widening
+ * the public signature to reach them is what this check exists to avoid. The
+ * callback's context carries the transaction-bound Unsafe surface (ADR-0056).
+ */
+interface TransactionCapableContext {
+  transaction<R>(body: (txContext: { readonly unsafe: unknown }) => Promise<R>): Promise<R>
+}
+
+function isTransactionCapable(value: unknown): value is TransactionCapableContext {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'transaction') === 'function'
   )
 }
 
@@ -84,12 +105,19 @@ function getDatabaseConfig(
   context: AccessContext,
 ): BetterAuthOptions['database'] {
   const unsafe = Reflect.get(context, 'unsafe')
-  if (!isUnsafeSurface(unsafe)) throw new AuthUnsafeSurfaceMissingError()
+  if (!isUnsafeSurface(unsafe) || !isTransactionCapable(context)) {
+    throw new AuthUnsafeSurfaceMissingError()
+  }
 
   return opensaasAuthAdapter({
     config: opensaasConfig,
     unsafe,
     registry: getAuthListRegistry(authConfig.models, authConfig.betterAuthPlugins),
+    transaction: (body) =>
+      context.transaction(async (txContext) => {
+        if (!isUnsafeSurface(txContext.unsafe)) throw new AuthUnsafeSurfaceMissingError()
+        return await body(txContext.unsafe)
+      }),
   })
 }
 

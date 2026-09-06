@@ -60,10 +60,14 @@ function makeOpensaasConfig(authConfig: NormalizedAuthConfig): OpenSaasConfig {
 }
 
 function makeContext(): AccessContext {
-  // `unsafe` is not a member of `AccessContext` (ADR-0038) but the Auth
-  // adapter is built from it, so the double has to carry one.
+  // Neither `unsafe` nor `transaction` is a member of `AccessContext`
+  // (ADR-0038) but the Auth adapter is built from both, so the double has to
+  // carry them.
   return {
     ormHandle: { __mockPrisma: true },
+    transaction: () => {
+      throw new Error('no transaction is opened in this test')
+    },
     unsafe: {
       sql: {},
       raw: {},

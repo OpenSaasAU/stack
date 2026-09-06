@@ -42,18 +42,34 @@ import type { AuthConfig, AuthModelConfig } from '../src/config/types.js'
  *   generator is ignored here and refused at config time (ADR-0048).
  * - The issuer-scoped account key: better-auth declares that `@@unique`
  *   table-level, which `deriveAuthLists` does not yet emit (#986). A schema
- *   gap, not an adapter one.
- * - The nullable foreign key: a reference field whose name does not end in
- *   `Id` derives a relation field and its own foreign-key column under the
- *   same name, and the relation shadows the column on the returned row. Also
- *   `deriveAuthLists`, not the adapter — better-auth's own tables all name
- *   theirs `<target>Id`.
+ *   gap, not an adapter one — and a production one, stated as a known limit on
+ *   `opensaasAuthAdapter` rather than only here.
+ * - The nullable foreign key: a `deriveAuthLists` gap tracked as
+ *   [#1222](https://github.com/OpenSaasAU/stack/issues/1222), not an adapter
+ *   one.
  */
 const NOT_IMPLEMENTED: Record<string, boolean> = {
   ...Object.fromEntries(Object.keys(enableJoinTests).map((name) => [name, true])),
   'create - should use generateId if provided': true,
   'create - should enforce the issuer-scoped account identity key': true,
   'create - should return null for nullable foreign keys': true,
+}
+
+/**
+ * The suite's own "no such row" probes, which are unrunnable against a `uuid`
+ * id column outside the `uuid` suite.
+ *
+ * Each hardcodes the id `"100000"` unless the running options say
+ * `advanced.database.generateId: 'uuid'` — the key production refuses — and
+ * Postgres rejects a malformed uuid outright rather than answering not-found.
+ * The `uuid` suite declares that key itself and runs them; the shipped
+ * configuration's own versions, with a well-formed id, are in
+ * `adapter-behaviour.test.ts`.
+ */
+const HARDCODED_NON_UUID_ID: Record<string, boolean> = {
+  'findOne - should not throw on record not found': true,
+  'findMany - should return an empty array when no models are found': true,
+  'delete - should not throw on record not found': true,
 }
 
 const BASE_MODELS = ['user', 'session', 'account', 'verification'] as const
@@ -168,10 +184,12 @@ await testAdapter({
     const built = opensaasConfig
     if (!current || !built) throw new Error('The conformance database was not stood up.')
     const normalized = built._pluginData?.auth as NormalizedAuthConfig
+    const context = current.context()
     return opensaasAuthAdapter({
       config: built,
-      unsafe: current.context().unsafe,
+      unsafe: context.unsafe,
       registry: getAuthListRegistry(normalized.models, normalized.betterAuthPlugins),
+      transaction: (body) => context.transaction((tx) => body(tx.unsafe)),
     })
   },
   runMigrations: async (options) => {
@@ -180,14 +198,13 @@ await testAdapter({
   // The Auth lists' ids are `uuid7` columns (ADR-0048), so the suite's own
   // fixtures have to mint UUIDs rather than better-auth's default nanoid, and
   // its "no such row" probes have to use a well-formed id — Postgres rejects a
-  // malformed one outright rather than answering not-found.
-  overrideBetterAuthOptions: (options) => ({
-    ...options,
-    advanced: {
-      ...options.advanced,
-      database: { ...options.advanced?.database, generateId: 'uuid' },
-    },
-  }),
+  // malformed one outright rather than answering not-found. This is the whole
+  // of what the fixtures need: `advanced.database.generateId` is the key
+  // `assertNoUnsupportedPassthroughKeys` refuses, so setting it here would run
+  // every assertion against a configuration no shipped app can have — and a
+  // different branch of better-auth's own `initGetIdField` from the one
+  // production takes. The `uuid` suite declares that key itself, upstream, as
+  // the mode it exists to exercise.
   customIdGenerator: () => randomUUID(),
   onFinish: async () => {
     await database?.close()
@@ -195,7 +212,7 @@ await testAdapter({
     fingerprint = undefined
   },
   tests: [
-    normalTestSuite({ disableTests: NOT_IMPLEMENTED }),
+    normalTestSuite({ disableTests: { ...NOT_IMPLEMENTED, ...HARDCODED_NON_UUID_ID } }),
     uuidTestSuite({ disableTests: NOT_IMPLEMENTED }),
     caseInsensitiveTestSuite(),
   ],

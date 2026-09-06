@@ -18,6 +18,14 @@ describe('escapeLikeLiteral', () => {
     expect(escapeLikeLiteral('a\\b')).toBe('a\\\\b')
   })
 
+  test('leaves the empty string empty', () => {
+    expect(escapeLikeLiteral('')).toBe('')
+    expect(likeEqualsPattern('')).toBe('')
+    expect(likeContainsPattern('')).toBe('%%')
+    expect(likeStartsWithPattern('')).toBe('%')
+    expect(likeEndsWithPattern('')).toBe('%')
+  })
+
   test('escapes the character it names', () => {
     expect(escapeLikeLiteral(LIKE_ESCAPE_CHARACTER)).toBe(
       `${LIKE_ESCAPE_CHARACTER}${LIKE_ESCAPE_CHARACTER}`,

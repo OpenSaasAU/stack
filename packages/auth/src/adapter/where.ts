@@ -1,4 +1,5 @@
 import { not, or } from '@prisma/orm-postgres/orm-client'
+import { param } from '@prisma/orm-postgres/relational-core'
 import {
   likeContainsPattern,
   likeEndsWithPattern,
@@ -74,8 +75,14 @@ function isInsensitive(clause: CleanedWhere): boolean {
   return clause.mode === 'insensitive' && typeof clause.value === 'string'
 }
 
+/**
+ * An empty list answers `undefined` rather than an empty disjunct list: `or()`
+ * with no arguments is not the `FALSE` the operator means, while the lanes'
+ * own `in([])` / `notIn([])` are.
+ */
 function insensitiveList(clause: CleanedWhere): readonly string[] | undefined {
   if (clause.mode !== 'insensitive' || !Array.isArray(clause.value)) return undefined
+  if (clause.value.length === 0) return undefined
   const strings = clause.value.filter((entry): entry is string => typeof entry === 'string')
   return strings.length === clause.value.length ? strings : undefined
 }
@@ -180,12 +187,20 @@ export function applyOrmWhere(
 const BOOLEAN_CODEC = { codecId: 'pg/bool@1', nullable: false } as const
 
 /**
+ * The codec a LIKE/ILIKE pattern binds under. Postgres compares the pattern as
+ * text whatever the column's own type is, and Prisma's raw builder needs the
+ * codec named where it cannot infer one from the JS value alone.
+ */
+const PATTERN_CODEC = { codecId: 'pg/text@1' } as const
+
+/**
  * One better-auth clause as a typed-SQL predicate.
  *
  * `like` has no builtin in Prisma's `fns` namespace — the Postgres target
- * contributes `ilike` and nothing else — so a case-sensitive pattern goes
- * through `fns.raw`, which is the documented seam for an expression fragment
- * the builder does not model.
+ * contributes `ilike` and nothing else, and there is no `not` — so a
+ * case-sensitive pattern and a negated insensitive one go through `fns.raw`,
+ * which is the documented seam for an expression fragment the builder does not
+ * model. The pattern itself is a bound parameter, never template text.
  */
 function sqlClause(
   column: Expression<ScopeField>,
@@ -193,8 +208,10 @@ function sqlClause(
   clause: CleanedWhere,
   isBigInt: boolean,
 ): Expression<ScopeField> {
+  const bound = (build: (value: string) => string) => param(pattern(clause, build), PATTERN_CODEC)
+
   const like = (build: (value: string) => string): Expression<ScopeField> =>
-    fns.raw`${column} LIKE ${pattern(clause, build)}`.returns(BOOLEAN_CODEC)
+    fns.raw`${column} LIKE ${bound(build)}`.returns(BOOLEAN_CODEC)
 
   switch (clause.operator) {
     case 'eq':
@@ -202,7 +219,9 @@ function sqlClause(
         ? fns.ilike(column, pattern(clause, likeEqualsPattern))
         : fns.eq(column, scalar(clause, isBigInt))
     case 'ne':
-      return fns.ne(column, scalar(clause, isBigInt))
+      return isInsensitive(clause)
+        ? fns.raw`${column} NOT ILIKE ${bound(likeEqualsPattern)}`.returns(BOOLEAN_CODEC)
+        : fns.ne(column, scalar(clause, isBigInt))
     case 'lt':
       return fns.lt(column, scalar(clause, isBigInt))
     case 'lte':
@@ -230,7 +249,14 @@ function sqlClause(
   }
 }
 
-/** better-auth's clause list as one typed-SQL predicate, grouped the same way. */
+/**
+ * better-auth's clause list as one typed-SQL predicate, grouped the same way.
+ *
+ * The two lanes address a column by different names because Prisma keys them
+ * differently: a Collection by the contract's model and field names (the
+ * derived Auth lists' own keys), the SQL builder by the table and column names
+ * the contract maps those to — which is what better-auth already hands over.
+ */
 export function sqlWhere(
   fields: AuthSqlFieldProxy,
   fns: AuthSqlFunctions,

@@ -42,10 +42,12 @@ beforeAll(async () => {
   })
   database = await createTestDatabase(opensaasConfig, { middleware: [recorder.middleware] })
   const normalized = opensaasConfig._pluginData?.auth as NormalizedAuthConfig
+  const context = database.context()
   adapter = opensaasAuthAdapter({
     config: opensaasConfig,
-    unsafe: database.context().unsafe,
+    unsafe: context.unsafe,
     registry: getAuthListRegistry(normalized.models, normalized.betterAuthPlugins),
+    transaction: (body) => context.transaction((tx) => body(tx.unsafe)),
   })(betterAuthOptions)
 }, BOOT)
 

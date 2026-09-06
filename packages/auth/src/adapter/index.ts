@@ -63,16 +63,34 @@ export interface OpenSaasAuthAdapterOptions {
   unsafe: UnsafeSurface
   /** better-auth model key → derived list key, from `getAuthListRegistry`. */
   registry: Record<string, string>
+  /**
+   * Run `body` in one database transaction, against that transaction's own
+   * Unsafe surface. `consumeOne` is the caller: its resolve-then-delete pair
+   * has to commit or roll back as one, or a single-use token can be consumed
+   * twice (ADR-0060).
+   */
+  transaction: <R>(body: (unsafe: UnsafeSurface) => Promise<R>) => Promise<R>
 }
 
 /**
  * better-auth types every row-returning adapter method as answering the
  * caller's own `T`, which no adapter can produce — the row comes from the
- * database, not from the caller. Its own reference adapters widen at this
- * seam; this is the one place ours does.
+ * database, not from the caller, and `T` is a free type parameter on every one
+ * of its method signatures. Its own reference adapters widen at this seam;
+ * this is the one place ours does.
  */
 function asAdapterResult<T>(row: unknown): T {
   return row as T
+}
+
+/** better-auth's `update` payload, which its own signature leaves as a free `T`. */
+function isColumnValues(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** An id as a `where` can carry it back — every Auth list is string-keyed (ADR-0048). */
+function isIdentity(value: unknown): value is string {
+  return typeof value === 'string'
 }
 
 /**
@@ -112,14 +130,22 @@ function renameKeys(
  *   stack's generator emits the contract, so better-auth's CLI (`generate`,
  *   `migrate`) is unsupported against this adapter.
  * - **No transaction option**, so the factory runs a transaction callback
- *   against the plain adapter with no atomicity.
+ *   against the plain adapter with no atomicity. `consumeOne` opens its own
+ *   transaction regardless — its at-most-one guarantee is not optional.
+ * - **No issuer-scoped account uniqueness.** better-auth declares the account
+ *   identity key (`providerId` + `accountId`) as a table-level `@@unique`,
+ *   which `deriveAuthLists` does not emit yet
+ *   ([#986](https://github.com/OpenSaasAU/stack/issues/986)). Nothing in the
+ *   database stops two concurrent sign-ins through the same issuer identity
+ *   from creating two accounts; better-auth's own existence check is all that
+ *   stands between them.
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */
 export function opensaasAuthAdapter(
   options: OpenSaasAuthAdapterOptions,
 ): AdapterFactory<BetterAuthOptions> {
-  const { config, unsafe, registry } = options
+  const { config, unsafe, registry, transaction } = options
 
   function coordinate(model: string, toModelKey: (model: string) => string): ModelCoordinate {
     const listKey = registry[toModelKey(model)]
@@ -160,9 +186,9 @@ export function opensaasAuthAdapter(
     }): CustomAdapter => {
       const at = (model: string): ModelCoordinate => coordinate(model, getDefaultModelName)
 
-      const collectionFor = (model: string): AuthCollection => {
+      const collectionFor = (model: string, lane: UnsafeSurface = unsafe): AuthCollection => {
         const { namespace, listKey } = at(model)
-        return authCollection(unsafe, namespace, listKey)
+        return authCollection(lane, namespace, listKey)
       }
 
       const toFieldKey =
@@ -206,14 +232,23 @@ export function opensaasAuthAdapter(
           return { key, isBigInt: isBigInt(model, key) }
         }
 
-      const narrow = (model: string, where: readonly CleanedWhere[]): AuthCollection =>
-        applyOrmWhere(collectionFor(model), where, resolveField(model))
+      const narrow = (
+        model: string,
+        where: readonly CleanedWhere[],
+        lane: UnsafeSurface = unsafe,
+      ): AuthCollection => applyOrmWhere(collectionFor(model, lane), where, resolveField(model))
 
+      /**
+       * The mirror of {@link inward}: only a column better-auth declares as
+       * `bigint` is narrowed back to a JS number, because only those were
+       * widened on the way in. Narrowing every `bigint` would silently mangle
+       * an application's own `int8` column above `Number.MAX_SAFE_INTEGER`.
+       */
       const outward = (model: string, row: AuthRow | null): AuthRow | null => {
         if (row === null) return null
         const narrowed: AuthRow = {}
         for (const [key, value] of Object.entries(row)) {
-          narrowed[key] = typeof value === 'bigint' ? Number(value) : value
+          narrowed[key] = typeof value === 'bigint' && isBigInt(model, key) ? Number(value) : value
         }
         return renameKeys(narrowed, toColumn(model))
       }
@@ -227,7 +262,13 @@ export function opensaasAuthAdapter(
         return widened
       }
 
-      /** Every column better-auth declares for a model, for a `RETURNING` list. */
+      /**
+       * Every column better-auth declares for a model, for a `RETURNING` list.
+       *
+       * Named the way the SQL lane addresses them — by column, not by field
+       * key — which is also the name better-auth expects a returned row to
+       * carry, so the row needs no renaming on the way back.
+       */
       const columnsOf = (model: string): string[] => {
         const fields = schema[getDefaultModelName(model)]?.fields ?? {}
         return ['id', ...Object.keys(fields).map((field) => getFieldName({ model, field }))]
@@ -299,9 +340,12 @@ export function opensaasAuthAdapter(
         },
 
         async update({ model, where, update }) {
-          const updated = await narrow(model, where).update(
-            inward(model, { ...(update as Record<string, unknown>) }),
-          )
+          if (!isColumnValues(update)) {
+            throw new AuthAdapterError(
+              `update on "${model}" expects an object of column values, got ${typeof update}.`,
+            )
+          }
+          const updated = await narrow(model, where).update(inward(model, update))
           return asAdapterResult(outward(model, updated))
         },
 
@@ -327,11 +371,39 @@ export function opensaasAuthAdapter(
         },
 
         async consumeOne({ model, where }) {
-          // Prisma resolves the first matching identity and deletes by it with
-          // `RETURNING`, so of two racing consumers exactly one gets the row —
-          // the at-most-one guarantee better-auth asks of this method.
-          const consumed = await narrow(model, where).delete()
-          return asAdapterResult(outward(model, consumed))
+          // The ORM lane lowers a single-row delete to two statements: a SELECT
+          // that resolves the identity, then the DELETE. Unbracketed, two
+          // racing consumers both resolve the same row and both are answered
+          // it, so a magic-link or OTP token is accepted twice. The pair runs
+          // in one transaction and the row is only handed back when the DELETE
+          // itself claimed it — the shape better-auth's own reference adapter
+          // uses (ADR-0060).
+          return await transaction(async (lane) => {
+            const target = await narrow(model, where, lane).first()
+            if (target === null) return asAdapterResult(null)
+
+            const identity = target.id
+            if (!isIdentity(identity)) {
+              throw new AuthAdapterError(
+                `consumeOne on "${model}" resolved a row with no string id to delete by.`,
+              )
+            }
+
+            const claimed = await narrow(
+              model,
+              [
+                {
+                  field: 'id',
+                  operator: 'eq',
+                  value: identity,
+                  connector: 'AND',
+                  mode: 'sensitive',
+                },
+              ],
+              lane,
+            ).deleteAndCount()
+            return asAdapterResult(claimed > 0 ? outward(model, target) : null)
+          })
         },
 
         async incrementOne({ model, where, increment, set }) {
@@ -340,18 +412,19 @@ export function opensaasAuthAdapter(
             .update((fields: AuthSqlFieldProxy, fns: AuthSqlFunctions) => {
               const assignments: Record<string, Expression<ScopeField>> = {}
               for (const [column, delta] of Object.entries(increment)) {
+                const field = resolveField(model)(column)
                 const { target, codec } = codecFor(fields, table, column)
-                assignments[column] = fns.raw`${target} + ${delta}`.returns({
-                  codecId: codec.codecId,
-                  nullable: true,
-                })
+                const widened = field.isBigInt && typeof delta === 'number' ? BigInt(delta) : delta
+                assignments[column] =
+                  fns.raw`${target} + ${param(widened, { codecId: codec.codecId })}`.returns({
+                    codecId: codec.codecId,
+                    nullable: true,
+                  })
               }
               for (const [column, value] of Object.entries(set ?? {})) {
+                const field = resolveField(model)(column)
                 const { codec } = codecFor(fields, table, column)
-                const widened =
-                  resolveField(model)(column).isBigInt && typeof value === 'number'
-                    ? BigInt(value)
-                    : value
+                const widened = field.isBigInt && typeof value === 'number' ? BigInt(value) : value
                 assignments[column] =
                   fns.raw`${param(widened, { codecId: codec.codecId })}`.returns({
                     codecId: codec.codecId,
