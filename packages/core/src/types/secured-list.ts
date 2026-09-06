@@ -216,7 +216,30 @@ type SingletonOps<C, R extends RemainderBase, K extends keyof R & string> = {
   }) => Promise<QueryResult<C, R, K, S, I> | null>
 }
 
-type ListOps<C, R extends RemainderBase, K extends keyof R & string> = {
+/**
+ * One column's condition in a composed read's predicate. Equality only, which
+ * is what the engine lowers today; ADR-0055's closed vocabulary widens this in
+ * its own spec.
+ */
+export type ColumnEquality<V> = V | { equals: V }
+
+/** What `.where()` takes: the list's own columns, compared for equality. */
+export type ListPredicate<C, R extends RemainderBase, K extends keyof R & string> = {
+  [F in keyof StoredRow<C, R, K>]?: ColumnEquality<StoredRow<C, R, K>[F]>
+}
+
+/**
+ * A composed read: an immutable value carrying the list and its predicates.
+ * `where` returns a new value and enforces nothing; the terminals resolve
+ * access, scope the query and materialise (ADR-0041, ADR-0046).
+ */
+export type ListQuery<C, R extends RemainderBase, K extends keyof R & string> = {
+  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K>
+  all: () => Promise<Row<C, R, K>[]>
+  first: () => Promise<Row<C, R, K> | null>
+}
+
+type ListOps<C, R extends RemainderBase, K extends keyof R & string> = ListQuery<C, R, K> & {
   findUnique: <
     S extends ListSelect<C, R, K> = never,
     I extends ListInclude<C, R, K> = never,

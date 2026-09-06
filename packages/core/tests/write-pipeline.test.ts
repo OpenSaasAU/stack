@@ -31,7 +31,7 @@ let events: string[]
 
 /**
  * Build a fake Prisma model whose methods log their calls. The pipeline
- * resolves the model dynamically via getDbKey('Post') -> 'post'.
+ * resolves the model dynamically by list key ('Post').
  */
 function makeFakePrisma(overrides?: {
   existing?: Record<string, unknown> | null
@@ -72,7 +72,7 @@ function makeFakePrisma(overrides?: {
     }),
   }
 
-  return { ormHandle: { post } as unknown as OrmClient, post }
+  return { ormHandle: { Post: post } as unknown as OrmClient, post }
 }
 
 /**
@@ -502,7 +502,7 @@ describe('Write Pipeline — sudo mode', () => {
       update: vi.fn(),
       delete: vi.fn(),
     }
-    const ormHandle = { post } as unknown as OrmClient
+    const ormHandle = { Post: post } as unknown as OrmClient
 
     const listConfig = {
       fields: {

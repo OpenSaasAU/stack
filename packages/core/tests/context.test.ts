@@ -17,7 +17,7 @@ describe('getContext', () => {
   beforeEach(() => {
     // Mock Prisma client with all methods needed by context
     mockPrisma = {
-      user: {
+      User: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -26,7 +26,7 @@ describe('getContext', () => {
         delete: vi.fn(),
         count: vi.fn(),
       },
-      post: {
+      Post: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         findMany: vi.fn(),
@@ -82,8 +82,8 @@ describe('getContext', () => {
     const context = await getContext(config, mockPrisma, null)
 
     expect(context.db).toBeDefined()
-    expect(context.db.user).toBeDefined()
-    expect(context.db.post).toBeDefined()
+    expect(context.db.User).toBeDefined()
+    expect(context.db.Post).toBeDefined()
     expect(context.session).toBeNull()
     // Built from a hand-made ORM double, so there is no client behind the
     // Unsafe surface and every lane refuses by name rather than being absent.
@@ -100,7 +100,7 @@ describe('getContext', () => {
   describe('serverAction', () => {
     it('should create an item', async () => {
       const mockCreatedUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.user.create.mockResolvedValue(mockCreatedUser)
+      mockPrisma.User.create.mockResolvedValue(mockCreatedUser)
 
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
@@ -109,7 +109,7 @@ describe('getContext', () => {
         data: { name: 'John', email: 'john@example.com' },
       })
 
-      expect(mockPrisma.user.create).toHaveBeenCalledWith({
+      expect(mockPrisma.User.create).toHaveBeenCalledWith({
         data: { name: 'John', email: 'john@example.com' },
       })
       expect(result).toEqual({ success: true, data: mockCreatedUser })
@@ -119,8 +119,8 @@ describe('getContext', () => {
       const existingUser = { id: '1', name: 'John', email: 'john@example.com' }
       const mockUpdatedUser = { id: '1', name: 'John Updated', email: 'john@example.com' }
       // Update operation first fetches the existing item
-      mockPrisma.user.findUnique.mockResolvedValue(existingUser)
-      mockPrisma.user.update.mockResolvedValue(mockUpdatedUser)
+      mockPrisma.User.findUnique.mockResolvedValue(existingUser)
+      mockPrisma.User.update.mockResolvedValue(mockUpdatedUser)
 
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
@@ -130,16 +130,16 @@ describe('getContext', () => {
         data: { name: 'John Updated' },
       })
 
-      expect(mockPrisma.user.findUnique).toHaveBeenCalled()
-      expect(mockPrisma.user.update).toHaveBeenCalled()
+      expect(mockPrisma.User.findUnique).toHaveBeenCalled()
+      expect(mockPrisma.User.update).toHaveBeenCalled()
       expect(result).toEqual({ success: true, data: mockUpdatedUser })
     })
 
     it('should delete an item', async () => {
       const mockDeletedUser = { id: '1', name: 'John', email: 'john@example.com' }
       // Delete operation first fetches the existing item
-      mockPrisma.user.findUnique.mockResolvedValue(mockDeletedUser)
-      mockPrisma.user.delete.mockResolvedValue(mockDeletedUser)
+      mockPrisma.User.findUnique.mockResolvedValue(mockDeletedUser)
+      mockPrisma.User.delete.mockResolvedValue(mockDeletedUser)
 
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
@@ -148,14 +148,14 @@ describe('getContext', () => {
         id: '1',
       })
 
-      expect(mockPrisma.user.findUnique).toHaveBeenCalled()
-      expect(mockPrisma.user.delete).toHaveBeenCalled()
+      expect(mockPrisma.User.findUnique).toHaveBeenCalled()
+      expect(mockPrisma.User.delete).toHaveBeenCalled()
       expect(result).toEqual({ success: true, data: mockDeletedUser })
     })
 
     it('should convert listKey to lowercase for db operations', async () => {
       const mockCreatedPost = { id: '1', title: 'Test Post' }
-      mockPrisma.post.create.mockResolvedValue(mockCreatedPost)
+      mockPrisma.Post.create.mockResolvedValue(mockCreatedPost)
 
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
@@ -164,7 +164,7 @@ describe('getContext', () => {
         data: { title: 'Test Post' },
       })
 
-      expect(mockPrisma.post.create).toHaveBeenCalled()
+      expect(mockPrisma.Post.create).toHaveBeenCalled()
       expect(result).toEqual({ success: true, data: mockCreatedPost })
     })
 
@@ -195,7 +195,7 @@ describe('getContext', () => {
 
     it('should handle database errors', async () => {
       const dbError = new Error('Database connection failed')
-      mockPrisma.user.create.mockRejectedValue(dbError)
+      mockPrisma.User.create.mockRejectedValue(dbError)
 
       const context = await getContext(config, mockPrisma, null)
       const result = await context.serverAction({
@@ -213,8 +213,8 @@ describe('getContext', () => {
     describe('removeRelated (relationship-table row removal)', () => {
       it('unlinks a to-one back-reference via an update on the related list', async () => {
         const existing = { id: 'p1', title: 'T', content: 'c', authorId: 'u1' }
-        mockPrisma.post.findUnique.mockResolvedValue(existing)
-        mockPrisma.post.update.mockResolvedValue({ id: 'p1', title: 'T', authorId: null })
+        mockPrisma.Post.findUnique.mockResolvedValue(existing)
+        mockPrisma.Post.update.mockResolvedValue({ id: 'p1', title: 'T', authorId: null })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -229,17 +229,17 @@ describe('getContext', () => {
         // Disconnect is an UPDATE on the related list nulling the back-reference
         // (a to-one back-ref disconnects with `true`), never a delete. The
         // distinct `{ removed }` shape avoids a redirect-on-success wrapper.
-        expect(mockPrisma.post.update).toHaveBeenCalled()
-        const updateArg = mockPrisma.post.update.mock.calls[0][0]
+        expect(mockPrisma.Post.update).toHaveBeenCalled()
+        const updateArg = mockPrisma.Post.update.mock.calls[0][0]
         expect(updateArg.where).toEqual({ id: 'p1' })
         expect(updateArg.data.author).toEqual({ disconnect: true })
-        expect(mockPrisma.post.delete).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.delete).not.toHaveBeenCalled()
         expect(result).toEqual({ removed: true })
       })
 
       it('deletes the related row when mode is delete', async () => {
-        mockPrisma.post.findUnique.mockResolvedValue({ id: 'p1', title: 'T', authorId: 'u1' })
-        mockPrisma.post.delete.mockResolvedValue({ id: 'p1', title: 'T' })
+        mockPrisma.Post.findUnique.mockResolvedValue({ id: 'p1', title: 'T', authorId: 'u1' })
+        mockPrisma.Post.delete.mockResolvedValue({ id: 'p1', title: 'T' })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -249,15 +249,15 @@ describe('getContext', () => {
           id: 'p1',
         })
 
-        expect(mockPrisma.post.delete).toHaveBeenCalled()
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.delete).toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
         expect(result).toEqual({ removed: true })
       })
 
       it('disconnects a to-many back-reference by parent id (many-to-many)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
-          lesson: {
+          Lesson: {
             findUnique: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
             update: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
             delete: vi.fn(),
@@ -307,7 +307,7 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        const updateArg = m2mPrisma.lesson.update.mock.calls[0][0]
+        const updateArg = m2mPrisma.Lesson.update.mock.calls[0][0]
         // A to-many back-reference disconnects the specific parent by id.
         expect(updateArg.data.teachers).toEqual({ disconnect: { id: 't1' } })
       })
@@ -348,7 +348,7 @@ describe('getContext', () => {
 
     describe('bulkAction (custom list bulk actions, #736)', () => {
       // A config whose Post list declares a custom bulk action that runs each
-      // selected id through the SECURED context (`context.db.post.update`), so
+      // selected id through the SECURED context (`context.db.Post.update`), so
       // access control + hooks apply per id.
       function configWithPublishAction(
         overrides?: Partial<import('../src/config/types.js').BulkAction>,
@@ -372,7 +372,7 @@ describe('getContext', () => {
                       handler: async ({ ids, context }) => {
                         let n = 0
                         for (const id of ids) {
-                          const r = await context.db.post.update({
+                          const r = await context.db.Post.update({
                             where: { id },
                             data: { status: 'published' },
                           })
@@ -391,10 +391,10 @@ describe('getContext', () => {
       }
 
       it('runs the handler over the selected ids through the secured context', async () => {
-        mockPrisma.post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        mockPrisma.Post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
           Promise.resolve({ id: where.id, title: 'T', content: 'c' }),
         )
-        mockPrisma.post.update.mockImplementation(({ where }: { where: { id: string } }) =>
+        mockPrisma.Post.update.mockImplementation(({ where }: { where: { id: string } }) =>
           Promise.resolve({ id: where.id, status: 'published' }),
         )
 
@@ -407,7 +407,7 @@ describe('getContext', () => {
         })
 
         // Each id went through the secured update delegate, not a raw call.
-        expect(mockPrisma.post.update).toHaveBeenCalledTimes(2)
+        expect(mockPrisma.Post.update).toHaveBeenCalledTimes(2)
         expect(result).toEqual({ bulkAction: true, message: 'Published 2 of 2' })
       })
 
@@ -427,15 +427,15 @@ describe('getContext', () => {
         // The access filter merges into the existence pre-check: only p1 is
         // visible, so p2's update is denied (Silent failure → null) before it
         // ever reaches the update delegate.
-        mockPrisma.post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        mockPrisma.Post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
           where.id === 'p1'
             ? Promise.resolve({ id: 'p1', title: 'T', content: 'c' })
             : Promise.resolve(null),
         )
         // The filter-match re-check (mergeFilters) only ever runs for the row
         // that passed the existence pre-check (p1), so returning it is enough.
-        mockPrisma.post.findFirst.mockResolvedValue({ id: 'p1', title: 'T', content: 'c' })
-        mockPrisma.post.update.mockResolvedValue({ id: 'p1', status: 'published' })
+        mockPrisma.Post.findFirst.mockResolvedValue({ id: 'p1', title: 'T', content: 'c' })
+        mockPrisma.Post.update.mockResolvedValue({ id: 'p1', status: 'published' })
 
         const context = await getContext(scopedConfig, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -475,7 +475,7 @@ describe('getContext', () => {
 
         expect(result).toEqual({ bulkAction: false, error: 'Access denied' })
         // The handler never ran.
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
       })
 
       it('returns a generic message (not the internal text) and logs when the handler throws a plain Error', async () => {
@@ -516,13 +516,13 @@ describe('getContext', () => {
 
     describe('updateRelated (relationship-table inline cell edit)', () => {
       it('updates a single field on the related row through the secured context', async () => {
-        mockPrisma.post.findUnique.mockResolvedValue({
+        mockPrisma.Post.findUnique.mockResolvedValue({
           id: 'p1',
           title: 'Old',
           content: 'c',
           authorId: 'u1',
         })
-        mockPrisma.post.update.mockResolvedValue({
+        mockPrisma.Post.update.mockResolvedValue({
           id: 'p1',
           title: 'New',
           content: 'c',
@@ -540,11 +540,11 @@ describe('getContext', () => {
 
         // The edit is an UPDATE on the RELATED list, one field only. The distinct
         // `{ updated }` shape avoids a redirect-on-success wrapper.
-        expect(mockPrisma.post.update).toHaveBeenCalled()
-        const updateArg = mockPrisma.post.update.mock.calls[0][0]
+        expect(mockPrisma.Post.update).toHaveBeenCalled()
+        const updateArg = mockPrisma.Post.update.mock.calls[0][0]
         expect(updateArg.where).toEqual({ id: 'p1' })
         expect(updateArg.data.title).toBe('New')
-        expect(mockPrisma.post.delete).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.delete).not.toHaveBeenCalled()
         expect(result).toEqual({ updated: true })
       })
 
@@ -599,7 +599,7 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.post.findUnique.mockResolvedValue({
+        mockPrisma.Post.findUnique.mockResolvedValue({
           id: 'p1',
           title: 'Old',
           content: 'c',
@@ -617,7 +617,7 @@ describe('getContext', () => {
 
         // A validation error becomes { updated: false } with the reason; the write
         // never reaches the database.
-        expect(mockPrisma.post.update).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
         expect(result).toMatchObject({ updated: false })
         const failure = result as { updated: boolean; error?: string }
         expect(failure.error).toContain('spam')
@@ -627,9 +627,9 @@ describe('getContext', () => {
     describe('createRelated (relationship-table pre-linked create)', () => {
       it('creates a row on the related list with the to-one back-reference preset to the parent', async () => {
         const created = { id: 'p1', title: 'New', content: 'c', authorId: 'u1' }
-        mockPrisma.post.create.mockResolvedValue(created)
+        mockPrisma.Post.create.mockResolvedValue(created)
         // The connect target must be reachable (the related list's read access).
-        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -642,8 +642,8 @@ describe('getContext', () => {
 
         // The back-reference is set on the SERVER (a to-one back-ref connects a
         // single parent), so the new row links to exactly the parent being edited.
-        expect(mockPrisma.post.create).toHaveBeenCalled()
-        const createArg = mockPrisma.post.create.mock.calls[0][0]
+        expect(mockPrisma.Post.create).toHaveBeenCalled()
+        const createArg = mockPrisma.Post.create.mock.calls[0][0]
         expect(createArg.data.title).toBe('New')
         expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
         // Distinct `{ created }` shape (never a single-op `success`).
@@ -653,13 +653,13 @@ describe('getContext', () => {
       it('connects a to-many back-reference by parent id (many-to-many)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
-          lesson: {
+          Lesson: {
             findUnique: vi.fn(),
             update: vi.fn(),
             delete: vi.fn(),
             create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
           },
-          teacher: {
+          Teacher: {
             findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
             update: vi.fn(),
             delete: vi.fn(),
@@ -709,7 +709,7 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        const createArg = m2mPrisma.lesson.create.mock.calls[0][0]
+        const createArg = m2mPrisma.Lesson.create.mock.calls[0][0]
         // A to-many back-reference connects the parent by id.
         expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
       })
@@ -721,9 +721,9 @@ describe('getContext', () => {
       // both the to-one and the to-many back-reference shapes.
       it('overwrites a hostile client-supplied to-one back-reference with the trusted parentId', async () => {
         const created = { id: 'p1', title: 'New', authorId: 'u1' }
-        mockPrisma.post.create.mockResolvedValue(created)
+        mockPrisma.Post.create.mockResolvedValue(created)
         // The connect target must be reachable (the related list's read access).
-        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         await context.serverAction({
@@ -738,7 +738,7 @@ describe('getContext', () => {
 
         // The server OVERWRITES the spread-in hostile value with a connect to the
         // trusted parentId — the evil id never reaches the secured create.
-        const createArg = mockPrisma.post.create.mock.calls[0][0]
+        const createArg = mockPrisma.Post.create.mock.calls[0][0]
         expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
         expect(createArg.data.author).not.toBe('evil-id')
       })
@@ -746,13 +746,13 @@ describe('getContext', () => {
       it('overwrites a hostile client-supplied to-many back-reference with the trusted parentId', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
-          lesson: {
+          Lesson: {
             findUnique: vi.fn(),
             update: vi.fn(),
             delete: vi.fn(),
             create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
           },
-          teacher: {
+          Teacher: {
             findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
             update: vi.fn(),
             delete: vi.fn(),
@@ -805,7 +805,7 @@ describe('getContext', () => {
 
         // The to-many back-reference is overwritten to connect exactly the trusted
         // parent by id — the hostile connect is discarded.
-        const createArg = m2mPrisma.lesson.create.mock.calls[0][0]
+        const createArg = m2mPrisma.Lesson.create.mock.calls[0][0]
         expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
       })
 
@@ -828,7 +828,7 @@ describe('getContext', () => {
           error: 'createRelated requires both field and parentId, or neither',
         })
         // The unguarded create is never attempted.
-        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.create).not.toHaveBeenCalled()
       })
 
       it('rejects a back-reference that does not name a relationship field (defensive guard)', async () => {
@@ -842,7 +842,7 @@ describe('getContext', () => {
         })
 
         expect(result).toMatchObject({ created: false })
-        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.create).not.toHaveBeenCalled()
       })
 
       it('returns a generic error (Silent failure) when the create is access-denied', async () => {
@@ -876,12 +876,12 @@ describe('getContext', () => {
         // Denied: reported as not created with a generic reason (no leak). The
         // create is never attempted at the Prisma layer.
         expect(result).toEqual({ created: false, error: 'Access denied or operation failed' })
-        expect(mockPrisma.post.create).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.create).not.toHaveBeenCalled()
       })
 
       it('surfaces field errors from the create (e.g. a unique constraint) in the drawer shape', async () => {
-        mockPrisma.post.create.mockRejectedValue({ code: 'P2002', meta: { target: ['title'] } })
-        mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+        mockPrisma.Post.create.mockRejectedValue({ code: 'P2002', meta: { target: ['title'] } })
+        mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -905,7 +905,7 @@ describe('getContext', () => {
       // data rather than the documented shape.
       describe('P2002 under Prisma 7 driver adapters (issue #979)', () => {
         it('produces per-field errors for a composite unique violation', async () => {
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2002',
             meta: {
               modelName: 'Post',
@@ -921,7 +921,7 @@ describe('getContext', () => {
               },
             },
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -939,7 +939,7 @@ describe('getContext', () => {
         })
 
         it('produces a field error for a single-column unique violation', async () => {
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2002',
             meta: {
               modelName: 'Post',
@@ -952,7 +952,7 @@ describe('getContext', () => {
               },
             },
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -972,7 +972,7 @@ describe('getContext', () => {
           // needed quoting — a camelCase column arrives as `"authorId"`. A naive
           // fix that skips stripping would key fieldErrors by the literal string
           // `"authorId"` (quotes included), missing the real field name.
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2002',
             meta: {
               driverAdapterError: {
@@ -984,7 +984,7 @@ describe('getContext', () => {
               },
             },
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -1014,7 +1014,7 @@ describe('getContext', () => {
               },
             },
           }
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2002',
             meta: {
               driverAdapterError: {
@@ -1026,7 +1026,7 @@ describe('getContext', () => {
               },
             },
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(camelCaseConfig, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -1044,7 +1044,7 @@ describe('getContext', () => {
         })
 
         it('leaves an already-populated meta.target unaffected (existing path still wins)', async () => {
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2002',
             meta: {
               target: ['title'],
@@ -1057,7 +1057,7 @@ describe('getContext', () => {
               },
             },
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -1073,8 +1073,8 @@ describe('getContext', () => {
         })
 
         it('falls back to the generic message (not a throw) when nothing is recoverable', async () => {
-          mockPrisma.post.create.mockRejectedValue({ code: 'P2002', meta: {} })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.Post.create.mockRejectedValue({ code: 'P2002', meta: {} })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -1093,12 +1093,12 @@ describe('getContext', () => {
         })
 
         it('leaves a non-P2002 Prisma error unaffected', async () => {
-          mockPrisma.post.create.mockRejectedValue({
+          mockPrisma.Post.create.mockRejectedValue({
             code: 'P2025',
             meta: { driverAdapterError: { cause: { constraint: { fields: ['title'] } } } },
             message: 'Record to update not found',
           })
-          mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1' })
+          mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
 
           const context = await getContext(config, mockPrisma, { userId: 'u1' })
           const result = await context.serverAction({
@@ -1120,7 +1120,7 @@ describe('getContext', () => {
 
     describe('relationshipOptions', () => {
       it('returns { id, label }[] for the related list, unfiltered/unincluded', async () => {
-        mockPrisma.user.findMany.mockResolvedValue([
+        mockPrisma.User.findMany.mockResolvedValue([
           { id: 'u1', name: 'Ada' },
           { id: 'u2', name: 'Alan' },
         ])
@@ -1139,12 +1139,12 @@ describe('getContext', () => {
             { id: 'u2', label: 'Alan' },
           ],
         })
-        const call = mockPrisma.user.findMany.mock.calls[0][0]
+        const call = mockPrisma.User.findMany.mock.calls[0][0]
         expect(call.include).toBeUndefined()
       })
 
       it('bounds the query by take', async () => {
-        mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
 
         const context = await getContext(config, mockPrisma, null)
         await context.serverAction({
@@ -1154,12 +1154,12 @@ describe('getContext', () => {
           take: 1,
         })
 
-        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
+        expect(mockPrisma.User.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
       })
 
       it('unions selectedIds beyond the take/search window', async () => {
-        mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u1', name: 'Ada' }])
-        mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u9', name: 'Zed' }])
+        mockPrisma.User.findMany.mockResolvedValueOnce([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.findMany.mockResolvedValueOnce([{ id: 'u9', name: 'Zed' }])
 
         const context = await getContext(config, mockPrisma, null)
         const result = await context.serverAction({
@@ -1190,7 +1190,7 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
 
         const context = await getContext(deniedConfig, mockPrisma, null)
         const result = await context.serverAction({
@@ -1235,29 +1235,29 @@ describe('getContext', () => {
   describe('db operations', () => {
     it('should delegate findUnique to prisma with access control', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+      mockPrisma.User.findFirst.mockResolvedValue(mockUser)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.findUnique({ where: { id: '1' } })
+      const result = await context.db.User.findUnique({ where: { id: '1' } })
 
-      expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+      expect(mockPrisma.User.findFirst).toHaveBeenCalled()
       expect(result).toEqual(mockUser)
     })
 
     describe('findUnique unique-where enforcement (#567)', () => {
       it('accepts a valid unique where (id) and keeps access + include intact', async () => {
         const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+        mockPrisma.User.findFirst.mockResolvedValue(mockUser)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findUnique({
+        const result = await context.db.User.findUnique({
           where: { id: '1' },
           include: { posts: true },
         })
 
         // Access control still runs and the underlying delegate is invoked with
         // the merged where + include (proving access + include path is intact).
-        expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect(mockPrisma.User.findFirst).toHaveBeenCalledWith(
           expect.objectContaining({
             where: expect.objectContaining({ id: '1' }),
             include: { posts: true },
@@ -1268,20 +1268,20 @@ describe('getContext', () => {
 
       it('accepts a configured-unique field (email) as the unique where', async () => {
         const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+        mockPrisma.User.findFirst.mockResolvedValue(mockUser)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findUnique({
+        const result = await context.db.User.findUnique({
           where: { email: 'john@example.com' },
         })
 
-        expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).toHaveBeenCalled()
         expect(result).toEqual(mockUser)
       })
 
       it('narrows the result through a query fragment with a unique where', async () => {
         const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-        mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+        mockPrisma.User.findFirst.mockResolvedValue(mockUser)
 
         const fragment = defineFragment<{ id: string; name: string; email: string }>()({
           id: true,
@@ -1289,45 +1289,45 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findUnique({ where: { id: '1' }, query: fragment })
+        const result = await context.db.User.findUnique({ where: { id: '1' }, query: fragment })
 
         // Fragment narrows the result to only the requested fields (email omitted)
         expect(result).toEqual({ id: '1', name: 'John' })
       })
 
       it('THROWS on a non-unique where (caller-shape error, not a silent null)', async () => {
-        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John' })
+        mockPrisma.User.findFirst.mockResolvedValue({ id: '1', name: 'John' })
 
         const context = await getContext(config, mockPrisma, null)
 
         // `name` is not a unique key — this is misuse and must throw, not return null.
-        await expect(context.db.user.findUnique({ where: { name: 'John' } })).rejects.toThrow(
+        await expect(context.db.User.findUnique({ where: { name: 'John' } })).rejects.toThrow(
           /requires a unique `where`/,
         )
         // The error guides the caller toward findFirst (the non-unique escape hatch).
-        await expect(context.db.user.findUnique({ where: { name: 'John' } })).rejects.toThrow(
+        await expect(context.db.User.findUnique({ where: { name: 'John' } })).rejects.toThrow(
           /findFirst/,
         )
         // Guard runs before any DB access.
-        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
       })
 
       it('THROWS when a unique key is mixed with extra non-unique keys', async () => {
         const context = await getContext(config, mockPrisma, null)
 
         await expect(
-          context.db.user.findUnique({ where: { id: '1', name: 'John' } }),
+          context.db.User.findUnique({ where: { id: '1', name: 'John' } }),
         ).rejects.toThrow(/requires a unique `where`/)
-        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
       })
 
       it('THROWS on an empty where', async () => {
         const context = await getContext(config, mockPrisma, null)
 
-        await expect(context.db.user.findUnique({ where: {} })).rejects.toThrow(
+        await expect(context.db.User.findUnique({ where: {} })).rejects.toThrow(
           /requires a unique `where`/,
         )
-        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
       })
 
       it('returns null on access denial (silent-failure contract preserved)', async () => {
@@ -1348,24 +1348,24 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.user.findFirst.mockResolvedValue({ id: '1', name: 'John' })
+        mockPrisma.User.findFirst.mockResolvedValue({ id: '1', name: 'John' })
 
         const context = await getContext(deniedConfig, mockPrisma, null)
-        const result = await context.db.user.findUnique({ where: { id: '1' } })
+        const result = await context.db.User.findUnique({ where: { id: '1' } })
 
         // Access denied -> null (not a throw), and the DB is never queried.
         expect(result).toBeNull()
-        expect(mockPrisma.user.findFirst).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).not.toHaveBeenCalled()
       })
 
       it('returns null when no record matches a valid unique where', async () => {
-        mockPrisma.user.findFirst.mockResolvedValue(null)
+        mockPrisma.User.findFirst.mockResolvedValue(null)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findUnique({ where: { id: 'missing' } })
+        const result = await context.db.User.findUnique({ where: { id: 'missing' } })
 
         expect(result).toBeNull()
-        expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+        expect(mockPrisma.User.findFirst).toHaveBeenCalled()
       })
     })
 
@@ -1374,12 +1374,12 @@ describe('getContext', () => {
         { id: '1', name: 'John' },
         { id: '2', name: 'Jane' },
       ]
-      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.findMany()
+      const result = await context.db.User.findMany()
 
-      expect(mockPrisma.user.findMany).toHaveBeenCalled()
+      expect(mockPrisma.User.findMany).toHaveBeenCalled()
       expect(result).toEqual(mockUsers)
     })
 
@@ -1389,21 +1389,21 @@ describe('getContext', () => {
           { id: '1', name: 'John', email: 'john@example.com' },
           { id: '2', name: 'Jane', email: 'jane@example.com' },
         ]
-        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+        mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findFirst()
+        const result = await context.db.User.findFirst()
 
         // Delegates to the access-controlled findMany with take: 1
-        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
+        expect(mockPrisma.User.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
         expect(result).toEqual(mockUsers[0])
       })
 
       it('should return null (not undefined, not throw) when nothing matches', async () => {
-        mockPrisma.user.findMany.mockResolvedValue([])
+        mockPrisma.User.findMany.mockResolvedValue([])
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findFirst({ where: { name: 'Nobody' } })
+        const result = await context.db.User.findFirst({ where: { name: 'Nobody' } })
 
         expect(result).toBeNull()
         expect(result).not.toBeUndefined()
@@ -1411,15 +1411,15 @@ describe('getContext', () => {
 
       it('should respect where and orderBy', async () => {
         const mockUser = { id: '2', name: 'Jane', email: 'jane@example.com' }
-        mockPrisma.user.findMany.mockResolvedValue([mockUser])
+        mockPrisma.User.findMany.mockResolvedValue([mockUser])
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findFirst({
+        const result = await context.db.User.findFirst({
           where: { name: 'Jane' },
           orderBy: { name: 'asc' },
         })
 
-        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect(mockPrisma.User.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: expect.objectContaining({ name: 'Jane' }),
             orderBy: { name: 'asc' },
@@ -1447,16 +1447,16 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.user.findMany.mockResolvedValue([
+        mockPrisma.User.findMany.mockResolvedValue([
           { id: '1', name: 'John', email: 'john@example.com' },
         ])
 
         const context = await getContext(deniedConfig, mockPrisma, null)
-        const result = await context.db.user.findFirst()
+        const result = await context.db.User.findFirst()
 
         // Denied query short-circuits before hitting prisma — exactly like findMany
         expect(result).toBeNull()
-        expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findMany).not.toHaveBeenCalled()
       })
 
       it('should respect a query fragment, narrowing the returned single result', async () => {
@@ -1464,7 +1464,7 @@ describe('getContext', () => {
           { id: '1', name: 'John', email: 'john@example.com' },
           { id: '2', name: 'Jane', email: 'jane@example.com' },
         ]
-        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+        mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
         const fragment = defineFragment<{ id: string; name: string; email: string }>()({
           id: true,
@@ -1472,7 +1472,7 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findFirst({ query: fragment })
+        const result = await context.db.User.findFirst({ query: fragment })
 
         // Fragment narrows the result to only the requested fields (email omitted)
         expect(result).toEqual({ id: '1', name: 'John' })
@@ -1483,42 +1483,42 @@ describe('getContext', () => {
       it('throws on an undeclared `where` key on findMany, naming the list and the key', async () => {
         const context = await getContext(config, mockPrisma, null)
 
-        await expect(context.db.post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(/Post/)
-        await expect(context.db.post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(
+        await expect(context.db.Post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(/Post/)
+        await expect(context.db.Post.findMany({ where: { bogusKey: 'x' } })).rejects.toThrow(
           /bogusKey/,
         )
-        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
       })
 
       it('throws on an undeclared `where` key on count', async () => {
         const context = await getContext(config, mockPrisma, null)
 
-        await expect(context.db.user.count({ where: { bogusKey: 'x' } })).rejects.toThrow(
+        await expect(context.db.User.count({ where: { bogusKey: 'x' } })).rejects.toThrow(
           /bogusKey/,
         )
-        expect(mockPrisma.user.count).not.toHaveBeenCalled()
+        expect(mockPrisma.User.count).not.toHaveBeenCalled()
       })
 
       it('throws on an undeclared `orderBy` key on findMany', async () => {
         const context = await getContext(config, mockPrisma, null)
 
-        await expect(context.db.post.findMany({ orderBy: { bogusKey: 'asc' } })).rejects.toThrow(
+        await expect(context.db.Post.findMany({ orderBy: { bogusKey: 'asc' } })).rejects.toThrow(
           /bogusKey/,
         )
-        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
       })
 
       it('throws on an undeclared key nested inside a logical operator (AND/OR/NOT)', async () => {
         const context = await getContext(config, mockPrisma, null)
 
         await expect(
-          context.db.post.findMany({
+          context.db.Post.findMany({
             where: { OR: [{ title: { contains: 'a' } }, { bogusKey: 'x' }] },
           }),
         ).rejects.toThrow(/bogusKey/)
 
         await expect(
-          context.db.post.findMany({
+          context.db.Post.findMany({
             where: { AND: [{ NOT: { bogusKey: 'x' } }] },
           }),
         ).rejects.toThrow(/bogusKey/)
@@ -1528,10 +1528,10 @@ describe('getContext', () => {
         const context = await getContext(config, mockPrisma, null)
 
         await expect(
-          context.db.post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
+          context.db.Post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
         ).rejects.toThrow(/User/)
         await expect(
-          context.db.post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
+          context.db.Post.findMany({ where: { author: { is: { bogusKey: 'x' } } } }),
         ).rejects.toThrow(/bogusKey/)
       })
 
@@ -1544,22 +1544,22 @@ describe('getContext', () => {
         const context = await getContext(config, mockPrisma, null)
 
         await expect(
-          context.db.post.findMany({ where: { author: { bogusKey: 'x' } } }),
+          context.db.Post.findMany({ where: { author: { bogusKey: 'x' } } }),
         ).rejects.toThrow(/User/)
         await expect(
-          context.db.post.findMany({ where: { author: { bogusKey: 'x' } } }),
+          context.db.Post.findMany({ where: { author: { bogusKey: 'x' } } }),
         ).rejects.toThrow(/bogusKey/)
-        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
       })
 
       it('accepts a declared field on the direct-nesting to-one filter form', async () => {
-        mockPrisma.post.findMany.mockResolvedValue([])
+        mockPrisma.Post.findMany.mockResolvedValue([])
 
         const context = await getContext(config, mockPrisma, null)
         const where = { author: { name: { equals: 'John' } } }
-        await context.db.post.findMany({ where })
+        await context.db.Post.findMany({ where })
 
-        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
+        expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
       })
 
       it('rejects a Prisma-generated back-relation the list config never declares (the regression that matters most)', async () => {
@@ -1567,7 +1567,7 @@ describe('getContext', () => {
         // list whose Prisma model gets a `from_Document_organisation`
         // back-relation purely because Document holds an FK pointing at it.
         const backRelationPrisma = {
-          organisation: { findMany: vi.fn(), count: vi.fn() },
+          Organisation: { findMany: vi.fn(), count: vi.fn() },
         }
         const backRelationConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -1582,22 +1582,22 @@ describe('getContext', () => {
         const context = await getContext(backRelationConfig, backRelationPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { from_Document_organisation: { some: {} } },
           }),
         ).rejects.toThrow(/from_Document_organisation/)
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: { from_Document_organisation: { some: {} } },
           }),
         ).rejects.toThrow(/from_Document_organisation/)
 
-        expect(backRelationPrisma.organisation.findMany).not.toHaveBeenCalled()
-        expect(backRelationPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(backRelationPrisma.Organisation.findMany).not.toHaveBeenCalled()
+        expect(backRelationPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('never mistakes a Prisma filter operator (equals/contains/startsWith/in/is/isNot) for a field name', async () => {
-        mockPrisma.post.findMany.mockResolvedValue([
+        mockPrisma.Post.findMany.mockResolvedValue([
           { id: '1', title: 'Test Post', content: 'x', authorId: 'u1' },
         ])
 
@@ -1607,21 +1607,21 @@ describe('getContext', () => {
           author: { is: { name: 'John' }, isNot: null },
         }
 
-        await context.db.post.findMany({ where })
+        await context.db.Post.findMany({ where })
 
-        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
+        expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(expect.objectContaining({ where }))
       })
 
       it('passes all of the above through under sudo (the single trusted bypass)', async () => {
-        mockPrisma.post.findMany.mockResolvedValue([])
+        mockPrisma.Post.findMany.mockResolvedValue([])
 
         const context = (await getContext(config, mockPrisma, null)).sudo()
-        await context.db.post.findMany({
+        await context.db.Post.findMany({
           where: { bogusKey: 'x', OR: [{ alsoBogus: 'y' }] },
           orderBy: { alsoOrderByBogus: 'asc' },
         })
 
-        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { bogusKey: 'x', OR: [{ alsoBogus: 'y' }] },
             orderBy: { alsoOrderByBogus: 'asc' },
@@ -1630,12 +1630,12 @@ describe('getContext', () => {
       })
 
       it('keeps an implied foreign-key scalar filterable (authorId for author: relationship(...))', async () => {
-        mockPrisma.post.findMany.mockResolvedValue([])
+        mockPrisma.Post.findMany.mockResolvedValue([])
 
         const context = await getContext(config, mockPrisma, null)
-        await context.db.post.findMany({ where: { authorId: 'user-1' } })
+        await context.db.Post.findMany({ where: { authorId: 'user-1' } })
 
-        expect(mockPrisma.post.findMany).toHaveBeenCalledWith(
+        expect(mockPrisma.Post.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ where: { authorId: 'user-1' } }),
         )
       })
@@ -1643,28 +1643,28 @@ describe('getContext', () => {
       it('findFirst inherits the check through findMany, with no second copy', async () => {
         const context = await getContext(config, mockPrisma, null)
 
-        await expect(context.db.post.findFirst({ where: { bogusKey: 'x' } })).rejects.toThrow(
+        await expect(context.db.Post.findFirst({ where: { bogusKey: 'x' } })).rejects.toThrow(
           /bogusKey/,
         )
-        expect(mockPrisma.post.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
       })
 
       it('updateMany inherits the check through findMany, with no second copy', async () => {
         const context = await getContext(config, mockPrisma, null)
 
         await expect(
-          context.db.user.updateMany({ where: { bogusKey: 'x' }, data: { name: 'y' } }),
+          context.db.User.updateMany({ where: { bogusKey: 'x' }, data: { name: 'y' } }),
         ).rejects.toThrow(/bogusKey/)
-        expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
-        expect(mockPrisma.user.update).not.toHaveBeenCalled()
+        expect(mockPrisma.User.findMany).not.toHaveBeenCalled()
+        expect(mockPrisma.User.update).not.toHaveBeenCalled()
       })
 
       it('an ordinary read using only declared keys is unaffected', async () => {
         const mockUsers = [{ id: '1', name: 'John', email: 'john@example.com' }]
-        mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+        mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
         const context = await getContext(config, mockPrisma, null)
-        const result = await context.db.user.findMany({
+        const result = await context.db.User.findMany({
           where: { name: 'John' },
           orderBy: { name: 'asc' },
         })
@@ -1685,7 +1685,7 @@ describe('getContext', () => {
 
       beforeEach(() => {
         orgPrisma = {
-          organisation: { findMany: vi.fn(), count: vi.fn() },
+          Organisation: { findMany: vi.fn(), count: vi.fn() },
         }
         orgConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -1708,18 +1708,18 @@ describe('getContext', () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { billingAddress: { startsWith: '12 ' } },
           }),
         ).rejects.toThrow(/billingAddress/)
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: { billingAddress: { startsWith: '12 ' } },
           }),
         ).rejects.toThrow(/billingAddress/)
 
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('a count probe answers identically for a matching and a non-matching prefix (no oracle)', async () => {
@@ -1728,36 +1728,36 @@ describe('getContext', () => {
         // both throw the SAME denial — there is no distinguishing signal left.
         const context = await getContext(orgConfig, orgPrisma, null)
 
-        const matching = context.db.organisation
-          .count({ where: { billingAddress: { startsWith: '12 ' } } })
-          .catch((err: Error) => err.message)
-        const nonMatching = context.db.organisation
-          .count({ where: { billingAddress: { startsWith: '99 ' } } })
-          .catch((err: Error) => err.message)
+        const matching = context.db.Organisation.count({
+          where: { billingAddress: { startsWith: '12 ' } },
+        }).catch((err: Error) => err.message)
+        const nonMatching = context.db.Organisation.count({
+          where: { billingAddress: { startsWith: '99 ' } },
+        }).catch((err: Error) => err.message)
 
         expect(await matching).toEqual(await nonMatching)
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('denies ordering by a read-denied field', async () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({ orderBy: { billingAddress: 'asc' } }),
+          context.db.Organisation.findMany({ orderBy: { billingAddress: 'asc' } }),
         ).rejects.toThrow(/billingAddress/)
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
       })
 
       it('checks keys nested inside logical operators (AND/OR/NOT)', async () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { OR: [{ name: { contains: 'a' } }, { billingAddress: { contains: 'x' } }] },
           }),
         ).rejects.toThrow(/billingAddress/)
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { AND: [{ NOT: { billingAddress: { contains: 'x' } } }] },
           }),
         ).rejects.toThrow(/billingAddress/)
@@ -1790,11 +1790,11 @@ describe('getContext', () => {
         const context = await getContext(rowDependentConfig, orgPrisma, { userId: 'user-1' })
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { billingAddress: { contains: 'x' } },
           }),
         ).rejects.toThrow(/billingAddress/)
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
       })
 
       it('propagates InvalidFieldAccessResultError (#913), never folding it into a plain denial', async () => {
@@ -1819,22 +1819,22 @@ describe('getContext', () => {
         const context = await getContext(filterReturningConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { billingAddress: { contains: 'x' } },
           }),
         ).rejects.toThrow(InvalidFieldAccessResultError)
       })
 
       it('leaves a readable field filterable and sortable (no regression)', async () => {
-        orgPrisma.organisation.findMany.mockResolvedValue([])
+        orgPrisma.Organisation.findMany.mockResolvedValue([])
 
         const context = await getContext(orgConfig, orgPrisma, null)
-        await context.db.organisation.findMany({
+        await context.db.Organisation.findMany({
           where: { name: { contains: 'Acme' } },
           orderBy: { name: 'asc' },
         })
 
-        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { name: { contains: 'Acme' } },
             orderBy: { name: 'asc' },
@@ -1843,25 +1843,25 @@ describe('getContext', () => {
       })
 
       it('sudo bypasses the check entirely, matching #912', async () => {
-        orgPrisma.organisation.findMany.mockResolvedValue([])
-        orgPrisma.organisation.count.mockResolvedValue(3)
+        orgPrisma.Organisation.findMany.mockResolvedValue([])
+        orgPrisma.Organisation.count.mockResolvedValue(3)
 
         const context = (await getContext(orgConfig, orgPrisma, null)).sudo()
-        await context.db.organisation.findMany({
+        await context.db.Organisation.findMany({
           where: { billingAddress: { startsWith: '12 ' } },
           orderBy: { billingAddress: 'asc' },
         })
-        await context.db.organisation.count({
+        await context.db.Organisation.count({
           where: { billingAddress: { startsWith: '12 ' } },
         })
 
-        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { billingAddress: { startsWith: '12 ' } },
             orderBy: { billingAddress: 'asc' },
           }),
         )
-        expect(orgPrisma.organisation.count).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.count).toHaveBeenCalledWith(
           expect.objectContaining({ where: { billingAddress: { startsWith: '12 ' } } }),
         )
       })
@@ -1889,22 +1889,22 @@ describe('getContext', () => {
         const context = await getContext(deniedConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { billingAddress: { startsWith: '12 ' } },
           }),
         ).resolves.toEqual([])
         await expect(
-          context.db.organisation.findMany({ where: { bogusKey: 'x' } }),
+          context.db.Organisation.findMany({ where: { bogusKey: 'x' } }),
         ).resolves.toEqual([])
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: { billingAddress: { startsWith: '12 ' } },
           }),
         ).resolves.toBe(0)
-        await expect(context.db.organisation.count({ where: { bogusKey: 'x' } })).resolves.toBe(0)
+        await expect(context.db.Organisation.count({ where: { bogusKey: 'x' } })).resolves.toBe(0)
 
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('#915 itself does not recurse into a related list nested inside a relation filter, but #916 now does', async () => {
@@ -1917,7 +1917,7 @@ describe('getContext', () => {
         // them — so the read-denied `User.secret` field is still rejected
         // overall, just not by #915's own top-level-only check.
         const relPrisma = {
-          post: { findMany: vi.fn(), count: vi.fn() },
+          Post: { findMany: vi.fn(), count: vi.fn() },
         }
         const relConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -1938,7 +1938,7 @@ describe('getContext', () => {
             },
           },
         }
-        relPrisma.post.findMany.mockResolvedValue([])
+        relPrisma.Post.findMany.mockResolvedValue([])
 
         const context = await getContext(relConfig, relPrisma, null)
         // Names a field on the RELATED list (User.secret) nested inside the
@@ -1947,10 +1947,10 @@ describe('getContext', () => {
         // #916's relation-filter scoping (which checks the RELATED list's
         // field-read access) now does.
         await expect(
-          context.db.post.findMany({ where: { author: { is: { secret: { contains: 'x' } } } } }),
+          context.db.Post.findMany({ where: { author: { is: { secret: { contains: 'x' } } } } }),
         ).rejects.toThrow(/secret/)
 
-        expect(relPrisma.post.findMany).not.toHaveBeenCalled()
+        expect(relPrisma.Post.findMany).not.toHaveBeenCalled()
       })
     })
 
@@ -1966,7 +1966,7 @@ describe('getContext', () => {
 
       beforeEach(() => {
         orgPrisma = {
-          organisation: { findMany: vi.fn(), count: vi.fn() },
+          Organisation: { findMany: vi.fn(), count: vi.fn() },
         }
         orgConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -2013,18 +2013,18 @@ describe('getContext', () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
           }),
         ).rejects.toThrow(/Document/)
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
           }),
         ).rejects.toThrow(/Document/)
 
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('a count probe through a denied relation answers identically for a matching and non-matching value (no oracle)', async () => {
@@ -2033,55 +2033,51 @@ describe('getContext', () => {
         // both throw the SAME denial.
         const context = await getContext(orgConfig, orgPrisma, null)
 
-        const matching = context.db.organisation
-          .count({ where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } } })
-          .catch((err: Error) => err.message)
-        const nonMatching = context.db.organisation
-          .count({ where: { documents: { some: { billingAddress: { startsWith: '99 ' } } } } })
-          .catch((err: Error) => err.message)
+        const matching = context.db.Organisation.count({
+          where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
+        }).catch((err: Error) => err.message)
+        const nonMatching = context.db.Organisation.count({
+          where: { documents: { some: { billingAddress: { startsWith: '99 ' } } } },
+        }).catch((err: Error) => err.message)
 
         expect(await matching).toEqual(await nonMatching)
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('denies a two-hop chain reaching a denied identity list, the exact probe from the issue', async () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: {
               members: { some: { user: { is: { email: { equals: 'ada@example.com' } } } } },
             },
           }),
         ).rejects.toThrow(/User/)
 
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it('a two-hop count probe answers identically for a real and a fabricated email (no identity-confirmation oracle)', async () => {
         const context = await getContext(orgConfig, orgPrisma, null)
 
-        const real = context.db.organisation
-          .count({
-            where: {
-              members: { some: { user: { is: { email: { equals: 'real@example.com' } } } } },
-            },
-          })
-          .catch((err: Error) => err.message)
-        const fabricated = context.db.organisation
-          .count({
-            where: {
-              members: { some: { user: { is: { email: { equals: 'nobody@example.com' } } } } },
-            },
-          })
-          .catch((err: Error) => err.message)
+        const real = context.db.Organisation.count({
+          where: {
+            members: { some: { user: { is: { email: { equals: 'real@example.com' } } } } },
+          },
+        }).catch((err: Error) => err.message)
+        const fabricated = context.db.Organisation.count({
+          where: {
+            members: { some: { user: { is: { email: { equals: 'nobody@example.com' } } } } },
+          },
+        }).catch((err: Error) => err.message)
 
         expect(await real).toEqual(await fabricated)
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
 
       it("folds the related list's access filter into a relation filter rather than denying or passing it through unscoped", async () => {
-        orgPrisma.organisation.findMany.mockResolvedValue([])
+        orgPrisma.Organisation.findMany.mockResolvedValue([])
         const scopedConfig: OpenSaasConfig = {
           ...orgConfig,
           lists: {
@@ -2095,11 +2091,11 @@ describe('getContext', () => {
         }
 
         const context = await getContext(scopedConfig, orgPrisma, null)
-        await context.db.organisation.findMany({
+        await context.db.Organisation.findMany({
           where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
         })
 
-        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: {
               documents: {
@@ -2113,7 +2109,7 @@ describe('getContext', () => {
       })
 
       it('leaves a relation filter through a fully readable related list unwrapped (no perturbation)', async () => {
-        orgPrisma.organisation.findMany.mockResolvedValue([])
+        orgPrisma.Organisation.findMany.mockResolvedValue([])
         const openConfig: OpenSaasConfig = {
           ...orgConfig,
           lists: {
@@ -2127,21 +2123,21 @@ describe('getContext', () => {
         const context = await getContext(openConfig, orgPrisma, null)
         const where = { members: { some: { organisation: { is: { name: { equals: 'Acme' } } } } } }
 
-        await context.db.organisation.findMany({ where })
+        await context.db.Organisation.findMany({ where })
 
-        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ where }),
         )
       })
 
       it('sudo bypasses relation-filter scoping entirely (#916 unaffected)', async () => {
-        orgPrisma.organisation.findMany.mockResolvedValue([])
+        orgPrisma.Organisation.findMany.mockResolvedValue([])
 
         const context = (await getContext(orgConfig, orgPrisma, null)).sudo()
         const where = { documents: { some: { billingAddress: { startsWith: '12 ' } } } }
-        await context.db.organisation.findMany({ where })
+        await context.db.Organisation.findMany({ where })
 
-        expect(orgPrisma.organisation.findMany).toHaveBeenCalledWith(
+        expect(orgPrisma.Organisation.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ where }),
         )
       })
@@ -2160,18 +2156,18 @@ describe('getContext', () => {
         const context = await getContext(deniedConfig, orgPrisma, null)
 
         await expect(
-          context.db.organisation.findMany({
+          context.db.Organisation.findMany({
             where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
           }),
         ).resolves.toEqual([])
         await expect(
-          context.db.organisation.count({
+          context.db.Organisation.count({
             where: { documents: { some: { billingAddress: { startsWith: '12 ' } } } },
           }),
         ).resolves.toBe(0)
 
-        expect(orgPrisma.organisation.findMany).not.toHaveBeenCalled()
-        expect(orgPrisma.organisation.count).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.findMany).not.toHaveBeenCalled()
+        expect(orgPrisma.Organisation.count).not.toHaveBeenCalled()
       })
     })
 
@@ -2184,17 +2180,17 @@ describe('getContext', () => {
 
       beforeEach(() => {
         relPrisma = {
-          author: {
+          Author: {
             findFirst: vi.fn(),
             findUnique: vi.fn(),
             findMany: vi.fn(),
           },
-          post: {
+          Post: {
             findFirst: vi.fn(),
             findUnique: vi.fn(),
             findMany: vi.fn(),
           },
-          comment: {
+          Comment: {
             findFirst: vi.fn(),
             findMany: vi.fn(),
           },
@@ -2248,53 +2244,53 @@ describe('getContext', () => {
       })
 
       it('findMany: caller include {posts:true} applies the relation access where (not bare true)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({ include: { posts: true } })
+        await context.db.Author.findMany({ include: { posts: true } })
 
         // The relation is fetched WITH the Post query-access where (NOT bare true),
         // proving the row-level bypass is closed.
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         expect(call.include.posts).not.toBe(true)
         expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
       })
 
       it('findUnique: caller include {posts:true} applies the relation access where', async () => {
-        relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
+        relPrisma.Author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findUnique({ where: { id: 'a1' }, include: { posts: true } })
+        await context.db.Author.findUnique({ where: { id: 'a1' }, include: { posts: true } })
 
-        const call = relPrisma.author.findFirst.mock.calls[0][0]
+        const call = relPrisma.Author.findFirst.mock.calls[0][0]
         expect(call.where).toEqual(expect.objectContaining({ id: 'a1' }))
         expect(call.include.posts).not.toBe(true)
         expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
       })
 
       it('drops a relation whose query access is false when named in the caller include', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({ include: { secrets: true, posts: true } })
+        await context.db.Author.findMany({ include: { secrets: true, posts: true } })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // Denied `secrets` relation is dropped; allowed `posts` keeps its filter.
         expect(call.include.secrets).toBeUndefined()
         expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
       })
 
       it('caller `_count` folds the relation access where into the select (#1087)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([
+        relPrisma.Author.findMany.mockResolvedValue([
           { id: 'a1', name: 'Jo', _count: { posts: 3 } },
         ])
 
         const context = await getContext(relConfig, relPrisma, null)
-        const result = await context.db.author.findMany({
+        const result = await context.db.Author.findMany({
           include: { _count: { select: { posts: true } } },
         })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         expect(call.include._count).toEqual({
           select: { posts: { where: { status: { equals: 'published' } } } },
         })
@@ -2302,14 +2298,14 @@ describe('getContext', () => {
       })
 
       it('caller `_count` on a fully-denied relation is omitted from the select and returns 0 (#1087)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
         const context = await getContext(relConfig, relPrisma, null)
-        const result = await context.db.author.findMany({
+        const result = await context.db.Author.findMany({
           include: { _count: { select: { posts: true, secrets: true } } },
         })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // The denied `Secret` list is never asked to be counted...
         expect(call.include._count).toEqual({
           select: { posts: { where: { status: { equals: 'published' } } } },
@@ -2320,16 +2316,16 @@ describe('getContext', () => {
       })
 
       it('sudo `_count` is used as-is, unscoped (behaviour preserved)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([
+        relPrisma.Author.findMany.mockResolvedValue([
           { id: 'a1', name: 'Jo', _count: { posts: 3, secrets: 7 } },
         ])
 
         const context = await getContext(relConfig, relPrisma, null).sudo()
-        const result = await context.db.author.findMany({
+        const result = await context.db.Author.findMany({
           include: { _count: { select: { posts: true, secrets: true } } },
         })
 
-        expect(relPrisma.author.findMany).toHaveBeenCalledWith(
+        expect(relPrisma.Author.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             include: { _count: { select: { posts: true, secrets: true } } },
           }),
@@ -2338,14 +2334,14 @@ describe('getContext', () => {
       })
 
       it('AND-combines a caller nested where with the relation access where', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({
+        await context.db.Author.findMany({
           include: { posts: { where: { title: { contains: 'hello' } } } },
         })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // Both the access where and the caller where are applied via AND.
         expect(call.include.posts.where).toEqual({
           AND: [{ status: { equals: 'published' } }, { title: { contains: 'hello' } }],
@@ -2353,33 +2349,33 @@ describe('getContext', () => {
       })
 
       it('access-filters nested (2-level) caller includes at every level', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({
+        await context.db.Author.findMany({
           include: { posts: { include: { comments: true } } },
         })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // Level 1 (posts) and level 2 (comments) both carry their access where.
         expect(call.include.posts.where).toEqual({ status: { equals: 'published' } })
         expect(call.include.posts.include.comments.where).toEqual({ approved: { equals: true } })
       })
 
       it('sudo with explicit include returns the include unfiltered (behaviour preserved)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
         const context = await getContext(relConfig, relPrisma, null).sudo()
-        await context.db.author.findMany({ include: { posts: true, secrets: true } })
+        await context.db.Author.findMany({ include: { posts: true, secrets: true } })
 
         // Under sudo the caller include is used as-is: no filter, nothing dropped.
-        expect(relPrisma.author.findMany).toHaveBeenCalledWith(
+        expect(relPrisma.Author.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ include: { posts: true, secrets: true } }),
         )
       })
 
       it('query fragment path carries the access filter, same as the include: path (#1088)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const postsFragment = defineFragment<{ id: string; title: string }>()({
           title: true,
@@ -2391,9 +2387,9 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({ query: fragment })
+        await context.db.Author.findMany({ query: fragment })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // The fragment-built include now runs through the same scoping walk as
         // an explicit caller `include`, so `posts` carries Post's access where
         // (matching the `include: { posts: true }` test above) instead of a
@@ -2402,7 +2398,7 @@ describe('getContext', () => {
       })
 
       it('drops a relation whose query access is false when named in a query fragment', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
         const secretsFragment = defineFragment<{ id: string; value: string }>()({
           value: true,
@@ -2414,9 +2410,9 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({ query: fragment })
+        await context.db.Author.findMany({ query: fragment })
 
-        const call = relPrisma.author.findMany.mock.calls[0][0]
+        const call = relPrisma.Author.findMany.mock.calls[0][0]
         // `Secret`'s query access is `() => false` — the denied relation is
         // dropped from the include entirely, same as the `include:` path.
         expect(call.include.secrets).toBeUndefined()
@@ -2438,7 +2434,7 @@ describe('getContext', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const chainPrisma: any = {}
         for (let i = 0; i < chainLength; i++) {
-          chainPrisma[`d${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
+          chainPrisma[`D${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
         }
 
         // A fragment selecting `next` recursively, `hops` levels deep.
@@ -2455,14 +2451,14 @@ describe('getContext', () => {
 
         const context = await getContext(chainConfig, chainPrisma, null)
 
-        await expect(context.db.d0.findMany({ query: deepFragment })).rejects.toThrow(
+        await expect(context.db.D0.findMany({ query: deepFragment })).rejects.toThrow(
           AccessScopeDepthExceededError,
         )
-        expect(chainPrisma.d0.findMany).not.toHaveBeenCalled()
+        expect(chainPrisma.D0.findMany).not.toHaveBeenCalled()
       })
 
       it('sudo query fragment reads stay unscoped (behaviour preserved)', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
         const secretsFragment = defineFragment<{ id: string; value: string }>()({
           value: true,
@@ -2474,12 +2470,12 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(relConfig, relPrisma, null).sudo()
-        await context.db.author.findMany({ query: fragment })
+        await context.db.Author.findMany({ query: fragment })
 
         // Under sudo, the fragment-built include is used as-is: the denied
         // `Secret` relation is fetched unfiltered, matching sudo's existing
         // include: behaviour.
-        expect(relPrisma.author.findMany).toHaveBeenCalledWith(
+        expect(relPrisma.Author.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ include: { secrets: true } }),
         )
       })
@@ -2498,21 +2494,21 @@ describe('getContext', () => {
           post: postFragment,
         } as const)
 
-        relPrisma.comment.findMany.mockResolvedValue([
+        relPrisma.Comment.findMany.mockResolvedValue([
           { id: 'c1', body: 'hi', post: { id: 'p1', title: 'Draft' } },
         ])
         // The batched existence check queries the raw Post model directly;
         // an empty result means `p1` does not satisfy Post's access filter.
-        relPrisma.post.findMany.mockResolvedValue([])
+        relPrisma.Post.findMany.mockResolvedValue([])
 
         const context = await getContext(relConfig, relPrisma, null)
-        const result = await context.db.comment.findMany({ query: fragment })
+        const result = await context.db.Comment.findMany({ query: fragment })
 
         expect(result[0].post).toBeNull()
       })
 
       it('a fragment read and an equivalent include: read produce the same access-scoped include', async () => {
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const postsFragment = defineFragment<{ id: string; title: string }>()({
           title: true,
@@ -2524,12 +2520,12 @@ describe('getContext', () => {
         } as const)
 
         const context = await getContext(relConfig, relPrisma, null)
-        await context.db.author.findMany({ query: fragment })
-        const fragmentInclude = relPrisma.author.findMany.mock.calls[0][0].include
+        await context.db.Author.findMany({ query: fragment })
+        const fragmentInclude = relPrisma.Author.findMany.mock.calls[0][0].include
 
-        relPrisma.author.findMany.mockClear()
-        await context.db.author.findMany({ include: { posts: true } })
-        const callerInclude = relPrisma.author.findMany.mock.calls[0][0].include
+        relPrisma.Author.findMany.mockClear()
+        await context.db.Author.findMany({ include: { posts: true } })
+        const callerInclude = relPrisma.Author.findMany.mock.calls[0][0].include
 
         expect(fragmentInclude).toEqual(callerInclude)
       })
@@ -2552,10 +2548,10 @@ describe('getContext', () => {
             Secret: { ...relConfig.lists.Secret, access: { operation: { query: secretQuerySpy } } },
           },
         }
-        relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+        relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
         const context = await getContext(spiedConfig, relPrisma, null)
-        await context.db.author.findMany({ include: { posts: true } })
+        await context.db.Author.findMany({ include: { posts: true } })
 
         expect(postQuerySpy).toHaveBeenCalledTimes(1)
         expect(secretQuerySpy).not.toHaveBeenCalled()
@@ -2590,8 +2586,8 @@ describe('getContext', () => {
                     type: 'string',
                     hooks: {
                       resolveOutput: async ({ context }) => {
-                        await context.db.comment.findMany({ include: callerInclude })
-                        capture(relPrisma.comment.findMany.mock.calls[0][0].include)
+                        await context.db.Comment.findMany({ include: callerInclude })
+                        capture(relPrisma.Comment.findMany.mock.calls[0][0].include)
                         return 'summary'
                       },
                     },
@@ -2608,11 +2604,11 @@ describe('getContext', () => {
             innerIncludeSeen = include
           })
 
-          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
-          relPrisma.comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
+          relPrisma.Author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+          relPrisma.Comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
 
           const context = await getContext(hookConfig, relPrisma, null)
-          await context.db.author.findUnique({ where: { id: 'a1' } })
+          await context.db.Author.findUnique({ where: { id: 'a1' } })
 
           // `post` is still fetched (not dropped). It carries no `where` — Post
           // is a to-one relation here, and Prisma rejects a `where` on a to-one
@@ -2630,11 +2626,11 @@ describe('getContext', () => {
             },
           )
 
-          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
-          relPrisma.comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
+          relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+          relPrisma.Comment.findMany.mockResolvedValue([{ id: 'c1', body: 'hi', post: null }])
 
           const context = await getContext(hookConfig, relPrisma, null)
-          await context.db.author.findMany()
+          await context.db.Author.findMany()
 
           // The caller's own nested selection (`post.include.author`) is honoured
           // as-is (access control does not auto-descend further here). `post`
@@ -2683,20 +2679,20 @@ describe('getContext', () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chainPrisma: any = {}
           for (let i = 0; i < chainLength; i++) {
-            chainPrisma[`c${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
+            chainPrisma[`C${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
           }
 
           const context = await getContext(chainConfig, chainPrisma, null)
 
           await expect(
-            context.db.c0.findMany({
+            context.db.C0.findMany({
               include: { next: nestedCallerInclude(READ_INCLUDE_MAX_DEPTH) },
             }),
           ).rejects.toThrow(AccessScopeDepthExceededError)
 
           // The database is never even queried — the denial happens before the
           // Prisma call, not as a post-hoc filter on returned data.
-          expect(chainPrisma.c0.findMany).not.toHaveBeenCalled()
+          expect(chainPrisma.C0.findMany).not.toHaveBeenCalled()
         })
 
         it('still applies row-scoping at the deepest hop for the same include one hop shallower', async () => {
@@ -2708,7 +2704,7 @@ describe('getContext', () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const chainPrisma: any = {}
           for (let i = 0; i < chainLength; i++) {
-            chainPrisma[`c${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
+            chainPrisma[`C${i}`] = { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() }
           }
 
           // Every hop here is to-one (no `many: true`), so none of them can
@@ -2720,20 +2716,20 @@ describe('getContext', () => {
           for (let i = chainLength - 2; i >= 0; i--) {
             deepestItem = { id: `id${i}`, name: 'x', next: deepestItem }
           }
-          chainPrisma.c0.findMany.mockResolvedValue([deepestItem])
+          chainPrisma.C0.findMany.mockResolvedValue([deepestItem])
           for (let i = 1; i < chainLength; i++) {
-            chainPrisma[`c${i}`].findMany.mockResolvedValue([{ id: `id${i}` }])
+            chainPrisma[`C${i}`].findMany.mockResolvedValue([{ id: `id${i}` }])
           }
 
           const context = await getContext(chainConfig, chainPrisma, null)
 
-          await context.db.c0.findMany({
+          await context.db.C0.findMany({
             include: { next: nestedCallerInclude(READ_INCLUDE_MAX_DEPTH - 1) },
           })
 
           // Walk the built include down to the last list — no hop carries a
           // `where` (they are all to-one).
-          let entry = chainPrisma.c0.findMany.mock.calls[0][0].include.next
+          let entry = chainPrisma.C0.findMany.mock.calls[0][0].include.next
           for (let i = 1; i < READ_INCLUDE_MAX_DEPTH; i++) {
             expect(entry.where).toBeUndefined()
             entry = entry.include.next
@@ -2743,7 +2739,7 @@ describe('getContext', () => {
           // The deepest hop's own existence check still carries that list's
           // access filter — row scoping reaches all the way down, just not
           // through the Prisma `include` itself.
-          expect(chainPrisma[`c${READ_INCLUDE_MAX_DEPTH}`].findMany).toHaveBeenCalledWith({
+          expect(chainPrisma[`C${READ_INCLUDE_MAX_DEPTH}`].findMany).toHaveBeenCalledWith({
             where: {
               AND: [
                 { ownerId: { equals: `C${READ_INCLUDE_MAX_DEPTH}` } },
@@ -2785,14 +2781,14 @@ describe('getContext', () => {
 
         it('findMany: strips the virtual key from the Prisma include but keeps the real relationship include, and computes the virtual value', async () => {
           const vConfig = configWithVirtualDisplayName()
-          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
+          relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo', posts: [] }])
 
           const context = await getContext(vConfig, relPrisma, null)
-          const result = await context.db.author.findMany({
+          const result = await context.db.Author.findMany({
             include: { displayName: true, posts: true },
           })
 
-          const call = relPrisma.author.findMany.mock.calls[0][0]
+          const call = relPrisma.Author.findMany.mock.calls[0][0]
           expect(call.include).not.toHaveProperty('displayName')
           expect(call.include.posts).toBeDefined()
           expect(result[0].displayName).toBe('Author: Jo')
@@ -2800,15 +2796,15 @@ describe('getContext', () => {
 
         it('findUnique: strips the virtual key from the Prisma include but keeps the real relationship include, and computes the virtual value', async () => {
           const vConfig = configWithVirtualDisplayName()
-          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
+          relPrisma.Author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo', posts: [] })
 
           const context = await getContext(vConfig, relPrisma, null)
-          const result = await context.db.author.findUnique({
+          const result = await context.db.Author.findUnique({
             where: { id: 'a1' },
             include: { displayName: true, posts: true },
           })
 
-          const call = relPrisma.author.findFirst.mock.calls[0][0]
+          const call = relPrisma.Author.findFirst.mock.calls[0][0]
           expect(call.include).not.toHaveProperty('displayName')
           expect(call.include.posts).toBeDefined()
           expect(result.displayName).toBe('Author: Jo')
@@ -2816,24 +2812,24 @@ describe('getContext', () => {
 
         it('the virtual value is populated even when omitted from include', async () => {
           const vConfig = configWithVirtualDisplayName()
-          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+          relPrisma.Author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
 
           const context = await getContext(vConfig, relPrisma, null)
-          const result = await context.db.author.findUnique({ where: { id: 'a1' } })
+          const result = await context.db.Author.findUnique({ where: { id: 'a1' } })
 
           expect(result.displayName).toBe('Author: Jo')
         })
 
         it('sudo: the virtual key is stripped from the Prisma include even though it bypasses access control', async () => {
           const vConfig = configWithVirtualDisplayName()
-          relPrisma.author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
+          relPrisma.Author.findMany.mockResolvedValue([{ id: 'a1', name: 'Jo' }])
 
           const context = await getContext(vConfig, relPrisma, null).sudo()
-          const result = await context.db.author.findMany({
+          const result = await context.db.Author.findMany({
             include: { displayName: true, posts: true },
           })
 
-          const call = relPrisma.author.findMany.mock.calls[0][0]
+          const call = relPrisma.Author.findMany.mock.calls[0][0]
           expect(call.include).not.toHaveProperty('displayName')
           // The real relationship is unaffected — sudo still passes it through as-is.
           expect(call.include.posts).toBe(true)
@@ -2849,10 +2845,10 @@ describe('getContext', () => {
               resolveOutput: ({ item }) => `Author: ${item.name}`,
             },
           })
-          relPrisma.author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
+          relPrisma.Author.findFirst.mockResolvedValue({ id: 'a1', name: 'Jo' })
 
           const context = await getContext(vConfig, relPrisma, null)
-          const result = await context.db.author.findUnique({
+          const result = await context.db.Author.findUnique({
             where: { id: 'a1' },
             include: { displayName: true },
           })
@@ -2864,52 +2860,52 @@ describe('getContext', () => {
 
     it('should delegate create to prisma with access control and hooks', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.user.create.mockResolvedValue(mockUser)
+      mockPrisma.User.create.mockResolvedValue(mockUser)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.create({
+      const result = await context.db.User.create({
         data: { name: 'John', email: 'john@example.com' },
       })
 
-      expect(mockPrisma.user.create).toHaveBeenCalled()
+      expect(mockPrisma.User.create).toHaveBeenCalled()
       expect(result).toEqual(mockUser)
     })
 
     it('should delegate update to prisma with access control and hooks', async () => {
       const existingUser = { id: '1', name: 'John', email: 'john@example.com' }
       const updatedUser = { id: '1', name: 'John Updated', email: 'john@example.com' }
-      mockPrisma.user.findUnique.mockResolvedValue(existingUser)
-      mockPrisma.user.update.mockResolvedValue(updatedUser)
+      mockPrisma.User.findUnique.mockResolvedValue(existingUser)
+      mockPrisma.User.update.mockResolvedValue(updatedUser)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.update({
+      const result = await context.db.User.update({
         where: { id: '1' },
         data: { name: 'John Updated' },
       })
 
-      expect(mockPrisma.user.update).toHaveBeenCalled()
+      expect(mockPrisma.User.update).toHaveBeenCalled()
       expect(result).toEqual(updatedUser)
     })
 
     it('should delegate delete to prisma with access control and hooks', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.user.findUnique.mockResolvedValue(mockUser)
-      mockPrisma.user.delete.mockResolvedValue(mockUser)
+      mockPrisma.User.findUnique.mockResolvedValue(mockUser)
+      mockPrisma.User.delete.mockResolvedValue(mockUser)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.delete({ where: { id: '1' } })
+      const result = await context.db.User.delete({ where: { id: '1' } })
 
-      expect(mockPrisma.user.delete).toHaveBeenCalled()
+      expect(mockPrisma.User.delete).toHaveBeenCalled()
       expect(result).toEqual(mockUser)
     })
 
     it('should delegate count to prisma with access control', async () => {
-      mockPrisma.user.count.mockResolvedValue(5)
+      mockPrisma.User.count.mockResolvedValue(5)
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.count()
+      const result = await context.db.User.count()
 
-      expect(mockPrisma.user.count).toHaveBeenCalled()
+      expect(mockPrisma.User.count).toHaveBeenCalled()
       expect(result).toBe(5)
     })
 
@@ -2921,13 +2917,13 @@ describe('getContext', () => {
       ]
 
       // Mock create to return each user in sequence
-      mockPrisma.user.create
+      mockPrisma.User.create
         .mockResolvedValueOnce(mockUsers[0])
         .mockResolvedValueOnce(mockUsers[1])
         .mockResolvedValueOnce(mockUsers[2])
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.createMany({
+      const result = await context.db.User.createMany({
         data: [
           { name: 'John', email: 'john@example.com' },
           { name: 'Jane', email: 'jane@example.com' },
@@ -2936,7 +2932,7 @@ describe('getContext', () => {
       })
 
       // Should call create 3 times (once for each item)
-      expect(mockPrisma.user.create).toHaveBeenCalledTimes(3)
+      expect(mockPrisma.User.create).toHaveBeenCalledTimes(3)
       expect(result).toEqual(mockUsers)
     })
 
@@ -2952,26 +2948,26 @@ describe('getContext', () => {
       ]
 
       // Mock findMany to return the users
-      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
       // Mock findUnique for each update's access check
-      mockPrisma.user.findUnique
+      mockPrisma.User.findUnique
         .mockResolvedValueOnce(mockUsers[0])
         .mockResolvedValueOnce(mockUsers[1])
 
       // Mock update to return updated users
-      mockPrisma.user.update
+      mockPrisma.User.update
         .mockResolvedValueOnce(updatedUsers[0])
         .mockResolvedValueOnce(updatedUsers[1])
 
       const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.user.updateMany({
+      const result = await context.db.User.updateMany({
         where: { id: { in: ['1', '2'] } },
         data: { name: 'Updated' },
       })
 
       // Should call findMany once to get records
-      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+      expect(mockPrisma.User.findMany).toHaveBeenCalledWith({
         where: { id: { in: ['1', '2'] } },
         take: undefined,
         skip: undefined,
@@ -2979,7 +2975,7 @@ describe('getContext', () => {
       })
 
       // Should call update twice (once for each item)
-      expect(mockPrisma.user.update).toHaveBeenCalledTimes(2)
+      expect(mockPrisma.User.update).toHaveBeenCalledTimes(2)
       expect(result).toEqual(updatedUsers)
     })
 
@@ -2990,7 +2986,7 @@ describe('getContext', () => {
         { id: '2', name: 'Jane', email: 'jane@example.com' },
       ]
 
-      mockPrisma.user.create.mockResolvedValueOnce(mockUsers[0]).mockResolvedValueOnce(mockUsers[1])
+      mockPrisma.User.create.mockResolvedValueOnce(mockUsers[0]).mockResolvedValueOnce(mockUsers[1])
 
       // Config with hook
       const configWithHook: OpenSaasConfig = {
@@ -3007,7 +3003,7 @@ describe('getContext', () => {
       }
 
       const context = await getContext(configWithHook, mockPrisma, null)
-      await context.db.user.createMany({
+      await context.db.User.createMany({
         data: [
           { name: 'John', email: 'john@example.com' },
           { name: 'Jane', email: 'jane@example.com' },
@@ -3029,11 +3025,11 @@ describe('getContext', () => {
         { id: '2', name: 'Jane Updated', email: 'jane@example.com' },
       ]
 
-      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
-      mockPrisma.user.findUnique
+      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
+      mockPrisma.User.findUnique
         .mockResolvedValueOnce(mockUsers[0])
         .mockResolvedValueOnce(mockUsers[1])
-      mockPrisma.user.update
+      mockPrisma.User.update
         .mockResolvedValueOnce(updatedUsers[0])
         .mockResolvedValueOnce(updatedUsers[1])
 
@@ -3052,7 +3048,7 @@ describe('getContext', () => {
       }
 
       const context = await getContext(configWithHook, mockPrisma, null)
-      await context.db.user.updateMany({
+      await context.db.User.updateMany({
         where: { id: { in: ['1', '2'] } },
         data: { name: 'Updated' },
       })
@@ -3083,10 +3079,10 @@ describe('getContext', () => {
 
     it('warns AND still returns the row when findUnique is passed a select', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.user.findFirst.mockResolvedValue(mockUser)
+      mockPrisma.User.findFirst.mockResolvedValue(mockUser)
 
       const context = await freshGetContext(config, mockPrisma, null)
-      const result = await context.db.user.findUnique({
+      const result = await context.db.User.findUnique({
         where: { id: '1' },
         select: { name: true },
       })
@@ -3095,7 +3091,7 @@ describe('getContext', () => {
       expect(warnSpy.mock.calls[0][0]).toContain('`select` is ignored')
       expect(warnSpy.mock.calls[0][0]).toContain('findUnique')
       // Behaviour unchanged: the op still runs and returns the full row.
-      expect(mockPrisma.user.findFirst).toHaveBeenCalled()
+      expect(mockPrisma.User.findFirst).toHaveBeenCalled()
       expect(result).toEqual(mockUser)
     })
 
@@ -3104,38 +3100,38 @@ describe('getContext', () => {
         { id: '1', name: 'John' },
         { id: '2', name: 'Jane' },
       ]
-      mockPrisma.user.findMany.mockResolvedValue(mockUsers)
+      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
 
       const context = await freshGetContext(config, mockPrisma, null)
-      const result = await context.db.user.findMany({ select: { name: true } })
+      const result = await context.db.User.findMany({ select: { name: true } })
 
       expect(warnSpy).toHaveBeenCalledTimes(1)
       expect(warnSpy.mock.calls[0][0]).toContain('`select` is ignored')
       expect(warnSpy.mock.calls[0][0]).toContain('findMany')
-      expect(mockPrisma.user.findMany).toHaveBeenCalled()
+      expect(mockPrisma.User.findMany).toHaveBeenCalled()
       expect(result).toEqual(mockUsers)
     })
 
     it('warns only once per list+operation across repeated calls', async () => {
-      mockPrisma.user.findMany.mockResolvedValue([])
+      mockPrisma.User.findMany.mockResolvedValue([])
 
       const context = await freshGetContext(config, mockPrisma, null)
-      await context.db.user.findMany({ select: { name: true } })
-      await context.db.user.findMany({ select: { name: true } })
-      await context.db.user.findMany({ select: { email: true } })
+      await context.db.User.findMany({ select: { name: true } })
+      await context.db.User.findMany({ select: { name: true } })
+      await context.db.User.findMany({ select: { email: true } })
 
       expect(warnSpy).toHaveBeenCalledTimes(1)
     })
 
     it('does NOT warn for findUnique/findMany using only include or query', async () => {
       const mockUser = { id: '1', name: 'John' }
-      mockPrisma.user.findFirst.mockResolvedValue(mockUser)
-      mockPrisma.user.findMany.mockResolvedValue([mockUser])
+      mockPrisma.User.findFirst.mockResolvedValue(mockUser)
+      mockPrisma.User.findMany.mockResolvedValue([mockUser])
 
       const context = await freshGetContext(config, mockPrisma, null)
-      await context.db.user.findUnique({ where: { id: '1' }, include: { posts: true } })
-      await context.db.user.findMany({ include: { posts: true } })
-      await context.db.user.findMany()
+      await context.db.User.findUnique({ where: { id: '1' }, include: { posts: true } })
+      await context.db.User.findMany({ include: { posts: true } })
+      await context.db.User.findMany()
 
       expect(warnSpy).not.toHaveBeenCalled()
     })

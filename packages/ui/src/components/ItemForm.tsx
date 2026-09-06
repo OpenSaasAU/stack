@@ -11,7 +11,6 @@ import {
   type FieldConfig,
   type ListConfig,
   buildRelationshipCountSelect,
-  getDbKey,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -167,7 +166,7 @@ async function ItemViewLayoutView({
   }
   let itemData: Record<string, unknown> | null = null
   try {
-    const delegate = context.db[getDbKey(listKey)]
+    const delegate = context.db[listKey]
     if (delegate?.findUnique) {
       itemData = await delegate.findUnique({ where: { id: itemId }, include })
     }
@@ -331,7 +330,7 @@ export async function ItemForm({
   if (mode === 'edit' && itemId) {
     try {
       const includeRelationships = buildRelationshipInclude(listConfig)
-      const delegate = context.db[getDbKey(listKey)]
+      const delegate = context.db[listKey]
       if (delegate?.findUnique) {
         itemData = await delegate.findUnique({
           where: { id: itemId },

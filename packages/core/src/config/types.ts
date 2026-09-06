@@ -450,7 +450,7 @@ export type FieldHooks<
    *
    * // Async example (e.g., for virtual fields that query the database)
    * resolveOutput: async ({ item, context }) => {
-   *   const related = await context.db.otherList.findUnique({ where: { id: item.relatedId } })
+   *   const related = await context.db.OtherList.findUnique({ where: { id: item.relatedId } })
    *   return related?.name
    * }
    * ```
@@ -2548,7 +2548,7 @@ export type ListViewUIConfig = {
    *         handler: async ({ ids, context }) => {
    *           let n = 0
    *           for (const id of ids) {
-   *             const r = await context.db.post.update({
+   *             const r = await context.db.Post.update({
    *               where: { id },
    *               data: { status: 'published' },
    *             })

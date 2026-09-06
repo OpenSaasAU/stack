@@ -83,7 +83,7 @@ function createDouble(pool: 'starved' | 'spare'): Double {
   }
 
   return {
-    handle: { post: outerCollection },
+    handle: { Post: outerCollection },
     committed: () => [...store],
     client: {
       sql: {},
@@ -129,7 +129,7 @@ describe('the transaction context is bound to the transaction', () => {
     const double = createDouble('spare')
 
     await contextOver(double).transaction(async (tx) => {
-      await tx.db.post.create({ data: { title: 'inside' } })
+      await tx.db.Post.create({ data: { title: 'inside' } })
     })
 
     expect(double.committed().map((row) => row.title)).toEqual(['inside'])
@@ -140,7 +140,7 @@ describe('the transaction context is bound to the transaction', () => {
 
     await expect(
       contextOver(double).transaction(async (tx) => {
-        await tx.db.post.create({ data: { title: 'rolled back' } })
+        await tx.db.Post.create({ data: { title: 'rolled back' } })
         throw new Error('boom')
       }),
     ).rejects.toThrow('boom')
@@ -152,7 +152,7 @@ describe('the transaction context is bound to the transaction', () => {
     const double = createDouble('starved')
 
     await contextOver(double).transaction(async (tx) => {
-      await tx.db.post.create({ data: { title: 'one connection' } })
+      await tx.db.Post.create({ data: { title: 'one connection' } })
     })
 
     expect(double.committed().map((row) => row.title)).toEqual(['one connection'])
@@ -175,7 +175,7 @@ describe('the transaction context is bound to the transaction', () => {
     const context = getContext(testConfig, double.handle, null)
 
     await context.transaction(async (tx) => {
-      await tx.db.post.create({ data: { title: 'no client' } })
+      await tx.db.Post.create({ data: { title: 'no client' } })
     })
 
     expect(double.committed().map((row) => row.title)).toEqual(['no client'])

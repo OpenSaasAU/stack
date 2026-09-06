@@ -122,9 +122,8 @@ export async function findSimilar<T = unknown>(
     where = {},
   } = options
 
-  const dbKey = getDbKey(listKey)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const model = (context.db as any)[dbKey]
+  const model = (context.db as any)[listKey]
 
   if (!model) {
     throw new Error(`List "${listKey}" not found in database`)
@@ -156,8 +155,4 @@ export async function findSimilar<T = unknown>(
   })
 
   return results
-}
-
-function getDbKey(listKey: string): string {
-  return listKey.charAt(0).toLowerCase() + listKey.slice(1)
 }

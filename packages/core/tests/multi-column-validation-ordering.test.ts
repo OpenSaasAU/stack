@@ -61,8 +61,8 @@ function mediaField(access?: FieldAccess): FieldConfig {
  */
 function createTxPrisma() {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    post: new Map(),
-    author: new Map(),
+    Post: new Map(),
+    Author: new Map(),
   }
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
@@ -78,13 +78,13 @@ function createTxPrisma() {
         const nested = value as Record<string, unknown>
         if (nested.create || nested.update) {
           if (nested.create) {
-            const created = doCreate('author', nested.create as Record<string, unknown>)
+            const created = doCreate('Author', nested.create as Record<string, unknown>)
             result[`${key}Link`] = created.id
             result[key] = created
           }
           if (nested.update) {
             const upd = nested.update as { where: { id: string }; data: Record<string, unknown> }
-            const updated = doUpdate('author', upd.where, upd.data)
+            const updated = doUpdate('Author', upd.where, upd.data)
             result[key] = updated
           }
           continue
@@ -131,8 +131,8 @@ function createTxPrisma() {
   }
 
   const client: Record<string, unknown> = {
-    post: makeModel('post'),
-    author: makeModel('author'),
+    Post: makeModel('Post'),
+    Author: makeModel('Author'),
   }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client)
 
@@ -163,23 +163,23 @@ describe('#789 top-level write — multi-column validation runs BEFORE the split
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.create({ data: { title: 'hi', media: 'not-a-valid-shape' } }),
+      context.db.Post.create({ data: { title: 'hi', media: 'not-a-valid-shape' } }),
     ).rejects.toBeInstanceOf(ValidationError)
 
-    expect(mock.tables.post.size).toBe(0)
+    expect(mock.tables.Post.size).toBe(0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((mock.client.post as any).create).not.toHaveBeenCalled()
+    expect((mock.client.Post as any).create).not.toHaveBeenCalled()
   })
 
   it('create: a valid media value passes validation and is split into physical columns', async () => {
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
-    const created = await context.db.post.create({
+    const created = await context.db.Post.create({
       data: { title: 'hi', media: { url: 'https://x/y.jpg', size: 99 } },
     })
 
     expect(created).toBeTruthy()
-    const stored = mock.tables.post.values().next().value
+    const stored = mock.tables.Post.values().next().value
     expect(stored).toMatchObject({ m_url: 'https://x/y.jpg', m_size: 99 })
     expect('media' in (stored ?? {})).toBe(false)
   })
@@ -187,35 +187,35 @@ describe('#789 top-level write — multi-column validation runs BEFORE the split
   it('create: a null media value passes validation and clears the columns', async () => {
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
-    await context.db.post.create({ data: { title: 'hi', media: null } })
+    await context.db.Post.create({ data: { title: 'hi', media: null } })
 
-    const stored = mock.tables.post.values().next().value
+    const stored = mock.tables.Post.values().next().value
     expect(stored).toMatchObject({ m_url: null, m_size: null })
   })
 
   it('update: an unrecognised media value throws ValidationError and never reaches the DB', async () => {
-    mock.tables.post.set('p1', { id: 'p1', title: 'old', m_url: null, m_size: null })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'old', m_url: null, m_size: null })
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.update({ where: { id: 'p1' }, data: { media: 42 } }),
+      context.db.Post.update({ where: { id: 'p1' }, data: { media: 42 } }),
     ).rejects.toBeInstanceOf(ValidationError)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((mock.client.post as any).update).not.toHaveBeenCalled()
-    expect(mock.tables.post.get('p1')).toMatchObject({ title: 'old', m_url: null, m_size: null })
+    expect((mock.client.Post as any).update).not.toHaveBeenCalled()
+    expect(mock.tables.Post.get('p1')).toMatchObject({ title: 'old', m_url: null, m_size: null })
   })
 
   it('update: a valid media value passes validation and is split into physical columns', async () => {
-    mock.tables.post.set('p1', { id: 'p1', title: 'old', m_url: null, m_size: null })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'old', m_url: null, m_size: null })
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
-    await context.db.post.update({
+    await context.db.Post.update({
       where: { id: 'p1' },
       data: { media: { url: 'https://x/new.jpg', size: 5 } },
     })
 
-    expect(mock.tables.post.get('p1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 5 })
+    expect(mock.tables.Post.get('p1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 5 })
   })
 })
 
@@ -247,51 +247,51 @@ describe('#789 nested write — multi-column validation runs BEFORE the split', 
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.create({
+      context.db.Post.create({
         data: { title: 'p', author: { create: { name: 'a', media: 'not-a-valid-shape' } } },
       }),
     ).rejects.toBeInstanceOf(ValidationError)
 
-    expect(mock.tables.post.size).toBe(0)
-    expect(mock.tables.author.size).toBe(0)
+    expect(mock.tables.Post.size).toBe(0)
+    expect(mock.tables.Author.size).toBe(0)
   })
 
   it('nested create: a valid media value is split into physical columns on the nested row', async () => {
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
-    await context.db.post.create({
+    await context.db.Post.create({
       data: {
         title: 'p',
         author: { create: { name: 'a', media: { url: 'https://x/y.jpg', size: 3 } } },
       },
     })
 
-    const author = mock.tables.author.values().next().value
+    const author = mock.tables.Author.values().next().value
     expect(author).toMatchObject({ m_url: 'https://x/y.jpg', m_size: 3 })
     expect('media' in (author ?? {})).toBe(false)
   })
 
   it('nested update: an unrecognised media value throws ValidationError and nothing persists', async () => {
-    mock.tables.post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
-    mock.tables.author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
+    mock.tables.Author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
     await expect(
-      context.db.post.update({
+      context.db.Post.update({
         where: { id: 'p1' },
         data: { author: { update: { where: { id: 'a1' }, data: { media: [] } } } },
       }),
     ).rejects.toBeInstanceOf(ValidationError)
 
-    expect(mock.tables.author.get('a1')).toMatchObject({ name: 'old', m_url: null, m_size: null })
+    expect(mock.tables.Author.get('a1')).toMatchObject({ name: 'old', m_url: null, m_size: null })
   })
 
   it('nested update: a valid media value is split into physical columns on the nested row', async () => {
-    mock.tables.post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
-    mock.tables.author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
+    mock.tables.Post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
+    mock.tables.Author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
     const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
 
-    await context.db.post.update({
+    await context.db.Post.update({
       where: { id: 'p1' },
       data: {
         author: {
@@ -300,6 +300,6 @@ describe('#789 nested write — multi-column validation runs BEFORE the split', 
       },
     })
 
-    expect(mock.tables.author.get('a1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 8 })
+    expect(mock.tables.Author.get('a1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 8 })
   })
 })

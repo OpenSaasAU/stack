@@ -52,7 +52,7 @@ function makeContext(
     session: null,
     _isSudo: false,
     _resolveOutputChain: [],
-    db: findMany ? { user: { findMany } } : {},
+    db: findMany ? { User: { findMany } } : {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any
 }

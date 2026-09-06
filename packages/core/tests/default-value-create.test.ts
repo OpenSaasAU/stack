@@ -158,8 +158,8 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
  */
 function createTxPrisma() {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    account: new Map(),
-    profile: new Map(),
+    Account: new Map(),
+    Profile: new Map(),
   }
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
@@ -173,7 +173,7 @@ function createTxPrisma() {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const nested = value as Record<string, unknown>
         if (nested.create) {
-          const created = doCreate('profile', nested.create as Record<string, unknown>)
+          const created = doCreate('Profile', nested.create as Record<string, unknown>)
           result[`${key}Link`] = created.id
           result[key] = created
           continue
@@ -206,8 +206,8 @@ function createTxPrisma() {
   }
 
   const client: Record<string, unknown> = {
-    account: makeModel('account'),
-    profile: makeModel('profile'),
+    Account: makeModel('Account'),
+    Profile: makeModel('Profile'),
   }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client)
 
@@ -246,14 +246,14 @@ describe('#615 context.db create — defaultValue resolves through the full pipe
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
-    const created = await context.db.account.create({ data: { name: 'Acme' } })
+    const created = await context.db.Account.create({ data: { name: 'Acme' } })
 
     expect(created).toBeTruthy()
     expect(created?.kind).toBe('STANDARD')
     expect(created?.count).toBe(7)
     // The DB received the resolved default in its `data` payload.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const createMock = (mock.client.account as any).create as ReturnType<typeof vi.fn>
+    const createMock = (mock.client.Account as any).create as ReturnType<typeof vi.fn>
     expect(createMock.mock.calls[0][0].data).toMatchObject({ kind: 'STANDARD', count: 7 })
   })
 
@@ -287,13 +287,13 @@ describe('#615 context.db create — defaultValue resolves through the full pipe
 
     const context = getContext(await testConfig, mock.client, { userId: '1' })
 
-    const created = await context.db.account.create({
+    const created = await context.db.Account.create({
       data: { name: 'Acme', profile: { create: {} } },
     })
 
     expect(created).toBeTruthy()
     // The nested Profile was created with its default `kind` despite being omitted.
-    const profile = mock.tables.profile.values().next().value
+    const profile = mock.tables.Profile.values().next().value
     expect(profile?.kind).toBe('STANDARD')
   })
 })

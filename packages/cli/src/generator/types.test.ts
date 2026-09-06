@@ -125,8 +125,8 @@ describe('the generated types file', () => {
     expect(types).toContain('export interface TransactionContext<TSession extends Stack$Session')
   })
 
-  it('keys the db surface by each list’s camelCase db key', () => {
-    expect(types).toContain('export interface DB {\n  user: UserList\n  post: PostList')
+  it('keys the db surface by each list’s PascalCase list name', () => {
+    expect(types).toContain('export interface DB {\n  User: UserList\n  Post: PostList')
   })
 
   it('writes no per-list args, payload, select, include or where type', () => {

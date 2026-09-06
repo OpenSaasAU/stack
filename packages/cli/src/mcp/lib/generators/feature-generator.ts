@@ -512,7 +512,7 @@ import { getContext } from '@/.opensaas/context'
 const session = await getSession()
 const context = await getContext(session)
 const currentUser = session
-  ? await context.db.user.findUnique({ where: { id: session.userId } })
+  ? await context.db.User.findUnique({ where: { id: session.userId } })
   : null
 \`\`\``
 
@@ -689,7 +689,7 @@ import Link from 'next/link'
 export default async function BlogPage() {
   const context = await getContext()
 
-  const posts = await context.db.post.findMany({
+  const posts = await context.db.Post.findMany({
     ${hasStatus ? "where: { status: { equals: 'published' } }," : ''}
     orderBy: { ${hasStatus ? 'publishedAt' : 'createdAt'}: 'desc' },
     include: { author: true },
@@ -731,7 +731,7 @@ export default async function BlogPostPage({
   const { slug } = await params
   const context = await getContext()
 
-  const post = await context.db.post.findFirst({
+  const post = await context.db.Post.findFirst({
     where: {
       slug: { equals: slug },
       ${hasStatus ? "status: { equals: 'published' }," : ''}

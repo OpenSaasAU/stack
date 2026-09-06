@@ -92,47 +92,47 @@ declare const context: Context
 
 async function run() {
   // A required column with no default is required; everything else is optional.
-  await context.db.event.create({ data: { title: 't' } })
+  await context.db.Event.create({ data: { title: 't' } })
 
   // @ts-expect-error \`title\` is non-nullable with no default
-  await context.db.event.create({ data: { day: '2026-01-01' } })
+  await context.db.Event.create({ data: { day: '2026-01-01' } })
 
   // \`calendarDay\` declares a \`string\` input override; the codec would take more.
-  await context.db.event.create({ data: { title: 't', day: '2026-01-01' } })
+  await context.db.Event.create({ data: { title: 't', day: '2026-01-01' } })
 
   // @ts-expect-error a Date is not a calendarDay input
-  await context.db.event.create({ data: { title: 't', day: new Date() } })
+  await context.db.Event.create({ data: { title: 't', day: new Date() } })
 
   // A native enum column is its own value union, from the contract.
-  await context.db.event.create({ data: { title: 't', status: 'live' } })
+  await context.db.Event.create({ data: { title: 't', status: 'live' } })
 
   // @ts-expect-error 'archived' is not one of the declared options
-  await context.db.event.create({ data: { title: 't', status: 'archived' } })
+  await context.db.Event.create({ data: { title: 't', status: 'archived' } })
 
   // \`connect\` on the foreign-key-owning side, and the column itself (ADR-0050).
-  await context.db.event.create({ data: { title: 't', owner: { connect: { id: 'u1' } } } })
-  await context.db.event.create({ data: { title: 't', ownerId: 'u1' } })
+  await context.db.Event.create({ data: { title: 't', owner: { connect: { id: 'u1' } } } })
+  await context.db.Event.create({ data: { title: 't', ownerId: 'u1' } })
 
   // @ts-expect-error the primary key is system-filled and never writable
-  await context.db.event.create({ data: { title: 't', id: 'e1' } })
+  await context.db.Event.create({ data: { title: 't', id: 'e1' } })
 
   // @ts-expect-error \`createdAt\` carries a database default and is never writable
-  await context.db.event.create({ data: { title: 't', createdAt: '2026-01-01T00:00:00Z' } })
+  await context.db.Event.create({ data: { title: 't', createdAt: '2026-01-01T00:00:00Z' } })
 
   // Update is partial, and keeps every narrowing create has.
-  await context.db.event.update({ where: { id: 'e1' }, data: { day: '2026-01-02' } })
+  await context.db.Event.update({ where: { id: 'e1' }, data: { day: '2026-01-02' } })
 
   // @ts-expect-error a Date is not a calendarDay input on update either
-  await context.db.event.update({ where: { id: 'e1' }, data: { day: new Date() } })
+  await context.db.Event.update({ where: { id: 'e1' }, data: { day: new Date() } })
 
   // @ts-expect-error \`titel\` is not a column on this list
-  await context.db.event.update({ where: { id: 'e1' }, data: { titel: 't' } })
+  await context.db.Event.update({ where: { id: 'e1' }, data: { titel: 't' } })
 }
 
 // The standalone export and the terminal's parameter are the same type (#608).
 declare const create: EventCreateInput
 declare const update: EventUpdateInput
-assertType<Exact<Parameters<Context['db']['event']['create']>[0]['data'], EventCreateInput>>()
+assertType<Exact<Parameters<Context['db']['Event']['create']>[0]['data'], EventCreateInput>>()
 
 void run
 void create
@@ -146,10 +146,10 @@ void update
     const output = fixture.check(`${CONSUMER_PRELUDE}
 import type { Context, Event } from './.opensaas/types.ts'
 
-type Created = Awaited<ReturnType<Context['db']['event']['create']>>
-type CreatedMany = Awaited<ReturnType<Context['db']['event']['createMany']>>
-type UpdatedMany = Awaited<ReturnType<Context['db']['event']['updateMany']>>
-type Found = Awaited<ReturnType<Context['db']['event']['findMany']>>
+type Created = Awaited<ReturnType<Context['db']['Event']['create']>>
+type CreatedMany = Awaited<ReturnType<Context['db']['Event']['createMany']>>
+type UpdatedMany = Awaited<ReturnType<Context['db']['Event']['updateMany']>>
+type Found = Awaited<ReturnType<Context['db']['Event']['findMany']>>
 
 declare const created: Created
 declare const createdMany: CreatedMany
@@ -196,14 +196,14 @@ async function run() {
   // ADR-0058: arity decides, not the column. \`host\`'s foreign key is
   // non-nullable, and the included row is still \`| null\` — the Access Filter
   // can scope it away even when the database cannot.
-  const rows = await context.db.booking.findMany({ include: { host: true } })
+  const rows = await context.db.Booking.findMany({ include: { host: true } })
   assertType<Exact<(typeof rows)[number]['host'], User | null>>()
 
   // …and the write side still requires it.
-  await context.db.booking.create({ data: { host: { connect: { id: 'u1' } } } })
+  await context.db.Booking.create({ data: { host: { connect: { id: 'u1' } } } })
 
   // @ts-expect-error \`host\` is non-nullable with no default
-  await context.db.booking.create({ data: {} })
+  await context.db.Booking.create({ data: {} })
 }
 
 void run

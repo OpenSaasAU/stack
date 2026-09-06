@@ -2,9 +2,9 @@ import * as z from 'zod'
 import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
+import { pascalToCamel } from '../lib/case-utils.js'
 import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
-import { getDbKey } from '../lib/case-utils.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { generateFieldSchemas } from './field-schema.js'
 import {
@@ -213,6 +213,9 @@ async function handleToolsList(
   const tools: McpTool[] = []
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    // The tool name stays camelCase: it is the identifier an assistant has
+    // already bound to, and renaming it would break every registered client.
+    const toolKey = pascalToCamel(listKey)
     if (listConfig.mcp?.enabled === false) continue
 
     // A session denied operation-level `query` outright sees none of this
@@ -223,7 +226,6 @@ async function handleToolsList(
     const accessResult = await checkAccess(queryAccess, { session: context.session, context })
     if (accessResult === false) continue
 
-    const dbKey = getDbKey(listKey)
     const defaultTools = config.mcp?.defaultTools || {
       read: true,
       create: true,
@@ -246,7 +248,7 @@ async function handleToolsList(
         context,
       )
       tools.push({
-        name: `list_${dbKey}_query`,
+        name: `list_${toolKey}_query`,
         description: `Query ${listKey} records with optional filters`,
         inputSchema: {
           type: 'object',
@@ -264,7 +266,7 @@ async function handleToolsList(
     if (enabledTools.create) {
       const fieldSchemas = generateFieldSchemas(listConfig.fields, 'create')
       tools.push({
-        name: `list_${dbKey}_create`,
+        name: `list_${toolKey}_create`,
         description: `Create a new ${listKey} record`,
         inputSchema: {
           type: 'object',
@@ -284,7 +286,7 @@ async function handleToolsList(
     if (enabledTools.update) {
       const fieldSchemas = generateFieldSchemas(listConfig.fields, 'update')
       tools.push({
-        name: `list_${dbKey}_update`,
+        name: `list_${toolKey}_update`,
         description: `Update an existing ${listKey} record`,
         inputSchema: {
           type: 'object',
@@ -310,7 +312,7 @@ async function handleToolsList(
 
     if (enabledTools.delete) {
       tools.push({
-        name: `list_${dbKey}_delete`,
+        name: `list_${toolKey}_delete`,
         description: `Delete a ${listKey} record`,
         inputSchema: {
           type: 'object',
@@ -389,15 +391,15 @@ async function handleToolsCall(
   const match = toolName.match(/^list_([a-z][a-zA-Z0-9]*)_(query|create|update|delete)$/)
 
   if (match) {
-    const [, dbKey, operation] = match
-    return await handleCrudTool(dbKey, operation, toolArgs, session, config, getContext, id)
+    const [, toolKey, operation] = match
+    return await handleCrudTool(toolKey, operation, toolArgs, session, config, getContext, id)
   }
 
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
 async function handleCrudTool(
-  dbKey: string,
+  toolKey: string,
   operation: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Tool arguments vary by operation
   args: any,
@@ -408,6 +410,14 @@ async function handleCrudTool(
 ): Promise<Response> {
   const context = await getContext(toContextSession(session))
 
+  const listEntry = Object.entries(config.lists).find(
+    ([candidate]) => pascalToCamel(candidate) === toolKey,
+  )
+  if (!listEntry) {
+    return createErrorResponse(`Unknown list for tool: ${toolKey}`, id)
+  }
+  const [listKey, listConfig] = listEntry
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
     let result: any
@@ -416,13 +426,6 @@ async function handleCrudTool(
       case 'query': {
         let projection: Awaited<ReturnType<typeof resolveFieldsProjection>> | undefined
         if (args.fields !== undefined) {
-          const listEntry = Object.entries(config.lists).find(
-            ([listKey]) => getDbKey(listKey) === dbKey,
-          )
-          if (!listEntry) {
-            return createErrorResponse(`Unknown list for tool: ${dbKey}`, id)
-          }
-          const [listKey, listConfig] = listEntry
           try {
             projection = await resolveFieldsProjection(
               args.fields,
@@ -440,7 +443,7 @@ async function handleCrudTool(
           }
         }
 
-        result = await context.db[dbKey].findMany({
+        result = await context.db[listKey].findMany({
           where: args.where,
           take: Math.min(args.take || 10, 100),
           skip: args.skip,
@@ -462,7 +465,7 @@ async function handleCrudTool(
       }
 
       case 'create':
-        result = await context.db[dbKey].create({
+        result = await context.db[listKey].create({
           data: args.data,
         })
         if (!result) {
@@ -474,7 +477,7 @@ async function handleCrudTool(
         return createSuccessResponse({ success: true, item: result }, id)
 
       case 'update':
-        result = await context.db[dbKey].update({
+        result = await context.db[listKey].update({
           where: args.where,
           data: args.data,
         })
@@ -487,7 +490,7 @@ async function handleCrudTool(
         return createSuccessResponse({ success: true, item: result }, id)
 
       case 'delete':
-        result = await context.db[dbKey].delete({
+        result = await context.db[listKey].delete({
           where: args.where,
         })
         if (!result) {

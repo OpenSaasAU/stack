@@ -1,4 +1,5 @@
 import type { Fragment, FieldSelection, ResultOf } from '../query/index.js'
+import type { SecuredQuery } from '../secured/read.js'
 import type { TransactionRegistry } from './transaction-registry.js'
 
 /**
@@ -139,7 +140,7 @@ export type FindManyQueryArgs = {
  * @example
  * ```ts
  * // Narrowed return type from fragment
- * const posts = await context.db.post.findMany({
+ * const posts = await context.db.Post.findMany({
  *   query:   postFragment,
  *   where:   { published: true },
  *   orderBy: { createdAt: 'desc' },
@@ -148,7 +149,7 @@ export type FindManyQueryArgs = {
  * // posts: ResultOf<typeof postFragment>[]
  *
  * // Original Prisma behaviour (no fragment)
- * const posts = await context.db.post.findMany({ where: { published: true } })
+ * const posts = await context.db.Post.findMany({ where: { published: true } })
  * // posts: Post[]
  * ```
  */
@@ -183,7 +184,7 @@ export type FindFirstQueryArgs = {
  *
  * @example
  * ```ts
- * const post = await context.db.post.findFirst({
+ * const post = await context.db.Post.findFirst({
  *   where:   { published: true },
  *   orderBy: { createdAt: 'desc' },
  *   query:   postFragment,
@@ -208,7 +209,7 @@ export interface AugmentedFindFirst {
  *
  * @example
  * ```ts
- * const post = await context.db.post.findUnique({
+ * const post = await context.db.Post.findUnique({
  *   where: { id: postId },
  *   query: postFragment,
  * })
@@ -233,7 +234,7 @@ export interface AugmentedFindUnique {
  * bundle, which instantiates `SecuredList` from the emitted contract
  * (ADR-0052). This is the engine's own view of its output.
  */
-export interface AccessControlledDelegate {
+export interface AccessControlledDelegate extends SecuredQuery {
   findUnique: AugmentedFindUnique
   findFirst: AugmentedFindFirst
   findMany: AugmentedFindMany
@@ -279,12 +280,14 @@ export type StackDb<DB = object> = [Extract<keyof DB, OrmClientMarker>] extends 
   : OrmClientIsNotADbSurface
 
 /**
- * The secured `db` surface, keyed by the camelCase db key of each list. List
- * names come from the config at runtime, so this is an index signature; the
- * generated bundle names each member and gives it its contract-derived type.
+ * The secured `db` surface, keyed by the PascalCase list name — the same
+ * spelling the config uses (ADR-0041). List names come from the config at
+ * runtime, so this is an index signature; the generated bundle names each
+ * member and gives it its contract-derived type, which is where a misspelt
+ * key becomes a compile error.
  */
 export interface AccessControlledDB {
-  [dbKey: string]: AccessControlledDelegate
+  [listKey: string]: AccessControlledDelegate
 }
 
 export type StorageUtils = {

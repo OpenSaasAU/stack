@@ -16,7 +16,6 @@ import {
   buildListFilterWhere,
   buildRelationshipCountSelect,
   collectFilterSuggestions,
-  getDbKey,
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
@@ -175,7 +174,7 @@ export async function ListView({
   sort,
   serverAction,
 }: ListViewProps) {
-  const key = getDbKey(listKey)
+  const key = listKey
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]
 

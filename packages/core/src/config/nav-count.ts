@@ -1,5 +1,4 @@
 import type { AccessContext } from '../access/types.js'
-import { getDbKey } from '../lib/case-utils.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
 /**
@@ -59,7 +58,7 @@ export async function resolveNavCounts(
 
   await Promise.all(
     optedIn.map(async (listKey) => {
-      const delegate: CountDelegate | undefined = context.db?.[getDbKey(listKey)]
+      const delegate: CountDelegate | undefined = context.db?.[listKey]
       if (!delegate?.count) return
       // A single list's count failing (a DB hiccup, a throwing access filter or
       // hook) must not blank the whole admin chrome — `AdminUI` awaits this

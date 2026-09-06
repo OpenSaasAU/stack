@@ -115,8 +115,8 @@ describe('Dashboard singleton affordance', () => {
     const siteConfigCount = vi.fn(async () => 1)
     const postCount = vi.fn(async () => 2)
     const context = makeContext({
-      siteConfig: { count: siteConfigCount },
-      post: { count: postCount },
+      SiteConfig: { count: siteConfigCount },
+      Post: { count: postCount },
     })
 
     const element = await Dashboard({ context, config, basePath: '/admin' })

@@ -85,7 +85,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({
       context,
@@ -116,7 +116,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({
       context,
@@ -148,7 +148,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({ post: { findMany, count } })
+    const context = makeContext({ Post: { findMany, count } })
 
     await ListView({
       context,
@@ -184,7 +184,7 @@ describe('AdminUI ui.listView wiring', () => {
     }
 
     const context = makeContext({
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const tree = await AdminUI({
@@ -216,7 +216,7 @@ describe('AdminUI ui.listView wiring', () => {
     }
 
     const context = makeContext({
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const tree = await AdminUI({

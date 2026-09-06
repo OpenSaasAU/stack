@@ -83,7 +83,7 @@ beforeEach(() => {
 describe('AdminUI singleton sub-route redirects', () => {
   it('redirects a singleton [list, "create"] to the bare editor route', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     await AdminUI({
@@ -100,7 +100,7 @@ describe('AdminUI singleton sub-route redirects', () => {
 
   it('redirects a singleton [list, id] to the bare editor route', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     await AdminUI({
@@ -117,7 +117,7 @@ describe('AdminUI singleton sub-route redirects', () => {
 
   it('honours a custom basePath in the redirect target', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     await AdminUI({
@@ -133,7 +133,7 @@ describe('AdminUI singleton sub-route redirects', () => {
 
   it('does NOT redirect a singleton bare [list] route (renders the editor)', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     await AdminUI({
@@ -149,7 +149,7 @@ describe('AdminUI singleton sub-route redirects', () => {
 
   it('does NOT redirect non-singleton create/edit routes (routing unchanged)', async () => {
     const context = makeContext({
-      post: {
+      Post: {
         findMany: vi.fn(async () => []),
         count: vi.fn(async () => 0),
         findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })),
@@ -181,8 +181,8 @@ describe('AdminUI singleton sub-route redirects', () => {
 describe('Dashboard create suppression for singletons', () => {
   it('does not render a "Create {singleton}" quick-action but does for a non-singleton', async () => {
     const context = makeContext({
-      settings: { count: vi.fn(async () => 1) },
-      post: { count: vi.fn(async () => 2) },
+      Settings: { count: vi.fn(async () => 1) },
+      Post: { count: vi.fn(async () => 2) },
     })
 
     const element = await Dashboard({ context, config, basePath: '/admin' })
@@ -206,7 +206,7 @@ describe('Dashboard create suppression for singletons', () => {
         Settings: list({ isSingleton: true, fields: { siteName: text() } }),
       },
     }
-    const context = makeContext({ settings: { count: vi.fn(async () => 1) } })
+    const context = makeContext({ Settings: { count: vi.fn(async () => 1) } })
 
     const element = await Dashboard({ context, config: singletonOnly, basePath: '/admin' })
     render(element)
@@ -219,7 +219,7 @@ describe('Dashboard create suppression for singletons', () => {
 describe('Delete suppression in the singleton editor', () => {
   it('renders no delete control in the singleton editor (SingletonView)', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     const element = await SingletonView({
@@ -238,7 +238,7 @@ describe('Delete suppression in the singleton editor', () => {
 
   it('still renders the delete control for a non-singleton edit form (ItemForm)', async () => {
     const context = makeContext({
-      post: { findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })) },
+      Post: { findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })) },
     })
 
     const element = await ItemForm({

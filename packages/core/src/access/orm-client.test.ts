@@ -16,35 +16,35 @@ function makeDelegate(): OrmModelDelegate {
 }
 
 describe('ormModel', () => {
-  it('resolves a PascalCase list name through its camelCase client key', () => {
-    const authUser = makeDelegate()
-    const ormHandle: OrmClient = { authUser }
+  it('resolves a list name verbatim off the client', () => {
+    const AuthUser = makeDelegate()
+    const ormHandle: OrmClient = { AuthUser }
 
-    expect(ormModel(ormHandle, 'AuthUser')).toBe(authUser)
+    expect(ormModel(ormHandle, 'AuthUser')).toBe(AuthUser)
   })
 
-  it('does not read the list name verbatim off the client', () => {
-    const ormHandle: OrmClient = { AuthUser: makeDelegate() }
+  it('does not read a camelCase key for a PascalCase list name', () => {
+    const ormHandle: OrmClient = { authUser: makeDelegate() }
 
     expect(() => ormModel(ormHandle, 'AuthUser')).toThrow(OrmModelMissingError)
   })
 
   it('accepts a partial delegate, since a test double implements only what it reaches', () => {
     const countOnly = { count: async () => 0 }
-    const ormHandle: OrmClient = { post: countOnly }
+    const ormHandle: OrmClient = { Post: countOnly }
 
     expect(ormModel(ormHandle, 'Post')).toBe(countOnly)
   })
 
   it('resolves through a client that also carries $transaction', () => {
-    const post = makeDelegate()
-    const ormHandle: OrmClient = { $transaction: async () => [], post }
+    const Post = makeDelegate()
+    const ormHandle: OrmClient = { $transaction: async () => [], Post }
 
-    expect(ormModel(ormHandle, 'Post')).toBe(post)
+    expect(ormModel(ormHandle, 'Post')).toBe(Post)
   })
 
-  it('throws OrmModelMissingError naming the list and the key it looked for', () => {
-    const ormHandle: OrmClient = { post: makeDelegate() }
+  it('throws OrmModelMissingError naming the list it looked for', () => {
+    const ormHandle: OrmClient = { Post: makeDelegate() }
 
     expect(() => ormModel(ormHandle, 'BlogPost')).toThrow(OrmModelMissingError)
 
@@ -57,7 +57,6 @@ describe('ormModel', () => {
       expect(error.listName).toBe('BlogPost')
       expect(error.name).toBe('OrmModelMissingError')
       expect(error.message).toContain('"BlogPost"')
-      expect(error.message).toContain('"blogPost"')
       expect(error.message).toContain('opensaas generate')
     }
   })
@@ -80,11 +79,11 @@ describe('ormModel', () => {
   it.each([
     ['undefined', undefined],
     ['null', null],
-    ['a string', 'post'],
+    ['a string', 'Post'],
     ['a number', 0],
     ['a function', () => undefined],
   ])('rejects a key holding %s', (_label, value) => {
-    const ormHandle: OrmClient = { post: value }
+    const ormHandle: OrmClient = { Post: value }
 
     expect(() => ormModel(ormHandle, 'Post')).toThrow(OrmModelMissingError)
   })

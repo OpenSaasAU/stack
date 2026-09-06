@@ -3,7 +3,7 @@ import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
 
@@ -65,7 +65,7 @@ export async function SingletonView({
   // `get()` means and how the branches below disambiguate it.
   let record: Record<string, unknown> | null = null
   try {
-    const delegate = context.db[getDbKey(listKey)]
+    const delegate = context.db[listKey]
     if (delegate?.get) {
       record = await delegate.get()
     }

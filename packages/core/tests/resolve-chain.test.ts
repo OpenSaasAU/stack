@@ -31,7 +31,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ context }) => {
-                  await context.db.pong.findMany({})
+                  await context.db.Pong.findMany({})
                   return 'ping'
                 },
               },
@@ -45,7 +45,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ context }) => {
-                  await context.db.ping.findMany({})
+                  await context.db.Ping.findMany({})
                   return 'pong'
                 },
               },
@@ -57,18 +57,18 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ormHandle: any = { ping: makeModel(), pong: makeModel() }
-    ormHandle.ping.findMany.mockResolvedValue([{ id: 'p1' }])
-    ormHandle.pong.findMany.mockResolvedValue([{ id: 'q1' }])
+    const ormHandle: any = { Ping: makeModel(), Pong: makeModel() }
+    ormHandle.Ping.findMany.mockResolvedValue([{ id: 'p1' }])
+    ormHandle.Pong.findMany.mockResolvedValue([{ id: 'q1' }])
 
     const context = await getContext(config, ormHandle, null)
 
-    await expect(context.db.ping.findMany({})).rejects.toThrow(ResolveOutputCycleError)
+    await expect(context.db.Ping.findMany({})).rejects.toThrow(ResolveOutputCycleError)
 
     // The cycle must be caught within a handful of hops, never left to grow
     // toward the hundreds of queries the un-bounded chain produced (#844).
     const totalCalls =
-      ormHandle.ping.findMany.mock.calls.length + ormHandle.pong.findMany.mock.calls.length
+      ormHandle.Ping.findMany.mock.calls.length + ormHandle.Pong.findMany.mock.calls.length
     expect(totalCalls).toBeLessThan(10)
   })
 
@@ -82,7 +82,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ context }) => {
-                  await context.db.pong.findMany({})
+                  await context.db.Pong.findMany({})
                   return 'ping'
                 },
               },
@@ -96,7 +96,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ context }) => {
-                  await context.db.ping.findMany({})
+                  await context.db.Ping.findMany({})
                   return 'pong'
                 },
               },
@@ -108,15 +108,15 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ormHandle: any = { ping: makeModel(), pong: makeModel() }
-    ormHandle.ping.findMany.mockResolvedValue([{ id: 'p1' }])
-    ormHandle.pong.findMany.mockResolvedValue([{ id: 'q1' }])
+    const ormHandle: any = { Ping: makeModel(), Pong: makeModel() }
+    ormHandle.Ping.findMany.mockResolvedValue([{ id: 'p1' }])
+    ormHandle.Pong.findMany.mockResolvedValue([{ id: 'q1' }])
 
     const context = await getContext(config, ormHandle, null)
 
     let caught: unknown
     try {
-      await context.db.ping.findMany({})
+      await context.db.Ping.findMany({})
     } catch (err) {
       caught = err
     }
@@ -152,7 +152,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ item, context }) => {
-                  const [a] = await context.db.account.findMany({
+                  const [a] = await context.db.Account.findMany({
                     where: { userId: item.id },
                     take: 1,
                   })
@@ -178,7 +178,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
               type: 'string',
               hooks: {
                 resolveOutput: async ({ item, context }) => {
-                  const a = await context.db.account.findUnique({
+                  const a = await context.db.Account.findUnique({
                     where: { id: item.accountId },
                   })
                   return `${(a as { firstName?: string } | undefined)?.firstName}`
@@ -192,14 +192,14 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ormHandle: any = { user: makeModel(), account: makeModel(), student: makeModel() }
-    ormHandle.user.findMany.mockResolvedValue([{ id: 'u1' }])
+    const ormHandle: any = { User: makeModel(), Account: makeModel(), Student: makeModel() }
+    ormHandle.User.findMany.mockResolvedValue([{ id: 'u1' }])
     // Mirrors real Prisma semantics: a relation key is only present on the
     // returned row when the caller actually asked for it via `include`. The
     // hook's read never does, so `students` (and `user`) never appear here —
     // that is the mechanism that breaks the cycle under ADR-0024.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ormHandle.account.findMany.mockImplementation((args: any = {}) => {
+    ormHandle.Account.findMany.mockImplementation((args: any = {}) => {
       const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
       if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
       if (args.include?.user) row.user = { id: 'u1' }
@@ -209,7 +209,7 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     // `findFirst` (see `createFindUnique` in `context/index.ts`), not its
     // `findUnique` — mock the method actually called.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ormHandle.account.findFirst.mockImplementation((args: any = {}) => {
+    ormHandle.Account.findFirst.mockImplementation((args: any = {}) => {
       const row: Record<string, unknown> = { id: 'a1', firstName: 'Ann' }
       if (args.include?.students) row.students = [{ id: 's1', accountId: 'a1' }]
       if (args.include?.user) row.user = { id: 'u1' }
@@ -221,14 +221,14 @@ describe('resolve chain — cycle guard terminates hook-issued reads (#844)', ()
     // Must settle (not hang or throw) — the bare hook-issued read never
     // fetches `students`, so `Student.label` never fires and there is no
     // cycle to detect.
-    const result = await context.db.user.findMany({})
+    const result = await context.db.User.findMany({})
     expect(result).toEqual([{ id: 'u1', name: 'Ann' }])
 
     // Only the two reads the hook actually issues — no unbounded recursion.
     const totalCalls =
-      ormHandle.user.findMany.mock.calls.length +
-      ormHandle.account.findMany.mock.calls.length +
-      ormHandle.account.findFirst.mock.calls.length
+      ormHandle.User.findMany.mock.calls.length +
+      ormHandle.Account.findMany.mock.calls.length +
+      ormHandle.Account.findFirst.mock.calls.length
     expect(totalCalls).toBe(2)
   })
 })
@@ -246,8 +246,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
     const ormHandle: any = {}
     for (let i = 0; i < listCount; i++) {
       const listKey = `L${i}`
-      const dbKey = `l${i}`
-      const nextDbKey = `l${i + 1}`
+      const nextListKey = `L${i + 1}`
       lists[listKey] = {
         fields: {
           next: virtual({
@@ -257,7 +256,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
                 i < listCount - 1
                   ? async ({ context }) => {
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      await (context.db as any)[nextDbKey].findMany({})
+                      await (context.db as any)[nextListKey].findMany({})
                       return 'ok'
                     }
                   : () => 'leaf',
@@ -266,8 +265,8 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
         },
         access: { operation: { query: () => true } },
       }
-      ormHandle[dbKey] = makeModel()
-      ormHandle[dbKey].findMany.mockResolvedValue([{ id: `${dbKey}-row` }])
+      ormHandle[listKey] = makeModel()
+      ormHandle[listKey].findMany.mockResolvedValue([{ id: `${listKey}-row` }])
     }
 
     const config: OpenSaasConfig = {
@@ -279,7 +278,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
 
     // Does NOT throw — a cap hit is a cost limit, never a correctness denial.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (context.db as any).l0.findMany({})
+    const result = await (context.db as any).L0.findMany({})
     expect(result).toBeTruthy()
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
@@ -287,7 +286,7 @@ describe('resolve chain — cost cap is a warning, not a denial (#844)', () => {
 
     // Nothing past the cap is ever queried — the chain simply stops growing.
     for (let i = RESOLVE_CHAIN_MAX_LENGTH + 1; i < listCount; i++) {
-      expect(ormHandle[`l${i}`].findMany).not.toHaveBeenCalled()
+      expect(ormHandle[`L${i}`].findMany).not.toHaveBeenCalled()
     }
 
     warnSpy.mockRestore()
@@ -322,11 +321,11 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ormHandle: any = { widget: makeModel() }
-    ormHandle.widget.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }])
+    const ormHandle: any = { Widget: makeModel() }
+    ormHandle.Widget.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }])
 
     const context = await getContext(config, ormHandle, null)
-    await context.db.widget.findMany({})
+    await context.db.Widget.findMany({})
 
     expect(observedLengths.sort()).toEqual([1, 1, 1])
   })
@@ -375,14 +374,14 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ormHandle: any = { slow: makeModel(), fast: makeModel() }
-    ormHandle.slow.findMany.mockResolvedValue([{ id: 'sl1' }])
-    ormHandle.fast.findMany.mockResolvedValue([{ id: 'f1' }])
+    const ormHandle: any = { Slow: makeModel(), Fast: makeModel() }
+    ormHandle.Slow.findMany.mockResolvedValue([{ id: 'sl1' }])
+    ormHandle.Fast.findMany.mockResolvedValue([{ id: 'f1' }])
 
     const context = await getContext(config, ormHandle, null)
 
     // Start the slow read — it blocks inside Slow.tag's hook until released.
-    const slowPromise = context.db.slow.findMany({})
+    const slowPromise = context.db.Slow.findMany({})
 
     // Let the slow hook actually start (and derive its context) before racing
     // the unrelated read against it.
@@ -392,7 +391,7 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     // that has nothing to do with it, explicitly naming a nested path two
     // levels deep (child → grandchild) — the "One hop" rule (ADR-0026) means
     // reaching grandchild requires naming it, which this request does.
-    const fastPromise = context.db.fast.findMany({
+    const fastPromise = context.db.Fast.findMany({
       include: { child: { include: { grandchild: true } } },
     })
 
@@ -404,7 +403,7 @@ describe('resolve chain — concurrent hook invocations are isolated (#844)', ()
     // far as ITS OWN request named, unaffected by a totally different read's
     // hook being in flight concurrently — no shared, leaking context state
     // between the two.
-    expect(ormHandle.fast.findMany.mock.calls[0][0].include).toEqual({
+    expect(ormHandle.Fast.findMany.mock.calls[0][0].include).toEqual({
       child: { include: { grandchild: true } },
     })
   })

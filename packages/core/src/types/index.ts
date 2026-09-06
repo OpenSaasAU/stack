@@ -27,6 +27,9 @@ export type { CreateInput, UpdateInput, WritableColumn } from './inputs.js'
 
 export type {
   SecuredList,
+  ListQuery,
+  ListPredicate,
+  ColumnEquality,
   QueryResult,
   ColumnFilter,
   ListWhere,

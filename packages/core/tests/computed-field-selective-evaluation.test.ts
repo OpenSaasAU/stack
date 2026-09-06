@@ -23,7 +23,7 @@ function createMockPrisma(): any {
     findFirst: vi.fn(),
     findMany: vi.fn(),
   })
-  return { order: model(), lineItem: model(), product: model() }
+  return { Order: model(), LineItem: model(), Product: model() }
 }
 
 function buildTestConfig(spies: {
@@ -182,18 +182,18 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1' })
+    mockPrisma.Order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1' })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true } as const)
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
 
     // None of the unselected computed fields' declared relations were folded
     // into the include — `lineItems` is only ever needed by `total`/
     // `doubleTotal`, neither of which was selected, so there is nothing to
     // fold and `include` stays exactly `undefined` (the bare-read shape).
-    const callArgs = mockPrisma.order.findFirst.mock.calls[0][0]
+    const callArgs = mockPrisma.Order.findFirst.mock.calls[0][0]
     expect(callArgs.include).toBeUndefined()
 
     expect(spies.totalHook).not.toHaveBeenCalled()
@@ -210,7 +210,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
@@ -219,9 +219,9 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true, total: true } as const)
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
 
-    const callArgs = mockPrisma.order.findFirst.mock.calls[0][0]
+    const callArgs = mockPrisma.Order.findFirst.mock.calls[0][0]
     expect(callArgs.include).toMatchObject({ lineItems: expect.anything() })
     expect(spies.totalHook).toHaveBeenCalledTimes(1)
     expect(result?.total).toBe(10)
@@ -232,7 +232,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
@@ -242,10 +242,10 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true, total: true } as const)
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
 
-    expect(mockPrisma.order.findFirst).toHaveBeenCalledTimes(1)
-    const callArgs = mockPrisma.order.findFirst.mock.calls[0][0]
+    expect(mockPrisma.Order.findFirst).toHaveBeenCalledTimes(1)
+    const callArgs = mockPrisma.Order.findFirst.mock.calls[0][0]
     // Exactly one `lineItems` entry in the include — folded once for `total`.
     expect(Object.keys(callArgs.include)).toEqual(['lineItems'])
 
@@ -258,7 +258,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1' }],
@@ -272,7 +272,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     } as any)
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({
+    const result = await context.db.Order.findUnique({
       where: { id: 'o1' },
       query: orderFragment,
     })
@@ -281,7 +281,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     // fragment, so neither its hook ran nor was `product` folded in beneath
     // `lineItems`.
     expect(spies.summaryHook).not.toHaveBeenCalled()
-    const callArgs = mockPrisma.order.findFirst.mock.calls[0][0]
+    const callArgs = mockPrisma.Order.findFirst.mock.calls[0][0]
     expect(callArgs.include.lineItems).not.toMatchObject({
       include: expect.objectContaining({ product: expect.anything() }),
     })
@@ -292,14 +292,14 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({
+    mockPrisma.Order.findFirst.mockResolvedValue({
       id: 'o1',
       title: 'Order 1',
       lineItems: [{ id: 'li1', price: 10, orderId: 'o1', product: { id: 'p1', name: 'Widget' } }],
     })
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({
+    const result = await context.db.Order.findUnique({
       where: { id: 'o1' },
       include: { lineItems: { include: { product: true } } },
     })
@@ -312,7 +312,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
+    mockPrisma.Order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
 
     const context = getContext(testConfig, mockPrisma, null)
     // Bare read: every computed field computes, including `secret` (a stored
@@ -320,7 +320,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     // `needs` at all, reading `item.secret` without declaring it). `secret`
     // is a plain stored scalar column, always fetched on any read (ADR-0024)
     // regardless of declarations — only RELATIONS are conditionally fetched.
-    const result = await context.db.order.findUnique({ where: { id: 'o1' } })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' } })
 
     // `secret`'s OWN resolveOutput wraps its stored value for the caller...
     expect(result?.secret).toBe('wrapped:hunter2')
@@ -335,13 +335,13 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
+    mockPrisma.Order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
 
     // `secret` is NOT selected; `peeker` is, and reads `item.secret`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true, peeker: true } as const)
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
 
     // `secret`'s own access/hook never ran (it was never going to be returned).
     expect(spies.secretAccess).not.toHaveBeenCalled()
@@ -356,12 +356,12 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     spies.secretAccess.mockImplementation(() => false)
     const testConfigDenied = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
+    mockPrisma.Order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1', secret: 'hunter2' })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true, secret: true } as const)
     const context = getContext(testConfigDenied, mockPrisma, null)
-    const result = await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    const result = await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
 
     expect(spies.secretAccess).toHaveBeenCalled()
     expect(spies.secretHook).not.toHaveBeenCalled()
@@ -372,23 +372,23 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1' })
-    mockPrisma.order.findMany.mockResolvedValue([{ id: 'o1', title: 'Order 1' }])
+    mockPrisma.Order.findFirst.mockResolvedValue({ id: 'o1', title: 'Order 1' })
+    mockPrisma.Order.findMany.mockResolvedValue([{ id: 'o1', title: 'Order 1' }])
 
     const context = getContext(testConfig, mockPrisma, null)
 
     // Bare read.
-    await context.db.order.findUnique({ where: { id: 'o1' } })
+    await context.db.Order.findUnique({ where: { id: 'o1' } })
     expect(spies.hooklessAccess).not.toHaveBeenCalled()
 
     // include-based read naming it explicitly.
-    await context.db.order.findUnique({ where: { id: 'o1' }, include: { hooklessVirtual: true } })
+    await context.db.Order.findUnique({ where: { id: 'o1' }, include: { hooklessVirtual: true } })
     expect(spies.hooklessAccess).not.toHaveBeenCalled()
 
     // fragment selecting it explicitly.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fragment = defineFragment<any>()({ title: true, hooklessVirtual: true } as const)
-    await context.db.order.findUnique({ where: { id: 'o1' }, query: fragment })
+    await context.db.Order.findUnique({ where: { id: 'o1' }, query: fragment })
     expect(spies.hooklessAccess).not.toHaveBeenCalled()
   })
 
@@ -396,7 +396,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     const spies = makeSpies()
     const testConfig = await buildTestConfig(spies)
     const mockPrisma = createMockPrisma()
-    mockPrisma.order.findMany.mockResolvedValue([
+    mockPrisma.Order.findMany.mockResolvedValue([
       {
         id: 'o1',
         title: 'Order 1',
@@ -406,7 +406,7 @@ describe('a computed field runs only when it is going to be returned (#855, ADR-
     ])
 
     const context = getContext(testConfig, mockPrisma, null)
-    const result = await context.db.order.findMany({})
+    const result = await context.db.Order.findMany({})
 
     expect(result[0].total).toBe(10)
     expect(result[0].doubleTotal).toBe(20)

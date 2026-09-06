@@ -68,7 +68,7 @@ describe('Vector Storage', () => {
 
       it('should return empty results when no items match', async () => {
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue([]),
           },
         })
@@ -105,7 +105,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -158,7 +158,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -193,7 +193,7 @@ describe('Vector Storage', () => {
         }))
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -237,7 +237,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -297,7 +297,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -342,7 +342,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -366,7 +366,7 @@ describe('Vector Storage', () => {
 
       it('should pass through where clause to Prisma', async () => {
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue([]),
           },
         })
@@ -380,7 +380,7 @@ describe('Vector Storage', () => {
         })
 
         expect(
-          (mockContext.db as Record<string, { findMany: (args: unknown) => void }>).article
+          (mockContext.db as Record<string, { findMany: (args: unknown) => void }>).Article
             .findMany,
         ).toHaveBeenCalledWith({
           where: {
@@ -407,7 +407,7 @@ describe('Vector Storage', () => {
         ]
 
         const mockContext = createMockContext({
-          article: {
+          Article: {
             findMany: vi.fn().mockResolvedValue(mockItems),
           },
         })
@@ -533,7 +533,7 @@ describe('Vector Storage', () => {
       const storage = new PgVectorStorage({ type: 'pgvector' })
       const ormHandle = createRawQueryClient([{ id: '1', distance: '0' }])
       const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
-      const context = createMockContext({ article: { findMany } }, ormHandle)
+      const context = createMockContext({ Article: { findMany } }, ormHandle)
 
       const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], { context })
 
@@ -553,7 +553,7 @@ describe('Vector Storage', () => {
         { id: '2', distance: '0.9' },
       ])
       const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1' }])
-      const context = createMockContext({ article: { findMany } }, ormHandle)
+      const context = createMockContext({ Article: { findMany } }, ormHandle)
 
       const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], {
         context,
@@ -567,7 +567,7 @@ describe('Vector Storage', () => {
     it('falls back to JSON search when the client exposes no raw query', async () => {
       const storage = new PgVectorStorage({ type: 'pgvector' })
       const findMany = vi.fn().mockResolvedValue([{ id: '1', title: 'Article 1', embedding }])
-      const context = createMockContext({ article: { findMany } }, {})
+      const context = createMockContext({ Article: { findMany } }, {})
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       const results = await storage.search('Article', 'embedding', [1.0, 0.0, 0.0], { context })

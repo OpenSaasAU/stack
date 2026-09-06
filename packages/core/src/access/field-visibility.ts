@@ -108,7 +108,7 @@ type FieldVisibilityArgs = {
  *
  * A plain `{ ...context, _resolveOutputChain }` spread is not enough on its
  * own: `context.db`'s operations capture their `context` at construction
- * (see `populateDbDelegate`), so a hook that calls `context.db.x.findMany(…)`
+ * (see `populateDbDelegate`), so a hook that calls `context.db.X.findMany(…)`
  * would otherwise reach the ORIGINAL closures — bound to the ORIGINAL
  * context — and its read would silently fall back to the un-extended chain,
  * defeating the cycle guard entirely. Rebuilding `db` via `buildDbDelegate`

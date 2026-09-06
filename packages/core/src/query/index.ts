@@ -1,4 +1,3 @@
-import { getDbKey } from '../lib/case-utils.js'
 import type { OrmOperationArgs } from '../access/types.js'
 
 // ─────────────────────────────────────────────────────────────
@@ -308,7 +307,6 @@ export async function runQuery<TItem, TFields extends FieldSelection<TItem>>(
   fragment: Fragment<TItem, TFields>,
   args?: QueryArgs,
 ): Promise<SelectedFields<TItem, TFields>[]> {
-  const dbKey = getDbKey(listKey)
   const include = buildInclude(fragment._fields as FieldSelection<unknown>)
 
   const findManyArgs: Record<string, unknown> = {}
@@ -318,7 +316,7 @@ export async function runQuery<TItem, TFields extends FieldSelection<TItem>>(
   if (args?.skip !== undefined) findManyArgs.skip = args.skip
   if (include) findManyArgs.include = include
 
-  const results = await context.db[dbKey].findMany(
+  const results = await context.db[listKey].findMany(
     Object.keys(findManyArgs).length > 0 ? findManyArgs : undefined,
   )
 
@@ -339,13 +337,12 @@ export async function runQueryOne<TItem, TFields extends FieldSelection<TItem>>(
   fragment: Fragment<TItem, TFields>,
   where: Record<string, unknown>,
 ): Promise<SelectedFields<TItem, TFields> | null> {
-  const dbKey = getDbKey(listKey)
   const include = buildInclude(fragment._fields as FieldSelection<unknown>)
 
   const findFirstArgs: Record<string, unknown> = { where }
   if (include) findFirstArgs.include = include
 
-  const item = await context.db[dbKey].findFirst(findFirstArgs)
+  const item = await context.db[listKey].findFirst(findFirstArgs)
 
   if (item === null || item === undefined) return null
 

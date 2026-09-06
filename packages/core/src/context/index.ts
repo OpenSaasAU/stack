@@ -21,9 +21,9 @@ import type {
   CountAccessDenialTree,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
-import { getDbKey } from '../lib/case-utils.js'
 import { uniqueConstraintOf } from '../lib/prisma-errors.js'
 import type { OrmClient } from '../access/types.js'
+import { createSecuredRead } from '../secured/read.js'
 import {
   createUnsafeSurface,
   createUnsafeTransactionSurface,
@@ -126,7 +126,7 @@ function warnIfSelectIgnored(
   selectWarnings.add(key)
 
   console.warn(
-    `[@opensaas/stack-core] \`select\` is ignored by context.db.${getDbKey(listName)}.${operation}() ` +
+    `[@opensaas/stack-core] \`select\` is ignored by context.db.${listName}.${operation}() ` +
       `and the full (access-filtered) record is returned. ` +
       `Narrow a read with \`include\` or a fragment \`query\` instead. ` +
       `See https://stack.opensaas.au/docs/concepts/queries`,
@@ -399,7 +399,7 @@ function ormHandleFor(config: OpenSaasConfig, orm: unknown): OrmClient | undefin
     ) {
       return undefined
     }
-    models[getDbKey(listKey)] = collection
+    models[listKey] = collection
   }
   return models
 }
@@ -535,7 +535,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { bulkAction: false; error: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
-    const dbKey = getDbKey(props.listKey)
     const listConfig = config.lists[props.listKey]
 
     if (!listConfig) {
@@ -545,7 +544,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
     }
 
-    const model = db[dbKey] as {
+    const model = db[props.listKey] as {
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
       update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
       delete: (args: { where: { id: string } }) => Promise<unknown>
@@ -987,8 +986,6 @@ export function populateDbDelegate(
   context: AccessContext,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const dbKey = getDbKey(listName)
-
     const createOp = createCreate(listName, listConfig, ormHandle, context, config)
     const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
     const updateOp = createUpdate(listName, listConfig, ormHandle, context, config)
@@ -1014,9 +1011,14 @@ export function populateDbDelegate(
 
     if (isSingletonList(listConfig)) {
       operations.get = createGet(listName, listConfig, ormHandle, context, config, createOp)
+    } else {
+      const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
+      operations.where = read.where
+      operations.all = read.all
+      operations.first = read.first
     }
 
-    target[dbKey] = operations
+    target[listName] = operations
   }
 }
 

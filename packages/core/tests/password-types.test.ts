@@ -10,7 +10,7 @@ import type { HashedPassword } from '../src/utils/password.js'
 describe('Password Field Type Safety', () => {
   // Mock Prisma client for type testing
   const mockPrismaClient = {
-    user: {
+    User: {
       findUnique: async () => ({
         id: '1',
         email: 'test@example.com',
@@ -59,7 +59,7 @@ describe('Password Field Type Safety', () => {
   it('should transform password field to HashedPassword type in findUnique', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.findUnique({ where: { id: '1' } })
+    const user = await context.db.User.findUnique({ where: { id: '1' } })
 
     // Type check: TypeScript should know that user.password is HashedPassword
     if (user) {
@@ -77,7 +77,7 @@ describe('Password Field Type Safety', () => {
   it('should transform password field to HashedPassword type in findMany', async () => {
     const context = await getContext(await testConfig, mockPrismaClient, null)
 
-    const users = await context.db.user.findMany()
+    const users = await context.db.User.findMany()
 
     // Type check: TypeScript should know that users[0].password is HashedPassword
     if (users.length > 0) {
@@ -96,7 +96,7 @@ describe('Password Field Type Safety', () => {
   it('should transform password field to HashedPassword type in create', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.create({
+    const user = await context.db.User.create({
       data: {
         email: 'new@example.com',
         password: 'plaintext',
@@ -114,7 +114,7 @@ describe('Password Field Type Safety', () => {
   it('should transform password field to HashedPassword type in update', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.update({
+    const user = await context.db.User.update({
       where: { id: '1' },
       data: {
         password: 'newpassword',
@@ -132,7 +132,7 @@ describe('Password Field Type Safety', () => {
   it('should allow checking the HashedPassword type explicitly', async () => {
     const context = getContext(await testConfig, mockPrismaClient, null)
 
-    const user = await context.db.user.findUnique({ where: { id: '1' } })
+    const user = await context.db.User.findUnique({ where: { id: '1' } })
 
     if (user) {
       // Explicit type assertion to verify TypeScript inference
@@ -157,14 +157,14 @@ describe('Password Field Type Safety', () => {
       },
     })
     const readablePrismaClient = {
-      user: {
-        ...mockPrismaClient.user,
-        findFirst: mockPrismaClient.user.findUnique,
+      User: {
+        ...mockPrismaClient.User,
+        findFirst: mockPrismaClient.User.findUnique,
       },
     }
     const context = getContext(await readableConfig, readablePrismaClient, null)
 
-    const user = await context.db.user.findUnique({ where: { id: '1' } })
+    const user = await context.db.User.findUnique({ where: { id: '1' } })
 
     const serialized = JSON.stringify(user)
     expect(serialized).not.toContain('$2a$10$hashedpassword')
