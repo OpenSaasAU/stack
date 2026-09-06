@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-s3
 
+## 0.41.0
+
+### Patch Changes
+
+- [#1028](https://github.com/OpenSaasAU/stack/pull/1028) [`5e03027`](https://github.com/OpenSaasAU/stack/commit/5e030278260f0879cea1768a4a4dfef04cee4d88) Thanks [@borisno2](https://github.com/borisno2)! - Upgrade `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` to `^3.1121.0`, keeping both on the same release.
+
 ## 0.40.0
 
 ### Patch Changes
