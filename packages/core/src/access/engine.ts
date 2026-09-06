@@ -1,7 +1,7 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import { getSyntheticFieldName } from '../fields/index.js'
-import { InvalidCreateAccessResultError } from './errors.js'
+import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './errors.js'
 
 /**
  * Access engine — operation-level access control and shared helpers.
@@ -201,6 +201,28 @@ export async function checkCreateAccess<T = Record<string, unknown>>(
 }
 
 /**
+ * The path to the first `undefined` condition in an access filter, or `null`
+ * when it carries none. Walks arrays too, so an `undefined` inside an `AND`
+ * or `OR` branch is found rather than folded in.
+ */
+function findUndefinedCondition(value: unknown, trail: readonly string[]): string[] | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const found = findUndefinedCondition(entry, [...trail, `${index}`])
+      if (found !== null) return found
+    }
+    return null
+  }
+  if (typeof value !== 'object' || value === null || value instanceof Date) return null
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) return [...trail, key]
+    const found = findUndefinedCondition(entry, [...trail, key])
+    if (found !== null) return found
+  }
+  return null
+}
+
+/**
  * Fold a {@link checkAccess} result into a caller's `where`, producing the
  * clause to hand the database — or `null` when access is denied.
  *
@@ -220,9 +242,21 @@ export async function checkCreateAccess<T = Record<string, unknown>>(
  * satisfy. A `PrismaFilter<Post>` from `checkAccess<Post>` is accepted here
  * unchanged; only the merged clause is untyped.
  *
+ * An access filter carrying an `undefined` condition anywhere throws
+ * {@link UndefinedAccessFilterError} rather than being handed on: the ORM
+ * reads `undefined` as "no constraint", so passing it through widens the read
+ * to every row. This is the same total-lowering rule the secured builder's
+ * Where vocabulary applies, so the guarantee holds on the legacy
+ * `findMany`/`count`/`updateMany`/`delete` paths too. The caller's own
+ * `userFilter` is left alone — it can only ever be narrowed by this clause,
+ * and `undefined` there is the caller's own optional key, not a scoping rule
+ * that failed to resolve.
+ *
  * @param userFilter - The caller's own `where`, if any.
  * @param accessFilter - What {@link checkAccess} returned.
  * @returns The clause to query with, or `null` when denied.
+ * @throws UndefinedAccessFilterError when the access filter has an
+ * `undefined` condition.
  */
 export function mergeFilters(
   userFilter: PrismaFilter | undefined,
@@ -230,6 +264,11 @@ export function mergeFilters(
 ): PrismaFilter | null {
   if (accessFilter === false) {
     return null
+  }
+
+  if (accessFilter !== true) {
+    const undefinedAt = findUndefinedCondition(accessFilter, [])
+    if (undefinedAt !== null) throw new UndefinedAccessFilterError(undefinedAt)
   }
 
   if (accessFilter === true) {

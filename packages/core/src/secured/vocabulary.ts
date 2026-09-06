@@ -102,6 +102,43 @@ function malformedCondition(listName: string, key: string, detail: string): Vali
 }
 
 /**
+ * How many Access Filters deep the engine will expand before refusing. A
+ * relation key inside an Access Filter re-enters access resolution, so this
+ * recursion is the engine's own and ADR-0043's caller-facing depth cap does
+ * not bound it. Cycles are caught by name; this is the second bound, for an
+ * acyclic chain long enough that it is a configuration mistake rather than a
+ * design. Ten is well past any real ownership chain and far short of a stack
+ * the process cannot hold.
+ */
+export const ACCESS_FILTER_MAX_DEPTH = 10
+
+/**
+ * An Access Filter that expands into itself, directly or through another
+ * list's filter. Refused loudly rather than truncated: a truncated Access
+ * Filter is a widened read, so failing closed is the only safe answer.
+ */
+export class AccessFilterRecursionError extends Error {
+  constructor(
+    readonly listPath: readonly string[],
+    reason: 'cycle' | 'depth',
+  ) {
+    const chain = listPath.join(' → ')
+    super(
+      reason === 'cycle'
+        ? `The Access Filter on "${listPath[listPath.length - 1]}" is cyclic: expanding it ` +
+            `re-enters the same list (${chain}). A relation key inside an Access Filter is ` +
+            `expanded into the related list's own filter, so a cycle has no fixed point and the ` +
+            `read is refused rather than resolved with a truncated filter. Scope the rule by a ` +
+            `column, or break the cycle by returning \`true\`/\`false\` on one side.`
+        : `The Access Filter on "${listPath[0]}" expands more than ${ACCESS_FILTER_MAX_DEPTH} ` +
+            `lists deep (${chain}). The read is refused rather than resolved with a truncated ` +
+            `filter; flatten the chain of relation-scoped access rules.`,
+    )
+    this.name = 'AccessFilterRecursionError'
+  }
+}
+
+/**
  * An `undefined` condition is refused rather than dropped. Dropping it widens
  * the read, and the Access Filter is lowered through this same seam: a rule
  * spelled `({ session }) => ({ authorId: session?.userId })` would otherwise
@@ -169,6 +206,12 @@ export interface ResolveContext {
   checkFieldRead: boolean
   /** Whether a relation quantifier carries the related list's `query` access. */
   applyRelationAccess: boolean
+  /**
+   * The lists whose Access Filter is currently being expanded, outermost
+   * first. Bounds the engine's own recursion — see
+   * {@link AccessFilterRecursionError}.
+   */
+  accessFilterPath: readonly string[]
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -304,11 +347,19 @@ async function relatedAccessPlan(
   if (access === false) return { kind: 'false' }
   if (access === true) return { kind: 'true' }
   const filter: PrismaFilter = access
+  const path = ctx.accessFilterPath
+  if (path.includes(related.listName)) {
+    throw new AccessFilterRecursionError([...path, related.listName], 'cycle')
+  }
+  if (path.length >= ACCESS_FILTER_MAX_DEPTH) {
+    throw new AccessFilterRecursionError([...path, related.listName], 'depth')
+  }
   return await resolveWhere(filter, {
     ...ctx,
     listName: related.listName,
     listConfig: related.listConfig,
     checkFieldRead: false,
+    accessFilterPath: [...path, related.listName],
   })
 }
 
@@ -343,6 +394,15 @@ async function resolveRelation(
       throw malformedCondition(ctx.listName, `${key}.${quantifier}`, 'takes a predicate')
     }
 
+    // Resolved before the denied-list short circuit below, so a malformed
+    // nested predicate is refused whether or not the session may query the
+    // related list — otherwise the refusal itself says which lists it may.
+    const caller = await resolveWhere(nested, {
+      ...ctx,
+      listName: related.listName,
+      listConfig: related.listConfig,
+    })
+
     // A related list the session cannot query is an empty set, not an error:
     // `some` is false, `none` and `every` are true. That keeps a relation
     // token from distinguishing parent rows by a list the session cannot see.
@@ -351,18 +411,33 @@ async function resolveRelation(
       continue
     }
 
-    const caller = await resolveWhere(nested, {
-      ...ctx,
-      listName: related.listName,
-      listConfig: related.listConfig,
-    })
+    const scoped = (node: WherePlan): WherePlan =>
+      access.kind === 'true' ? node : { kind: 'and', nodes: [node, access] }
+
+    if (quantifier === 'every') {
+      // "Every row the caller may SEE also matches", lowered as "no visible
+      // row fails the predicate". ANDing the access filter into an `every`
+      // body would instead mean "every related row is visible AND matches",
+      // which drops a parent for owning a row the caller cannot see — a
+      // positive signal about an invisible row (spec #1123, story 10).
+      nodes.push({
+        kind: 'relation',
+        listName: ctx.listName,
+        relation: key,
+        relatedListName: related.listName,
+        quantifier: 'none',
+        node: scoped({ kind: 'not', node: caller }),
+      })
+      continue
+    }
+
     nodes.push({
       kind: 'relation',
       listName: ctx.listName,
       relation: key,
       relatedListName: related.listName,
-      quantifier: quantifier === 'some' ? 'some' : quantifier === 'every' ? 'every' : 'none',
-      node: access.kind === 'true' ? caller : { kind: 'and', nodes: [caller, access] },
+      quantifier: quantifier === 'some' ? 'some' : 'none',
+      node: scoped(caller),
     })
   }
   return nodes.length === 1 ? nodes[0] : { kind: 'and', nodes }
@@ -435,17 +510,21 @@ export async function resolveOrderBy(
       }
       const resolved = resolveQueryField(key, ctx.listConfig.fields)
       if (!resolved) throw unqueryableKey(ctx.listName, key)
-      if (resolved.isRelationship) {
-        throw new ValidationError([
-          `Cannot order "${ctx.listName}" by "${key}" — orderBy takes scalar columns only.`,
-        ])
-      }
+      // The read gate runs before the relationship refusal, as `resolveKey`
+      // does: a read-denied key must be indistinguishable from one the list
+      // does not declare, and "orderBy takes scalar columns only" would
+      // otherwise confirm that a read-denied relationship exists (ADR-0031).
       if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
         const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
           session: ctx.session,
           context: ctx.context,
         })
         if (!readable) throw unqueryableKey(ctx.listName, key)
+      }
+      if (resolved.isRelationship) {
+        throw new ValidationError([
+          `Cannot order "${ctx.listName}" by "${key}" — orderBy takes scalar columns only.`,
+        ])
       }
       plans.push({ listName: ctx.listName, column: key, direction })
     }

@@ -6,7 +6,7 @@ import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { ValidationError } from '../hooks/index.js'
-import type { Where } from './vocabulary.js'
+import { AccessFilterRecursionError, type Where } from './vocabulary.js'
 
 const BOOT = 120_000
 
@@ -27,6 +27,9 @@ const blogConfig: OpenSaasConfig = {
         handle: text({ validation: { isRequired: true } }),
         posts: relationship({ ref: 'Post.author', many: true }),
         secrets: relationship({ ref: 'Secret.owner', many: true }),
+        // A relationship the session may not read: `orderBy` must refuse it
+        // with the message an undeclared key gets, not one that confirms it.
+        hidden: relationship({ ref: 'Secret', access: { read: () => false } }),
       },
       access: { operation: { query: () => true } },
     },
@@ -68,6 +71,33 @@ const blogConfig: OpenSaasConfig = {
         owner: text(),
       },
       access: { operation: { query: ({ session }) => ({ owner: session?.userId }) } },
+    },
+    // An Access Filter that scopes by a relation on its own list: expanding it
+    // re-enters the same filter, so it has no fixed point.
+    SelfRef: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        parent: relationship({ ref: 'SelfRef.children' }),
+        children: relationship({ ref: 'SelfRef.parent', many: true }),
+      },
+      access: {
+        operation: { query: () => ({ parent: { some: { title: { equals: 'root' } } } }) },
+      },
+    },
+    // The same shape spread across two lists, which no single-list guard sees.
+    Left: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        rights: relationship({ ref: 'Right.left', many: true }),
+      },
+      access: { operation: { query: () => ({ rights: { some: {} } }) } },
+    },
+    Right: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        left: relationship({ ref: 'Left.rights' }),
+      },
+      access: { operation: { query: () => ({ left: { some: {} } }) } },
     },
   },
 }
@@ -522,12 +552,34 @@ describe('the Where vocabulary', () => {
 
       // Anonymously, `Post` scopes to published rows, so the draft is not
       // visible to the quantifier at all: `some` cannot find it, and `every`
-      // is measured against the same scoped set — which is why ada, whose
-      // draft fails the ANDed predicate, drops out while bob does not.
+      // is measured over the visible rows only.
       expect(await handles({ posts: { some: { published: false } } })).toEqual([])
       expect(await handles({ posts: { some: {} } })).toEqual(['ada', 'bob'])
       expect(await handles({ posts: { none: { published: true } } })).toEqual([])
-      expect(await handles({ posts: { every: { published: true } } })).toEqual(['bob'])
+    },
+    BOOT,
+  )
+
+  test(
+    'every asks whether every VISIBLE row matches, so an invisible row decides nothing',
+    async () => {
+      const handles = async (session: Session | null, predicate: Where): Promise<unknown[]> =>
+        (await database.context(session).db.User.where(predicate).all())
+          .map((row) => row.handle)
+          .sort()
+
+      // ada owns a draft; bob does not. Anonymously neither draft nor any
+      // unpublished row is visible, so both users' visible posts are all
+      // published and both satisfy `every`. If the access filter were ANDed
+      // into the quantifier body instead, ada would drop out here — a
+      // positive signal about a row this caller may not see (#1123 story 10).
+      expect(await handles(null, { posts: { every: { published: true } } })).toEqual(['ada', 'bob'])
+      expect(await handles(null, { posts: { every: { published: false } } })).toEqual([])
+
+      // ada's own session sees her draft, so it does decide her membership;
+      // bob's posts are invisible to her, which makes his `every` vacuously
+      // true rather than false.
+      expect(await handles(ada, { posts: { every: { published: true } } })).toEqual(['bob'])
     },
     BOOT,
   )
@@ -573,6 +625,46 @@ describe('the Where vocabulary', () => {
     async () => {
       await expect(database.context(ada).db.Post.orderBy({ author: 'asc' }).all()).rejects.toThrow(
         /scalar columns only/,
+      )
+    },
+    BOOT,
+  )
+})
+
+describe("the engine's own recursion is bounded", () => {
+  test(
+    'an Access Filter that expands into itself refuses the read and names the lists',
+    async () => {
+      await expect(database.context(ada).db.SelfRef.all()).rejects.toThrow(
+        /Access Filter on "SelfRef" is cyclic.*SelfRef → SelfRef/s,
+      )
+      expect(recorder.plans).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'two lists whose Access Filters reference each other are refused the same way',
+    async () => {
+      await expect(database.context(ada).db.Left.all()).rejects.toThrow(
+        /is cyclic.*Left → Right → Left/s,
+      )
+      await expect(database.context(ada).db.Right.all()).rejects.toThrow(
+        /is cyclic.*Right → Left → Right/s,
+      )
+      expect(recorder.plans).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'the refusal is loud, not a truncated filter: no rows come back either way',
+    async () => {
+      await seed('SelfRef', { title: 'root' })
+      // A truncated Access Filter would be a widened read, so the failure has
+      // to be an error rather than a result set of any size.
+      await expect(database.context(ada).db.SelfRef.all()).rejects.toThrow(
+        AccessFilterRecursionError,
       )
     },
     BOOT,
@@ -641,6 +733,35 @@ describe('the vocabulary is closed, and refusing is not an oracle', () => {
       const absent = await message(context.db.Post.where({ nope: 'secret' }).all())
 
       expect(denied.replace('editorNotes', 'nope')).toBe(absent)
+    },
+    BOOT,
+  )
+
+  test(
+    'orderBy refuses a read-denied relationship exactly as it refuses an absent key',
+    async () => {
+      const context = database.context(ada)
+      const denied = await message(context.db.User.orderBy({ hidden: 'asc' }).all())
+      const absent = await message(context.db.User.orderBy({ nope: 'asc' }).all())
+
+      expect(denied.replace('hidden', 'nope')).toBe(absent)
+      expect(denied).not.toMatch(/scalar columns only/)
+    },
+    BOOT,
+  )
+
+  test(
+    'a nested predicate is validated whether or not the related list is queryable',
+    async () => {
+      const context = database.context(ada)
+      // `Secret` denies `query` and `Post` does not; refusing the nested key
+      // in only one of them would make the refusal an existence oracle for
+      // the related list's own access.
+      const denied = await message(context.db.User.where({ secrets: { some: { nope: 1 } } }).all())
+      const queryable = await message(context.db.User.where({ posts: { some: { nope: 1 } } }).all())
+
+      expect(denied).toBe('Cannot query "Secret" — "nope" is not a queryable field of this list.')
+      expect(denied.replace('Secret', 'Post')).toBe(queryable)
     },
     BOOT,
   )
@@ -729,8 +850,11 @@ describe('context.db is keyed by the PascalCase list name', () => {
       expect(Object.keys(context.db).sort()).toEqual([
         'Draft',
         'Empty',
+        'Left',
         'Post',
+        'Right',
         'Secret',
+        'SelfRef',
         'User',
         'Widened',
       ])

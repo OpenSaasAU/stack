@@ -25,6 +25,7 @@ import {
   type WherePlan,
 } from './vocabulary.js'
 
+export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export type {
   OrderBy,
   OrderDirection,
@@ -124,6 +125,7 @@ function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext 
     context: binding.context,
     checkFieldRead: secured,
     applyRelationAccess: secured,
+    accessFilterPath: [],
   }
 }
 
@@ -165,6 +167,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
       await resolveWhere(filter, {
         ...resolveContext(binding, true),
         checkFieldRead: false,
+        accessFilterPath: [binding.listName],
       }),
     )
   }

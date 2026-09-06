@@ -9,7 +9,7 @@ import {
   isBoolean,
   isPrismaFilter,
 } from '../src/access/index.js'
-import { InvalidCreateAccessResultError } from '../src/access/errors.js'
+import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from '../src/access/errors.js'
 import type { AccessControl, FieldAccess, AccessContext } from '../src/access/types.js'
 import { ValidationError } from '../src/hooks/index.js'
 
@@ -225,6 +225,47 @@ describe('Access Control', () => {
 
       expect(result).toEqual({
         AND: [accessFilter, userFilter],
+      })
+    })
+
+    // The legacy findMany/count/updateMany/delete paths fold their access
+    // filter in here rather than through the secured builder's Where
+    // vocabulary, so the total-lowering guarantee the docs state has to hold
+    // here too (#1147).
+    describe('an undefined condition in the access filter is refused, not dropped', () => {
+      it('refuses the shape an anonymous session produces', () => {
+        expect(() => mergeFilters(undefined, { authorId: undefined })).toThrow(
+          UndefinedAccessFilterError,
+        )
+        expect(() => mergeFilters({ name: 'John' }, { authorId: undefined })).toThrow(
+          /condition on "authorId" is undefined/,
+        )
+      })
+
+      it('refuses it nested under an operator or a branch', () => {
+        expect(() => mergeFilters(undefined, { authorId: { equals: undefined } })).toThrow(
+          /condition on "authorId.equals" is undefined/,
+        )
+        expect(() =>
+          mergeFilters(undefined, { OR: [{ published: true }, { authorId: undefined }] }),
+        ).toThrow(/condition on "OR.1.authorId" is undefined/)
+      })
+
+      it("leaves the caller's own filter alone", () => {
+        expect(mergeFilters({ name: undefined }, true)).toEqual({ name: undefined })
+        expect(mergeFilters({ name: undefined }, { authorId: 'a' })).toEqual({
+          AND: [{ authorId: 'a' }, { name: undefined }],
+        })
+      })
+
+      it('is not thrown for a boolean decision, which scopes nothing', () => {
+        expect(mergeFilters(undefined, false)).toBeNull()
+        expect(mergeFilters({ authorId: undefined }, false)).toBeNull()
+      })
+
+      it('accepts a Date and a null, which are conditions rather than absences', () => {
+        const accessFilter = { createdAt: { lt: new Date(0) }, deletedAt: null }
+        expect(mergeFilters(undefined, accessFilter)).toEqual(accessFilter)
       })
     })
   })

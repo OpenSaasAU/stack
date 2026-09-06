@@ -132,6 +132,10 @@ export type { StackContext } from './types/context.js'
 // The secured read surface: the composed query value `context.db.<List>` is,
 // and the closed Where vocabulary it takes (ADR-0041, ADR-0055).
 export { SecuredCollectionMissingError } from './secured/read.js'
+// Thrown when an Access Filter that scopes by a relation expands into itself,
+// directly or through another list's filter. Loud rather than truncated: a
+// truncated Access Filter is a widened read (#1147).
+export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/read.js'
 export type {
   SecuredQuery,
   OrderBy,
@@ -192,6 +196,12 @@ export { InvalidFieldAccessResultError } from './access/index.js'
 // create: there is no existing row and no way to test it against input data,
 // so it is refused loudly rather than silently treated as a full allow.
 export { InvalidCreateAccessResultError } from './access/index.js'
+
+// Thrown by `mergeFilters` when an access rule returns a filter carrying an
+// `undefined` condition — the shape `({ session }) => ({ authorId:
+// session?.userId })` yields for an anonymous caller. Dropping it would widen
+// the read to every row, so it is refused (see #1147, ADR-0022, ADR-0055).
+export { UndefinedAccessFilterError } from './access/index.js'
 
 // Thrown by a read when a caller-supplied `where` filters on a relation whose
 // related list denies operation-level `query` access outright (see #916 and
