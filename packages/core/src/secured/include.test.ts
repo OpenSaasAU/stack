@@ -1,12 +1,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import type { Session } from '../access/types.js'
+import type { AccessContext, Session } from '../access/types.js'
 import { checkbox, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
-import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { AccessScopeDepthExceededError } from '../access/errors.js'
-import { InvalidRefinementError } from './include.js'
+import { buildAccessScopedInclude } from '../access/access-filter.js'
+import {
+  DuplicateIncludeError,
+  InvalidRefinementError,
+  NestedToOneIncludeError,
+} from './include.js'
 
 const BOOT = 120_000
 
@@ -81,6 +86,13 @@ const blogConfig: OpenSaasConfig = {
         title: text({ validation: { isRequired: true } }),
         published: checkbox({ defaultValue: false }),
         author: relationship({ ref: 'User.posts' }),
+        // The same shape as `author`, with the foreign-key column renamed, so
+        // nothing about the include collides with it. What the caller may see
+        // must not depend on that.
+        mappedAuthor: relationship({
+          ref: 'User',
+          db: { foreignKey: { map: 'mapped_author_id' } },
+        }),
         category: relationship({ ref: 'Category' }),
         editorNotes: text({ access: { read: () => false } }),
         // Row-independent and denies: omitted before the query runs.
@@ -178,6 +190,7 @@ async function seedBlog(): Promise<void> {
     title: "ada's published",
     published: true,
     author: adaRow.id,
+    mappedAuthorId: bobRow.id,
     category: category.id,
     editorNotes: 'secret',
     hiddenEditor: bobRow.id,
@@ -375,6 +388,7 @@ describe('Field Visibility is the boundary, not the omission', () => {
       // The relation is stripped from every key that could carry it, the
       // foreign-key column included: a stripped relation must not survive
       // under a second name.
+      expect(draft?.reviewerId).not.toBe(ada.userId)
       expect(JSON.stringify(draft)).not.toContain('ada')
     },
     BOOT,
@@ -403,6 +417,198 @@ describe('Field Visibility is the boundary, not the omission', () => {
 
       expect(includedRelations(recorder.plans[0])).toEqual(['hiddenEditor'])
       expect(rows[0].hiddenEditor).toMatchObject({ handle: 'bob' })
+    },
+    BOOT,
+  )
+})
+
+describe("the foreign key follows the relation's own visibility", () => {
+  test(
+    'a to-one the Access Filter scoped away leaves no id behind',
+    async () => {
+      const [row] = await database
+        .context(ada)
+        .db.Post.where({ title: "bob's draft" })
+        .include('author')
+        .all()
+
+      expect(row.author).toBeNull()
+      expect(row.authorId).toBeNull()
+      expect(row.authorId).not.toBe(bob.userId)
+    },
+    BOOT,
+  )
+
+  test(
+    'a renamed foreign-key column is treated no differently',
+    async () => {
+      // `mappedAuthor` carries `db.foreignKey.map`, so the include's alias and
+      // the physical column never collide — and the id must still not survive
+      // a relation the caller cannot see.
+      const [row] = await database
+        .context(ada)
+        .db.Post.where({ title: "ada's published" })
+        .include('mappedAuthor')
+        .all()
+
+      expect(row.mappedAuthor).toBeNull()
+      expect(row.mappedAuthorId).toBeNull()
+      expect(row.mappedAuthorId).not.toBe(bob.userId)
+    },
+    BOOT,
+  )
+
+  test(
+    'a row-dependent denial takes the foreign key with it',
+    async () => {
+      const rows = await database.context(ada).db.Post.include('reviewer').all()
+      const draft = rows.find((row) => row.published === false)
+
+      expect(draft?.reviewer).toBeUndefined()
+      expect(draft?.reviewerId).toBeNull()
+      expect(draft?.reviewerId).not.toBe(ada.userId)
+    },
+    BOOT,
+  )
+
+  test(
+    'a visible to-one keeps its own id',
+    async () => {
+      const [row] = await database
+        .context(ada)
+        .db.Post.where({ title: "ada's published" })
+        .include('author')
+        .all()
+
+      expect(row.author).toMatchObject({ handle: 'ada' })
+      expect(row.authorId).toBe(ada.userId)
+    },
+    BOOT,
+  )
+
+  test(
+    'a read-denied relation is unqueryable under its foreign key too',
+    async () => {
+      const denied = database
+        .context(ada)
+        .db.Post.where({ hiddenEditorId: { not: null } })
+        .all()
+      const undeclared = database
+        .context(ada)
+        .db.Post.where({ nopeId: { not: null } })
+        .all()
+
+      await expect(denied).rejects.toThrow(/not a queryable field/)
+      await expect(undeclared).rejects.toThrow(/not a queryable field/)
+    },
+    BOOT,
+  )
+})
+
+describe('a nested to-one is refused until #1236', () => {
+  test(
+    'the refusal names the relation and the issue rather than reaching the database',
+    async () => {
+      const nested = database
+        .context(ada)
+        .db.User.include('posts', (posts) => posts.include('author'))
+        .all()
+
+      await expect(nested).rejects.toThrow(NestedToOneIncludeError)
+      await expect(nested).rejects.toThrow(/1236/)
+      expect(recorder.plans).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a nested to-one whose column is renamed is served',
+    async () => {
+      // The collision is the column name, not the arity: the day #1236 renames
+      // every to-one's column, the guard above is the deletion and this is the
+      // shape that already worked.
+      const rows = await database
+        .context(ada)
+        .db.User.include('posts', (posts) => posts.include('mappedAuthor'))
+        .all()
+
+      expect(rows).toHaveLength(1)
+      expect(rows[0].posts).toEqual([
+        expect.objectContaining({ title: "ada's published", mappedAuthor: null }),
+      ])
+    },
+    BOOT,
+  )
+})
+
+describe('a relation named twice is refused', () => {
+  test(
+    'the refusal names the relation, at the top level and inside a refinement',
+    async () => {
+      const top = database
+        .context(ada)
+        .db.Post.include('author')
+        .include('author', (author) => author.where({ handle: { equals: 'ada' } }))
+        .all()
+      const nested = database
+        .context(ada)
+        .db.User.include('posts', (posts) => posts.include('category').include('category'))
+        .all()
+
+      await expect(top).rejects.toThrow(DuplicateIncludeError)
+      await expect(top).rejects.toThrow(/author/)
+      await expect(nested).rejects.toThrow(/category/)
+      expect(recorder.plans).toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('the two read surfaces scope a filtered to-one identically', () => {
+  test(
+    'both mechanisms scope Post.author by the same rule, and reach the same answer',
+    async () => {
+      // Two mechanisms, one answer. The legacy method surface flags a filtered
+      // to-one for a post-query existence check carrying the related list's
+      // own `query` filter; the secured surface pushes that same filter into
+      // the join. Both stay alive until `context/index.ts` is transformed
+      // (#1237), and nothing else pins them to each other.
+      //
+      // The legacy surface's own terminal cannot run here: it drives a
+      // Prisma 7 `findMany` the rc.8 client does not carry. So the comparison
+      // is made where both are observable — the filter each mechanism decides
+      // on, and the row the secured one returns under it.
+      const context = database.context(ada)
+      const accessContext: AccessContext = {
+        ...context,
+        ormHandle: ormClientFor(database.data, database.client.orm),
+        _resolveOutputChain: [],
+      }
+      const legacy = await buildAccessScopedInclude(
+        { author: true },
+        blogConfig.lists.Post.fields,
+        { session: ada, context: accessContext },
+        blogConfig,
+        'Post',
+      )
+
+      expect(legacy.toOneAccessFilters.filters.author).toEqual({
+        kind: 'scoped',
+        relatedListName: 'User',
+        accessWhere: { handle: { equals: 'ada' } },
+      })
+
+      const secured = await context.db.Post.where({ title: "bob's draft" }).include('author').all()
+      const plan = recorder.plans[recorder.plans.length - 1]
+
+      // The same rule, in the shape the secured path carries it: inside the
+      // include's own subquery rather than in a second round trip.
+      expect(includedRelations(plan)).toEqual(['author'])
+      expect(JSON.stringify(plan.ast)).toContain('"value":"ada"')
+      // And the same answer: bob is not a user ada may see, so the relation is
+      // absent for her by either route.
+      expect(secured).toHaveLength(1)
+      expect(secured[0].author).toBeNull()
     },
     BOOT,
   )

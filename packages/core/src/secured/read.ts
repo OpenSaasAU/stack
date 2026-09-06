@@ -34,7 +34,11 @@ import {
 } from './include.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
-export { InvalidRefinementError } from './include.js'
+export {
+  DuplicateIncludeError,
+  InvalidRefinementError,
+  NestedToOneIncludeError,
+} from './include.js'
 export type { Refinement, SecuredRefinement } from './include.js'
 export type {
   OrderBy,
@@ -115,12 +119,16 @@ interface ReadableCollection extends RefinableCollection {
   first(): Promise<OrmRow | null>
 }
 
+/**
+ * Presence, not completeness — the same rule `isDelegate` states in
+ * `access/orm-client.ts`, and for the same reason. A test double implements
+ * only the operations its test reaches, so requiring the full set would refuse
+ * a client the engine can drive, and would refuse it with advice ("re-run
+ * `opensaas generate`") that does not describe what is actually wrong. A
+ * member that is genuinely absent surfaces at its own call site.
+ */
 function isReadableCollection(value: unknown): value is ReadableCollection {
-  if (typeof value !== 'object' || value === null) return false
-  for (const member of ['where', 'orderBy', 'include', 'all', 'first']) {
-    if (typeof Reflect.get(value, member) !== 'function') return false
-  }
-  return true
+  return typeof value === 'object' && value !== null
 }
 
 function collectionFor(ormHandle: OrmClient, listName: string): ReadableCollection {
@@ -260,40 +268,44 @@ function isRow(value: unknown): value is OrmRow {
 }
 
 /**
- * Undo the foreign-key column an include overwrites.
+ * Rewrite the foreign-key column of every included to-one to the value the
+ * relation itself came back as.
  *
- * Prisma 8 aliases an include by the relation's name and a scalar column by
- * its physical name, and the contract maps a to-one's foreign key onto the
+ * Two things make this necessary, and each on its own would be enough. Prisma
+ * 8 aliases an include by the relation's name and a scalar column by its
+ * physical name, and the contract maps a to-one's foreign key onto the
  * relation's own name (`contract/derive.ts`), so the two aliases collide and
- * the decoder writes the include's payload into the foreign-key key as well.
- * Left alone that is a leak, not a cosmetic defect: a relation Field
- * Visibility strips survives under its foreign key.
+ * the decoder writes the include's payload into the foreign-key key. And
+ * independently of any collision, the foreign key is a second name for the
+ * related row's identity: a relation the Access Filter scoped away or Field
+ * Visibility stripped would otherwise survive under it as the invisible row's
+ * id.
  *
- * The value written back is the one the caller may see — the related row's id
- * when the relation is visible, `null` when the Access Filter scoped it away,
- * which is what a denied to-one means everywhere else (ADR-0058).
+ * So the pass is driven by the contract's own foreign-key member
+ * (`IncludePlan.foreignKey`) rather than by the shape of whatever is stored,
+ * which makes it independent of `db: { foreignKey: { map } }`; and it runs
+ * AFTER Field Visibility, which makes visibility authoritative over the
+ * column. The value written is the one the caller may see: the related row's
+ * id when the relation is visible, `null` when it is not — denied, scoped away
+ * and stripped alike, which is what a to-one the caller may not see means
+ * everywhere else (ADR-0058).
  */
-function repairForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
+function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   for (const plan of plans) {
     const value = row[plan.relation]
-    if (plan.arity === 'one') {
-      const key = `${plan.relation}Id`
-      const stored = row[key]
-      if (stored !== undefined && typeof stored === 'object' && stored !== null) {
-        row[key] = isRow(value) ? value.id : null
-      }
+    if (plan.arity === 'one' && plan.foreignKey !== undefined && plan.foreignKey in row) {
+      row[plan.foreignKey] = isRow(value) ? value.id : null
     }
     if (plan.includes.length === 0) continue
     for (const related of Array.isArray(value) ? value : [value]) {
-      if (isRow(related)) repairForeignKeys(related, plan.includes)
+      if (isRow(related)) applyForeignKeys(related, plan.includes)
     }
   }
 }
 
-function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<OrmRow> {
+async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
-  repairForeignKeys(row, plan.includes)
-  return filterReadableFields(
+  const filtered = await filterReadableFields(
     row,
     listConfig.fields,
     { session: context.session, context },
@@ -301,6 +313,8 @@ function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<Orm
     0,
     listName,
   )
+  applyForeignKeys(filtered, plan.includes)
+  return filtered
 }
 
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
