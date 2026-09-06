@@ -379,7 +379,11 @@ describe('a composed read is an immutable value', () => {
       const query = database.context(ada).db.Post.where({ published: true })
 
       expect(Object.keys(query).sort()).toEqual([
+        'aggregate',
         'all',
+        'cursor',
+        'distinct',
+        'distinctOn',
         'first',
         'include',
         'nearest',
