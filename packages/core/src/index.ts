@@ -130,10 +130,18 @@ export type {
 export type { StackContext } from './types/context.js'
 
 // The secured read surface: the composed query value `context.db.<List>` is,
-// its predicate vocabulary, and the refusal a predicate the engine cannot
-// lower raises (ADR-0041, ADR-0055).
-export { UnsupportedPredicateError, SecuredCollectionMissingError } from './secured/read.js'
-export type { SecuredQuery, Where, WhereCondition, WhereValue } from './secured/read.js'
+// and the closed Where vocabulary it takes (ADR-0041, ADR-0055).
+export { SecuredCollectionMissingError } from './secured/read.js'
+export type {
+  SecuredQuery,
+  OrderBy,
+  OrderDirection,
+  RelationCondition,
+  ScalarOperators,
+  Where,
+  WhereCondition,
+  WhereValue,
+} from './secured/read.js'
 
 // Naming utilities (documented public helpers; used for URLs)
 export { getUrlKey, getListKeyFromUrl, resolveListKeyFromUrl } from './lib/case-utils.js'
@@ -294,7 +302,6 @@ export {
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
-  RELATIONSHIP_COUNT_FILTER_KEY,
 } from './filter/index.js'
 export type {
   FilterOperator,
@@ -303,27 +310,15 @@ export type {
   FilterSpec,
   FilterValueSource,
   FilterFieldSuggestion,
-  RelationshipCountFilterMarker,
   FilterAccessArgs,
 } from './filter/index.js'
 
 // Access-scoped to-many relationship counts for the admin list view (#732):
-// build the filtered `_count` select for count cells/sort, and resolve the
-// count Filter spec's markers into `{ id: { in } }` — all through the secured
-// context, so counts never include related rows the session cannot read.
+// the filtered `_count` select for count cells, with each related list's
+// `query` access folded in, so counts never include rows the session cannot
+// read. The count-filter resolver is gone with the vocabulary (ADR-0055): a
+// count comparison shrinks to presence, which the engine lowers itself.
 export {
   buildRelationshipCountSelect,
-  resolveRelationshipCountFilters,
   isToManyRelationshipField,
 } from './access/relationship-count.js'
-
-// To-one relationship label filter helpers for the admin list view (#749).
-// `resolveRelationshipLabelFilters` is now a pass-through: the engine itself
-// scopes every relation filter in `where` (`buildAccessScopedWhere`, #916),
-// including the `{ is: {...} } }` shape a label filter produces, so this no
-// longer needs its own access fold. Kept exported, unchanged in shape, for
-// API compatibility — see `relationship-label-filter.ts`'s doc comment.
-export {
-  resolveRelationshipLabelFilters,
-  isToOneRelationshipField,
-} from './access/relationship-label-filter.js'

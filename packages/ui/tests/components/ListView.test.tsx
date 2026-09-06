@@ -428,28 +428,22 @@ describe('ListView to-many relationship count sort & filter (issue #732)', () =>
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: undefined }))
   })
 
-  it('resolves a count filter (posts:>5) to an access-scoped id constraint', async () => {
-    const rows = [
-      { id: 'u1', _count: { posts: 7 } },
-      { id: 'u2', _count: { posts: 2 } },
-    ]
-    const findMany = vi.fn(async () => rows)
+  it('shrinks a count filter to presence, and degrades any other comparison', async () => {
+    const findMany = vi.fn(async () => [])
     const count = vi.fn(async () => 0)
     const context = makeContext({ User: { findMany, count } })
 
-    await ListView({
-      context,
-      config,
-      listKey: 'User',
-      basePath: '/admin',
-      search: 'posts:>5',
-    })
+    await ListView({ context, config, listKey: 'User', basePath: '/admin', search: 'posts:>0' })
+    expect(findMany.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ where: { posts: { some: {} } } }),
+    )
 
-    // The main query (and its count) is narrowed to the users whose
-    // access-visible post count exceeds 5 — only u1.
-    const mainCall = findMany.mock.calls.at(-1)?.[0] as { where?: unknown }
-    expect(mainCall.where).toEqual({ id: { in: ['u1'] } })
-    expect(count).toHaveBeenCalledWith({ where: { id: { in: ['u1'] } } })
+    // Prisma 8 cannot compare a relation count in a `where` (ADR-0055), so a
+    // bookmarked `posts:>5` degrades to free text rather than filtering.
+    await ListView({ context, config, listKey: 'User', basePath: '/admin', search: 'posts:>5' })
+    expect(findMany.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ where: { name: { contains: '5' } } }),
+    )
   })
 })
 
@@ -491,7 +485,7 @@ describe('ListView to-one relationship label filter (issue #749 / #916)', () => 
       search: 'author:Ada',
     })
 
-    const expectedWhere = { author: { is: { name: { contains: 'Ada' } } } }
+    const expectedWhere = { author: { some: { name: { contains: 'Ada' } } } }
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }))
     expect(count).toHaveBeenCalledWith({ where: expectedWhere })
   })
