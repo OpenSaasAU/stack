@@ -22,6 +22,9 @@ jobs:
   # toolchain offline; this exercises the actual published artifact). See ADR-0002.
   published-create-e2e:
     name: Published npm create e2e
+    # The published package is `main`'s Prisma 7 scaffold. The integration
+    # branch's cold start is the `cold-clone` job below instead.
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -85,6 +88,9 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
+    # The examples cannot build on the integration branch until they are
+    # converted (#1121, build spec 9).
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -126,3 +132,72 @@ jobs:
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+  # (c) The COLD CLONE: `create` then `dev` on a runner with no database
+  # installed. This is the one place CI exercises the Dev database sidecar, and
+  # that is its whole purpose (ADR-0063) — so this job deliberately sets no
+  # `DATABASE_URL`. Setting one is the Database escape and no Dev database
+  # would start, which is precisely the property under test.
+  #
+  # The scaffolded project borrows `examples/starter`'s installed
+  # `node_modules` rather than installing from the registry, the same trick the
+  # PR-gate scaffold guard uses: the integration branch's packages are not
+  # published, so the workspace is the only source of the toolchain.
+  cold-clone:
+    name: Cold clone — create then dev
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Build packages
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-core
+          --filter=@opensaas/stack-auth
+          --filter=@opensaas/stack-ui
+          --filter=@opensaas/stack-cli
+          --filter=create-opensaas-app
+
+      - name: Scaffold a project outside the workspace
+        run: |
+          set -euo pipefail
+          WORKDIR="$(mktemp -d)"
+          echo "COLD_CLONE_DIR=$WORKDIR" >> "$GITHUB_ENV"
+          cd "$WORKDIR"
+          node "$GITHUB_WORKSPACE/packages/create-opensaas-app/dist/index.js" \
+            myapp --no-auth --no-ai --no-install
+          ln -s "$GITHUB_WORKSPACE/examples/starter/node_modules" "$WORKDIR/myapp/node_modules"
+
+      - name: Run the dev loop and serve the app
+        run: |
+          set -euo pipefail
+          cd "$COLD_CLONE_DIR/myapp"
+          node "$GITHUB_WORKSPACE/packages/cli/bin/opensaas.js" dev > dev.log 2>&1 &
+          DEV_PID=$!
+          for _ in $(seq 1 120); do
+            if curl -sf http://localhost:3000 > /dev/null; then break; fi
+            if ! kill -0 "$DEV_PID" 2> /dev/null; then
+              echo '`opensaas dev` exited before the app answered:'
+              cat dev.log
+              exit 1
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:3000 > /dev/null
+          test -f .opensaas/dev-db.json
+          kill "$DEV_PID"
+
+      - name: Upload the dev loop's output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cold-clone-dev-log
+          path: ${{ env.COLD_CLONE_DIR }}/myapp/dev.log
+          retention-days: 7
+          if-no-files-found: ignore

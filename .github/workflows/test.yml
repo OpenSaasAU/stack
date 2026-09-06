@@ -13,12 +13,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # The escape belongs to the job, not to the steps that happen to need it: a
+    # suite whose guarantee PGlite cannot exercise skips itself by name when the
+    # variable is absent, and a skip that reads as coverage is what this guards
+    # against (ADR-0063). PRs into `main` keep the SQLite string that branch
+    # still uses; the integration branch names the service container below.
+    env:
+      DATABASE_URL: ${{ github.base_ref == 'main' && 'file:./dev.db' || 'postgres://postgres:postgres@localhost:5432/postgres' }}
+
     # The real Postgres the test harness runs against on the integration branch
     # (ADR-0057's `DATABASE_URL` escape, #1143). pgvector's image rather than
     # the plain one, so a pack-declaring contract's `CREATE EXTENSION vector`
     # has something to install — ADR-0065 makes provisioning the deployment's
-    # job, and CI is a deployment. The steps for PRs into `main` do not set
-    # DATABASE_URL, so this container simply goes unused there.
+    # job, and CI is a deployment. PRs into `main` point the job's DATABASE_URL
+    # at SQLite instead, so this container simply goes unused there.
     services:
       postgres:
         # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
@@ -86,39 +94,28 @@ jobs:
         run: turbo run test
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
       # every examples/* package. On the prisma-8 integration branch the
       # examples cannot build until they are converted (#1121, build spec 9),
       # so PRs into any base other than main run the published packages only.
-      #
-      # These two steps point DATABASE_URL at the service container above, so
-      # the test harness runs the identical suite against a real Postgres and
-      # its escape-only tests execute rather than skipping (ADR-0057). Their
-      # `main` counterparts keep the SQLite string, which `main` still uses;
-      # SQLite was removed from the integration branch in #1130 and a
-      # set-but-unusable connection string is refused by name here.
       - name: Run package tests (integration branch — examples convert in spec 9)
         if: github.base_ref != 'main'
         run: turbo run test --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
 
       - name: Run tests with coverage
         if: github.base_ref == 'main'
         run: turbo run test:coverage
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
 
       - name: Run package tests with coverage (integration branch — examples convert in spec 9)
         if: github.base_ref != 'main'
         run: turbo run test:coverage --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
 
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
@@ -153,6 +150,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # The escape on the job rather than on individual steps, so no step that
+    # runs tests is missing it. Spec 9 moves this job to the integration
+    # branch's Postgres, and adds the service container the `test` job carries.
+    env:
+      DATABASE_URL: 'file:./dev.db'
+      BETTER_AUTH_URL: 'http://localhost:3000'
+      BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
+      NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -177,7 +183,6 @@ jobs:
         run: pnpm --filter create-opensaas-app test run scaffold-first-run-guard
         env:
           RUN_SCAFFOLD_GUARD: '1'
-          DATABASE_URL: 'file:./dev.db'
 
       # Live proof the database-backed rate limiter (issue #909) actually
       # works: generates a real schema with the derived RateLimit list,
@@ -230,10 +235,6 @@ jobs:
         run: pnpm test:e2e
         env:
           CI: true
-          DATABASE_URL: 'file:./dev.db'
-          BETTER_AUTH_URL: http://localhost:3000
-          BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
-          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
       - name: Upload Playwright report
         if: always()

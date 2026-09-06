@@ -1,71 +1,80 @@
-import { execSync } from 'child_process'
-import * as fs from 'fs'
-import * as path from 'path'
+import { spawn } from 'node:child_process'
+import * as path from 'node:path'
+import { startDevDatabase, type DevDatabase } from '@opensaas/stack-core/dev-database'
+import { findDatabaseConnection } from '@opensaas/stack-core/internal'
+import { runPrismaCli } from '@opensaas/stack-cli/generator'
 
 /**
- * Setup database for E2E tests
- * Creates a fresh database and runs migrations
+ * The database an e2e run reaches, and the lookup branch that produced it
+ * (ADR-0063). `'env'` is the CI service container; `'dev-database'` is the
+ * in-process Postgres this module starts for a local run.
  */
-export function setupDatabase(exampleDir: string) {
-  const dbPath = path.join(exampleDir, 'dev.db')
-  const prismaDir = path.join(exampleDir, 'prisma')
-
-  console.log(`Setting up database in: ${exampleDir}`)
-
-  // Remove existing database
-  if (fs.existsSync(dbPath)) {
-    console.log('Removing existing database...')
-    fs.unlinkSync(dbPath)
-  }
-
-  // Remove existing migrations
-  const migrationsDir = path.join(prismaDir, 'migrations')
-  if (fs.existsSync(migrationsDir)) {
-    console.log('Removing existing migrations...')
-    fs.rmSync(migrationsDir, { recursive: true, force: true })
-  }
-
-  // Generate schema
-  console.log('Generating Prisma schema and types...')
-  try {
-    execSync('pnpm generate', {
-      cwd: exampleDir,
-      stdio: 'inherit',
-    })
-  } catch (error) {
-    console.error('Failed to generate schema')
-    throw error
-  }
-
-  // Push schema to database
-  console.log('Pushing schema to database...')
-  try {
-    execSync('pnpm db:push --accept-data-loss', {
-      cwd: exampleDir,
-      stdio: 'inherit',
-    })
-  } catch (error) {
-    console.error('Failed to push schema to database')
-    throw error
-  }
-
-  console.log('Database setup completed successfully')
+export interface PreparedDatabase {
+  readonly url: string
+  readonly provenance: 'env' | 'dev-database'
 }
 
 /**
- * Clean up database after tests
+ * The Dev database this process started, if it started one. Playwright runs
+ * `globalSetup` and `globalTeardown` in the same process, so the handle
+ * survives between them without a file.
  */
-export function cleanupDatabase(exampleDir: string) {
-  const dbPath = path.join(exampleDir, 'dev.db')
+let started: DevDatabase | undefined
 
-  // Remove database file
-  if (fs.existsSync(dbPath)) {
-    fs.unlinkSync(dbPath)
+const cliEntry = path.join(process.cwd(), 'packages', 'cli', 'bin', 'opensaas.js')
+
+async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(command, [...args], { cwd, stdio: 'inherit' })
+    child.once('error', reject)
+    child.once('close', resolve)
+  })
+  if (exitCode !== 0) {
+    throw new Error(`\`${[command, ...args].join(' ')}\` exited ${exitCode ?? 'on a signal'}.`)
+  }
+}
+
+/**
+ * Brings the project's database up to its config and hands back the connection
+ * the app will find.
+ *
+ * The connection is never chosen here and never injected into the app: this
+ * calls the same lookup `.opensaas/context.ts` and `prisma.config.ts` call, so
+ * CI (with `DATABASE_URL` on the service container) and a local run (with
+ * nothing set) differ only in which branch that lookup takes. When it finds
+ * neither, the Dev database is started under the project's Generated bundle,
+ * which is where every later process — `generate`, `prisma db update` and the
+ * Next server Playwright starts — reads it back from.
+ */
+export async function setupDatabase(projectDir: string): Promise<PreparedDatabase> {
+  const existing = findDatabaseConnection({ cwd: projectDir })
+  if (existing === undefined) {
+    started = await startDevDatabase({
+      dataDir: path.join(projectDir, '.opensaas', 'dev-db'),
+      extensions: ['vector'],
+      cwd: projectDir,
+    })
   }
 
-  // Remove journal file if it exists
-  const journalPath = `${dbPath}-journal`
-  if (fs.existsSync(journalPath)) {
-    fs.unlinkSync(journalPath)
+  const connection = findDatabaseConnection({ cwd: projectDir })
+  if (connection === undefined) {
+    throw new Error('The database lookup found nothing after the Dev database was started.')
   }
+
+  await run(process.execPath, [cliEntry, 'generate'], projectDir)
+
+  const update = await runPrismaCli(projectDir, ['db', 'update'])
+  if (update.exitCode !== 0) {
+    throw new Error(
+      `\`prisma db update\` exited ${update.exitCode ?? 'on a signal'}.\n${update.output}`,
+    )
+  }
+
+  return connection
+}
+
+/** Stops the Dev database, if this process started one. */
+export async function cleanupDatabase(): Promise<void> {
+  await started?.stop()
+  started = undefined
 }
