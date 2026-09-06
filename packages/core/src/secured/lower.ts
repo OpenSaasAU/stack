@@ -2,7 +2,8 @@
 // place the vocabulary meets the ORM (ADR-0055).
 
 import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
-import type { OrderPlan, ScalarStep, WherePlan } from './vocabulary.js'
+import type { VectorDistanceFunction } from '../config/types.js'
+import type { NearestPlan, OrderPlan, ScalarStep, WherePlan } from './vocabulary.js'
 import { unsupportedOperator, unqueryableKey } from './vocabulary.js'
 
 /**
@@ -165,6 +166,72 @@ export function lowerWhere(
       return quantifier((related) => lowerWhere(plan.node, related, ops))
     }
   }
+}
+
+/**
+ * pgvector's distance operator for each function. The query vector is bound
+ * through the column's own codec rather than rendered into the template, so
+ * the only thing these strings contribute is the operator.
+ */
+const DISTANCE_TEMPLATES: Record<VectorDistanceFunction, string> = {
+  cosine: '{{self}} <=> {{arg0}}',
+  l2: '{{self}} <-> {{arg0}}',
+  inner_product: '{{self}} <#> {{arg0}}',
+}
+
+const FLOAT8_CODEC = 'pg/float8@1'
+
+/** The two places a resolved vector search meets the ORM. */
+export interface VectorLowering {
+  /** `ORDER BY <column> <op> <vector> ASC` — the ranking. */
+  order(plan: NearestPlan, accessor: PredicateAccessor): OrderByItem
+  /** `<column> <op> <vector> <= bound` — `minScore`, inside the query. */
+  bound(plan: NearestPlan, accessor: PredicateAccessor, distance: number): AnyExpression
+}
+
+let pendingVector: Promise<VectorLowering> | undefined
+
+/**
+ * Load the expression builders a vector search needs, lazily, for the reason
+ * {@link whereCombinators} is lazy.
+ *
+ * Known limits: at `8.0.0-rc.8` the pgvector pack registers `cosineDistance`
+ * and `cosineSimilarity` on the model accessor and nothing else, so `l2` and
+ * `inner_product` have no accessor method to call. All three are therefore
+ * built through the ORM's own operation builder against pgvector's operators,
+ * one path rather than two. Re-check at GA: if the pack registers the other
+ * distances, these become accessor calls (ADR-0045).
+ */
+export function vectorLowering(): Promise<VectorLowering> {
+  pendingVector ??= Promise.all([
+    import('@prisma/orm-postgres/relational-core/expression'),
+    import('@prisma/orm-postgres/relational-core/ast'),
+  ]).then(([expression, ast]) => {
+    const { buildOperation, codecOf, toExpr, param } = expression
+    const { BinaryExpr, OrderByItem: OrderBy } = ast
+
+    const distance = (plan: NearestPlan, accessor: PredicateAccessor): AnyExpression => {
+      const member = memberOf(accessor, plan.listName, plan.column)
+      const codec = codecOf(member)
+      return buildOperation({
+        method: 'nearest',
+        args: [toExpr(member, codec), toExpr(plan.vector, codec)],
+        returns: { codecId: FLOAT8_CODEC, nullable: false },
+        lowering: {
+          targetFamily: 'sql',
+          strategy: 'function',
+          template: DISTANCE_TEMPLATES[plan.distanceFunction],
+        },
+      }).buildAst()
+    }
+
+    return {
+      order: (plan, accessor) => OrderBy.asc(distance(plan, accessor)),
+      bound: (plan, accessor, bound) =>
+        new BinaryExpr('lte', distance(plan, accessor), param(bound, { codecId: FLOAT8_CODEC })),
+    }
+  })
+  return pendingVector
 }
 
 /** Build one `ORDER BY` item for a resolved sort. */

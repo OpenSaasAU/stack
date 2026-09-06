@@ -1,7 +1,7 @@
 // The secured read surface: `context.db.<List>` as an opaque wrapper over a
 // Prisma 8 collection, its `where`/`orderBy` composition, and the
-// `all()`/`first()` terminals the engine owns. See ADR-0041, ADR-0044,
-// ADR-0046, ADR-0055 and ADR-0058.
+// `all()`/`first()`/`nearest()` terminals the engine owns. See ADR-0041,
+// ADR-0044, ADR-0045, ADR-0046, ADR-0055 and ADR-0058.
 
 import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
@@ -11,22 +11,29 @@ import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
   lowerWhere,
+  vectorLowering,
   whereCombinators,
   type PredicateAccessor,
   type WhereCombinators,
 } from './lower.js'
 import {
+  resolveNearest,
   resolveOrderBy,
   resolveWhere,
+  type NearestOptions,
+  type NearestPlan,
   type OrderBy,
   type OrderPlan,
   type ResolveContext,
   type Where,
   type WherePlan,
 } from './vocabulary.js'
+import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
+export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
 export type {
+  NearestOptions,
   OrderBy,
   OrderDirection,
   RelationCondition,
@@ -35,6 +42,8 @@ export type {
   WhereCondition,
   WhereValue,
 } from './vocabulary.js'
+export type { VectorColumnDescriptor, VectorDistanceFunction } from './vector.js'
+export { VectorDecodeError } from './vector.js'
 
 /**
  * A composed read: an immutable value carrying the list, the predicates and
@@ -54,6 +63,41 @@ export interface SecuredQuery<TRow = OrmRow> {
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
   first(): Promise<TRow | null>
+  /**
+   * The rows nearest `vector` by the embedding field's own distance function,
+   * scoped exactly as any other read. `[]` when the read is denied.
+   *
+   * The ranking, the `limit` and the `minScore` bound are all inside one
+   * query, alongside the Access Filter — so the top-K is computed over the
+   * rows this session may see rather than filtered down afterwards
+   * (ADR-0045). Searching requires read access to `field`: ordering by a
+   * vector measures its contents, so a session that cannot read it is refused
+   * exactly as it would be for a field the list does not declare.
+   */
+  nearest(
+    field: string,
+    vector: readonly number[],
+    options?: NearestOptions,
+  ): Promise<NearestMatch<TRow>[]>
+}
+
+/**
+ * One vector-search hit. A wrapper rather than a row, so `item` still matches
+ * the caller's selection exactly and the score sits beside it instead of
+ * arriving as a field the list does not have (ADR-0045).
+ */
+export interface NearestMatch<TRow = OrmRow> {
+  /** The row, through Field Visibility like any other read. */
+  item: TRow
+  /**
+   * Similarity in the field's own terms; the raw distance is not exposed.
+   *
+   * The database owns the ordering. This number is the same function
+   * recomputed here from the row's own vector, in float64 over a float4
+   * column, so at a tie two rows can arrive in an order their scores do not
+   * reproduce — do not treat it as the sort key.
+   */
+  score: number
 }
 
 /**
@@ -79,13 +123,14 @@ export class SecuredCollectionMissingError extends Error {
 interface ReadableCollection {
   where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
+  limit(rows: number): ReadableCollection
   all(): PromiseLike<OrmRow[]>
   first(): Promise<OrmRow | null>
 }
 
 function isReadableCollection(value: unknown): value is ReadableCollection {
   if (typeof value !== 'object' || value === null) return false
-  for (const member of ['where', 'orderBy', 'all', 'first']) {
+  for (const member of ['where', 'orderBy', 'limit', 'all', 'first']) {
     if (typeof Reflect.get(value, member) !== 'function') return false
   }
   return true
@@ -216,6 +261,89 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow
   return row === null ? null : await visible(binding, row)
 }
 
+/**
+ * A row with no vector has no distance, so it is excluded in the query rather
+ * than dropped from the result — which is what keeps `limit` exact.
+ */
+function present(near: NearestPlan): WherePlan {
+  return {
+    kind: 'scalar',
+    listName: near.listName,
+    column: near.column,
+    steps: [{ op: 'isNotNull' }],
+  }
+}
+
+/**
+ * Run a vector search: one scoped query carrying the caller's predicates, the
+ * Access Filter, the `minScore` distance bound, the distance ordering and the
+ * limit.
+ *
+ * Known limits:
+ * - The score is computed here from the row's own vector rather than projected.
+ *   A Prisma 8 collection at `8.0.0-rc.8` projects columns only — an expression
+ *   cannot be selected — so the database owns the ranking and the bound, and
+ *   the number beside the row is the same function evaluated over the same
+ *   values. Re-check at GA (ADR-0045).
+ * - pgvector's index authoring is not on the `rc.8` pack, so a contract-managed
+ *   schema carries no HNSW or IVFFlat index and every search here is an exact
+ *   scan, whose top-K under the Access Filter is exact. `hnsw.iterative_scan`
+ *   therefore has nothing to apply to and is not set; enabling it needs a
+ *   connection-scoped statement the read binding has no seam for, and belongs
+ *   with the index declaration (#1128).
+ */
+async function runNearest(
+  binding: ReadBinding,
+  state: QueryState,
+  field: string,
+  vector: readonly number[],
+  options: NearestOptions,
+): Promise<NearestMatch<OrmRow>[]> {
+  const plan = await resolvePlan(binding, state)
+  if (plan === null) return []
+
+  const near = await resolveNearest(
+    field,
+    vector,
+    options,
+    resolveContext(binding, binding.context._isSudo !== true),
+  )
+
+  const ops = await whereCombinators()
+  const vectors = await vectorLowering()
+  const bound = near.distanceBound
+
+  // The sort is built in one call, distance first: a caller's own `orderBy`
+  // becomes the tiebreak rather than competing with the ranking.
+  let collection = scope(
+    binding,
+    { predicates: [...plan.predicates, present(near)], orders: [] },
+    ops,
+  ).orderBy([
+    (model) => vectors.order(near, model),
+    ...plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+  ])
+  if (bound !== null) {
+    collection = collection.where((model) => vectors.bound(near, model, bound))
+  }
+
+  const rows = await withOrigin('engine', () => collection.limit(near.limit).all())
+  return await Promise.all(
+    rows.map(async (row) => ({
+      item: await visible(binding, row),
+      score: score(near, row),
+    })),
+  )
+}
+
+function score(near: NearestPlan, row: OrmRow): number {
+  const stored = requireVector(row[near.column], near.listName, near.column)
+  return distanceToScore(
+    near.distanceFunction,
+    vectorDistance(near.distanceFunction, stored, near.vector),
+  )
+}
+
 function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
   return Array.isArray(order)
 }
@@ -232,6 +360,8 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
       query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
     all: () => runAll(binding, state),
     first: () => runFirst(binding, state),
+    nearest: (field: string, vector: readonly number[], options: NearestOptions = {}) =>
+      runNearest(binding, state, field, vector, options),
   }
 }
 

@@ -136,12 +136,19 @@ export { SecuredCollectionMissingError } from './secured/read.js'
 // directly or through another list's filter. Loud rather than truncated: a
 // truncated Access Filter is a widened read (#1147).
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/read.js'
+// The vector-search terminal: how many rows it returns by default, and the
+// `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
+export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 export type {
   SecuredQuery,
+  NearestMatch,
+  NearestOptions,
   OrderBy,
   OrderDirection,
   RelationCondition,
   ScalarOperators,
+  VectorColumnDescriptor,
+  VectorDistanceFunction,
   Where,
   WhereCondition,
   WhereValue,

@@ -3,12 +3,23 @@
 // a plan the lowering can build without asking another question. Nothing here
 // imports the ORM — the same property that keeps `../filter/` unit-testable.
 
-import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
+import type {
+  ListConfig,
+  OpenSaasConfig,
+  TypeInfo,
+  VectorColumnDescriptor,
+  VectorDistanceFunction,
+} from '../config/types.js'
 import type { AccessContext, PrismaFilter, Session } from '../access/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
+import {
+  VECTOR_DISTANCE_FUNCTIONS,
+  isVectorDistanceFunction,
+  minScoreToDistanceBound,
+} from './vector.js'
 import {
   RELATION_QUANTIFIERS,
   RELATION_QUANTIFIER_SET,
@@ -530,4 +541,114 @@ export async function resolveOrderBy(
     }
   }
   return plans
+}
+
+/** What `nearest()` takes beside the field and the query vector. */
+export interface NearestOptions {
+  /** How many rows to return. Defaults to {@link NEAREST_DEFAULT_LIMIT}. */
+  limit?: number
+  /** Exclude rows scoring below this, as a bound inside the query. */
+  minScore?: number
+}
+
+/** A resolved vector search: the column, the measurement and the bounds. */
+export interface NearestPlan {
+  listName: string
+  column: string
+  distanceFunction: VectorDistanceFunction
+  vector: readonly number[]
+  limit: number
+  /** The lowered `minScore`, or `null` when it bounds nothing. */
+  distanceBound: number | null
+}
+
+/** How many rows `nearest()` returns when the caller names no limit. */
+export const NEAREST_DEFAULT_LIMIT = 10
+
+function malformedSearch(listName: string, detail: string): ValidationError {
+  return new ValidationError([`Cannot search "${listName}" — ${detail}.`])
+}
+
+function queryVector(
+  fieldKey: string,
+  descriptor: VectorColumnDescriptor,
+  raw: unknown,
+  ctx: ResolveContext,
+): readonly number[] {
+  if (
+    !Array.isArray(raw) ||
+    !raw.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+  ) {
+    throw malformedSearch(ctx.listName, `"${fieldKey}" takes a query vector of finite numbers`)
+  }
+  if (raw.length !== descriptor.dimensions) {
+    throw malformedSearch(
+      ctx.listName,
+      `"${fieldKey}" is a ${descriptor.dimensions}-dimension column and the query vector has ` +
+        `${raw.length}`,
+    )
+  }
+  return raw
+}
+
+/**
+ * Resolve a vector search: the field checked against the config and the
+ * session, the query vector checked against the column's dimension, and
+ * `minScore` lowered to a distance bound.
+ *
+ * The field's read gate runs before the "not a vector column" refusal, as
+ * `resolveKey` and `resolveOrderBy` do: a field the session may not read is
+ * refused with the message an undeclared key gets, so the refusal is not an
+ * existence oracle (ADR-0031). Requiring read access is itself the leak
+ * control — ordering by a vector measures its contents (ADR-0045).
+ */
+export async function resolveNearest(
+  fieldKey: string,
+  vector: unknown,
+  options: NearestOptions,
+  ctx: ResolveContext,
+): Promise<NearestPlan> {
+  const resolved = resolveQueryField(fieldKey, ctx.listConfig.fields)
+  if (!resolved) throw unqueryableKey(ctx.listName, fieldKey)
+
+  if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
+    const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
+      session: ctx.session,
+      context: ctx.context,
+    })
+    if (!readable) throw unqueryableKey(ctx.listName, fieldKey)
+  }
+
+  const descriptor = resolved.fieldConfig?.getVectorColumn?.(fieldKey)
+  if (descriptor === undefined) {
+    throw malformedSearch(ctx.listName, `"${fieldKey}" is not a vector column`)
+  }
+  const distanceFunction: unknown = descriptor.distanceFunction
+  if (!isVectorDistanceFunction(distanceFunction)) {
+    throw malformedSearch(
+      ctx.listName,
+      `"${fieldKey}" declares the distance function "${String(distanceFunction)}", which is not ` +
+        `one of ${VECTOR_DISTANCE_FUNCTIONS.join(', ')}`,
+    )
+  }
+
+  const limit = options.limit ?? NEAREST_DEFAULT_LIMIT
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw malformedSearch(ctx.listName, 'limit takes a positive whole number')
+  }
+  if (options.minScore !== undefined && !Number.isFinite(options.minScore)) {
+    throw malformedSearch(ctx.listName, 'minScore takes a finite number')
+  }
+
+  return {
+    listName: ctx.listName,
+    column: descriptor.column,
+    distanceFunction,
+    vector: queryVector(fieldKey, descriptor, vector, ctx),
+    limit,
+    distanceBound:
+      options.minScore === undefined
+        ? null
+        : minScoreToDistanceBound(descriptor.distanceFunction, options.minScore),
+  }
 }

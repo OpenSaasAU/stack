@@ -135,6 +135,8 @@ export type {
   ContractForeignKeyDescriptor,
   ContractRelationDescriptor,
   ContractFieldDescriptor,
+  VectorColumnDescriptor,
+  VectorDistanceFunction,
   JsonField,
   VirtualField,
   TypeDescriptor,
