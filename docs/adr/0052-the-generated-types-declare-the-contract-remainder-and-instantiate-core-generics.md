@@ -135,3 +135,35 @@ Four spellings today say what a field's TypeScript face is: `getTypeScriptType()
 - **The dependency set is emitted twice from one pass** — as data for the engine (ADR-0051) and as the `needs` type here. They cannot drift because the generator computes the set once and renders it in both forms; a build effort that computes them separately has reintroduced the two-walker shape ADR-0051 deleted.
 - **ADR-0032 is amended**: its rejected mapped-type option is adopted now the registry exists; its interface rule stands and extends to the generics core exports. **ADR-0040 is amended**: its "shrinks to what the contract cannot express" consequence resolves to the four items above. **ADR-0051 is amended**: the emitted set also has a type-level form, and its silent-break consequence is narrowed to untyped hooks.
 - **`CONTEXT.md` gains "Contract remainder"** for the per-list facts the generator authors because the contract cannot.
+
+## Amendment — a hook's `context` is keyed too ([#1211](https://github.com/OpenSaasAU/stack/issues/1211))
+
+The Hook arguments section above has three consequences; there is a fourth, and
+it was missing rather than decided against. Every hook-args type hardcodes an
+unparameterised `context`, so a hook's context statically resolves over
+`PrismaClientLike = any`. `AccessControlledDB<any>` is a mapped type over
+`keyof any` intersected with an index signature: it declares no named delegate,
+is therefore assignable to nothing, and accepts `context.db.typoedListName`
+without complaint. A consumer passing a hook's `context` into its own typed
+function has no expressible spelling and must write
+`context as unknown as Context`.
+
+This record's own keying is what closes it. `TypeInfo` is the config-facing
+seam, so it carries the app's `DB` alongside `item`, `output`, `inputs` and
+`fields`, and core's generic hook types read `context` off it — a hook's
+`context` is the same `StackContext<DB, S, PluginServices>` the generated
+`Context` instantiates, not a widened one. The consequence "Core gains the
+generics and loses `any`" already deletes `PrismaClientLike` and
+`AccessControlledDB`'s structural probing; this says the hook args must be
+keyed at the same time rather than left reading a deleted default.
+
+Two facts about the boundary hold. `beforeTransaction` / `afterTransaction`
+keep the plain base-client-bound context of ADR-0028, and a field
+`resolveOutput` keeps the plain context type of ADR-0066 — both are keyed to
+the same `DB`, and neither gains `sudo`/`withSession`/`transaction` here.
+
+`main` closes this ahead of the build, threading the client type through
+`TypeInfo` under the pre-contract keying (#1211). That work is not wasted and
+not a second mechanism: the seam it establishes — the client type enters at
+`TypeInfo`, and core's hook types read it from there — is the seam this record
+keeps. What changes under the contract is only what `TypeInfo` holds.
