@@ -111,9 +111,11 @@ interface TransactionCapable {
  * Run `fn` inside ONE interactive transaction, used as the persistence target
  * for the parent and all nested writes (ADR-0010).
  *
- * Without `$transaction` (e.g. a test mock), `fn` runs directly against the
- * client — hook ordering and arguments are identical, but only a real
- * transaction provides the rollback guarantee.
+ * A client exposing no way to open one is already inside a transaction it did
+ * not open — a Prisma transaction handle carries no `$transaction`, and Prisma
+ * 8's `PostgresTransactionContext` carries no `transaction` either — so `fn`
+ * runs directly against it as a Joined write. Where the enclosing transaction
+ * is the application's own, that write is an Unowned join (ADR-0028).
  */
 async function runInTransaction(
   prisma: OrmClient,

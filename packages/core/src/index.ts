@@ -59,6 +59,13 @@ export type {
   OrmRow,
 } from './access/index.js'
 
+// The access-filter builder — supported API (ADR-0038, ADR-0057). The two
+// primitives every access-scoped read is built from: evaluate a list's
+// operation-level rule, then fold its result into the caller's `where`. A
+// package that reads outside `context.db` — a vector search issuing its own
+// SQL, a plugin composing a filter — calls these rather than carrying a copy.
+export { checkAccess, mergeFilters } from './access/index.js'
+
 // Context factory
 export { getContext } from './context/index.js'
 export type { TransactionOptions, TransactionIsolationLevel } from './context/index.js'
