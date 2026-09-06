@@ -1,4 +1,4 @@
-import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { AccessControl, FieldAccess, PrismaClientLike } from '../access/types.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 
@@ -21,7 +21,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -30,7 +30,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
 
 /** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
@@ -45,7 +45,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
       addValidationError: (msg: string) => void
     }
   | {
@@ -55,7 +55,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
       addValidationError: (msg: string) => void
     }
   | {
@@ -63,7 +63,7 @@ export type FieldValidateHookArgs<
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
       addValidationError: (msg: string) => void
     }
 
@@ -78,7 +78,7 @@ export type FieldBeforeOperationHookArgs<
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -87,14 +87,14 @@ export type FieldBeforeOperationHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
 
 /** Arguments for {@link FieldHooks.afterOperation}. */
@@ -109,7 +109,7 @@ export type FieldAfterOperationHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -119,14 +119,14 @@ export type FieldAfterOperationHookArgs<
       originalItem: TTypeInfo['item']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       originalItem: TTypeInfo['item']
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TTypeInfo['prisma']>
     }
 
 /**
@@ -150,7 +150,7 @@ export type FieldBeforeTransactionHookArgs<
       fieldKey: TFieldKey
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -158,14 +158,14 @@ export type FieldBeforeTransactionHookArgs<
       operation: 'update'
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
 
 /**
@@ -196,7 +196,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['create']
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -205,7 +205,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TTypeInfo['inputs']['create']
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -217,7 +217,7 @@ export type FieldAfterTransactionHookArgs<
       originalItem: TTypeInfo['item'] | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -227,7 +227,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['update']
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -236,7 +236,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
   | {
       listKey: string
@@ -245,7 +245,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
     }
 
 /** Arguments for {@link FieldHooks.resolveOutput}. */
@@ -258,7 +258,7 @@ export type FieldResolveOutputHookArgs<
   item: TTypeInfo['item']
   listKey: string
   fieldName: TFieldKey
-  context: import('../access/types.js').AccessContext
+  context: import('../access/types.js').AccessContext<TTypeInfo['prisma']>
 }
 
 /**
@@ -1499,6 +1499,10 @@ export type GetFieldValueType<
  *
  * @template TKey - The list key/name (e.g., 'Post', 'User')
  * @template TFields - The fields configuration for the list
+ * @template TPrisma - The consuming app's own Prisma client type. Defaults to
+ *   {@link PrismaClientLike} so a `TypeInfo` written (or defaulted) without it
+ *   keeps today's behaviour — a hook's `context` resolves to `StackContext`
+ *   over an unnamed client, same as before this member existed.
  * @template TItem - The output type (Prisma model type)
  * @template TCreateInput - The Prisma create input type
  * @template TUpdateInput - The Prisma update input type
@@ -1513,12 +1517,14 @@ export type GetFieldValueType<
  *     create: Prisma.PostCreateInput
  *     update: Prisma.PostUpdateInput
  *   }
+ *   prisma: PrismaClient
  * }
  * ```
  */
 export interface TypeInfo<
   TKey extends string = string,
   TFields extends Record<string, any> = Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- TypeInfo must accept any field record
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > {
   key: TKey
   fields: TFields
@@ -1527,6 +1533,12 @@ export interface TypeInfo<
     create: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
     update: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
   }
+  /**
+   * The consuming app's own Prisma client type, so a hook's `context` can be
+   * keyed as `StackContext<TPrisma>`/`AccessContext<TPrisma>` instead of
+   * resolving through the unparameterised {@link PrismaClientLike} default.
+   */
+  prisma: TPrisma
 }
 
 // Generic `any` default allows OperationAccess to work with any list item type
@@ -1602,6 +1614,7 @@ export type ResolveInputHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
@@ -1609,7 +1622,7 @@ export type ResolveInputHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
   | {
       listKey: string
@@ -1617,7 +1630,7 @@ export type ResolveInputHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
 
 /**
@@ -1630,6 +1643,7 @@ export type ValidateHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
@@ -1637,7 +1651,7 @@ export type ValidateHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
       addValidationError: (msg: string) => void
     }
   | {
@@ -1646,14 +1660,14 @@ export type ValidateHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
       addValidationError: (msg: string) => void
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
       addValidationError: (msg: string) => void
     }
 
@@ -1667,13 +1681,14 @@ export type BeforeOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
       resolvedData: TCreateInput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
   | {
       listKey: string
@@ -1681,13 +1696,13 @@ export type BeforeOperationHookArgs<
       inputData: TUpdateInput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
 
 /**
@@ -1700,6 +1715,7 @@ export type AfterOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
@@ -1707,7 +1723,7 @@ export type AfterOperationHookArgs<
       inputData: TCreateInput
       item: TOutput
       resolvedData: TCreateInput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
   | {
       listKey: string
@@ -1716,13 +1732,13 @@ export type AfterOperationHookArgs<
       originalItem: TOutput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
   | {
       listKey: string
       operation: 'delete'
       originalItem: TOutput
-      context: import('../context/index.js').StackContext
+      context: import('../context/index.js').StackContext<TPrisma>
     }
 
 /**
@@ -1738,25 +1754,26 @@ export type BeforeTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
       operation: 'update'
       inputData: TUpdateInput
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
 
 /**
@@ -1781,6 +1798,7 @@ export type AfterTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > =
   | {
       listKey: string
@@ -1789,7 +1807,7 @@ export type AfterTransactionHookArgs<
       inputData: TCreateInput
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
@@ -1797,7 +1815,7 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TCreateInput
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
@@ -1808,7 +1826,7 @@ export type AfterTransactionHookArgs<
       originalItem: TOutput | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
@@ -1817,7 +1835,7 @@ export type AfterTransactionHookArgs<
       inputData: TUpdateInput
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
@@ -1825,7 +1843,7 @@ export type AfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
   | {
       listKey: string
@@ -1833,23 +1851,24 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TPrisma>
     }
 
 export type Hooks<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TPrisma extends PrismaClientLike = PrismaClientLike,
 > = {
   resolveInput?: (
-    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
   ) => Promise<TCreateInput | TUpdateInput>
-  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>) => Promise<void>
   beforeOperation?: (
-    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
   ) => Promise<void>
   afterOperation?: (
-    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
   ) => Promise<void>
   /**
    * Side effect BEFORE the write's transaction opens (#590 / ADR-0010).
@@ -1858,7 +1877,7 @@ export type Hooks<
    * with `status: 'rolled-back'`. See {@link BeforeTransactionHookArgs}.
    */
   beforeTransaction?: (
-    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
   ) => Promise<void> | void
   /**
    * Side effect AFTER the write's transaction settles (#590 / ADR-0010).
@@ -1869,12 +1888,14 @@ export type Hooks<
    * {@link AfterTransactionHookArgs}.
    */
   afterTransaction?: (
-    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
   ) => Promise<void> | void
   /**
    * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
    */
-  validateInput?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  validateInput?: (
+    args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma>,
+  ) => Promise<void>
 }
 
 /**
@@ -1938,7 +1959,12 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
-  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
+  hooks?: Hooks<
+    TTypeInfo['item'],
+    TTypeInfo['inputs']['create'],
+    TTypeInfo['inputs']['update'],
+    TTypeInfo['prisma']
+  >
   /**
    * Database configuration for this list (model level)
    */
