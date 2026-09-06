@@ -150,34 +150,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Story 25 of #1125: local e2e runs on the Dev database, CI on the
-    # container. The lookup takes the escape branch when `DATABASE_URL` is set,
-    # so naming the service container here is what puts CI on the escape; a
-    # developer running `pnpm test:e2e` sets nothing and gets the sidecar. PRs
-    # into `main` keep the SQLite string that branch's examples still use, the
-    # same split the `test` job makes.
+    # No `DATABASE_URL`: the Playwright harness calls the same lookup the app
+    # does, and with nothing set it starts the Dev database in-process
+    # (ADR-0063). Naming one here would take the escape branch instead, so the
+    # sidecar this job exists to exercise would never start — and a SQLite URL
+    # is a value the Prisma 8 toolchain cannot use at all.
+    #
+    # Story 25 of #1125 also wants this job on a Postgres service container in
+    # CI. It cannot be added here yet and stay honest: the gate above is the
+    # only condition this job runs under, so any expression keyed on the same
+    # condition resolves one way, and a service container plus a URL nothing
+    # dials is cost that reads as coverage. It belongs in the commit that lifts
+    # the gate, which is #1129.
     env:
-      DATABASE_URL: ${{ github.base_ref == 'main' && 'file:./dev.db' || 'postgres://postgres:postgres@localhost:5432/postgres' }}
       BETTER_AUTH_URL: 'http://localhost:3000'
       BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
-
-    # The same pgvector-capable Postgres 17 the `test` job runs against, so a
-    # pack-declaring contract's `CREATE EXTENSION vector` has something to
-    # install (ADR-0063, ADR-0065). Pinned by digest for the reason given
-    # there; bump both together.
-    services:
-      postgres:
-        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout code

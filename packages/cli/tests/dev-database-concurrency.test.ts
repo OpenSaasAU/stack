@@ -32,9 +32,34 @@ const scratchRoot = fs.mkdtempSync(path.join(packageRoot, 'tests', 'tmp-concurre
 
 const CONNECTION_VARIABLES = ['DATABASE_URL', 'DIRECT_DATABASE_URL'] as const
 
-const ROUNDS = 4
-const CONCURRENCY = 16
+/**
+ * `CONCURRENCY` is the queue depth this load presents to the Dev database's
+ * one connection, and that is the only thing it has to be: above 1 so cycles
+ * genuinely interleave on the shared session, and low enough that the last
+ * worker of a round is still inside the 20 s `connectionTimeoutMillis` the
+ * runtime binds that pool with (`DEV_CONNECTION_TIMEOUT_MS`,
+ * `packages/core/src/db/client.ts`), which pg-pool applies to a *queued*
+ * checkout and not only to dialling. Raising it past that ceiling does not
+ * test the binding harder; it converts a busy CI runner into a red build. Add
+ * total load with `ROUNDS`, which costs time rather than tail latency.
+ */
+const ROUNDS = 8
+const CONCURRENCY = 8
 const SECOND_PROCESS_UPDATES = 3
+
+/**
+ * The lower bound on cycles that must have completed while a `db update` child
+ * was alive. Without it the test passes on a run where the load and the second
+ * process never met — the one arrangement it exists to rule out. One round's
+ * worth is far below what an overlapping run produces and far above the zero a
+ * non-overlapping one produces.
+ */
+const MIN_OVERLAPPING_CYCLES = CONCURRENCY
+
+const LOAD_DEADLINE_MS = 420_000
+const BATCH_TIMEOUT_MS = 120_000
+const DB_UPDATE_TIMEOUT_MS = 180_000
+const COMPLETED_TIMEOUT_MS = 30_000
 
 /**
  * The app: the generated bundle's context, and a `/` that runs `rounds`
@@ -42,6 +67,10 @@ const SECOND_PROCESS_UPDATES = 3
  * sides of a relation inside `context.transaction`, joins them back with
  * `.include()`, edits, re-reads, deletes and confirms the row is gone — so a
  * corrupted session shows up as a wrong answer and not only as a thrown error.
+ *
+ * `/completed` reports the running count of cycles that finished clean, which
+ * is what the test samples either side of a `db update` to prove the two
+ * actually overlapped.
  */
 const APP = `import { createServer } from 'node:http'
 import { writeFileSync } from 'node:fs'
@@ -51,7 +80,9 @@ const context = await getContext()
 const authors = () => context.unsafe.orm.public.Author
 const notes = () => context.unsafe.orm.public.Note
 
-async function cycle(tag, failures) {
+let completed = 0
+
+async function cycle(tag, result) {
   try {
     const { author, note } = await context.transaction(async (tx) => {
       const author = await tx.unsafe.orm.public.Author.create({ name: \`author \${tag}\` })
@@ -63,52 +94,64 @@ async function cycle(tag, failures) {
     })
 
     const joined = await authors().where({ id: author.id }).include('notes').first()
-    if (joined === null) return failures.push(\`\${tag}: the committed author was not readable\`)
+    if (joined === null) return result.failures.push(\`\${tag}: the committed author was not readable\`)
     if (joined.notes.length !== 1) {
-      return failures.push(\`\${tag}: expected 1 note, read \${joined.notes.length}\`)
+      return result.failures.push(\`\${tag}: expected 1 note, read \${joined.notes.length}\`)
     }
     if (joined.notes[0].title !== \`note \${tag}\`) {
-      return failures.push(\`\${tag}: read back "\${joined.notes[0].title}"\`)
+      return result.failures.push(\`\${tag}: read back "\${joined.notes[0].title}"\`)
     }
 
     await notes().where({ id: note.id }).update({ title: \`edited \${tag}\` })
     const edited = await authors().where({ id: author.id }).include('notes').first()
     if (edited?.notes[0]?.title !== \`edited \${tag}\`) {
-      return failures.push(\`\${tag}: the edit read back as "\${edited?.notes[0]?.title}"\`)
+      return result.failures.push(\`\${tag}: the edit read back as "\${edited?.notes[0]?.title}"\`)
     }
 
     await notes().where({ id: note.id }).delete()
     await authors().where({ id: author.id }).delete()
     const gone = await authors().where({ id: author.id }).include('notes').first()
-    if (gone !== null) return failures.push(\`\${tag}: the deleted author is still readable\`)
+    if (gone !== null) return result.failures.push(\`\${tag}: the deleted author is still readable\`)
+
+    completed += 1
   } catch (error) {
-    failures.push(\`\${tag}: \${error instanceof Error ? error.message : String(error)}\`)
+    const message = error instanceof Error ? error.message : String(error)
+    // pg-pool's checkout ceiling, not the shared session going wrong: with
+    // \`max: 1\` a cycle can wait out the whole round for the connection on a
+    // loaded machine. Recorded apart from the failures so a busy runner never
+    // reads as the corruption this test hunts.
+    if (message.includes('timeout exceeded when trying to connect')) {
+      result.timeouts.push(\`\${tag}: \${message}\`)
+    } else {
+      result.failures.push(\`\${tag}: \${message}\`)
+    }
   }
 }
 
 async function load(rounds, concurrency) {
-  const failures = []
+  const result = { cycles: rounds * concurrency, failures: [], timeouts: [] }
   for (let round = 0; round < rounds; round++) {
     await Promise.all(
       Array.from({ length: concurrency }, (_, worker) =>
-        cycle(\`\${Date.now()}-\${round}-\${worker}\`, failures),
+        cycle(\`\${Date.now()}-\${round}-\${worker}\`, result),
       ),
     )
   }
-  return { cycles: rounds * concurrency, failures }
+  return result
 }
 
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
+  const send = (status, body) => {
+    response.writeHead(status, { 'content-type': 'application/json' })
+    response.end(JSON.stringify(body))
+  }
+
+  if (url.pathname === '/completed') return send(200, { completed })
+
   load(Number(url.searchParams.get('rounds')), Number(url.searchParams.get('concurrency')))
-    .then((result) => {
-      response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify(result))
-    })
-    .catch((error) => {
-      response.writeHead(500, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ cycles: 0, failures: [String(error)] }))
-    })
+    .then((result) => send(200, result))
+    .catch((error) => send(500, { cycles: 0, failures: [String(error)], timeouts: [] }))
 })
 
 server.listen(0, '127.0.0.1', () => {
@@ -119,6 +162,11 @@ server.listen(0, '127.0.0.1', () => {
 interface LoadResult {
   cycles: number
   failures: string[]
+  timeouts: string[]
+}
+
+interface CompletedResult {
+  completed: number
 }
 
 interface CliRun {
@@ -163,11 +211,17 @@ function startLoop(projectDir: string): Loop {
   return {
     output: () => output,
     stop: async () => {
-      if (child.exitCode !== null) return
+      // A signal-killed child reports `exitCode === null` and carries the
+      // signal in `signalCode`, so exit code alone does not answer "already
+      // gone" — and `close` will never fire again to settle the promise below.
+      if (child.exitCode !== null || child.signalCode !== null) return
       await new Promise<void>((resolve) => {
         // Inside vitest's default 10 s hook timeout: a wedged sidecar must not
         // turn a reported failure into an unexplained hook timeout on top of it.
-        const timer = setTimeout(() => child.kill('SIGKILL'), 5_000)
+        const timer = setTimeout(() => {
+          child.kill('SIGKILL')
+          resolve()
+        }, 5_000)
         child.once('close', () => {
           clearTimeout(timer)
           resolve()
@@ -194,7 +248,18 @@ async function runDbUpdate(projectDir: string): Promise<CliRun> {
   }
 
   return await new Promise((resolve) => {
-    child.once('close', (exitCode) => resolve({ exitCode, output }))
+    const timer = setTimeout(() => {
+      output += `\n[the test killed this run after ${DB_UPDATE_TIMEOUT_MS} ms]\n`
+      child.kill('SIGKILL')
+    }, DB_UPDATE_TIMEOUT_MS)
+    child.once('error', (error: Error) => {
+      clearTimeout(timer)
+      resolve({ exitCode: null, output: `${output}\n${error.message}` })
+    })
+    child.once('close', (exitCode) => {
+      clearTimeout(timer)
+      resolve({ exitCode, output })
+    })
   })
 }
 
@@ -215,11 +280,25 @@ async function waitForPort(projectDir: string, loop: Loop): Promise<string> {
   throw new Error(`The app never reported a port:\n\n${loop.output()}`)
 }
 
-async function drive(port: string, rounds: number, concurrency: number): Promise<LoadResult> {
+async function drive(
+  port: string,
+  rounds: number,
+  concurrency: number,
+  timeoutMs: number = BATCH_TIMEOUT_MS,
+): Promise<LoadResult> {
   const response = await fetch(
     `http://127.0.0.1:${port}/?rounds=${rounds}&concurrency=${concurrency}`,
+    { signal: AbortSignal.timeout(timeoutMs) },
   )
   return await response.json()
+}
+
+async function readCompleted(port: string): Promise<number> {
+  const response = await fetch(`http://127.0.0.1:${port}/completed`, {
+    signal: AbortSignal.timeout(COMPLETED_TIMEOUT_MS),
+  })
+  const body: CompletedResult = await response.json()
+  return body.completed
 }
 
 const loops: Loop[] = []
@@ -238,30 +317,73 @@ describe('the Dev database under app load and a concurrent second-process db upd
     const port = await waitForPort(projectDir, loop)
 
     const updates: CliRun[] = []
+    const observed: LoadResult = { cycles: 0, failures: [], timeouts: [] }
+    let overlappingCycles = 0
     let updatesFinished = false
+    let secondProcessFailure: Error | undefined
+
     const secondProcess = (async () => {
       for (let index = 0; index < SECOND_PROCESS_UPDATES; index++) {
+        const before = await readCompleted(port)
         updates.push(await runDbUpdate(projectDir))
+        overlappingCycles += (await readCompleted(port)) - before
       }
-      updatesFinished = true
     })()
+      .catch((error: unknown) => {
+        secondProcessFailure = error instanceof Error ? error : new Error(String(error))
+      })
+      .finally(() => {
+        updatesFinished = true
+      })
+
+    const diagnose = (message: string): Error =>
+      new Error(
+        `${message}\n\n${updates.length} of ${SECOND_PROCESS_UPDATES} \`db update\` runs ` +
+          `finished, ${observed.cycles} cycles driven, ${observed.failures.length} failed, ` +
+          `${observed.timeouts.length} timed out waiting for the pool.\n\n` +
+          `${updates.map((update) => update.output).join('\n')}\n\n${loop.output()}`,
+      )
 
     // Batches rather than one fixed run, so the load and the second process
     // overlap whichever finishes first — a sized load that ended before the
     // first `db update` connected would assert nothing about the two together.
-    const observed: LoadResult = { cycles: 0, failures: [] }
+    const deadline = Date.now() + LOAD_DEADLINE_MS
     while (!updatesFinished) {
-      const batch = await drive(port, ROUNDS, CONCURRENCY)
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        throw diagnose(`The second process did not finish within ${LOAD_DEADLINE_MS} ms.`)
+      }
+      const batch = await drive(
+        port,
+        ROUNDS,
+        CONCURRENCY,
+        Math.min(remaining, BATCH_TIMEOUT_MS),
+      ).catch((error: unknown) => {
+        throw diagnose(
+          `A load batch never returned: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
       observed.cycles += batch.cycles
       observed.failures.push(...batch.failures)
+      observed.timeouts.push(...batch.timeouts)
     }
     await secondProcess
+    if (secondProcessFailure !== undefined) throw secondProcessFailure
 
     expect(
       observed.failures.slice(0, 10),
-      `${observed.failures.length} of ${observed.cycles} cycles failed\n\n${loop.output()}`,
+      `${observed.failures.length} of ${observed.cycles} cycles failed ` +
+        `(${observed.timeouts.length} timed out waiting for the pool, which is not ` +
+        `corruption)\n\n${loop.output()}`,
     ).toEqual([])
-    expect(observed.cycles).toBeGreaterThanOrEqual(ROUNDS * CONCURRENCY)
+
+    expect(
+      overlappingCycles,
+      `only ${overlappingCycles} cycles completed while a \`db update\` child was alive, ` +
+        `so this run did not exercise the two together — the property the test is named ` +
+        `for went unasserted (${observed.timeouts.length} cycles timed out waiting for ` +
+        `the pool)\n\n${loop.output()}`,
+    ).toBeGreaterThanOrEqual(MIN_OVERLAPPING_CYCLES)
 
     for (const update of updates) {
       expect(update.exitCode, update.output).toBe(0)

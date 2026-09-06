@@ -4,7 +4,8 @@ Set up a Stack project — from an empty folder to a running admin UI you can ex
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 22.18 or newer — the dev loop runs the generated `.opensaas` bundle
+  through Node's own type stripping, with no loader
 - pnpm (`npm install -g pnpm`)
 - Basic familiarity with Next.js and TypeScript
 
@@ -57,7 +58,8 @@ UI — staying within the access-control guardrails.
 Your schema lives in `opensaas.config.ts`. Running the generator (which the
 scaffolder did for you, and which you re-run with `pnpm generate`) produces:
 
-- **`prisma/contract.json`** and **`prisma/contract.d.ts`** — the emitted schema contract; commit both
+- **`prisma/contract.ts`** — the schema contract, and what `prisma.config.ts` points at
+- **`prisma/contract.json`** and **`prisma/contract.d.ts`** — the artifacts emitted beside it; commit all three
 - **`prisma.config.ts`** — Prisma CLI configuration
 - **`.opensaas/types.ts`** — TypeScript types for your lists
 - **`.opensaas/context.ts`** — the access-controlled context factory
@@ -87,15 +89,21 @@ if (!post) {
 
 Leave `pnpm dev` running. It watches `opensaas.config.ts`, and on a change it
 regenerates and applies the new schema for you — an added field or list is live
-without a restart.
+without a restart. The [Admin UI](http://localhost:3000/admin) rebuilds itself
+from the same config, so reloading it is how you see that the change landed.
 
 A change that would drop data stops short of applying: the loop prints the plan
 and leaves both the database and the running app on the old schema. Approve it
 in a second terminal, while `pnpm dev` is still running:
 
 ```bash
-pnpm db:update
+pnpm db:update --confirm postgres
 ```
+
+The token is the name of the database being changed, which is what Prisma asks
+for before it destroys data; the local one is called `postgres`. `pnpm db:update`
+on its own is refused and exits non-zero — the loop reports that nothing was
+applied and nothing was promoted.
 
 ## Using your own Postgres
 
