@@ -89,6 +89,14 @@ describe('withOrigin', () => {
     await lazy.toArray()
     expect(seen).toEqual([undefined])
   })
+
+  it('accepts a PromiseLike terminal that is not a Promise, inferring its rows', async () => {
+    const seen: (QueryOrigin | undefined)[] = []
+    const terminal: LazyQueryResult<string> = lazyRows(['a', 'b'], seen)
+    const rows: string[] = await withOrigin('engine', () => terminal)
+    expect(rows).toEqual(['a', 'b'])
+    expect(seen).toEqual(['engine'])
+  })
 })
 
 describe('preserveOrigin', () => {
@@ -164,6 +172,76 @@ describe('preserveOrigin', () => {
   })
 })
 
+describe('preserveOrigin containment', () => {
+  const callers: (QueryOrigin | undefined)[] = [undefined, 'engine']
+
+  const asCaller = <T>(caller: QueryOrigin | undefined, body: () => Promise<T>): Promise<T> =>
+    caller === undefined ? body() : withOrigin(caller, body)
+
+  const consumers: [string, (lazy: LazyQueryResult<string>) => Promise<unknown>][] = [
+    ['await', async (lazy) => await lazy],
+    [
+      'for await',
+      async (lazy) => {
+        const rows: string[] = []
+        for await (const row of lazy) rows.push(row)
+        return rows
+      },
+    ],
+    ['toArray', (lazy) => lazy.toArray()],
+    ['first', (lazy) => lazy.first()],
+    ['firstOrThrow', (lazy) => lazy.firstOrThrow()],
+  ]
+
+  for (const [label, consume] of consumers) {
+    for (const caller of callers) {
+      it(`leaves a ${caller ?? 'unscoped'} caller on its own origin after ${label}`, async () => {
+        const seen: (QueryOrigin | undefined)[] = []
+        const observed = await asCaller(caller, async () => {
+          await consume(preserveOrigin('unsafe', lazyRows(['a'], seen)))
+          return currentOrigin()
+        })
+        expect(observed).toBe(caller)
+        expect(seen).toEqual(['unsafe'])
+      })
+    }
+  }
+
+  for (const caller of callers) {
+    it(`runs a ${caller ?? 'unscoped'} caller's then callback on its own origin`, async () => {
+      const seen: (QueryOrigin | undefined)[] = []
+      const observed = await asCaller(
+        caller,
+        () =>
+          new Promise<QueryOrigin | undefined>((resolve, reject) => {
+            preserveOrigin('unsafe', lazyRows(['a'], seen)).then(
+              () => resolve(currentOrigin()),
+              reject,
+            )
+          }),
+      )
+      expect(observed).toBe(caller)
+      expect(seen).toEqual(['unsafe'])
+    })
+
+    it(`runs a ${caller ?? 'unscoped'} caller's then rejection callback on its own origin`, async () => {
+      const failing: LazyQueryResult<string> = {
+        ...lazyRows([], []),
+        then: (onfulfilled, onrejected) =>
+          Promise.reject<string[]>(new Error('query failed')).then(onfulfilled, onrejected),
+      }
+      const observed = await asCaller(
+        caller,
+        () =>
+          new Promise<QueryOrigin | undefined>((resolve) => {
+            preserveOrigin('unsafe', failing).then(null, () => resolve(currentOrigin()))
+          }),
+      )
+      expect(observed).toBe(caller)
+    })
+  }
+})
+
 describe('the tripwire', () => {
   it('throws the refusal error when no origin is in scope', () => {
     expect(() => refuseUnmarkedQuery(plan())).toThrow(UnmarkedQueryError)
@@ -205,16 +283,26 @@ describe('the tripwire', () => {
         expect(() => refuseUnmarkedQuery(plan())).toThrow(UnmarkedQueryError)
       }
     } finally {
-      process.env.NODE_ENV = original
+      if (original === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = original
     }
   })
 
   it('is one installable middleware value that never rewrites the plan', async () => {
     expect(originTripwire.name).toBe('opensaas-origin-tripwire')
     expect(originTripwire.familyId).toBe('sql')
-    expect(typeof originTripwire.beforeCompile).toBe('function')
-    expect(originTripwire.beforeExecute).toBeUndefined()
-    expect(originTripwire.afterExecute).toBeUndefined()
+    expect(Object.keys(originTripwire)).toEqual(['name', 'familyId', 'beforeCompile'])
+  })
+
+  it('refuses through the installed middleware value, not just the decision', async () => {
+    await expect(originTripwire.beforeCompile(plan('dsl', 'insert'))).rejects.toThrow(
+      UnmarkedQueryError,
+    )
+  })
+
+  it('returns undefined from beforeCompile when an origin is in scope', async () => {
+    const rewrite = await withOrigin('engine', () => originTripwire.beforeCompile(plan()))
+    expect(rewrite).toBeUndefined()
   })
 })
 

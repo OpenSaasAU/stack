@@ -15,12 +15,15 @@ import { originTripwire, withOrigin, preserveOrigin } from '@opensaas/stack-core
 const client = postgres({ contractJson, middleware: [originTripwire] })
 
 // A surface that materialises enters the origin around exactly its ORM call,
-// with the await inside — hooks therefore run outside the mark.
-const rows = await withOrigin('engine', () => orm.Post.where({ id }).all())
+// with the await inside — hooks therefore run outside the mark. The terminal
+// returns Prisma's `AsyncIterableResult`, a `PromiseLike` rather than a
+// `Promise`, which is what `withOrigin` accepts.
+const rows: Post[] = await withOrigin('engine', () => orm.Post.where({ id }).all())
 
 // A surface that hands a lazy result back wraps it, so `then`, `toArray`,
 // `first`, `firstOrThrow` and the async iterator's `next` each re-enter the
-// scope and the query executes marked wherever the caller consumes it.
+// scope and the query executes marked wherever the caller consumes it. The
+// caller's own continuations still run under the caller's origin.
 return preserveOrigin('unsafe', client.runtime().query(plan))
 ```
 

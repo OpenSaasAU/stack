@@ -1,11 +1,7 @@
-// ───────────────────────────────────────────────────────────────
-// @opensaas/stack-core/origin
-//
 // The Engine stamp: the ambient origin a declared surface enters around the
 // query it executes, the tripwire that refuses any plan compiled without one,
 // and the refusal error. One module, installed identically by the generated
 // context and by the test harness. See ADR-0059.
-// ───────────────────────────────────────────────────────────────
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { SqlMiddleware } from '@prisma/orm-postgres/family-runtime'
@@ -75,8 +71,13 @@ export class UnmarkedQueryError extends Error {
  * The scope must wrap the ORM call and nothing else. Hooks run outside it by
  * construction, so a hook's own read has to reach a declared surface and mark
  * itself; running a hook inside the engine's scope would silently bless it.
+ *
+ * `execute` returns a `PromiseLike<T>`, not a `Promise<T>`: an ORM read
+ * terminal returns `AsyncIterableResult`, which has `then` but no `catch`,
+ * `finally` or `Symbol.toStringTag`. `withOrigin` still returns a real
+ * `Promise<T>`.
  */
-export function withOrigin<T>(origin: QueryOrigin, execute: () => Promise<T>): Promise<T> {
+export function withOrigin<T>(origin: QueryOrigin, execute: () => PromiseLike<T>): Promise<T> {
   return originStore.run(origin, async () => await execute())
 }
 
@@ -96,6 +97,17 @@ export interface LazyQueryResult<Row> extends AsyncIterable<Row>, PromiseLike<Ro
   ): PromiseLike<TResult1 | TResult2>
 }
 
+function inCallerScope<Args extends unknown[], Result>(
+  caller: QueryOrigin | undefined,
+  callback: ((...args: Args) => Result) | undefined | null,
+): ((...args: Args) => Result) | undefined | null {
+  if (callback === undefined || callback === null) return callback
+  return (...args: Args): Result =>
+    caller === undefined
+      ? originStore.exit(() => callback(...args))
+      : originStore.run(caller, () => callback(...args))
+}
+
 /**
  * Wrap a lazy result so every way of consuming it re-enters `origin`.
  *
@@ -107,6 +119,17 @@ export interface LazyQueryResult<Row> extends AsyncIterable<Row>, PromiseLike<Ro
  * iterator's `next` therefore enters the scope around the underlying call, so
  * the query executes marked whenever and wherever the caller consumes it.
  * Laziness and streaming are unchanged (ADR-0056, ADR-0059).
+ *
+ * The scope covers the underlying execution only. Callbacks the caller passes
+ * to `then` run under the caller's own origin — `undefined` when the caller is
+ * outside any scope — so a continuation is never blessed by the wrapper.
+ *
+ * Known limits: {@link LazyQueryResult} mirrors `AsyncIterableResult` as
+ * published in Prisma `8.0.0-rc.8`, whose whole public surface is the five
+ * members declared here. The wrapper returns an object literal, so
+ * `instanceof AsyncIterableResult` is false downstream, and a member added in
+ * a later release is dropped silently rather than flagged by the compiler —
+ * re-check this shape when the pinned ORM version moves.
  */
 export function preserveOrigin<Row>(
   origin: QueryOrigin,
@@ -129,7 +152,12 @@ export function preserveOrigin<Row>(
     toArray: () => enter(() => result.toArray()),
     first: () => enter(() => result.first()),
     firstOrThrow: () => enter(() => result.firstOrThrow()),
-    then: (onfulfilled, onrejected) => enter(() => result.then(onfulfilled, onrejected)),
+    then: (onfulfilled, onrejected) => {
+      const caller = originStore.getStore()
+      return enter(() =>
+        result.then(inCallerScope(caller, onfulfilled), inCallerScope(caller, onrejected)),
+      )
+    },
   }
 }
 
@@ -164,17 +192,22 @@ export function refuseUnmarkedQuery(draft: DraftPlanIdentity): void {
  * It reads the origin and nothing else — it carries no policy and no session
  * (ADR-0038). It never rewrites the plan.
  *
- * Known limits: a prepared statement runs `beforeCompile` once at `prepare()`
- * and zero times per execution, so neither surface exposes `prepare()` or
- * `runtime()`; an already-compiled `ExecutionPlan` handed to `runtime()`
- * bypasses the middleware chain entirely. Both are closed by keeping those
- * entry points unreachable, not here (ADR-0059).
+ * Known limits, against Prisma `8.0.0-rc.8`: a prepared statement runs
+ * `beforeCompile` once at `prepare()` and zero times per execution, so neither
+ * surface exposes `prepare()` or `runtime()`; an already-compiled
+ * `ExecutionPlan` handed to `runtime()` bypasses the middleware chain
+ * entirely. Both are closed by keeping those entry points unreachable, not
+ * here (ADR-0059).
+ *
+ * `beforeCompile` declares only the part of the draft it reads and ignores the
+ * middleware context, which is what lets a test drive the installed value
+ * itself rather than the decision it delegates to.
  */
-export const originTripwire: SqlMiddleware = {
+export const originTripwire = {
   name: 'opensaas-origin-tripwire',
   familyId: 'sql',
-  async beforeCompile(draft) {
+  async beforeCompile(draft: DraftPlanIdentity): Promise<undefined> {
     refuseUnmarkedQuery(draft)
     return undefined
   },
-}
+} satisfies SqlMiddleware
