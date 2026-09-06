@@ -42,3 +42,8 @@ config describing extensions the contract does not carry. Promotion moves the en
 staged bundle directory — including files a plugin's `afterGenerate` wrote — and swaps
 each file into place through a rename, so the running app never reads a half-written
 one.
+
+Each file lands atomically; the set of them does not. The filesystem offers no
+multi-file commit, so a crash part-way through promotion leaves the bundle split across
+two contracts. The loop reports the split, naming the file it stopped on, and re-running
+`opensaas generate` rewrites the whole bundle from the current config.

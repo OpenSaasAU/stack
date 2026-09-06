@@ -196,7 +196,10 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     const refs = snapshotMigrationRefs(cwd)
 
     const generation = await stage(say)
-    if (generation === undefined) return
+    if (generation === undefined) {
+      restoreMigrationRefs(cwd, refs)
+      return
+    }
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {

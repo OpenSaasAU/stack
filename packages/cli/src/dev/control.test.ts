@@ -111,6 +111,12 @@ describe('the dev loop control channel', () => {
     expect(fs.readFileSync(decoy, 'utf-8')).toBe('nothing yet')
   })
 
+  it('publishes no channel when the control file path cannot hold a file', async () => {
+    fs.mkdirSync(path.join(projectDir, CONTROL_FILE), { recursive: true })
+
+    await expect(startControlChannel(projectDir, async () => {})).rejects.toThrow()
+  })
+
   it('reports a drop mid-exchange as the loop stopping, not as no loop running', async () => {
     channel = await startControlChannel(projectDir, async () => {
       await new Promise(() => {})

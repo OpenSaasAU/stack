@@ -128,6 +128,29 @@ describe('promoting a staged generation', () => {
     expect(fs.readdirSync(live.opensaasDir).sort()).toEqual(['context.ts', 'types.ts'])
   })
 
+  it('replaces the live file rather than rewriting it, so an open reader keeps whole bytes', () => {
+    const { paths: live } = resolveOutputPaths(cwd)
+    const stagingDir = path.join(cwd, '.opensaas', 'staged')
+    const staged = stageWritePaths(live, stagingDir)
+
+    fs.mkdirSync(live.opensaasDir, { recursive: true })
+    fs.writeFileSync(live.types, 'previous', 'utf-8')
+    fs.mkdirSync(staged.opensaasDir, { recursive: true })
+    fs.writeFileSync(staged.types, 'next', 'utf-8')
+
+    // A second name for the live inode stands in for a reader holding it open:
+    // a rename leaves that inode untouched, an in-place copy rewrites it.
+    const heldOpen = path.join(cwd, 'held-open')
+    fs.linkSync(live.types, heldOpen)
+    const inodeBefore = fs.statSync(live.types).ino
+
+    promoteStagedGeneration(staged, live, stagingDir)
+
+    expect(fs.readFileSync(live.types, 'utf-8')).toBe('next')
+    expect(fs.readFileSync(heldOpen, 'utf-8')).toBe('previous')
+    expect(fs.statSync(live.types).ino).not.toBe(inodeBefore)
+  })
+
   it('promotes the held-back project-root prisma.config.ts', () => {
     const { paths: live } = resolveOutputPaths(cwd)
     const stagingDir = path.join(cwd, '.opensaas', 'staged')

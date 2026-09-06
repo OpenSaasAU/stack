@@ -159,18 +159,28 @@ export async function startControlChannel(
   const file = controlFilePath(cwd)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   // `mode` reaches open(2) and so applies only to a file this call creates,
-  // and writeFileSync follows symlinks. Removing whatever is there first is
-  // what makes 0600 hold over a pre-created world-readable file, and stops a
-  // planted symlink redirecting the token somewhere readable.
-  fs.rmSync(file, { force: true })
-  fs.writeFileSync(
-    file,
-    `${JSON.stringify({ pid: process.pid, port: address.port, token }, null, 2)}\n`,
-    {
-      encoding: 'utf-8',
-      mode: 0o600,
-    },
-  )
+  // and writeFileSync follows symlinks. `wx` is O_CREAT|O_EXCL, so the token
+  // only ever lands in a file this call made: 0600 holds over a pre-created
+  // world-readable one, and a planted symlink cannot redirect it somewhere
+  // readable. Removing first and retrying keeps that guarantee across the
+  // stale file a previous loop left behind, and the removal is not the write.
+  const published = `${JSON.stringify({ pid: process.pid, port: address.port, token }, null, 2)}\n`
+  const options = { encoding: 'utf-8', mode: 0o600, flag: 'wx' } as const
+  try {
+    fs.writeFileSync(file, published, options)
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+      server.close()
+      throw error
+    }
+    fs.rmSync(file, { force: true })
+    try {
+      fs.writeFileSync(file, published, options)
+    } catch (retryError) {
+      server.close()
+      throw retryError
+    }
+  }
 
   const clearFile = (): void => {
     fs.rmSync(file, { force: true })

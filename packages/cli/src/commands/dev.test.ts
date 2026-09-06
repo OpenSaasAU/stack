@@ -293,6 +293,47 @@ describe('devCommand', () => {
     await loop
   })
 
+  it('puts the migration refs back when the config change stages nothing', async () => {
+    child.hold = true
+
+    const refsDir = path.join(tempDir, 'migrations', 'app', 'refs')
+    fs.mkdirSync(refsDir, { recursive: true })
+    fs.writeFileSync(path.join(refsDir, 'db.json'), JSON.stringify({ hash: 'before' }), 'utf-8')
+
+    const { resolveOutputPaths } = await import('../generator/output-paths.js')
+    const { paths: live } = resolveOutputPaths(tempDir)
+
+    const { generateCommand } = await import('./generate.js')
+    let refusals = 0
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+      }
+      // Generation seeds each declared pack's contract space into
+      // `migrations/` before it can refuse on the config surface.
+      fs.writeFileSync(path.join(refsDir, 'db.json'), JSON.stringify({ hash: 'after' }), 'utf-8')
+      fs.writeFileSync(path.join(refsDir, 'seeded.json'), JSON.stringify({ hash: 'new' }), 'utf-8')
+      refusals += 1
+      throw new Error('config surface invalid')
+    })
+
+    const { devCommand } = await import('./dev.js')
+    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    const { CONTROL_FILE } = await import('../dev/control.js')
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    watcherHandlers.get('change')?.()
+    await until(() => refusals === 1)
+    await until(() => !fs.existsSync(path.join(refsDir, 'seeded.json')))
+
+    const restored: unknown = JSON.parse(fs.readFileSync(path.join(refsDir, 'db.json'), 'utf-8'))
+    expect(restored).toEqual({ hash: 'before' })
+
+    child.emit('exit', 0, null)
+    await loop
+  })
+
   it('does not start the app when reconciliation does not apply', async () => {
     const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
