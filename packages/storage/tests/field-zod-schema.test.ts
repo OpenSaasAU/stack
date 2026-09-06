@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { validateDatabaseConfig } from '@opensaas/stack-core'
+import type { ContractColumnDescriptor, ContractFieldDescriptor } from '@opensaas/stack-core/extend'
 import { image, file } from '../src/fields/index.js'
 import type { ImageMetadata, FileMetadata } from '../src/config/types.js'
 
@@ -128,6 +131,180 @@ describe('image()/file() getZodSchema key-optionality (issue #618)', () => {
         // size should be a number, not a string.
         expect(obj.safeParse({ resume: { ...validFileMetadata, size: 'big' } }).success).toBe(false)
       })
+    })
+  }
+})
+
+/**
+ * `db.isNullable: false` emits a NOT NULL column. The declared TypeScript face
+ * and the Zod schema must follow it, or `{ field: null }` type-checks and
+ * validates its way to a database not-null violation.
+ */
+describe('image()/file() nullability is one decision', () => {
+  const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+  function columnOf(
+    field: {
+      getContractField?: (
+        name: string,
+        list: string,
+        config: OpenSaasConfig,
+      ) => ContractFieldDescriptor
+    },
+    fieldName: string,
+  ): ContractColumnDescriptor {
+    const descriptor = field.getContractField?.(fieldName, 'Post', CONFIG)
+    if (!descriptor || descriptor.kind !== 'column') {
+      throw new Error('expected a single-column descriptor')
+    }
+    return descriptor
+  }
+
+  describe('a NON-nullable field', () => {
+    const avatar = image({ storage: 'images', db: { isNullable: false } })
+    const resume = file({ storage: 'documents', db: { isNullable: false } })
+
+    it('emits a NOT NULL column', () => {
+      expect(columnOf(avatar, 'avatar').nullable).toBe(false)
+      expect(columnOf(resume, 'resume').nullable).toBe(false)
+    })
+
+    it('declares a face without `| null`', () => {
+      expect(avatar.outputType).toBe("import('@opensaas/stack-storage').ImageMetadata")
+      expect(avatar.inputType).toBe("File | import('@opensaas/stack-storage').ImageMetadata")
+      expect(resume.outputType).toBe("import('@opensaas/stack-storage').FileMetadata")
+      expect(resume.inputType).toBe("File | import('@opensaas/stack-storage').FileMetadata")
+      expect(avatar.resultExtension?.outputType).toBe(avatar.outputType)
+      expect(resume.resultExtension?.outputType).toBe(resume.outputType)
+    })
+
+    for (const operation of ['create', 'update'] as const) {
+      it(`REJECTS null on ${operation}`, () => {
+        expect(objectFor(avatar, 'avatar', operation).safeParse({ avatar: null }).success).toBe(
+          false,
+        )
+        expect(objectFor(resume, 'resume', operation).safeParse({ resume: null }).success).toBe(
+          false,
+        )
+      })
+
+      it(`still accepts a correctly-shaped metadata object on ${operation}`, () => {
+        expect(
+          objectFor(avatar, 'avatar', operation).safeParse({ avatar: validImageMetadata }).success,
+        ).toBe(true)
+        expect(
+          objectFor(resume, 'resume', operation).safeParse({ resume: validFileMetadata }).success,
+        ).toBe(true)
+      })
+    }
+
+    it('requires the key on create — the column has no default to fall back on', () => {
+      expect(objectFor(avatar, 'avatar', 'create').safeParse({}).success).toBe(false)
+      expect(objectFor(resume, 'resume', 'create').safeParse({}).success).toBe(false)
+    })
+
+    it('allows the key to be omitted on update, so partial updates still work', () => {
+      expect(objectFor(avatar, 'avatar', 'update').safeParse({}).success).toBe(true)
+      expect(objectFor(resume, 'resume', 'update').safeParse({}).success).toBe(true)
+    })
+  })
+
+  describe('a nullable field (the default, and an explicit `isNullable: true`)', () => {
+    for (const [label, avatar, resume] of [
+      ['default', image({ storage: 'images' }), file({ storage: 'documents' })],
+      [
+        'explicit',
+        image({ storage: 'images', db: { isNullable: true } }),
+        file({ storage: 'documents', db: { isNullable: true } }),
+      ],
+    ] as const) {
+      it(`${label}: emits a nullable column, a \`| null\` face, and accepts null`, () => {
+        expect(columnOf(avatar, 'avatar').nullable).toBe(true)
+        expect(avatar.outputType).toBe("import('@opensaas/stack-storage').ImageMetadata | null")
+        expect(resume.inputType).toBe(
+          "File | import('@opensaas/stack-storage').FileMetadata | null",
+        )
+        for (const operation of ['create', 'update'] as const) {
+          expect(objectFor(avatar, 'avatar', operation).safeParse({ avatar: null }).success).toBe(
+            true,
+          )
+          expect(objectFor(resume, 'resume', operation).safeParse({ resume: null }).success).toBe(
+            true,
+          )
+        }
+      })
+    }
+  })
+
+  // Multi-column mode has no single column for `isNullable` to constrain: every
+  // part column is nullable and an all-NULL row assembles to null.
+  it('multi-column mode is nullable, and stays so under an explicit `isNullable: true`', () => {
+    const avatar = image({ storage: 'images', db: { columns: 'keystone' } })
+    const resume = file({
+      storage: 'documents',
+      db: { isNullable: true, columns: 'keystone' },
+    })
+
+    expect(avatar.outputType).toBe("import('@opensaas/stack-storage').ImageMetadata | null")
+    expect(resume.outputType).toBe("import('@opensaas/stack-storage').FileMetadata | null")
+    for (const operation of ['create', 'update'] as const) {
+      expect(objectFor(avatar, 'avatar', operation).safeParse({ avatar: null }).success).toBe(true)
+      expect(objectFor(resume, 'resume', operation).safeParse({ resume: null }).success).toBe(true)
+    }
+  })
+})
+
+/**
+ * `db.isNullable: false` cannot be honoured in multi-column mode, so it is
+ * refused rather than dropped — an option taken and silently ignored is the
+ * shape that let the single-column nullability bug reach a release.
+ */
+describe('image()/file() refuse `db.isNullable: false` in multi-column mode', () => {
+  function configWith(field: FieldConfig): OpenSaasConfig {
+    return { db: { provider: 'postgresql' }, lists: { Post: { fields: { hero: field } } } }
+  }
+
+  for (const [label, field] of [
+    ['image()', image({ storage: 'images', db: { isNullable: false, columns: 'keystone' } })],
+    ['file()', file({ storage: 'documents', db: { isNullable: false, columns: 'keystone' } })],
+    [
+      'file() with a parts subset',
+      file({
+        storage: 'documents',
+        db: { isNullable: false, columns: { mode: 'keystone', parts: ['url', 'contentType'] } },
+      }),
+    ],
+  ] as const) {
+    it(`${label}: refuses, naming the list, the field and the fix`, () => {
+      const refusals = validateDatabaseConfig(configWith(field))
+
+      expect(refusals).toHaveLength(1)
+      expect(refusals[0]).toMatchObject({
+        listKey: 'Post',
+        entry: 'fields.hero',
+        reason: 'field-descriptor-error',
+      })
+      expect(refusals[0]?.message).toContain('List "Post"')
+      expect(refusals[0]?.message).toContain('fields.hero')
+      expect(refusals[0]?.message).toContain('Remove db.isNullable, or remove db.columns')
+    })
+  }
+
+  for (const [label, field] of [
+    ['multi-column with no isNullable', image({ storage: 'images', db: { columns: 'keystone' } })],
+    [
+      'multi-column with isNullable: true',
+      file({ storage: 'documents', db: { isNullable: true, columns: 'keystone' } }),
+    ],
+    [
+      'single-column with isNullable: false',
+      file({ storage: 'documents', db: { isNullable: false } }),
+    ],
+    ['single-column with isNullable: true', image({ storage: 'images', db: { isNullable: true } })],
+    ['no db config at all', file({ storage: 'documents' })],
+  ] as const) {
+    it(`${label}: still passes`, () => {
+      expect(validateDatabaseConfig(configWith(field))).toEqual([])
     })
   }
 })

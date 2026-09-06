@@ -158,6 +158,25 @@ describe('the generated bundle type-checks', () => {
     }
   }, 180_000)
 
+  /**
+   * The `tsc` pass below is only worth what the bundle puts in front of it. The
+   * third-party field faces are the ones that resolve outside the generated
+   * tree — into `@opensaas/stack-storage` and `@opensaas/stack-tiptap` — so a
+   * fixture that quietly lost them would leave the compile green and the faces
+   * unchecked (#1167 review).
+   */
+  test('the remainder carries the third-party field faces the tsc pass has to resolve', () => {
+    const types = fs.readFileSync(path.join(projectDir, '.opensaas', 'types.ts'), 'utf-8')
+    for (const face of [
+      "import('@opensaas/stack-storage').ImageMetadata",
+      "import('@opensaas/stack-storage').FileMetadata",
+      "import('@opensaas/stack-tiptap').JSONContent",
+      "File | import('@opensaas/stack-storage').ImageMetadata",
+    ]) {
+      expect(types, face).toContain(face)
+    }
+  })
+
   test('references no Prisma client tree the pipeline never writes', () => {
     for (const file of ['types.ts', 'lists.ts', 'context.ts']) {
       const source = fs.readFileSync(path.join(projectDir, '.opensaas', file), 'utf-8')

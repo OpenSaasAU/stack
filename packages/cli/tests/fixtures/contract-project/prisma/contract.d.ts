@@ -38,7 +38,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'2ed1f8b40bb5f8e673495c5cc8fb5c0ca8be53b2ffe97205623f636c13efbd9f'>;
+  StorageHashBase<'9d76ddf4bf714237a44249e5e5f765c5775586992a706774ccf2c7a0da5e195a'>;
 export type ExecutionHash =
   ExecutionHashBase<'dae5903078565ab31cb5f8ebb7ad424a5c262825cb64eb3e9499e857380e9396'>;
 export type ProfileHash =
@@ -265,6 +265,9 @@ export type FieldOutputTypes = {
       readonly title: CodecTypes['pg/text@1']['output'];
       readonly status: 'draft' | 'published';
       readonly publishedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
+      readonly body: CodecTypes['pg/jsonb@1']['output'] | null;
+      readonly hero: CodecTypes['pg/jsonb@1']['output'] | null;
+      readonly attachment: CodecTypes['pg/jsonb@1']['output'] | null;
       readonly authorId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly categoryId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
@@ -315,6 +318,9 @@ export type FieldInputTypes = {
       readonly title: CodecTypes['pg/text@1']['input'];
       readonly status: 'draft' | 'published';
       readonly publishedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
+      readonly body: CodecTypes['pg/jsonb@1']['input'] | null;
+      readonly hero: CodecTypes['pg/jsonb@1']['input'] | null;
+      readonly attachment: CodecTypes['pg/jsonb@1']['input'] | null;
       readonly authorId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly categoryId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
@@ -361,9 +367,12 @@ export type StorageColumnTypes = {
       readonly name: CodecTypes['pg/text@1']['output'];
     };
     readonly post: {
+      readonly attachment: CodecTypes['pg/jsonb@1']['output'] | null;
       readonly author: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly body: CodecTypes['pg/jsonb@1']['output'] | null;
       readonly category: CodecTypes['pg/uuid@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
+      readonly hero: CodecTypes['pg/jsonb@1']['output'] | null;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly publishedAt: CodecTypes['pg/timestamptz-string@1']['output'] | null;
       readonly status: 'draft' | 'published';
@@ -411,9 +420,12 @@ export type StorageColumnInputTypes = {
       readonly name: CodecTypes['pg/text@1']['input'];
     };
     readonly post: {
+      readonly attachment: CodecTypes['pg/jsonb@1']['input'] | null;
       readonly author: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly body: CodecTypes['pg/jsonb@1']['input'] | null;
       readonly category: CodecTypes['pg/uuid@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
+      readonly hero: CodecTypes['pg/jsonb@1']['input'] | null;
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly publishedAt: CodecTypes['pg/timestamptz-string@1']['input'] | null;
       readonly status: 'draft' | 'published';
@@ -568,6 +580,21 @@ type ContractBase = Omit<
                 readonly publishedAt: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
+                  readonly nullable: true;
+                };
+                readonly body: {
+                  readonly nativeType: 'jsonb';
+                  readonly codecId: 'pg/jsonb@1';
+                  readonly nullable: true;
+                };
+                readonly hero: {
+                  readonly nativeType: 'jsonb';
+                  readonly codecId: 'pg/jsonb@1';
+                  readonly nullable: true;
+                };
+                readonly attachment: {
+                  readonly nativeType: 'jsonb';
+                  readonly codecId: 'pg/jsonb@1';
                   readonly nullable: true;
                 };
                 readonly author: {
@@ -942,6 +969,18 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                 };
               };
+              readonly body: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/jsonb@1' };
+              };
+              readonly hero: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/jsonb@1' };
+              };
+              readonly attachment: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/jsonb@1' };
+              };
               readonly authorId: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
@@ -994,6 +1033,9 @@ type ContractBase = Omit<
                 readonly title: { readonly column: 'title' };
                 readonly status: { readonly column: 'status' };
                 readonly publishedAt: { readonly column: 'publishedAt' };
+                readonly body: { readonly column: 'body' };
+                readonly hero: { readonly column: 'hero' };
+                readonly attachment: { readonly column: 'attachment' };
                 readonly authorId: { readonly column: 'author' };
                 readonly categoryId: { readonly column: 'category' };
                 readonly createdAt: { readonly column: 'createdAt' };

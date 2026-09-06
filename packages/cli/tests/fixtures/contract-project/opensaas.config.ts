@@ -7,6 +7,8 @@ import {
   timestamp,
   virtual,
 } from '@opensaas/stack-core/fields'
+import { file, image } from '@opensaas/stack-storage/fields'
+import { richText } from '@opensaas/stack-tiptap/fields'
 
 /**
  * The project CI regenerates to prove `opensaas generate` is deterministic:
@@ -17,6 +19,12 @@ import {
  * computed field whose `needs` names both a relation and a column. Its
  * declared pgvector pack puts the seeded extension contract space under
  * `migrations/` inside the same gate (ADR-0065).
+ *
+ * `Post`'s third-party fields put `File`, `FileMetadata`, `ImageMetadata` and
+ * `JSONContent` into the generated `.opensaas/types.ts`, so `bundle-typecheck`
+ * compiles those faces as a real generated project resolves them — including
+ * `@opensaas/stack-tiptap`'s `JSONContent` re-export, which exists precisely so
+ * a consumer need not resolve `@tiptap/react` itself (#1167 review).
  */
 export default config({
   db: {
@@ -56,6 +64,9 @@ export default config({
           db: { type: 'enum' },
         }),
         publishedAt: timestamp(),
+        body: richText(),
+        hero: image({ storage: 'images' }),
+        attachment: file({ storage: 'documents' }),
         author: relationship({ ref: 'User.posts', db: { onDelete: 'setNull' } }),
         category: relationship({ ref: 'Category' }),
         byline: virtual({

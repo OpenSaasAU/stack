@@ -23,6 +23,7 @@ import {
   hostileNamesConfig,
   ragConfig,
 } from '../../core/tests/fixtures/contract-configs.js'
+import { fieldPackageConfig } from './fixtures/field-package-configs.js'
 import { renderContractModule } from '../src/generator/contract-module.js'
 
 // The rendered module imports `@prisma/orm-postgres/*` and each pack by
@@ -54,6 +55,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'multi-schema', config: multiSchemaConfig },
   { name: 'native-types', config: nativeTypesConfig },
   { name: 'hostile-names', config: hostileNamesConfig },
+  { name: 'field-packages', config: fieldPackageConfig },
 ]
 
 describe('renderContractModule — the rendered module and the in-process derivation agree', () => {

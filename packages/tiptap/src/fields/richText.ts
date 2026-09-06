@@ -1,5 +1,14 @@
 import { z } from 'zod'
+import type { ContractFieldDescriptor } from '@opensaas/stack-core/extend'
 import type { RichTextField } from '../config/types.js'
+
+/**
+ * Tiptap's document type, referenced through this package rather than
+ * `@tiptap/react`: the generated types are compiled in the consuming app,
+ * where `@tiptap/react` is this package's own dependency and not resolvable
+ * under a strict node_modules layout.
+ */
+const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
 
 /**
  * Rich text field using Tiptap editor
@@ -21,8 +30,13 @@ import type { RichTextField } from '../config/types.js'
  * ```
  */
 export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
+  const isRequired = options?.validation?.isRequired === true
+  const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
+
   return {
     type: 'richText',
+    outputType: face,
+    inputType: face,
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
@@ -49,9 +63,13 @@ export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
         modifiers: isRequired ? undefined : '?',
       }
     },
+    getContractField: (fieldName: string): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: !isRequired,
+    }),
     getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired
-
       return {
         type: 'any',
         optional: !isRequired,

@@ -5,5 +5,6 @@ export { richText } from './fields/richText.js'
 export { TiptapField } from './components/TiptapField.js'
 
 // Types
+export type { JSONContent } from '@tiptap/react'
 export type { RichTextField } from './config/types.js'
 export type { TiptapFieldProps } from './components/TiptapField.js'
