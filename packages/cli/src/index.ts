@@ -32,9 +32,10 @@ program
 
 program
   .command('dev')
-  .description('Watch opensaas.config.ts and regenerate on changes')
-  .action(async () => {
-    await devCommand()
+  .description('Start the dev database, generate, reconcile the schema and run the app')
+  .argument('[command...]', 'App command to run instead of `next dev`, after `--`')
+  .action(async (command: string[]) => {
+    await devCommand({ appCommand: command })
   })
 
 // Add MCP command group

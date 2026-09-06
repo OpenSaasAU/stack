@@ -93,8 +93,8 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
 describe('the generated bundle for a 23-list schema', () => {
   let fixture: TypeFixture
 
-  beforeAll(() => {
-    fixture = emitTypeFixture('large-schema', buildLargeSchemaConfig())
+  beforeAll(async () => {
+    fixture = await emitTypeFixture('large-schema', buildLargeSchemaConfig())
   }, 300_000)
 
   afterAll(() => {

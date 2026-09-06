@@ -1,65 +1,91 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
-import * as path from 'path'
 import * as os from 'os'
+import * as path from 'path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock chokidar
-const mockWatcherOn = vi.fn()
-const mockWatcherClose = vi.fn()
-const mockWatch = vi.fn(() => ({
-  on: mockWatcherOn,
-  close: mockWatcherClose,
+/**
+ * The loop end to end — a real Dev database, a real reconcile and a real app
+ * child — is `tests/dev-loop.test.ts`. What is left here is the boot decisions
+ * that test cannot observe cheaply: the guard on a missing config, and what
+ * the app child is spawned with when the invocation names no command.
+ */
+
+const spawned = vi.hoisted(() => {
+  const calls: { file: string; args: string[]; env: typeof process.env }[] = []
+  return calls
+})
+
+const child = vi.hoisted(() => {
+  const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+  return {
+    exitCode: null,
+    signalCode: null,
+    kill: () => true,
+    once(event: string, handler: (...args: unknown[]) => void) {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler])
+      return this
+    },
+    emit(event: string, ...args: unknown[]) {
+      for (const handler of handlers.get(event) ?? []) handler(...args)
+    },
+  }
+})
+
+vi.mock('child_process', () => ({
+  spawn: (file: string, args: string[], options: { env: typeof process.env }) => {
+    spawned.push({ file, args, env: options.env })
+    setTimeout(() => child.emit('exit', 0, null), 0)
+    return child
+  },
+}))
+
+const stop = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+
+vi.mock('@opensaas/stack-core/dev-database', () => ({
+  startDevDatabase: vi.fn().mockResolvedValue({
+    url: 'postgres://postgres@127.0.0.1:54321/postgres',
+    host: '127.0.0.1',
+    port: 54321,
+    dataDir: undefined,
+    stateFile: 'dev-db.json',
+    stop,
+  }),
+}))
+
+vi.mock('@opensaas/stack-core/internal', () => ({
+  findDatabaseConnection: vi.fn(() => undefined),
+}))
+
+vi.mock('./generate.js', () => ({ generateCommand: vi.fn().mockResolvedValue(undefined) }))
+
+vi.mock('../generator/index.js', () => ({
+  loadOpenSaasConfig: vi.fn().mockResolvedValue({
+    config: { db: { provider: 'postgresql' }, lists: {} },
+    aliasWarnings: [],
+  }),
+  runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
 }))
 
 vi.mock('chokidar', () => ({
   default: {
-    watch: mockWatch,
+    watch: vi.fn(() => ({ on: vi.fn(), close: vi.fn().mockResolvedValue(undefined) })),
   },
 }))
 
-// Mock the generate command
-vi.mock('./generate.js', () => ({
-  generateCommand: vi.fn().mockResolvedValue(undefined),
-}))
-
-// Mock ora
-vi.mock('ora', () => ({
-  default: vi.fn(() => ({
-    start: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    text: '',
-  })),
-}))
-
-// Mock chalk
-vi.mock('chalk', () => ({
-  default: {
-    bold: {
-      cyan: vi.fn((str) => str),
-    },
-    cyan: vi.fn((str) => str),
-    gray: vi.fn((str) => str),
-    red: vi.fn((str) => str),
-    yellow: vi.fn((str) => str),
-  },
-}))
-
-describe('Dev Command', () => {
+describe('devCommand', () => {
   let tempDir: string
   let originalCwd: string
-  let originalExit: typeof process.exit
   let exitCode: number | undefined
+  let originalExit: typeof process.exit
 
   beforeEach(() => {
     vi.clearAllMocks()
+    spawned.length = 0
 
-    // Create temp directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-test-'))
     originalCwd = process.cwd()
     process.chdir(tempDir)
 
-    // Mock process.exit
     originalExit = process.exit
     exitCode = undefined
     process.exit = vi.fn((code?: number) => {
@@ -67,149 +93,54 @@ describe('Dev Command', () => {
       throw new Error(`process.exit(${code})`)
     }) as never
 
-    // Create opensaas.config.ts file
-    fs.writeFileSync(
-      path.join(tempDir, 'opensaas.config.ts'),
-      `
-      import { config } from '@opensaas/stack-core'
-      export default config({
-        lists: {}
-      })
-    `,
-    )
+    fs.writeFileSync(path.join(tempDir, 'opensaas.config.ts'), 'export default {}\n')
   })
 
   afterEach(() => {
-    // Restore
     process.chdir(originalCwd)
     process.exit = originalExit
-
-    // Clean up
-    if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true })
-    }
+    process.exitCode = 0
+    fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
-  describe('devCommand', () => {
-    it('should fail if config file does not exist', async () => {
-      // Remove config file
-      fs.unlinkSync(path.join(tempDir, 'opensaas.config.ts'))
+  it('refuses a directory with no opensaas.config.ts', async () => {
+    fs.unlinkSync(path.join(tempDir, 'opensaas.config.ts'))
+    const { devCommand } = await import('./dev.js')
 
-      const { devCommand } = await import('./dev.js')
+    await expect(devCommand()).rejects.toThrow('process.exit(1)')
+    expect(exitCode).toBe(1)
+  })
 
-      try {
-        await devCommand()
-      } catch {
-        // Expected to throw
-      }
+  it('runs `next dev` when the invocation names no command', async () => {
+    const { devCommand } = await import('./dev.js')
 
-      expect(exitCode).toBe(1)
-    })
+    await devCommand()
 
-    it('should call generateCommand initially', async () => {
-      const { generateCommand } = await import('./generate.js')
-      const { devCommand } = await import('./dev.js')
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0]?.file).toBe('next')
+    expect(spawned[0]?.args).toEqual(['dev'])
+  })
 
-      // Run dev command in background (don't await)
-      devCommand().catch(() => {
-        // Ignore errors
-      })
+  it('runs the command given after `--`, and hands the child no database URL', async () => {
+    const { devCommand } = await import('./dev.js')
 
-      // Wait a bit for initial generation
-      await new Promise((resolve) => setTimeout(resolve, 100))
+    await devCommand({ appCommand: ['node', 'server.mjs'] })
 
-      expect(generateCommand).toHaveBeenCalled()
-    })
+    expect(spawned[0]?.file).toBe('node')
+    expect(spawned[0]?.args).toEqual(['server.mjs'])
+    expect(spawned[0]?.env.DATABASE_URL).toBeUndefined()
+    expect(stop).toHaveBeenCalled()
+  })
 
-    it('should set up file watcher for config file', async () => {
-      const { devCommand } = await import('./dev.js')
+  it('does not start the app when reconciliation does not apply', async () => {
+    const { runPrismaCli } = await import('../generator/index.js')
+    vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
 
-      // Run dev command
-      devCommand().catch(() => {
-        // Ignore errors
-      })
+    const { devCommand } = await import('./dev.js')
+    await devCommand()
 
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      // Verify watcher was set up
-      expect(mockWatch).toHaveBeenCalled()
-      expect(mockWatch.mock.calls.length).toBeGreaterThan(0)
-
-      const watchPath = mockWatch.mock.calls[0]![0]
-      expect(watchPath).toContain('opensaas.config.ts')
-
-      const watchOptions = mockWatch.mock.calls[0]![1]
-      expect(watchOptions).toMatchObject({
-        persistent: true,
-        ignoreInitial: true,
-      })
-    })
-
-    it('should register change event handler', async () => {
-      const { devCommand } = await import('./dev.js')
-
-      devCommand().catch(() => {
-        // Ignore errors
-      })
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      expect(mockWatcherOn).toHaveBeenCalledWith('change', expect.any(Function))
-    })
-
-    it('should register error event handler', async () => {
-      const { devCommand } = await import('./dev.js')
-
-      devCommand().catch(() => {
-        // Ignore errors
-      })
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      expect(mockWatcherOn).toHaveBeenCalledWith('error', expect.any(Function))
-    })
-
-    it('should regenerate on config file change', async () => {
-      const { generateCommand } = await import('./generate.js')
-      const { devCommand } = await import('./dev.js')
-
-      devCommand().catch(() => {
-        // Ignore errors
-      })
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      // Simulate file change
-      const changeHandler = mockWatcherOn.mock.calls.find((call) => call[0] === 'change')?.[1]
-      expect(changeHandler).toBeDefined()
-
-      if (changeHandler) {
-        await changeHandler()
-      }
-
-      // generateCommand should be called again
-      expect(vi.mocked(generateCommand).mock.calls.length).toBeGreaterThan(1)
-    })
-
-    it('should close watcher on SIGINT', async () => {
-      const { devCommand } = await import('./dev.js')
-
-      devCommand().catch(() => {
-        // Ignore errors
-      })
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      // Simulate SIGINT - catch the error from process.exit
-      try {
-        process.emit('SIGINT', 'SIGINT')
-      } catch {
-        // Expected to throw from process.exit mock
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
-      expect(mockWatcherClose).toHaveBeenCalled()
-    })
+    expect(spawned).toHaveLength(0)
+    expect(process.exitCode).toBe(1)
+    expect(stop).toHaveBeenCalled()
   })
 })

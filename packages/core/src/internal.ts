@@ -63,3 +63,9 @@ export type {
   ImageMetadata,
   ImageTransformationResult,
 } from './config/index.js'
+
+// The lookup's provenance, which `opensaas dev` reads to tell the Database
+// escape (a URL in the environment) from a Dev database it should start for
+// the project itself (ADR-0063). The public accessor, `findDatabaseUrl`,
+// reports the URL alone.
+export { findDatabaseConnection } from './db/url.js'

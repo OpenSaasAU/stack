@@ -1,0 +1,27 @@
+---
+'@opensaas/stack-cli': minor
+'@opensaas/stack-core': patch
+---
+
+`opensaas dev` is the dev loop: it starts the Dev database, generates, reconciles and runs the app
+
+Running `opensaas dev` in a project now starts the Dev database on a free loopback port
+(persisting under `.opensaas/dev-db`, with `vector` loaded when the config declares the pgvector
+pack), runs `generate`, runs `prisma db update` against it, and spawns the app — `next dev` by
+default:
+
+```bash
+opensaas dev              # runs `next dev`
+opensaas dev -- vitest    # runs your own command instead
+```
+
+The app child is handed **no** `DATABASE_URL`: it finds the database through the state file, so
+the generated runtime reports `'dev-database'` provenance and takes the single-connection binding.
+`DATABASE_URL` already set is the Database escape — no Dev database starts and the environment
+passes through untouched. The database dies with the process; `opensaas.config.ts` is still
+watched.
+
+Every Prisma CLI spawn is asynchronous now (a `spawnSync` deadlocks the socket server the Dev
+database is served on), with stdin closed for `contract emit` and the terminal inherited for the
+boot `db update`, so a destructive plan stops at Prisma's own consent prompt and the app is never
+started.

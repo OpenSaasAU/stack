@@ -27,7 +27,7 @@ afterAll(() => {
   fs.rmSync(scratchRoot, { recursive: true, force: true })
 })
 
-function emit(name: string, config: OpenSaasConfig): EmittedContract {
+async function emit(name: string, config: OpenSaasConfig): Promise<EmittedContract> {
   const cwd = path.join(scratchRoot, name)
   fs.mkdirSync(path.join(cwd, 'prisma'), { recursive: true })
 
@@ -38,7 +38,7 @@ function emit(name: string, config: OpenSaasConfig): EmittedContract {
     outputDir: './prisma',
   })
 
-  emitContract(cwd, path.join(cwd, 'prisma'))
+  await emitContract(cwd, path.join(cwd, 'prisma'))
 
   expect(fs.existsSync(path.join(cwd, 'prisma', 'contract.d.ts'))).toBe(true)
   return JSON.parse(fs.readFileSync(path.join(cwd, 'prisma', 'contract.json'), 'utf-8'))
@@ -47,8 +47,8 @@ function emit(name: string, config: OpenSaasConfig): EmittedContract {
 describe('prisma contract emit — the blog fixture', () => {
   let emitted: EmittedContract
 
-  beforeAll(() => {
-    emitted = emit('blog', blogConfig)
+  beforeAll(async () => {
+    emitted = await emit('blog', blogConfig)
   }, 180_000)
 
   test('emits every model the config declares', () => {
@@ -106,8 +106,8 @@ describe('prisma contract emit — the blog fixture', () => {
 describe('prisma contract emit — the pgvector fixture', () => {
   let emitted: EmittedContract
 
-  beforeAll(() => {
-    emitted = emit('rag', ragConfig)
+  beforeAll(async () => {
+    emitted = await emit('rag', ragConfig)
   }, 180_000)
 
   test('emits the model and its extension-typed column', () => {

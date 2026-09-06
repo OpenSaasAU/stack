@@ -76,8 +76,8 @@ const config: OpenSaasConfig = {
 describe('write-path narrowing over the emitted contract', () => {
   let fixture: TypeFixture
 
-  beforeAll(() => {
-    fixture = emitTypeFixture('write-narrowing', config)
+  beforeAll(async () => {
+    fixture = await emitTypeFixture('write-narrowing', config)
   }, 300_000)
 
   afterAll(() => {
