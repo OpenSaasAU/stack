@@ -1,5 +1,7 @@
 export { renderContractModule, writeContractModule } from './contract-module.js'
-export { emitContract, resolvePrismaBinary, ContractEmitError } from './contract-emit.js'
+export { emitContract, ContractEmitError } from './contract-emit.js'
+export { resolvePrismaBinary, runPrismaCli } from './prisma-cli.js'
+export type { PrismaCliRun, PrismaCliStdio } from './prisma-cli.js'
 export {
   seedExtensionContractSpaces,
   verifyExtensionSubpaths,
@@ -28,3 +30,5 @@ export type {
 } from './output-paths.js'
 export { resolveTsconfigAlias } from './tsconfig-alias.js'
 export type { TsconfigAliasResult } from './tsconfig-alias.js'
+export { loadOpenSaasConfig } from './config-load.js'
+export type { LoadedOpenSaasConfig } from './config-load.js'

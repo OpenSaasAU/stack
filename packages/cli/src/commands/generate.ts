@@ -2,7 +2,6 @@ import * as path from 'path'
 import * as fs from 'fs'
 import chalk from 'chalk'
 import ora from 'ora'
-import { createJiti } from 'jiti'
 import {
   emitContract,
   seedExtensionContractSpaces,
@@ -15,7 +14,7 @@ import {
   writePluginTypes,
   writeTables,
   resolveOutputPaths,
-  resolveTsconfigAlias,
+  loadOpenSaasConfig,
 } from '../generator/index.js'
 import {
   OpenSaasConfig,
@@ -91,24 +90,8 @@ export async function generateCommand() {
   const spinner = ora('Loading configuration...').start()
 
   try {
-    // Resolve tsconfig.json path aliases (e.g. "@/*") into jiti's alias
-    // option, so a value import in opensaas.config.ts (or anything it
-    // imports) can use the same aliases as the rest of the project (#905).
-    // A project with no tsconfig.json, or no `paths`, resolves to
-    // `alias: undefined`, which is identical to omitting the option.
-    const { alias, warnings: aliasWarnings } = resolveTsconfigAlias(cwd)
-
-    const jiti = createJiti(cwd, {
-      interopDefault: true,
-      alias,
-    })
-
-    // jiti's `interopDefault` doesn't unwrap an async `default` export, so it
-    // must be extracted manually here (config may be a Promise when plugins
-    // are present).
-    const module = (await jiti.import(configPath)) as { default: Promise<OpenSaasConfig> }
-    const configOrPromise = module.default
-    let config = await Promise.resolve(configOrPromise)
+    const { config: loaded, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
+    let config: OpenSaasConfig = loaded
 
     if (config.plugins && config.plugins.length > 0) {
       spinner.text = `Loading configuration with ${config.plugins.length} plugin(s)...`
@@ -306,7 +289,7 @@ export async function generateCommand() {
     // contract.ts.
     const emitSpinner = ora('Emitting contract artifacts...').start()
     try {
-      emitContract(cwd, paths.contractDir)
+      await emitContract(cwd, paths.contractDir)
       emitSpinner.succeed(chalk.green('Contract artifacts emitted'))
       console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractJson)} emitted`))
       console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractTypes)} emitted`))
