@@ -19,8 +19,12 @@ The app child is handed **no** `DATABASE_URL` — one inherited from the environ
 rather than merely left uninjected: it finds the database through the state file, so
 the generated runtime reports `'dev-database'` provenance and takes the single-connection binding.
 `DATABASE_URL` already set is the Database escape — no Dev database starts and the environment
-passes through untouched. The database dies with the process; `opensaas.config.ts` is still
-watched.
+passes through untouched. The project's `.env` is loaded before that decision is made, the same
+file the generated `prisma.config.ts` and `next dev` load, so a `DATABASE_URL` written there is
+honoured rather than shadowed by a sidecar nothing uses; a shell variable still outranks the file.
+The database dies with the process; `opensaas.config.ts` is still watched, and the loop shuts the
+database down on every exit path — a failed reconcile, a Prisma CLI that will not run, and Ctrl-C
+at the consent prompt included.
 
 Every Prisma CLI spawn is asynchronous now (a `spawnSync` deadlocks the socket server the Dev
 database is served on), with stdin closed for `contract emit` and the terminal inherited for the

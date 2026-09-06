@@ -155,6 +155,60 @@ describe('devCommand', () => {
     expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/inherited')
   })
 
+  it('takes the escape from a DATABASE_URL in the project .env, with nothing in the shell', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, '.env'),
+      'DATABASE_URL=postgres://someone@example.test:5432/from-dotenv\n',
+    )
+    const { findDatabaseConnection } = await import('@opensaas/stack-core/internal')
+    vi.mocked(findDatabaseConnection).mockImplementationOnce(() => {
+      const url = process.env.DATABASE_URL
+      return url === undefined || url.length === 0 ? undefined : { url, provenance: 'env' as const }
+    })
+    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
+
+    const { devCommand } = await import('./dev.js')
+    await devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    expect(startDevDatabase).not.toHaveBeenCalled()
+    expect(stop).not.toHaveBeenCalled()
+    expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/from-dotenv')
+  })
+
+  it('stops the dev database when the boot sequence fails before the app starts', async () => {
+    const { runPrismaCli } = await import('../generator/index.js')
+    vi.mocked(runPrismaCli).mockRejectedValueOnce(new Error('The `prisma` CLI is not installed'))
+
+    const { devCommand } = await import('./dev.js')
+
+    await expect(devCommand()).rejects.toThrow('The `prisma` CLI is not installed')
+    expect(spawned).toHaveLength(0)
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('has signal handlers installed before the dev database starts, and removes them after', async () => {
+    const baseline = process.listenerCount('SIGINT')
+    let installedWhenStarting = 0
+    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
+    vi.mocked(startDevDatabase).mockImplementationOnce(async () => {
+      installedWhenStarting = process.listenerCount('SIGINT')
+      return {
+        url: 'postgres://postgres@127.0.0.1:54321/postgres',
+        host: '127.0.0.1',
+        port: 54321,
+        dataDir: undefined,
+        stateFile: path.join(tempDir, '.opensaas', 'dev-db.json'),
+        stop,
+      }
+    })
+
+    const { devCommand } = await import('./dev.js')
+    await devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    expect(installedWhenStarting).toBe(baseline + 1)
+    expect(process.listenerCount('SIGINT')).toBe(baseline)
+  })
+
   it('does not start the app when reconciliation does not apply', async () => {
     const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })

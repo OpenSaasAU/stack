@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import chalk from 'chalk'
-import chokidar from 'chokidar'
+import chokidar, { type FSWatcher } from 'chokidar'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import {
@@ -13,7 +13,6 @@ import {
 import { generateCommand } from './generate.js'
 import { loadOpenSaasConfig, runPrismaCli } from '../generator/index.js'
 
-/** The app command spawned when the invocation carries none of its own. */
 const DEFAULT_APP_COMMAND = ['next', 'dev'] as const
 
 /** The Dev database's data directory, inside the Generated bundle (ADR-0063). */
@@ -46,6 +45,20 @@ function declaredDevDatabaseExtensions(config: OpenSaasConfig): DevDatabaseExten
     if (name !== undefined) loadable.add(name)
   }
   return [...loadable]
+}
+
+/**
+ * Loads the project's `.env` before the Database escape is decided.
+ *
+ * The generated `prisma.config.ts` loads that same file, and `next dev` loads
+ * it too, so a `DATABASE_URL` written there is what the reconcile and the app
+ * resolve — the escape check has to see it or it predicts the wrong branch.
+ * `process.loadEnvFile` throws when the file is absent, and leaves variables
+ * already in the environment untouched, so a shell variable still wins.
+ */
+function loadProjectEnvFile(cwd: string): void {
+  const envFile = path.join(cwd, '.env')
+  if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
 }
 
 /**
@@ -98,18 +111,7 @@ async function reconcile(cwd: string): Promise<boolean> {
   return false
 }
 
-/**
- * The dev loop: start the Dev database, generate, reconcile, run the app, and
- * keep watching `opensaas.config.ts` (ADR-0063).
- *
- * It is a foreground sidecar. There is no daemon and no registry: the database
- * dies with this process, and every other process — the app child, a seed
- * script, a second-terminal `prisma db update` — finds it through the state
- * file rather than an injected variable.
- *
- * `DATABASE_URL` (or `DIRECT_DATABASE_URL`) already set is the Database
- * escape: no Dev database starts and the environment passes through untouched.
- */
+/** The dev loop: Dev database, generate, reconcile, app child, config watch (ADR-0063). */
 export async function devCommand(options: DevCommandOptions = {}): Promise<void> {
   const cwd = process.cwd()
   const configPath = path.join(cwd, 'opensaas.config.ts')
@@ -122,79 +124,104 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
   console.log(chalk.bold.cyan('\nOpenSaas Dev Mode\n'))
 
+  loadProjectEnvFile(cwd)
+
   const appCommand =
     options.appCommand !== undefined && options.appCommand.length > 0
       ? options.appCommand
       : DEFAULT_APP_COMMAND
 
   let database: DevDatabase | undefined
-  if (findDatabaseConnection({ cwd })?.provenance === 'env') {
-    console.log(chalk.gray('DATABASE_URL is set: using it, and starting no dev database.\n'))
-  } else {
-    const { config, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
-    for (const warning of aliasWarnings) console.log(chalk.yellow(`⚠️  ${warning}`))
-
-    // PGlite's own `mkdir` of the data directory is not recursive, so the
-    // Generated bundle directory has to exist before it runs.
-    const dataDir = path.join(cwd, DEV_DATABASE_DIR)
-    fs.mkdirSync(path.dirname(dataDir), { recursive: true })
-
-    database = await startDevDatabase({
-      cwd,
-      dataDir,
-      extensions: declaredDevDatabaseExtensions(config),
-    })
-    console.log(chalk.green(`Dev database listening on ${database.url}\n`))
-  }
-
-  const watcher = chokidar.watch(configPath, { persistent: true, ignoreInitial: true })
-  watcher.on('change', async () => {
-    console.log(chalk.yellow('\nConfig changed, regenerating...\n'))
-    await generateCommand()
-  })
-  watcher.on('error', (error) => {
-    console.error(chalk.red('\nWatcher error:'), error)
-  })
+  let watcher: FSWatcher | undefined
+  let child: ChildProcess | undefined
+  let interrupted = false
 
   const stop = async (): Promise<void> => {
-    await watcher.close()
+    await watcher?.close()
     await database?.stop()
   }
 
-  await generateCommand()
+  const childIsRunning = (): boolean =>
+    child !== undefined && child.exitCode === null && child.signalCode === null
 
-  if (!(await reconcile(cwd))) {
-    await stop()
-    process.exitCode = 1
-    return
+  const onSignal = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    interrupted = true
+    if (childIsRunning()) child?.kill(signal)
+  }
+  const onSigint = (): void => onSignal('SIGINT')
+  const onSigterm = (): void => onSignal('SIGTERM')
+
+  // `generateCommand` reports every refusal by exiting the process, and
+  // `process.exit` skips `finally` — so this listener is the only shutdown
+  // left on that path, and it is confined to what can be done synchronously:
+  // orphan neither the app child nor the state file pointing other processes
+  // at a database that is about to disappear.
+  const onExit = (): void => {
+    if (childIsRunning()) child?.kill('SIGTERM')
+    if (database !== undefined) fs.rmSync(database.stateFile, { force: true })
   }
 
-  console.log(chalk.gray(`Starting the app: ${appCommand.join(' ')}\n`))
-  console.log(chalk.gray('Watching opensaas.config.ts. Press Ctrl+C to stop.\n'))
+  // Registered before the database starts: Ctrl-C at Prisma's consent prompt
+  // is the natural way to decline a destructive plan, and default SIGINT
+  // handling would kill this process with PGlite still open.
+  process.once('SIGINT', onSigint)
+  process.once('SIGTERM', onSigterm)
+  process.once('exit', onExit)
 
-  let child: ChildProcess
   try {
-    child = spawnApp(cwd, appCommand, database !== undefined)
-  } catch (error) {
-    await stop()
-    throw error
-  }
+    if (findDatabaseConnection({ cwd })?.provenance === 'env') {
+      console.log(chalk.gray('DATABASE_URL is set: using it, and starting no dev database.\n'))
+    } else {
+      const { config, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
+      for (const warning of aliasWarnings) console.log(chalk.yellow(`⚠️  ${warning}`))
 
-  const exitCode = await new Promise<number>((resolve) => {
-    const forward = (signal: 'SIGINT' | 'SIGTERM'): void => {
-      if (child.exitCode === null && child.signalCode === null) child.kill(signal)
+      // PGlite's own `mkdir` of the data directory is not recursive, so the
+      // Generated bundle directory has to exist before it runs.
+      const dataDir = path.join(cwd, DEV_DATABASE_DIR)
+      fs.mkdirSync(path.dirname(dataDir), { recursive: true })
+
+      database = await startDevDatabase({
+        cwd,
+        dataDir,
+        extensions: declaredDevDatabaseExtensions(config),
+      })
+      console.log(chalk.green(`Dev database listening on ${database.url}\n`))
     }
-    process.once('SIGINT', () => forward('SIGINT'))
-    process.once('SIGTERM', () => forward('SIGTERM'))
 
-    child.once('error', (error) => {
-      console.error(chalk.red(`\nCould not run \`${appCommand.join(' ')}\`:`), error.message)
-      resolve(1)
+    watcher = chokidar.watch(configPath, { persistent: true, ignoreInitial: true })
+    watcher.on('change', async () => {
+      console.log(chalk.yellow('\nConfig changed, regenerating...\n'))
+      await generateCommand()
     })
-    child.once('exit', (code, signal) => resolve(signal !== null ? 1 : (code ?? 0)))
-  })
+    watcher.on('error', (error) => {
+      console.error(chalk.red('\nWatcher error:'), error)
+    })
 
-  console.log(chalk.yellow('\nStopping dev mode...'))
-  await stop()
-  process.exitCode = exitCode
+    await generateCommand()
+
+    if (!(await reconcile(cwd)) || interrupted) {
+      process.exitCode = 1
+      return
+    }
+
+    console.log(chalk.gray(`Starting the app: ${appCommand.join(' ')}\n`))
+    console.log(chalk.gray('Watching opensaas.config.ts. Press Ctrl+C to stop.\n'))
+
+    child = spawnApp(cwd, appCommand, database !== undefined)
+    const spawned = child
+
+    process.exitCode = await new Promise<number>((resolve) => {
+      spawned.once('error', (error) => {
+        console.error(chalk.red(`\nCould not run \`${appCommand.join(' ')}\`:`), error.message)
+        resolve(1)
+      })
+      spawned.once('exit', (code, signal) => resolve(signal !== null ? 1 : (code ?? 0)))
+    })
+  } finally {
+    process.off('SIGINT', onSigint)
+    process.off('SIGTERM', onSigterm)
+    process.off('exit', onExit)
+    if (child !== undefined) console.log(chalk.yellow('\nStopping dev mode...'))
+    await stop()
+  }
 }

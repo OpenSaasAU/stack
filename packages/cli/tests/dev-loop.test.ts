@@ -184,6 +184,27 @@ describe('opensaas dev', () => {
     expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db.json'))).toBe(false)
   }, 300_000)
 
+  test('a database URL in the project .env is the escape as well', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-escape-dotenv-'))
+    const escape = await startDevDatabase({
+      stateFile: path.join(stateDir, 'dev-db.json'),
+      extensions: ['vector'],
+    })
+    escapes.push(escape)
+
+    const projectDir = createProject('escape-dotenv', ROW_PROBE)
+    fs.writeFileSync(path.join(projectDir, '.env'), `DATABASE_URL=${escape.url}\n`, 'utf-8')
+
+    const run = await runDevLoop(projectDir)
+
+    expect(run.output, run.output).toContain('PROVENANCE env')
+    expect(run.output, run.output).toContain('ROWS 1: read by the app')
+    expect(run.exitCode, run.output).toBe(0)
+
+    expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db'))).toBe(false)
+    expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db.json'))).toBe(false)
+  }, 300_000)
+
   test('twelve projects started at once get twelve distinct ports', async () => {
     const projects = Array.from({ length: 12 }, (_, index) =>
       createProject(`concurrent-${index}`, PORT_PROBE),
