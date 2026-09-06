@@ -5,10 +5,12 @@
 // rather than a login in production.
 
 import {
+  authFlowTestSuite,
   caseInsensitiveTestSuite,
   enableJoinTests,
   normalTestSuite,
   testAdapter,
+  transactionsTestSuite,
   uuidTestSuite,
 } from '@better-auth/test-utils/adapter'
 import { randomUUID } from 'node:crypto'
@@ -215,5 +217,7 @@ await testAdapter({
     normalTestSuite({ disableTests: { ...NOT_IMPLEMENTED, ...HARDCODED_NON_UUID_ID } }),
     uuidTestSuite({ disableTests: NOT_IMPLEMENTED }),
     caseInsensitiveTestSuite(),
+    transactionsTestSuite(),
+    authFlowTestSuite(),
   ],
 }).then((suite) => suite.execute())
