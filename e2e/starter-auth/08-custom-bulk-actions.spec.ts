@@ -25,7 +25,7 @@ test.describe('Custom bulk actions', () => {
     await page.fill('input[name="slug"]', slug)
     await page.fill('textarea[name="content"]', 'content')
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
   test('select rows, run Publish, and see the outcome with the table refreshed', async ({
