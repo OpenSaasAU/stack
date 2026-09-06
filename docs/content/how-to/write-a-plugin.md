@@ -213,7 +213,7 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
               if (operation === 'query' && !logReads) return
 
               // Create audit log entry
-              await ctx.prisma.auditLog.create({
+              await ctx.ormHandle.auditLog.create({
                 data: {
                   listName,
                   itemId: item?.id || '',
@@ -235,7 +235,7 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
     runtime: (context) => ({
       // Provide utility to query audit logs
       getAuditTrail: async (listName: string, itemId: string) => {
-        return context.prisma.auditLog.findMany({
+        return context.ormHandle.auditLog.findMany({
           where: { listName, itemId },
           orderBy: { timestamp: 'desc' },
         })
@@ -244,6 +244,27 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
   }
 }
 ```
+
+#### Which database handle does a plugin get?
+
+The `context` a hook or a `runtime()` factory receives is an `AccessContext`, and
+it carries two database surfaces:
+
+- **`context.db`** — the secured surface. Access control, field visibility and
+  hooks all apply. Inside a write it is bound to that write's transaction, so a
+  `context.db` call from a `beforeOperation`/`afterOperation` hook rolls back
+  with the write. Reach for this by default.
+- **`context.ormHandle`** — the engine's own ORM handle, the client `context.db`
+  runs its queries through. It enforces **nothing**: no access control, no field
+  visibility, no hooks, no error normalisation. The audit plugin above uses it
+  deliberately: an audit trail that the audited session's own access rules can
+  scope away is not an audit trail. It is bound to the write's transaction on
+  the same terms as `context.db`.
+
+`context.ormHandle` is not the same thing as `context.unsafe`, the application's
+documented bypass on the request context (`StackBaseContext`). An `AccessContext`
+has no `unsafe` member; `ormHandle` is what a plugin gets, and it bypasses just
+as much — say why at the call site.
 
 ### Using the Audit Plugin
 

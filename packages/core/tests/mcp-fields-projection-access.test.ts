@@ -125,7 +125,7 @@ describe('MCP `fields` projection against the real access-control pipeline (#851
     mockPrisma.post.findMany.mockResolvedValue([
       { id: 'p1', title: 'Hi', author: { id: 'u2', name: 'Bob' } },
     ])
-    // The batched existence check queries the RAW prisma client for ids
+    // The batched existence check queries the RAW ORM handle for ids
     // matching the access filter — "u2" doesn't, so it comes back empty.
     mockPrisma.user.findMany.mockResolvedValue([])
 

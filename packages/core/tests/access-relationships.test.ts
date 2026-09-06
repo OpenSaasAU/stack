@@ -5,7 +5,7 @@ import type { OpenSaasConfig, AccessContext } from '../src/index.js'
 describe('Relationship Access Control', () => {
   const mockContext: AccessContext = {
     session: null,
-    prisma: {},
+    ormHandle: {},
     db: {},
     storage: {
       uploadFile: async () => {

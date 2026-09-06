@@ -188,7 +188,7 @@ describe.skipIf(!prerequisitesPresent)(
         // First `max` (3) requests succeed, everything past it is rejected.
         expect(statuses.slice(0, 3)).toEqual([200, 200, 200])
         expect(statuses.slice(3)).toEqual([429, 429])
-        await context.prisma.$disconnect()
+        await context.ormHandle.$disconnect()
       } finally {
         await cleanupProject(dir)
       }
@@ -213,7 +213,7 @@ describe.skipIf(!prerequisitesPresent)(
         // for this IP, must see A's persisted counter via the database and
         // reject — proof the limiter state lives in the DB, not in-process.
         expect((await authB.handler(sessionRequest(ip))).status).toBe(429)
-        await context.prisma.$disconnect()
+        await context.ormHandle.$disconnect()
       } finally {
         await cleanupProject(dir)
       }

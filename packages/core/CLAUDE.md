@@ -118,7 +118,7 @@ Hook types:
 
 ### Context (`src/context/index.ts`)
 
-- `createContext(config, prisma, session?)` - Creates context wrapper
+- `createContext(config, ormHandle, session?)` - Creates context wrapper
 - Returns `{ db, session }` where `db` is Prisma client with access control
 - `context.transaction(fn, options?)` - Interactive, hook-firing transaction (see below)
 
@@ -334,7 +334,7 @@ A hookless virtual field (one with `access.read` but no `resolveOutput`) has its
 Context uses generic typing to preserve Prisma types:
 
 ```typescript
-const context = createContext<typeof prisma>(config, prisma, session)
+const context = createContext<typeof ormHandle>(config, ormHandle, session)
 // context.db.post.findMany() is fully typed
 ```
 

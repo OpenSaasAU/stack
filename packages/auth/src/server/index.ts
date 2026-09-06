@@ -53,7 +53,7 @@ function getDatabaseConfig(
   dbConfig: DatabaseConfig,
   context: AccessContext,
 ): BetterAuthOptions['database'] {
-  return prismaAdapter(context.prisma, {
+  return prismaAdapter(context.ormHandle, {
     provider: dbConfig.provider,
   })
 }

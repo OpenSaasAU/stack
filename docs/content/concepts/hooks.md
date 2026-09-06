@@ -116,8 +116,10 @@ hooks split into two families by where they run relative to that transaction:
 - **In-transaction hooks — `beforeOperation` / `afterOperation`.** They run
   _inside_ the transaction and roll back with it. Use them for work that must be
   atomic with the write — typically further database work through
-  `context.db`/`context.prisma` (which the pipeline binds to the transaction for
-  the duration of the write). A throwing `afterOperation` rolls the write back.
+  `context.db` (which the pipeline binds to the transaction for the duration of
+  the write; so is `context.ormHandle`, the engine's own ORM handle, if you have
+  a reason to skip the secured surface). A throwing `afterOperation` rolls the
+  write back.
   **Do not** make non-transactional external calls (HTTP, email, billing) here:
   holding a transaction open across a network call is bad, and such calls can't
   be rolled back.

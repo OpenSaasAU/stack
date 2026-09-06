@@ -131,7 +131,7 @@ function deriveResolveOutputContext(
     _resolveOutputChain: [...context._resolveOutputChain, link],
   }
   if (config) {
-    derived.db = buildDbDelegate(config, context.prisma, derived)
+    derived.db = buildDbDelegate(config, context.ormHandle, derived)
   }
   return derived
 }

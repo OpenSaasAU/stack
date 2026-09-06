@@ -18,38 +18,38 @@ function makeDelegate(): OrmModelDelegate {
 describe('ormModel', () => {
   it('resolves a PascalCase list name through its camelCase client key', () => {
     const authUser = makeDelegate()
-    const prisma: OrmClient = { authUser }
+    const ormHandle: OrmClient = { authUser }
 
-    expect(ormModel(prisma, 'AuthUser')).toBe(authUser)
+    expect(ormModel(ormHandle, 'AuthUser')).toBe(authUser)
   })
 
   it('does not read the list name verbatim off the client', () => {
-    const prisma: OrmClient = { AuthUser: makeDelegate() }
+    const ormHandle: OrmClient = { AuthUser: makeDelegate() }
 
-    expect(() => ormModel(prisma, 'AuthUser')).toThrow(OrmModelMissingError)
+    expect(() => ormModel(ormHandle, 'AuthUser')).toThrow(OrmModelMissingError)
   })
 
   it('accepts a partial delegate, since a test double implements only what it reaches', () => {
     const countOnly = { count: async () => 0 }
-    const prisma: OrmClient = { post: countOnly }
+    const ormHandle: OrmClient = { post: countOnly }
 
-    expect(ormModel(prisma, 'Post')).toBe(countOnly)
+    expect(ormModel(ormHandle, 'Post')).toBe(countOnly)
   })
 
   it('resolves through a client that also carries $transaction', () => {
     const post = makeDelegate()
-    const prisma: OrmClient = { $transaction: async () => [], post }
+    const ormHandle: OrmClient = { $transaction: async () => [], post }
 
-    expect(ormModel(prisma, 'Post')).toBe(post)
+    expect(ormModel(ormHandle, 'Post')).toBe(post)
   })
 
   it('throws OrmModelMissingError naming the list and the key it looked for', () => {
-    const prisma: OrmClient = { post: makeDelegate() }
+    const ormHandle: OrmClient = { post: makeDelegate() }
 
-    expect(() => ormModel(prisma, 'BlogPost')).toThrow(OrmModelMissingError)
+    expect(() => ormModel(ormHandle, 'BlogPost')).toThrow(OrmModelMissingError)
 
     try {
-      ormModel(prisma, 'BlogPost')
+      ormModel(ormHandle, 'BlogPost')
       expect.unreachable('ormModel should have thrown')
     } catch (error) {
       expect(error).toBeInstanceOf(OrmModelMissingError)
@@ -63,11 +63,11 @@ describe('ormModel', () => {
   })
 
   it('reports the missing model itself rather than surfacing later as a TypeError', () => {
-    const prisma: OrmClient = {}
+    const ormHandle: OrmClient = {}
 
     let thrown: unknown
     try {
-      ormModel(prisma, 'Post')
+      ormModel(ormHandle, 'Post')
     } catch (error) {
       thrown = error
     }
@@ -84,8 +84,8 @@ describe('ormModel', () => {
     ['a number', 0],
     ['a function', () => undefined],
   ])('rejects a key holding %s', (_label, value) => {
-    const prisma: OrmClient = { post: value }
+    const ormHandle: OrmClient = { post: value }
 
-    expect(() => ormModel(prisma, 'Post')).toThrow(OrmModelMissingError)
+    expect(() => ormModel(ormHandle, 'Post')).toThrow(OrmModelMissingError)
   })
 })

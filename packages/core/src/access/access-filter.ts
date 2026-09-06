@@ -722,7 +722,7 @@ export function emptyToOneAccessVisibilityTree(): ToOneAccessVisibilityTree {
  * - `kind: 'denied'` → carried straight through; no query, nothing to check.
  * - `kind: 'scoped'` → every id present at this key across ALL of `items` is
  *   collected first (an empty set skips the query entirely — nothing to
- *   check), then ONE `findMany` through the RAW `prisma` client (not
+ *   check), then ONE `findMany` through the RAW ORM handle (not
  *   `context.db`, which would re-evaluate the same access-control function a
  *   second time) asks which of those ids also satisfy `accessWhere` — the
  *   exact `PrismaFilter` `checkAccess` already produced, handed to Prisma
@@ -764,7 +764,7 @@ export async function resolveToOneAccessVisibility(
       continue
     }
 
-    const model = ormModel(args.context.prisma, entry.relatedListName)
+    const model = ormModel(args.context.ormHandle, entry.relatedListName)
     const visibleRows = await model.findMany({
       where: { AND: [entry.accessWhere, { id: { in: [...ids] } }] },
       select: { id: true },

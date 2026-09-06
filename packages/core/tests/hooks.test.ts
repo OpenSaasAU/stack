@@ -13,7 +13,7 @@ import { text, integer, relationship } from '../src/fields/index.js'
 describe('Hooks', () => {
   const mockContext = {
     session: null,
-    prisma: {},
+    ormHandle: {},
     db: {},
   }
 

@@ -44,13 +44,13 @@ export class SqliteVssStorage implements VectorStorage {
     }
 
     try {
-      const prisma = context.prisma
+      const ormHandle = context.ormHandle
 
-      if (!prisma) {
+      if (!ormHandle) {
         console.warn(
           'sqlite-vss: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +
-            'For full sqlite-vss support, ensure the context exposes _prisma.',
+            'For full sqlite-vss support, ensure the context exposes its ORM handle.',
         )
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }

@@ -11,7 +11,7 @@ import type { AccessContext } from '../src/access/types.js'
 
 const mockContext = {
   session: null,
-  prisma: {},
+  ormHandle: {},
   db: {},
 } as unknown as AccessContext
 

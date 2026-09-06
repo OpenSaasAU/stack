@@ -83,13 +83,13 @@ export class PgVectorStorage implements VectorStorage {
     // filter below must be built and merged into the WHERE clause manually.
 
     try {
-      const prisma = context.prisma
+      const ormHandle = context.ormHandle
 
-      if (!isRawQueryable(prisma)) {
+      if (!isRawQueryable(ormHandle)) {
         console.warn(
           'pgvector: Could not access Prisma client directly. ' +
             'Falling back to JSON-based search. ' +
-            'For full pgvector support, ensure the context exposes prisma.',
+            'For full pgvector support, ensure the context exposes its ORM handle.',
         )
         return this.fallbackSearch(listKey, fieldName, queryVector, options)
       }
@@ -112,7 +112,7 @@ export class PgVectorStorage implements VectorStorage {
       const tableName = listKey // Prisma table names match the model name (PascalCase by default)
       const sqlWhereClause = prismaFilterToSQL(combinedFilter, tableName)
 
-      const results = (await prisma.$queryRawUnsafe(`
+      const results = (await ormHandle.$queryRawUnsafe(`
         SELECT id,
                (("${fieldName}"->>'vector')::vector ${distanceOp} '${vectorString}'::vector) as distance
         FROM "${tableName}"
