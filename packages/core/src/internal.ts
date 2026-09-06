@@ -64,6 +64,17 @@ export type {
   ImageTransformationResult,
 } from './config/index.js'
 
+// The engine's LIKE-pattern escaping, shared with the packages that lower a
+// substring predicate to `like`/`ilike` (ADR-0055, ADR-0060). One escaper.
+export {
+  LIKE_ESCAPE_CHARACTER,
+  escapeLikeLiteral,
+  likeEqualsPattern,
+  likeContainsPattern,
+  likeStartsWithPattern,
+  likeEndsWithPattern,
+} from './where/like.js'
+
 // The lookup's provenance, which `opensaas dev` reads to tell the Database
 // escape (a URL in the environment) from a Dev database it should start for
 // the project itself (ADR-0063). The public accessor, `findDatabaseUrl`,

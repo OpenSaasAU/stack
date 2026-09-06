@@ -60,7 +60,11 @@ export function authPlugin(config: AuthConfig): Plugin {
       // suffices for both: a list already declared by the app (or added by
       // an earlier iteration of this same loop) merges via `extendList`;
       // everything else registers via `addList`.
-      for (const [listName, listConfig] of Object.entries(authLists)) {
+      for (const [listName, derived] of Object.entries(authLists)) {
+        // ADR-0048's per-list pin, named for the Auth lists: every id the
+        // adapter hands better-auth is minted by the database, and it is the
+        // same strategy every other list gets.
+        const listConfig = { ...derived, db: { ...derived.db, idField: 'uuid7' as const } }
         if (context.config.lists[listName]) {
           // A list already exists under this derived key — merge auth fields
           // in only. Access control belongs to whoever owns the list (the

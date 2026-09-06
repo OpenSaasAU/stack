@@ -4,15 +4,10 @@ import type { NormalizedAuthConfig } from '../src/config/types.js'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 
 const betterAuthMock = vi.fn(() => ({ api: { getSession: vi.fn(async () => null) } }))
-const prismaAdapterMock = vi.fn((client: unknown, opts: unknown) => ({ client, opts }))
 const nextCookiesMock = vi.fn(() => ({ id: 'next-cookies' }))
 
 vi.mock('better-auth', () => ({
   betterAuth: betterAuthMock,
-}))
-
-vi.mock('better-auth/adapters/prisma', () => ({
-  prismaAdapter: prismaAdapterMock,
 }))
 
 vi.mock('better-auth/next-js', () => ({
@@ -65,8 +60,37 @@ function makeOpensaasConfig(authConfig: NormalizedAuthConfig): OpenSaasConfig {
 }
 
 function makeContext(): AccessContext {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal test fixture
-  return { ormHandle: { __mockPrisma: true } } as any
+  // Neither `unsafe` nor `transaction` is a member of `AccessContext`
+  // (ADR-0038) but the Auth adapter is built from both, so the double has to
+  // carry them.
+  return {
+    ormHandle: { __mockPrisma: true },
+    transaction: () => {
+      throw new Error('no transaction is opened in this test')
+    },
+    unsafe: {
+      sql: {},
+      raw: {},
+      orm: {},
+      query: () => {
+        throw new Error('not queried in this test')
+      },
+      execute: () => {
+        throw new Error('not executed in this test')
+      },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal test fixture
+  } as any
+}
+
+/**
+ * `database` is the Auth adapter factory — a fresh closure per build, so it
+ * compares by identity and never matches. Everything else is compared whole.
+ */
+function expectSameOptions(actual: BetterAuthOptions, expected: BetterAuthOptions): void {
+  expect(typeof actual.database).toBe('function')
+  expect(typeof expected.database).toBe('function')
+  expect({ ...actual, database: undefined }).toEqual({ ...expected, database: undefined })
 }
 
 async function buildBetterAuthConfig(authConfig: NormalizedAuthConfig): Promise<BetterAuthOptions> {
@@ -81,7 +105,6 @@ async function buildBetterAuthConfig(authConfig: NormalizedAuthConfig): Promise<
 describe('createAuth', () => {
   beforeEach(() => {
     betterAuthMock.mockClear()
-    prismaAdapterMock.mockClear()
     nextCookiesMock.mockClear()
   })
 
@@ -310,7 +333,6 @@ describe('createAuth', () => {
 describe('betterAuthOptions passthrough', () => {
   beforeEach(() => {
     betterAuthMock.mockClear()
-    prismaAdapterMock.mockClear()
     nextCookiesMock.mockClear()
   })
 
@@ -324,7 +346,7 @@ describe('betterAuthOptions passthrough', () => {
     const built = await buildBetterAuthConfig(authConfig)
 
     expect(built).toEqual({
-      database: { client: { __mockPrisma: true }, opts: { provider: 'sqlite' } },
+      database: expect.any(Function),
       user: { modelName: 'User' },
       session: { modelName: 'Session', expiresIn: 604800, updateAge: 86400 },
       account: { modelName: 'Account' },
@@ -496,7 +518,6 @@ describe('betterAuthOptions passthrough', () => {
 describe('rateLimit option forwarding (issue #909)', () => {
   beforeEach(() => {
     betterAuthMock.mockClear()
-    prismaAdapterMock.mockClear()
     nextCookiesMock.mockClear()
   })
 
@@ -579,7 +600,7 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     await auth.api.getSession({})
 
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
-    expect(betterAuthMock.mock.calls[0][0]).toEqual(built)
+    expectSameOptions(betterAuthMock.mock.calls[0][0], built)
   })
 
   it('createAuth with a plugin tuple constructs betterAuth with exactly what buildBetterAuthOptions returns for the same tuple', async () => {
@@ -594,7 +615,7 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     await auth.api.getSession({})
 
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
-    expect(betterAuthMock.mock.calls[0][0]).toEqual(built)
+    expectSameOptions(betterAuthMock.mock.calls[0][0], built)
   })
 
   it('createAuth rejects when its plugin tuple does not match the resolved betterAuthPlugins', async () => {
@@ -616,7 +637,6 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
 describe('buildBetterAuthOptions plugin-tuple argument', () => {
   beforeEach(() => {
     betterAuthMock.mockClear()
-    prismaAdapterMock.mockClear()
     nextCookiesMock.mockClear()
   })
 

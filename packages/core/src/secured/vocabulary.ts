@@ -15,6 +15,7 @@ import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
+import { likeContainsPattern } from '../where/like.js'
 import {
   VECTOR_DISTANCE_FUNCTIONS,
   isVectorDistanceFunction,
@@ -240,15 +241,6 @@ function isWhereValue(value: unknown): value is WhereValue {
   )
 }
 
-/**
- * Prisma 8 ships `like`/`ilike` with no `contains` and renders no `ESCAPE`
- * clause, so the pattern is bound verbatim and the engine escapes the
- * wildcards itself against Postgres's default backslash escape (ADR-0055).
- */
-export function containsPattern(value: string): string {
-  return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
-}
-
 function comparison(
   listName: string,
   key: string,
@@ -312,7 +304,7 @@ function resolveScalar(listName: string, key: string, condition: unknown): Scala
         if (typeof raw !== 'string') {
           throw malformedCondition(listName, key, 'takes a string for "contains"')
         }
-        steps.push({ op: 'contains', pattern: containsPattern(raw) })
+        steps.push({ op: 'contains', pattern: likeContainsPattern(raw) })
         break
     }
   }
