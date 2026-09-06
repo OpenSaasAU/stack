@@ -1,11 +1,6 @@
-import type {
-  AccessControlledDB,
-  OrmClient,
-  Session,
-  StackDb,
-  StorageUtils,
-} from '../access/types.js'
+import type { AccessControlledDB, Session, StackDb, StorageUtils } from '../access/types.js'
 import type { ServerActionProps, TransactionOptions } from '../context/index.js'
+import type { UnsafeSurface } from '../unsafe.js'
 
 export type { StackDb }
 
@@ -34,11 +29,12 @@ export interface StackBaseContext<
   db: DB
   session: S | null
   /**
-   * The ORM client, unsecured. Reaching a model through it bypasses access
-   * control and hooks entirely; it is the documented escape hatch for the
-   * cases the secured surface cannot express, and every use should say why.
+   * The {@link UnsafeSurface}: Prisma's own query lanes, bypassing access
+   * control, Field Visibility, hooks and error normalisation entirely. It is
+   * the documented escape hatch for the cases the secured surface cannot
+   * express, and every use should say why.
    */
-  prisma: OrmClient
+  unsafe: UnsafeSurface
   storage: StorageUtils
   plugins: P
   _isSudo: boolean

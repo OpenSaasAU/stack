@@ -254,7 +254,7 @@ ${storageUtilities(config)}
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, asOrmClient(db), session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext(config, asOrmClient(db), session ?? null, storage, false, undefined, undefined, db) as unknown as Context<TSession>
 }
 
 /**
@@ -266,7 +266,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const db = await getClient()
-  return getOpensaasContext(config, asOrmClient(db), null, storage) as unknown as Context
+  return getOpensaasContext(config, asOrmClient(db), null, storage, false, undefined, undefined, db) as unknown as Context
 })()
 
 // This one is pulled during module evaluation, so a database that isn't up yet

@@ -24,6 +24,14 @@ import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { getDbKey } from '../lib/case-utils.js'
 import { uniqueConstraintOf } from '../lib/prisma-errors.js'
 import type { OrmClient } from '../access/types.js'
+import {
+  createUnsafeSurface,
+  createUnsafeTransactionSurface,
+  unavailableUnsafeSurface,
+  type UnsafeCapableClient,
+  type UnsafeSurface,
+  type UnsafeTransactionScope,
+} from '../unsafe.js'
 import type { StackContext } from '../types/context.js'
 import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
 import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
@@ -348,9 +356,23 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // owner's callback body, carry the deferral registry so writes reached
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
+  // The Prisma 8 client the Unsafe surface is built over. Omitted by a caller
+  // that assembles a context from a hand-built ORM double, whose
+  // `context.unsafe` then refuses rather than being typed as absent.
+  client?: UnsafeCapableClient,
+  // Internal: the transaction the Unsafe surface binds its executors to, set
+  // when rebuilding the context inside `transaction()` (ADR-0056).
+  _unsafeTransaction?: UnsafeTransactionScope,
 ): StackContext<AccessControlledDB> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
+
+  const unsafe: UnsafeSurface =
+    client === undefined
+      ? unavailableUnsafeSurface()
+      : _unsafeTransaction === undefined
+        ? createUnsafeSurface(client)
+        : createUnsafeTransactionSurface(client, _unsafeTransaction)
 
   const context: AccessContext = {
     session,
@@ -733,6 +755,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
       // `tx.sudo().db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      client,
+      _unsafeTransaction,
     )
   }
 
@@ -749,6 +773,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       // ADR-0028: a write issued from inside an owned transaction (e.g.
       // `tx.withSession(s).db.x.create()`) must still defer to that owner.
       context._transactionOwner,
+      client,
+      _unsafeTransaction,
     )
   }
 
@@ -772,48 +798,59 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     const registry = new TransactionRegistry()
-    const client = prisma as unknown as TransactionCapable
+    const ormClient = prisma as unknown as TransactionCapable
 
-    const settled =
-      typeof client.$transaction !== 'function'
-        ? // No interactive transaction available (plain client/mock, or already
-          // inside one — see `TransactionCapable` above). Run directly: hook/
-          // access semantics are identical, atomicity comes from the enclosing
-          // transaction.
-          fn(
-            getContext(
-              config,
-              prisma,
-              session,
-              context.storage,
-              _isSudo,
-              context.plugins,
-              registry,
-            ),
-          )
-        : (client.$transaction(
-            (tx) =>
-              fn(
-                getContext(
-                  config,
-                  tx,
-                  session,
-                  context.storage,
-                  _isSudo,
-                  context.plugins,
-                  registry,
-                ),
-              ),
-            options,
-          ) as Promise<T>)
+    const settled = runTransactionBody(fn, registry, ormClient, options)
 
     return settleTransactionOwner(settled, registry)
+  }
+
+  function runTransactionBody<T>(
+    fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
+    registry: TransactionRegistry,
+    ormClient: TransactionCapable,
+    options?: TransactionOptions,
+  ): Promise<T> {
+    const child = (
+      ormHandle: OrmClient,
+      unsafeTransaction?: UnsafeTransactionScope,
+    ): StackContext<AccessControlledDB> =>
+      getContext(
+        config,
+        ormHandle,
+        session,
+        context.storage,
+        _isSudo,
+        context.plugins,
+        registry,
+        client,
+        unsafeTransaction,
+      )
+
+    if (typeof ormClient.$transaction === 'function') {
+      return ormClient.$transaction((tx) => fn(child(tx)), options) as Promise<T>
+    }
+
+    // The engine's own delegates are not on Prisma 8's transaction yet
+    // (spec 3), so the ORM handle stays the outer one and only the Unsafe
+    // surface is transaction-bound — enough for a script inside
+    // `context.transaction` to reach `tx` without closing over the client
+    // (ADR-0056).
+    if (client !== undefined && _unsafeTransaction === undefined) {
+      return client.transaction((tx) => fn(child(prisma, tx)))
+    }
+
+    // Nothing can open an interactive transaction here: a hand-built double,
+    // or a context already inside one. Run directly — hook and access
+    // semantics are identical and atomicity comes from the enclosing
+    // transaction.
+    return fn(child(prisma, _unsafeTransaction))
   }
 
   const returned: StackContext<AccessControlledDB> = {
     db: db as AccessControlledDB,
     session,
-    prisma,
+    unsafe,
     storage: context.storage,
     plugins: context.plugins,
     serverAction,

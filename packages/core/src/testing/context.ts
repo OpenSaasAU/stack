@@ -358,8 +358,9 @@ async function startInstance(
  * Known limits:
  * - The secured surface's terminals arrive in a later spec, so a context built
  *   here is the real engine over a real database but `context.db` cannot yet
- *   execute. Rows go in and come back through {@link TestDatabase.client}
- *   under `withOrigin('unsafe', …)` until then.
+ *   execute. Rows go in and come back through `context.unsafe` — which marks
+ *   itself — or through {@link TestDatabase.client} under
+ *   `withOrigin('unsafe', …)`, which does not, until then.
  * - PGlite serialises every transaction, so nothing contention-shaped is
  *   observable on the default harness. Those guarantees are escape-only.
  * - Only `pgvector` is mapped to a PGlite extension. A pack outside that map
@@ -441,7 +442,8 @@ export async function createTestDatabase(
       contract,
       data,
       client,
-      context: (session = null) => getContext(config, orm, session),
+      context: (session = null) =>
+        getContext(config, orm, session, undefined, false, undefined, undefined, client),
       truncate: async () => {
         if (tables.length === 0) return
         await onClient(instance.url, `truncate table ${tables.join(', ')} restart identity cascade`)

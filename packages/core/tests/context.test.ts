@@ -85,7 +85,9 @@ describe('getContext', () => {
     expect(context.db.user).toBeDefined()
     expect(context.db.post).toBeDefined()
     expect(context.session).toBeNull()
-    expect(context.prisma).toBe(mockPrisma)
+    // Built from a hand-made ORM double, so there is no client behind the
+    // Unsafe surface and every lane refuses by name rather than being absent.
+    expect(() => context.unsafe.orm).toThrow(/context\.unsafe\.orm/)
   })
 
   it('should include session when provided', async () => {
