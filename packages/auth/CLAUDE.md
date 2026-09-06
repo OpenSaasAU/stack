@@ -171,10 +171,12 @@ no better-auth Prisma Client adapter in the path, and no second client:
 `getDatabaseConfig` reads `unsafe` and `transaction` off the resolved context
 structurally, because `AccessContext` names neither (ADR-0038).
 
-The factory's `transaction` option is implemented by rebinding a second factory
-instance to the transaction-bound Unsafe surface, so sign-up's user, account
-and session writes commit or roll back as one. A transaction-bound instance
-ships that option off and brackets `consumeOne` on the lane it already holds.
+The factory's `transaction` option is implemented by a second factory instance,
+built once and reading its lane from an `AsyncLocalStorage` store — the
+transaction-bound Unsafe surface inside a transaction, the outer surface when
+there is none — so sign-up's user, account and session writes commit or roll
+back as one. That bound instance ships the option off and brackets `consumeOne`
+on the lane it already holds.
 ADR-0042's rule applies unchanged: **no isolation level is selectable**, and
 auth transactions run at Read Committed.
 

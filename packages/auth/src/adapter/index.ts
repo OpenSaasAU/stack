@@ -135,11 +135,12 @@ function renameKeys(
  * Every query runs marked as intentionally unscoped: this is auth's own
  * bookkeeping, outside the Access Filter by construction (ADR-0038, ADR-0049).
  *
- * The factory's transaction option is implemented by rebinding a second
- * factory instance to the transaction-bound Unsafe surface, so sign-up's user,
- * account and session writes commit or roll back as one. ADR-0042's rule
- * applies unchanged: no isolation level is selectable, and auth transactions
- * run at Read Committed.
+ * The factory's transaction option is implemented by a second factory
+ * instance, built once and reading its lane from an AsyncLocalStorage store —
+ * the transaction-bound Unsafe surface inside a transaction, the outer surface
+ * when there is none — so sign-up's user, account and session writes commit or
+ * roll back as one. ADR-0042's rule applies unchanged: no isolation level is
+ * selectable, and auth transactions run at Read Committed.
  *
  * Known limits:
  * - **No joins.** `advanced.database.joins` is refused at config time rather
@@ -485,10 +486,9 @@ export function opensaasAuthAdapter(
   }
 
   // The lane is the only thing a transaction-bound instance varies, so it
-  // travels in an AsyncLocalStorage store rather than being closed over: the
-  // bound instance is then built once per adapter, outside the transaction,
-  // instead of on every sign-up and sign-in. Concurrent transactions each read
-  // their own store; outside one there is none, and the outer lane answers.
+  // travels in an AsyncLocalStorage store rather than being closed over:
+  // concurrent transactions each read their own store, and outside one there is
+  // none, so the outer lane answers.
   const boundLane = new AsyncLocalStorage<UnsafeSurface>()
   const laneOf = (): UnsafeSurface => boundLane.getStore() ?? unsafe
 
