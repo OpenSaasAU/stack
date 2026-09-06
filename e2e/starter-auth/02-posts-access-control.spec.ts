@@ -32,7 +32,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.getByLabel('Status').click()
       await setupPage.getByRole('option', { name: 'Published' }).click()
       await setupPage.click('button[type="submit"]')
-      await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
+      await setupPage.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Create a draft post
       await setupPage.getByRole('link', { name: /create.*post/i }).click()
@@ -43,7 +43,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.fill('textarea[name="content"]', 'This is a draft')
       // Default status is draft, no need to change
       await setupPage.click('button[type="submit"]')
-      await setupPage.waitForURL(/admin\/post/, { timeout: 10000 })
+      await setupPage.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       await setupPage.close()
 
@@ -79,7 +79,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.click('button[type="submit"]')
 
       // Should redirect back to post list
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Verify post appears in list
       await expect(page.locator('text=My First Post')).toBeVisible({
@@ -139,7 +139,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', 'unique-slug')
       await page.fill('textarea[name="content"]', 'Content')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Try to create second post with same slug
       await page.getByRole('link', { name: /create.*post/i }).click()
@@ -177,7 +177,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.getByRole('option', { name: 'Published' }).click()
 
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       // Wait for the post to appear in the table before clicking Edit
@@ -214,7 +214,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', `post-${Date.now()}`)
       await page.fill('textarea[name="content"]', 'Original content')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
       // Wait for the specific post to appear
@@ -256,7 +256,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', 'user-1-post')
       await page.fill('textarea[name="content"]', 'Content by user 1')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Get the post URL/ID
       await page.getByRole('link', { name: 'Edit' }).first().click()
@@ -316,7 +316,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('input[name="slug"]', 'post-to-delete')
       await page.fill('textarea[name="content"]', 'This will be deleted')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Find and click delete button (adjust selector based on your UI)
       const deleteButton = page
@@ -358,7 +358,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.fill('textarea[name="content"]', 'Public content')
       await page.fill('textarea[name="internalNotes"]', 'Secret notes')
       await page.click('button[type="submit"]')
-      await page.waitForURL(/admin\/post/, { timeout: 10000 })
+      await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Verify author can see internal notes
       await page.getByRole('link', { name: 'Edit' }).first().click()

@@ -150,11 +150,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # The escape on the job rather than on individual steps, so no step that
-    # runs tests is missing it. Spec 9 moves this job to the integration
-    # branch's Postgres, and adds the service container the `test` job carries.
+    # No `DATABASE_URL`: the Playwright harness calls the same lookup the app
+    # does, and with nothing set it starts the Dev database in-process
+    # (ADR-0063). Naming one here would take the escape branch instead, so the
+    # sidecar this job exists to exercise would never start — and a SQLite URL
+    # is a value the Prisma 8 toolchain cannot use at all.
     env:
-      DATABASE_URL: 'file:./dev.db'
       BETTER_AUTH_URL: 'http://localhost:3000'
       BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000'

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { startDevDatabase, type DevDatabase } from '@opensaas/stack-core/dev-database'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
@@ -45,12 +46,23 @@ async function run(command: string, args: readonly string[], cwd: string): Promi
  * neither, the Dev database is started under the project's Generated bundle,
  * which is where every later process — `generate`, `prisma db update` and the
  * Next server Playwright starts — reads it back from.
+ *
+ * The Dev database's data directory is persistent, and the specs create posts
+ * under fixed unique slugs, so it is discarded first: a run that inherited the
+ * previous run's rows would assert against them instead of what it created.
+ * The `'env'` branch is not reset — a server named by `DATABASE_URL` belongs to
+ * whoever set it, and in CI it is a fresh container per job.
  */
 export async function setupDatabase(projectDir: string): Promise<PreparedDatabase> {
   const existing = findDatabaseConnection({ cwd: projectDir })
   if (existing === undefined) {
+    const dataDir = path.join(projectDir, '.opensaas', 'dev-db')
+    fs.rmSync(dataDir, { recursive: true, force: true })
+    // PGlite's own `mkdir` of the data directory is not recursive, so the
+    // Generated bundle directory has to exist before it runs.
+    fs.mkdirSync(path.dirname(dataDir), { recursive: true })
     started = await startDevDatabase({
-      dataDir: path.join(projectDir, '.opensaas', 'dev-db'),
+      dataDir,
       extensions: ['vector'],
       cwd: projectDir,
     })
