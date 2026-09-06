@@ -77,10 +77,14 @@ describe('devCommand', () => {
   let originalCwd: string
   let exitCode: number | undefined
   let originalExit: typeof process.exit
+  let originalDatabaseUrl: string | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
     spawned.length = 0
+
+    originalDatabaseUrl = process.env.DATABASE_URL
+    delete process.env.DATABASE_URL
 
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-test-'))
     originalCwd = process.cwd()
@@ -100,6 +104,8 @@ describe('devCommand', () => {
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = originalDatabaseUrl
     fs.rmSync(tempDir, { recursive: true, force: true })
   })
 
@@ -122,6 +128,7 @@ describe('devCommand', () => {
   })
 
   it('runs the command given after `--`, and hands the child no database URL', async () => {
+    process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
     const { devCommand } = await import('./dev.js')
 
     await devCommand({ appCommand: ['node', 'server.mjs'] })
@@ -130,6 +137,22 @@ describe('devCommand', () => {
     expect(spawned[0]?.args).toEqual(['server.mjs'])
     expect(spawned[0]?.env.DATABASE_URL).toBeUndefined()
     expect(stop).toHaveBeenCalled()
+  })
+
+  it('starts no dev database and passes the environment through when a URL is already resolved', async () => {
+    const { findDatabaseConnection } = await import('@opensaas/stack-core/internal')
+    vi.mocked(findDatabaseConnection).mockReturnValueOnce({
+      url: 'postgres://someone@example.test:5432/inherited',
+      provenance: 'env',
+    })
+    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
+    process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
+
+    const { devCommand } = await import('./dev.js')
+    await devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    expect(startDevDatabase).not.toHaveBeenCalled()
+    expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/inherited')
   })
 
   it('does not start the app when reconciliation does not apply', async () => {

@@ -15,7 +15,8 @@ opensaas dev              # runs `next dev`
 opensaas dev -- vitest    # runs your own command instead
 ```
 
-The app child is handed **no** `DATABASE_URL`: it finds the database through the state file, so
+The app child is handed **no** `DATABASE_URL` — one inherited from the environment is removed
+rather than merely left uninjected: it finds the database through the state file, so
 the generated runtime reports `'dev-database'` provenance and takes the single-connection binding.
 `DATABASE_URL` already set is the Database escape — no Dev database starts and the environment
 passes through untouched. The database dies with the process; `opensaas.config.ts` is still

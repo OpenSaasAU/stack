@@ -65,22 +65,19 @@ function pathWithProjectBinaries(cwd: string): string {
   return [...directories, process.env.PATH ?? ''].join(path.delimiter)
 }
 
-/**
- * The app child is spawned with the environment as it stands: the Dev database
- * publishes itself through the state file, and an injected `DATABASE_URL`
- * would make the child indistinguishable from the Database escape, costing it
- * the single-connection binding and the marker suppression that the
- * `'dev-database'` provenance turns on (ADR-0063).
- */
-function spawnApp(cwd: string, command: readonly string[]): ChildProcess {
+function spawnApp(cwd: string, command: readonly string[], devDatabase: boolean): ChildProcess {
   const [file, ...args] = command
   if (file === undefined) throw new Error('No app command to run.')
 
-  return spawn(file, args, {
-    cwd,
-    stdio: 'inherit',
-    env: { ...process.env, PATH: pathWithProjectBinaries(cwd) },
-  })
+  const env: typeof process.env = { ...process.env, PATH: pathWithProjectBinaries(cwd) }
+  // The generated runtime binds a single connection and suppresses the
+  // contract-marker read only when `resolveDatabaseUrl()` reports
+  // `'dev-database'`; any inherited `DATABASE_URL` would put it on the `'env'`
+  // branch instead, so it has to be removed, not merely left uninjected
+  // (ADR-0063).
+  if (devDatabase) delete env.DATABASE_URL
+
+  return spawn(file, args, { cwd, stdio: 'inherit', env })
 }
 
 async function reconcile(cwd: string): Promise<boolean> {
@@ -177,7 +174,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
   let child: ChildProcess
   try {
-    child = spawnApp(cwd, appCommand)
+    child = spawnApp(cwd, appCommand, database !== undefined)
   } catch (error) {
     await stop()
     throw error
