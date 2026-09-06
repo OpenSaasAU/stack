@@ -164,6 +164,25 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('update:')
     })
 
+    it("keys TypeInfo's `prisma` member to the app's own generated PrismaClient (#1211)", () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const lists = generateListsNamespace(config)
+
+      expect(lists).toContain("prisma: import('./prisma-client/client.ts').PrismaClient")
+    })
+
     it('should handle lists with relationships', () => {
       const config: OpenSaasConfig = {
         db: {
