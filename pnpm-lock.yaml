@@ -918,6 +918,12 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@opensaas/stack-storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@opensaas/stack-tiptap':
+        specifier: workspace:*
+        version: link:../tiptap
       '@prisma/orm-extension-pgvector':
         specifier: 8.0.0-rc.8
         version: 8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@prisma/orm-target-postgres@8.0.0-rc.8(@prisma/cli-engine@0.3.0(@prisma/management-api-sdk@1.69.0)(magicast@0.5.4))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(magicast@0.5.4)(typanion@3.14.0)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))

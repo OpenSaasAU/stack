@@ -163,10 +163,24 @@
           },
           "Post": {
             "fields": {
+              "attachment": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
               "authorId": {
                 "nullable": true,
                 "type": {
                   "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "body": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
                   "kind": "scalar"
                 }
               },
@@ -181,6 +195,13 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "hero": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
                   "kind": "scalar"
                 }
               },
@@ -257,14 +278,23 @@
             },
             "storage": {
               "fields": {
+                "attachment": {
+                  "column": "attachment"
+                },
                 "authorId": {
                   "column": "author"
+                },
+                "body": {
+                  "column": "body"
                 },
                 "categoryId": {
                   "column": "category"
                 },
                 "createdAt": {
                   "column": "createdAt"
+                },
+                "hero": {
+                  "column": "hero"
                 },
                 "id": {
                   "column": "id"
@@ -910,9 +940,19 @@
             },
             "post": {
               "columns": {
+                "attachment": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
+                },
                 "author": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
+                  "nullable": true
+                },
+                "body": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
                   "nullable": true
                 },
                 "category": {
@@ -928,6 +968,11 @@
                   },
                   "nativeType": "timestamptz",
                   "nullable": false
+                },
+                "hero": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/uuid@1",
@@ -1051,7 +1096,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "2ed1f8b40bb5f8e673495c5cc8fb5c0ca8be53b2ffe97205623f636c13efbd9f"
+    "storageHash": "9d76ddf4bf714237a44249e5e5f765c5775586992a706774ccf2c7a0da5e195a"
   },
   "execution": {
     "executionHash": "dae5903078565ab31cb5f8ebb7ad424a5c262825cb64eb3e9499e857380e9396",

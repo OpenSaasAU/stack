@@ -71,6 +71,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@opensaas/stack-storage": "workspace:*",
+    "@opensaas/stack-tiptap": "workspace:*",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.1.1",
