@@ -48,6 +48,10 @@
     "./config/plugin-engine": {
       "types": "./dist/config/plugin-engine.d.ts",
       "default": "./dist/config/plugin-engine.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     }
   },
   "scripts": {
@@ -79,7 +83,8 @@
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-pgvector": "0.0.9",
     "@electric-sql/pglite-socket": "0.2.11",
-    "@prisma/orm-postgres": "8.0.0-rc.8"
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
@@ -89,6 +94,9 @@
       "optional": true
     },
     "@electric-sql/pglite-socket": {
+      "optional": true
+    },
+    "@prisma/orm-toolchain": {
       "optional": true
     }
   },
@@ -103,6 +111,7 @@
     "@electric-sql/pglite-socket": "0.2.11",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
