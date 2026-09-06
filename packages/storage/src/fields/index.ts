@@ -40,7 +40,7 @@ import {
 export interface ImageDbConfig {
   /** Custom database column name for single-Json? mode (unused in multi-column mode). */
   map?: string
-  /** Override DB-level nullability for single-Json? mode. */
+  /** Override DB-level nullability for single-Json? mode; refused alongside `columns`. */
   isNullable?: boolean
   /** Override the native database type for single-Json? mode. */
   nativeType?: string
@@ -58,7 +58,7 @@ export interface ImageDbConfig {
 export interface FileDbConfig {
   /** Custom database column name for single-Json? mode (unused in multi-column mode). */
   map?: string
-  /** Override DB-level nullability for single-Json? mode. */
+  /** Override DB-level nullability for single-Json? mode; refused alongside `columns`. */
   isNullable?: boolean
   /** Override the native database type for single-Json? mode. */
   nativeType?: string
@@ -91,6 +91,26 @@ function isMultiColumn(columns: ImageDbConfig['columns'] | FileDbConfig['columns
  */
 function resolveNullable(db: ImageDbConfig | FileDbConfig | undefined): boolean {
   return isMultiColumn(db?.columns) ? true : (db?.isNullable ?? true)
+}
+
+/**
+ * Refuse `db.isNullable: false` alongside multi-column mode.
+ *
+ * Thrown from `getContractField`, which core's `validateExtensionPacks` calls
+ * inside a try/catch and reports as a `field-descriptor-error` config refusal
+ * naming the list and the field — so generation stops before any column is
+ * emitted. Core cannot make this call itself: another field package may
+ * legitimately consume `db.isNullable` when building its part columns, and only
+ * the package that drops the option knows that it drops it.
+ */
+function refuseNullabilityOverride(db: ImageDbConfig | FileDbConfig | undefined): void {
+  if (db?.isNullable !== false) return
+  throw new Error(
+    'db.isNullable: false is set alongside db.columns (multi-column, Keystone-parity mode), ' +
+      'where every part column is nullable and an all-NULL row reads back as null — the ' +
+      'assembled value cannot be non-nullable. Remove db.isNullable, or remove db.columns to ' +
+      'use the single-Json? column that db.isNullable constrains.',
+  )
 }
 
 /** The metadata blob's single-column backing, honouring the `db` overrides the field documents. */
@@ -408,8 +428,10 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
         map: col.map,
       }))
     }
-    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor =>
-      partColumns(fileColumnDescriptors(columnMapFor(fieldName), fileParts))
+    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor => {
+      refuseNullabilityOverride(options.db)
+      return partColumns(fileColumnDescriptors(columnMapFor(fieldName), fileParts))
+    }
     fieldConfig.getColumnNames = (fieldName: string): string[] =>
       fileColumnNames(columnMapFor(fieldName), fileParts)
     fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
@@ -606,8 +628,10 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
         map: col.map,
       }))
     }
-    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor =>
-      partColumns(imageColumnDescriptors(columnMapFor(fieldName)))
+    fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor => {
+      refuseNullabilityOverride(options.db)
+      return partColumns(imageColumnDescriptors(columnMapFor(fieldName)))
+    }
     fieldConfig.getColumnNames = (fieldName: string): string[] =>
       imageColumnNames(columnMapFor(fieldName))
     fieldConfig.assembleColumns = (fieldName: string, row: Record<string, unknown>): unknown =>
