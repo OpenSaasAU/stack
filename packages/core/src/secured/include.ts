@@ -66,10 +66,33 @@ export interface SecuredRefinement {
    * {@link NestedToOneIncludeError}.
    */
   include(name: string, refine?: Refinement): SecuredRefinement
+  /**
+   * Reduce the related rows to how many of them this session may see, in
+   * place of the rows themselves. To-many only, and `where()` only: see
+   * {@link UnreducibleRefinementError}.
+   */
+  count(): SecuredReduction
+  /**
+   * Several independently scoped reductions over the same relation, one per
+   * key. Each branch carries its own predicates and the related list's
+   * `query` access, so one branch's scope never decides another's.
+   */
+  combine(spec: Record<string, SecuredReduction>): SecuredReduction
 }
 
-/** What `.include()`'s second argument is: a refinement in, a refinement out. */
-export type Refinement = (refinement: SecuredRefinement) => SecuredRefinement
+/**
+ * A reduction over a relation's rows, in place of the rows themselves. Opaque
+ * for the reason a refinement is: a caller holding one can reach nothing.
+ */
+export interface SecuredReduction {
+  readonly reduction: 'relation'
+}
+
+/** What a refinement callback may return: the related rows, or a reduction. */
+export type RefinementResult = SecuredRefinement | SecuredReduction
+
+/** What `.include()`'s second argument is: a refinement in, rows or a count out. */
+export type Refinement = (refinement: SecuredRefinement) => RefinementResult
 
 /**
  * Thrown when a refinement callback returns something this engine did not
@@ -133,6 +156,64 @@ export class NestedToOneIncludeError extends Error {
   }
 }
 
+/**
+ * Thrown when a reduction is asked of a relation that has no rows to reduce —
+ * a to-one. Denial by arity, the same rule ADR-0058 states for what a relation
+ * reads as: a to-one is one row or `null`, and counting it would answer a
+ * question about the relationship's existence rather than about rows.
+ */
+export class ReducedToOneIncludeError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly relation: string,
+  ) {
+    super(
+      `Cannot count "${listName}.${relation}": it is a to-one relation, which reads as one row ` +
+        `or null rather than as rows to count. Include it and test the result for null instead.`,
+    )
+    this.name = 'ReducedToOneIncludeError'
+  }
+}
+
+/**
+ * Thrown when a refinement that is reduced to a count also composed something
+ * a count cannot honour. Refused rather than dropped: silently ignoring a
+ * `limit` the caller wrote would answer a different question than the one they
+ * asked.
+ */
+export class UnreducibleRefinementError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly relation: string,
+    readonly member: string,
+  ) {
+    super(
+      `Cannot count "${listName}.${relation}" through a refinement that also calls ` +
+        `"${member}()" — a count honours where() alone. Drop the ${member}(), or include the ` +
+        `rows instead of counting them.`,
+    )
+    this.name = 'UnreducibleRefinementError'
+  }
+}
+
+/**
+ * Thrown when a `combine` branch is not a reduction this engine handed out —
+ * a branch that named rows rather than a count, or a nested `combine`.
+ */
+export class InvalidCombineBranchError extends Error {
+  constructor(
+    readonly relation: string,
+    readonly key: string,
+  ) {
+    super(
+      `The combine branch "${key}" on include("${relation}") is not a count. Every branch must ` +
+        `be a reduction the refinement produced — \`(rows) => rows.combine({ ${key}: ` +
+        `rows.where(…).count() })\`.`,
+    )
+    this.name = 'InvalidCombineBranchError'
+  }
+}
+
 /** One relation the caller named, and everything they composed onto it. */
 export interface IncludeRequest {
   readonly name: string
@@ -141,6 +222,30 @@ export interface IncludeRequest {
   readonly limit?: number
   readonly offset?: number
   readonly includes: readonly IncludeRequest[]
+  /** Present when the callback reduced the relation rather than refining it. */
+  readonly reduce?: ReduceRequest
+}
+
+/** How a relation was reduced: to one count, or to several named ones. */
+export type ReduceRequest =
+  | { readonly kind: 'count' }
+  | { readonly kind: 'combine'; readonly branches: readonly CombineBranchRequest[] }
+
+/** One `combine` branch: a result key and the refinement it was reduced from. */
+export interface CombineBranchRequest {
+  readonly key: string
+  readonly request: IncludeRequest
+}
+
+/** A resolved reduction: every branch's predicates already carry the Access Filter. */
+export type ReducePlan =
+  | { readonly kind: 'count' }
+  | { readonly kind: 'combine'; readonly branches: readonly CombineBranchPlan[] }
+
+/** One resolved `combine` branch. */
+export interface CombineBranchPlan {
+  readonly key: string
+  readonly predicates: readonly WherePlan[]
 }
 
 /** A resolved include: every key checked, the Access Filter already folded in. */
@@ -161,6 +266,13 @@ export interface IncludePlan {
   readonly limit?: number
   readonly offset?: number
   readonly includes: readonly IncludePlan[]
+  /**
+   * Present when the relation reads as a count rather than as rows. Its
+   * branches carry the Access Filter, and so does {@link predicates} — the
+   * duplication is deliberate, so a lowering that applied only one of the two
+   * still runs scoped.
+   */
+  readonly reduce?: ReducePlan
 }
 
 function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
@@ -179,6 +291,29 @@ export function orderList(order: OrderBy | readonly OrderBy[]): readonly OrderBy
  */
 const requests = new WeakMap<SecuredRefinement, IncludeRequest>()
 
+/** The request behind a reduction value, held for the same reason. */
+const reductions = new WeakMap<SecuredReduction, IncludeRequest>()
+
+function reduction(request: IncludeRequest): SecuredReduction {
+  const value: SecuredReduction = { reduction: 'relation' }
+  reductions.set(value, request)
+  return value
+}
+
+function isReduction(value: RefinementResult): value is SecuredReduction {
+  return typeof value === 'object' && value !== null && 'reduction' in value
+}
+
+function branchesOf(name: string, spec: Record<string, SecuredReduction>): CombineBranchRequest[] {
+  return Object.entries(spec).map(([key, value]) => {
+    const composed = reductions.get(value)
+    if (composed === undefined || composed.reduce?.kind !== 'count') {
+      throw new InvalidCombineBranchError(name, key)
+    }
+    return { key, request: composed }
+  })
+}
+
 function refinement(request: IncludeRequest): SecuredRefinement {
   const value: SecuredRefinement = {
     where: (predicate) =>
@@ -192,6 +327,12 @@ function refinement(request: IncludeRequest): SecuredRefinement {
         ...request,
         includes: [...request.includes, buildIncludeRequest(name, refine)],
       }),
+    count: () => reduction({ ...request, reduce: { kind: 'count' } }),
+    combine: (spec) =>
+      reduction({
+        ...request,
+        reduce: { kind: 'combine', branches: branchesOf(request.name, spec) },
+      }),
   }
   requests.set(value, request)
   return value
@@ -201,7 +342,8 @@ function refinement(request: IncludeRequest): SecuredRefinement {
 export function buildIncludeRequest(name: string, refine?: Refinement): IncludeRequest {
   const base: IncludeRequest = { name, predicates: [], orders: [], includes: [] }
   if (refine === undefined) return base
-  const composed = requests.get(refine(refinement(base)))
+  const result = refine(refinement(base))
+  const composed = isReduction(result) ? reductions.get(result) : requests.get(result)
   if (composed === undefined) throw new InvalidRefinementError(name)
   return composed
 }
@@ -349,7 +491,61 @@ async function resolveInclude(
     limit: request.limit,
     offset: request.offset,
     includes,
+    ...(request.reduce
+      ? { reduce: await resolveReduce(request, target, ctx, related, access) }
+      : {}),
   }
+}
+
+/** Refuse what a count cannot honour, naming the member the caller wrote. */
+function checkReducible(request: IncludeRequest, listName: string): void {
+  const member =
+    request.orders.length > 0
+      ? 'orderBy'
+      : request.limit !== undefined
+        ? 'limit'
+        : request.offset !== undefined
+          ? 'offset'
+          : request.includes.length > 0
+            ? 'include'
+            : undefined
+  if (member !== undefined) throw new UnreducibleRefinementError(listName, request.name, member)
+}
+
+/**
+ * Resolve a reduction over an already-resolved relation.
+ *
+ * Every branch is resolved against the related list's own context and carries
+ * the related list's `query` access itself, so a branch is scoped by what the
+ * session may see rather than by whatever a sibling branch composed — which is
+ * what makes `combine`'s subqueries independent (ADR-0041).
+ */
+async function resolveReduce(
+  request: IncludeRequest,
+  target: IncludeTarget,
+  ctx: ResolveContext,
+  related: ResolveContext,
+  access: WherePlan,
+): Promise<ReducePlan> {
+  const reduce = request.reduce
+  if (reduce === undefined) throw new InvalidRefinementError(request.name)
+  if (target.arity !== 'many') {
+    throw new ReducedToOneIncludeError(ctx.listName, request.name)
+  }
+  checkReducible(request, ctx.listName)
+  if (reduce.kind === 'count') return { kind: 'count' }
+
+  const branches: CombineBranchPlan[] = []
+  for (const branch of reduce.branches) {
+    checkReducible(branch.request, ctx.listName)
+    const predicates: WherePlan[] = []
+    for (const predicate of branch.request.predicates) {
+      predicates.push(await resolveWhere(predicate, related))
+    }
+    if (access.kind !== 'true') predicates.push(access)
+    branches.push({ key: branch.key, predicates })
+  }
+  return { kind: 'combine', branches }
 }
 
 /**

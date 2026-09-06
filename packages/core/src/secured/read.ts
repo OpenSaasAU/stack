@@ -1,6 +1,6 @@
 // The secured read surface: `context.db.<List>` as an opaque wrapper over a
 // Prisma 8 collection, its `where`/`orderBy` composition, and the
-// `all()`/`first()`/`nearest()` terminals the engine owns. See ADR-0041,
+// `all()`/`first()`/`nearest()`/`aggregate()` terminals the engine owns. See ADR-0041,
 // ADR-0044, ADR-0045, ADR-0046, ADR-0055 and ADR-0058.
 
 import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
@@ -17,9 +17,12 @@ import {
   type WhereCombinators,
 } from './lower.js'
 import {
+  resolveColumns,
   resolveNearest,
   resolveOrderBy,
   resolveWhere,
+  unqueryableKey,
+  type ColumnPlan,
   type NearestOptions,
   type NearestPlan,
   type OrderBy,
@@ -36,16 +39,27 @@ import {
   type IncludeRequest,
   type Refinement,
 } from './include.js'
+import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
+import { ValidationError } from '../hooks/index.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
 export {
   DuplicateIncludeError,
+  InvalidCombineBranchError,
   InvalidRefinementError,
   NestedToOneIncludeError,
+  ReducedToOneIncludeError,
+  UnreducibleRefinementError,
 } from './include.js'
-export type { Refinement, SecuredRefinement } from './include.js'
+export type {
+  Refinement,
+  RefinementResult,
+  SecuredRefinement,
+  SecuredReduction,
+} from './include.js'
+export type { AggregateBuild, AggregateSpec, Aggregations, CountReduction } from './aggregate.js'
 export type {
   NearestOptions,
   OrderBy,
@@ -80,6 +94,19 @@ export interface SecuredQuery<TRow = OrmRow> {
    * present and the parent row kept.
    */
   include(name: string, refine?: Refinement): SecuredQuery<TRow>
+  /** Collapse rows that agree on every named column. */
+  distinct(...fields: string[]): SecuredQuery<TRow>
+  /**
+   * Keep the first row per distinct key, in the order `orderBy` established —
+   * so it requires one.
+   */
+  distinctOn(...fields: string[]): SecuredQuery<TRow>
+  /**
+   * Resume from a known position. Every key must name a column the active
+   * `orderBy` sorts by, so a cursor cannot seek on an axis the read has no
+   * order along — nor on one this session may not read.
+   */
+  cursor(values: Record<string, unknown>): SecuredQuery<TRow>
   /** Every row this session may see. `[]` when the read is denied. */
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
@@ -100,6 +127,18 @@ export interface SecuredQuery<TRow = OrmRow> {
     vector: readonly number[],
     options?: NearestOptions,
   ): Promise<NearestMatch<TRow>[]>
+  /**
+   * Reduce the read to named aggregates over the rows this session may see:
+   * `aggregate((a) => ({ total: a.count() }))`.
+   *
+   * A count is a Session-relative value, not a property of the table — it is
+   * the same scoped read `all()` runs, counted in the database instead of
+   * materialised, so it always equals the length of that `all()`. A denied
+   * read answers `0` under every key rather than throwing: zero is the empty
+   * value of a count's type, and it is indistinguishable from a genuinely
+   * empty scoped set (ADR-0041, Silent failure).
+   */
+  aggregate(build: AggregateBuild): Promise<Record<string, number>>
 }
 
 /**
@@ -146,22 +185,46 @@ interface RefinableCollection {
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): RefinableCollection
   limit(count: number): RefinableCollection
   offset(count: number): RefinableCollection
-  include(
-    name: string,
-    refine: (child: RefinableCollection) => RefinableCollection,
-  ): RefinableCollection
+  include(name: string, refine: (child: RefinableCollection) => IncludeBranch): RefinableCollection
+  /** The relation reads as how many rows matched, rather than as the rows. */
+  count(): IncludeReduction
+  /** Several named reductions over the same relation, each its own subquery. */
+  combine(spec: Record<string, IncludeReduction>): IncludeReduction
+}
+
+/**
+ * What an include's refinement callback may hand back to the ORM: a composed
+ * child collection, or the reduction that replaces it.
+ */
+type IncludeBranch = RefinableCollection | IncludeReduction
+
+/** The ORM's reduced-relation value. Opaque here; only the ORM reads it. */
+interface IncludeReduction {
+  readonly reduced?: never
+}
+
+/** What a bare aggregate spec names on the ORM's aggregate accessor. */
+interface AggregateAccessor {
+  count(): AggregateReduction
+}
+
+interface AggregateReduction {
+  readonly aggregated?: never
 }
 
 interface ReadableCollection extends RefinableCollection {
   where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
-  include(
-    name: string,
-    refine: (child: RefinableCollection) => RefinableCollection,
-  ): ReadableCollection
+  include(name: string, refine: (child: RefinableCollection) => IncludeBranch): ReadableCollection
   limit(rows: number): ReadableCollection
+  distinct(...fields: string[]): ReadableCollection
+  distinctOn(...fields: string[]): ReadableCollection
+  cursor(values: Record<string, unknown>): ReadableCollection
   all(): PromiseLike<OrmRow[]>
   first(): Promise<OrmRow | null>
+  aggregate(
+    build: (aggregate: AggregateAccessor) => Record<string, AggregateReduction>,
+  ): Promise<Record<string, unknown>>
 }
 
 /**
@@ -190,10 +253,18 @@ interface ReadBinding {
   config: OpenSaasConfig
 }
 
+/** How rows that agree on the named columns are collapsed. */
+interface DistinctRequest {
+  readonly kind: 'all' | 'on'
+  readonly fields: readonly string[]
+}
+
 interface QueryState {
   readonly predicates: readonly Where[]
   readonly orders: readonly OrderBy[]
   readonly includes: readonly IncludeRequest[]
+  readonly distinct?: DistinctRequest
+  readonly cursor?: Record<string, unknown>
 }
 
 /** A resolved read: the predicates to AND, the sort to apply, the tree to reach. */
@@ -201,6 +272,8 @@ interface ReadPlan {
   readonly predicates: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
   readonly includes: readonly IncludePlan[]
+  readonly distinct?: { readonly kind: 'all' | 'on'; readonly columns: readonly ColumnPlan[] }
+  readonly cursor?: Record<string, unknown>
 }
 
 function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
@@ -245,6 +318,20 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
   }
   const orders = await resolveOrderBy(state.orders, ctx)
   const includes = await resolveIncludes(state.includes, ctx, 0)
+  const distinct =
+    state.distinct === undefined
+      ? undefined
+      : {
+          kind: state.distinct.kind,
+          columns: await resolveColumns(
+            state.distinct.fields,
+            ctx,
+            state.distinct.kind === 'on' ? 'distinctOn' : 'distinct',
+          ),
+        }
+  if (distinct?.kind === 'on') requireOrder(binding.listName, orders, 'distinctOn')
+  const cursor =
+    state.cursor === undefined ? undefined : resolveCursor(binding.listName, state.cursor, orders)
 
   if (access !== true) {
     const filter: PrismaFilter = access
@@ -260,7 +347,44 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     )
   }
 
-  return { predicates, orders, includes }
+  return {
+    predicates,
+    orders,
+    includes,
+    ...(distinct ? { distinct } : {}),
+    ...(cursor ? { cursor } : {}),
+  }
+}
+
+function requireOrder(listName: string, orders: readonly OrderPlan[], member: string): void {
+  if (orders.length > 0) return
+  throw new ValidationError([
+    `Cannot ${member} "${listName}" without an orderBy — it has no order to resume or keep the ` +
+      `first row of.`,
+  ])
+}
+
+/**
+ * Resolve a cursor's keys against the sort the read already established.
+ *
+ * A key the active `orderBy` does not name is refused with the message an
+ * undeclared key gets. That is what makes the refusal indistinguishable: a
+ * read-denied column never reaches a resolved order in the first place
+ * (`resolveOrderBy` refuses it there), so an undeclared column, a denied one
+ * and one the caller simply did not sort by all answer the same way
+ * (ADR-0031).
+ */
+function resolveCursor(
+  listName: string,
+  values: Record<string, unknown>,
+  orders: readonly OrderPlan[],
+): Record<string, unknown> {
+  requireOrder(listName, orders, 'cursor')
+  const sorted = new Set(orders.map((order) => order.column))
+  for (const key of Object.keys(values)) {
+    if (!sorted.has(key)) throw unqueryableKey(listName, key)
+  }
+  return values
 }
 
 /**
@@ -274,10 +398,24 @@ function refine(
   collection: RefinableCollection,
   plan: IncludePlan,
   ops: WhereCombinators,
-): RefinableCollection {
+): IncludeBranch {
   let refined = collection
   for (const predicate of plan.predicates) {
     refined = refined.where((model) => lowerWhere(predicate, model, ops))
+  }
+  // A reduction replaces the rows, so nothing below it applies: `resolveReduce`
+  // refuses a refinement that composed anything a count cannot honour.
+  if (plan.reduce !== undefined) {
+    if (plan.reduce.kind === 'count') return refined.count()
+    const spec: Record<string, IncludeReduction> = {}
+    for (const branch of plan.reduce.branches) {
+      let branched = refined
+      for (const predicate of branch.predicates) {
+        branched = branched.where((model) => lowerWhere(predicate, model, ops))
+      }
+      spec[branch.key] = branched.count()
+    }
+    return refined.combine(spec)
   }
   if (plan.orders.length > 0) {
     refined = refined.orderBy(
@@ -302,6 +440,14 @@ function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): Rea
       plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
     )
   }
+  if (plan.distinct !== undefined) {
+    const fields = plan.distinct.columns.map((column) => column.column)
+    collection =
+      plan.distinct.kind === 'on'
+        ? collection.distinctOn(...fields)
+        : collection.distinct(...fields)
+  }
+  if (plan.cursor !== undefined) collection = collection.cursor(plan.cursor)
   for (const include of plan.includes) {
     collection = collection.include(include.relation, (child) => refine(child, include, ops))
   }
@@ -348,10 +494,70 @@ function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   }
 }
 
+function reduces(plans: readonly IncludePlan[]): boolean {
+  return plans.some((plan) => plan.reduce !== undefined || reduces(plan.includes))
+}
+
+/**
+ * Stand an empty to-many in for every relation the read reduced.
+ *
+ * Field Visibility decides whether a relation key survives by evaluating the
+ * relationship field's own `read` rule, and it reaches that decision on the
+ * path it takes for a relation's ROWS. A count is not rows, so handing it the
+ * reduced value would take it down neither path and the key would fall out of
+ * the result whether or not the session may read it. Substituting `[]` puts
+ * the decision back on the one path that makes it — Field Visibility runs the
+ * same rule over the same parent row — and {@link restoreReductions} then
+ * writes the count back under exactly the keys that survived. A reduction is
+ * to-many only ({@link ReducedToOneIncludeError}), so `[]` is the shape the
+ * relation would otherwise have had.
+ */
+function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
+  if (!reduces(plans)) return row
+  const masked: OrmRow = { ...row }
+  for (const plan of plans) {
+    if (plan.reduce !== undefined) {
+      masked[plan.relation] = []
+      continue
+    }
+    if (!reduces(plan.includes)) continue
+    const value = masked[plan.relation]
+    if (Array.isArray(value)) {
+      masked[plan.relation] = value.map((related) =>
+        isRow(related) ? maskReductions(related, plan.includes) : related,
+      )
+    } else if (isRow(value)) {
+      masked[plan.relation] = maskReductions(value, plan.includes)
+    }
+  }
+  return masked
+}
+
+/** Write each reduced relation back, under the keys Field Visibility kept. */
+function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly IncludePlan[]): void {
+  for (const plan of plans) {
+    if (plan.reduce !== undefined) {
+      if (plan.relation in shown) shown[plan.relation] = source[plan.relation]
+      continue
+    }
+    if (!reduces(plan.includes)) continue
+    const kept = shown[plan.relation]
+    const raw = source[plan.relation]
+    if (Array.isArray(kept) && Array.isArray(raw)) {
+      kept.forEach((related, index) => {
+        const original = raw[index]
+        if (isRow(related) && isRow(original)) restoreReductions(related, original, plan.includes)
+      })
+    } else if (isRow(kept) && isRow(raw)) {
+      restoreReductions(kept, raw, plan.includes)
+    }
+  }
+}
+
 async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
   const filtered = await filterReadableFields(
-    row,
+    maskReductions(row, plan.includes),
     listConfig.fields,
     { session: context.session, context },
     config,
@@ -359,6 +565,7 @@ async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promi
     listName,
   )
   applyForeignKeys(filtered, plan.includes)
+  restoreReductions(filtered, row, plan.includes)
   return filtered
 }
 
@@ -376,6 +583,64 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow
   const collection = scope(binding, plan, await whereCombinators())
   const row = await withOrigin('engine', () => collection.first())
   return row === null ? null : await visible(binding, row, plan)
+}
+
+function countOf(result: Record<string, unknown>, listName: string, key: string): number {
+  const value = result[key]
+  if (typeof value !== 'number') {
+    throw new ValidationError([
+      `The database answered "${key}" for "${listName}" with something other than a count. ` +
+        `Re-run \`opensaas generate\` so the emitted contract matches the config.`,
+    ])
+  }
+  return value
+}
+
+/**
+ * Run an aggregate: the same scoped read every other terminal runs, counted in
+ * the database instead of materialised.
+ *
+ * The read's own `orderBy`, `include`, `distinct` and `cursor` are not carried
+ * across. An include is an eager load and a sort is over rows this terminal
+ * returns none of, so neither can change how many rows match — and Postgres
+ * refuses an `ORDER BY` beside a bare aggregate outright. `distinct` and a
+ * cursor WOULD change the answer, so they are refused rather than dropped.
+ *
+ * Known limits: `count()` throws rather than rounding beyond
+ * ±(2^53 − 1) — the guarded integer codec the ORM decodes it through
+ * (`RUNTIME.DECODE_FAILED`). A lossless `countBigInt` is on the ORM's
+ * aggregate accessor and not on this vocabulary; re-check at GA (ADR-0041).
+ */
+async function runAggregate(
+  binding: ReadBinding,
+  state: QueryState,
+  build: AggregateBuild,
+): Promise<Record<string, number>> {
+  if (state.distinct !== undefined || state.cursor !== undefined) {
+    throw new ValidationError([
+      `Cannot aggregate "${binding.listName}" over a read that composed distinct or cursor — ` +
+        `an aggregate counts the rows the predicates match, which is not what either would ` +
+        `return. Aggregate the predicates alone, or read the rows.`,
+    ])
+  }
+  const spec = build(aggregations)
+  const keys = specKeys(spec)
+
+  const plan = await resolvePlan(binding, state)
+  if (plan === null) return zeroed(keys)
+  checkSpec(binding.listName, spec)
+
+  const collection = scope(
+    binding,
+    { predicates: plan.predicates, orders: [], includes: [] },
+    await whereCombinators(),
+  )
+  const result = await withOrigin('engine', () =>
+    collection.aggregate((aggregate) =>
+      Object.fromEntries(keys.map((key) => [key, aggregate.count()])),
+    ),
+  )
+  return Object.fromEntries(keys.map((key) => [key, countOf(result, binding.listName, key)]))
 }
 
 /**
@@ -472,10 +737,16 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
         ...state,
         includes: [...state.includes, buildIncludeRequest(name, refinement)],
       }),
+    distinct: (...fields: string[]) =>
+      query(binding, { ...state, distinct: { kind: 'all', fields } }),
+    distinctOn: (...fields: string[]) =>
+      query(binding, { ...state, distinct: { kind: 'on', fields } }),
+    cursor: (values: Record<string, unknown>) => query(binding, { ...state, cursor: values }),
     all: () => runAll(binding, state),
     first: () => runFirst(binding, state),
     nearest: (field: string, vector: readonly number[], options: NearestOptions = {}) =>
       runNearest(binding, state, field, vector, options),
+    aggregate: (build: AggregateBuild) => runAggregate(binding, state, build),
   }
 }
 

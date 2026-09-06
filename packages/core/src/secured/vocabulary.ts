@@ -549,6 +549,46 @@ export async function resolveOrderBy(
   return plans
 }
 
+/** One of the list's own scalar columns, resolved from a caller's key. */
+export interface ColumnPlan {
+  listName: string
+  column: string
+}
+
+/**
+ * Resolve a bare list of the caller's keys to scalar columns — what
+ * `distinct`, `distinctOn` and a cursor's keys name.
+ *
+ * The read gate runs before the relationship refusal for the reason
+ * {@link resolveOrderBy} states: a read-denied key must be indistinguishable
+ * from one the list does not declare (ADR-0031).
+ */
+export async function resolveColumns(
+  keys: readonly string[],
+  ctx: ResolveContext,
+  member: string,
+): Promise<ColumnPlan[]> {
+  const plans: ColumnPlan[] = []
+  for (const key of keys) {
+    const resolved = resolveQueryField(key, ctx.listConfig.fields)
+    if (!resolved) throw unqueryableKey(ctx.listName, key)
+    if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
+      const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
+        session: ctx.session,
+        context: ctx.context,
+      })
+      if (!readable) throw unqueryableKey(ctx.listName, key)
+    }
+    if (resolved.isRelationship) {
+      throw new ValidationError([
+        `Cannot ${member} "${ctx.listName}" by "${key}" — ${member} takes scalar columns only.`,
+      ])
+    }
+    plans.push({ listName: ctx.listName, column: key })
+  }
+  return plans
+}
+
 /** What `nearest()` takes beside the field and the query vector. */
 export interface NearestOptions {
   /** How many rows to return. Defaults to {@link NEAREST_DEFAULT_LIMIT}. */
