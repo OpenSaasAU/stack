@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { generateCommand } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
 import { devCommand } from './commands/dev.js'
+import { createDbCommand } from './commands/db.js'
 import { createMCPCommand } from './commands/mcp.js'
 import { createMigrateCommand } from './commands/migrate.js'
 
@@ -37,6 +38,8 @@ program
   .action(async (command: string[]) => {
     await devCommand({ appCommand: command })
   })
+
+program.addCommand(createDbCommand())
 
 // Add MCP command group
 program.addCommand(createMCPCommand())

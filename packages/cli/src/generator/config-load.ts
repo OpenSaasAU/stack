@@ -24,7 +24,11 @@ export async function loadOpenSaasConfig(
   configPath: string,
 ): Promise<LoadedOpenSaasConfig> {
   const { alias, warnings } = resolveTsconfigAlias(cwd)
-  const jiti = createJiti(cwd, { interopDefault: true, alias })
+  // jiti's module cache is keyed by path and outlives the instance holding it,
+  // so a second load in one process returns the first read of the file. The
+  // dev loop reloads this exact path every time the config changes, and would
+  // otherwise stage the schema the process booted on.
+  const jiti = createJiti(cwd, { interopDefault: true, alias, moduleCache: false })
 
   // jiti's `interopDefault` doesn't unwrap an async `default` export, so the
   // module's own default is awaited here.

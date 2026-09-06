@@ -162,3 +162,37 @@ export function resolveOutputPaths(
 
   return { paths, crossReferences }
 }
+
+/**
+ * The same set of files, redirected under a staging directory: the Contract
+ * module and the two artifacts `prisma contract emit` writes beside it in one
+ * subdirectory, the bundle in another, and the Prisma config that drives the
+ * staged emission at the top.
+ *
+ * The two subdirectories keep a Contract module named after a bundle file from
+ * landing on top of it, since both sets are flattened into one place here.
+ *
+ * @example
+ * ```typescript
+ * const staged = stageWritePaths(paths, path.join(cwd, '.opensaas', 'staged'))
+ * writeContractModule(contractData, staged.contractModule)
+ * ```
+ */
+export function stageWritePaths(paths: ResolvedWritePaths, stagingDir: string): ResolvedWritePaths {
+  const contractDir = path.join(stagingDir, 'contract')
+  const bundleDir = path.join(stagingDir, 'bundle')
+
+  return {
+    contractModule: path.join(contractDir, path.basename(paths.contractModule)),
+    contractDir,
+    contractJson: path.join(contractDir, CONTRACT_ARTIFACTS.json),
+    contractTypes: path.join(contractDir, CONTRACT_ARTIFACTS.types),
+    prismaConfig: path.join(stagingDir, 'prisma.config.ts'),
+    opensaasDir: bundleDir,
+    types: path.join(bundleDir, OPENSAAS_FILES.types),
+    lists: path.join(bundleDir, OPENSAAS_FILES.lists),
+    context: path.join(bundleDir, OPENSAAS_FILES.context),
+    pluginTypes: path.join(bundleDir, OPENSAAS_FILES.pluginTypes),
+    tables: path.join(bundleDir, OPENSAAS_FILES.tables),
+  }
+}

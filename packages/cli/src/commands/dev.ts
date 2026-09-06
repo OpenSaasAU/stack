@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import chalk from 'chalk'
@@ -10,8 +9,18 @@ import {
   type DevDatabase,
   type DevDatabaseExtension,
 } from '@opensaas/stack-core/dev-database'
-import { generateCommand } from './generate.js'
+import { generateCommand, type GenerationResult } from './generate.js'
 import { loadOpenSaasConfig, runPrismaCli } from '../generator/index.js'
+import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
+import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
+import {
+  describePlan,
+  planDatabaseUpdate,
+  promoteStagedGeneration,
+  restoreMigrationRefs,
+  snapshotMigrationRefs,
+  STAGING_DIR,
+} from '../dev/staged-reconcile.js'
 
 const DEFAULT_APP_COMMAND = ['next', 'dev'] as const
 
@@ -61,38 +70,6 @@ function loadProjectEnvFile(cwd: string): void {
   if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
 }
 
-/**
- * `PATH` with every `node_modules/.bin` from the project up to the filesystem
- * root ahead of it, so `next dev` — and any command a caller passes — resolves
- * to the project's own binary without a shell.
- */
-function pathWithProjectBinaries(cwd: string): string {
-  const directories: string[] = []
-  let directory = path.resolve(cwd)
-  for (;;) {
-    directories.push(path.join(directory, 'node_modules', '.bin'))
-    const parent = path.dirname(directory)
-    if (parent === directory) break
-    directory = parent
-  }
-  return [...directories, process.env.PATH ?? ''].join(path.delimiter)
-}
-
-function spawnApp(cwd: string, command: readonly string[], devDatabase: boolean): ChildProcess {
-  const [file, ...args] = command
-  if (file === undefined) throw new Error('No app command to run.')
-
-  const env: typeof process.env = { ...process.env, PATH: pathWithProjectBinaries(cwd) }
-  // The generated runtime binds a single connection and suppresses the
-  // contract-marker read only when `resolveDatabaseUrl()` reports
-  // `'dev-database'`; any inherited `DATABASE_URL` would put it on the `'env'`
-  // branch instead, so it has to be removed, not merely left uninjected
-  // (ADR-0063).
-  if (devDatabase) delete env.DATABASE_URL
-
-  return spawn(file, args, { cwd, stdio: 'inherit', env })
-}
-
 async function reconcile(cwd: string): Promise<boolean> {
   console.log(chalk.gray('\nReconciling the database with the emitted contract...\n'))
 
@@ -131,33 +108,39 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       ? options.appCommand
       : DEFAULT_APP_COMMAND
 
+  const stagingDir = path.join(cwd, STAGING_DIR)
+
   let database: DevDatabase | undefined
   let watcher: FSWatcher | undefined
-  let child: ChildProcess | undefined
+  let control: ControlChannel | undefined
+  let app: AppRunner | undefined
   let interrupted = false
+
+  /** A staged generation the database does not carry yet. */
+  let staged: GenerationResult | undefined
+  /** One reconcile at a time: a burst of writes must not race itself. */
+  let queue = Promise.resolve()
 
   const stop = async (): Promise<void> => {
     await watcher?.close()
+    await control?.close()
     await database?.stop()
   }
 
-  const childIsRunning = (): boolean =>
-    child !== undefined && child.exitCode === null && child.signalCode === null
-
   const onSignal = (signal: 'SIGINT' | 'SIGTERM'): void => {
     interrupted = true
-    if (childIsRunning()) child?.kill(signal)
+    app?.kill(signal)
   }
   const onSigint = (): void => onSignal('SIGINT')
   const onSigterm = (): void => onSignal('SIGTERM')
 
-  // `generateCommand` reports every refusal by exiting the process, and
-  // `process.exit` skips `finally` — so this listener is the only shutdown
-  // left on that path, and it is confined to what can be done synchronously:
-  // orphan neither the app child nor the state file pointing other processes
-  // at a database that is about to disappear.
+  // `process.exit` skips `finally`, so this listener is the only shutdown left
+  // on that path, and it is confined to what can be done synchronously:
+  // orphan neither the app child nor the files pointing other processes at a
+  // loop and a database that are about to disappear.
   const onExit = (): void => {
-    if (childIsRunning()) child?.kill('SIGTERM')
+    app?.kill('SIGTERM')
+    control?.clearFile()
     if (database !== undefined) fs.rmSync(database.stateFile, { force: true })
   }
 
@@ -167,6 +150,111 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   process.once('SIGINT', onSigint)
   process.once('SIGTERM', onSigterm)
   process.once('exit', onExit)
+
+  /**
+   * Generates into staging. The app keeps running on the contract it has if
+   * this refuses — a half-saved config must not take the loop down with it.
+   */
+  const stage = async (say: (message: string) => void): Promise<GenerationResult | undefined> => {
+    fs.rmSync(stagingDir, { recursive: true, force: true })
+    try {
+      return await generateCommand({ stagingDir, throwOnFailure: true })
+    } catch (error) {
+      say(
+        `Generation failed, so nothing was staged: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+      say('The app keeps serving the contract the database already carries.')
+      return undefined
+    }
+  }
+
+  const promote = (generation: GenerationResult): void => {
+    promoteStagedGeneration(generation.paths, generation.livePaths, stagingDir)
+    staged = undefined
+  }
+
+  const reportFailure = (say: (message: string) => void, output: string): void => {
+    say('prisma db update did not apply. Nothing was promoted.')
+    const trimmed = output.trim()
+    if (trimmed.length > 0) say(trimmed)
+  }
+
+  const onConfigChange = async (): Promise<void> => {
+    console.log(chalk.yellow('\nConfig changed: staging the new contract...\n'))
+    const say = (message: string): void => console.log(chalk.gray(message))
+
+    const generation = await stage(say)
+    if (generation === undefined) return
+
+    const refs = snapshotMigrationRefs(cwd)
+    const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
+    if (!planned.ok) {
+      restoreMigrationRefs(cwd, refs)
+      reportFailure((message) => console.error(chalk.red(message)), planned.failure.output)
+      return
+    }
+
+    if (planned.plan.destructive) {
+      restoreMigrationRefs(cwd, refs)
+      staged = generation
+      console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
+      for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
+      console.log(
+        chalk.yellow(
+          '\nThe app keeps serving the previous schema. To apply it, run `pnpm db:update` ' +
+            '(`opensaas db update --confirm postgres`) in another terminal.\n',
+        ),
+      )
+      return
+    }
+
+    const applied = await planDatabaseUpdate(cwd, generation.prismaConfig)
+    if (!applied.ok) {
+      restoreMigrationRefs(cwd, refs)
+      reportFailure((message) => console.error(chalk.red(message)), applied.failure.output)
+      return
+    }
+
+    promote(generation)
+    console.log(chalk.green('\nDatabase updated and the new contract promoted.\n'))
+  }
+
+  const onDatabaseUpdateRequest = async (
+    confirm: readonly string[],
+    reply: ControlReply,
+  ): Promise<void> => {
+    const say = (message: string): void => {
+      console.log(chalk.gray(message))
+      reply.log(message)
+    }
+
+    const generation = staged ?? (await stage(say))
+    if (generation === undefined) {
+      reply.finish(false, 'Nothing was staged: generation refused the current config.')
+      return
+    }
+
+    const refs = snapshotMigrationRefs(cwd)
+    const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, { confirm })
+    if (!applied.ok) {
+      restoreMigrationRefs(cwd, refs)
+      reportFailure(say, applied.failure.output)
+      reply.finish(false, 'The database is unchanged and nothing was promoted.')
+      return
+    }
+
+    promote(generation)
+    for (const line of describePlan(applied.plan)) say(line)
+
+    if (applied.plan.destructive) {
+      say('Restarting the app: a client cached across a reload would query the dropped column.')
+      app?.restart()
+    }
+
+    reply.finish(true, 'Applied, promoted.')
+  }
 
   try {
     if (findDatabaseConnection({ cwd })?.provenance === 'env') {
@@ -188,10 +276,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       console.log(chalk.green(`Dev database listening on ${database.url}\n`))
     }
 
+    fs.rmSync(stagingDir, { recursive: true, force: true })
+
     watcher = chokidar.watch(configPath, { persistent: true, ignoreInitial: true })
-    watcher.on('change', async () => {
-      console.log(chalk.yellow('\nConfig changed, regenerating...\n'))
-      await generateCommand()
+    watcher.on('change', () => {
+      queue = queue.then(onConfigChange).catch((error: unknown) => {
+        console.error(chalk.red('\nStaged reconcile failed:'), error)
+      })
     })
     watcher.on('error', (error) => {
       console.error(chalk.red('\nWatcher error:'), error)
@@ -204,24 +295,27 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
+    control = await startControlChannel(cwd, async (request, reply) => {
+      await new Promise<void>((resolve) => {
+        queue = queue
+          .then(() => onDatabaseUpdateRequest(request.confirm, reply))
+          .catch((error: unknown) => {
+            reply.finish(false, error instanceof Error ? error.message : String(error))
+          })
+          .finally(resolve)
+      })
+    })
+
     console.log(chalk.gray(`Starting the app: ${appCommand.join(' ')}\n`))
     console.log(chalk.gray('Watching opensaas.config.ts. Press Ctrl+C to stop.\n'))
 
-    child = spawnApp(cwd, appCommand, database !== undefined)
-    const spawned = child
-
-    process.exitCode = await new Promise<number>((resolve) => {
-      spawned.once('error', (error) => {
-        console.error(chalk.red(`\nCould not run \`${appCommand.join(' ')}\`:`), error.message)
-        resolve(1)
-      })
-      spawned.once('exit', (code, signal) => resolve(signal !== null ? 1 : (code ?? 0)))
-    })
+    app = createAppRunner({ cwd, command: appCommand, devDatabase: database !== undefined })
+    process.exitCode = await app.run()
   } finally {
     process.off('SIGINT', onSigint)
     process.off('SIGTERM', onSigterm)
     process.off('exit', onExit)
-    if (child !== undefined) console.log(chalk.yellow('\nStopping dev mode...'))
+    if (app !== undefined) console.log(chalk.yellow('\nStopping dev mode...'))
     await stop()
   }
 }
