@@ -251,15 +251,20 @@ The `context` a hook or a `runtime()` factory receives is an `AccessContext`, an
 it carries two database surfaces:
 
 - **`context.db`** — the secured surface. Access control, field visibility and
-  hooks all apply. Inside a write it is bound to that write's transaction, so a
-  `context.db` call from a `beforeOperation`/`afterOperation` hook rolls back
-  with the write. Reach for this by default.
+  hooks all apply. Reach for this by default.
 - **`context.ormHandle`** — the engine's own ORM handle, the client `context.db`
   runs its queries through. It enforces **nothing**: no access control, no field
   visibility, no hooks, no error normalisation. The audit plugin above uses it
   deliberately: an audit trail that the audited session's own access rules can
-  scope away is not an audit trail. It is bound to the write's transaction on
-  the same terms as `context.db`.
+  scope away is not an audit trail.
+
+The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, so the
+two are always in the same transaction state as each other. Do not rely on that
+state being a transaction: on `prisma-8` no write currently opens one, so
+database work a `beforeOperation`/`afterOperation` hook does through either
+handle is **not** rolled back when the write fails (#1205). Every write running
+in a transaction is the intended end state, restored by #1124 — it is not
+today's behaviour.
 
 `context.ormHandle` is not the same thing as `context.unsafe`, the application's
 documented bypass on the request context (`StackBaseContext`). An `AccessContext`

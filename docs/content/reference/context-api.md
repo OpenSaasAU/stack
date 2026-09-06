@@ -185,7 +185,7 @@ The engine's own ORM handle — the client `db` runs its queries through, and th
 
 **Type:** `OrmClient`
 
-**Warning:** It is engine plumbing, not a secured surface. Access control, field visibility and hooks are applied by the engine _around_ it; the handle itself applies none of them. Inside a write it is bound to that write's transaction, alongside `context.db`.
+**Warning:** It is engine plumbing, not a secured surface. Access control, field visibility and hooks are applied by the engine _around_ it; the handle itself applies none of them. The Write Pipeline rebinds it wherever it rebinds `context.db`, so the two are always in the same transaction state as each other — but on `prisma-8` no write currently opens a transaction at all, so work done through either handle is not rolled back when the write fails (#1205). Every write running in a transaction is the intended end state, restored by #1124.
 
 This is what a hook or a plugin `runtime()` factory reaches, since both are handed an `AccessContext` — which has no `unsafe` member. It is a different object from [`unsafe`](#unsafe) below, with the same absence of protection.
 
