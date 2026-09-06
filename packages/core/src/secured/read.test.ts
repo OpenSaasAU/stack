@@ -378,7 +378,7 @@ describe('a composed read is an immutable value', () => {
     async () => {
       const query = database.context(ada).db.Post.where({ published: true })
 
-      expect(Object.keys(query).sort()).toEqual(['all', 'first', 'orderBy', 'where'])
+      expect(Object.keys(query).sort()).toEqual(['all', 'first', 'include', 'orderBy', 'where'])
       for (const member of ['state', 'ctx', 'modelName', 'registry', 'tableName']) {
         expect(Reflect.get(query, member)).toBeUndefined()
       }

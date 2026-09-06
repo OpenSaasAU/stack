@@ -166,18 +166,46 @@ export async function isFieldReadableForPredicate(
     context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<boolean> {
+  return (await classifyRowIndependentRead(fieldAccess, args)) === 'allow'
+}
+
+/**
+ * What a field's `read` rule answers when it is asked with no row: `'allow'`
+ * or `'deny'` for a rule that never touched `item`, and `'row-dependent'` for
+ * one that did and therefore cannot be answered until a row exists.
+ *
+ * This is the one interpretation of that question (ADR-0044's "one
+ * classifier"), and its consumers differ deliberately in what they do with
+ * the answer. `isFieldReadableForPredicate` folds `'row-dependent'` into a
+ * denial, because a predicate that cannot be answered must refuse (ADR-0031).
+ * The include path keeps the three apart: `'deny'` omits the relation before
+ * the query, and `'row-dependent'` fetches it and leaves Field Visibility to
+ * decide (ADR-0044). Neither is to be harmonised into the other.
+ *
+ * A rule that returns a non-boolean is a distinct, louder failure (#913,
+ * ADR-0030) — `InvalidFieldAccessResultError` — and propagates rather than
+ * being folded into `'deny'`.
+ */
+export async function classifyRowIndependentRead(
+  fieldAccess: FieldAccess | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
   try {
-    return await checkFieldAccess(fieldAccess, 'read', {
+    const readable = await checkFieldAccess(fieldAccess, 'read', {
       session: args.session,
       context: args.context,
       item: createPoisonedItem(),
     })
+    return readable ? 'allow' : 'deny'
   } catch (err) {
-    // Only the poisoned-item signal means "row-dependent, deny". Anything
-    // else — including `InvalidFieldAccessResultError` and a genuine bug in
-    // the rule itself — propagates unchanged rather than being silently
-    // folded into an ordinary denial (found in review of #925).
-    if (err instanceof PredicateTimeItemAccessError) return false
+    // Only the poisoned-item signal means "row-dependent". Anything else —
+    // including `InvalidFieldAccessResultError` and a genuine bug in the rule
+    // itself — propagates unchanged rather than being silently folded into an
+    // ordinary denial (found in review of #925).
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
     throw err
   }
 }

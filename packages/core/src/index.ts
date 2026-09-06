@@ -136,8 +136,14 @@ export { SecuredCollectionMissingError } from './secured/read.js'
 // directly or through another list's filter. Loud rather than truncated: a
 // truncated Access Filter is a widened read (#1147).
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/read.js'
+// Thrown when an include refinement callback returns something other than the
+// refinement it was handed — dropping it would run the include unscoped by
+// everything the caller wrote (#1148).
+export { InvalidRefinementError } from './secured/read.js'
 export type {
   SecuredQuery,
+  SecuredRefinement,
+  Refinement,
   OrderBy,
   OrderDirection,
   RelationCondition,
