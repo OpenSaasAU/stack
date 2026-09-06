@@ -1016,6 +1016,7 @@ export function populateDbDelegate(
       operations.orderBy = read.orderBy
       operations.include = read.include
       operations.select = read.select
+      operations.limit = read.limit
       operations.all = read.all
       operations.first = read.first
       operations.nearest = read.nearest

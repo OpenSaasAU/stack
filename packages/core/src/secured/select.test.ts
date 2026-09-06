@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { Session } from '../access/types.js'
-import { integer, relationship, text, virtual } from '../fields/index.js'
+import type { FieldConfig } from '../config/types.js'
+import { integer, json, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
@@ -45,6 +46,13 @@ const shopConfig: OpenSaasConfig = {
         cardLast4: text({ access: { read: () => false } }),
         buyer: relationship({ ref: 'User.orders' }),
         lines: relationship({ ref: 'Line.order', many: true }),
+        // A relation whose own `read` rule reaches into the parent row. Field
+        // Visibility answers it post-query, so the projection must not decide
+        // it (#1249 review).
+        receipt: relationship({
+          ref: 'Receipt',
+          access: { read: ({ item }) => item?.note === 'leave at the door' },
+        }),
         // Declares a stored column the caller need never name.
         shout: virtual({
           type: 'string',
@@ -78,6 +86,31 @@ const shopConfig: OpenSaasConfig = {
       },
       access: { operation: { query: () => true } },
     },
+    // A multi-column storage field, as `@opensaas/stack-storage` builds one:
+    // several contract columns under one field key, assembled post-query.
+    // Core cannot import that package, so the shape is declared here.
+    Profile: {
+      fields: {
+        avatar: multiColumn(),
+        // Declares the multi-column field. Its `needs` entry is the FIELD KEY,
+        // which is not a column of anything.
+        badge: virtual({
+          type: 'string',
+          needs: ['avatar'],
+          hooks: {
+            resolveOutput: ({ item }) => {
+              const avatar = item.avatar as { filename?: string; filesize?: number } | undefined
+              return `${String(avatar?.filename)} (${String(avatar?.filesize)})`
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Receipt: {
+      fields: { number: text({ validation: { isRequired: true } }) },
+      access: { operation: { query: () => true } },
+    },
     Line: {
       fields: {
         price: integer(),
@@ -106,6 +139,32 @@ const shopConfig: OpenSaasConfig = {
       fields: { code: text({ validation: { isRequired: true } }) },
     },
   },
+}
+
+/**
+ * A two-column storage field: one field key, two contract columns, assembled
+ * back into a single value post-query.
+ */
+function multiColumn(): FieldConfig {
+  const field = json()
+  const columns = ['avatar_filename', 'avatar_filesize']
+  field.getContractField = () => ({
+    kind: 'columns',
+    columns: [
+      { name: columns[0], type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: columns[1], type: { pack: 'pg', type: 'int' }, nullable: true },
+    ],
+  })
+  field.getColumnNames = () => columns
+  field.assembleColumns = (_fieldName, row) => ({
+    filename: row[columns[0]],
+    filesize: row[columns[1]],
+  })
+  field.splitColumns = (_fieldName, value) => {
+    const metadata = (value ?? null) as { filename?: string; filesize?: number } | null
+    return { [columns[0]]: metadata?.filename ?? null, [columns[1]]: metadata?.filesize ?? null }
+  }
+  return field
 }
 
 const recorder = createPlanRecorder()
@@ -150,14 +209,17 @@ function projectedColumns(plan: RecordedPlan | undefined): string[] {
 async function seedShop(): Promise<void> {
   const user = await seed('User', { handle: 'ada' })
   ada = { userId: user.id }
+  const receipt = await seed('Receipt', { number: 'R-1' })
   const order = await seed('Order', {
     title: 'a crate of punchcards',
     note: 'leave at the door',
     cardLast4: '4242',
     buyer: user.id,
+    receipt: receipt.id,
   })
   await seed('Line', { price: 3, order: order.id })
   await seed('Line', { price: 4, order: order.id })
+  await seed('Profile', { avatar_filename: 'ada.png', avatar_filesize: 12 })
   await seed('Ticket', { subject: 'open one', open: 'yes', detail: 'visible' })
   await seed('Ticket', { subject: 'shut one', open: 'no', detail: 'hidden' })
 }
@@ -289,6 +351,50 @@ describe('Projection', () => {
     },
     BOOT,
   )
+
+  test(
+    'a projection naming the foreign-key scalar a to-one implies returns that column',
+    async () => {
+      const rows = await database.context(ada).db.Order.select('buyerId').all()
+
+      // The plan projects the foreign key's own physical column, which the
+      // decoder reads back under the contract member `buyerId`.
+      expect(projectedColumns(recorder.plans[0])).toEqual(['buyer', 'createdAt', 'id', 'updatedAt'])
+      expect(rows[0].buyerId).toBe(ada.userId)
+      expect(rows[0]).not.toHaveProperty('title')
+    },
+    BOOT,
+  )
+
+  test(
+    'a projection naming a raw part column of a multi-column field is refused rather than dropped',
+    async () => {
+      // `filterReadableFields` assembles the parts into the owning field's
+      // value and never lets one reach a caller, so accepting the name would
+      // return a row with the key silently absent.
+      await expect(
+        database.context(ada).db.Profile.select('avatar_filename').all(),
+      ).rejects.toThrow(ValidationError)
+    },
+    BOOT,
+  )
+})
+
+describe('limit', () => {
+  test(
+    'bounds all() and composes with the rest of the read',
+    async () => {
+      const context = database.context(ada)
+      await seed('Order', { title: 'a second crate', buyer: ada.userId })
+
+      expect(await context.db.Order.limit(1).all()).toHaveLength(1)
+      expect(await context.db.Order.all()).toHaveLength(2)
+
+      // Replaces rather than accumulating, like `select()`.
+      expect(await context.db.Order.limit(1).limit(2).all()).toHaveLength(2)
+    },
+    BOOT,
+  )
 })
 
 describe('Field Visibility', () => {
@@ -304,6 +410,24 @@ describe('Field Visibility', () => {
       expect(details).toHaveLength(2)
       // And the column the rule read is still the engine's, not the caller's.
       for (const row of rows) expect(row).not.toHaveProperty('open')
+    },
+    BOOT,
+  )
+
+  test(
+    "a relation's read rule is answered the same way whatever the caller selected",
+    async () => {
+      const context = database.context(ada)
+
+      // The rule reaches into `item.note`. One of these two reads does not
+      // name `note`; an access decision must not turn on that.
+      const [byTitle] = await context.db.Order.select('title').include('receipt').all()
+      const [byNote] = await context.db.Order.select('note').include('receipt').all()
+
+      expect(byTitle.receipt).toMatchObject({ number: 'R-1' })
+      expect(byNote.receipt).toMatchObject({ number: 'R-1' })
+      // The column the rule read is still the engine's, not the caller's.
+      expect(byTitle).not.toHaveProperty('note')
     },
     BOOT,
   )
@@ -354,6 +478,26 @@ describe('Declared dependency set', () => {
       // …and the column itself still never reaches the caller.
       expect(rows[0]).not.toHaveProperty('cardLast4')
       expect(JSON.stringify(rows[0])).not.toContain('"4242"')
+    },
+    BOOT,
+  )
+
+  test(
+    "a declared dependency on a multi-column field projects the field's columns, not its key",
+    async () => {
+      const rows = await database.context(ada).db.Profile.select('badge').all()
+
+      // `badge` declares `avatar` — a field key the contract has no column
+      // for. The widening resolves it to the two part columns instead.
+      expect(projectedColumns(recorder.plans[0])).toEqual([
+        'avatar_filename',
+        'avatar_filesize',
+        'createdAt',
+        'id',
+        'updatedAt',
+      ])
+      expect(rows[0].badge).toBe('ada.png (12)')
+      expect(rows[0]).not.toHaveProperty('avatar')
     },
     BOOT,
   )

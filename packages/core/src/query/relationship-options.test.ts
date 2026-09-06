@@ -1,19 +1,53 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { getRelationshipOptions } from './relationship-options.js'
-import type { QueryRunnerContext } from './relationship-options.js'
+import type { QueryRunnerContext, RelationshipOptionsQuery } from './relationship-options.js'
+import type { OrderBy, Where } from '../secured/vocabulary.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
+/** One composed read, as the primitive built it, recorded when its terminal ran. */
+interface RecordedRead {
+  where: Where[]
+  orderBy: OrderBy | undefined
+  select: readonly string[]
+  limit: number | undefined
+}
+
+/**
+ * A composed-read double. The projection is the point of these assertions —
+ * a read that names no `select` computes every field of every row it returns
+ * (#1249 review) — so the double records what each chain composed rather than
+ * only that it ran.
+ */
 function makeDelegate(rows: Array<Record<string, unknown>>) {
+  const calls: RecordedRead[] = []
+  const queue: Array<Array<Record<string, unknown>>> = []
+
+  function build(read: RecordedRead): RelationshipOptionsQuery {
+    return {
+      where: (predicate: Where) => build({ ...read, where: [...read.where, predicate] }),
+      orderBy: (order: OrderBy) => build({ ...read, orderBy: order }),
+      select: (...fields: readonly string[]) => build({ ...read, select: fields }),
+      limit: (count: number) => build({ ...read, limit: count }),
+      all: async () => {
+        calls.push(read)
+        return queue.shift() ?? rows
+      },
+    }
+  }
+
   return {
-    findMany: vi.fn(async (_args?: unknown) => rows),
-    findFirst: vi.fn(async (_args?: unknown) => rows[0] ?? null),
+    calls,
+    queue,
+    query: build({ where: [], orderBy: undefined, select: [], limit: undefined }),
   }
 }
 
 function makeContext(
   delegates: Record<string, ReturnType<typeof makeDelegate>>,
 ): QueryRunnerContext {
-  return { db: delegates }
+  const db: Record<string, RelationshipOptionsQuery> = {}
+  for (const [key, delegate] of Object.entries(delegates)) db[key] = delegate.query
+  return { db }
 }
 
 const authors = [
@@ -51,7 +85,7 @@ function makeConfig(): OpenSaasConfig {
 }
 
 describe('getRelationshipOptions', () => {
-  it('returns { id, label }[] via a scalar-only fragment with no nested include', async () => {
+  it('returns { id, label }[] from a projection of id and the label field alone', async () => {
     const delegate = makeDelegate(authors)
     const context = makeContext({ Author: delegate })
     const config = makeConfig()
@@ -64,8 +98,10 @@ describe('getRelationshipOptions', () => {
       { id: 'a3', label: 'Grace Hopper' },
     ])
 
-    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
-    expect(call.include).toBeUndefined()
+    // The projection is what keeps every other field's `resolveOutput` from
+    // running over the window, and what keeps a `needs` on this list from
+    // widening the read into a relation.
+    expect(delegate.calls[0].select).toEqual(['id', 'name'])
   })
 
   it('bounds the result by take', async () => {
@@ -75,7 +111,7 @@ describe('getRelationshipOptions', () => {
 
     await getRelationshipOptions(context, config, 'Author', { take: 2 })
 
-    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }))
+    expect(delegate.calls[0].limit).toBe(2)
   })
 
   it('orders by the label field ascending and filters via contains on a text label field', async () => {
@@ -85,12 +121,8 @@ describe('getRelationshipOptions', () => {
 
     await getRelationshipOptions(context, config, 'Author', { search: 'Ada' })
 
-    expect(delegate.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { name: { contains: 'Ada' } },
-        orderBy: { name: 'asc' },
-      }),
-    )
+    expect(delegate.calls[0].where).toEqual([{ name: { contains: 'Ada' } }])
+    expect(delegate.calls[0].orderBy).toEqual({ name: 'asc' })
   })
 
   it('does not filter (first-N) when the label field is not a text field', async () => {
@@ -101,9 +133,8 @@ describe('getRelationshipOptions', () => {
 
     await getRelationshipOptions(context, config, 'NumericLabel', { search: '1' })
 
-    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
-    expect(call.where).toBeUndefined()
-    expect(call.orderBy).toEqual({ rank: 'asc' })
+    expect(delegate.calls[0].where).toEqual([])
+    expect(delegate.calls[0].orderBy).toEqual({ rank: 'asc' })
   })
 
   it('falls back to ordering by id when the label field is virtual (no backing column)', async () => {
@@ -114,11 +145,10 @@ describe('getRelationshipOptions', () => {
 
     const result = await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
 
-    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
     // Virtual label fields have no backing column, so ordering by them would
     // 500 in Prisma — order by id instead, and skip the text `contains` filter.
-    expect(call.orderBy).toEqual({ id: 'asc' })
-    expect(call.where).toBeUndefined()
+    expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
+    expect(delegate.calls[0].where).toEqual([])
     expect(result).toEqual([{ id: 'v1', label: 'Computed One' }])
   })
 
@@ -132,8 +162,7 @@ describe('getRelationshipOptions', () => {
 
     await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
 
-    const call = delegate.findMany.mock.calls[0][0] as Record<string, unknown>
-    expect(call.orderBy).toEqual({ id: 'asc' })
+    expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
   })
 
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
@@ -142,10 +171,9 @@ describe('getRelationshipOptions', () => {
     const context = makeContext({ Author: primaryDelegate })
     const config = makeConfig()
 
-    // The selected-ids query (a separate findMany call) resolves a3, which fell
+    // The selected-ids read (a second composed read) resolves a3, which fell
     // outside the primary window.
-    primaryDelegate.findMany.mockImplementationOnce(async () => [authors[0]])
-    primaryDelegate.findMany.mockImplementationOnce(async () => [authors[2]])
+    primaryDelegate.queue.push([authors[0]], [authors[2]])
 
     const result = await getRelationshipOptions(context, config, 'Author', {
       take: 1,
@@ -157,8 +185,10 @@ describe('getRelationshipOptions', () => {
       { id: 'a3', label: 'Grace Hopper' },
     ])
 
-    const selectedCall = primaryDelegate.findMany.mock.calls[1][0] as Record<string, unknown>
-    expect(selectedCall.where).toEqual({ id: { in: ['a3'] } })
+    const selectedCall = primaryDelegate.calls[1]
+    expect(selectedCall.where).toEqual([{ id: { in: ['a3'] } }])
+    // …and it is projected exactly as the primary window is.
+    expect(selectedCall.select).toEqual(['id', 'name'])
   })
 
   it('does not re-query when the selected id is already within the primary window', async () => {
@@ -168,10 +198,10 @@ describe('getRelationshipOptions', () => {
 
     await getRelationshipOptions(context, config, 'Author', { selectedIds: ['a1'] })
 
-    expect(delegate.findMany).toHaveBeenCalledTimes(1)
+    expect(delegate.calls).toHaveLength(1)
   })
 
-  it('returns [] when the related list query access is denied (findMany returns [])', async () => {
+  it('returns [] when the related list query access is denied (the terminal returns [])', async () => {
     const delegate = makeDelegate([])
     const context = makeContext({ Author: delegate })
     const config = makeConfig()

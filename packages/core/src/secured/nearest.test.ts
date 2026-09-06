@@ -11,7 +11,7 @@ import { relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { createPlanRecorder } from '../testing/plans.js'
+import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
 import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
 
 const BOOT = 120_000
@@ -127,6 +127,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+/** Every column the recorded plan projects, in the alias the decoder reads it back under. */
+function projectedColumns(plan: RecordedPlan | undefined): string[] {
+  const ast: unknown = plan?.ast
+  if (!isRecord(ast)) return []
+  const projection: unknown = ast.projection
+  if (!Array.isArray(projection)) return []
+  return projection
+    .map((item) => (isRecord(item) && typeof item.alias === 'string' ? item.alias : ''))
+    .filter((alias) => alias !== '')
+    .sort()
+}
+
 /** The client's own collection, as the harness exposes it (ADR-0057). */
 function collection(model: string): Record<string, unknown> {
   const namespace: unknown = Reflect.get(database.client.orm, 'public')
@@ -240,6 +252,36 @@ describe.skipIf(!available)(
           'unit',
           'tilt',
         ])
+      })
+
+      test('a projection naming the vector column does not ask for it twice', async () => {
+        for (const row of SEED) await seed('Cosine', row)
+        recorder.clear()
+
+        const matches = await database
+          .context(anonymous)
+          .db.Cosine.select('title', 'embedding')
+          .nearest('embedding', QUERY)
+
+        expect(titles(matches)).toEqual(['unit', 'long', 'tilt'])
+        const aliases = projectedColumns(recorder.plans[0])
+        expect(aliases.filter((alias) => alias === 'embedding')).toEqual(['embedding'])
+      })
+
+      test('a projection that leaves the vector out still carries it, once', async () => {
+        for (const row of SEED) await seed('Cosine', row)
+        recorder.clear()
+
+        const matches = await database
+          .context(anonymous)
+          .db.Cosine.select('title')
+          .nearest('embedding', QUERY)
+
+        // The score is recomputed from the row's own vector, so the column
+        // survives the projection — and is stripped from the result.
+        const aliases = projectedColumns(recorder.plans[0])
+        expect(aliases.filter((alias) => alias === 'embedding')).toEqual(['embedding'])
+        expect(matches[0].item).not.toHaveProperty('embedding')
       })
 
       test('a row with no vector has no distance and is left out', async () => {

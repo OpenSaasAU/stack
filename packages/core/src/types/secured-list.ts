@@ -1,6 +1,6 @@
 import type { IsToOne, ListId, RelationKey, RelationTarget, RemainderBase } from './contract.js'
 import type { CreateInput, UpdateInput } from './inputs.js'
-import type { RelationValue, Row, StoredRow } from './rows.js'
+import type { RelationValue, Row, StoredRow, SystemFieldKey } from './rows.js'
 
 /**
  * One column's filter. The operator vocabulary is the one the engine lowers
@@ -278,17 +278,57 @@ type IncludeTargetOf<C, R extends RemainderBase, K extends keyof R & string, Rel
     : never
 
 /**
+ * What `.select()` may name: this list's own scalar and computed keys. A
+ * relation is reached with `.include()` — naming one here is a
+ * `RelationSelectError` at runtime, and a compile error now.
+ */
+export type SelectableKey<C, R extends RemainderBase, K extends keyof R & string> = Exclude<
+  Extract<keyof Row<C, R, K>, string>,
+  RelationKey<C, K>
+>
+
+/**
+ * A projected row: exactly the keys `.select()` named, plus the list's own
+ * system fields — which every read carries whatever it projected. Everything
+ * the engine widened the query by is outside this type for the same reason it
+ * is outside the result (ADR-0041).
+ */
+export type SelectedRow<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  F extends string,
+> = Pick<Row<C, R, K>, Extract<F | SystemFieldKey, keyof Row<C, R, K>>>
+
+/** A composed read's row: the projection when there is one, the whole row when there is not. */
+type ComposedRow<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Selected extends string,
+> = [Selected] extends [never] ? Row<C, R, K> : SelectedRow<C, R, K, Selected>
+
+/**
  * What one include adds to the row.
  *
  * Arity alone decides, off the contract's relation graph: a to-one is
  * `| null` whatever its foreign key's nullability, because the Access Filter
  * can scope it away for one session and not another and the result shape must
  * not vary (ADR-0058). Prisma's own `IncludeRelationValue` is never consulted.
+ *
+ * `Sel` is the refinement's own `.select()`, inferred at the include's call
+ * site, so a projection is exact at every level exactly as it is at the root.
  */
-type IncludedRelation<C, R extends RemainderBase, K extends keyof R & string, Rel> = {
+type IncludedRelation<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Rel,
+  Sel extends string = never,
+> = {
   [P in Rel & string]: IsToOne<C, K, Rel> extends true
-    ? Row<C, R, IncludeTargetOf<C, R, K, Rel>> | null
-    : Row<C, R, IncludeTargetOf<C, R, K, Rel>>[]
+    ? ComposedRow<C, R, IncludeTargetOf<C, R, K, Rel>, Sel> | null
+    : ComposedRow<C, R, IncludeTargetOf<C, R, K, Rel>, Sel>[]
 }
 
 /**
@@ -296,17 +336,30 @@ type IncludedRelation<C, R extends RemainderBase, K extends keyof R & string, Re
  * parent's terminal is the only thing that runs, and `limit`/`offset` here
  * page the related rows per parent row.
  */
-export type ListRefinement<C, R extends RemainderBase, K extends keyof R & string> = {
-  where: (predicate: ListPredicate<C, R, K>) => ListRefinement<C, R, K>
-  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListRefinement<C, R, K>
-  limit: (count: number) => ListRefinement<C, R, K>
-  offset: (count: number) => ListRefinement<C, R, K>
-  include: <Rel extends RelationKey<C, K>>(
+export type ListRefinement<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Selected extends string = never,
+> = {
+  where: (predicate: ListPredicate<C, R, K>) => ListRefinement<C, R, K, Selected>
+  orderBy: (
+    order: ListSort<C, R, K> | readonly ListSort<C, R, K>[],
+  ) => ListRefinement<C, R, K, Selected>
+  limit: (count: number) => ListRefinement<C, R, K, Selected>
+  offset: (count: number) => ListRefinement<C, R, K, Selected>
+  /**
+   * Return exactly these of the related list's own fields. Replaces any
+   * previous call rather than accumulating, and leaves relations this
+   * refinement includes on the row.
+   */
+  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListRefinement<C, R, K, F>
+  include: <Rel extends RelationKey<C, K>, Sel extends string = never>(
     name: Rel,
     refine?: (
       refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
-    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
-  ) => ListRefinement<C, R, K>
+    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel>,
+  ) => ListRefinement<C, R, K, Selected>
 }
 
 /**
@@ -324,17 +377,32 @@ export type ListQuery<
   R extends RemainderBase,
   K extends keyof R & string,
   Included = unknown,
+  Selected extends string = never,
 > = {
-  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K, Included>
-  orderBy: (order: ListSort<C, R, K> | readonly ListSort<C, R, K>[]) => ListQuery<C, R, K, Included>
-  include: <Rel extends RelationKey<C, K>>(
+  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K, Included, Selected>
+  orderBy: (
+    order: ListSort<C, R, K> | readonly ListSort<C, R, K>[],
+  ) => ListQuery<C, R, K, Included, Selected>
+  include: <Rel extends RelationKey<C, K>, Sel extends string = never>(
     name: Rel,
     refine?: (
       refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
-    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
-  ) => ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel>>
-  all: () => Promise<(Row<C, R, K> & Included)[]>
-  first: () => Promise<(Row<C, R, K> & Included) | null>
+    ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel>,
+  ) => ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel, Sel>, Selected>
+  /**
+   * Return exactly these of the list's own fields — including a computed one,
+   * which is produced whether or not the columns it reads were named.
+   *
+   * Replaces any previous call rather than accumulating, and leaves relations
+   * this read includes on the row. The engine widens the query behind it and
+   * strips the difference back out, so neither the result nor this type
+   * carries what it added (ADR-0041, ADR-0051).
+   */
+  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListQuery<C, R, K, Included, F>
+  /** At most this many rows. Replaces any previous call; shapes `all()` alone. */
+  limit: (count: number) => ListQuery<C, R, K, Included, Selected>
+  all: () => Promise<(ComposedRow<C, R, K, Selected> & Included)[]>
+  first: () => Promise<(ComposedRow<C, R, K, Selected> & Included) | null>
 }
 
 type ListOps<C, R extends RemainderBase, K extends keyof R & string> = ListQuery<C, R, K> & {

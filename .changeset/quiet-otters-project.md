@@ -1,8 +1,12 @@
 ---
-'@opensaas/stack-core': major
+'@opensaas/stack-core': minor
 ---
 
-BREAKING: `.select()` is honoured exactly, and the fragment API is deleted
+`.select()` is honoured exactly, and the fragment API is deleted
+
+The breaks below are real and are documented in full. They ship on `minor`
+because the whole Prisma 8 line is released as one major at the end of it,
+which is the convention every other changeset on this line follows.
 
 A read on the secured surface is narrowed with `.select(...fields)`, which the
 engine honours exactly: it widens the query by the declared dependency sets of
@@ -20,6 +24,15 @@ const rows = await context.db.Post.select('wordCount')
   .include('author', (author) => author.select('name'))
   .all()
 ```
+
+`.select()` is on the generated typed surface, so a projected read's row type
+is exactly the keys it named plus the list's system fields — an unselected
+column, and anything the engine widened the query by, is a compile error rather
+than an absent value. A relation named in `.select()` is refused at compile
+time and, at runtime, with `RelationSelectError` (now exported from the package
+root).
+
+`.limit(count)` joins the composed read as well, bounding `.all()`.
 
 Relation-valued `needs` are now folded into the read on the new terminals, so
 `.all()` / `.first()` and the legacy read path agree on a computed field with a

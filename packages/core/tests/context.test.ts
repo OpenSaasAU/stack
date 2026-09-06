@@ -8,6 +8,34 @@ import {
 import { READ_INCLUDE_MAX_DEPTH } from '../src/access/depth-limits.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 
+/**
+ * One list's collection: the legacy model operations plus the composed-read
+ * members the secured surface drives (ADR-0041). Each composition step returns
+ * the collection itself, so a test asserts on the calls and stubs `all()`.
+ */
+function mockModel() {
+  const model = {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn(),
+    select: vi.fn(),
+    where: vi.fn(),
+    orderBy: vi.fn(),
+    limit: vi.fn(),
+    include: vi.fn(),
+    all: vi.fn(async () => []),
+    first: vi.fn(async () => null),
+  }
+  for (const member of ['select', 'where', 'orderBy', 'limit', 'include'] as const) {
+    model[member].mockImplementation(() => model)
+  }
+  return model
+}
+
 describe('getContext', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockPrisma: any
@@ -15,26 +43,7 @@ describe('getContext', () => {
 
   beforeEach(() => {
     // Mock Prisma client with all methods needed by context
-    mockPrisma = {
-      User: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        count: vi.fn(),
-      },
-      Post: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        count: vi.fn(),
-      },
-    }
+    mockPrisma = { User: mockModel(), Post: mockModel() }
 
     // Sample config with open access (no access control to simplify tests)
     config = {
@@ -1118,8 +1127,8 @@ describe('getContext', () => {
     })
 
     describe('relationshipOptions', () => {
-      it('returns { id, label }[] for the related list, unfiltered/unincluded', async () => {
-        mockPrisma.User.findMany.mockResolvedValue([
+      it('returns { id, label }[] for the related list, projected and unincluded', async () => {
+        mockPrisma.User.all.mockResolvedValue([
           { id: 'u1', name: 'Ada' },
           { id: 'u2', name: 'Alan' },
         ])
@@ -1138,12 +1147,14 @@ describe('getContext', () => {
             { id: 'u2', label: 'Alan' },
           ],
         })
-        const call = mockPrisma.User.findMany.mock.calls[0][0]
-        expect(call.include).toBeUndefined()
+        // Projected to `id` and the label field, so no other field's
+        // `resolveOutput` runs over the window, and no relation is reached.
+        expect(mockPrisma.User.select).toHaveBeenCalledWith('id', 'name')
+        expect(mockPrisma.User.include).not.toHaveBeenCalled()
       })
 
       it('bounds the query by take', async () => {
-        mockPrisma.User.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.all.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
 
         const context = await getContext(config, mockPrisma, null)
         await context.serverAction({
@@ -1153,12 +1164,12 @@ describe('getContext', () => {
           take: 1,
         })
 
-        expect(mockPrisma.User.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }))
+        expect(mockPrisma.User.limit).toHaveBeenCalledWith(1)
       })
 
       it('unions selectedIds beyond the take/search window', async () => {
-        mockPrisma.User.findMany.mockResolvedValueOnce([{ id: 'u1', name: 'Ada' }])
-        mockPrisma.User.findMany.mockResolvedValueOnce([{ id: 'u9', name: 'Zed' }])
+        mockPrisma.User.all.mockResolvedValueOnce([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.all.mockResolvedValueOnce([{ id: 'u9', name: 'Zed' }])
 
         const context = await getContext(config, mockPrisma, null)
         const result = await context.serverAction({
@@ -1189,7 +1200,7 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.User.findMany.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
+        mockPrisma.User.all.mockResolvedValue([{ id: 'u1', name: 'Ada' }])
 
         const context = await getContext(deniedConfig, mockPrisma, null)
         const result = await context.serverAction({

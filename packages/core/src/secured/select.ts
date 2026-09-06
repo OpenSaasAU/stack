@@ -79,6 +79,43 @@ function contractColumns(
 }
 
 /**
+ * The to-one relationship field a foreign-key scalar (`authorId`) belongs to,
+ * matching the key `resolveQueryField` already accepts for the same column.
+ * `undefined` for anything else, including the many side — which owns no
+ * foreign key of its own.
+ */
+function foreignKeyOwner(
+  name: string,
+  ctx: ResolveContext,
+): { name: string; fieldConfig: FieldConfig } | undefined {
+  if (!name.endsWith('Id')) return undefined
+  const owner = name.slice(0, -2)
+  const fieldConfig = ctx.listConfig.fields[owner]
+  if (fieldConfig === undefined) return undefined
+  if (fieldConfig.type !== 'relationship') return undefined
+  if ('many' in fieldConfig && fieldConfig.many === true) return undefined
+  return { name: owner, fieldConfig }
+}
+
+/**
+ * Whether a `read` rule on this field has to see a row to answer. A level
+ * carrying one is read at its full width, because a rule that reaches into
+ * `item` cannot be answered against a row that was projected away.
+ */
+async function readsTheRow(
+  fieldConfig: FieldConfig | undefined,
+  ctx: ResolveContext,
+): Promise<boolean> {
+  if (!ctx.checkFieldRead) return false
+  if (fieldConfig?.access?.read === undefined) return false
+  const answer = await classifyRowIndependentRead(fieldConfig.access, {
+    session: ctx.session,
+    context: ctx.context,
+  })
+  return answer === 'row-dependent'
+}
+
+/**
  * Resolve one level's `.select()` into the projection the query runs with.
  *
  * The widening has two reasons, both of them the engine's rather than the
@@ -92,6 +129,13 @@ function contractColumns(
  * An include is not narrowed by `select()` — the ORM's own rule, and the only
  * one under which `select()` and `include()` compose rather than compete — so
  * every relation this level names stays in `caller`.
+ *
+ * The relations this level includes are scanned for the same row-dependent
+ * `read` rule the selected fields are. Their rules are answered post-query by
+ * Field Visibility against the row this level fetched, so a projected-away
+ * row would make a relation's visibility a function of the caller's
+ * projection — an access decision must not depend on what someone happened to
+ * select.
  */
 export async function resolveProjection(
   fields: readonly string[] | undefined,
@@ -100,31 +144,56 @@ export async function resolveProjection(
 ): Promise<ProjectionPlan> {
   if (fields === undefined) return UNPROJECTED
 
+  const systemFields = new Set(getListDependencies(ctx.config, ctx.listName).systemFields)
+  const columns = new Set<string>(systemFields)
   const selected = new Set<string>()
+  let rowDependent = false
+
   for (const name of fields) {
     const resolved = resolveQueryField(name, ctx.listConfig.fields)
     if (resolved === undefined) throw unqueryableKey(ctx.listName, name)
     if (resolved.isRelationship) throw new RelationSelectError(ctx.listName, name)
+
+    const fieldConfig = ctx.listConfig.fields[name]
+    if (fieldConfig !== undefined) {
+      for (const column of contractColumns(name, fieldConfig, ctx)) columns.add(column)
+      if (await readsTheRow(fieldConfig, ctx)) rowDependent = true
+    } else if (!systemFields.has(name)) {
+      // `resolveQueryField` also admits two keys that are not fields of this
+      // list: the foreign-key scalar a to-one implies, which is a column and
+      // is projected, and the raw per-part column of a multi-column field,
+      // which is not — `filterReadableFields` assembles those into the
+      // owning field's value and never lets one reach a caller. Refused with
+      // the message an undeclared key gets rather than accepted and dropped.
+      const owner = foreignKeyOwner(name, ctx)
+      if (owner === undefined) throw unqueryableKey(ctx.listName, name)
+      for (const column of contractColumns(owner.name, owner.fieldConfig, ctx)) columns.add(column)
+    }
+
     selected.add(name)
   }
 
-  const columns = new Set<string>(getListDependencies(ctx.config, ctx.listName).systemFields)
-  let rowDependent = false
-
-  for (const name of selected) {
-    const fieldConfig = ctx.listConfig.fields[name]
-    if (fieldConfig === undefined) continue
-    for (const column of contractColumns(name, fieldConfig, ctx)) columns.add(column)
-    if (!ctx.checkFieldRead || fieldConfig.access?.read === undefined) continue
-    const answer = await classifyRowIndependentRead(fieldConfig.access, {
-      session: ctx.session,
-      context: ctx.context,
-    })
-    if (answer === 'row-dependent') rowDependent = true
+  for (const name of includeNames) {
+    if (await readsTheRow(ctx.listConfig.fields[name], ctx)) rowDependent = true
   }
 
-  for (const column of resolveDeclaredDependencies(ctx.config, ctx.listName, selected).columns) {
-    columns.add(column)
+  // A declared dependency names a FIELD KEY (`contract/dependencies.ts`), and
+  // a field key is not a contract column: a multi-column field owns several
+  // and a to-one owns its foreign key. Resolved through the same descriptor
+  // the caller's own selection is, so the widening never projects a column
+  // the contract does not have.
+  for (const name of resolveDeclaredDependencies(ctx.config, ctx.listName, selected).columns) {
+    const fieldConfig = ctx.listConfig.fields[name]
+    if (fieldConfig !== undefined) {
+      for (const column of contractColumns(name, fieldConfig, ctx)) columns.add(column)
+      continue
+    }
+    const owner = foreignKeyOwner(name, ctx)
+    if (owner !== undefined) {
+      for (const column of contractColumns(owner.name, owner.fieldConfig, ctx)) columns.add(column)
+      continue
+    }
+    if (resolveQueryField(name, ctx.listConfig.fields) !== undefined) columns.add(name)
   }
 
   return {

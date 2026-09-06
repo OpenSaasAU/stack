@@ -1,13 +1,24 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { getLabelFieldName, getItemLabel } from '../config/label.js'
-import type { OrmOperationArgs } from '../access/types.js'
+import type { OrderBy, Where } from '../secured/vocabulary.js'
+
+/**
+ * The composed-read members this primitive drives. Structural rather than the
+ * generated `SecuredList`, so `getContext()`'s own delegate satisfies it and a
+ * test can stand one in.
+ */
+export interface RelationshipOptionsQuery {
+  where(predicate: Where): RelationshipOptionsQuery
+  orderBy(order: OrderBy): RelationshipOptionsQuery
+  select(...fields: readonly string[]): RelationshipOptionsQuery
+  limit(count: number): RelationshipOptionsQuery
+  all(): Promise<Record<string, unknown>[]>
+}
 
 /** Compatible with the full `AccessContext` produced by `getContext()`. */
 export interface QueryRunnerContext {
   db: {
-    [key: string]: {
-      findMany: (args?: OrmOperationArgs) => Promise<unknown[]>
-    }
+    [key: string]: RelationshipOptionsQuery
   }
 }
 
@@ -28,14 +39,15 @@ export interface RelationshipOptionsArgs {
 }
 
 /**
- * Bounded fetch of `{ id, label }` options for a relationship editor — the
- * read primitive behind the `relationshipOptions` serverAction op. It names
- * no relations, so `buildAccessScopedInclude` never has anything to scope,
- * and keeps only `id` and the resolved label field (via
- * {@link getLabelFieldName}) from each row.
+ * Bounded, projected fetch of `{ id, label }` options for a relationship
+ * editor — the read primitive behind the `relationshipOptions` serverAction
+ * op. It selects `id` and the resolved label field (via
+ * {@link getLabelFieldName}) and nothing else, so no other field's
+ * `resolveOutput` runs over the window and no `needs` on this list widens the
+ * read into a relation.
  *
  * Operation-level `query` access on `relatedListKey` still applies — a denied
- * list resolves to `[]` (via the underlying access-controlled `findMany`).
+ * list resolves to `[]` (the secured terminal's own Silent failure).
  */
 export async function getRelationshipOptions(
   context: QueryRunnerContext,
@@ -61,19 +73,17 @@ export async function getRelationshipOptions(
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
   const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
 
-  const primary = (await context.db[relatedListKey].findMany({
-    ...(where ? { where } : {}),
-    orderBy,
-    take,
-  })) as Record<string, unknown>[]
+  const options = (query: RelationshipOptionsQuery): RelationshipOptionsQuery =>
+    query.select('id', labelField)
+
+  const scoped = where ? context.db[relatedListKey].where(where) : context.db[relatedListKey]
+  const primary = await options(scoped).orderBy(orderBy).limit(take).all()
 
   const seenIds = new Set(primary.map((item) => String(item.id)))
   const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id))
 
   const selected = missingSelectedIds.length
-    ? ((await context.db[relatedListKey].findMany({
-        where: { id: { in: missingSelectedIds } },
-      })) as Record<string, unknown>[])
+    ? await options(context.db[relatedListKey].where({ id: { in: missingSelectedIds } })).all()
     : []
 
   return [...primary, ...selected].map((item) => ({

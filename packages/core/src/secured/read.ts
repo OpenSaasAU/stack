@@ -101,6 +101,12 @@ export interface SecuredQuery<TRow = OrmRow> {
    * was named here exactly (ADR-0041, ADR-0051).
    */
   select(...fields: readonly string[]): SecuredQuery<TRow>
+  /**
+   * At most this many rows. Replaces any previous call rather than
+   * accumulating. `first()` is bounded by its own terminal and `nearest()`
+   * takes its bound from `options.limit`, so this shapes `all()` alone.
+   */
+  limit(count: number): SecuredQuery<TRow>
   /** Every row this session may see. `[]` when the read is denied. */
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
@@ -218,6 +224,7 @@ interface QueryState {
   readonly orders: readonly OrderBy[]
   readonly includes: readonly IncludeRequest[]
   readonly fields?: readonly string[]
+  readonly limit?: number
 }
 
 /** A resolved read: the predicates to AND, the sort to apply, the tree to reach. */
@@ -231,6 +238,8 @@ interface ReadPlan {
   readonly selection: FieldSelectionScope | undefined
   /** The relation branches only the widening asked for, level by level (ADR-0051). */
   readonly additions: DependencyAdditions
+  /** The caller's own row bound, applied by `all()` alone. */
+  readonly limit?: number
 }
 
 function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
@@ -302,6 +311,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     projection,
     selection: selectionScope(projection, includes),
     additions: dependencyAdditions(includes),
+    limit: state.limit,
   }
 }
 
@@ -415,7 +425,8 @@ async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promi
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
-  const collection = scope(binding, plan, await whereCombinators())
+  const scoped = scope(binding, plan, await whereCombinators())
+  const collection = plan.limit === undefined ? scoped : scoped.limit(plan.limit)
   const rows = await withOrigin('engine', () => collection.all())
   return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
@@ -489,11 +500,13 @@ async function runNearest(
       predicates: [...plan.predicates, present(near)],
       orders: [],
       includes: plan.includes,
+      // `options.limit` is this terminal's own bound (ADR-0045).
+      limit: undefined,
       // The score is recomputed from the row's own vector, so the column has
       // to survive the projection even when the caller did not name it. It is
       // outside `projection.caller`, so Field Visibility strips it back out.
       projection:
-        plan.projection.columns === undefined
+        plan.projection.columns === undefined || plan.projection.columns.includes(near.column)
           ? plan.projection
           : { ...plan.projection, columns: [...plan.projection.columns, near.column] },
     },
@@ -530,6 +543,7 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
     orderBy: (order: OrderBy | readonly OrderBy[]) =>
       query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
     select: (...fields: readonly string[]) => query(binding, { ...state, fields }),
+    limit: (count: number) => query(binding, { ...state, limit: count }),
     include: (name: string, refinement?: Refinement) =>
       query(binding, {
         ...state,

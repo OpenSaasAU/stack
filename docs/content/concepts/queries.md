@@ -57,6 +57,28 @@ const rows = await context.db.Post.select('title')
 
 A refinement takes its own `.select()`, so a projection is exact at every level.
 
+### The result type narrows with the projection
+
+The generated types read the projection off the call site, so an unselected
+column is a compile error rather than an absent value — and so is a key the
+list does not have.
+
+```typescript
+const [row] = await context.db.Post.select('title').all()
+row.title // string
+row.body // Property 'body' does not exist
+```
+
+## `.limit()`
+
+`.limit(count)` bounds `.all()`. It replaces any previous call; `.first()` is
+bounded by its own terminal, and `.nearest()` takes its bound from
+`options.limit`.
+
+```typescript
+const recent = await context.db.Post.orderBy({ createdAt: 'desc' }).limit(20).all()
+```
+
 ## What a `resolveOutput` hook sees
 
 A computed field's hook is handed **exactly its own declared dependencies plus
