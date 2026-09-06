@@ -1,13 +1,4 @@
-/** Thrown by {@link resolveDatabaseUrl} when no connection variable is set. */
-export class DatabaseUrlUnresolvedError extends Error {
-  constructor(names: readonly string[]) {
-    super(
-      `No database connection URL is set. Set one of ${names.join(', ')} in the environment ` +
-        `(or a .env file the process loads) before running a command that reaches the database.`,
-    )
-    this.name = 'DatabaseUrlUnresolvedError'
-  }
-}
+import { readDevDatabaseState, type DevDatabaseStateLocation } from './state-file.js'
 
 /**
  * The environment variables consulted, in order. `DIRECT_DATABASE_URL` wins so
@@ -16,9 +7,52 @@ export class DatabaseUrlUnresolvedError extends Error {
  */
 const CONNECTION_VARIABLES = ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const
 
+/** Thrown by {@link resolveDatabaseUrl} when neither remedy has been taken. */
+export class DatabaseUrlUnresolvedError extends Error {
+  constructor(names: readonly string[]) {
+    super(
+      `No database connection URL is set and no dev database is running. Either set ` +
+        `${names.join(' or ')} in the environment (or a .env file the process loads) to point at ` +
+        `a Postgres you own, or run \`opensaas dev\`, which starts the dev database and writes ` +
+        `the state file this lookup reads.`,
+    )
+    this.name = 'DatabaseUrlUnresolvedError'
+  }
+}
+
+/**
+ * Where a connection string came from. `'env'` is a database the stack does
+ * not own; `'dev-database'` is the sidecar `opensaas dev` runs, which the
+ * generated runtime binds differently (one connection, no marker check —
+ * ADR-0063).
+ */
+export type DatabaseUrlProvenance = 'env' | 'dev-database'
+
+/** A connection string and the lookup branch that produced it. */
+export interface ResolvedDatabaseUrl {
+  readonly url: string
+  readonly provenance: DatabaseUrlProvenance
+}
+
+/**
+ * Where the Dev database state file is looked for when the environment names
+ * no connection.
+ */
+export type DatabaseUrlLookupOptions = DevDatabaseStateLocation
+
+function lookupDatabaseUrl(options: DatabaseUrlLookupOptions): ResolvedDatabaseUrl | undefined {
+  for (const name of CONNECTION_VARIABLES) {
+    const value = process.env[name]
+    if (value !== undefined && value.length > 0) return { url: value, provenance: 'env' }
+  }
+  const state = readDevDatabaseState(options)
+  if (state !== undefined) return { url: state.url, provenance: 'dev-database' }
+  return undefined
+}
+
 /**
  * The stack's database URL lookup, non-throwing: the connection string if one
- * is set, `undefined` otherwise.
+ * is set or a dev database is running, `undefined` otherwise.
  *
  * This is what the generated `prisma.config.ts` calls. That file is evaluated
  * for every Prisma command, including the offline ones (`contract emit`), so it
@@ -30,41 +64,34 @@ const CONNECTION_VARIABLES = ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const
  * db: { connection: findDatabaseUrl() }
  * ```
  */
-export function findDatabaseUrl(): string | undefined {
-  for (const name of CONNECTION_VARIABLES) {
-    const value = process.env[name]
-    if (value !== undefined && value.length > 0) return value
-  }
-  return undefined
+export function findDatabaseUrl(options: DatabaseUrlLookupOptions = {}): string | undefined {
+  return lookupDatabaseUrl(options)?.url
 }
 
 /**
- * The stack's database URL lookup — the one place a connection string is read
- * from the environment, used by the generated context when `db.client` supplies
- * no pool of its own.
+ * The stack's database URL lookup — the one place a connection string is
+ * chosen (ADR-0063, amending ADR-0014). `DATABASE_URL` (or
+ * `DIRECT_DATABASE_URL`) wins; otherwise the Dev database state file written by
+ * `startDevDatabase`; otherwise a throw. A deploy that forgets the
+ * variable gets that error, never a silent in-process Postgres.
  *
- * @param fallback - A URL to use when no environment variable is set, so a
- *   caller with its own default need not pre-check the environment.
+ * The provenance is load-bearing, not informational: only on `'dev-database'`
+ * does the generated context bind a single connection and disable Prisma's
+ * contract-marker read, which is why the dev loop must never inject a
+ * `DATABASE_URL` into the app it spawns.
  *
- * @throws {DatabaseUrlUnresolvedError} when nothing is set and no `fallback`
- *   is given — a named failure rather than an `undefined` that surfaces as a
- *   driver error several frames later.
+ * @throws {DatabaseUrlUnresolvedError} naming both remedies — the environment
+ *   variable and `opensaas dev`.
  *
  * @example
  * ```typescript
  * import { resolveDatabaseUrl } from '@opensaas/stack-core'
- * const db = postgres({ contractJson, url: resolveDatabaseUrl() })
+ * const { url, provenance } = resolveDatabaseUrl()
+ * const db = postgres({ contractJson, url })
  * ```
- *
- * This is the seam spec 2 (#1122's dev loop and client construction) replaces
- * with the full lookup — a `.env` load order, the dev loop's ephemeral
- * database, and the pooled/direct split per command. Callers should keep
- * reaching the connection through these two functions rather than reading
- * `process.env` themselves, so that replacement lands in one place.
  */
-export function resolveDatabaseUrl(fallback?: string): string {
-  const found = findDatabaseUrl()
+export function resolveDatabaseUrl(options: DatabaseUrlLookupOptions = {}): ResolvedDatabaseUrl {
+  const found = lookupDatabaseUrl(options)
   if (found !== undefined) return found
-  if (fallback !== undefined) return fallback
   throw new DatabaseUrlUnresolvedError(CONNECTION_VARIABLES)
 }
