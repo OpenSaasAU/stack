@@ -20,6 +20,8 @@ const child = vi.hoisted(() => {
   return {
     exitCode: null,
     signalCode: null,
+    /** When true the spawn mock leaves the child running for the test to drive. */
+    hold: false,
     kill: () => true,
     once(event: string, handler: (...args: unknown[]) => void) {
       handlers.set(event, [...(handlers.get(event) ?? []), handler])
@@ -34,7 +36,7 @@ const child = vi.hoisted(() => {
 vi.mock('child_process', () => ({
   spawn: (file: string, args: string[], options: { env: typeof process.env }) => {
     spawned.push({ file, args, env: options.env })
-    setTimeout(() => child.emit('exit', 0, null), 0)
+    if (!child.hold) setTimeout(() => child.emit('exit', 0, null), 0)
     return child
   },
 }))
@@ -66,11 +68,27 @@ vi.mock('../generator/index.js', () => ({
   runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
 }))
 
+const watcherHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+
 vi.mock('chokidar', () => ({
   default: {
-    watch: vi.fn(() => ({ on: vi.fn(), close: vi.fn().mockResolvedValue(undefined) })),
+    watch: vi.fn(() => ({
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        watcherHandlers.set(event, handler)
+      },
+      close: vi.fn().mockResolvedValue(undefined),
+    })),
   },
 }))
+
+/** Waits for the loop's queued work to reach a state the test can assert on. */
+async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('Timed out waiting for the dev loop.')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 
 describe('devCommand', () => {
   let tempDir: string
@@ -82,6 +100,8 @@ describe('devCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     spawned.length = 0
+    watcherHandlers.clear()
+    child.hold = false
 
     originalDatabaseUrl = process.env.DATABASE_URL
     delete process.env.DATABASE_URL
@@ -207,6 +227,111 @@ describe('devCommand', () => {
 
     expect(installedWhenStarting).toBe(baseline + 1)
     expect(process.listenerCount('SIGINT')).toBe(baseline)
+  })
+
+  it('refuses `db update` when a refused generation replaced the parked one', async () => {
+    child.hold = true
+
+    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
+    const { paths: live } = resolveOutputPaths(tempDir)
+    const stagingDir = path.join(tempDir, '.opensaas', 'staged')
+    const staged = stageWritePaths(live, stagingDir)
+
+    const { generateCommand } = await import('./generate.js')
+    let stagedGenerations = 0
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+      }
+      stagedGenerations += 1
+      if (stagedGenerations > 1) throw new Error('config surface invalid')
+      fs.mkdirSync(path.dirname(staged.contractModule), { recursive: true })
+      fs.writeFileSync(staged.contractModule, 'the parked generation', 'utf-8')
+      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+    })
+
+    const destructivePlan = JSON.stringify({
+      kind: 'result',
+      envelope: {
+        result: {
+          plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
+        },
+      },
+    })
+    const { runPrismaCli } = await import('../generator/index.js')
+    vi.mocked(runPrismaCli).mockImplementation(async () => ({
+      exitCode: 0,
+      signal: null,
+      output: destructivePlan,
+      stdout: destructivePlan,
+    }))
+
+    const { devCommand } = await import('./dev.js')
+    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    const { CONTROL_FILE, requestDatabaseUpdate } = await import('../dev/control.js')
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    const change = watcherHandlers.get('change')
+    expect(change).toBeDefined()
+
+    change?.()
+    await until(() => stagedGenerations === 1)
+    expect(fs.existsSync(staged.contractModule)).toBe(true)
+
+    change?.()
+    await until(() => stagedGenerations === 2)
+
+    const said: string[] = []
+    const ok = await requestDatabaseUpdate(tempDir, ['postgres'], (message) => said.push(message))
+
+    expect(ok).toBe(false)
+    expect(said.join('\n')).toContain('Nothing was staged')
+    expect(fs.existsSync(live.contractModule)).toBe(false)
+
+    child.emit('exit', 0, null)
+    await loop
+  })
+
+  it('puts the migration refs back when the config change stages nothing', async () => {
+    child.hold = true
+
+    const refsDir = path.join(tempDir, 'migrations', 'app', 'refs')
+    fs.mkdirSync(refsDir, { recursive: true })
+    fs.writeFileSync(path.join(refsDir, 'db.json'), JSON.stringify({ hash: 'before' }), 'utf-8')
+
+    const { resolveOutputPaths } = await import('../generator/output-paths.js')
+    const { paths: live } = resolveOutputPaths(tempDir)
+
+    const { generateCommand } = await import('./generate.js')
+    let refusals = 0
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+      }
+      // Generation seeds each declared pack's contract space into
+      // `migrations/` before it can refuse on the config surface.
+      fs.writeFileSync(path.join(refsDir, 'db.json'), JSON.stringify({ hash: 'after' }), 'utf-8')
+      fs.writeFileSync(path.join(refsDir, 'seeded.json'), JSON.stringify({ hash: 'new' }), 'utf-8')
+      refusals += 1
+      throw new Error('config surface invalid')
+    })
+
+    const { devCommand } = await import('./dev.js')
+    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    const { CONTROL_FILE } = await import('../dev/control.js')
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    watcherHandlers.get('change')?.()
+    await until(() => refusals === 1)
+    await until(() => !fs.existsSync(path.join(refsDir, 'seeded.json')))
+
+    const restored: unknown = JSON.parse(fs.readFileSync(path.join(refsDir, 'db.json'), 'utf-8'))
+    expect(restored).toEqual({ hash: 'before' })
+
+    child.emit('exit', 0, null)
+    await loop
   })
 
   it('does not start the app when reconciliation does not apply', async () => {

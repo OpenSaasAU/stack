@@ -14,8 +14,11 @@ import {
   writePluginTypes,
   writeTables,
   resolveOutputPaths,
+  stageWritePaths,
+  STAGED_ROOT_PRISMA_CONFIG,
   loadOpenSaasConfig,
 } from '../generator/index.js'
+import type { ResolvedWritePaths } from '../generator/index.js'
 import {
   OpenSaasConfig,
   assertRelationGraphAgrees,
@@ -75,7 +78,60 @@ export function formatConfigRefusals(refusals: ConfigRefusal[]): string {
   )
 }
 
-export async function generateCommand() {
+/**
+ * A refusal generation has already reported in full. Thrown only when the
+ * caller asked for it: `opensaas generate` still exits on one, and the dev
+ * loop catches it and keeps serving.
+ */
+export class GenerationFailedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GenerationFailedError'
+  }
+}
+
+/** Options for {@link generateCommand}. */
+export interface GenerateCommandOptions {
+  /**
+   * Write the Contract module, its emitted artifacts and the bundle under this
+   * directory instead of their resolved homes, so a generation can be planned
+   * against the database before the app is allowed to load it (ADR-0063). The
+   * project-root `prisma.config.ts` is held back with them, and promoted with
+   * them.
+   */
+  stagingDir?: string
+  /**
+   * Throw a {@link GenerationFailedError} rather than exiting the process, so
+   * a caller with something to keep alive survives a refusal.
+   */
+  throwOnFailure?: boolean
+}
+
+/** Where one generation put its files, and how to point Prisma at them. */
+export interface GenerationResult {
+  /** Absolute path of every file this generation wrote. */
+  paths: ResolvedWritePaths
+  /**
+   * Where those files belong — the same set as `paths` unless the generation
+   * was staged, in which case this is what promoting it writes over.
+   */
+  livePaths: ResolvedWritePaths
+  /** The Prisma config a CLI command must read to see this generation. */
+  prismaConfig: string
+}
+
+export async function generateCommand(
+  options: GenerateCommandOptions = {},
+): Promise<GenerationResult> {
+  try {
+    return await runGeneration(options)
+  } catch (error) {
+    if (options.throwOnFailure === true) throw error
+    process.exit(1)
+  }
+}
+
+async function runGeneration(options: GenerateCommandOptions): Promise<GenerationResult> {
   console.log(chalk.bold('\n🚀 OpenSaas Generator\n'))
 
   const cwd = process.cwd()
@@ -84,7 +140,7 @@ export async function generateCommand() {
   if (!fs.existsSync(configPath)) {
     console.error(chalk.red('❌ Error: opensaas.config.ts not found in current directory'))
     console.error(chalk.gray('   Please run this command from your project root'))
-    process.exit(1)
+    throw new GenerationFailedError('opensaas.config.ts not found')
   }
 
   const spinner = ora('Loading configuration...').start()
@@ -122,7 +178,7 @@ export async function generateCommand() {
     if (fieldErrors.length > 0) {
       validationSpinner.fail(chalk.red('Field configuration invalid'))
       console.error(chalk.red('\n❌ Error:'), formatFieldValidationErrors(fieldErrors))
-      process.exit(1)
+      throw new GenerationFailedError('field configuration invalid')
     }
     validationSpinner.succeed(chalk.green('Field configuration valid'))
 
@@ -134,7 +190,7 @@ export async function generateCommand() {
     if (needsErrors.length > 0) {
       needsSpinner.fail(chalk.red('Declared dependencies invalid'))
       console.error(chalk.red('\n❌ Error:'), formatNeedsClosureErrors(needsErrors))
-      process.exit(1)
+      throw new GenerationFailedError('declared dependencies invalid')
     }
     needsSpinner.succeed(chalk.green('Declared dependencies valid'))
 
@@ -143,7 +199,7 @@ export async function generateCommand() {
     if (refusals.length > 0) {
       surfaceSpinner.fail(chalk.red('Config surface invalid'))
       console.error(chalk.red('\n❌ Error:'), formatConfigRefusals(refusals))
-      process.exit(1)
+      throw new GenerationFailedError('config surface invalid')
     }
     surfaceSpinner.succeed(chalk.green('Config surface valid'))
 
@@ -155,7 +211,7 @@ export async function generateCommand() {
     } catch (err) {
       deriveSpinner.fail(chalk.red('Failed to derive the contract'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
+      throw new GenerationFailedError('contract derivation failed')
     }
 
     // Ahead of the writes: prisma.config.ts and the Contract module both
@@ -168,17 +224,48 @@ export async function generateCommand() {
     } catch (err) {
       packSpinner.fail(chalk.red('Declared extension pack unresolvable'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
+      throw new GenerationFailedError('declared extension pack unresolvable')
     }
 
-    const { paths, crossReferences } = resolveOutputPaths(cwd, config.output, config.opensaasPath)
+    const { paths: resolved, crossReferences } = resolveOutputPaths(
+      cwd,
+      config.output,
+      config.opensaasPath,
+    )
+    const staging = options.stagingDir
+    const paths = staging === undefined ? resolved : stageWritePaths(resolved, staging)
+
     const generatorSpinner = ora('Writing the Contract module and prisma.config.ts...').start()
     try {
       writeContractModule(contractData, paths.contractModule)
-      writePrismaConfig(contractData, paths.prismaConfig, {
-        contractModule: crossReferences.prismaConfigContract,
-        outputDir: crossReferences.prismaConfigOutput,
-      })
+      if (staging === undefined) {
+        writePrismaConfig(contractData, resolved.prismaConfig, {
+          contractModule: crossReferences.prismaConfigContract,
+          outputDir: crossReferences.prismaConfigOutput,
+        })
+      } else {
+        // Held back rather than written: the root config's contract-derived
+        // content is the extension import list, so writing it now would leave
+        // the project describing extensions a discarded plan never applied.
+        // Promotion moves this file into place with the rest.
+        writePrismaConfig(contractData, path.join(staging, STAGED_ROOT_PRISMA_CONFIG), {
+          contractModule: crossReferences.prismaConfigContract,
+          outputDir: crossReferences.prismaConfigOutput,
+        })
+
+        // The staged config names absolute paths and the project's own
+        // migrations directory: `db update --to` takes a ref or a migration
+        // directory rather than a contract file, so pointing the CLI at a
+        // staged contract means pointing it at a config that reads one — and
+        // it has to share the graph the project's refs live in, not start a
+        // private one beside itself (ADR-0063).
+        writePrismaConfig(contractData, paths.prismaConfig, {
+          contractModule: paths.contractModule,
+          outputDir: paths.contractDir,
+          migrationsDir: path.join(cwd, 'migrations'),
+          envDir: cwd,
+        })
+      }
 
       generatorSpinner.succeed(chalk.green('Contract module written'))
       console.log(chalk.green('✅ Contract module generated'))
@@ -190,7 +277,7 @@ export async function generateCommand() {
       if (err.stack) {
         console.error(chalk.gray('\n' + err.stack))
       }
-      process.exit(1)
+      throw new GenerationFailedError('the Contract module was not written')
     }
 
     // One computation, three consumers: the emitted `tables.ts` the runtime
@@ -262,7 +349,7 @@ export async function generateCommand() {
       if (err.stack) {
         console.error(chalk.gray('\n' + err.stack))
       }
-      process.exit(1)
+      throw new GenerationFailedError('bundle generation failed')
     }
 
     // Extension contract spaces are seeded between the Contract module and
@@ -279,7 +366,7 @@ export async function generateCommand() {
     } catch (err) {
       seedSpinner.fail(chalk.red('Failed to seed extension contract spaces'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
+      throw new GenerationFailedError('extension contract spaces were not seeded')
     }
 
     // Emission runs after `afterGenerate`, so a plugin's rewrite of the
@@ -289,14 +376,18 @@ export async function generateCommand() {
     // contract.ts.
     const emitSpinner = ora('Emitting contract artifacts...').start()
     try {
-      await emitContract(cwd, paths.contractDir)
+      await emitContract(
+        cwd,
+        paths.contractDir,
+        staging === undefined ? undefined : paths.prismaConfig,
+      )
       emitSpinner.succeed(chalk.green('Contract artifacts emitted'))
       console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractJson)} emitted`))
       console.log(chalk.green(`✅ ${path.relative(cwd, paths.contractTypes)} emitted`))
     } catch (err) {
       emitSpinner.fail(chalk.red('Failed to emit contract artifacts'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
+      throw new GenerationFailedError('contract emission failed')
     }
 
     // Reading the artifact is its own failure: a missing or unparseable
@@ -314,7 +405,7 @@ export async function generateCommand() {
           'wrote them unparseably.',
       )
       console.error(chalk.gray(err instanceof Error ? err.message : String(err)))
-      process.exit(1)
+      throw new GenerationFailedError('the emitted contract could not be read')
     }
 
     // The emitted contract is the artifact the runtime executes, so the last
@@ -327,21 +418,26 @@ export async function generateCommand() {
     } catch (err) {
       agreementSpinner.fail(chalk.red('Emitted relation graph disagrees with the config'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
-      process.exit(1)
+      throw new GenerationFailedError('the emitted relation graph disagrees with the config')
     }
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))
-    console.log(chalk.gray('Next steps:'))
-    console.log(chalk.gray('  1. Commit prisma/contract.json and prisma/contract.d.ts'))
-    console.log(chalk.gray('  2. Run: npx prisma db update'))
-    console.log(chalk.gray('  3. Start using your generated types!\n'))
+    if (staging === undefined) {
+      console.log(chalk.gray('Next steps:'))
+      console.log(chalk.gray('  1. Commit prisma/contract.json and prisma/contract.d.ts'))
+      console.log(chalk.gray('  2. Run: npx prisma db update'))
+      console.log(chalk.gray('  3. Start using your generated types!\n'))
+    }
+
+    return { paths, livePaths: resolved, prismaConfig: paths.prismaConfig }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
+    if (error instanceof GenerationFailedError) throw error
     spinner.fail(chalk.red('Generation failed'))
     console.error(chalk.red('\n❌ Error:'), error.message)
     if (error.stack) {
       console.error(chalk.gray('\n' + error.stack))
     }
-    process.exit(1)
+    throw new GenerationFailedError(error.message)
   }
 }

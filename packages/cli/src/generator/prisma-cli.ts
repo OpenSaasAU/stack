@@ -67,6 +67,11 @@ export interface PrismaCliRun {
   readonly signal: string | null
   /** Combined stdout and stderr; empty for an `'interactive'` run. */
   readonly output: string
+  /**
+   * Stdout alone, where `--json`'s newline-delimited envelopes arrive
+   * unmixed with the CLI's commentary.
+   */
+  readonly stdout: string
 }
 
 /**
@@ -101,15 +106,18 @@ export async function runPrismaCli(
     })
 
     let output = ''
+    let stdout = ''
     for (const stream of [child.stdout, child.stderr]) {
       if (stream === null) continue
+      const isStdout = stream === child.stdout
       stream.setEncoding('utf-8')
       stream.on('data', (chunk: string) => {
         output += chunk
+        if (isStdout) stdout += chunk
       })
     }
 
     child.once('error', reject)
-    child.once('close', (exitCode, signal) => resolve({ exitCode, signal, output }))
+    child.once('close', (exitCode, signal) => resolve({ exitCode, signal, output, stdout }))
   })
 }

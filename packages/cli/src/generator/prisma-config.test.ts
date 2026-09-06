@@ -42,6 +42,35 @@ describe('generatePrismaConfig', () => {
     expect(output).toContain("output: './db',")
   })
 
+  it('names no migrations directory unless one is given', () => {
+    expect(generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')).not.toContain(
+      'migrations:',
+    )
+  })
+
+  it('shares the project’s migrations graph and .env when it is written elsewhere', () => {
+    const output = generatePrismaConfig(
+      contract(),
+      '/app/.opensaas/staged/contract/contract.ts',
+      '/app/.opensaas/staged/contract',
+      { migrationsDir: '/app/migrations', envDir: '/app' },
+    )
+
+    expect(output).toContain("migrations: { dir: '/app/migrations' },")
+    expect(output).toContain("const envFile = join('/app', '.env')")
+    expect(output).not.toContain('import.meta.dirname')
+  })
+
+  it('escapes a Windows path into the emitted literal', () => {
+    const output = generatePrismaConfig(
+      contract(),
+      'C:\\app\\prisma\\contract.ts',
+      'C:\\app\\prisma',
+    )
+
+    expect(output).toContain("contract: 'C:\\\\app\\\\prisma\\\\contract.ts',")
+  })
+
   it('resolves the connection through the stack URL lookup, never process.env', () => {
     const output = generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')
 
