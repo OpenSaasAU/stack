@@ -2,7 +2,7 @@
 '@opensaas/stack-core': minor
 ---
 
-A field that declares `getContractField` satisfies the self-containment gate on its own
+`getContractField` replaces the PSL pair at the field self-containment gate
 
 `validateConfigFields` — the check `pnpm generate` runs over every stored field before it
 reads any contract — used to require the PSL-shaped `getPrismaType` and `getTypeScriptType`
@@ -19,11 +19,12 @@ plus a `jsonb` column, and had to claim `Json?`.
 
 `getContractField` is now what satisfies the gate for a stored field, with no PSL method in
 the picture at all. `getZodSchema` is still required of it — no contract supplies
-validation — and a field whose descriptor is `kind: 'columns'` must also declare
-`outputType`, having no single column to be typed from. A relationship field needs only
-`getContractField`; a virtual field needs `outputType` and `getZodSchema`. A stored field
-that declares no contract now fails the gate outright: there is no PSL pair left to satisfy
-it with.
+validation — and a field with no single column to be typed from must also declare
+`outputType`. That is decided by the descriptor: `kind: 'columns'`, or `kind: 'computed'`
+whether or not the builder also sets the `virtual` flag core's own `virtual()` sets
+alongside it. A relationship field needs only `getContractField`. A stored field that
+declares no contract now fails the gate outright: there is no PSL pair left to satisfy it
+with.
 
 ```typescript
 // A field package can now describe its columns once, to the contract:

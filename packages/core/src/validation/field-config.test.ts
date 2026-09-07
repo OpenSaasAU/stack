@@ -247,6 +247,55 @@ describe('validateFieldConfig', () => {
     })
 
     /**
+     * A `kind: 'computed'` descriptor with no `virtual: true` beside it. Core's
+     * `virtual()` sets both, so the two markers agree on every shipped field
+     * and neither can be told from the other there; a third-party builder owes
+     * only the descriptor. `outputType` is absent, which is the whole question
+     * — under a check reading the flag this field falls into the stored branch,
+     * is never asked for one, and then emits no column (`deriveContract`'s
+     * `case 'computed'`) and lands in none of `computed`/`output`/`input`,
+     * vanishing from every consumer's row type (#1292's shape).
+     */
+    const computedWithoutVirtualFlag: FieldConfig = {
+      type: 'fullName',
+      getZodSchema: () => json().getZodSchema!('fullName', 'create'),
+      getContractField: () => ({ kind: 'computed' }),
+    }
+
+    it('requires outputType from a computed descriptor that does not set virtual', () => {
+      expect(computedWithoutVirtualFlag.virtual).toBeUndefined()
+      expect(computedWithoutVirtualFlag.type).not.toBe('virtual')
+
+      expect(
+        validateFieldConfig(computedWithoutVirtualFlag, 'fullName', 'User', CONFIG).map(
+          (e) => e.missingMember,
+        ),
+      ).toEqual(['outputType'])
+    })
+
+    it('accepts the same field once it declares its face', () => {
+      const field: FieldConfig = { ...computedWithoutVirtualFlag, outputType: 'string' }
+
+      expect(validateFieldConfig(field, 'fullName', 'User', CONFIG)).toEqual([])
+    })
+
+    /**
+     * The stored branch's own obligation is not owed by a computed field: it
+     * has no column, so demanding `getContractField` from a field that returned
+     * `computed` from it would be incoherent. Pinned so the fix cannot be
+     * mistaken for routing computed fields through the scalar branch.
+     */
+    it('does not ask a computed field for the stored-scalar members', () => {
+      const field: FieldConfig = { ...computedWithoutVirtualFlag }
+      delete field.outputType
+      delete field.getZodSchema
+
+      expect(
+        validateFieldConfig(field, 'fullName', 'User', CONFIG).map((e) => e.missingMember),
+      ).toEqual(['outputType', 'getZodSchema'])
+    })
+
+    /**
      * `getContractField` is a field's refusal seam (`embedding()` throws out of
      * it for an impossible `dimensions`). This gate is the first step
      * `opensaas generate` runs, ahead of the config-surface step that reports

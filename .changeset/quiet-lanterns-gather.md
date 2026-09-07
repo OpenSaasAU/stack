@@ -79,8 +79,11 @@ from `getContractField` and keeps `getColumnNames`/`assembleColumns`/`splitColum
 **The generate-time gate moved with the contract.** `validateFieldConfig` now
 requires `getContractField` and `getZodSchema` from a stored field (a
 relationship only the former), and additionally `outputType` from a field that
-has no single column to be typed from — a virtual field, or one whose
-descriptor is `kind: 'columns'`. That closes a hole where such a field passed
+has no single column to be typed from — one whose descriptor is
+`kind: 'columns'` or `kind: 'computed'`. Both are read off the descriptor, so a
+`computed` field carries the obligation whether or not its builder also sets the
+`virtual` flag that core's own `virtual()` sets alongside it. That closes a hole
+where such a field passed
 the gate, generated successfully, and left every consumer reading it as
 `unknown` (issue #1292). `FieldConfigValidationError.missingMethod` is renamed
 to `missingMember` to carry `outputType` alongside the two methods.
@@ -163,8 +166,10 @@ alone still gets the default, as does one carrying only a `length.max`.
 Relatedly, `text()` no longer treats `validation: { length: { min: 0 } }` as
 `min(1)`. A zero minimum now means no minimum, so `''` validates — which is
 what the option says, and what lets such a column keep its compat default
-without the column and the validator disagreeing. An `isRequired` field is
-still `min(1)` whatever its `length.min`.
+without the column and the validator disagreeing. `isRequired` still imposes a
+floor of `min(1)` on a field that declares `length: { min: 0 }` or no minimum
+at all, and never lowers a larger declared one — `isRequired` with
+`length: { min: 5 }` is still `min(5)`.
 
 **Test coverage that thinned.** Three assertions were lost rather than ported,
 and are recorded here so the change is not silent:

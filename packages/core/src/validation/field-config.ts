@@ -1,4 +1,4 @@
-import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 
 /**
  * A single self-containment violation found on a field.
@@ -58,21 +58,25 @@ function buildMessage(
  *
  *   - `relationship` fields contribute a relation descriptor and take no
  *     input of their own, so only `getContractField` is required.
- *   - `virtual` fields have no column for the contract to type them from, so
- *     they must declare `outputType` (ADR-0052) as well as `getZodSchema`.
+ *   - a field that stores nothing — `kind: 'computed'`, or the `virtual` flag
+ *     core's `virtual()` sets alongside it — has no column for the contract to
+ *     type it from, so it must declare `outputType` (ADR-0052) as well as
+ *     `getZodSchema`.
  *   - a field whose contract descriptor is `kind: 'columns'` — one field over
  *     several physical columns — has no single column to type it from either,
- *     so it must declare `outputType` too. The descriptor is read for this,
- *     not a proxy for it: a `columns` field that happens not to implement the
- *     optional `getColumnNames` is the same shape and carries the same
- *     obligation, and a single-column field that happens to implement it
- *     carries none.
+ *     so it must declare `outputType` too.
  *   - every other (stored scalar) field must provide `getContractField` and
  *     `getZodSchema`; its TypeScript face comes from its contract column, and
  *     `outputType` is an override it may omit.
  *
- * Reading the descriptor is what makes that rule decidable, so `listKey` and
- * `config` — the two things `getContractField` takes — are required.
+ * Both no-column cases are decided by the descriptor rather than by a proxy
+ * for it: a `columns` field that happens not to implement the optional
+ * `getColumnNames` carries the same obligation, a single-column field that
+ * happens to implement it carries none, and a `computed` field is one whether
+ * or not its builder also sets `virtual: true` — the flag is a marker core's
+ * own `virtual()` sets, not something a third-party builder owes. Reading the
+ * descriptor is what makes the rule decidable, so `listKey` and `config` — the
+ * two things `getContractField` takes — are required.
  *
  * @param field - The field config produced by a field builder.
  * @param fieldKey - The field's key within its list.
@@ -108,14 +112,16 @@ export function validateFieldConfig(
     return errors
   }
 
-  if (field.virtual === true || field.type === 'virtual') {
+  const descriptorKind = contractDescriptorKind(field, fieldKey, listKey, config)
+
+  if (field.virtual === true || field.type === 'virtual' || descriptorKind === 'computed') {
     requireMember('outputType', field.outputType !== undefined)
     requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
     return errors
   }
 
   requireMember('getContractField', hasFieldMethod(field, 'getContractField'))
-  if (spansSeveralColumns(field, fieldKey, listKey, config)) {
+  if (descriptorKind === 'columns') {
     requireMember('outputType', field.outputType !== undefined)
   }
   requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
@@ -124,7 +130,8 @@ export function validateFieldConfig(
 }
 
 /**
- * Whether the field's contract descriptor covers several physical columns.
+ * The `kind` of the field's contract descriptor, or `undefined` when it
+ * declares none or refuses to describe itself.
  *
  * `getContractField` is a field's own refusal seam — `embedding()` throws out
  * of it for an impossible `dimensions` or a mismatched `opclass`. This gate is
@@ -134,16 +141,16 @@ export function validateFieldConfig(
  * throw is swallowed here: the field goes un-gated for one run, and the run
  * fails at the step designed to name it.
  */
-function spansSeveralColumns(
+function contractDescriptorKind(
   field: FieldConfig,
   fieldKey: string,
   listKey: string,
   config: OpenSaasConfig,
-): boolean {
+): ContractFieldDescriptor['kind'] | undefined {
   try {
-    return field.getContractField?.(fieldKey, listKey, config)?.kind === 'columns'
+    return field.getContractField?.(fieldKey, listKey, config)?.kind
   } catch {
-    return false
+    return undefined
   }
 }
 

@@ -198,7 +198,13 @@ export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
     outputType: face,
     inputType: face,
     ...options,
-    getZodSchema: (fieldName, operation) => (isRequired ? z.any() : z.any().optional()),
+    getZodSchema: (fieldName, operation) => {
+      // Tiptap emits a nested JSONContent structure; accept any valid JSON.
+      const base = z.any()
+      if (!isRequired) return base.optional()
+      // A partial update may omit a required field; a create may not.
+      return operation === 'update' ? z.union([base, z.undefined()]) : base
+    },
     getContractField: (fieldName): ContractFieldDescriptor => ({
       kind: 'column',
       name: fieldName,
