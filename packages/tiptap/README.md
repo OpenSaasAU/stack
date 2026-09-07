@@ -268,8 +268,8 @@ This package follows OpenSaas's extensibility pattern:
 
 1. **Field Builder** (`richText()`) - Defines field configuration
    - Returns `RichTextField` type
-   - Implements `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()`
-   - Stores data as `Json` in Prisma
+   - Implements `getZodSchema()` and `getContractField()`, and declares `outputType`/`inputType`
+   - Stores data in a `jsonb` column
 
 2. **React Component** (`TiptapField`) - UI implementation
    - Client component with `"use client"` directive

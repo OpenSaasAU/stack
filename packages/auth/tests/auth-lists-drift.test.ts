@@ -3,7 +3,7 @@ import { getAuthTables } from 'better-auth/db'
 import { mcp } from '@better-auth/mcp'
 import type { BetterAuthOptions } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
-import type { FieldConfig } from '@opensaas/stack-core'
+import type { ColumnTypeDescriptor, FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import { deriveAuthLists } from '../src/config/derive-auth-lists.js'
 import type { NormalizedAuthModels } from '../src/config/types.js'
@@ -56,25 +56,35 @@ function normalizeOnDelete(action: string): string {
 }
 
 /**
- * The Prisma scalar type a correctly-derived field should carry for a given
+ * `getContractField` takes the whole config; nothing reached through a scalar
+ * auth field reads more of it than the database block.
+ */
+const DRIFT_CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+/**
+ * The contract column type a correctly-derived field should carry for a given
  * better-auth field type. `undefined` means "not modeled by any field in
  * these lists" (json/array types don't appear on user/session/account/
  * verification/rateLimit) — the caller skips the comparison in that case
  * rather than treating it as a mismatch.
  */
-function expectedPrismaType(upstream: DBFieldAttribute): string | undefined {
+function expectedColumnType(upstream: DBFieldAttribute): ColumnTypeDescriptor | undefined {
   switch (upstream.type) {
     case 'string':
-      return 'String'
+      return { pack: 'pg', type: 'text' }
     case 'boolean':
-      return 'Boolean'
+      return { pack: 'pg', type: 'boolean' }
     case 'date':
-      return 'DateTime'
+      return { pack: 'pg', type: 'dateTime' }
     case 'number':
-      return upstream.bigint ? 'BigInt' : 'Int'
+      return { pack: 'pg', type: upstream.bigint ? 'bigint' : 'int' }
     default:
       return undefined
   }
+}
+
+function describeColumnType(type: ColumnTypeDescriptor): string {
+  return `${type.pack}/${type.type}`
 }
 
 /** Narrows a derived list's field to a `RelationshipField` — the shape the FK-bridged comparison reads. */
@@ -89,7 +99,8 @@ function compareScalarField(
   derived: FieldConfig | undefined,
   divergences: Divergence[],
 ): void {
-  if (!derived || !derived.getPrismaType) {
+  const descriptor = derived?.getContractField?.(fieldKey, model, DRIFT_CONFIG)
+  if (!descriptor || descriptor.kind !== 'column') {
     divergences.push({
       model,
       field: fieldKey,
@@ -99,17 +110,16 @@ function compareScalarField(
     return
   }
 
-  const prismaType = derived.getPrismaType(fieldKey)
-  const isNullable = prismaType.modifiers?.startsWith('?') ?? false
-  const isUnique = prismaType.modifiers?.includes('@unique') ?? false
-  const isIndexed = prismaType.index === true
+  const isNullable = descriptor.nullable
+  const isUnique = descriptor.unique === true
+  const isIndexed = descriptor.index === true
 
   // Base models always declare an explicit `fieldName`; a plugin table
   // doesn't have to (`getAuthTables` merges plugin schema fields verbatim,
   // with no per-field defaulting) — an unset `fieldName` means the column IS
   // the field key, same as `scalarFieldDb` in `derive-auth-lists.ts` assumes.
   const upstreamColumn = upstream.fieldName ?? fieldKey
-  const derivedColumn = derived.db?.map ?? fieldKey
+  const derivedColumn = derived?.db?.map ?? fieldKey
   if (derivedColumn !== upstreamColumn) {
     divergences.push({
       model,
@@ -149,13 +159,16 @@ function compareScalarField(
     })
   }
 
-  const expectedType = expectedPrismaType(upstream)
-  if (expectedType !== undefined && prismaType.type !== expectedType) {
+  const expectedType = expectedColumnType(upstream)
+  if (
+    expectedType !== undefined &&
+    describeColumnType(descriptor.type) !== describeColumnType(expectedType)
+  ) {
     divergences.push({
       model,
       field: fieldKey,
       dimension: 'scalar type',
-      detail: `better-auth type "${upstream.type}"${upstream.bigint ? ' (bigint)' : ''} expects Prisma "${expectedType}" vs derived "${prismaType.type}"`,
+      detail: `better-auth type "${upstream.type}"${upstream.bigint ? ' (bigint)' : ''} expects column "${describeColumnType(expectedType)}" vs derived "${describeColumnType(descriptor.type)}"`,
     })
   }
 
@@ -170,12 +183,12 @@ function compareScalarField(
     typeof upstream.defaultValue !== 'function' &&
     upstream.defaultValue !== undefined
   ) {
-    if (derived.defaultValue !== upstream.defaultValue) {
+    if (derived?.defaultValue !== upstream.defaultValue) {
       divergences.push({
         model,
         field: fieldKey,
         dimension: 'default value',
-        detail: `better-auth defaultValue=${JSON.stringify(upstream.defaultValue)} vs derived defaultValue=${JSON.stringify(derived.defaultValue)}`,
+        detail: `better-auth defaultValue=${JSON.stringify(upstream.defaultValue)} vs derived defaultValue=${JSON.stringify(derived?.defaultValue)}`,
       })
     }
   }

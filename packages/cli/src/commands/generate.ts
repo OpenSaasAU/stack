@@ -40,16 +40,19 @@ import type {
 export function formatFieldValidationErrors(errors: FieldConfigValidationError[]): string {
   const lines = errors.map((error) => {
     const location = error.listKey ? `${error.listKey}.${error.fieldKey}` : error.fieldKey
-    return `  • ${location} (type "${error.fieldType}") is missing ${error.missingMethod}()`
+    const spelling =
+      error.missingMember === 'outputType' ? error.missingMember : `${error.missingMember}()`
+    return `  • ${location} (type "${error.fieldType}") is missing ${spelling}`
   })
 
   return [
     `${errors.length} field(s) do not satisfy the self-containment contract:`,
     ...lines,
     '',
-    'Each field builder must implement getPrismaType, getTypeScriptType, and',
-    'getZodSchema (or getPrismaRelation for relationships) so the generator can',
-    'produce schema and types without inspecting field internals.',
+    'Each field builder must declare getContractField and getZodSchema (a relationship',
+    'only the former), plus outputType when it has no single column to be typed from —',
+    'a virtual field, or one spanning several columns — so the generator can produce the',
+    'contract and types without inspecting field internals.',
   ].join('\n')
 }
 

@@ -51,20 +51,19 @@ function makeContext() {
 }
 
 describe('image() / file() multi-column mode', () => {
-  describe('single-Json? default is unchanged', () => {
-    it('image() default has no multi-column methods and emits Json?', () => {
+  describe('single-column default is unchanged', () => {
+    it('image() default has no multi-column methods', () => {
       const field = image({ storage: 'images' })
-      expect(field.getPrismaColumns).toBeUndefined()
       expect(field.getColumnNames).toBeUndefined()
       expect(field.assembleColumns).toBeUndefined()
       expect(field.splitColumns).toBeUndefined()
-      expect(field.getPrismaType?.('image')).toEqual({ type: 'Json', modifiers: '?' })
     })
 
-    it('file() default has no multi-column methods and emits Json?', () => {
+    it('file() default has no multi-column methods', () => {
       const field = file({ storage: 'documents' })
-      expect(field.getPrismaColumns).toBeUndefined()
-      expect(field.getPrismaType?.('doc')).toEqual({ type: 'Json', modifiers: '?' })
+      expect(field.getColumnNames).toBeUndefined()
+      expect(field.assembleColumns).toBeUndefined()
+      expect(field.splitColumns).toBeUndefined()
     })
   })
 
@@ -175,9 +174,6 @@ describe('image() / file() multi-column mode', () => {
 
       expect(described.map((column) => column.name)).toEqual(parts.map((part) => `doc_${part}`))
       expect(described.map((column) => column.name)).toEqual(field.getColumnNames?.('doc'))
-      expect(described.map((column) => column.name)).toEqual(
-        field.getPrismaColumns?.('doc')?.map((column) => column.map),
-      )
       expect(Object.keys(field.splitColumns?.('doc', null) ?? {})).toEqual(
         field.getColumnNames?.('doc'),
       )
@@ -226,12 +222,14 @@ describe('image() / file() multi-column mode', () => {
   })
 
   describe('multi-column emission', () => {
-    it('image() in keystone mode emits seven @map-ped nullable columns', () => {
+    it('image() in keystone mode describes seven nullable columns', () => {
       const field = image({ storage: 'images', db: { columns: 'keystone' } })
-      const columns = field.getPrismaColumns?.('image')
+      const descriptor = field.getContractField?.('image', 'Post', CONFIG)
+      const columns = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
       expect(columns).toHaveLength(7)
-      expect(columns?.every((c) => c.modifiers === '?')).toBe(true)
-      expect(columns?.map((c) => c.map)).toEqual([
+      expect(columns.every((c) => c.nullable)).toBe(true)
+      expect(columns.map((c) => c.name)).toEqual([
         'image_url',
         'image_width',
         'image_height',
@@ -243,45 +241,44 @@ describe('image() / file() multi-column mode', () => {
       expect(field.getColumnNames?.('image')).toHaveLength(7)
     })
 
-    it('file() in keystone mode emits three @map-ped nullable columns', () => {
+    it('file() in keystone mode describes three nullable columns', () => {
       const field = file({ storage: 'documents', db: { columns: 'keystone' } })
-      const columns = field.getPrismaColumns?.('doc')
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      const columns = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
       expect(columns).toHaveLength(3)
-      expect(columns?.every((c) => c.modifiers === '?')).toBe(true)
-      expect(columns?.map((c) => c.map)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
-      // filesize is Int; filename/url are String.
-      const byMap = Object.fromEntries((columns ?? []).map((c) => [c.map, c.type]))
-      expect(byMap.doc_filesize).toBe('Int')
-      expect(byMap.doc_filename).toBe('String')
-      expect(byMap.doc_url).toBe('String')
+      expect(columns.every((c) => c.nullable)).toBe(true)
+      expect(columns.map((c) => c.name)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
+      // filesize is an int column; filename/url are text.
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c.type]))
+      expect(byName.doc_filesize).toEqual({ pack: 'pg', type: 'int' })
+      expect(byName.doc_filename).toEqual({ pack: 'pg', type: 'text' })
+      expect(byName.doc_url).toEqual({ pack: 'pg', type: 'text' })
       expect(field.getColumnNames?.('doc')).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
     })
 
-    it('file() per-part @map names are configurable', () => {
+    it('file() per-part column names are configurable', () => {
       const field = file({
         storage: 'documents',
         db: { columns: { mode: 'keystone', map: { url: 'doc_href' } } },
       })
-      const maps = field.getPrismaColumns?.('doc')?.map((c) => c.map)
-      expect(maps).toContain('doc_href')
+      const names = field.getColumnNames?.('doc')
+      expect(names).toContain('doc_href')
       // Un-overridden parts keep Keystone defaults.
-      expect(maps).toContain('doc_filename')
-      expect(maps).not.toContain('doc_url')
-      expect(field.getColumnNames?.('doc')).toContain('doc_href')
+      expect(names).toContain('doc_filename')
+      expect(names).not.toContain('doc_url')
     })
 
-    it('per-part @map names are configurable', () => {
+    it('per-part column names are configurable', () => {
       const field = image({
         storage: 'images',
         db: { columns: { mode: 'keystone', map: { url: 'image_link', pathname: 'image_key' } } },
       })
-      const columns = field.getPrismaColumns?.('image')
-      const maps = columns?.map((c) => c.map)
-      expect(maps).toContain('image_link')
-      expect(maps).toContain('image_key')
+      const names = field.getColumnNames?.('image')
+      expect(names).toContain('image_link')
+      expect(names).toContain('image_key')
       // Un-overridden parts keep Keystone defaults.
-      expect(maps).toContain('image_width')
-      expect(field.getColumnNames?.('image')).toContain('image_link')
+      expect(names).toContain('image_width')
     })
   })
 

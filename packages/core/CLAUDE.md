@@ -11,7 +11,7 @@ The foundation of OpenSaas Stack. Defines the config DSL, executes access contro
 The package exposes a curated surface across several import paths. Use the narrowest one that fits:
 
 - **`@opensaas/stack-core`** (root) — the everyday consumer surface: `config`, `list`, `getContext`, the naming helpers (`getUrlKey`, `getListKeyFromUrl`), `ValidationError`, and the config/access types you annotate with (`OpenSaasConfig`, `ListConfig`, `FieldConfig`, `AccessControl`, `FieldAccess`, `Session`, `AccessContext`, `PrismaFilter`, `OperationAccess`).
-- **`@opensaas/stack-core/fields`** — field builder functions (`text()`, `integer()`, …) and their config types (`TextField`, `IntegerField`, `DecimalField`, `CalendarDayField`, …, plus `PrismaRelationResult`). The builders and the types they produce live together here.
+- **`@opensaas/stack-core/fields`** — field builder functions (`text()`, `integer()`, …) and their config types (`TextField`, `IntegerField`, `DecimalField`, `CalendarDayField`, …). The builders and the types they produce live together here.
 - **`@opensaas/stack-core/extend`** — authoring contracts: implement these to build a plugin (`Plugin`, `PluginContext`, `GeneratedFiles`) or a third-party field package (`BaseFieldConfig`, `TypeInfo`, `TypeDescriptor`).
 - **`@opensaas/stack-core/mcp`** — MCP runtime handlers.
 - **`@opensaas/stack-core/internal`** — `@internal` plumbing shared between the `@opensaas/*` packages and generated `.opensaas/` code. **No semver guarantees**; application code should never import from here.
@@ -31,8 +31,8 @@ The package exposes a curated surface across several import paths. Use the narro
 Field builder functions, each returning object with:
 
 - `getZodSchema(fieldName, operation)` - Validation schema
-- `getPrismaType(fieldName)` - Prisma type and modifiers
-- `getTypeScriptType()` - TypeScript type and optionality
+- `getContractField(fieldName, listKey, config)` - the column(s), relation, or `{ kind: 'computed' }` the field contributes to the contract
+- `outputType` / `inputType` - the TypeScript face, when it differs from the column's codec type (required on a virtual or multi-column field)
 
 Built-in fields:
 
@@ -262,14 +262,18 @@ export function text(options) {
   return {
     type: 'text',
     ...options,
-    getPrismaType: () => ({ type: 'String', modifiers: '?' }),
-    getTypeScriptType: () => ({ type: 'string', optional: true }),
+    getContractField: (fieldName) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+    }),
     getZodSchema: (fieldName, operation) => z.string().optional(),
   }
 }
 
 // Generator delegates to field
-const prismaType = field.getPrismaType(fieldName)
+const descriptor = field.getContractField(fieldName, listKey, config)
 ```
 
 ### Access Control Execution Flow

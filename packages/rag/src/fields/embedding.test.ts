@@ -203,14 +203,17 @@ describe('Embedding Field', () => {
       ).toEqual([])
     })
 
-    it('passes it on the contract alone, declaring no PSL type it could not honour', () => {
+    it('passes it on the contract and its own TypeScript face', () => {
       const field = embedding({ sourceField: 'content' })
 
-      // One field, two columns of different types — there is no single
-      // `Json?`/`String?` that describes it, so it declares neither.
-      expect(field.getPrismaType).toBeUndefined()
-      expect(field.getTypeScriptType).toBeUndefined()
+      // One field, two columns of different types — no single column type
+      // describes it, so the gate takes the descriptor plus a declared face.
       expect(typeof field.getContractField).toBe('function')
+      expect(field.outputType).toBe("import('@opensaas/stack-rag').StoredEmbedding | null")
+      expect(field.getColumnNames?.('contentEmbedding')).toEqual([
+        'contentEmbedding',
+        'contentEmbeddingMetadata',
+      ])
     })
   })
 

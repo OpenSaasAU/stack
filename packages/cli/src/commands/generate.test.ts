@@ -300,10 +300,9 @@ describe('Generate Command Integration', () => {
     })
 
     it('reports a non-compliant field with a friendly message instead of a stack trace', () => {
-      // Simulate a misimplemented (e.g. third-party) field that describes its
-      // storage neither in PSL nor to the contract.
+      // Simulate a misimplemented (e.g. third-party) field that never
+      // describes its storage to the contract.
       const brokenField = text()
-      delete brokenField.getPrismaType
       delete brokenField.getContractField
 
       const config: OpenSaasConfig = {
@@ -326,13 +325,13 @@ describe('Generate Command Integration', () => {
       expect(errors[0]).toMatchObject({
         listKey: 'Post',
         fieldKey: 'title',
-        missingMethod: 'getPrismaType',
+        missingMember: 'getContractField',
       })
 
       const message = formatFieldValidationErrors(errors)
-      // Friendly, actionable message naming the list, field, and method...
+      // Friendly, actionable message naming the list, field, and member...
       expect(message).toContain('Post.title')
-      expect(message).toContain('getPrismaType')
+      expect(message).toContain('getContractField()')
       expect(message).toContain('self-containment contract')
       // ...and explicitly not a raw stack trace.
       expect(message).not.toContain('at Object.')
@@ -340,9 +339,8 @@ describe('Generate Command Integration', () => {
     })
 
     it('aggregates multiple non-compliant fields across lists into one message', () => {
-      const noPrisma = text()
-      delete noPrisma.getPrismaType
-      delete noPrisma.getContractField
+      const noContract = text()
+      delete noContract.getContractField
       const noZod = text()
       delete noZod.getZodSchema
 
@@ -353,7 +351,7 @@ describe('Generate Command Integration', () => {
           prismaClientConstructor: (() => null) as any,
         },
         lists: {
-          Post: { fields: { title: noPrisma as FieldConfig } },
+          Post: { fields: { title: noContract as FieldConfig } },
           User: { fields: { name: noZod as FieldConfig } },
         },
       }

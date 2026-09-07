@@ -27,12 +27,12 @@ describe('validateFieldConfig', () => {
       expect(validateFieldConfig(field as FieldConfig, 'myField', 'MyList')).toEqual([])
     })
 
-    it('a relationship field is self-contained via getPrismaRelation', () => {
+    it('a relationship field is self-contained via getContractField alone', () => {
       const field = relationship({ ref: 'User.posts' })
       expect(validateFieldConfig(field as FieldConfig, 'author', 'Post')).toEqual([])
     })
 
-    it('a virtual field is self-contained without getPrismaType', () => {
+    it('a virtual field is self-contained without a column', () => {
       const field = virtual({
         type: 'string',
         hooks: { resolveOutput: () => 'x' },
@@ -41,10 +41,9 @@ describe('validateFieldConfig', () => {
     })
   })
 
-  describe('missing scalar contract methods fail', () => {
-    it('reports a missing getPrismaType naming the list, field, and method', () => {
+  describe('missing stored-field contract members fail', () => {
+    it('reports a missing getContractField naming the list, field, and member', () => {
       const field = text()
-      delete field.getPrismaType
       delete field.getContractField
 
       const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
@@ -54,44 +53,31 @@ describe('validateFieldConfig', () => {
         listKey: 'Post',
         fieldKey: 'title',
         fieldType: 'text',
-        missingMethod: 'getPrismaType',
+        missingMember: 'getContractField',
       })
       expect(errors[0].message).toContain('Post.title')
-      expect(errors[0].message).toContain('getPrismaType')
+      expect(errors[0].message).toContain('getContractField()')
       expect(errors[0].message).toContain('not self-contained')
     })
 
-    it('reports a missing getTypeScriptType naming the method', () => {
-      const field = text()
-      delete field.getTypeScriptType
-      delete field.getContractField
-
-      const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
-
-      expect(errors).toHaveLength(1)
-      expect(errors[0].missingMethod).toBe('getTypeScriptType')
-      expect(errors[0].message).toContain('getTypeScriptType')
-    })
-
-    it('reports a missing getZodSchema naming the method', () => {
+    it('reports a missing getZodSchema naming the member', () => {
       const field = text()
       delete field.getZodSchema
 
       const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].missingMethod).toBe('getZodSchema')
+      expect(errors[0].missingMember).toBe('getZodSchema')
       expect(errors[0].message).toContain('getZodSchema')
     })
 
-    it('reports every missing method when a field implements none', () => {
+    it('reports every missing member when a field declares none', () => {
       const field: FieldConfig = { type: 'custom' }
 
       const errors = validateFieldConfig(field, 'mystery', 'Widget')
 
-      expect(errors.map((e) => e.missingMethod).sort()).toEqual([
-        'getPrismaType',
-        'getTypeScriptType',
+      expect(errors.map((e) => e.missingMember).sort()).toEqual([
+        'getContractField',
         'getZodSchema',
       ])
       for (const error of errors) {
@@ -103,46 +89,66 @@ describe('validateFieldConfig', () => {
     it('works without a listKey (bare field validation)', () => {
       const field: FieldConfig = { type: 'custom' }
       const errors = validateFieldConfig(field, 'mystery')
-      expect(errors).toHaveLength(3)
+      expect(errors).toHaveLength(2)
       expect(errors[0].listKey).toBeUndefined()
       expect(errors[0].message).toContain('Field "mystery"')
     })
   })
 
   describe('relationship and virtual variants', () => {
-    it('reports a relationship missing getPrismaRelation', () => {
+    it('reports a relationship missing getContractField', () => {
       const field: FieldConfig = { type: 'relationship' }
 
       const errors = validateFieldConfig(field, 'author', 'Post')
 
       expect(errors).toHaveLength(1)
-      expect(errors[0].missingMethod).toBe('getPrismaRelation')
+      expect(errors[0].missingMember).toBe('getContractField')
       expect(errors[0].message).toContain('Post.author')
     })
 
-    it('reports a virtual field missing getTypeScriptType and getZodSchema', () => {
+    it('reports a virtual field missing outputType and getZodSchema', () => {
       const field: FieldConfig = { type: 'virtual', virtual: true }
 
       const errors = validateFieldConfig(field, 'fullName', 'User')
 
-      expect(errors.map((e) => e.missingMethod).sort()).toEqual([
-        'getTypeScriptType',
-        'getZodSchema',
-      ])
+      expect(errors.map((e) => e.missingMember).sort()).toEqual(['getZodSchema', 'outputType'])
     })
 
-    it('does not require getPrismaType for virtual fields', () => {
+    it('does not require getContractField for virtual fields', () => {
       const field: FieldConfig = { type: 'virtual', virtual: true }
       const errors = validateFieldConfig(field, 'fullName', 'User')
-      expect(errors.some((e) => e.missingMethod === 'getPrismaType')).toBe(false)
+      expect(errors.some((e) => e.missingMember === 'getContractField')).toBe(false)
+    })
+
+    /**
+     * A virtual field with no `outputType` has no column for the contract to
+     * type it from, so the remainder's `computed` entry would be missing and
+     * every consumer would see the field as `unknown` (#1292). The gate names
+     * it instead.
+     */
+    it('names outputType, not the type it would have been inferred from', () => {
+      const field: FieldConfig = {
+        type: 'virtual',
+        virtual: true,
+        getZodSchema: () => json().getZodSchema!('x', 'create'),
+      }
+
+      const errors = validateFieldConfig(field, 'fullName', 'User')
+
+      expect(errors).toHaveLength(1)
+      expect(errors[0].missingMember).toBe('outputType')
+      expect(errors[0].message).toContain('outputType.')
+      expect(errors[0].message).not.toContain('outputType()')
     })
   })
 
   describe('contract-era fields', () => {
-    /** Two columns of different types, which no single `getPrismaType` describes. */
+    /** Two columns of different types, which no single column type describes. */
     const twoColumns: FieldConfig = {
       type: 'embedding',
+      outputType: "import('@opensaas/stack-rag').StoredEmbedding | null",
       getZodSchema: () => json().getZodSchema!('embedding', 'create'),
+      getColumnNames: () => ['embedding', 'embeddingMetadata'],
       getContractField: () => ({
         kind: 'columns',
         columns: [
@@ -156,7 +162,7 @@ describe('validateFieldConfig', () => {
       }),
     }
 
-    it('accepts getContractField in lieu of the PSL pair', () => {
+    it('accepts a multi-column field that declares its own TypeScript face', () => {
       expect(validateFieldConfig(twoColumns, 'embedding', 'Article')).toEqual([])
     })
 
@@ -166,16 +172,25 @@ describe('validateFieldConfig', () => {
 
       const errors = validateFieldConfig(field, 'embedding', 'Article')
 
-      expect(errors.map((e) => e.missingMethod)).toEqual(['getZodSchema'])
+      expect(errors.map((e) => e.missingMember)).toEqual(['getZodSchema'])
     })
 
-    it('still requires the PSL pair from a stored field that declares no contract', () => {
+    /**
+     * A field spanning several columns has no single column to be typed from,
+     * so an absent `outputType` leaves it `unknown` everywhere (#1292).
+     */
+    it('requires outputType from a multi-column field', () => {
       const field: FieldConfig = { ...twoColumns }
-      delete field.getContractField
+      delete field.outputType
 
       expect(
-        validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMethod),
-      ).toEqual(['getPrismaType', 'getTypeScriptType'])
+        validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMember),
+      ).toEqual(['outputType'])
+    })
+
+    it('does not require outputType from a single-column field, whose codec types it', () => {
+      expect(text().outputType).toBeUndefined()
+      expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post')).toEqual([])
     })
   })
 })
@@ -207,7 +222,6 @@ describe('validateConfigFields', () => {
 
   it('collects per-field errors across every list and names each location', () => {
     const brokenTitle = text()
-    delete brokenTitle.getPrismaType
     delete brokenTitle.getContractField
 
     const brokenName = text()
@@ -235,7 +249,7 @@ describe('validateConfigFields', () => {
 
     expect(errors).toHaveLength(2)
     const byField = Object.fromEntries(errors.map((e) => [`${e.listKey}.${e.fieldKey}`, e]))
-    expect(byField['User.name'].missingMethod).toBe('getZodSchema')
-    expect(byField['Post.title'].missingMethod).toBe('getPrismaType')
+    expect(byField['User.name'].missingMember).toBe('getZodSchema')
+    expect(byField['Post.title'].missingMember).toBe('getContractField')
   })
 })

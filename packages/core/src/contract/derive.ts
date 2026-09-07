@@ -522,7 +522,6 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
  *   out of scope (ADR-0048) and refused before derivation.
  * - `db.nativeType` is folded only for the Postgres pack's own constructors;
  *   an extension type's native-type override is not supported.
- * - `keystoneCompat`'s implicit `""` text default is not carried.
  */
 export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])

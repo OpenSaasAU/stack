@@ -433,7 +433,7 @@ access: {
       'custom-fields': {
         description: 'Creating custom field types',
         code: `// In your field definition file
-import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+import type { BaseFieldConfig, ContractFieldDescriptor } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
 export type SlugField = BaseFieldConfig & {
@@ -453,15 +453,12 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
       return z.string().regex(/^[a-z0-9-]+$/).optional()
     },
 
-    getPrismaType: (fieldName) => ({
-      type: 'String',
-      modifiers: '?',
-      attributes: ['@unique'],
-    }),
-
-    getTypeScriptType: () => ({
-      type: 'string',
-      optional: true,
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+      unique: true,
     }),
   }
 }
@@ -472,7 +469,7 @@ fields: {
   urlSlug: slug({ sourceField: 'title' }),
 }`,
         notes:
-          'Custom fields implement getZodSchema, getPrismaType, and getTypeScriptType methods. See packages/tiptap for a full example.',
+          'Custom fields implement getZodSchema and getContractField. Declare outputType too when the field has no single column to be typed from. See packages/tiptap for a full example.',
         sourcePath: 'examples/custom-field',
       },
     }

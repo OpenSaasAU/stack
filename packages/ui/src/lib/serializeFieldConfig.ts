@@ -46,7 +46,7 @@ export type SerializableFieldConfig = {
 }
 
 /**
- * Omits functions (getZodSchema, getPrismaType, getTypeScriptType) and
+ * Omits functions (getZodSchema, getContractField, getFilterSpec) and
  * non-serializable properties (access, hooks, typePatch, valueForClientSerialization).
  */
 export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {

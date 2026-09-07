@@ -6,7 +6,7 @@ import type { FieldConfigValidationError, OpenSaasConfig } from '@opensaas/stack
 import { executeBeforeGenerateHooks } from '@opensaas/stack-core/config/plugin-engine'
 import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin } from '@opensaas/stack-rag'
-import { embedding } from '@opensaas/stack-rag/fields'
+import { embedding, searchable } from '@opensaas/stack-rag/fields'
 import {
   CONSUMER_PRELUDE,
   emitTypeFixture,
@@ -33,6 +33,10 @@ const source: OpenSaasConfig = {
         title: text({ validation: { isRequired: true } }),
         content: text(),
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 1536 }),
+        // The high-level wrapper: the plugin derives a companion embedding
+        // field from it, so generation has to carry both the wrapped text
+        // column and the derived vector pair.
+        summary: searchable(text(), { dimensions: 1536 }),
       },
     },
   },
@@ -87,9 +91,22 @@ describe('nearest() over a plugin-injected embedding column', () => {
       type: { codecId: 'pg/jsonb@1', kind: 'scalar' },
     })
 
-    // `getPrismaType`'s `Json?` was a declaration nothing consumed and nothing
-    // could have consumed: the field is two columns of different types.
     expect(emitted).not.toContain('Json')
+  })
+
+  it('emits the wrapped text column and the companion pair searchable() derives', () => {
+    const emitted = readFileSync(join(fixture.projectDir, 'prisma', 'contract.json'), 'utf-8')
+    const fields: unknown = Reflect.get(emittedArticle(emitted), 'fields')
+    if (!isRecord(fields)) throw new Error('the emitted Article carries no fields')
+
+    expect(fields.summary).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/text@1', kind: 'scalar' },
+    })
+    expect(fields.summaryEmbedding).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/vector@1', kind: 'scalar', typeParams: { length: 1536 } },
+    })
   })
 
   it('compiles nearest() against the emitted contract', { timeout: 300_000 }, () => {

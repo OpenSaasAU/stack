@@ -12,7 +12,7 @@ Demonstrates how to create third-party field packages that extend OpenSaas Stack
 
 - `richText(options?)` - Field builder function
 - Returns `RichTextField` type implementing `BaseFieldConfig`
-- Methods: `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()`
+- Members: `getZodSchema()`, `getContractField()`, `outputType`/`inputType`
 
 ### Component (`src/components/TiptapField.tsx`)
 
@@ -37,8 +37,14 @@ export function richText(options) {
   return {
     type: 'richText',
     ...options,
-    getPrismaType: () => ({ type: 'Json', modifiers: '' }),
-    getTypeScriptType: () => ({ type: 'any', optional: !options?.validation?.isRequired }),
+    outputType: face,
+    inputType: face,
+    getContractField: (fieldName) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: !options?.validation?.isRequired,
+    }),
     getZodSchema: (fieldName, operation) => {
       return operation === 'create' && options?.validation?.isRequired
         ? z.any().refine((val) => val, 'Required')
@@ -181,10 +187,7 @@ export function richText(options?): RichTextField {
     getZodSchema: (fieldName, operation) => {
       /* ... */
     },
-    getPrismaType: (fieldName) => {
-      /* ... */
-    },
-    getTypeScriptType: () => {
+    getContractField: (fieldName) => {
       /* ... */
     },
   }

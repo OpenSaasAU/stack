@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { select } from './index.js'
+import type { ContractColumnDescriptor, OpenSaasConfig } from '../config/types.js'
+
+const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+function columnOf(
+  field: ReturnType<typeof select>,
+  fieldName: string,
+  listName = 'Post',
+): ContractColumnDescriptor {
+  const descriptor = field.getContractField?.(fieldName, listName, config)
+  if (descriptor?.kind !== 'column') {
+    throw new Error(`select("${fieldName}") did not describe a single column`)
+  }
+  const { kind: _kind, ...column } = descriptor
+  return column
+}
 
 describe('select field builder', () => {
   describe('string type (default)', () => {
@@ -7,7 +23,7 @@ describe('select field builder', () => {
       expect(() => select({ options: [] })).toThrow('Select field must have at least one option')
     })
 
-    it('should return String prisma type for default select field', () => {
+    it('should back a default select with a text column and no enum', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -15,31 +31,27 @@ describe('select field builder', () => {
         ],
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.type).toBe('String')
-      expect(result.enumValues).toBeUndefined()
+      const column = columnOf(field, 'status')
+      expect(column.type).toEqual({ pack: 'pg', type: 'text' })
+      expect(column.enum).toBeUndefined()
     })
 
-    it('should add ? modifier for optional string select', () => {
-      const field = select({
-        options: [{ label: 'Draft', value: 'draft' }],
-      })
+    it('should be nullable for an optional string select', () => {
+      const field = select({ options: [{ label: 'Draft', value: 'draft' }] })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe('?')
+      expect(columnOf(field, 'status').nullable).toBe(true)
     })
 
-    it('should not add ? modifier for required string select', () => {
+    it('should not be nullable for a required string select', () => {
       const field = select({
         options: [{ label: 'Draft', value: 'draft' }],
         validation: { isRequired: true },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBeUndefined()
+      expect(columnOf(field, 'status').nullable).toBe(false)
     })
 
-    it('should generate quoted default value for string select', () => {
+    it('should carry the default value as a literal for a string select', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -48,11 +60,10 @@ describe('select field builder', () => {
         defaultValue: 'draft',
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe(' @default("draft")')
+      expect(columnOf(field, 'status').default).toEqual({ kind: 'literal', value: 'draft' })
     })
 
-    it('should emit NOT NULL (no ?) for optional string select with a default', () => {
+    it('should be non-nullable for an optional string select with a default', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -61,13 +72,13 @@ describe('select field builder', () => {
         defaultValue: 'draft',
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
+      const column = columnOf(field, 'status')
       // Default behaviour: a present default makes the column NOT NULL
-      expect(result.modifiers).toBe(' @default("draft")')
-      expect(result.modifiers).not.toContain('?')
+      expect(column.default).toEqual({ kind: 'literal', value: 'draft' })
+      expect(column.nullable).toBe(false)
     })
 
-    it('should force ? with db.isNullable even when a default is present (string)', () => {
+    it('should force nullable with db.isNullable even when a default is present (string)', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -77,12 +88,13 @@ describe('select field builder', () => {
         db: { isNullable: true },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.type).toBe('String')
-      expect(result.modifiers).toBe('? @default("draft")')
+      const column = columnOf(field, 'status')
+      expect(column.type).toEqual({ pack: 'pg', type: 'text' })
+      expect(column.nullable).toBe(true)
+      expect(column.default).toEqual({ kind: 'literal', value: 'draft' })
     })
 
-    it('should keep ? from db.isNullable for a required string select with default', () => {
+    it('should keep nullable from db.isNullable for a required string select with default', () => {
       const field = select({
         options: [{ label: 'Draft', value: 'draft' }],
         defaultValue: 'draft',
@@ -90,11 +102,10 @@ describe('select field builder', () => {
         db: { isNullable: true },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe('? @default("draft")')
+      expect(columnOf(field, 'status').nullable).toBe(true)
     })
 
-    it('should generate union TypeScript type from options', () => {
+    it('should declare a union TypeScript face from the options', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -102,12 +113,11 @@ describe('select field builder', () => {
         ],
       })
 
-      const result = field.getTypeScriptType!()
-      expect(result.type).toBe("'draft' | 'published'")
-      expect(result.optional).toBe(true)
+      expect(field.outputType).toBe("'draft' | 'published'")
+      expect(field.inputType).toBe("'draft' | 'published'")
     })
 
-    it('should mark TypeScript type as non-optional when required', () => {
+    it('should declare the same union when required — nullability lives on the column', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -116,8 +126,8 @@ describe('select field builder', () => {
         validation: { isRequired: true },
       })
 
-      const result = field.getTypeScriptType!()
-      expect(result.optional).toBe(false)
+      expect(field.outputType).toBe("'draft' | 'published'")
+      expect(columnOf(field, 'status').nullable).toBe(false)
     })
   })
 
@@ -161,7 +171,7 @@ describe('select field builder', () => {
       ).not.toThrow()
     })
 
-    it('should return derived enum name from listName + fieldName', () => {
+    it('should derive the enum name from listName + fieldName', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -170,11 +180,12 @@ describe('select field builder', () => {
         db: { type: 'enum' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.type).toBe('PostStatus')
+      const column = columnOf(field, 'status')
+      expect(column.type).toEqual({ pack: 'pg', type: 'enum' })
+      expect(column.enum?.name).toBe('PostStatus')
     })
 
-    it('should capitalize fieldName when deriving enum name', () => {
+    it('should capitalize fieldName when deriving the enum name', () => {
       const field = select({
         options: [
           { label: 'Article', value: 'article' },
@@ -183,21 +194,10 @@ describe('select field builder', () => {
         db: { type: 'enum' },
       })
 
-      const result = field.getPrismaType!('contentType', 'sqlite', 'Post')
-      expect(result.type).toBe('PostContentType')
+      expect(columnOf(field, 'contentType').enum?.name).toBe('PostContentType')
     })
 
-    it('should fall back to capitalized fieldName when listName is not provided', () => {
-      const field = select({
-        options: [{ label: 'Draft', value: 'draft' }],
-        db: { type: 'enum' },
-      })
-
-      const result = field.getPrismaType!('status')
-      expect(result.type).toBe('Status')
-    })
-
-    it('should return enumValues in getPrismaType result', () => {
+    it('should carry the enum values on the column', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -206,32 +206,29 @@ describe('select field builder', () => {
         db: { type: 'enum' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.enumValues).toEqual(['draft', 'published'])
+      expect(columnOf(field, 'status').enum?.values).toEqual(['draft', 'published'])
     })
 
-    it('should add ? modifier for optional enum field', () => {
+    it('should be nullable for an optional enum field', () => {
       const field = select({
         options: [{ label: 'Draft', value: 'draft' }],
         db: { type: 'enum' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe('?')
+      expect(columnOf(field, 'status').nullable).toBe(true)
     })
 
-    it('should not add ? modifier for required enum field', () => {
+    it('should not be nullable for a required enum field', () => {
       const field = select({
         options: [{ label: 'Draft', value: 'draft' }],
         db: { type: 'enum' },
         validation: { isRequired: true },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBeUndefined()
+      expect(columnOf(field, 'status').nullable).toBe(false)
     })
 
-    it('should generate unquoted default value for enum field', () => {
+    it('should carry the default value as a literal for an enum field', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -241,13 +238,10 @@ describe('select field builder', () => {
         defaultValue: 'draft',
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe(' @default(draft)')
-      // Explicitly check there are no quotes
-      expect(result.modifiers).not.toContain('"')
+      expect(columnOf(field, 'status').default).toEqual({ kind: 'literal', value: 'draft' })
     })
 
-    it('should emit NOT NULL (no ?) for optional enum select with a default', () => {
+    it('should be non-nullable for an optional enum select with a default', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -257,12 +251,12 @@ describe('select field builder', () => {
         defaultValue: 'draft',
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toBe(' @default(draft)')
-      expect(result.modifiers).not.toContain('?')
+      const column = columnOf(field, 'status')
+      expect(column.default).toEqual({ kind: 'literal', value: 'draft' })
+      expect(column.nullable).toBe(false)
     })
 
-    it('should force ? with db.isNullable even when a default is present (enum)', () => {
+    it('should force nullable with db.isNullable even when a default is present (enum)', () => {
       const field = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -272,9 +266,10 @@ describe('select field builder', () => {
         defaultValue: 'draft',
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.type).toBe('PostStatus')
-      expect(result.modifiers).toBe('? @default(draft)')
+      const column = columnOf(field, 'status')
+      expect(column.enum?.name).toBe('PostStatus')
+      expect(column.nullable).toBe(true)
+      expect(column.default).toEqual({ kind: 'literal', value: 'draft' })
     })
 
     it('should override the derived enum name with db.enumName', () => {
@@ -286,35 +281,35 @@ describe('select field builder', () => {
         db: { type: 'enum', enumName: 'AccountNoteStatusType' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'AccountNote')
-      // result.type drives both the enum block name and the column reference
-      expect(result.type).toBe('AccountNoteStatusType')
-      expect(result.enumValues).toEqual(['open', 'closed'])
+      const column = columnOf(field, 'status', 'AccountNote')
+      expect(column.enum).toEqual({
+        name: 'AccountNoteStatusType',
+        values: ['open', 'closed'],
+      })
     })
 
     it('should ignore db.enumName for string (non-enum) selects', () => {
       const field = select({
         options: [{ label: 'Open', value: 'open' }],
-        // enumName only applies to native-enum selects; string selects stay String
+        // enumName only applies to native-enum selects; string selects stay text
         db: { enumName: 'ShouldBeIgnored' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'AccountNote')
-      expect(result.type).toBe('String')
-      expect(result.enumValues).toBeUndefined()
+      const column = columnOf(field, 'status', 'AccountNote')
+      expect(column.type).toEqual({ pack: 'pg', type: 'text' })
+      expect(column.enum).toBeUndefined()
     })
 
-    it('should include @map modifier for enum field with map option', () => {
+    it('should carry the map for an enum field with a map option', () => {
       const field = select({
         options: [{ label: 'Draft', value: 'draft' }],
         db: { type: 'enum', map: 'post_status' },
       })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Post')
-      expect(result.modifiers).toContain('@map("post_status")')
+      expect(columnOf(field, 'status').map).toBe('post_status')
     })
 
-    it('should generate same union TypeScript type as string select', () => {
+    it('should declare the same union TypeScript face as a string select', () => {
       const enumField = select({
         options: [
           { label: 'Draft', value: 'draft' },
@@ -330,7 +325,8 @@ describe('select field builder', () => {
         ],
       })
 
-      expect(enumField.getTypeScriptType!()).toEqual(stringField.getTypeScriptType!())
+      expect(enumField.outputType).toBe(stringField.outputType)
+      expect(enumField.inputType).toBe(stringField.inputType)
     })
   })
 })

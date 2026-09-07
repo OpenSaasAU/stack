@@ -10,6 +10,23 @@ import {
   relationship,
   json,
 } from '../src/fields/index.js'
+import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../src/config/types.js'
+
+const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+/** The single column a stored scalar contributes to the contract. */
+function columnOf(
+  field: FieldConfig,
+  fieldName: string,
+  listKey = 'Post',
+): ContractColumnDescriptor {
+  const descriptor = field.getContractField?.(fieldName, listKey, config)
+  if (descriptor?.kind !== 'column') {
+    throw new Error(`the field "${fieldName}" did not describe a single column`)
+  }
+  const { kind: _kind, ...column } = descriptor
+  return column
+}
 
 describe('Field Types', () => {
   describe('text field', () => {
@@ -79,125 +96,67 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns String type for basic text field', () => {
-        const field = text()
-        const prismaType = field.getPrismaType('title')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain text field is a nullable pg text column', () => {
+        expect(columnOf(text(), 'title')).toEqual({
+          name: 'title',
+          type: { pack: 'pg', type: 'text' },
+          nullable: true,
+        })
       })
 
-      test('returns required String for required field', () => {
-        const field = text({ validation: { isRequired: true } })
-        const prismaType = field.getPrismaType('title')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBeUndefined()
+      test('validation.isRequired makes the column non-nullable', () => {
+        expect(columnOf(text({ validation: { isRequired: true } }), 'title').nullable).toBe(false)
       })
 
-      test('includes @unique modifier', () => {
-        const field = text({ isIndexed: 'unique' })
-        const prismaType = field.getPrismaType('email')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('@unique')
+      test("isIndexed: 'unique' marks the column unique, not indexed", () => {
+        const column = columnOf(text({ isIndexed: 'unique' }), 'email')
+        expect(column.unique).toBe(true)
+        expect(column.index).toBeUndefined()
       })
 
-      test('requests a block-level index rather than an inline modifier', () => {
-        const field = text({ isIndexed: true })
-        const prismaType = field.getPrismaType('slug')
-
-        expect(prismaType.type).toBe('String')
-        // Prisma has no field-level `@index` attribute — emitting one produces a
-        // schema Prisma refuses to parse. A non-unique index is requested
-        // out-of-line and lands as `@@index([slug])` on the model.
-        expect(prismaType.index).toBe(true)
-        expect(prismaType.modifiers ?? '').not.toContain('@index')
+      test('isIndexed: true asks for a non-unique index', () => {
+        const column = columnOf(text({ isIndexed: true }), 'slug')
+        expect(column.index).toBe(true)
+        expect(column.unique).toBeUndefined()
       })
 
-      test('db.isNullable: true makes optional field explicitly nullable', () => {
-        const field = text({ db: { isNullable: true } })
-        const prismaType = field.getPrismaType('description')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('?')
+      test('db.isNullable: true makes an optional field explicitly nullable', () => {
+        expect(columnOf(text({ db: { isNullable: true } }), 'description').nullable).toBe(true)
       })
 
-      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
-        const field = text({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('phoneNumber')
-
-        expect(prismaType.type).toBe('String')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable regardless of validation', () => {
+        expect(columnOf(text({ db: { isNullable: false } }), 'phoneNumber').nullable).toBe(false)
       })
 
-      test('db.isNullable: false on required field keeps it non-nullable', () => {
+      test('db.isNullable: false on a required field keeps it non-nullable', () => {
         const field = text({ validation: { isRequired: true }, db: { isNullable: false } })
-        const prismaType = field.getPrismaType('title')
-
-        expect(prismaType.type).toBe('String')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+        expect(columnOf(field, 'title').nullable).toBe(false)
       })
 
-      test('db.isNullable: true on required field overrides to nullable', () => {
+      test('db.isNullable: true on a required field overrides to nullable', () => {
         const field = text({ validation: { isRequired: true }, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('title')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('?')
+        expect(columnOf(field, 'title').nullable).toBe(true)
       })
 
-      test('db.nativeType generates @db. attribute', () => {
-        const field = text({ db: { nativeType: 'Text' } })
-        const prismaType = field.getPrismaType('medical')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('@db.Text')
+      test('db.nativeType reaches the column', () => {
+        expect(columnOf(text({ db: { nativeType: 'Text' } }), 'medical').nativeType).toBe('Text')
       })
 
-      test('db.nativeType with nullable field includes both ? and @db. attribute', () => {
-        const field = text({ db: { isNullable: true, nativeType: 'Text' } })
-        const prismaType = field.getPrismaType('bio')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('? @db.Text')
-      })
-
-      test('db.nativeType with non-nullable field excludes ? but includes @db. attribute', () => {
-        const field = text({ db: { isNullable: false, nativeType: 'Text' } })
-        const prismaType = field.getPrismaType('content')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('@db.Text')
-      })
-
-      test('db.nativeType with required field generates non-nullable with @db. attribute', () => {
-        const field = text({ validation: { isRequired: true }, db: { nativeType: 'Text' } })
-        const prismaType = field.getPrismaType('content')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('@db.Text')
+      test('db.nativeType and nullability are independent', () => {
+        expect(
+          columnOf(text({ db: { isNullable: true, nativeType: 'Text' } }), 'bio'),
+        ).toMatchObject({ nullable: true, nativeType: 'Text' })
+        expect(
+          columnOf(text({ db: { isNullable: false, nativeType: 'Text' } }), 'content'),
+        ).toMatchObject({ nullable: false, nativeType: 'Text' })
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional string type for non-required field', () => {
-        const field = text()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('string')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required string type for required field', () => {
-        const field = text({ validation: { isRequired: true } })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('string')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the text codec types it', () => {
+        expect(text().outputType).toBeUndefined()
+        expect(text().inputType).toBeUndefined()
       })
     })
   })
@@ -258,95 +217,55 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns Int type for basic integer field', () => {
-        const field = integer()
-        const prismaType = field.getPrismaType('age')
-
-        expect(prismaType.type).toBe('Int')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain integer field is a nullable pg int column', () => {
+        expect(columnOf(integer(), 'age')).toEqual({
+          name: 'age',
+          type: { pack: 'pg', type: 'int' },
+          nullable: true,
+        })
       })
 
-      test('returns required Int for required field', () => {
-        const field = integer({ validation: { isRequired: true } })
-        const prismaType = field.getPrismaType('age')
-
-        expect(prismaType.type).toBe('Int')
-        expect(prismaType.modifiers).toBeUndefined()
+      test('validation.isRequired makes the column non-nullable', () => {
+        expect(columnOf(integer({ validation: { isRequired: true } }), 'age').nullable).toBe(false)
       })
 
-      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
-        const field = integer({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('count')
-
-        expect(prismaType.type).toBe('Int')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable regardless of validation', () => {
+        expect(columnOf(integer({ db: { isNullable: false } }), 'count').nullable).toBe(false)
       })
 
-      test('db.isNullable: true on required field overrides to nullable', () => {
+      test('db.isNullable: true on a required field overrides to nullable', () => {
         const field = integer({ validation: { isRequired: true }, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('count')
-
-        expect(prismaType.type).toBe('Int')
-        expect(prismaType.modifiers).toContain('?')
+        expect(columnOf(field, 'count').nullable).toBe(true)
       })
 
-      test('db.nativeType generates @db. attribute', () => {
-        const field = integer({ db: { nativeType: 'SmallInt' } })
-        const prismaType = field.getPrismaType('score')
-
-        expect(prismaType.type).toBe('Int')
-        expect(prismaType.modifiers).toContain('@db.SmallInt')
+      test('db.nativeType reaches the column', () => {
+        expect(columnOf(integer({ db: { nativeType: 'SmallInt' } }), 'score').nativeType).toBe(
+          'SmallInt',
+        )
       })
 
-      test('db.nativeType with non-nullable field excludes ? but includes @db. attribute', () => {
-        const field = integer({ db: { isNullable: false, nativeType: 'BigInt' } })
-        const prismaType = field.getPrismaType('largeId')
-
-        expect(prismaType.type).toBe('Int')
-        expect(prismaType.modifiers).toBe('@db.BigInt')
+      test('isIndexed: true asks for a non-unique index', () => {
+        expect(columnOf(integer({ isIndexed: true }), 'rank').index).toBe(true)
       })
 
-      test('isIndexed: true requests a block-level index', () => {
-        const field = integer({ isIndexed: true })
-        const prismaType = field.getPrismaType('rank')
-
-        expect(prismaType.index).toBe(true)
+      test("isIndexed: 'unique' marks the column unique, not indexed", () => {
+        const column = columnOf(integer({ isIndexed: 'unique' }), 'rank')
+        expect(column.unique).toBe(true)
+        expect(column.index).toBeUndefined()
       })
 
-      test("isIndexed: 'unique' generates @unique modifier", () => {
-        const field = integer({ isIndexed: 'unique' })
-        const prismaType = field.getPrismaType('rank')
-
-        expect(prismaType.modifiers).toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
-      })
-
-      test('no isIndexed generates neither modifier nor index', () => {
-        const field = integer()
-        const prismaType = field.getPrismaType('rank')
-
-        expect(prismaType.modifiers).not.toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
+      test('no isIndexed asks for neither', () => {
+        const column = columnOf(integer(), 'rank')
+        expect(column.unique).toBeUndefined()
+        expect(column.index).toBeUndefined()
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional number type for non-required field', () => {
-        const field = integer()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('number')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required number type for required field', () => {
-        const field = integer({ validation: { isRequired: true } })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('number')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the int codec types it', () => {
+        expect(integer().outputType).toBeUndefined()
+        expect(integer().inputType).toBeUndefined()
       })
     })
   })
@@ -480,74 +399,49 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns BigInt type for basic field', () => {
-        const field = bigInt()
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.type).toBe('BigInt')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain bigInt field is a nullable pg bigint column', () => {
+        expect(columnOf(bigInt(), 'epoch')).toEqual({
+          name: 'epoch',
+          type: { pack: 'pg', type: 'bigint' },
+          nullable: true,
+        })
       })
 
-      test('returns required BigInt for required field', () => {
-        const field = bigInt({ validation: { isRequired: true } })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.type).toBe('BigInt')
-        expect(prismaType.modifiers).toBeUndefined()
+      test('validation.isRequired makes the column non-nullable', () => {
+        expect(columnOf(bigInt({ validation: { isRequired: true } }), 'epoch').nullable).toBe(false)
       })
 
-      test('db.isNullable: false makes field non-nullable regardless of validation', () => {
-        const field = bigInt({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable regardless of validation', () => {
+        expect(columnOf(bigInt({ db: { isNullable: false } }), 'epoch').nullable).toBe(false)
       })
 
-      test('db.map generates @map attribute', () => {
-        const field = bigInt({ db: { map: 'occurred_at_ms' } })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.modifiers).toContain('@map("occurred_at_ms")')
+      test('db.map reaches the column', () => {
+        expect(columnOf(bigInt({ db: { map: 'occurred_at_ms' } }), 'epoch').map).toBe(
+          'occurred_at_ms',
+        )
       })
 
-      test('defaultValue generates a bare @default literal', () => {
-        const field = bigInt({ defaultValue: 0n })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.modifiers).toContain('@default(0)')
+      test('a bigint default carries as its decimal string', () => {
+        expect(columnOf(bigInt({ defaultValue: 0n }), 'epoch').default).toEqual({
+          kind: 'literal',
+          value: '0',
+        })
       })
 
-      test('isIndexed: true requests a block-level index', () => {
-        const field = bigInt({ isIndexed: true })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.index).toBe(true)
+      test('isIndexed: true asks for a non-unique index', () => {
+        expect(columnOf(bigInt({ isIndexed: true }), 'epoch').index).toBe(true)
       })
 
-      test("isIndexed: 'unique' generates @unique modifier", () => {
-        const field = bigInt({ isIndexed: 'unique' })
-        const prismaType = field.getPrismaType('epoch')
-
-        expect(prismaType.modifiers).toContain('@unique')
+      test("isIndexed: 'unique' marks the column unique", () => {
+        expect(columnOf(bigInt({ isIndexed: 'unique' }), 'epoch').unique).toBe(true)
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional bigint type for non-required field', () => {
-        const field = bigInt()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('bigint')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required bigint type for required field', () => {
-        const field = bigInt({ validation: { isRequired: true } })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('bigint')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the bigint codec types it', () => {
+        expect(bigInt().outputType).toBeUndefined()
+        expect(bigInt().inputType).toBeUndefined()
       })
     })
 
@@ -585,64 +479,46 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns Boolean type without default', () => {
-        const field = checkbox()
-        const prismaType = field.getPrismaType('isActive')
-
-        expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toBeUndefined()
+    describe('the contract column', () => {
+      test('a plain checkbox is a non-nullable pg boolean column', () => {
+        expect(columnOf(checkbox(), 'isActive')).toEqual({
+          name: 'isActive',
+          type: { pack: 'pg', type: 'boolean' },
+          nullable: false,
+        })
       })
 
-      test('returns Boolean type with default true', () => {
-        const field = checkbox({ defaultValue: true })
-        const prismaType = field.getPrismaType('isActive')
-
-        expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toBe('@default(true)')
+      test('carries a true default', () => {
+        expect(columnOf(checkbox({ defaultValue: true }), 'isActive').default).toEqual({
+          kind: 'literal',
+          value: true,
+        })
       })
 
-      test('returns Boolean type with default false', () => {
-        const field = checkbox({ defaultValue: false })
-        const prismaType = field.getPrismaType('isActive')
-
-        expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toBe('@default(false)')
+      test('carries a false default — not treated as absent', () => {
+        expect(columnOf(checkbox({ defaultValue: false }), 'isActive').default).toEqual({
+          kind: 'literal',
+          value: false,
+        })
       })
 
-      test('db.isNullable: true makes Boolean field nullable', () => {
-        const field = checkbox({ db: { isNullable: true } })
-        const prismaType = field.getPrismaType('agreed')
-
-        expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toContain('?')
+      test('db.isNullable: true makes the column nullable', () => {
+        expect(columnOf(checkbox({ db: { isNullable: true } }), 'agreed').nullable).toBe(true)
       })
 
-      test('db.isNullable: true with default value makes nullable Boolean with default', () => {
+      test('db.isNullable: true keeps a default alongside it', () => {
         const field = checkbox({ defaultValue: false, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('agreed')
-
-        expect(prismaType.type).toBe('Boolean')
-        expect(prismaType.modifiers).toContain('?')
-        expect(prismaType.modifiers).toContain('@default(false)')
+        expect(columnOf(field, 'agreed')).toMatchObject({
+          nullable: true,
+          default: { kind: 'literal', value: false },
+        })
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional boolean type without default', () => {
-        const field = checkbox()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('boolean')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required boolean type with default', () => {
-        const field = checkbox({ defaultValue: false })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('boolean')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the boolean codec types it', () => {
+        expect(checkbox().outputType).toBeUndefined()
+        expect(checkbox().inputType).toBeUndefined()
       })
     })
   })
@@ -660,88 +536,62 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns optional DateTime type', () => {
-        const field = timestamp()
-        const prismaType = field.getPrismaType('createdAt')
-
-        expect(prismaType.type).toBe('DateTime')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain timestamp is a nullable pg dateTime column', () => {
+        expect(columnOf(timestamp(), 'createdAt')).toEqual({
+          name: 'createdAt',
+          type: { pack: 'pg', type: 'dateTime' },
+          nullable: true,
+        })
       })
 
-      test('returns DateTime type with @default(now())', () => {
-        const field = timestamp({ defaultValue: { kind: 'now' } })
-        const prismaType = field.getPrismaType('createdAt')
-
-        expect(prismaType.type).toBe('DateTime')
-        expect(prismaType.modifiers).toBe('@default(now())')
+      test('defaultValue { kind: now } is a now default on a non-nullable column', () => {
+        const column = columnOf(timestamp({ defaultValue: { kind: 'now' } }), 'createdAt')
+        expect(column.default).toEqual({ kind: 'now' })
+        expect(column.nullable).toBe(false)
       })
 
-      test('db.isNullable: false makes timestamp non-nullable without default', () => {
-        const field = timestamp({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('publishedAt')
-
-        expect(prismaType.type).toBe('DateTime')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable without a default', () => {
+        const column = columnOf(timestamp({ db: { isNullable: false } }), 'publishedAt')
+        expect(column.nullable).toBe(false)
+        expect(column.default).toBeUndefined()
       })
 
-      test('db.isNullable: true on timestamp with @default(now()) overrides to nullable', () => {
+      test('db.isNullable: true overrides a now default back to nullable', () => {
         const field = timestamp({ defaultValue: { kind: 'now' }, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('createdAt')
-
-        expect(prismaType.type).toBe('DateTime')
-        expect(prismaType.modifiers).toContain('?')
-        expect(prismaType.modifiers).toContain('@default(now())')
+        expect(columnOf(field, 'createdAt')).toMatchObject({
+          nullable: true,
+          default: { kind: 'now' },
+        })
       })
 
-      test('db.nativeType generates @db. attribute', () => {
-        const field = timestamp({ db: { nativeType: 'Timestamptz' } })
-        const prismaType = field.getPrismaType('scheduledAt')
-
-        expect(prismaType.type).toBe('DateTime')
-        expect(prismaType.modifiers).toContain('@db.Timestamptz')
+      test('db.nativeType reaches the column', () => {
+        expect(
+          columnOf(timestamp({ db: { nativeType: 'Timestamptz' } }), 'scheduledAt').nativeType,
+        ).toBe('Timestamptz')
       })
 
-      test('isIndexed: true requests a block-level index', () => {
-        const field = timestamp({ isIndexed: true })
-        const prismaType = field.getPrismaType('publishedAt')
-
-        expect(prismaType.index).toBe(true)
+      test('isIndexed: true asks for a non-unique index', () => {
+        expect(columnOf(timestamp({ isIndexed: true }), 'publishedAt').index).toBe(true)
       })
 
-      test("isIndexed: 'unique' generates @unique modifier", () => {
-        const field = timestamp({ isIndexed: 'unique' })
-        const prismaType = field.getPrismaType('publishedAt')
-
-        expect(prismaType.modifiers).toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
+      test("isIndexed: 'unique' marks the column unique, not indexed", () => {
+        const column = columnOf(timestamp({ isIndexed: 'unique' }), 'publishedAt')
+        expect(column.unique).toBe(true)
+        expect(column.index).toBeUndefined()
       })
 
-      test('no isIndexed generates neither modifier nor index', () => {
-        const field = timestamp()
-        const prismaType = field.getPrismaType('publishedAt')
-
-        expect(prismaType.modifiers).not.toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
+      test('no isIndexed asks for neither', () => {
+        const column = columnOf(timestamp(), 'publishedAt')
+        expect(column.unique).toBeUndefined()
+        expect(column.index).toBeUndefined()
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional Date type without default', () => {
-        const field = timestamp()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('Date')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required Date type with default now', () => {
-        const field = timestamp({ defaultValue: { kind: 'now' } })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('Date')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the dateTime codec types it', () => {
+        expect(timestamp().outputType).toBeUndefined()
+        expect(timestamp().inputType).toBeUndefined()
       })
     })
   })
@@ -775,56 +625,34 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns String type for password field', () => {
-        const field = password()
-        const prismaType = field.getPrismaType('password')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain password is a nullable pg text column', () => {
+        expect(columnOf(password(), 'password')).toEqual({
+          name: 'password',
+          type: { pack: 'pg', type: 'text' },
+          nullable: true,
+        })
       })
 
-      test('returns required String for required password', () => {
-        const field = password({ validation: { isRequired: true } })
-        const prismaType = field.getPrismaType('password')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBeUndefined()
+      test('validation.isRequired makes the column non-nullable', () => {
+        expect(columnOf(password({ validation: { isRequired: true } }), 'password').nullable).toBe(
+          false,
+        )
       })
 
-      test('db.isNullable: false makes password non-nullable regardless of validation', () => {
-        const field = password({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('password')
-
-        expect(prismaType.type).toBe('String')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable regardless of validation', () => {
+        expect(columnOf(password({ db: { isNullable: false } }), 'password').nullable).toBe(false)
       })
 
-      test('db.isNullable: true on required password overrides to nullable', () => {
+      test('db.isNullable: true on a required password overrides to nullable', () => {
         const field = password({ validation: { isRequired: true }, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('password')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('?')
+        expect(columnOf(field, 'password').nullable).toBe(true)
       })
 
-      test('db.nativeType generates @db. attribute', () => {
-        const field = password({ db: { nativeType: 'Text' } })
-        const prismaType = field.getPrismaType('password')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toContain('@db.Text')
-      })
-    })
-
-    describe('getTypeScriptType', () => {
-      test('returns optional string type', () => {
-        const field = password()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('string')
-        expect(tsType.optional).toBe(true)
+      test('db.nativeType reaches the column', () => {
+        expect(columnOf(password({ db: { nativeType: 'Text' } }), 'password').nativeType).toBe(
+          'Text',
+        )
       })
     })
 
@@ -846,14 +674,9 @@ describe('Field Types', () => {
       })
     })
 
-    describe('resultExtension', () => {
-      test('has result extension configured', () => {
-        const field = password()
-
-        expect(field.resultExtension).toBeDefined()
-        expect(field.resultExtension?.outputType).toBe(
-          "import('@opensaas/stack-core/internal').HashedPassword",
-        )
+    describe('the TypeScript face', () => {
+      test('reads as HashedPassword over its text column', () => {
+        expect(password().outputType).toBe("import('@opensaas/stack-core/internal').HashedPassword")
       })
     })
 
@@ -948,18 +771,17 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns String type with optional modifier', () => {
-        const field = select({
-          options: [{ label: 'Option', value: 'option' }],
+    describe('the contract column', () => {
+      test('a plain select is a nullable pg text column', () => {
+        const field = select({ options: [{ label: 'Option', value: 'option' }] })
+        expect(columnOf(field, 'status')).toEqual({
+          name: 'status',
+          type: { pack: 'pg', type: 'text' },
+          nullable: true,
         })
-        const prismaType = field.getPrismaType('status')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe('?')
       })
 
-      test('includes @default modifier when defaultValue provided', () => {
+      test('a defaultValue carries as a literal and makes the column non-nullable', () => {
         const field = select({
           options: [
             { label: 'Draft', value: 'draft' },
@@ -967,91 +789,76 @@ describe('Field Types', () => {
           ],
           defaultValue: 'draft',
         })
-        const prismaType = field.getPrismaType('status')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.modifiers).toBe(' @default("draft")')
-      })
-
-      test('isIndexed: true requests a block-level index on the default string column', () => {
-        const field = select({
-          options: [{ label: 'Draft', value: 'draft' }],
-          isIndexed: true,
+        expect(columnOf(field, 'status')).toMatchObject({
+          nullable: false,
+          default: { kind: 'literal', value: 'draft' },
         })
-        const prismaType = field.getPrismaType('status')
-
-        expect(prismaType.type).toBe('String')
-        expect(prismaType.index).toBe(true)
       })
 
-      test("isIndexed: 'unique' generates @unique on the default string column", () => {
-        const field = select({
-          options: [{ label: 'Draft', value: 'draft' }],
-          isIndexed: 'unique',
-        })
-        const prismaType = field.getPrismaType('status')
-
-        expect(prismaType.modifiers).toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
+      test('isIndexed: true asks for a non-unique index on the text column', () => {
+        const field = select({ options: [{ label: 'Draft', value: 'draft' }], isIndexed: true })
+        const column = columnOf(field, 'status')
+        expect(column.type).toEqual({ pack: 'pg', type: 'text' })
+        expect(column.index).toBe(true)
       })
 
-      test('isIndexed: true requests a block-level index on a native-enum column', () => {
+      test("isIndexed: 'unique' marks the text column unique, not indexed", () => {
+        const field = select({ options: [{ label: 'Draft', value: 'draft' }], isIndexed: 'unique' })
+        const column = columnOf(field, 'status')
+        expect(column.unique).toBe(true)
+        expect(column.index).toBeUndefined()
+      })
+
+      test('isIndexed: true asks for a non-unique index on a native-enum column', () => {
         const field = select({
           options: [{ label: 'Draft', value: 'draft' }],
           db: { type: 'enum' },
           isIndexed: true,
         })
-        const prismaType = field.getPrismaType('status', undefined, 'Post')
-
-        expect(prismaType.type).toBe('PostStatus')
-        expect(prismaType.index).toBe(true)
+        const column = columnOf(field, 'status')
+        expect(column.enum?.name).toBe('PostStatus')
+        expect(column.index).toBe(true)
       })
 
-      test("isIndexed: 'unique' generates @unique on a native-enum column", () => {
+      test("isIndexed: 'unique' marks a native-enum column unique, not indexed", () => {
         const field = select({
           options: [{ label: 'Draft', value: 'draft' }],
           db: { type: 'enum' },
           isIndexed: 'unique',
         })
-        const prismaType = field.getPrismaType('status', undefined, 'Post')
-
-        expect(prismaType.modifiers).toContain('@unique')
-        expect(prismaType.index).toBeUndefined()
+        const column = columnOf(field, 'status')
+        expect(column.unique).toBe(true)
+        expect(column.index).toBeUndefined()
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns union type from options', () => {
+    describe('the TypeScript face', () => {
+      test('is the union of the option values, on both sides', () => {
         const field = select({
           options: [
             { label: 'Draft', value: 'draft' },
             { label: 'Published', value: 'published' },
           ],
         })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe("'draft' | 'published'")
-        expect(tsType.optional).toBe(true)
+        expect(field.outputType).toBe("'draft' | 'published'")
+        expect(field.inputType).toBe("'draft' | 'published'")
       })
 
-      test('returns required type when isRequired', () => {
+      test('does not change with isRequired — nullability lives on the column', () => {
         const field = select({
           options: [{ label: 'Draft', value: 'draft' }],
           validation: { isRequired: true },
         })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.optional).toBe(false)
+        expect(field.outputType).toBe("'draft'")
+        expect(columnOf(field, 'status').nullable).toBe(false)
       })
 
-      test('returns optional type when has defaultValue', () => {
+      test('does not change with a defaultValue', () => {
         const field = select({
           options: [{ label: 'Draft', value: 'draft' }],
           defaultValue: 'draft',
         })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.optional).toBe(true)
+        expect(field.outputType).toBe("'draft'")
       })
     })
   })
@@ -1157,56 +964,35 @@ describe('Field Types', () => {
       })
     })
 
-    describe('getPrismaType', () => {
-      test('returns Json type with optional modifier', () => {
-        const field = json()
-        const prismaType = field.getPrismaType('metadata')
-
-        expect(prismaType.type).toBe('Json')
-        expect(prismaType.modifiers).toBe('?')
+    describe('the contract column', () => {
+      test('a plain json field is a nullable pg jsonb column', () => {
+        expect(columnOf(json(), 'metadata')).toEqual({
+          name: 'metadata',
+          type: { pack: 'pg', type: 'jsonb' },
+          nullable: true,
+        })
       })
 
-      test('returns required Json type for required field', () => {
-        const field = json({ validation: { isRequired: true } })
-        const prismaType = field.getPrismaType('metadata')
-
-        expect(prismaType.type).toBe('Json')
-        expect(prismaType.modifiers).toBeUndefined()
+      test('validation.isRequired makes the column non-nullable', () => {
+        expect(columnOf(json({ validation: { isRequired: true } }), 'metadata').nullable).toBe(
+          false,
+        )
       })
 
-      test('db.isNullable: false makes Json field non-nullable regardless of validation', () => {
-        const field = json({ db: { isNullable: false } })
-        const prismaType = field.getPrismaType('settings')
-
-        expect(prismaType.type).toBe('Json')
-        // Non-nullable with no other modifiers → modifiers is undefined
-        expect(prismaType.modifiers).toBeUndefined()
+      test('db.isNullable: false makes the column non-nullable regardless of validation', () => {
+        expect(columnOf(json({ db: { isNullable: false } }), 'settings').nullable).toBe(false)
       })
 
-      test('db.isNullable: true on required field overrides to nullable', () => {
+      test('db.isNullable: true on a required field overrides to nullable', () => {
         const field = json({ validation: { isRequired: true }, db: { isNullable: true } })
-        const prismaType = field.getPrismaType('settings')
-
-        expect(prismaType.type).toBe('Json')
-        expect(prismaType.modifiers).toContain('?')
+        expect(columnOf(field, 'settings').nullable).toBe(true)
       })
     })
 
-    describe('getTypeScriptType', () => {
-      test('returns optional unknown type', () => {
-        const field = json()
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('unknown')
-        expect(tsType.optional).toBe(true)
-      })
-
-      test('returns required unknown type for required field', () => {
-        const field = json({ validation: { isRequired: true } })
-        const tsType = field.getTypeScriptType()
-
-        expect(tsType.type).toBe('unknown')
-        expect(tsType.optional).toBe(false)
+    describe('the TypeScript face', () => {
+      test('declares no override — the jsonb codec types it', () => {
+        expect(json().outputType).toBeUndefined()
+        expect(json().inputType).toBeUndefined()
       })
     })
   })

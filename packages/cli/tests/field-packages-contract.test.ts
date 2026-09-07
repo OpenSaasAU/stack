@@ -134,7 +134,7 @@ describe('the TypeScript face', () => {
     deriveGeneratedTables(fieldPackageConfig, deriveContract(fieldPackageConfig)).dependencies,
   )
 
-  test('the remainder types each field through outputType, not resultExtension', () => {
+  test('the remainder types each field through its declared outputType', () => {
     expect(types).toContain("hero: import('@opensaas/stack-storage').ImageMetadata | null")
     expect(types).toContain("attachment: import('@opensaas/stack-storage').FileMetadata | null")
     expect(types).toContain("body: import('@opensaas/stack-tiptap').JSONContent")

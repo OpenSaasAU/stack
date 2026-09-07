@@ -126,8 +126,6 @@ export type {
   PasswordField,
   SelectField,
   RelationshipField,
-  PrismaRelationResult,
-  MultiColumnPrismaResult,
   ContractLiteral,
   ColumnTypeDescriptor,
   ColumnDefaultDescriptor,

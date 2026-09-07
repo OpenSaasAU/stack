@@ -199,11 +199,13 @@ export function myCustom(options?: Omit<MyCustomField, 'type'>): MyCustomField {
     getZodSchema: (fieldName, operation) => {
       return z.string().optional()
     },
-    getPrismaType: (fieldName) => {
-      return { type: 'String', modifiers: '?' }
-    },
-    getTypeScriptType: () => {
-      return { type: 'string', optional: true }
+    getContractField: (fieldName) => {
+      return {
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+      }
     },
   }
 }

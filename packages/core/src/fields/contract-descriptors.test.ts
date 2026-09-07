@@ -147,7 +147,7 @@ describe('getContractField — every core builder describes its contract contrib
     expect(
       checkbox({ db: { isNullable: true } }).getContractField?.('done', 'Task', config),
     ).toMatchObject({ nullable: true })
-    // getPrismaType never emits @db.* for a checkbox, so neither does the descriptor.
+    // checkbox() takes no native-type override, so db.nativeType never reaches the column.
     expect(
       checkbox({ db: { nativeType: 'Bit(1)' } }).getContractField?.('done', 'Task', config),
     ).toEqual({
@@ -174,7 +174,7 @@ describe('getContractField — every core builder describes its contract contrib
     })
   })
 
-  test('timestamp: a Date default carries no default, matching getPrismaType; null and absence leave the column nullable', () => {
+  test('timestamp: a Date default carries no default; null and absence leave the column nullable', () => {
     const noDefault = {
       kind: 'column',
       name: 'publishedAt',
@@ -182,7 +182,6 @@ describe('getContractField — every core builder describes its contract contrib
       nullable: true,
     }
     const dated = timestamp({ defaultValue: new Date('2024-01-01T00:00:00.000Z') })
-    expect(dated.getPrismaType?.('publishedAt').modifiers).toBe('?')
     expect(dated.getContractField?.('publishedAt', 'Post', config)).toEqual(noDefault)
     const nulled = timestamp({
       // @ts-expect-error — a plain-JS config can spell "no default" as null
@@ -437,18 +436,5 @@ describe('getContractField — every core builder describes its contract contrib
       expect(field.outputType).toBeUndefined()
       expect(field.inputType).toBeUndefined()
     }
-  })
-
-  test('the PSL-shaped methods still answer beside the descriptor', () => {
-    const field = text({ validation: { isRequired: true } })
-    expect(field.getPrismaType?.('title')).toEqual({
-      type: 'String',
-      modifiers: undefined,
-      index: undefined,
-    })
-    expect(field.getTypeScriptType?.()).toEqual({ type: 'string', optional: false })
-    expect(postAuthor.getPrismaRelation?.('author', {}, 'Post', config)).toMatchObject({
-      foreignKeyField: 'authorId',
-    })
   })
 })

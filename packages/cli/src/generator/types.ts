@@ -14,15 +14,11 @@ const EMPTY = 'Record<never, never>'
 /**
  * Resolve the TypeScript type a field reads as, when it differs from its
  * column's codec type. A virtual field's `outputType` is already a resolved
- * string; a stored field's may be a descriptor. `resultExtension.outputType`
- * is the pre-ADR-0052 spelling, still honoured by the field packages that
- * have not moved yet (#1139).
+ * string; a stored field's may be a descriptor.
  */
 function readOutputType(field: FieldConfig): string | null {
   const declared: TypeDescriptor | undefined = field.outputType
-  if (declared !== undefined) return typeDescriptorToTypeString(declared)
-  if (field.resultExtension?.outputType) return field.resultExtension.outputType
-  return null
+  return declared === undefined ? null : typeDescriptorToTypeString(declared)
 }
 
 function readInputType(field: FieldConfig): string | null {

@@ -1,126 +1,135 @@
 import { describe, it, expect } from 'vitest'
 import { text, integer } from './index.js'
+import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 
 /**
  * Unit coverage for Keystone-compat mode on text() (issue #475).
  *
  * Keystone 6 gives every non-null text column an implicit empty-string default.
- * The `keystoneCompat` flag (db.keystoneCompat) reaches text()'s getPrismaType as
- * the 4th positional argument — the same way provider/listName already do — and
- * emits `@default("")` for a non-null text column that has no explicit default.
+ * `db.keystoneCompat` mirrors that: a non-null `text()` column with no explicit
+ * `defaultValue` carries `''` on its contract column, so a migrating project
+ * reaches schema parity without hand-setting it on dozens of columns.
  *
  * These tests pin the precise on/off/explicit-default/nullable/non-text matrix
  * from the issue's acceptance criteria.
  */
+const ON: OpenSaasConfig = { db: { provider: 'postgresql', keystoneCompat: true }, lists: {} }
+const OFF: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+const EXPLICIT_OFF: OpenSaasConfig = {
+  db: { provider: 'postgresql', keystoneCompat: false },
+  lists: {},
+}
+
+function columnOf(
+  field: FieldConfig,
+  fieldName: string,
+  config: OpenSaasConfig,
+): ContractColumnDescriptor {
+  const descriptor = field.getContractField?.(fieldName, 'User', config)
+  if (descriptor?.kind !== 'column') {
+    throw new Error(`the field "${fieldName}" did not describe a single column`)
+  }
+  const { kind: _kind, ...column } = descriptor
+  return column
+}
+
 describe('text() Keystone-compat empty-string default', () => {
-  const KEYSTONE_COMPAT = true
-
   describe('with keystoneCompat ON', () => {
-    it('emits @default("") for a required (non-null) text field without an explicit default', () => {
-      const field = text({ validation: { isRequired: true } })
+    it('defaults a required (non-null) text field with no explicit default to ""', () => {
+      const column = columnOf(text({ validation: { isRequired: true } }), 'name', ON)
 
-      const result = field.getPrismaType!('name', 'sqlite', 'User', KEYSTONE_COMPAT)
-
-      expect(result.type).toBe('String')
-      expect(result.modifiers).toBe('@default("")')
+      expect(column.type).toEqual({ pack: 'pg', type: 'text' })
+      expect(column.default).toEqual({ kind: 'literal', value: '' })
     })
 
-    it('emits @default("") for a non-null text field made non-null via db.isNullable: false', () => {
+    it('defaults a text field made non-null via db.isNullable: false to ""', () => {
       // Non-null at the DB level even though validation does not mark it required.
-      const field = text({ db: { isNullable: false } })
+      const column = columnOf(text({ db: { isNullable: false } }), 'phone', ON)
 
-      const result = field.getPrismaType!('phone', 'sqlite', 'User', KEYSTONE_COMPAT)
-
-      expect(result.modifiers).toBe('@default("")')
+      expect(column.nullable).toBe(false)
+      expect(column.default).toEqual({ kind: 'literal', value: '' })
     })
 
-    it('does NOT emit a default for a nullable text field', () => {
+    it('gives a nullable text field no default', () => {
       // Optional → nullable; Keystone-compat must leave it alone.
-      const field = text()
+      const column = columnOf(text(), 'bio', ON)
 
-      const result = field.getPrismaType!('bio', 'sqlite', 'User', KEYSTONE_COMPAT)
-
-      expect(result.modifiers).toBe('?')
-      expect(result.modifiers).not.toContain('@default')
+      expect(column.nullable).toBe(true)
+      expect(column.default).toBeUndefined()
     })
 
-    it('does NOT emit a default for a text field made nullable via db.isNullable: true', () => {
+    it('gives a text field made nullable via db.isNullable: true no default', () => {
       // Required validation, but explicitly nullable at the DB level.
       const field = text({ validation: { isRequired: true }, db: { isNullable: true } })
+      const column = columnOf(field, 'note', ON)
 
-      const result = field.getPrismaType!('note', 'sqlite', 'User', KEYSTONE_COMPAT)
-
-      expect(result.modifiers).toBe('?')
-      expect(result.modifiers).not.toContain('@default')
+      expect(column.nullable).toBe(true)
+      expect(column.default).toBeUndefined()
     })
 
     it('lets an explicit defaultValue win over the compat empty-string default', () => {
       const field = text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Account', KEYSTONE_COMPAT)
-
-      expect(result.modifiers).toBe('@default("PLEASE_UPDATE")')
-      expect(result.modifiers).not.toContain('@default("")')
+      expect(columnOf(field, 'status', ON).default).toEqual({
+        kind: 'literal',
+        value: 'PLEASE_UPDATE',
+      })
     })
 
-    it('honours an explicit empty-string defaultValue without double-emitting', () => {
+    it('honours an explicit empty-string defaultValue', () => {
       const field = text({ validation: { isRequired: true }, defaultValue: '' })
 
-      const result = field.getPrismaType!('label', 'sqlite', 'Account', KEYSTONE_COMPAT)
-
-      // A single @default("") — the explicit default, not a duplicate.
-      expect(result.modifiers).toBe('@default("")')
-      expect(result.modifiers!.match(/@default/g)).toHaveLength(1)
+      expect(columnOf(field, 'label', ON).default).toEqual({ kind: 'literal', value: '' })
     })
 
-    it('places @default("") alongside other modifiers in the expected order', () => {
+    it('carries the default alongside the field’s other column facts', () => {
       const field = text({
         validation: { isRequired: true },
         isIndexed: 'unique',
         db: { nativeType: 'Text', map: 'full_name' },
       })
 
-      const result = field.getPrismaType!('fullName', 'postgresql', 'User', KEYSTONE_COMPAT)
-
-      // nativeType → default → unique → map, matching the builder's modifier order.
-      expect(result.modifiers).toBe('@db.Text @default("") @unique @map("full_name")')
+      expect(columnOf(field, 'fullName', ON)).toEqual({
+        name: 'fullName',
+        type: { pack: 'pg', type: 'text' },
+        nullable: false,
+        nativeType: 'Text',
+        map: 'full_name',
+        unique: true,
+        default: { kind: 'literal', value: '' },
+      })
     })
   })
 
   describe('with keystoneCompat OFF (default)', () => {
-    it('emits no default for a required text field when the flag is omitted', () => {
-      const field = text({ validation: { isRequired: true } })
+    it('gives a required text field no default when the flag is omitted', () => {
+      const column = columnOf(text({ validation: { isRequired: true } }), 'name', OFF)
 
-      const result = field.getPrismaType!('name', 'sqlite', 'User')
-
-      expect(result.modifiers).toBeUndefined()
+      expect(column.default).toBeUndefined()
     })
 
-    it('emits no default for a required text field when the flag is explicitly false', () => {
-      const field = text({ validation: { isRequired: true } })
+    it('gives a required text field no default when the flag is explicitly false', () => {
+      const column = columnOf(text({ validation: { isRequired: true } }), 'name', EXPLICIT_OFF)
 
-      const result = field.getPrismaType!('name', 'sqlite', 'User', false)
-
-      expect(result.modifiers).toBeUndefined()
+      expect(column.default).toBeUndefined()
     })
 
     it('still honours an explicit defaultValue when the flag is off', () => {
       const field = text({ validation: { isRequired: true }, defaultValue: 'PLEASE_UPDATE' })
 
-      const result = field.getPrismaType!('status', 'sqlite', 'Account', false)
-
-      expect(result.modifiers).toBe('@default("PLEASE_UPDATE")')
+      expect(columnOf(field, 'status', EXPLICIT_OFF).default).toEqual({
+        kind: 'literal',
+        value: 'PLEASE_UPDATE',
+      })
     })
   })
 
   describe('non-text fields are unaffected by the flag', () => {
     it('does not give a required integer field an empty-string default under keystoneCompat', () => {
-      const field = integer({ validation: { isRequired: true } })
+      const column = columnOf(integer({ validation: { isRequired: true } }), 'count', ON)
 
-      const result = field.getPrismaType!('count', 'sqlite', 'Widget', KEYSTONE_COMPAT)
-
-      expect(result.type).toBe('Int')
-      expect(result.modifiers ?? '').not.toContain('@default')
+      expect(column.type).toEqual({ pack: 'pg', type: 'int' })
+      expect(column.default).toBeUndefined()
     })
   })
 })
