@@ -172,24 +172,39 @@ content: richText({ ui: { fieldType: 'richTextExtended' } })
 
 This package demonstrates all requirements for third-party fields:
 
-### 1. Field Builder with Required Methods
+### 1. Field Builder with Required Members
 
 ```typescript
-export type RichTextField = BaseFieldConfig & {
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
+import { z } from 'zod'
+
+export type RichTextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'richText'
-  // Custom options
+  validation?: { isRequired?: boolean }
 }
 
-export function richText(options?): RichTextField {
+const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
+
+export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
+  const isRequired = options?.validation?.isRequired === true
+  const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
+
   return {
     type: 'richText',
+    outputType: face,
+    inputType: face,
     ...options,
-    getZodSchema: (fieldName, operation) => {
-      /* ... */
-    },
-    getContractField: (fieldName) => {
-      /* ... */
-    },
+    getZodSchema: (fieldName, operation) => (isRequired ? z.any() : z.any().optional()),
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: !isRequired,
+    }),
   }
 }
 ```
