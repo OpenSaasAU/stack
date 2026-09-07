@@ -7,7 +7,7 @@ Turn your OpenSaas app into a knowledge base with semantic search capabilities p
 ## Features
 
 - 🤖 **Multiple Embedding Providers**: OpenAI, Ollama (local), or bring your own
-- 🗄️ **Flexible Storage**: pgvector, SQLite VSS, or JSON-based (for development)
+- 🗄️ **Native Vector Column**: a pgvector `vector(n)` column declared by the field
 - 🔍 **Semantic Search**: Natural language queries with relevance scoring
 - 🔐 **Access Control**: All searches respect your existing access control rules
 - ⚡ **Automatic Embeddings**: Auto-generate embeddings when content changes
@@ -34,7 +34,7 @@ pnpm add openai  # For OpenAI embeddings
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
@@ -44,7 +44,6 @@ export default config({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
       }),
-      storage: pgvectorStorage(),
     }),
   ],
   db: {
@@ -99,7 +98,7 @@ await context.db.article.create({
 ### 4. Perform semantic search
 
 ```typescript
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
@@ -111,15 +110,12 @@ export async function searchArticles(query: string) {
   })
   const queryVector = await provider.embed(query)
 
-  // Search for similar articles
-  const storage = createVectorStorage({ type: 'json' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+  // Ranked inside one scoped query — the Access Filter and Field Visibility
+  // apply exactly as they do to any other read.
+  return await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
     minScore: 0.7,
-    context, // Access control enforced
   })
-
-  return results
 }
 ```
 
@@ -129,7 +125,7 @@ For local development without API costs:
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
-import { ragPlugin, ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
+import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 
 export default config({
   plugins: [
@@ -137,8 +133,10 @@ export default config({
       provider: ollamaEmbeddings({
         baseURL: 'http://localhost:11434',
         model: 'nomic-embed-text',
+        // Required: generation must not depend on a running Ollama, and
+        // Ollama reports its output size only from a live embed call.
+        dimensions: 768,
       }),
-      storage: jsonStorage(), // No database extensions needed
     }),
   ],
   // ... rest of config
@@ -153,36 +151,25 @@ ollama pull nomic-embed-text
 ollama serve
 ```
 
-## Storage Backends
+## Storage
 
-### JSON Storage (Development)
-
-Good for development and small datasets. No database extensions needed.
-
-```typescript
-storage: jsonStorage()
-```
-
-### pgvector (Production PostgreSQL)
-
-Best for production apps using PostgreSQL. Requires pgvector extension.
+Embeddings live in a native pgvector column beside the row, with their metadata
+in a `jsonb` column next to it. There is no storage backend to select: the
+column, its dimension and its distance function are declared on the field, and
+`ragPlugin` names the pgvector extension pack so no app config has to.
 
 ```typescript
-storage: pgvectorStorage({ distanceFunction: 'cosine' })
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+})
 ```
 
 Setup:
 
 ```sql
 CREATE EXTENSION vector;
-```
-
-### SQLite VSS (SQLite)
-
-Good for SQLite-based apps. Requires sqlite-vss extension.
-
-```typescript
-storage: sqliteVssStorage({ distanceFunction: 'cosine' })
 ```
 
 ## Field Configuration Patterns
@@ -303,7 +290,7 @@ Simplified API that handles embedding generation and search in one call:
 
 ```typescript
 import { semanticSearch } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag'
 import { getContext } from '@/.opensaas/context'
 
 const results = await semanticSearch({
@@ -311,7 +298,6 @@ const results = await semanticSearch({
   fieldName: 'contentEmbedding',
   query: 'articles about machine learning',
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),
-  storage: createVectorStorage({ type: 'pgvector' }),
   context: await getContext(),
   limit: 10,
   minScore: 0.7,
@@ -329,7 +315,6 @@ const similar = await findSimilar({
   listKey: 'Article',
   fieldName: 'contentEmbedding',
   itemId: 'article-123',
-  storage: createVectorStorage({ type: 'pgvector' }),
   context: await getContext(),
   limit: 5,
   excludeSelf: true, // Don't include the source article
@@ -420,10 +405,7 @@ for (const { chunk, embedding } of chunkedEmbeddings) {
 
 - `ragPlugin(config)` - RAG plugin for OpenSaas Stack (v0.2.0+)
 - `openaiEmbeddings(config)` - OpenAI embedding provider helper
-- `ollamaEmbeddings(config)` - Ollama embedding provider helper
-- `pgvectorStorage(config)` - pgvector storage helper
-- `sqliteVssStorage(config)` - SQLite VSS storage helper
-- `jsonStorage()` - JSON-based storage helper
+- `ollamaEmbeddings(config)` - Ollama embedding provider helper (`dimensions` is required)
 
 ### Field Types (`@opensaas/stack-rag/fields`)
 
@@ -433,11 +415,6 @@ for (const { chunk, embedding } of chunkedEmbeddings) {
 
 - `createEmbeddingProvider(config)` - Factory for creating embedding providers
 - `registerEmbeddingProvider(type, factory)` - Register custom providers
-
-### Storage (`@opensaas/stack-rag/storage`)
-
-- `createVectorStorage(config)` - Factory for creating storage backends
-- `registerVectorStorage(type, factory)` - Register custom storage backends
 
 ### Runtime Utilities (`@opensaas/stack-rag/runtime`)
 
@@ -456,7 +433,6 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation including:
 
 - All abstraction levels (high-level to low-level)
 - Custom embedding providers
-- Custom storage backends
 - Text chunking strategies
 - Performance optimization
 - Testing patterns

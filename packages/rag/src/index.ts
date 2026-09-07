@@ -3,13 +3,7 @@
  * RAG and AI embeddings integration for OpenSaas Stack
  */
 
-export {
-  openaiEmbeddings,
-  ollamaEmbeddings,
-  pgvectorStorage,
-  sqliteVssStorage,
-  jsonStorage,
-} from './config/index.js'
+export { openaiEmbeddings, ollamaEmbeddings } from './config/index.js'
 
 export { ragPlugin } from './config/plugin.js'
 
@@ -21,10 +15,6 @@ export type {
   EmbeddingProviderConfig,
   OpenAIEmbeddingConfig,
   OllamaEmbeddingConfig,
-  VectorStorageConfig,
-  PgVectorStorageConfig,
-  SqliteVssStorageConfig,
-  JsonStorageConfig,
   ChunkingConfig,
   ChunkingStrategy,
   EmbeddingMetadata,
@@ -34,3 +24,10 @@ export type {
   EmbeddedDocument,
   EmbeddingChunk,
 } from './config/types.js'
+
+export type {
+  EmbeddingIndexConfig,
+  ResolvedEmbeddingIndex,
+  VectorColumnType,
+  VectorIndexMethod,
+} from './fields/embedding.js'

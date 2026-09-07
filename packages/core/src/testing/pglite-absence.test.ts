@@ -89,6 +89,13 @@ const config: OpenSaasConfig = {
   lists: { Note: { fields: { body: text() } } },
 }
 
+/**
+ * A ceiling for a pathological run, not an expected duration: the tests that
+ * carry it re-load or re-parse a module graph that grows with the package, and
+ * Vitest's 5s default left no margin for that on a loaded CI runner. See #1290.
+ */
+const GRAPH_WALK_TIMEOUT_MS = 30_000
+
 describe('the optional peers are reached only lazily', () => {
   test('the scan sees every static import form, and no dynamic one', () => {
     const forms: Record<string, string[]> = {
@@ -116,15 +123,19 @@ describe('the optional peers are reached only lazily', () => {
     expect(runtimeSpecifiers(lazy, 'sample.ts').filter(isLazyOnly)).toEqual([])
   })
 
-  test('no module on the subpath statically imports one at runtime', () => {
-    const offenders: string[] = []
-    for (const file of sourcesUnder(HERE, '.ts', (entry) => entry.endsWith('.test.ts'))) {
-      for (const specifier of runtimeSpecifiers(readFileSync(file, 'utf8'), file)) {
-        if (isLazyOnly(specifier)) offenders.push(`${path.relative(HERE, file)} -> ${specifier}`)
+  test(
+    'no module on the subpath statically imports one at runtime',
+    () => {
+      const offenders: string[] = []
+      for (const file of sourcesUnder(HERE, '.ts', (entry) => entry.endsWith('.test.ts'))) {
+        for (const specifier of runtimeSpecifiers(readFileSync(file, 'utf8'), file)) {
+          if (isLazyOnly(specifier)) offenders.push(`${path.relative(HERE, file)} -> ${specifier}`)
+        }
       }
-    }
-    expect(offenders).toEqual([])
-  })
+      expect(offenders).toEqual([])
+    },
+    GRAPH_WALK_TIMEOUT_MS,
+  )
 
   const built = existsSync(DIST)
   test.skipIf(!built)(
@@ -140,25 +151,30 @@ describe('the optional peers are reached only lazily', () => {
       }
       expect(offenders).toEqual([])
     },
+    GRAPH_WALK_TIMEOUT_MS,
   )
 
-  test('a missing PGlite install is reported by name, with both remedies', async () => {
-    const escape = process.env.DATABASE_URL
-    delete process.env.DATABASE_URL
-    vi.doMock('@electric-sql/pglite', () => {
-      const error = new Error("Cannot find package '@electric-sql/pglite'")
-      Object.assign(error, { code: 'ERR_MODULE_NOT_FOUND' })
-      throw error
-    })
-    vi.resetModules()
-
-    try {
-      const { createTestDatabase, DevDatabaseUnavailableError } = await import('./context.js')
-      await expect(createTestDatabase(config)).rejects.toThrow(DevDatabaseUnavailableError)
-    } finally {
-      vi.doUnmock('@electric-sql/pglite')
+  test(
+    'a missing PGlite install is reported by name, with both remedies',
+    async () => {
+      const escape = process.env.DATABASE_URL
+      delete process.env.DATABASE_URL
+      vi.doMock('@electric-sql/pglite', () => {
+        const error = new Error("Cannot find package '@electric-sql/pglite'")
+        Object.assign(error, { code: 'ERR_MODULE_NOT_FOUND' })
+        throw error
+      })
       vi.resetModules()
-      if (escape !== undefined) process.env.DATABASE_URL = escape
-    }
-  })
+
+      try {
+        const { createTestDatabase, DevDatabaseUnavailableError } = await import('./context.js')
+        await expect(createTestDatabase(config)).rejects.toThrow(DevDatabaseUnavailableError)
+      } finally {
+        vi.doUnmock('@electric-sql/pglite')
+        vi.resetModules()
+        if (escape !== undefined) process.env.DATABASE_URL = escape
+      }
+    },
+    GRAPH_WALK_TIMEOUT_MS,
+  )
 })

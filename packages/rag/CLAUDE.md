@@ -4,13 +4,13 @@ RAG (Retrieval-Augmented Generation) and AI embeddings integration for OpenSaas 
 
 ## Purpose
 
-Adds vector embeddings and semantic search to OpenSaas Stack apps with minimal configuration. Supports multiple embedding providers (OpenAI, Ollama) and vector storage backends (pgvector, SQLite VSS, JSON).
+Adds vector embeddings and semantic search to OpenSaas Stack apps with minimal configuration. Supports multiple embedding providers (OpenAI, Ollama) over a native pgvector column.
 
 ## Key Features
 
 - **Multiple abstraction levels**: From automatic "magic" RAG to low-level primitives
 - **Embedding providers**: OpenAI, Ollama (local), extensible for custom providers
-- **Vector storage**: pgvector, sqlite-vss, JSON-based (for development)
+- **Native vector column**: `embedding()` emits a pgvector column with its index and distance function declared on the field
 - **MCP integration**: Automatic semantic search tools for AI assistants
 - **Access control**: All searches respect existing access control rules
 - **Automatic embedding generation**: Via hooks when source fields change
@@ -20,10 +20,9 @@ Adds vector embeddings and semantic search to OpenSaas Stack apps with minimal c
 ```
 packages/rag/
 ├── src/
-│   ├── config/         # ragPlugin(), provider & storage helpers
+│   ├── config/         # ragPlugin(), provider helpers
 │   ├── fields/         # embedding() field type
 │   ├── providers/      # OpenAI, Ollama embedding providers
-│   ├── storage/        # pgvector, sqlite-vss, JSON backends
 │   ├── runtime/        # generateEmbeddings(), semanticSearch()
 │   └── mcp/            # MCP tool generators
 ```
@@ -34,10 +33,7 @@ packages/rag/
 
 - `ragPlugin({ ... })` - Plugin added to `config({ plugins: [...] })` that wires RAG into your config
 - `openaiEmbeddings({ ... })` - OpenAI provider config helper
-- `ollamaEmbeddings({ ... })` - Ollama provider config helper
-- `pgvectorStorage({ ... })` - pgvector backend config helper
-- `sqliteVssStorage({ ... })` - SQLite VSS backend config helper
-- `jsonStorage()` - JSON-based storage config helper
+- `ollamaEmbeddings({ ... })` - Ollama provider config helper (`dimensions` is required)
 
 ### Fields (`@opensaas/stack-rag/fields`)
 
@@ -50,19 +46,11 @@ packages/rag/
 - `OllamaEmbeddingProvider` - Ollama implementation
 - `registerEmbeddingProvider(type, factory)` - Register custom providers
 
-### Storage (`@opensaas/stack-rag/storage`)
-
-- `createVectorStorage(config)` - Factory for storage backends
-- `JsonVectorStorage` - JSON-based storage (development)
-- `PgVectorStorage` - PostgreSQL pgvector storage
-- `SqliteVssStorage` - SQLite VSS storage
-- `registerVectorStorage(type, factory)` - Register custom backends
-
 ### Runtime (`@opensaas/stack-rag/runtime`)
 
 - `generateEmbeddings(config, text, provider)` - Generate embeddings
-- `semanticSearch(context, query, options)` - Search by natural language
-- `findSimilar(context, itemId, options)` - Find similar items
+- `semanticSearch({ listKey, fieldName, query, provider, context, ... })` - Embed a query and rank through `nearest()`
+- `findSimilar({ listKey, fieldName, itemId, context, ... })` - Rank by an item's own embedding
 - `chunkText(text, strategy)` - Text chunking utilities
 
 ### MCP (`@opensaas/stack-rag/mcp`)
@@ -77,7 +65,7 @@ packages/rag/
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 export default config({
@@ -105,7 +93,6 @@ export default config({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
       }),
-      storage: pgvectorStorage({ distanceFunction: 'cosine' }),
     }),
   ],
 })
@@ -117,7 +104,7 @@ export default config({
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { ragPlugin, ollamaEmbeddings, jsonStorage } from '@opensaas/stack-rag'
+import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 export default config({
@@ -139,8 +126,8 @@ export default config({
       provider: ollamaEmbeddings({
         baseURL: 'http://localhost:11434',
         model: 'nomic-embed-text',
+        dimensions: 768,
       }),
-      storage: jsonStorage(), // Good for development, no DB extensions needed
     }),
   ],
 })
@@ -157,9 +144,9 @@ ragPlugin({
     }),
     ollama: ollamaEmbeddings({
       model: 'nomic-embed-text',
+      dimensions: 768,
     }),
   },
-  storage: pgvectorStorage(),
 })
 
 // In fields
@@ -210,33 +197,29 @@ await context.db.article.create({
 ### Semantic Search (Runtime)
 
 ```typescript
-import { createVectorStorage } from '@opensaas/stack-rag/storage'
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
-import config from '@/opensaas.config'
 
 // Server action or API route
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate query embedding
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // Search
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+  // `nearest()` is a core-owned terminal: the access filter, the minScore
+  // bound and the ranking are all inside one scoped query (ADR-0045).
+  const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
     minScore: 0.7,
-    context,
   })
 
-  return results.map((r) => ({
-    article: r.item,
-    similarity: r.score,
+  return matches.map((match) => ({
+    article: match.item,
+    similarity: match.score,
   }))
 }
 ```
@@ -340,31 +323,29 @@ All searches use the access-controlled context:
 // Search respects access control
 const context = await getContext({ userId: 'user-123' })
 
-const results = await storage.search('Article', 'contentEmbedding', queryVector, {
-  context, // Access control applied
-  where: { published: true }, // Additional filters
-})
+const matches = await context.db.Article.where({ published: { equals: true } }).nearest(
+  'contentEmbedding',
+  queryVector,
+)
 
 // Users only see articles they have access to
 ```
 
-### Vector Storage Backends
+### The vector column
 
-Storage backends are pluggable:
+There is no storage backend to choose. `embedding()` emits a native pgvector
+column, and the field owns its dimension, its distance function and its index:
 
 ```typescript
-// pgvector (best for production PostgreSQL)
-storage: pgvectorStorage({ distanceFunction: 'cosine' })
-// Uses pgvector extension, fast indexed search
-
-// sqlite-vss (good for SQLite apps)
-storage: sqliteVssStorage({ distanceFunction: 'cosine' })
-// Uses sqlite-vss extension
-
-// JSON (good for development)
-storage: jsonStorage()
-// No extensions needed, JS-based similarity search
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
+})
 ```
+
+`ragPlugin` declares the pgvector extension pack itself, so no config names it.
 
 ### Embedding Providers
 
@@ -406,17 +387,6 @@ ON "Article" USING ivfflat (("contentEmbedding"->>'vector')::vector(1536))
 WITH (lists = 100);
 ```
 
-### SQLite with VSS
-
-```sql
--- Load VSS extension (depends on your SQLite setup)
--- Embeddings stored as JSON, VSS used for search
-```
-
-### Any Database with JSON Storage
-
-No special setup needed. Embeddings stored as JSON, similarity computed in JavaScript.
-
 ## Type Safety
 
 All operations are fully typed:
@@ -424,7 +394,7 @@ All operations are fully typed:
 ```typescript
 import type { SearchResult, StoredEmbedding } from '@opensaas/stack-rag'
 
-const results: SearchResult<Article>[] = await storage.search(...)
+const matches = await context.db.Article.nearest('contentEmbedding', queryVector)
 
 const embedding: StoredEmbedding = {
   vector: [0.1, 0.2, 0.3],
@@ -432,8 +402,8 @@ const embedding: StoredEmbedding = {
     model: 'text-embedding-3-small',
     provider: 'openai',
     dimensions: 1536,
-    generatedAt: new Date().toISOString()
-  }
+    generatedAt: new Date().toISOString(),
+  },
 }
 ```
 
@@ -468,14 +438,11 @@ const vectors = await provider.embedBatch(chunks)
 // Combine traditional search with semantic search
 const keywordResults = await context.db.article.findMany({
   where: {
-    OR: [
-      { title: { contains: query } },
-      { content: { contains: query } },
-    ],
+    OR: [{ title: { contains: query } }, { content: { contains: query } }],
   },
 })
 
-const semanticResults = await storage.search(...)
+const semanticResults = await context.db.Article.nearest('contentEmbedding', queryVector)
 
 // Merge and deduplicate results
 ```
@@ -484,14 +451,14 @@ const semanticResults = await storage.search(...)
 
 ```typescript
 // Find articles similar to a given article
-const article = await context.db.article.findUnique({ where: { id } })
+const article = await context.db.Article.where({ id: { equals: id } }).first()
 const queryVector = article.contentEmbedding.vector
 
-const similar = await storage.search('Article', 'contentEmbedding', queryVector, {
-  limit: 5,
-  where: { id: { not: id } }, // Exclude the article itself
-  context,
-})
+const similar = await context.db.Article.where({ id: { not: id } }).nearest(
+  'contentEmbedding',
+  queryVector,
+  { limit: 5 },
+)
 ```
 
 ## Testing
@@ -527,16 +494,9 @@ describe('OpenAIEmbeddingProvider', () => {
 5. Run `pnpm generate` and `pnpm db:push`
 6. Embeddings will be generated automatically on create/update
 
-### Switching Storage Backends
+### Changing a field's dimension
 
-Change storage config and regenerate schema:
-
-```typescript
-// From JSON to pgvector
-storage: pgvectorStorage() // instead of jsonStorage()
-```
-
-Then:
+The dimension is the column's type, so changing it is a migration:
 
 ```bash
 pnpm generate
@@ -548,7 +508,6 @@ Existing embeddings in JSON format are compatible.
 ## Limitations
 
 - **Dimensions must match**: Provider and field dimensions must match
-- **JSON storage performance**: JSON-based search doesn't scale to millions of vectors
 - **No automatic re-embedding**: Changing provider/model requires manual re-embedding
 - **Access control bypass**: Raw Prisma queries bypass access control (handled in implementation)
 

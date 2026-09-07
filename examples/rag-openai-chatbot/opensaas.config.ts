@@ -1,6 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, select, checkbox } from '@opensaas/stack-core/fields'
-import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
 import { PrismaPg } from '@prisma/adapter-pg'
 import pg from 'pg'
@@ -11,9 +11,6 @@ export default config({
       provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-      }),
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine',
       }),
     }),
   ],

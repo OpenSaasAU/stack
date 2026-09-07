@@ -70,6 +70,12 @@ function buildMessage(
  *   - `virtual` fields are not stored in the database, so `getPrismaType` is
  *     legitimately absent; they must still provide `getTypeScriptType` and
  *     `getZodSchema`.
+ *   - a field that declares `getContractField` describes its own columns to the
+ *     contract and its own value type through `outputType`/`inputType`, which
+ *     is what the contract-era generators read. Neither PSL-shaped method is
+ *     consulted for such a field, so neither is required — a field spanning
+ *     several columns of different types has no honest single `getPrismaType`
+ *     to give. It must still provide `getZodSchema`.
  *   - every other (stored scalar) field must provide `getPrismaType`,
  *     `getTypeScriptType`, and `getZodSchema`.
  *
@@ -105,6 +111,11 @@ export function validateFieldConfig(
 
   if (field.virtual === true || field.type === 'virtual') {
     requireMethod('getTypeScriptType')
+    requireMethod('getZodSchema')
+    return errors
+  }
+
+  if (hasFieldMethod(field, 'getContractField')) {
     requireMethod('getZodSchema')
     return errors
   }

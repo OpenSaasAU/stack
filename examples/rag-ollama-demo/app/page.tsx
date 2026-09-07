@@ -10,7 +10,7 @@ export default function HomePage() {
           <strong>Ollama</strong> - Local embedding generation using nomic-embed-text model
         </li>
         <li>
-          <strong>SQLite VSS</strong> - Vector similarity search in SQLite
+          <strong>pgvector</strong> - Vector similarity search in a native Postgres column
         </li>
         <li>
           <strong>Automatic embeddings</strong> - Auto-generated when content changes
