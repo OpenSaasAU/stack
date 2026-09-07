@@ -194,17 +194,39 @@ describe.skipIf(!available)(
       test('bounds the result set by minScore, on the raw cosine', async () => {
         await seedPalette()
 
-        // 0.8 keeps red (1) and reddish (0.8) and drops blue (0). On the
-        // deleted (cos + 1) / 2 scoring these would have been 1, 0.9 and 0.5.
+        // 0.4 keeps red (1) and reddish (0.8) and drops blue (0), each 0.4 clear
+        // of the bound. pgvector stores float4 and its builds accumulate the
+        // cosine differently — PGlite scores reddish at 0.80000001, pg17 at
+        // 0.79999999 — so a minScore within ~1e-7 of a row's cosine decides
+        // nothing. On the deleted (cos + 1) / 2 scoring the three would have
+        // been 1, 0.9 and 0.5, and blue would be in this result.
         const results = await semanticSearch({
           list: list(),
           fieldName: 'contentEmbedding',
           query: 'red',
           provider: searchProvider,
-          minScore: 0.8,
+          minScore: 0.4,
         })
 
         expect(results.map((result) => result.item.content)).toEqual(['red', 'reddish'])
+      })
+
+      test('admits a row whose score is exactly minScore', async () => {
+        await seedPalette()
+
+        // The bound is inclusive, asserted on the one cosine float4 carries
+        // exactly: red against itself is 1 in every build, so this pins
+        // inclusivity rather than landing near it. An exclusive bound returns
+        // nothing here.
+        const results = await semanticSearch({
+          list: list(),
+          fieldName: 'contentEmbedding',
+          query: 'red',
+          provider: searchProvider,
+          minScore: 1,
+        })
+
+        expect(results.map((result) => result.item.content)).toEqual(['red'])
       })
 
       test('caps the result set at limit', async () => {
