@@ -100,6 +100,7 @@ Perform semantic search:
 
 ```typescript
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
+import { getContext } from '@/.opensaas/context'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
@@ -131,6 +132,7 @@ Embedding fields store vector embeddings (arrays of numbers) that represent the 
 The easiest way to add semantic search to any text field:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -164,6 +166,7 @@ type SearchableOptions = {
 For advanced use cases where you need more control:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -362,6 +365,8 @@ The plugin stores a SHA-256 hash of the source text in the embedding metadata. T
 All semantic searches automatically respect your existing access control rules. This ensures users can only search content they have permission to view.
 
 ```typescript
+import { getContext } from '@/.opensaas/context'
+
 // Search respects access control
 const context = await getContext({ userId: 'user-123' })
 
@@ -419,10 +424,10 @@ content: searchable(text(), {
   dimensions: 1536, // Vector dimensions
   embeddingFieldName: 'customEmbedding', // Custom field name
   chunking: {
-    // Text chunking for long content
+    // Text chunking for long content, in tokens (ChunkingConfig)
     strategy: 'recursive',
-    maxTokens: 1000,
-    overlap: 200,
+    maxTokens: 250,
+    overlap: 50,
   },
 })
 ```
@@ -436,9 +441,9 @@ contentEmbedding: embedding({
   dimensions: 1536, // Vector dimensions
   autoGenerate: true, // Auto-generate on changes
   chunking: {
-    // Text chunking configuration
+    // Text chunking configuration, in tokens (ChunkingConfig)
     strategy: 'sentence',
-    maxTokens: 500,
+    maxTokens: 125,
   },
 })
 ```
@@ -645,6 +650,7 @@ const results = await semanticSearch({
 
 ```typescript
 import { findSimilar } from '@opensaas/stack-rag/runtime'
+import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 

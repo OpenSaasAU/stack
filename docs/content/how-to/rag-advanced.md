@@ -99,21 +99,28 @@ Known limits, because the row is already committed by the time this runs:
 
 The RAG package uses a registry pattern for embedding providers, making it easy to add custom providers.
 
+A factory is keyed by `type` and receives the whole config union, which is what
+makes the narrowing below necessary:
+
 ```typescript
-// Internal provider registry
-const providerFactories = new Map<string, Factory>()
+import type { EmbeddingProviderConfig } from '@opensaas/stack-rag'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 
-providerFactories.set('openai', (config) => new OpenAIEmbeddingProvider(config))
-providerFactories.set('ollama', (config) => new OllamaEmbeddingProvider(config))
+type ProviderFactory = (config: EmbeddingProviderConfig) => EmbeddingProvider
 
-export function createEmbeddingProvider(config: EmbeddingProviderConfig) {
-  const factory = providerFactories.get(config.type)
-  if (!factory) {
-    throw new Error(`Unknown provider type: ${config.type}`)
-  }
-  return factory(config)
-}
+const providerFactories = new Map<string, ProviderFactory>()
 ```
+
+`EmbeddingProviderConfig`'s third member is `CustomEmbeddingConfig`, an open
+`{ type: string; [key: string]: unknown }`, so a factory cannot assume it was
+handed the config shape matching its own key — `config.type === 'openai'` does
+not narrow the union past that open member. Read a member off the union and you
+get `TS2345`; the examples below narrow with `in` first.
+
+`createEmbeddingProvider()` closes the same gap at the call site by intersecting
+its argument (`<TConfig extends EmbeddingProviderConfig>(config: TConfig &
+BuiltInConfigFor<TConfig>)`), so a literal naming a built-in provider must
+satisfy that provider's own config even though the union alone would accept it.
 
 Users can register custom providers:
 
@@ -149,6 +156,8 @@ Access Filter, Field Visibility and the list's `query` rule apply to it
 unchanged:
 
 ```typescript
+import { getContext } from '@/.opensaas/context'
+
 const context = await getContext({ userId: 'user-123' })
 
 const matches = await context.db.Article.where({
@@ -179,15 +188,15 @@ Creating custom embedding providers allows you to use any embedding model or ser
 
 ```typescript
 interface EmbeddingProvider {
-  type: string // Provider identifier
-  model: string // Model name
-  dimensions: number // Vector dimensions
+  readonly type: string // Provider identifier
+  readonly model: string // Model name
+  readonly dimensions: number // Vector dimensions
 
   // Generate single embedding
   embed(text: string): Promise<number[]>
 
-  // Generate batch embeddings (optional, but recommended)
-  embedBatch?(texts: string[]): Promise<number[][]>
+  // Generate batch embeddings. Required — chunked fields call it directly.
+  embedBatch(texts: string[]): Promise<number[][]>
 }
 ```
 
@@ -455,11 +464,16 @@ content: searchable(text(), {
   dimensions: 1536,
   chunking: {
     strategy: 'recursive',
-    maxTokens: 1000,
-    overlap: 200,
+    maxTokens: 250,
+    overlap: 50,
   },
 })
 ```
+
+A field's `chunking` is a `ChunkingConfig`, measured in **tokens** — not the
+`ChunkingOptions` that `chunkText()` above takes, which are in characters. The
+two are separate types with separate units; at roughly 4 characters per token,
+`maxTokens: 250` is about the same span of text as `chunkSize: 1000`.
 
 **How it works:**
 
@@ -775,10 +789,15 @@ Improve search quality by re-ranking results with a cross-encoder model.
 ```typescript
 // lib/rerank.ts
 import { HfInference } from '@huggingface/inference'
+import type { SearchResult } from '@opensaas/stack-rag'
 
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY!)
 
-export async function rerankResults(query: string, results: SearchResult[], topK = 5) {
+export async function rerankResults<T extends { id: string; content: string }>(
+  query: string,
+  results: SearchResult<T>[],
+  topK = 5,
+) {
   // Generate pairs of (query, document)
   const pairs = results.map((result) => ({
     id: result.item.id,
@@ -853,6 +872,10 @@ lists: {
 **Querying multiple embeddings:**
 
 ```typescript
+import type { NearestMatch } from '@opensaas/stack-core'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
+import { getContext } from '@/.opensaas/context'
+
 async function multiVectorSearch(query: string) {
   const context = await getContext()
 
@@ -872,9 +895,9 @@ async function multiVectorSearch(query: string) {
   ])
 
   // Combine and deduplicate
-  const scoreMap = new Map()
+  const scoreMap = new Map<string, { item: { id: string }; score: number }>()
 
-  const addResults = (results: SearchResult[], weight: number) => {
+  const addResults = (results: NearestMatch<{ id: string }>[], weight: number) => {
     results.forEach((r) => {
       const existing = scoreMap.get(r.item.id)
       const score = r.score * weight
@@ -904,15 +927,17 @@ Handle embedding generation failures gracefully:
 
 ```typescript
 // hooks/embedding-error-handling.ts
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
 async function generateEmbeddingWithRetry(text: string, provider: EmbeddingProvider) {
   const maxRetries = 3
-  let lastError: Error
+  let lastError: Error | undefined
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await provider.embed(text)
     } catch (error) {
-      lastError = error as Error
+      lastError = error instanceof Error ? error : new Error(String(error))
       console.error(`Embedding generation failed (attempt ${i + 1}/${maxRetries}):`, error)
 
       // Wait before retry (exponential backoff)
@@ -937,6 +962,8 @@ Track embedding generation and search performance:
 
 ```typescript
 // lib/rag-monitoring.ts
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
 export async function monitoredEmbedGeneration(text: string, provider: EmbeddingProvider) {
   const startTime = Date.now()
 
@@ -961,7 +988,7 @@ export async function monitoredEmbedGeneration(text: string, provider: Embedding
       model: provider.model,
       textLength: text.length,
       duration,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     })
 
     throw error
@@ -1024,7 +1051,9 @@ Track and optimize API costs:
 
 ```typescript
 // lib/cost-tracking.ts
-const COST_PER_1K_TOKENS = {
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
+const COST_PER_1K_TOKENS: Record<string, number> = {
   'text-embedding-3-small': 0.00002,
   'text-embedding-3-large': 0.00013,
 }

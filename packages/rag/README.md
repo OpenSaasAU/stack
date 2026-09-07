@@ -107,6 +107,7 @@ await context.db.Article.create({
 
 ```typescript
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
+import { getContext } from '@/.opensaas/context'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
@@ -206,6 +207,7 @@ naming the `pgvector` space and SQL state `58P01`.
 The easiest way to add semantic search to any field:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -250,6 +252,7 @@ fields: {
 For advanced use cases where you need more control:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -344,6 +347,7 @@ Find items similar to a given item by ID:
 
 ```typescript
 import { findSimilar } from '@opensaas/stack-rag/runtime'
+import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 
@@ -391,6 +395,7 @@ Process large batches of texts with automatic rate limiting:
 
 ```typescript
 import { batchProcess } from '@opensaas/stack-rag/runtime'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const result = await batchProcess({
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),
@@ -412,6 +417,7 @@ Generate embeddings for long texts with automatic chunking:
 
 ```typescript
 import { generateEmbedding } from '@opensaas/stack-rag/runtime'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 // Single embedding
 const embedding = await generateEmbedding({

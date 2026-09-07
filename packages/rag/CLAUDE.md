@@ -369,6 +369,8 @@ the commit — none can abort the write:
 All searches use the access-controlled context:
 
 ```typescript
+import { getContext } from '@/.opensaas/context'
+
 // Search respects access control
 const context = await getContext({ userId: 'user-123' })
 

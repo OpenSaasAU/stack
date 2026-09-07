@@ -173,6 +173,7 @@ export default config({
 Use the `searchable()` wrapper to automatically add embeddings to any field:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -194,6 +195,7 @@ fields: {
 **Alternative (manual pattern):**
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 fields: {
