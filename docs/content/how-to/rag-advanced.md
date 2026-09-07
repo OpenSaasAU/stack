@@ -121,17 +121,21 @@ Users can register custom providers:
 import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
+  const model = typeof config.model === 'string' ? config.model : 'custom-embed'
+  const dimensions =
+    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+
   return {
     type: 'custom',
-    model: config.model,
-    dimensions: config.dimensions,
+    model,
+    dimensions,
     async embed(text) {
       // Your implementation
-      return vector
+      return [/* vector */]
     },
     async embedBatch(texts) {
       // Batch implementation
-      return vectors
+      return [[/* vectors */]]
     },
   }
 })

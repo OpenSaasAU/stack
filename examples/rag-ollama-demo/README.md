@@ -449,7 +449,7 @@ ollama pull nomic-embed-text
 3. **Chunk long texts**:
    ```typescript
    import { chunkText } from '@opensaas/stack-rag/runtime'
-   const chunks = chunkText(longDocument, { maxTokens: 500 })
+   const chunks = chunkText(longDocument, { chunkSize: 500 })
    ```
 
 ## Next Steps

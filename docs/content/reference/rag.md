@@ -708,7 +708,7 @@ console.log(`Failed: ${result.stats.failed}`)
 ## Working Examples
 
 - **[RAG OpenAI Chatbot](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-openai-chatbot)** - Production-ready chatbot with knowledge base, streaming responses, and source citations
-- **[RAG Ollama Demo](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-ollama-demo)** - Local development with Ollama embeddings and SQLite VSS
+- **[RAG Ollama Demo](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-ollama-demo)** - Local development with Ollama embeddings over a native pgvector column
 
 ## Next Steps
 

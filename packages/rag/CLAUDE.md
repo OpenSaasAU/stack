@@ -405,10 +405,14 @@ Providers are pluggable and extensible:
 import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
+  const model = typeof config.model === 'string' ? config.model : 'custom-embed'
+  const dimensions =
+    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+
   return {
     type: 'custom',
-    model: config.model,
-    dimensions: config.dimensions,
+    model,
+    dimensions,
     async embed(text) {
       // Your implementation
       return [/* vector */]
@@ -420,6 +424,13 @@ registerEmbeddingProvider('custom', (config) => {
   }
 })
 ```
+
+The factory is handed the whole `EmbeddingProviderConfig` union, whose custom
+member is an open `{ type: string; [key: string]: unknown }`. So `config.model`
+arrives as `unknown` and `config.dimensions` is not on the union at all —
+narrow both, as above, rather than reading them straight onto the returned
+`EmbeddingProvider`, whose `model` and `dimensions` are a required `string` and
+`number`.
 
 ## Provisioning pgvector
 
@@ -495,12 +506,12 @@ import { chunkText } from '@opensaas/stack-rag/runtime'
 
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
-  maxTokens: 500,
-  overlap: 50,
+  chunkSize: 500,
+  chunkOverlap: 50,
 })
 
 // Generate embeddings for each chunk
-const vectors = await provider.embedBatch(chunks)
+const vectors = await provider.embedBatch(chunks.map((chunk) => chunk.text))
 ```
 
 ### Hybrid Search (Keyword + Semantic)

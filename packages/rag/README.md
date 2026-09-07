@@ -475,12 +475,12 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation including:
 
 ## Examples
 
-See `examples/rag-demo` for a complete working example with:
+Two complete working examples:
 
-- Document search
-- Chatbot with knowledge base
-- MCP integration
-- Multiple embedding providers
+- `examples/rag-ollama-demo` — semantic search over the sample documents its
+  `pnpm test:rag` script creates, embedded locally by Ollama, with no API key
+- `examples/rag-openai-chatbot` — a chatbot answering from a knowledge base seeded by
+  `pnpm db:seed`, embedded by OpenAI, with source citations
 
 ## Repository
 
