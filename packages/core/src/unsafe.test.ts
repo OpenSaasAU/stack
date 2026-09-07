@@ -341,6 +341,7 @@ describe('the Unsafe surface', () => {
         sql: database.client.sql,
         raw: database.client.raw,
         orm,
+        contract: database.client.contract,
         runtime: () => database.client.runtime(),
         transaction: <R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R> =>
           database.client.transaction((tx: UnsafeTransactionScope) => fn(tx)),

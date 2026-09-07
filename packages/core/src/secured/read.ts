@@ -48,6 +48,15 @@ import {
 import type { DependencyAdditions, FieldSelectionScope } from '../access/declared-dependencies.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
+import {
+  ROW_LOCK_MAX_KEYS,
+  RowLockIdentityError,
+  RowLockKeyLimitExceededError,
+  RowLockUnavailableError,
+  type RowLockIdentity,
+  type RowLockKey,
+  type RowLockLane,
+} from './lock.js'
 import { ValidationError } from '../hooks/index.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
@@ -67,6 +76,13 @@ export type {
   SecuredReduction,
 } from './include.js'
 export { RelationSelectError } from './select.js'
+export {
+  ROW_LOCK_MAX_KEYS,
+  RowLockIdentityError,
+  RowLockKeyLimitExceededError,
+  RowLockUnavailableError,
+} from './lock.js'
+export type { RowLockIdentity, RowLockKey, RowLockLane } from './lock.js'
 export type { AggregateBuild, AggregateSpec, Aggregations, CountReduction } from './aggregate.js'
 export type {
   NearestOptions,
@@ -141,6 +157,26 @@ export interface SecuredQuery<TRow = OrmRow> {
    * order along — nor on one this session may not read.
    */
   cursor(values: Record<string, unknown>): SecuredQuery<TRow>
+  /**
+   * Take a row lock on everything `first()` or `all()` is about to return.
+   *
+   * Two statements: the scoped read resolves operation access, the Access
+   * Filter and Field Visibility exactly as any read does, and the engine then
+   * locks the identity rows it returned. So the locked set is provably a
+   * subset of the readable set, and a row deleted in between locks nothing —
+   * `first()` yields `null` and `all()` the surviving subset. `null` therefore
+   * means denied-or-vanished, which extends a conflation Silent failure
+   * already makes deliberately (ADR-0047).
+   *
+   * `aggregate()` and `nearest()` do not carry it: an aggregate returns no
+   * primary keys to lock, and a ranking is not a gate.
+   *
+   * A transaction is required — a lock taken outside one is released at the
+   * end of the statement that took it. On the generated surface this is a
+   * compile error rather than a throw: `forUpdate()` is on the
+   * transaction-bound builder alone.
+   */
+  forUpdate(): SecuredQuery<TRow>
   /** Every row this session may see. `[]` when the read is denied. */
   all(): Promise<TRow[]>
   /** The first row this session may see, or `null` — denied or absent alike. */
@@ -288,6 +324,11 @@ interface ReadBinding {
   ormHandle: OrmClient
   context: AccessContext
   config: OpenSaasConfig
+  /**
+   * Present only on a context bound to a transaction, which is what makes
+   * `forUpdate()` answerable there and a refusal everywhere else (ADR-0047).
+   */
+  lock?: RowLockLane
 }
 
 /** How rows that agree on the named columns are collapsed. */
@@ -305,6 +346,8 @@ interface QueryState {
   readonly offset?: number
   readonly distincts: readonly DistinctRequest[]
   readonly cursor?: Record<string, unknown>
+  /** Whether `.forUpdate()` composed onto this read (ADR-0047). */
+  readonly lock: boolean
 }
 
 /** A resolved read: the predicates to AND, the sort to apply, the tree to reach. */
@@ -324,6 +367,12 @@ interface ReadPlan {
   readonly offset?: number
   readonly distinct?: { readonly kind: 'all' | 'on'; readonly columns: readonly ColumnPlan[] }
   readonly cursor?: Record<string, unknown>
+  /**
+   * Present only when `.forUpdate()` composed. `true` rather than a boolean so
+   * an uncomposed read carries nothing: {@link carried} reads absence, and a
+   * `false` would read as a member every terminal has to refuse.
+   */
+  readonly forUpdate?: true
 }
 
 /**
@@ -471,6 +520,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     offset: state.offset,
     ...(distinct ? { distinct } : {}),
     ...(cursor ? { cursor } : {}),
+    ...(state.lock ? { forUpdate: true as const } : {}),
   }
 }
 
@@ -792,6 +842,7 @@ const ALL_DISPOSITIONS: PlanDispositions = {
   offset: 'applied',
   distinct: 'applied',
   cursor: 'applied',
+  forUpdate: 'applied',
 }
 
 /**
@@ -812,9 +863,64 @@ function unreachableRefusal(members: readonly string[]): never {
   throw new ValidationError([`Nothing is refused here, yet ${quoted(members)} was.`])
 }
 
+/**
+ * The lane this read locks through, and where its rows' identity lives —
+ * resolved before the scoped read runs, so a list the contract cannot lock and
+ * a bound the terminal will not honour are both refused before any statement
+ * is issued (ADR-0062).
+ */
+function lockLane(
+  binding: ReadBinding,
+  plan: ReadPlan,
+  member: string,
+  bound: number | undefined,
+): { lane: RowLockLane; identity: RowLockIdentity } | undefined {
+  if (plan.forUpdate !== true) return undefined
+  if (binding.lock === undefined) throw new RowLockUnavailableError(member)
+  if (bound !== undefined && bound > ROW_LOCK_MAX_KEYS) {
+    throw new RowLockKeyLimitExceededError(binding.listName, bound)
+  }
+  return { lane: binding.lock, identity: binding.lock.identity(binding.listName) }
+}
+
+/**
+ * Lock the rows the scoped read returned, and keep the ones that were still
+ * there.
+ *
+ * No keys, no statement: an empty scoped read — unmatched, or scoped away —
+ * has nothing to lock, and `IN ()` is a Postgres syntax error rather than an
+ * empty result (ADR-0062). A row whose key the lock did not come back with
+ * vanished between the two statements and is dropped (ADR-0047).
+ */
+async function locked(
+  taken: { lane: RowLockLane; identity: RowLockIdentity },
+  listName: string,
+  rows: readonly OrmRow[],
+): Promise<OrmRow[]> {
+  const column = taken.identity.column
+  const keys: RowLockKey[] = []
+  for (const row of rows) {
+    const value = row[column]
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      throw new RowLockIdentityError(
+        listName,
+        `the read returned a row with no "${column}" to lock it by`,
+      )
+    }
+    keys.push(value)
+  }
+  if (keys.length === 0) return []
+  const held = new Set<RowLockKey>(await taken.lane.lock(listName, taken.identity, keys))
+  return rows.filter((row) => {
+    const value = row[column]
+    return (typeof value === 'string' || typeof value === 'number') && held.has(value)
+  })
+}
+
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
+  const taken = lockLane(binding, plan, 'all().forUpdate()', plan.limit)
   const collection = scope(
     binding,
     plan,
@@ -822,13 +928,15 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]
     ALL_DISPOSITIONS,
     unreachableRefusal,
   )
-  const rows = await withOrigin('engine', () => collection.all())
+  const read = await withOrigin('engine', () => collection.all())
+  const rows = taken === undefined ? read : await locked(taken, binding.listName, read)
   return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
 
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow | null> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return null
+  const taken = lockLane(binding, plan, 'first().forUpdate()', 1)
   const collection = scope(
     binding,
     plan,
@@ -836,8 +944,11 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow
     FIRST_DISPOSITIONS,
     unreachableRefusal,
   )
-  const row = await withOrigin('engine', () => collection.first())
-  return row === null ? null : await visible(binding, row, plan)
+  const read = await withOrigin('engine', () => collection.first())
+  if (read === null) return null
+  if (taken === undefined) return await visible(binding, read, plan)
+  const rows = await locked(taken, binding.listName, [read])
+  return rows.length === 0 ? null : await visible(binding, rows[0], plan)
 }
 
 function countOf(result: Record<string, unknown>, listName: string, key: string): number {
@@ -874,14 +985,15 @@ const AGGREGATE_DISPOSITIONS: PlanDispositions = {
   offset: 'refused',
   distinct: 'refused',
   cursor: 'refused',
+  forUpdate: 'refused',
 }
 
 function refuseUncountable(listName: string): (members: readonly string[]) => never {
   return (members) => {
     throw new ValidationError([
       `Cannot aggregate "${listName}" over a read that composed ${quoted(members)} — an ` +
-        `aggregate counts the rows the predicates match, which is not what any of those would ` +
-        `return. Aggregate the predicates alone, or read the rows.`,
+        `aggregate counts the rows the predicates match, so it returns no rows to bound, page, ` +
+        `collapse or lock. Aggregate the predicates alone, or read the rows.`,
     ])
   }
 }
@@ -958,6 +1070,7 @@ const NEAREST_DISPOSITIONS: PlanDispositions = {
   offset: 'refused',
   distinct: 'refused',
   cursor: 'refused',
+  forUpdate: 'refused',
 }
 
 function refuseUnrankable(listName: string): (members: readonly string[]) => never {
@@ -966,7 +1079,8 @@ function refuseUnrankable(listName: string): (members: readonly string[]) => nev
       `Cannot search "${listName}" over a read that composed ${quoted(members)} — the ranking is ` +
         `this query's leading order, so a cursor has no axis to resume along, an offset pages a ` +
         `ranking whose scores this engine recomputes, and a distinct would collapse rows the ` +
-        `nearest limit is already counted over. Search the predicates alone.`,
+        `nearest limit is already counted over. A ranking is not a gate, so it takes no row lock ` +
+        `either. Search the predicates alone.`,
     ])
   }
 }
@@ -1072,6 +1186,7 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
     distinctOn: (...fields: string[]) =>
       query(binding, { ...state, distincts: [...state.distincts, { kind: 'on', fields }] }),
     cursor: (values: Record<string, unknown>) => query(binding, { ...state, cursor: values }),
+    forUpdate: () => query(binding, { ...state, lock: true }),
     all: () => runAll(binding, state),
     first: () => runFirst(binding, state),
     nearest: (field: string, vector: readonly number[], options: NearestOptions = {}) =>
@@ -1087,5 +1202,11 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
  * or its type (ADR-0041, ADR-0057).
  */
 export function createSecuredRead(binding: ReadBinding): SecuredQuery {
-  return query(binding, { predicates: [], orders: [], includes: [], distincts: [] })
+  return query(binding, {
+    predicates: [],
+    orders: [],
+    includes: [],
+    distincts: [],
+    lock: false,
+  })
 }

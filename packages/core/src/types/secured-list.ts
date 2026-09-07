@@ -495,11 +495,58 @@ export type ListQuery<
   K extends keyof R & string,
   Included = unknown,
   Selected extends string = never,
+  Tx extends boolean = false,
+> = ComposedRead<C, R, K, Included, Selected, Tx> & RowLock<C, R, K, Included, Selected, Tx>
+
+/**
+ * `forUpdate()` exists on a transaction-bound read and nowhere else. A lock
+ * taken outside a transaction is released at the end of the statement that
+ * took it, so it would compile, run, return rows and guard nothing — the
+ * restriction is a type parameter rather than a runtime throw (ADR-0047).
+ *
+ * A mapped type over a key union that is empty outside a transaction, for the
+ * reason {@link SingletonOpKey} is one: a generated interface still extends
+ * the whole {@link SecuredList}.
+ */
+type RowLockKey<Tx extends boolean> = Tx extends true ? 'forUpdate' : never
+
+type RowLock<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Included,
+  Selected extends string,
+  Tx extends boolean,
 > = {
-  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K, Included, Selected>
+  /**
+   * Take a row lock on everything `first()` or `all()` is about to return.
+   *
+   * The scoped read runs first and resolves operation access, the Access
+   * Filter and Field Visibility exactly as any read does; the engine then
+   * locks the identity rows it returned, so the locked set is provably a
+   * subset of the readable one. A row deleted in between locks nothing —
+   * `first()` yields `null` and `all()` the surviving subset — so `null` here
+   * means denied-or-vanished (ADR-0047).
+   *
+   * `aggregate()` and `nearest()` do not carry it: an aggregate returns no
+   * primary keys to lock, and a ranking is not a gate. A list whose table has
+   * no single-column primary key cannot be locked.
+   */
+  [M in RowLockKey<Tx>]: () => ListQuery<C, R, K, Included, Selected, Tx>
+}
+
+type ComposedRead<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Included,
+  Selected extends string,
+  Tx extends boolean,
+> = {
+  where: (predicate: ListPredicate<C, R, K>) => ListQuery<C, R, K, Included, Selected, Tx>
   orderBy: (
     order: ListSort<C, R, K> | readonly ListSort<C, R, K>[],
-  ) => ListQuery<C, R, K, Included, Selected>
+  ) => ListQuery<C, R, K, Included, Selected, Tx>
   /**
    * Reach one hop into a relation, optionally refining the related read.
    *
@@ -511,7 +558,7 @@ export type ListQuery<
     <Rel extends ToManyKey<C, K>, Red extends ListReduction<unknown>>(
       name: Rel,
       refine: (refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>) => Red,
-    ): ListQuery<C, R, K, Included & ReducedRelation<Rel, Red>, Selected>
+    ): ListQuery<C, R, K, Included & ReducedRelation<Rel, Red>, Selected, Tx>
     <Rel extends RelationKey<C, K>, Sel extends string = never>(
       name: Rel,
       refine?: (
@@ -523,7 +570,7 @@ export type ListQuery<
           IsToOne<C, K, Rel> extends true ? false : true
         >,
       ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel, boolean>,
-    ): ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel, Sel>, Selected>
+    ): ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel, Sel>, Selected, Tx>
   }
   /**
    * Return exactly these of the list's own fields — including a computed one,
@@ -534,27 +581,27 @@ export type ListQuery<
    * strips the difference back out, so neither the result nor this type
    * carries what it added (ADR-0041, ADR-0051).
    */
-  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListQuery<C, R, K, Included, F>
+  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListQuery<C, R, K, Included, F, Tx>
   /** At most this many rows. Replaces any previous call; shapes `all()` alone. */
-  limit: (count: number) => ListQuery<C, R, K, Included, Selected>
+  limit: (count: number) => ListQuery<C, R, K, Included, Selected, Tx>
   /** Skip this many rows. Replaces any previous call; shapes `all()` alone. */
-  offset: (count: number) => ListQuery<C, R, K, Included, Selected>
+  offset: (count: number) => ListQuery<C, R, K, Included, Selected, Tx>
   /**
    * Collapse rows that agree on every named column. One `distinct` per read:
    * name every column in a single call.
    */
-  distinct: (...fields: StoredKey<C, R, K>[]) => ListQuery<C, R, K, Included, Selected>
+  distinct: (...fields: StoredKey<C, R, K>[]) => ListQuery<C, R, K, Included, Selected, Tx>
   /**
    * Keep the first row per distinct key, in the order `orderBy` established —
    * so it requires one that leads with these columns.
    */
-  distinctOn: (...fields: StoredKey<C, R, K>[]) => ListQuery<C, R, K, Included, Selected>
+  distinctOn: (...fields: StoredKey<C, R, K>[]) => ListQuery<C, R, K, Included, Selected, Tx>
   /**
    * Resume from a known position. Every key must name a column the active
    * `orderBy` sorts by, so a cursor cannot seek on an axis the read has no
    * order along — nor on one this session may not read.
    */
-  cursor: (values: ListCursor<C, R, K>) => ListQuery<C, R, K, Included, Selected>
+  cursor: (values: ListCursor<C, R, K>) => ListQuery<C, R, K, Included, Selected, Tx>
   all: () => Promise<IncludedRow<ComposedRow<C, R, K, Selected>, Included>[]>
   first: () => Promise<IncludedRow<ComposedRow<C, R, K, Selected>, Included> | null>
   /**
@@ -589,15 +636,20 @@ export type ListQuery<
  * reason {@link SingletonOpKey} is one — a generated interface still extends
  * the whole {@link SecuredList}.
  */
-type ComposedReadKey<C, R extends RemainderBase, K extends keyof R & string> = R[K] extends {
+type ComposedReadKey<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Tx extends boolean,
+> = R[K] extends {
   singleton: true
 }
   ? never
-  : keyof ListQuery<C, R, K>
+  : keyof ListQuery<C, R, K, unknown, never, Tx>
 
-type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
-  ListQuery<C, R, K>,
-  ComposedReadKey<C, R, K>
+type ListOps<C, R extends RemainderBase, K extends keyof R & string, Tx extends boolean> = Pick<
+  ListQuery<C, R, K, unknown, never, Tx>,
+  ComposedReadKey<C, R, K, Tx>
 > & {
   findUnique: <
     S extends ListSelect<C, R, K> = never,
@@ -649,8 +701,18 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
  * ```ts
  * export interface PostList extends SecuredList<Contract, Remainder, 'Post'> {}
  * ```
+ *
+ * `Tx` says whether this is the transaction-bound face of the list. It is the
+ * one difference between the two: a transaction-bound read carries
+ * `forUpdate()` and the plain one does not, which is what makes a lock taken
+ * outside a transaction a compile error (ADR-0047). The generated bundle names
+ * both, `PostList` and `PostTxList`.
  */
-export type SecuredList<C, R extends RemainderBase, K extends keyof R & string> = ListOps<C, R, K> &
-  SingletonOps<C, R, K>
+export type SecuredList<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Tx extends boolean = false,
+> = ListOps<C, R, K, Tx> & SingletonOps<C, R, K>
 
 export type { ListId }

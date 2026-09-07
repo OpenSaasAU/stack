@@ -97,8 +97,14 @@ const config: OpenSaasConfig = {
  */
 type PromisedQueryMember = keyof ListQuery<unknown, RemainderBase, string>
 type PromisedRefinementMember = keyof ListRefinement<unknown, RemainderBase, string>
+/**
+ * The transaction-bound face promises one member more (ADR-0047), and the
+ * engine has to answer that one too — `forUpdate()` reached a generated
+ * project through `SecuredQuery`, not through a second implementation.
+ */
+type PromisedLockingMember = keyof ListQuery<unknown, RemainderBase, string, unknown, never, true>
 
-type UnansweredQueryMember = Exclude<PromisedQueryMember, keyof SecuredQuery>
+type UnansweredQueryMember = Exclude<PromisedLockingMember, keyof SecuredQuery>
 type UnansweredRefinementMember = Exclude<PromisedRefinementMember, keyof SecuredRefinement>
 
 const queryBridged: [UnansweredQueryMember] extends [never] ? true : false = true
@@ -140,6 +146,8 @@ type Exact<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
 const queryListed: Exact<PromisedQueryMember, (typeof PROMISED_QUERY_MEMBERS)[number]> = true
+/** The locking face is the plain one plus `forUpdate`, and nothing else. */
+const lockListed: Exact<Exclude<PromisedLockingMember, PromisedQueryMember>, 'forUpdate'> = true
 const refinementListed: Exact<
   PromisedRefinementMember,
   (typeof PROMISED_REFINEMENT_MEMBERS)[number]
@@ -195,7 +203,8 @@ beforeEach(async () => {
 
 describe('the members the generated surface promises', () => {
   test('the type-level bridge holds in both directions', () => {
-    expect([queryBridged, refinementBridged, queryListed, refinementListed]).toEqual([
+    expect([queryBridged, refinementBridged, queryListed, refinementListed, lockListed]).toEqual([
+      true,
       true,
       true,
       true,
@@ -207,7 +216,7 @@ describe('the members the generated surface promises', () => {
 
   test('every one of them is callable on the engine value', () => {
     const query: SecuredQuery = database.context(ada).db.Post
-    const absent = PROMISED_QUERY_MEMBERS.filter(
+    const absent = [...PROMISED_QUERY_MEMBERS, 'forUpdate'].filter(
       (member) => typeof Reflect.get(query, member) !== 'function',
     )
     expect(absent).toEqual([])

@@ -25,6 +25,7 @@ import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import type { OpenedTransaction, OrmClient, TransactionOpener } from '../access/types.js'
 import { createSecuredRead } from '../secured/read.js'
+import { createRowLockLane, RowLockUnavailableError, type RowLockLane } from '../secured/lock.js'
 import {
   createUnsafeSurface,
   createUnsafeTransactionSurface,
@@ -33,7 +34,7 @@ import {
   type UnsafeSurface,
   type UnsafeTransactionScope,
 } from '../unsafe.js'
-import type { StackContext } from '../types/context.js'
+import type { StackContext, StackTransactionContext } from '../types/context.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -468,6 +469,38 @@ async function settleTransactionOwner<T>(
   return result
 }
 
+/**
+ * The transaction-bound face of a context: everything it already carries, plus
+ * `advisoryLock`, and with `sudo()`, `withSession()` and `transaction()`
+ * answering in the same face rather than dropping back to the plain one
+ * (ADR-0047).
+ *
+ * A wrapper rather than a second `getContext` branch, because the difference
+ * between the two shapes is exactly these four members — `db` is the same
+ * object, already built over the transaction's own collections and its lock
+ * lane. The nested `transaction()` runs the callback directly, which is what
+ * the wrapped context's own `transaction` does inside an owned transaction
+ * (ADR-0028); it is spelled here so the callback is handed this face.
+ */
+function transactionFace(
+  base: StackContext<AccessControlledDB>,
+  lock: RowLockLane | undefined,
+): StackTransactionContext<AccessControlledDB> {
+  const face: StackTransactionContext<AccessControlledDB> = {
+    ...base,
+    advisoryLock: async (key: string): Promise<void> => {
+      if (lock === undefined) throw new RowLockUnavailableError('advisoryLock()')
+      await lock.advisory(key)
+    },
+    sudo: () => transactionFace(base.sudo(), lock),
+    withSession: (session) => transactionFace(base.withSession(session), lock),
+    transaction: <T>(
+      fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
+    ): Promise<T> => fn(face),
+  }
+  return face
+}
+
 // A database failure reaches the client as the stack's own message (ADR-0042),
 // so the driver's diagnostic text — carried on `cause` — reaches no channel at
 // all unless it is logged here. Deleting this closes the operator's only view
@@ -502,6 +535,16 @@ export function getContext<TConfig extends OpenSaasConfig>(
   const db: Record<string, unknown> = {}
 
   const openTransaction = transactionOpenerFor(config, client, _unsafeTransaction)
+
+  // Present only inside a transaction, which is what makes `forUpdate()`
+  // answerable there and a refusal everywhere else. The raw tag comes from the
+  // client because Prisma's transaction context carries none, and the executor
+  // from the transaction because the lock has to be the transaction's
+  // (ADR-0047, ADR-0062).
+  const lock: RowLockLane | undefined =
+    client === undefined || _unsafeTransaction === undefined
+      ? undefined
+      : createRowLockLane(client.raw, client.contract, _unsafeTransaction)
 
   const unsafe: UnsafeSurface =
     client === undefined
@@ -545,7 +588,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _transactionOpener: openTransaction,
   }
 
-  populateDbDelegate(db, config, ormHandle, context)
+  populateDbDelegate(db, config, ormHandle, context, lock)
 
   // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
   // any side effects they carry — run exactly once per top-level context.
@@ -936,10 +979,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // `transaction()` nested inside another joins the outer owner's queue
   // rather than creating a second one.
   function transaction<T>(
-    fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
+    fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
   ): Promise<T> {
     if (context._transactionOwner) {
-      return fn(returned)
+      return fn(transactionFace(returned, lock))
     }
 
     const registry = new TransactionRegistry()
@@ -951,24 +994,29 @@ export function getContext<TConfig extends OpenSaasConfig>(
   }
 
   function runTransactionBody<T>(
-    fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
+    fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
     registry: TransactionRegistry,
     ormClient: TransactionCapable,
   ): Promise<T> {
     const child = (
       ormHandle: OrmClient,
       unsafeTransaction?: UnsafeTransactionScope,
-    ): StackContext<AccessControlledDB> =>
-      getContext(
-        config,
-        ormHandle,
-        session,
-        context.storage,
-        _isSudo,
-        context.plugins,
-        registry,
-        client,
-        unsafeTransaction,
+    ): StackTransactionContext<AccessControlledDB> =>
+      transactionFace(
+        getContext(
+          config,
+          ormHandle,
+          session,
+          context.storage,
+          _isSudo,
+          context.plugins,
+          registry,
+          client,
+          unsafeTransaction,
+        ),
+        client === undefined || unsafeTransaction === undefined
+          ? undefined
+          : createRowLockLane(client.raw, client.contract, unsafeTransaction),
       )
 
     // Known limits: this branch hands `fn` a context whose `unsafe` is built
@@ -1057,6 +1105,8 @@ export function populateDbDelegate(
   config: OpenSaasConfig,
   ormHandle: OrmClient,
   context: AccessContext,
+  /** The row-lock lane, on a transaction-bound context alone (ADR-0047). */
+  lock?: RowLockLane,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const createOp = resolvingConstraints(
@@ -1087,7 +1137,7 @@ export function populateDbDelegate(
         config,
       )
     } else {
-      const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
+      const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
       operations.where = read.where
       operations.orderBy = read.orderBy
       operations.include = read.include
@@ -1097,6 +1147,7 @@ export function populateDbDelegate(
       operations.distinct = read.distinct
       operations.distinctOn = read.distinctOn
       operations.cursor = read.cursor
+      operations.forUpdate = read.forUpdate
       operations.all = read.all
       operations.first = read.first
       operations.nearest = read.nearest
