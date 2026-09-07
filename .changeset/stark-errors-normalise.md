@@ -29,6 +29,8 @@ Errors raised at `COMMIT` are normalised the same way, at the transaction owner'
 
 A `DatabaseError`'s message is always stack-authored; the driver's own text — which names columns, tables and constraint names — is on `cause`, for a server-side log rather than a browser. A failure the classification does not recognise carries `'The database refused this operation'`.
 
+`context.serverAction` — the surface the admin UI drives — logs that `cause` to the server console before returning the stack-authored message to the client, so a database failure stays diagnosable to the operator without the driver's text ever reaching the browser.
+
 An application's own error wins over the stack's. Catching a stack error and rethrowing your own with `{ cause }` reaches the caller as your error, not as the `UniqueConstraintViolation` underneath it.
 
 `context.unsafe` is deliberately excluded and still rejects with the driver's own error, consistent with its bypassing everything else.

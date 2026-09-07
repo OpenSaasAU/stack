@@ -166,10 +166,9 @@ CLAUDE.md keeps TSDoc only on "exported config options, field builders, and plug
  * The transaction takes the callback and nothing else, and runs at the
  * connection's default isolation level. Serialization failures reach the
  * caller as `SerializationFailure` rather than being swallowed, so the caller
- * can own a retry loop. If
- * the client cannot open an interactive transaction (e.g. a plain mock, or we
- * are already inside a transaction), `fn` runs directly against the current
- * client with identical hook/access semantics.
+ * can own a retry loop. If the client cannot open an interactive transaction
+ * (e.g. a plain mock, or we are already inside a transaction), `fn` runs
+ * directly against the current client with identical hook/access semantics.
  *
  * Caveat: plugin runtime services (`txContext.plugins`) stay bound to the
  * top-level (non-transaction) client — they are shared services initialised

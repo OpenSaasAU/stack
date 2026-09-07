@@ -536,6 +536,46 @@ describe('getContext', () => {
           error: 'The database refused this operation',
         })
       })
+
+      it('logs the driver text server-side while the client sees only the stack message', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const driverText =
+          'null value in column "status" of relation "Post" violates not-null constraint'
+        try {
+          const context = await getContext(
+            configWithPublishAction({
+              handler: async () => {
+                throw driverQueryError(driverText, { sqlState: '23502', constraint: undefined })
+              },
+            }),
+            mockPrisma,
+            { userId: 'u1' },
+          )
+
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'bulkAction',
+            key: 'publish',
+            ids: ['p1'],
+          })
+
+          expect(consoleError).toHaveBeenCalled()
+          const logged = consoleError.mock.calls.flat()
+          const cause = logged.find((arg): arg is Error => arg instanceof Error)
+          expect(cause?.message).toBe(driverText)
+
+          expect(result).toEqual({
+            bulkAction: false,
+            error: 'The database refused this operation',
+          })
+          if ('error' in result) {
+            expect(result.error).not.toContain('null value in column')
+            expect(result.error).not.toContain('not-null constraint')
+          }
+        } finally {
+          consoleError.mockRestore()
+        }
+      })
     })
 
     describe('updateRelated (relationship-table inline cell edit)', () => {

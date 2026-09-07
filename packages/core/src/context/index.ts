@@ -468,6 +468,15 @@ async function settleTransactionOwner<T>(
   return result
 }
 
+// A database failure reaches the client as the stack's own message (ADR-0042),
+// so the driver's diagnostic text — carried on `cause` — reaches no channel at
+// all unless it is logged here. Deleting this closes the operator's only view
+// of a production database failure.
+function logDatabaseFailure(error: unknown, listKey: string, action: string): void {
+  if (!(error instanceof DatabaseError)) return
+  console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
+}
+
 export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
   ormHandle: OrmClient,
@@ -641,11 +650,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { bulkAction: true, message: result?.message }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { bulkAction: false, error: error.message }
         }
         const dbError = databaseErrorMessage(error, config)
         // A normalised database error carries a user-safe, translated message.
         if (dbError instanceof DatabaseError) {
+          logDatabaseFailure(dbError, props.listKey, props.action)
           return { bulkAction: false, error: dbError.message }
         }
         // Anything else is an unexpected handler bug whose raw `.message` could
@@ -690,9 +701,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { removed: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { removed: false, error: error.message }
         }
         const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return { removed: false, error: dbError.message }
       }
     }
@@ -750,9 +763,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { created: true, id }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { created: false, error: error.message, fieldErrors: error.fieldErrors }
         }
         const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           created: false,
           error: dbError.message,
@@ -778,9 +793,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { updated: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
         }
         const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           updated: false,
           error: dbError.message,
@@ -847,6 +864,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
 
       if (error instanceof DatabaseError) {
+        logDatabaseFailure(error, props.listKey, props.action)
         return {
           success: false,
           error: error.message,
@@ -856,6 +874,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
       const dbError = databaseErrorMessage(error, config)
       if (dbError instanceof DatabaseError) {
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           success: false,
           error: dbError.message,
