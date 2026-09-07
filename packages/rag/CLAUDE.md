@@ -38,6 +38,7 @@ packages/rag/
 ### Fields (`@opensaas/stack-rag/fields`)
 
 - `embedding({ ... })` - Vector embedding field type
+- `searchable(field, { ... })` - Wraps a field so the list also carries its companion `embedding()`
 
 ### Providers (`@opensaas/stack-rag/providers`)
 
@@ -48,14 +49,17 @@ packages/rag/
 
 ### Runtime (`@opensaas/stack-rag/runtime`)
 
-- `generateEmbeddings(config, text, provider)` - Generate embeddings
+- `generateEmbedding({ provider, text, ... })` - One `StoredEmbedding`, or a `ChunkedEmbedding[]` under `enableChunking: true`
+- `generateEmbeddings({ provider, texts, ... })` - A `StoredEmbedding[]`, batched
 - `semanticSearch({ list, fieldName, query, provider, ... })` - Embed a query and rank through `nearest()`
 - `findSimilar({ list, fieldName, itemId, ... })` - Rank by an item's own embedding
-- `chunkText(text, strategy)` - Text chunking utilities
+- `chunkText(text, options)` - Text chunking utilities; `strategy` is one of `options`
 
 ### MCP (`@opensaas/stack-rag/mcp`)
 
-- Auto-generated semantic search tools for MCP server
+Semantic search tools are registered by `ragPlugin` itself, so nothing here is
+imported to get them. The module carries the types a custom tool needs:
+`SearchResult` and `SemanticSearchOptions`.
 
 ## Usage Patterns
 
@@ -166,11 +170,25 @@ fields: {
 
 ### Manual Embedding Storage (Low-Level)
 
+An embedding is a plugin output, so the field is write-denied to application
+code by default and a create or update naming it throws
+`Cannot create "contentEmbedding": field-level access denied.` A list that
+maintains its own vectors opts out on the field:
+
+```typescript
+fields: {
+  title: text(),
+  contentEmbedding: embedding({ dimensions: 1536, allowManualWrites: true }),
+}
+```
+
+No `sourceField` and no `autoGenerate`, so nothing regenerates the column behind
+you. Then the write is an ordinary one:
+
 ```typescript
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
-// Generate embeddings manually
 const provider = createEmbeddingProvider({
   type: 'openai',
   apiKey: process.env.OPENAI_API_KEY!,
@@ -178,7 +196,6 @@ const provider = createEmbeddingProvider({
 
 const vector = await provider.embed('Hello world')
 
-// Store manually
 const context = await getContext()
 await context.db.Article.create({
   data: {
@@ -195,6 +212,10 @@ await context.db.Article.create({
   },
 })
 ```
+
+The vector has to be exactly as wide as the field's `dimensions` — that is the
+column's type, and the field's own schema refuses a mismatch before the write
+reaches it.
 
 ### Semantic Search (Runtime)
 

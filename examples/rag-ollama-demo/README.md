@@ -300,9 +300,10 @@ needs a Postgres with the `vector` extension available.
 ### Provisioning pgvector
 
 You do not enable the extension yourself, and there is no install script.
-`ragPlugin` declares the pgvector extension pack, `pnpm generate` writes the
-extension's own migration alongside the app's, and `pnpm dev` (or
-`pnpm db:update`) enables it.
+`ragPlugin` declares the pgvector extension pack, `pnpm generate` seeds that
+pack's contract space under `migrations/` — it writes no app migration of its
+own — and `pnpm dev` enables the extension when it reconciles. `pnpm dev` has to
+be running for `pnpm db:update` to have anything to talk to.
 
 Leave `DATABASE_URL` unset and the Dev database `pnpm dev` starts carries
 pgvector already. Pointing at a Postgres of your own adds two requirements:

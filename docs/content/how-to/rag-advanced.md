@@ -439,8 +439,25 @@ content: searchable(text(), {
 
 #### Manual Chunking for Custom Workflows
 
+A chunk row's vector is written by your code rather than by the plugin, so the
+field has to say so. Without `allowManualWrites`, `embedding()` denies writes and
+the create below throws `Cannot create "embedding": field-level access denied.`:
+
 ```typescript
-import { chunkText, generateEmbedding } from '@opensaas/stack-rag/runtime'
+DocumentChunk: list({
+  fields: {
+    document: relationship({ ref: 'Document' }),
+    chunkIndex: integer(),
+    content: text(),
+    embedding: embedding({ dimensions: 1536, allowManualWrites: true }),
+    startOffset: integer(),
+    endOffset: integer(),
+  },
+}),
+```
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const provider = createEmbeddingProvider({

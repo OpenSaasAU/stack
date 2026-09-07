@@ -79,14 +79,18 @@ sudo systemctl restart postgresql
 ### Enabling it
 
 You do not run any SQL for this, and there is no install script. `ragPlugin`'s
-declaration is a generator emission: `pnpm generate` writes the extension's own
-migration under `migrations/pgvector/`, alongside your app's, and the migration
-enables the extension ahead of your tables.
+declaration is a generator emission: `pnpm generate` seeds the pack's contract
+space under `migrations/pgvector/` — it writes no app migration of its own — and
+that space enables the extension ahead of your tables.
 
 ```bash
 pnpm generate
 pnpm db:update
 ```
+
+`opensaas db update` opens no connection of its own: it hands the request to a
+running `opensaas dev` loop and exits non-zero when none is listening. Keep
+`pnpm dev` up in another terminal for the command above.
 
 In production the same committed migration runs under `opensaas db migrate`.
 

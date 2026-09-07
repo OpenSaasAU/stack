@@ -70,9 +70,10 @@ createdb rag_chatbot
 ```
 
 You do **not** enable the extension yourself, and there is no install script to
-run. `ragPlugin` declares the pgvector extension pack, `pnpm generate` writes
-the extension's own migration alongside the app's, and `pnpm dev` (or
-`pnpm db:update`) enables it.
+run. `ragPlugin` declares the pgvector extension pack, `pnpm generate` seeds
+that pack's contract space under `migrations/` — it writes no app migration of
+its own — and `pnpm dev` enables the extension when it reconciles. `pnpm dev`
+has to be running for `pnpm db:update` to have anything to talk to.
 
 pgvector is not a trusted extension, so the role in your `DATABASE_URL` needs
 superuser or a provider grant to enable it. If it has neither, have someone who
@@ -325,9 +326,10 @@ export default config({
 
 ### Emitted columns
 
-`pnpm generate` emits the app's contract and the migrations that reconcile it,
-so `KnowledgeBase` carries `id`, `title`, `content`, `category`, `published` and
-the timestamps, plus two columns for the one `contentEmbedding` field:
+`pnpm generate` emits the app's contract — the schema the app's own migration is
+later planned from — so `KnowledgeBase` carries `id`, `title`, `content`,
+`category`, `published` and the timestamps, plus two columns for the one
+`contentEmbedding` field:
 
 | Column                     | Type           |
 | -------------------------- | -------------- |
