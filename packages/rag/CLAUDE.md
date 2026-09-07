@@ -283,8 +283,11 @@ AI assistants can then use:
 
 ### Automatic Embedding Generation
 
-`ragPlugin()` extends every list holding an `embedding()` field that declares a
-`sourceField` and `autoGenerate` with a **list-level `afterTransaction` hook**.
+`ragPlugin()` extends every list holding an `embedding()` field with
+`autoGenerate` set with a **list-level `afterTransaction` hook**. `autoGenerate`
+alone is the gate: a field carrying it but no `sourceField` is a config error,
+not a quiet skip — `pnpm generate` throws
+`RAG plugin: Field "<List>.<field>" has autoGenerate enabled but no sourceField specified`.
 The config below is the whole of what an app author writes:
 
 ```typescript
@@ -402,8 +405,11 @@ registerEmbeddingProvider('custom', (config) => {
 ## Provisioning pgvector
 
 `ragPlugin` declares the pgvector extension pack, so the extension's own
-migration is a generator emission (ADR-0065) and `pnpm db:update` enables the
-extension. No DDL here is hand-written and there is no install script.
+migration is a generator emission: `pnpm generate` seeds it under
+`migrations/pgvector/` (ADR-0065). Applying the contract is what enables the
+extension — the dev loop locally, `prisma db migrate` in a deployment (see
+"Applying the change" below). No DDL here is hand-written and there is no
+install script.
 
 What the deployment owns is provisioning:
 
@@ -537,23 +543,62 @@ describe('OpenAIEmbeddingProvider', () => {
 2. Install provider: `pnpm add openai` (for OpenAI)
 3. Add `ragPlugin()` to your config's `plugins` array
 4. Add `embedding()` fields to lists
-5. Run `pnpm generate` and `pnpm db:update` — the latter enables pgvector, which
-   needs the extension available on the server and the create privilege (see
-   "Provisioning pgvector" above)
+5. Apply the schema change. Which command that is depends on where the database
+   is — see "Applying the change" below
 6. Embeddings are generated from the source text on create and update
+
+### Applying the change
+
+`opensaas db update` (`pnpm db:update`) is **not** a standalone migrate command.
+It opens no connection of its own: it hands the request to a **running
+`opensaas dev` loop** over that loop's control channel, and exits non-zero with
+`NoDevLoopError` when none is listening (`packages/cli/src/commands/db.ts`). So
+the route differs by where you are.
+
+**Locally, the loop applies it.** Run `pnpm dev`. It generates and reconciles on
+boot, and again on every save of `opensaas.config.ts`
+(`packages/cli/src/commands/dev.ts`). Which database it reconciles is one rule:
+`DATABASE_URL` set means no Dev database starts and the loop uses the one you
+named — which is the route to an existing app's own Postgres. Leave it unset and
+you get the Dev database the loop starts for you. `pnpm db:update` is for the one
+case the loop declines to decide by itself, below.
+
+**In a deployment there is no loop, so `db:update` has nothing to talk to.** Plan
+the migration once against a database you are willing to open a planning
+connection to, commit the result, then apply it: `prisma migration plan`, then
+`prisma db migrate`. The starter templates wire these as `pnpm migrate` and
+`pnpm migrate:deploy`; the RAG examples carry no such script, so run the Prisma
+commands. See [Deploy](https://stack.opensaas.au/docs/how-to/deploy).
+
+Either route runs the pgvector space's `CREATE EXTENSION IF NOT EXISTS`, which
+needs the extension available on the server and the create privilege (see
+"Provisioning pgvector" above).
 
 ### Changing a field's dimension
 
-The dimension is the column's type, so changing it is a migration:
+The dimension is the column's type, so changing it retypes the column and a
+stored vector of the old width does not survive. That makes it a **destructive
+plan**, and the dev loop will not apply one unasked: on save it prints the plan,
+leaves the database and the running app on the old schema, and tells you to
+consent from a second terminal (`packages/cli/src/commands/dev.ts`). With the
+loop still running:
 
 ```bash
-pnpm generate
-pnpm db:update
+pnpm db:update --confirm postgres
 ```
 
-A stored vector of the old width does not survive it. Re-save each row's source
-field so the plugin regenerates the embedding — there is no re-embedding
-command (#1271).
+The token is the name of the database being changed — that is what Prisma asks
+for before it destroys data, and the Dev database's name is `postgres`. The loop
+stages its own generation, so there is no separate `pnpm generate` step. In a
+deployment, apply it as a migration instead (see "Applying the change" above).
+
+Every affected row is then left with a null embedding. There is no re-embedding
+command (#1271); what regenerates one is re-saving the row's source field, which
+works because a null vector reads back as no stored embedding at all, so the
+`sourceHash` gate has nothing to match and does not short-circuit. **On the
+`prisma-8` branch that re-save regenerates nothing** — the plugin's sudo write is
+inert until #1124/#1127 land (see "Known limits" above) — so the column stays
+null regardless.
 
 ### Coming from an app whose embeddings were JSON
 
