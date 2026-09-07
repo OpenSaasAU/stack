@@ -42,10 +42,20 @@ non-owning half of a one-to-one — is not writable through the surfaces that
 carry a payload for a single row, so neither surface offers it any more:
 
 - The admin item form renders it read-only, stating that the related record
-  holds the link, instead of a picker whose selection had nowhere to go.
+  holds the link, instead of a picker whose selection had nowhere to go. An
+  item form ignores a change for any field it rendered read-only, so a field
+  component that does not honour the read mode it is handed cannot stage a
+  value the submit transform would then have to drop.
+- The standalone `ItemCreateForm` / `ItemEditForm` take optional `listKey` and
+  `config` props. Given both, they mark the non-owning half of a one-to-one
+  the same way — a field config alone cannot answer which end holds the
+  column, so without them that end still renders a picker whose selection the
+  engine refuses at save.
 - The MCP create/update tools omit it from the advertised `data` properties,
   so a client cannot spell a call that could only fail.
 
 On the end that does hold the column, the MCP schema now advertises `null`
 alongside `connect`, so both spellings of an edge the engine accepts are
-describable through the tool surface.
+describable through the tool surface — and only those: the object form
+requires `connect`, requires `id` within it, and admits no other key, matching
+what the engine lowers rather than leaving the difference to prose.

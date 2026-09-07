@@ -1,9 +1,8 @@
 import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
-import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import {
+  markUnwritableRelationships,
   serializeFieldConfigs,
-  UNWRITABLE_RELATIONSHIP_REASON,
   type SerializableFieldConfig,
 } from './serializeFieldConfig.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
@@ -53,37 +52,6 @@ export function buildRelationshipInclude(
 }
 
 /**
- * Mark every relationship whose foreign key lives on the related row, so no
- * editable control renders for it.
- *
- * `serializeFieldConfig` already catches the to-many case from the field alone.
- * The other case — the non-owning end of a one-to-one, where both ends are
- * `many: false` and only one holds the column — is not visible in the field
- * config, and needs the whole config to answer (ADR-0064).
- */
-function markUnwritableRelationships(
-  serializableFields: Record<string, SerializableFieldConfig>,
-  listKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
-  listConfig: ListConfig<any>,
-  config: OpenSaasConfig,
-): void {
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(fieldConfig)) continue
-    const serialized = serializableFields[fieldName]
-    if (!serialized || serialized.readOnly) continue
-    // `shouldHaveForeignKey` throws on a ref naming a list the config does not
-    // declare. `validateRelations` refuses that at `generate`, so reaching it
-    // here means an unvalidated config — leave the field alone rather than
-    // failing the whole page render.
-    if (!config.lists[fieldConfig.ref.split('.')[0]]) continue
-    if (shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)) continue
-    serialized.readOnly = true
-    serialized.readOnlyReason = UNWRITABLE_RELATIONSHIP_REASON
-  }
-}
-
-/**
  * Prepare the serializable props for `ItemFormClient` from an already-fetched
  * record (or an empty object for create).
  *
@@ -130,7 +98,7 @@ export async function prepareItemForm(
   }
 
   const serializableFields = serializeFieldConfigs(listConfig.fields)
-  markUnwritableRelationships(serializableFields, listKey, listConfig, config)
+  markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {

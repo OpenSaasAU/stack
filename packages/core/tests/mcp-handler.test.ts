@@ -1500,4 +1500,66 @@ describe('MCP relationship input schemas', () => {
 
     expect(Object.keys(properties)).toEqual(['name'])
   })
+
+  it('admits no object shape the engine would refuse', async () => {
+    // `{}` and `{ disconnect: … }` are the two shapes a client would otherwise
+    // read as valid and the engine then refuses. The schema says so itself
+    // rather than leaving it to the prose description.
+    const properties = await createToolProperties('list_profile_create')
+
+    expect(properties.user).toMatchObject({
+      required: ['connect'],
+      additionalProperties: false,
+      properties: {
+        connect: { required: ['id'], additionalProperties: false },
+      },
+    })
+  })
+
+  it('lists tools for a config whose relationship ownership cannot be decided', async () => {
+    // Both shapes `shouldHaveForeignKey` throws on. `generate` refuses this
+    // config, so it is only reachable unvalidated — and `tools/list` covers
+    // every list at once, so one bad field must not fail the whole listing.
+    const undecidable: OpenSaasConfig = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      mcp: { enabled: true, basePath: '/api/mcp' },
+      lists: {
+        Left: {
+          fields: {
+            name: { type: 'text' },
+            ghost: { type: 'relationship', ref: 'Nowhere.left' },
+            right: { type: 'relationship', ref: 'Right.left', db: { foreignKey: true } },
+          },
+          access: OPEN,
+        },
+        Right: {
+          fields: {
+            left: { type: 'relationship', ref: 'Left.right', db: { foreignKey: true } },
+          },
+          access: OPEN,
+        },
+      },
+    }
+
+    const handlers = createMcpHandlers({
+      config: undecidable,
+      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getContext: () => ({ db: {}, session: { userId: 'user-123' } }) as unknown as AccessContext,
+    })
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    )
+    const data = await response.json()
+
+    expect(data.error).toBeUndefined()
+    const create = data.result.tools.find(
+      (entry: { name: string }) => entry.name === 'list_left_create',
+    )
+    // The undecidable fields are simply not advertised; the rest of the list is.
+    expect(Object.keys(create.inputSchema.properties.data.properties)).toEqual(['name'])
+  })
 })

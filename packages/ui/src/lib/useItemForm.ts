@@ -215,6 +215,15 @@ export function useItemForm({
   const [generalError, setGeneralError] = useState<string | null>(null)
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
+    // A field the form rendered read-only has no input to accept: its control
+    // was handed `mode="read"`. A third-party component that ignores that and
+    // calls this anyway would otherwise put a value into `formData` that the
+    // submit transform then has to drop — a selection shown as accepted and
+    // discarded at save, which is the failure ADR-0050's marking exists to
+    // stop. Refusing it here keeps the control showing the stored value.
+    const fieldConfig = fields[fieldName]
+    if (fieldConfig?.readOnly || fieldConfig?.virtual) return
+
     setFormData((prev) => ({ ...prev, [fieldName]: value }))
     if (errors[fieldName]) {
       setErrors((prev) => {

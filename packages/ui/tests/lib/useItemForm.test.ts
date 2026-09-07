@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import {
   transformItemFormData,
   transformInitialData,
   getEditableFields,
   UnwritableRelationshipError,
+  useItemForm,
 } from '../../src/lib/useItemForm.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
 
@@ -161,5 +163,68 @@ describe('getEditableFields', () => {
     const fields = { title: text(), tags: readOnlyManyRel() }
     expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title', 'tags'])
     expect(getEditableFields(fields, 'update').map(([k]) => k)).toEqual(['title', 'tags'])
+  })
+})
+
+/**
+ * The framework hands a read-only field's control `mode="read"`, but nothing
+ * makes a third-party component honour it (`ui.component`,
+ * `registerFieldComponent`). One that calls `onChange` anyway must not be able
+ * to put a value into `formData` that the submit transform then drops: that is
+ * a selection shown as accepted and discarded at save, reported as success —
+ * the exact failure the read-only marking exists to stop.
+ */
+describe('useItemForm handleFieldChange', () => {
+  const submitted: Array<Record<string, unknown>> = []
+  const onSubmit = async (data: Record<string, unknown>) => {
+    submitted.push(data)
+    return { success: true } as const
+  }
+
+  it('ignores a change for a read-only field, so a rogue control cannot stage a lost value', async () => {
+    submitted.length = 0
+    const fields = { title: text(), tags: readOnlyManyRel() }
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData: { tags: ['stored'] }, mode: 'update', onSubmit }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+      result.current.handleFieldChange('tags', ['a', 'b'])
+    })
+
+    // The control still shows what the server sent — the selection was refused
+    // on screen, not accepted and dropped later.
+    expect(result.current.formData).toEqual({ title: 'Hi', tags: ['stored'] })
+
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(submitted).toEqual([{ title: 'Hi' }])
+  })
+
+  it('ignores a change for a virtual field', () => {
+    const fields = { title: text(), fullName: virtual() }
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData: { fullName: 'Ada Lovelace' }, mode: 'update', onSubmit }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('fullName', 'Grace Hopper')
+    })
+
+    expect(result.current.formData).toEqual({ fullName: 'Ada Lovelace' })
+  })
+
+  it('accepts a change for a writable field', () => {
+    const fields = { title: text(), author: singleRel() }
+    const { result } = renderHook(() => useItemForm({ fields, mode: 'create', onSubmit }))
+
+    act(() => {
+      result.current.handleFieldChange('author', 'u1')
+    })
+
+    expect(result.current.formData).toEqual({ author: 'u1' })
   })
 })

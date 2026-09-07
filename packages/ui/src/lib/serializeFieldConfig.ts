@@ -1,5 +1,6 @@
-import type { FieldConfig } from '@opensaas/stack-core'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { SelectOption } from '@opensaas/stack-core/fields'
+import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 
@@ -56,9 +57,7 @@ export type SerializableFieldConfig = {
 
 /**
  * Shown beneath a relationship an item form cannot write, in place of the
- * picker it would otherwise render. Exported so `prepareItemForm` marks the
- * non-owning end of a one-to-one — which needs the whole config to recognise —
- * with the same wording this module applies to a to-many.
+ * picker it would otherwise render.
  */
 export const UNWRITABLE_RELATIONSHIP_REASON =
   'Not editable here — the related record holds this link. Edit it from the other list.'
@@ -106,7 +105,8 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   // collected here has no column to land in and the engine refuses it
   // (ADR-0050). Marking it read-only is what stops the form offering an edit it
   // would then have to discard. The non-owning end of a one-to-one is the same
-  // case but needs the whole config to recognise — `prepareItemForm` adds it.
+  // case but needs the whole config to recognise — see
+  // {@link markUnwritableRelationships}.
   if (config.type === 'relationship' && config.many === true) {
     config.readOnly = true
     config.readOnlyReason = UNWRITABLE_RELATIONSHIP_REASON
@@ -126,4 +126,36 @@ export function serializeFieldConfigs(
   }
 
   return serialized
+}
+
+/**
+ * Mark every relationship whose foreign key lives on the related row, so no
+ * editable control renders for it.
+ *
+ * {@link serializeFieldConfig} already catches the to-many case from the field
+ * alone. The other case — the non-owning end of a one-to-one, where both ends
+ * are `many: false` and only one holds the column — is not visible in the
+ * field config and needs the whole config to answer (ADR-0064).
+ *
+ * Mutates `serializableFields` in place.
+ */
+export function markUnwritableRelationships(
+  serializableFields: Record<string, SerializableFieldConfig>,
+  listKey: string,
+  fields: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
+): void {
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    if (!isRelationshipField(fieldConfig)) continue
+    const serialized = serializableFields[fieldName]
+    if (!serialized || serialized.readOnly) continue
+    // `shouldHaveForeignKey` throws on a ref naming a list the config does not
+    // declare. `validateRelations` refuses that at `generate`, so reaching it
+    // here means an unvalidated config — leave the field alone rather than
+    // failing the whole page render.
+    if (!config.lists[fieldConfig.ref.split('.')[0]]) continue
+    if (shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)) continue
+    serialized.readOnly = true
+    serialized.readOnlyReason = UNWRITABLE_RELATIONSHIP_REASON
+  }
 }
