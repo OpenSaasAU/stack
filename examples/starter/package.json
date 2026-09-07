@@ -10,8 +10,7 @@
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
     "migrate": "prisma migration plan",
-    "migrate:deploy": "prisma db migrate",
-    "db:studio": "prisma studio"
+    "migrate:deploy": "prisma db migrate"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",

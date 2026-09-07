@@ -93,7 +93,6 @@ plan is printed and the app keeps serving until you run `pnpm db:update`.
 - `pnpm start` - Start production server
 - `pnpm generate` - Generate Prisma schema and types
 - `pnpm db:update` - Apply a staged schema change through the running dev loop
-- `pnpm db:studio` - Open Prisma Studio
 - `pnpm clean` - Remove build artifacts
 
 ## Using Your Own Postgres

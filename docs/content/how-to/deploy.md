@@ -378,14 +378,12 @@ vercel --prod
 
 ### Verify Database Setup
 
-Inspect your database with Prisma Studio (uses the direct connection via `prisma.config.ts`):
+Prisma 8 ships no Studio. Inspect the deployed database with any Postgres client
+pointed at the direct connection string:
 
 ```bash
-# DIRECT_DATABASE_URL set in your environment
-pnpm db:studio
+psql "$DIRECT_DATABASE_URL"
 ```
-
-Open [http://localhost:5555](http://localhost:5555) to view your production database.
 
 ## Step 7: Verify Deployment
 

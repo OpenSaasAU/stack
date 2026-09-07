@@ -8,8 +8,7 @@
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start -p 3003",
     "generate": "opensaas generate",
-    "db:update": "opensaas db update",
-    "db:studio": "prisma studio"
+    "db:update": "opensaas db update"
   },
   "dependencies": {
     "@opensaas/stack-auth": "workspace:*",

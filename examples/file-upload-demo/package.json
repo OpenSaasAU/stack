@@ -8,8 +8,7 @@
     "build": "pnpm generate && next build",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:update": "opensaas db update",
-    "db:studio": "prisma studio"
+    "db:update": "opensaas db update"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",

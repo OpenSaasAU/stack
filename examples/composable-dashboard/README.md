@@ -111,10 +111,11 @@ With `pnpm dev` running in another terminal:
 npx tsx seed.ts
 ```
 
-Or manually using Prisma Studio:
+Or by hand, with any Postgres client pointed at the connection string `pnpm dev`
+prints on startup:
 
 ```bash
-pnpm db:studio
+psql "$DATABASE_URL"
 ```
 
 Create a few users and posts to see the dashboard in action.
