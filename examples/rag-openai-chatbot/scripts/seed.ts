@@ -52,7 +52,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack RAG Integration',
-    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. The searchable() field wrapper automatically creates embedding fields and hooks for regeneration on content changes. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings. Storage backends include pgvector for PostgreSQL, sqlite-vss for SQLite, and JSON storage for development. The package provides runtime utilities like semanticSearch(), generateEmbedding(), and chunkText(). Embeddings are stored as JSON with metadata including model, provider, dimensions, and source hash for change detection.`,
+    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. The searchable() field wrapper automatically creates embedding fields and hooks for regeneration on content changes. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings. Embeddings are stored in a native pgvector column, with their metadata in a jsonb column beside it, and search runs through nearest() on the secured read surface so the ranking and the access filter live in the same query. The package provides runtime utilities like semanticSearch(), generateEmbedding(), and chunkText(). The stored metadata includes model, provider, dimensions, and a source hash for change detection.`,
     category: 'database',
     published: true,
   },
@@ -121,7 +121,7 @@ async function seed() {
 
   try {
     // Check if articles already exist
-    const existing = await context.db.knowledgeBase.count()
+    const existing = await context.db.KnowledgeBase.count()
 
     if (existing > 0) {
       console.log(`⚠️  Database already contains ${existing} article(s). Skipping seed.`)
@@ -134,7 +134,7 @@ async function seed() {
     let created = 0
     for (const article of sampleArticles) {
       try {
-        await context.db.knowledgeBase.create({
+        await context.db.KnowledgeBase.create({
           data: article,
         })
         created++

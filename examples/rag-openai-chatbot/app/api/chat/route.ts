@@ -24,7 +24,8 @@ export async function POST(req: Request) {
     try {
       searchResults = await searchKnowledge(userQuery, {
         limit: 3,
-        minScore: 0.6,
+        // Raw cosine, not a normalised 0-1 score: 0.25 is a loose floor.
+        minScore: 0.25,
       })
     } catch (error) {
       console.error('Semantic search error:', error)
