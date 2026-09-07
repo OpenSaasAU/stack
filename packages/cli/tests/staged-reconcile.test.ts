@@ -189,13 +189,26 @@ async function waitForState(
   )
 }
 
-async function waitForOutput(loop: Loop, needle: string, timeoutMs = 120_000): Promise<void> {
+/**
+ * `loop.output()` is append-only, so a length taken before an edit is a stable
+ * offset into it afterwards. Pass that length as `from` to wait for output the
+ * edit *caused*: without it a needle the loop had already printed satisfies the
+ * wait immediately, and the caller proceeds while the run it meant to wait for
+ * has not started.
+ */
+async function waitForOutput(
+  loop: Loop,
+  needle: string,
+  { from = 0, timeoutMs = 120_000 }: { from?: number; timeoutMs?: number } = {},
+): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (loop.output().includes(needle)) return
+    if (loop.output().indexOf(needle, from) !== -1) return
     await wait(500)
   }
-  throw new Error(`Timed out waiting for "${needle}" in the loop's output:\n\n${loop.output()}`)
+  throw new Error(
+    `Timed out waiting for "${needle}" at or after offset ${from} in the loop's output:\n\n${loop.output()}`,
+  )
 }
 
 function writeConfig(projectDir: string, extraField: string): void {
@@ -228,6 +241,7 @@ describe('staged reconcile under opensaas dev', () => {
     expect(booted.columns).toContain('title')
     expect(booted.columns).not.toContain('note')
 
+    const beforeAdditiveEdit = loop.output().length
     writeConfig(projectDir, '\n        note: text(),')
 
     const promoted = await waitForState(
@@ -237,6 +251,16 @@ describe('staged reconcile under opensaas dev', () => {
       'the additive edit to go live',
     )
     expect(promoted.pid, 'an additive promote must not restart the app').toBe(booted.pid)
+
+    // A promotion moves a set of files and the filesystem offers no multi-file
+    // commit, so the app answering with the new contract only means the file
+    // it reads has landed — the root config is promoted after it. The loop's
+    // own line is the one signal emitted once the whole set is in place, so
+    // the stamp below waits for that rather than for the app. `from` keeps it
+    // an ordering guarantee: only a line printed after the edit above counts.
+    await waitForOutput(loop, 'Database updated and the new contract promoted.', {
+      from: beforeAdditiveEdit,
+    })
 
     // Stamped so the next assertion can tell "left alone" from "rewritten
     // with the same bytes": the root config is contract-derived, and a change
