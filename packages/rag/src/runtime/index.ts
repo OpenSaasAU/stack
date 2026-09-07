@@ -22,6 +22,7 @@ export {
 export {
   semanticSearch,
   findSimilar,
+  type SearchableList,
   type SemanticSearchOptions,
   type FindSimilarOptions,
 } from './search.js'

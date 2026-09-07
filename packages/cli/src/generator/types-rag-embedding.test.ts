@@ -1,0 +1,193 @@
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { config as defineConfig, validateConfigFields } from '@opensaas/stack-core'
+import type { FieldConfigValidationError, OpenSaasConfig } from '@opensaas/stack-core'
+import { executeBeforeGenerateHooks } from '@opensaas/stack-core/config/plugin-engine'
+import { text } from '@opensaas/stack-core/fields'
+import { ragPlugin } from '@opensaas/stack-rag'
+import { embedding } from '@opensaas/stack-rag/fields'
+import {
+  CONSUMER_PRELUDE,
+  emitTypeFixture,
+  type TypeFixture,
+} from '../../tests/emit-type-fixture.js'
+
+/**
+ * `nearest()` over the real `embedding()`, on the surface a generated project
+ * gets.
+ *
+ * `types-read-terminals.test.ts` declares its own single-column `kind: 'column'`
+ * stub so its fixture owns no plugin. The shipped field is a two-column
+ * `kind: 'columns'` descriptor contributed by `ragPlugin`, and #1253's defect
+ * class — an API documented on core's untyped `SecuredQuery` that was `TS2339`
+ * from a generated project — is only closed for it by compiling against
+ * `./.opensaas/types.ts` emitted from that field.
+ */
+const source: OpenSaasConfig = {
+  db: { provider: 'postgresql', timestamps: true },
+  plugins: [ragPlugin({ provider: { type: 'openai', apiKey: 'test-key' } })],
+  lists: {
+    Article: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions: 1536 }),
+      },
+    },
+  },
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** The emitted contract's `Article` model, from `domain.namespaces.public.models`. */
+function emittedArticle(json: string): Record<string, unknown> {
+  let node: unknown = JSON.parse(json)
+  for (const key of ['domain', 'namespaces', 'public', 'models', 'Article']) {
+    if (!isRecord(node)) throw new Error(`the emitted contract has no "${key}" under it`)
+    node = node[key]
+  }
+  if (!isRecord(node)) throw new Error('the emitted contract has no Article model')
+  return node
+}
+
+describe('nearest() over a plugin-injected embedding column', () => {
+  let fixture: TypeFixture
+  let fieldErrors: FieldConfigValidationError[]
+
+  beforeAll(async () => {
+    // The order `pnpm generate` runs in: the plugins' beforeGenerate hooks,
+    // then core's field self-containment gate, then the contract.
+    const generated = await executeBeforeGenerateHooks(await defineConfig(source))
+    fieldErrors = validateConfigFields(generated)
+    fixture = await emitTypeFixture('rag-embedding', generated)
+  }, 300_000)
+
+  afterAll(() => {
+    fixture?.cleanup()
+  })
+
+  it('passes the self-containment gate, which runs before the contract is read', () => {
+    expect(fieldErrors).toEqual([])
+  })
+
+  it('emits a vector column and a jsonb column beside it, and no Json', () => {
+    const emitted = readFileSync(join(fixture.projectDir, 'prisma', 'contract.json'), 'utf-8')
+    const fields: unknown = Reflect.get(emittedArticle(emitted), 'fields')
+    if (!isRecord(fields)) throw new Error('the emitted Article carries no fields')
+
+    expect(fields.contentEmbedding).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/vector@1', kind: 'scalar', typeParams: { length: 1536 } },
+    })
+    expect(fields.contentEmbeddingMetadata).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/jsonb@1', kind: 'scalar' },
+    })
+
+    // `getPrismaType`'s `Json?` was a declaration nothing consumed and nothing
+    // could have consumed: the field is two columns of different types.
+    expect(emitted).not.toContain('Json')
+  })
+
+  it('compiles nearest() against the emitted contract', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+declare const queryVector: number[]
+
+async function run() {
+  const hits = await context.db.Article.where({ title: { contains: 'pg' } }).nearest(
+    'contentEmbedding',
+    queryVector,
+    { limit: 5, minScore: 0.8 },
+  )
+
+  for (const { item, score } of hits) {
+    console.log(item.title, score)
+  }
+
+  assertType<Exact<(typeof hits)[number]['score'], number>>()
+
+  // @ts-expect-error the metadata column is not a vector column of this list
+  await context.db.Article.nearest('contentEmbeddingMetadata', queryVector)
+
+  // @ts-expect-error \`content\` is a text column, not a vector one
+  await context.db.Article.nearest('content', queryVector)
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  /**
+   * The search helpers' own seam. `semanticSearch()` typed its list as core's
+   * `SecuredQuery`, which a generated `ArticleList` is not assignable to —
+   * every documented call was `TS2322` for an app author, and the rag suite
+   * missed it by passing the engine's untyped delegate. Only a generated list
+   * reaching the real parameter closes this.
+   */
+  it('compiles the search helpers against a generated list', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+import { semanticSearch, findSimilar } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
+declare const context: Context
+declare const provider: EmbeddingProvider
+
+async function run() {
+  const hits = await semanticSearch({
+    list: context.db.Article,
+    fieldName: 'contentEmbedding',
+    query: 'articles about machine learning',
+    provider,
+    limit: 10,
+    minScore: 0.25,
+  })
+
+  const similar = await findSimilar({
+    list: context.db.Article,
+    fieldName: 'contentEmbedding',
+    itemId: 'article-123',
+    limit: 5,
+  })
+
+  // The row type reaches the caller off the list it passed, rather than
+  // degrading to the \`Record<string, unknown>\` default.
+  assertType<Exact<(typeof hits)[number]['score'], number>>()
+  assertType<Exact<(typeof hits)[number]['item']['title'], string>>()
+  assertType<Exact<(typeof similar)[number]['item']['content'], string | null>>()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('reads the embedding back as the value the field declares', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+import type { StoredEmbedding } from '@opensaas/stack-rag'
+
+declare const context: Context
+
+async function run() {
+  const article = await context.db.Article.where({}).first()
+  if (article === null) return
+
+  assertType<Exact<typeof article.contentEmbedding, StoredEmbedding | null>>()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+})

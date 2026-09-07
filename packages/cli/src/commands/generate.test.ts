@@ -300,9 +300,11 @@ describe('Generate Command Integration', () => {
     })
 
     it('reports a non-compliant field with a friendly message instead of a stack trace', () => {
-      // Simulate a misimplemented (e.g. third-party) field missing getPrismaType.
+      // Simulate a misimplemented (e.g. third-party) field that describes its
+      // storage neither in PSL nor to the contract.
       const brokenField = text()
       delete brokenField.getPrismaType
+      delete brokenField.getContractField
 
       const config: OpenSaasConfig = {
         db: {
@@ -340,6 +342,7 @@ describe('Generate Command Integration', () => {
     it('aggregates multiple non-compliant fields across lists into one message', () => {
       const noPrisma = text()
       delete noPrisma.getPrismaType
+      delete noPrisma.getContractField
       const noZod = text()
       delete noZod.getZodSchema
 

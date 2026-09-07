@@ -604,3 +604,76 @@ describe('a nested write in a payload is refused', () => {
     BOOT,
   )
 })
+
+/**
+ * The other path that throws a `ValidationError` naming a field: the
+ * field-level write gate. #568 made it throw for a multi-column field in
+ * `splitMultiColumnFields` too, so both now run inside the transaction body —
+ * strictly after the operation gate has already answered `null`. A denied
+ * caller must not learn from an error which fields this list declares
+ * (ADR-0031).
+ */
+describe('a field-level refusal never outranks the operation gate', () => {
+  let harness: TestContext
+
+  const fieldDeniedConfig = (create: () => boolean): OpenSaasConfig => ({
+    db: { provider: 'postgresql', timestamps: true },
+    lists: {
+      Post: {
+        fields: {
+          title: text(),
+          secret: text({ access: { create: () => false, update: () => false } }),
+        },
+        access: { operation: { ...OPEN, create } },
+      },
+    },
+  })
+
+  beforeAll(async () => {
+    harness = await createTestContext(
+      fieldDeniedConfig(() => true),
+      { userId: 'u1' },
+    )
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+  })
+
+  test(
+    'the field refusal throws for a caller the operation gate admits',
+    async () => {
+      await expect(
+        harness.context.db.Post.create({ data: { title: 't', secret: 's' } }),
+      ).rejects.toThrow('Cannot create "secret": field-level access denied.')
+
+      expect(await storedTitles(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'the same payload from an operation-denied caller returns null, naming nothing',
+    async () => {
+      const orm = ormClientFor(harness.data, harness.client.orm)
+      const denied = getContext(
+        fieldDeniedConfig(() => false),
+        orm,
+        { userId: 'u1' },
+        undefined,
+        false,
+        undefined,
+        undefined,
+        harness.client,
+      )
+
+      expect(await denied.db.Post.create({ data: { title: 't', secret: 's' } })).toBeNull()
+      expect(await storedTitles(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+})

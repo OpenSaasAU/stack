@@ -1,5 +1,9 @@
 import type { EmbeddingProvider } from './types.js'
-import type { EmbeddingProviderConfig } from '../config/types.js'
+import type {
+  EmbeddingProviderConfig,
+  OllamaEmbeddingConfig,
+  OpenAIEmbeddingConfig,
+} from '../config/types.js'
 import { createOpenAIProvider } from './openai.js'
 import { createOllamaProvider } from './ollama.js'
 
@@ -36,6 +40,23 @@ export function registerEmbeddingProvider(
 }
 
 /**
+ * The config a literal naming a built-in provider must satisfy, whatever else
+ * it declares.
+ *
+ * `EmbeddingProviderConfig`'s third member is `CustomEmbeddingConfig`, an open
+ * `{ type: string }`, so `{ type: 'ollama', model }` is assignable to the union
+ * through it even though `OllamaEmbeddingConfig.dimensions` is required.
+ * TypeScript has no way to subtract `'ollama'` from `string`, so the union
+ * itself cannot close that; intersecting the argument here does, for every
+ * literal that reaches this funnel.
+ */
+type BuiltInConfigFor<TConfig> = TConfig extends { type: 'openai' }
+  ? OpenAIEmbeddingConfig
+  : TConfig extends { type: 'ollama' }
+    ? OllamaEmbeddingConfig
+    : EmbeddingProviderConfig
+
+/**
  * @example
  * ```typescript
  * import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
@@ -49,7 +70,9 @@ export function registerEmbeddingProvider(
  * const embedding = await provider.embed('Hello world')
  * ```
  */
-export function createEmbeddingProvider(config: EmbeddingProviderConfig): EmbeddingProvider {
+export function createEmbeddingProvider<TConfig extends EmbeddingProviderConfig>(
+  config: TConfig & BuiltInConfigFor<TConfig>,
+): EmbeddingProvider {
   const factory = providerFactories.get(config.type)
 
   if (!factory) {
@@ -63,5 +86,5 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
 }
 
 export * from './types.js'
-export { OpenAIEmbeddingProvider, createOpenAIProvider } from './openai.js'
+export { OpenAIEmbeddingProvider, createOpenAIProvider, OPENAI_MODEL_DIMENSIONS } from './openai.js'
 export { OllamaEmbeddingProvider, createOllamaProvider } from './ollama.js'

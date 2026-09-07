@@ -215,37 +215,20 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
 })
 
 describe('multi-column write split respects field-level write access', () => {
-  it('does NOT write any per-part columns when update access is denied', async () => {
+  it('THROWS when update access is denied, exactly as filterWritableFields does', async () => {
     const fields = { media: multiColumnField({ update: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await splitMultiColumnFields(
-      inputData,
-      { ...inputData },
-      fields,
-      'update',
-      makeContext(),
-    )
-    // The logical key is dropped (it is not a real column) AND none of its
-    // per-part columns are written — identical to how filterWritableFields
-    // drops a denied single-column field.
-    expect(result).toEqual({})
-    expect('media' in result).toBe(false)
-    expect('m_url' in result).toBe(false)
-    expect('m_size' in result).toBe(false)
+    await expect(
+      splitMultiColumnFields(inputData, { ...inputData }, fields, 'update', makeContext()),
+    ).rejects.toThrow('Cannot update "media": field-level access denied.')
   })
 
-  it('does NOT write any per-part columns when create access is denied', async () => {
+  it('THROWS when create access is denied', async () => {
     const fields = { media: multiColumnField({ create: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
-    const result = await splitMultiColumnFields(
-      inputData,
-      { ...inputData },
-      fields,
-      'create',
-      makeContext(),
-    )
-    expect(result).toEqual({})
-    expect('m_url' in result).toBe(false)
+    await expect(
+      splitMultiColumnFields(inputData, { ...inputData }, fields, 'create', makeContext()),
+    ).rejects.toThrow('Cannot create "media": field-level access denied.')
   })
 
   it('still splits/writes the columns when write access is granted', async () => {

@@ -1,9 +1,9 @@
-# RAG Demo - Ollama + SQLite VSS
+# RAG Demo - Ollama + pgvector
 
 This example demonstrates **RAG (Retrieval-Augmented Generation)** integration with OpenSaas Stack using:
 
 - **Ollama** - Local embedding generation (no API keys needed!)
-- **SQLite VSS** - Vector similarity search in SQLite
+- **pgvector** - Vector similarity search in a native Postgres column
 - **Automatic embeddings** - Auto-generated when content changes
 
 Perfect for local development and applications that need semantic search without external API dependencies.
@@ -12,11 +12,15 @@ Perfect for local development and applications that need semantic search without
 
 - 🔍 **Semantic Search** - Find documents by meaning, not just keywords
 - 🤖 **Local Embeddings** - Uses Ollama running on your machine
-- 🗃️ **SQLite VSS** - Vector search directly in SQLite
+- 🗃️ **pgvector** - Vector search in the column itself, ranked by `nearest()`
 - ⚡ **Auto-generation** - Embeddings update automatically when content changes
 - 🎯 **No API Keys** - Completely local, no external services required
 
 ## Prerequisites
+
+A Postgres with pgvector available. Leave `DATABASE_URL` unset and `pnpm dev`
+starts a Dev database that carries it — see
+[Provisioning pgvector](#provisioning-pgvector) to bring your own.
 
 ### 1. Install Ollama
 
@@ -109,7 +113,7 @@ This script:
 **Expected output:**
 
 ```
-🚀 RAG Demo with Ollama + SQLite VSS
+🚀 RAG Demo with Ollama + pgvector
 
 📝 Initializing...
 ✓ Provider: ollama
@@ -142,7 +146,7 @@ Top 3 Results:
 The RAG plugin is configured in `opensaas.config.ts`:
 
 ```typescript
-import { ragPlugin, ollamaEmbeddings, sqliteVssStorage } from '@opensaas/stack-rag'
+import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 
 export default config({
   plugins: [
@@ -150,15 +154,16 @@ export default config({
       provider: ollamaEmbeddings({
         baseURL: 'http://localhost:11434',
         model: 'nomic-embed-text',
-      }),
-      storage: sqliteVssStorage({
-        distanceFunction: 'cosine',
+        dimensions: 768,
       }),
     }),
   ],
+  db: { provider: 'postgresql' },
   // ... rest of config
 })
 ```
+
+`ragPlugin` declares the pgvector extension pack itself, so no config names it.
 
 ### 2. Embedding Fields
 
@@ -171,10 +176,7 @@ fields: {
   // Using searchable() wrapper (recommended)
   content: searchable(
     text({ validation: { isRequired: true } }),
-    {
-      provider: 'ollama',    // Use Ollama provider
-      dimensions: 768,       // nomic-embed-text dimensions
-    }
+    { provider: 'ollama' },  // dimensions come from the provider (768)
   ),
 }
 ```
@@ -196,7 +198,6 @@ fields: {
   contentEmbedding: embedding({
     sourceField: 'content',      // Generate from this field
     provider: 'ollama',           // Use Ollama provider
-    dimensions: 768,
     autoGenerate: true,           // Auto-generate on create/update
   }),
 }
@@ -208,10 +209,11 @@ Both patterns are fully supported and produce the same results.
 
 When you create or update a document:
 
-1. RAG plugin detects the change via `afterOperation` hook
+1. RAG plugin sees the committed row in an `afterTransaction` hook
 2. Checks if source text changed (using hash comparison)
 3. If changed, generates new embedding via Ollama
-4. Stores embedding with metadata (model, dimensions, timestamp)
+4. Writes the vector and its metadata under sudo — the columns are write-denied
+   to application code
 
 ### 4. Semantic Search
 
@@ -225,20 +227,16 @@ const provider = createEmbeddingProvider({
   type: 'ollama',
   baseURL: 'http://localhost:11434',
   model: 'nomic-embed-text',
+  dimensions: 768,
 })
 const queryVector = await provider.embed('artificial intelligence')
 
-// Get all documents
-const docs = await context.db.document.findMany()
-
-// Calculate similarity
-const results = docs
-  .map((doc) => ({
-    doc,
-    score: cosineSimilarity(queryVector, doc.contentEmbedding.vector),
-  }))
-  .sort((a, b) => b.score - a.score)
-  .slice(0, 10)
+// Rank the column itself, inside the access filter
+const results = await context.db.Document.where({ published: { equals: true } }).nearest(
+  'contentEmbedding',
+  queryVector,
+  { limit: 10 },
+)
 ```
 
 ## Project Structure
@@ -278,7 +276,8 @@ rag-ollama-demo/
 
 ## Storage Format
 
-Embeddings are stored as JSON in the database:
+`contentEmbedding` is two columns — a pgvector `vector(768)` and a `jsonb` column beside
+it — that read back as one value:
 
 ```json
 {
@@ -293,33 +292,38 @@ Embeddings are stored as JSON in the database:
 }
 ```
 
-## SQLite VSS vs JSON Storage
+Both columns are Postgres-only, and pgvector is the only vector backend: this example
+needs a Postgres with the `vector` extension available.
 
-This example uses **SQLite VSS** for vector search. The RAG package also supports:
+### Provisioning pgvector
 
-### SQLite VSS (this example)
+You do not enable the extension yourself, and there is no install script.
+`ragPlugin` declares the pgvector extension pack, `pnpm generate` writes the
+extension's own migration alongside the app's, and `pnpm dev` (or
+`pnpm db:update`) enables it.
 
-- ✅ Fast indexed vector search
-- ✅ Native SQLite extension
-- ✅ Good for production SQLite apps
-- ⚠️ Requires VSS extension
+Leave `DATABASE_URL` unset and the Dev database `pnpm dev` starts carries
+pgvector already. Pointing at a Postgres of your own adds two requirements:
 
-### JSON Storage (alternative)
+- The extension has to be **available** on that server — `brew install pgvector`,
+  `postgresql-16-pgvector`, the `pgvector/pgvector` Docker images, or a managed
+  service that offers it.
+- The connecting role needs the privilege to **create** it. pgvector is not a
+  trusted extension, so that is superuser or a provider grant. Where a
+  locked-down server offers neither, have someone who holds the privilege
+  pre-create the extension in that database once; the migration prechecks for it
+  and records the step as already satisfied.
 
-```typescript
-storage: jsonStorage()
-```
+A server with no pgvector fails the migration with Prisma's own error, naming
+the `pgvector` space and SQL state `58P01`.
 
-- ✅ No extensions needed
-- ✅ Works with any database
-- ✅ Good for development
-- ⚠️ Slower for large datasets (full scan)
+### Ollama's dimension
 
-To switch to JSON storage, update `opensaas.config.ts`:
-
-```typescript
-storage: jsonStorage()
-```
+`OLLAMA_EMBEDDING_DIMENSIONS` in `.env` is the model's output size, defaulting to
+768 (`nomic-embed-text`). It is read rather than discovered because it is a
+column's type and Ollama reports it only from a live embed call — which
+generation must not depend on. Change the model and you change this number, the
+`dimensions` in `opensaas.config.ts`, and the column: that is a migration.
 
 ## Ollama Models
 
@@ -399,23 +403,11 @@ ollama pull nomic-embed-text
 3. Check logs for errors during document creation
 4. Manually trigger update:
    ```typescript
-   await context.db.document.update({
+   await context.db.Document.update({
      where: { id: 'doc-id' },
      data: { content: 'Updated content' },
    })
    ```
-
-### SQLite VSS extension missing
-
-**Error**: `sqlite-vss extension not found`
-
-**Solution**: This example uses JSON storage as fallback if VSS is unavailable. To use VSS properly, ensure `sqlite-vss` extension is installed.
-
-For now, you can switch to JSON storage:
-
-```typescript
-storage: jsonStorage()
-```
 
 ## Performance Notes
 
@@ -427,9 +419,8 @@ storage: jsonStorage()
 
 ### Search Performance
 
-- **SQLite VSS with index**: Sub-second for 100k+ vectors
-- **JSON storage**: Linear scan, acceptable for <10k vectors
-- **Cosine similarity**: Most common distance metric
+- **pgvector**: ranked in the database, over the column itself
+- **Cosine similarity**: Most common distance metric, and this example's default
 
 ### Optimization Tips
 
@@ -439,11 +430,12 @@ storage: jsonStorage()
    const vectors = await provider.embedBatch([text1, text2, text3])
    ```
 
-2. **Add indexes** (for SQLite VSS):
+2. **Declare the index on the field** (see `embedding({ index })` in the RAG README —
+   under the pgvector pack this example ships against, the declaration derives the
+   column type and operator class and does not yet build the index):
 
-   ```sql
-   -- Index creation (future enhancement)
-   CREATE INDEX content_embedding_idx ON Document(contentEmbedding);
+   ```typescript
+   contentEmbedding: embedding({ sourceField: 'content', index: { method: 'hnsw' } })
    ```
 
 3. **Chunk long texts**:
@@ -465,7 +457,7 @@ storage: jsonStorage()
 - [OpenSaas Stack Documentation](https://stack.opensaas.au/docs)
 - [RAG Package](../../packages/rag/README.md)
 - [Ollama Documentation](https://ollama.ai/docs)
-- [SQLite VSS](https://github.com/asg017/sqlite-vss)
+- [pgvector](https://github.com/pgvector/pgvector)
 - [RAG Specification](../../specs/rag-integration.md)
 
 ## License

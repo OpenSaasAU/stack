@@ -1,8 +1,25 @@
 # RAG Integration Specification
 
-**Status**: Plugin System Implemented
+**Status**: Superseded — historical record, do not build from this
 **Package**: `@opensaas/stack-rag`
 **Version**: 0.2.0
+
+> **Superseded by [`specs/prisma-8/architecture-spec.md`](prisma-8/architecture-spec.md).**
+>
+> The pluggable storage layer this document specifies — `createVectorStorage()`,
+> `registerVectorStorage()`, `pgvectorStorage()`, `sqliteVssStorage()`,
+> `jsonStorage()` and the `@opensaas/stack-rag/storage` entry point — no longer
+> exists. An embedding is now a native pgvector column, and search is
+> `nearest()` on the secured read surface, an engine-owned terminal that scopes
+> and ranks in one query. See
+> [ADR-0045](../docs/adr/0045-vector-search-is-an-engine-owned-terminal-over-a-native-vector-column.md)
+> for that decision, and
+> [ADR-0065](../docs/adr/0065-the-extension-contract-space-is-a-generator-emission-and-prisma-runs-create-extension.md)
+> for how pgvector is provisioned and enabled.
+>
+> Kept for the history of how the package got here. Every API below is read as a
+> record of what was, not as documentation of what is — for that, see the
+> [RAG package reference](../docs/content/reference/rag.md).
 
 ## Overview
 
