@@ -42,7 +42,6 @@ next-env.d.ts
 
 # opensaas
 /.opensaas/
-/prisma/schema.prisma
 
 # database
 *.db

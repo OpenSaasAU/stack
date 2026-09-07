@@ -79,7 +79,9 @@ pnpm generate
 
 This creates:
 
-- `prisma/schema.prisma` - Database schema from `opensaas.config.ts`
+- `prisma/contract.ts` - The Contract module, and `prisma.config.ts` at the root, which names it
+- `prisma/contract.json` and `prisma/contract.d.ts` - The emitted contract artifacts. **Commit both** — generation says so on its way out, and `.opensaas/context.ts` imports them
+- `migrations/pgvector/` - The pgvector extension pack's contract space, seeded because the config declares that pack. Generation seeds a space for each declared pack and writes no app migration of its own; the app's schema history comes from `prisma migration plan`
 - `.opensaas/types.ts` - TypeScript types for your lists
 - `.opensaas/context.ts` - Context factory with access control
 

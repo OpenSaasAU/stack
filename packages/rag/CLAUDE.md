@@ -283,44 +283,67 @@ AI assistants can then use:
 
 ### Automatic Embedding Generation
 
-The `ragPlugin()` injects hooks into fields with `sourceField` set:
+`ragPlugin()` extends every list holding an `embedding()` field with
+`autoGenerate` set with a **list-level `afterTransaction` hook**. `autoGenerate`
+alone is the gate: a field carrying it but no `sourceField` is a config error,
+not a quiet skip — `pnpm generate` throws
+`RAG plugin: Field "<List>.<field>" has autoGenerate enabled but no sourceField specified`.
+The config below is the whole of what an app author writes:
 
 ```typescript
-// User config
-contentEmbedding: embedding({
-  sourceField: 'content',
-  autoGenerate: true
-})
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
+import { embedding } from '@opensaas/stack-rag/fields'
 
-// ragPlugin() automatically adds:
-contentEmbedding: embedding({
-  hooks: {
-    afterOperation: async ({ operation, value, item, context }) => {
-      if (operation === 'create' || operation === 'update') {
-        // Check if source field changed
-        const sourceText = item.content
-        const currentEmbedding = item.contentEmbedding
-
-        // Generate embedding if needed
-        if (shouldRegenerate(sourceText, currentEmbedding)) {
-          const provider = getEmbeddingProvider(ragConfig)
-          const vector = await provider.embed(sourceText)
-
-          await context.db.Article.update({
-            where: { id: item.id },
-            data: {
-              contentEmbedding: {
-                vector,
-                metadata: { ... }
-              }
-            }
-          })
-        }
-      }
-    }
-  }
+export default config({
+  db: { provider: 'postgresql' },
+  plugins: [ragPlugin({ provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }) })],
+  lists: {
+    Article: list({
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', autoGenerate: true }),
+      },
+    }),
+  },
 })
 ```
+
+Once the write's own transaction has committed, that hook:
+
+1. Reads the **persisted** source text off `item`, so a value a `resolveInput`
+   hook derived is embedded like any other.
+2. Hashes it and compares the hash with the `sourceHash` on the stored
+   embedding's metadata. Equal means nothing to do — which is what stops the
+   plugin's own write from re-entering, and what stops an unrelated field change
+   from costing an API call.
+3. Otherwise calls the provider and writes the vector and its metadata.
+
+Generation runs after the commit, not on input, because calling a provider is a
+network round trip that has no business holding a database connection open
+inside a transaction (ADR-0045).
+
+**The column is write-denied to application code.** A plain
+`context.db.Article.update({ where, data: { contentEmbedding } })` throws
+`Cannot update "contentEmbedding": field-level access denied.` — do not write
+that. The plugin's own output reaches the column through a `sudo()` context
+held behind a module-private symbol, which is on neither the package's exported
+surface nor the generated `PluginServices` face. Application code that
+maintains its own vectors declares `embedding({ allowManualWrites: true })` and
+then writes the field like any other.
+
+Known limits of the generation hook, all of them consequences of running after
+the commit — none can abort the write:
+
+- A nested record is never embedded: `afterTransaction` carries a persisted
+  `item` for the top-level record only (#1271).
+- A provider failure is logged, not thrown. The row keeps a null embedding and
+  there is no regeneration path yet (#1271); `generation-failure.ts` classifies
+  a throw as transient or standing and says a standing one once per field.
+- On the `prisma-8` branch the sudo write cannot execute at all, because the
+  secured write surface is not yet ported (#1124, #1127), so every embedding
+  column stays null and searches return nothing.
 
 ### Access Control Integration
 
@@ -382,8 +405,11 @@ registerEmbeddingProvider('custom', (config) => {
 ## Provisioning pgvector
 
 `ragPlugin` declares the pgvector extension pack, so the extension's own
-migration is a generator emission (ADR-0065) and `pnpm db:update` enables the
-extension. No DDL here is hand-written and there is no install script.
+migration is a generator emission: `pnpm generate` seeds it under
+`migrations/pgvector/` (ADR-0065). Applying the contract is what enables the
+extension — the dev loop locally, `prisma db migrate` in a deployment (see
+"Applying the change" below). No DDL here is hand-written and there is no
+install script.
 
 What the deployment owns is provisioning:
 
@@ -517,19 +543,73 @@ describe('OpenAIEmbeddingProvider', () => {
 2. Install provider: `pnpm add openai` (for OpenAI)
 3. Add `ragPlugin()` to your config's `plugins` array
 4. Add `embedding()` fields to lists
-5. Run `pnpm generate` and `pnpm db:push`
-6. Embeddings will be generated automatically on create/update
+5. Apply the schema change. Which command that is depends on where the database
+   is — see "Applying the change" below
+6. Embeddings are generated from the source text on create and update
+
+### Applying the change
+
+`opensaas db update` (`pnpm db:update`) is **not** a standalone migrate command.
+It opens no connection of its own: it hands the request to a **running
+`opensaas dev` loop** over that loop's control channel, and exits non-zero with
+`NoDevLoopError` when none is listening (`packages/cli/src/commands/db.ts`). So
+the route differs by where you are.
+
+**Locally, the loop applies it.** Run `pnpm dev`. It generates and reconciles on
+boot, and again on every save of `opensaas.config.ts`
+(`packages/cli/src/commands/dev.ts`). Which database it reconciles is one rule:
+`DATABASE_URL` set means no Dev database starts and the loop uses the one you
+named — which is the route to an existing app's own Postgres. Leave it unset and
+you get the Dev database the loop starts for you. `pnpm db:update` is for the one
+case the loop declines to decide by itself, below.
+
+**In a deployment there is no loop, so `db:update` has nothing to talk to.** Plan
+the migration once against a database you are willing to open a planning
+connection to, commit the result, then apply it: `prisma migration plan`, then
+`prisma db migrate`. The starter templates wire these as `pnpm migrate` and
+`pnpm migrate:deploy`; the RAG examples carry no such script, so run the Prisma
+commands. See [Deploy](https://stack.opensaas.au/docs/how-to/deploy).
+
+Either route runs the pgvector space's `CREATE EXTENSION IF NOT EXISTS`, which
+needs the extension available on the server and the create privilege (see
+"Provisioning pgvector" above).
 
 ### Changing a field's dimension
 
-The dimension is the column's type, so changing it is a migration:
+The dimension is the column's type, so changing it retypes the column and a
+stored vector of the old width does not survive. That makes it a **destructive
+plan**, and the dev loop will not apply one unasked: on save it prints the plan,
+leaves the database and the running app on the old schema, and tells you to
+consent from a second terminal (`packages/cli/src/commands/dev.ts`). With the
+loop still running:
 
 ```bash
-pnpm generate
-pnpm db:push
+pnpm db:update --confirm postgres
 ```
 
-Existing embeddings in JSON format are compatible.
+The token is the name of the database being changed — that is what Prisma asks
+for before it destroys data, and the Dev database's name is `postgres`. The loop
+stages its own generation, so there is no separate `pnpm generate` step. In a
+deployment, apply it as a migration instead (see "Applying the change" above).
+
+Every affected row is then left with a null embedding. There is no re-embedding
+command (#1271); what regenerates one is re-saving the row's source field, which
+works because a null vector reads back as no stored embedding at all, so the
+`sourceHash` gate has nothing to match and does not short-circuit. **On the
+`prisma-8` branch that re-save regenerates nothing** — the plugin's sudo write is
+inert until #1124/#1127 land (see "Known limits" above) — so the column stays
+null regardless.
+
+### Coming from an app whose embeddings were JSON
+
+Embeddings stored as JSON by an earlier version of this package are **not**
+compatible and there is no conversion path. An embedding is now a pgvector
+`vector(n)` column with a `jsonb` metadata sibling, and a JSON array is
+readable as neither.
+
+An embedding is derived data, so regenerate it from the text it came from
+rather than converting it: reseed, or re-save each row's source field. Both RAG
+examples (`examples/rag-openai-chatbot`, `examples/rag-ollama-demo`) reseed.
 
 ## Limitations
 

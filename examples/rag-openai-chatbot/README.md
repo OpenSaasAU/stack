@@ -323,28 +323,23 @@ export default config({
 })
 ```
 
-### Generated Prisma Schema
+### Emitted columns
 
-The `pnpm generate` command creates:
+`pnpm generate` emits the app's contract and the migrations that reconcile it,
+so `KnowledgeBase` carries `id`, `title`, `content`, `category`, `published` and
+the timestamps, plus two columns for the one `contentEmbedding` field:
 
-```prisma
-model KnowledgeBase {
-  id                String   @id @default(cuid())
-  title             String
-  content           String
-  contentEmbedding  Json?    // Stores vector + metadata
-  category          String
-  published         Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-}
-```
+| Column                     | Type           |
+| -------------------------- | -------------- |
+| `contentEmbedding`         | `vector(1536)` |
+| `contentEmbeddingMetadata` | `jsonb`        |
 
-Embeddings are stored as JSON:
+The vector is a native pgvector column, not JSON, and the field reassembles the
+pair into a single value on read:
 
 ```json
 {
-  "vector": [0.123, -0.456, 0.789, ...],  // 1536 dimensions
+  "vector": [0.123, -0.456, 0.789],
   "metadata": {
     "provider": "openai",
     "model": "text-embedding-3-small",
