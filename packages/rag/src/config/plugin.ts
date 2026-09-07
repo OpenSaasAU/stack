@@ -25,6 +25,30 @@ function isEmbeddingField(field: { type?: string }): field is EmbeddingField {
 }
 
 /**
+ * The seat of the plugin's escalated write. Keyed by a module-private symbol
+ * and absent from {@link RAGRuntimeServices}, so it is on neither the package's
+ * exported surface nor the generated `PluginServices` face — `sudo()` bypasses
+ * a list's operation access and its Access Filter as well as this field's own
+ * denial, and only the generation hook below may hold that (ADR-0045).
+ * Application code that maintains its own vectors uses
+ * `embedding({ allowManualWrites: true })` and an ordinary `context.db` write.
+ */
+const WRITE_EMBEDDING = Symbol('rag.writeEmbedding')
+
+type EmbeddingWriter = (
+  listKey: string,
+  id: string | number,
+  fieldName: string,
+  stored: StoredEmbedding,
+) => Promise<void>
+
+type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
+
+function rowId(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined
+}
+
+/**
  * A provider's output dimension where it is known without calling anything.
  * OpenAI's models each have a fixed size; Ollama declares its own; a custom
  * provider that declares none is exempt from the generate-time check.
@@ -145,6 +169,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                 const item = args.item
                 if (item === undefined) return
+                const id = rowId(item.id)
+                if (id === undefined) return
                 const sourceText = item[sourceField]
                 if (typeof sourceText !== 'string' || sourceText.length === 0) return
 
@@ -174,7 +200,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   },
                 }
 
-                await ragServices(args.context).writeEmbedding(listName, item.id, fieldName, stored)
+                await embeddingWriter(args.context)(listName, id, fieldName, stored)
               },
             },
           })
@@ -287,7 +313,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
       return generateConfig
     },
 
-    runtime: (_context, sudo): RAGRuntimeServices => {
+    runtime: (_context, sudo): RAGInternalServices => {
       const requireProvider = (providerName?: string) => {
         const providerConfig = providerFor(providerName)
         if (!providerConfig) {
@@ -303,7 +329,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
         generateEmbeddings: async (texts: string[], providerName?: string) =>
           await requireProvider(providerName).embedBatch(texts),
 
-        writeEmbedding: async (listKey, id, fieldName, stored) => {
+        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored) => {
           await sudoWrite(sudo(), listKey, id, fieldName, stored)
         },
       }
@@ -312,17 +338,17 @@ export function ragPlugin(config: RAGConfig): Plugin {
 }
 
 /**
- * Write a generated embedding past its own write denial. Field-level write
- * denial throws rather than dropping the key, and `checkFieldAccess` returns
- * true under sudo — so a sudo context is the only path the plugin's own output
- * reaches the column by (ADR-0045). A hook's `AccessContext` cannot derive one,
- * which is why the write is a runtime service closing over the `sudo` factory
- * `Plugin.runtime` is handed.
+ * Write a generated embedding past its own write denial. A denied field-level
+ * write throws, and `checkFieldAccess` returns true under sudo, so a sudo
+ * context is how the plugin's own output reaches the column (ADR-0045). A
+ * hook's `AccessContext` cannot derive one, which is why the write is created
+ * by `Plugin.runtime`, closing over the `sudo` factory it is handed, and
+ * reached only through {@link WRITE_EMBEDDING}.
  */
 async function sudoWrite(
   context: AccessContext,
   listKey: string,
-  id: unknown,
+  id: string | number,
   fieldName: string,
   stored: StoredEmbedding,
 ): Promise<void> {
@@ -336,23 +362,23 @@ async function sudoWrite(
   })
 }
 
-function hasWriteEmbedding(value: unknown): value is RAGRuntimeServices {
+function hasEmbeddingWriter(value: unknown): value is { [WRITE_EMBEDDING]: EmbeddingWriter } {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof Reflect.get(value, 'writeEmbedding') === 'function'
+    typeof Reflect.get(value, WRITE_EMBEDDING) === 'function'
   )
 }
 
-function ragServices(context: AccessContext): RAGRuntimeServices {
+function embeddingWriter(context: AccessContext): EmbeddingWriter {
   const services: unknown = context.plugins.rag
-  if (!hasWriteEmbedding(services)) {
+  if (!hasEmbeddingWriter(services)) {
     throw new Error(
       'RAG plugin: context.plugins.rag is missing, so a generated embedding has no sudo write to ' +
         'reach its write-denied column through. The context was built without the plugin.',
     )
   }
-  return services
+  return services[WRITE_EMBEDDING]
 }
 
 /** The `sourceHash` of an already-stored embedding, when there is one. */

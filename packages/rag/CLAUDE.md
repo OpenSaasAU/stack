@@ -387,17 +387,6 @@ ON "Article" USING ivfflat (("contentEmbedding"->>'vector')::vector(1536))
 WITH (lists = 100);
 ```
 
-### SQLite with VSS
-
-```sql
--- Load VSS extension (depends on your SQLite setup)
--- Embeddings stored as JSON, VSS used for search
-```
-
-### Any Database with JSON Storage
-
-No special setup needed. Embeddings stored as JSON, similarity computed in JavaScript.
-
 ## Type Safety
 
 All operations are fully typed:

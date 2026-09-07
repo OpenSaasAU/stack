@@ -39,6 +39,11 @@ The operator class is derived from `distanceFunction` and the column type, and a
 emits `halfvec` (which pgvector can index to 4,000); over 4,000 generation fails with a
 named error. An unindexed field stays `vector` at any dimension.
 
+**`index:` does not yet build an index.** `@prisma/orm-extension-pgvector@8.0.0-rc.8`
+registers no index types, so nothing lowers the declaration to a `CREATE INDEX`. Today it
+derives the column type and the operator class — and applies both dimension caps above —
+and nothing else. Declare it to pin the shape you want; re-check when the pack reaches GA.
+
 `ragPlugin`'s `beforeGenerate` refuses a declared dimension that disagrees with a
 statically known provider dimension, and `OllamaEmbeddingConfig.dimensions` is now
 required — generation must never depend on a running Ollama:
@@ -72,3 +77,18 @@ const matches = await context.db.Article.where({ published: { equals: true } }).
 type. `semanticSearch()` and `findSimilar()` keep their names and drop their `storage`
 option. The scaffolder's semantic-search feature template no longer emits a `storage`
 option.
+
+**This drops semantic search for every database except Postgres.** The `json`,
+`json-file` and `sqlite-vss` backends are removed with no replacement, and `embedding()`
+now emits Postgres-only columns (`pgvector.Vector(n)` plus `pg.jsonb`). An app on SQLite,
+or one that used `jsonStorage()` to avoid a database extension, has no migration path in
+this release other than moving to Postgres with pgvector installed. If you need the old
+in-JavaScript cosine scan, keep it in your own app — `docs/lib/embeddings-search.ts` in
+this repo is a ~40-line worked example of exactly that.
+
+`@prisma/orm-extension-pgvector` is now a peer dependency of `@opensaas/stack-rag`:
+install it alongside the package, since `ragPlugin` names it in every config it builds.
+
+```bash
+pnpm add @opensaas/stack-rag @prisma/orm-extension-pgvector
+```

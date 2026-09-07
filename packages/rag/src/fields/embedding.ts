@@ -99,9 +99,14 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
   distanceFunction?: VectorDistanceFunction
 
   /**
-   * The vector index to build over the column. Declaring one caps the
-   * dimension: over 2,000 the column becomes `halfvec`, and over 4,000
-   * generation fails, because no pgvector index can be built there.
+   * The index this column's type and operator class are derived for. Declaring
+   * one caps the dimension: over 2,000 the column becomes `halfvec`, and over
+   * 4,000 generation fails, because no pgvector index can be built there.
+   *
+   * Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no
+   * index types, so a declaration is NOT yet lowered to a `CREATE INDEX` —
+   * today it derives the column type and the operator class and nothing else.
+   * Re-check when the pack reaches GA.
    */
   index?: EmbeddingIndexConfig
 
@@ -127,7 +132,11 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
   /** The metadata column's model field name, resolved from the field's key. */
   getMetadataColumn?: (fieldName: string) => string
 
-  /** The index this field declares, with its column type and operator class resolved. */
+  /**
+   * The index this field declares, with its column type and operator class
+   * resolved. See {@link EmbeddingField.index} for what is and is not built
+   * from it under the pack version this ships against.
+   */
   getVectorIndex?: (fieldName: string, listKey?: string) => ResolvedEmbeddingIndex | undefined
 
   ui?: {
@@ -146,6 +155,10 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
 /** The metadata column's model field name — `<field>Metadata`, beside the vector. */
 export function embeddingMetadataColumn(fieldName: string): string {
   return `${fieldName}Metadata`
+}
+
+function isStoredEmbedding(value: unknown): value is StoredEmbedding {
+  return typeof value === 'object' && value !== null && Array.isArray(Reflect.get(value, 'vector'))
 }
 
 function where(fieldName: string, listKey: string | undefined): string {
@@ -335,7 +348,7 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
     },
 
     splitColumns: (fieldName: string, value: unknown): Record<string, unknown> => {
-      const stored = (value ?? null) as StoredEmbedding | null
+      const stored = isStoredEmbedding(value) ? value : null
       return {
         [fieldName]: stored?.vector ?? null,
         [embeddingMetadataColumn(fieldName)]: stored?.metadata ?? null,

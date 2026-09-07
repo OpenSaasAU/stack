@@ -9,7 +9,7 @@ import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
 import { registerEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
-import type { RAGRuntimeServices, StoredEmbedding } from '../index.js'
+import type { StoredEmbedding } from '../index.js'
 
 const openai: RAGConfig = { provider: { type: 'openai', apiKey: 'test-key' } }
 
@@ -74,18 +74,35 @@ function stubContext(overrides: Partial<AccessContext>): AccessContext {
   }
 }
 
-function writeEmbeddingOf(services: unknown): RAGRuntimeServices['writeEmbedding'] {
-  if (
-    typeof services !== 'object' ||
-    services === null ||
-    typeof Reflect.get(services, 'writeEmbedding') !== 'function'
-  ) {
-    throw new Error('the plugin runtime exposes no writeEmbedding')
+type EmbeddingWriter = (
+  listKey: string,
+  id: string | number,
+  fieldName: string,
+  stored: StoredEmbedding,
+) => Promise<void>
+
+/**
+ * The plugin's escalated write is keyed by a symbol the package does not
+ * export, so this is the only way anything outside the plugin can reach it —
+ * and the reason a generated project cannot.
+ */
+function writeEmbeddingOf(services: unknown): { key: symbol; write: EmbeddingWriter } {
+  if (typeof services !== 'object' || services === null) {
+    throw new Error('the plugin runtime returned no services object')
   }
-  const found: unknown = Reflect.get(services, 'writeEmbedding')
+  const key = Object.getOwnPropertySymbols(services).find(
+    (candidate) => typeof Reflect.get(services, candidate) === 'function',
+  )
+  if (key === undefined) {
+    throw new Error('the plugin runtime exposes no symbol-keyed embedding writer')
+  }
+  const found: unknown = Reflect.get(services, key)
   if (typeof found !== 'function') throw new Error('unreachable')
-  return async (listKey, id, fieldName, stored) => {
-    await found(listKey, id, fieldName, stored)
+  return {
+    key,
+    write: async (listKey, id, fieldName, stored) => {
+      await found(listKey, id, fieldName, stored)
+    },
   }
 }
 
@@ -271,10 +288,21 @@ describe('ragPlugin', () => {
         providers: { counting: { type: 'counting', dimensions: 1 } },
       }).init!(harness.context)
 
-      const writes: { listKey: string; id: unknown; fieldName: string; stored: StoredEmbedding }[] =
-        []
-      const services: Pick<RAGRuntimeServices, 'writeEmbedding'> = {
-        writeEmbedding: async (listKey, id, fieldName, stored) => {
+      const writes: {
+        listKey: string
+        id: string | number
+        fieldName: string
+        stored: StoredEmbedding
+      }[] = []
+      // Keyed by the symbol a live runtime uses, since that is the only key the
+      // plugin's own hook looks under.
+      const { key } = writeEmbeddingOf(
+        ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(stubContext({}), () =>
+          stubContext({}),
+        ),
+      )
+      const services: Record<symbol, EmbeddingWriter> = {
+        [key]: async (listKey, id, fieldName, stored) => {
           writes.push({ listKey, id, fieldName, stored })
         },
       }
@@ -417,7 +445,7 @@ describe('ragPlugin', () => {
       const request = stubContext({ db: { Article: delegate({ update: requestUpdate }) } })
       const elevated = stubContext({ db: { Article: delegate({ update: sudoUpdate }) } })
 
-      const writeEmbedding = writeEmbeddingOf(plugin.runtime!(request, () => elevated))
+      const { write } = writeEmbeddingOf(plugin.runtime!(request, () => elevated))
       const stored: StoredEmbedding = {
         vector: [4],
         metadata: {
@@ -427,13 +455,28 @@ describe('ragPlugin', () => {
           generatedAt: '2026-01-01T00:00:00.000Z',
         },
       }
-      await writeEmbedding('Article', 'a1', 'contentEmbedding', stored)
+      await write('Article', 'a1', 'contentEmbedding', stored)
 
       expect(requestUpdate).not.toHaveBeenCalled()
       expect(sudoUpdate).toHaveBeenCalledWith({
         where: { id: 'a1' },
         data: { contentEmbedding: stored },
       })
+    })
+
+    it('puts the escalated write on no string key of context.plugins.rag', () => {
+      const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
+      const services = plugin.runtime!(stubContext({}), () => stubContext({}))
+      if (typeof services !== 'object' || services === null) {
+        throw new Error('the plugin runtime returned no services object')
+      }
+
+      // String keys are the only kind a generated project, typed by
+      // RAGRuntimeServices, could name.
+      expect(Object.getOwnPropertyNames(services).sort()).toEqual([
+        'generateEmbedding',
+        'generateEmbeddings',
+      ])
     })
   })
 

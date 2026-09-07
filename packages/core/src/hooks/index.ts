@@ -519,8 +519,8 @@ export async function executeFieldResolveInputHooks(
  * `filterWritableFields`'s undeclared-key reject cannot enforce this field's
  * own write access — enforce it HERE, using the canonical field-access
  * evaluator with the same arguments the write pipeline uses. A denied field
- * drops its logical key and contributes NONE of its per-part columns (sudo
- * bypasses via `checkFieldAccess`).
+ * throws the same `ValidationError` a denied single-column field throws in
+ * `filterWritableFields` (#568); sudo bypasses via `checkFieldAccess`.
  */
 export async function splitMultiColumnFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -548,17 +548,14 @@ export async function splitMultiColumnFields(
       inputData,
     })
 
-    // Drop the logical key (it is not a real column) regardless of outcome —
-    // a denied field must not leave its logical key behind either.
+    if (!canWrite) {
+      throw new ValidationError([`Cannot ${operation} "${fieldKey}": field-level access denied.`])
+    }
+
+    // Drop the logical key — it is not a real column.
     const next = { ...result }
     delete next[fieldKey]
     result = next
-
-    if (!canWrite) {
-      // Denied: write none of its per-part columns — exactly as
-      // filterWritableFields drops a denied single-column field.
-      continue
-    }
 
     const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
     result = { ...result, ...columns }

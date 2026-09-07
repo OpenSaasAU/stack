@@ -4,16 +4,17 @@
 //
 // Known limits: the secured write surface has not been ported onto the Prisma 8
 // collection yet (spec 7, #1127) — `context.db.<list>.create()` still speaks
-// Prisma 6's `{ data }` to a collection that takes a row — so rows are seeded
-// through the Unsafe origin, the write denial is asserted against the evaluator
-// the Write Pipeline gates on, and the plugin's generation hook is driven
-// directly. Re-point those three at `context.db` once #1127 lands.
+// Prisma 6's `{ data }` to a collection that takes a row, and `update()` calls
+// a `findUnique` no collection carries — so rows are seeded through the Unsafe
+// origin, and the write denial is driven through `hookPipeline`, the
+// transform+validate span `write-pipeline.ts` runs before it persists. Re-point
+// both at `context.db` once #1127 lands.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import { config as defineConfig } from '@opensaas/stack-core'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
-import { checkFieldAccess } from '@opensaas/stack-core/internal'
+import { hookPipeline } from '@opensaas/stack-core/internal'
 import { text } from '@opensaas/stack-core/fields'
 import { withOrigin } from '@opensaas/stack-core/origin'
 import {
@@ -153,7 +154,9 @@ describe.skipIf(!available)(
     })
 
     test('a row with no vector reads back as a null embedding', async () => {
-      await seed('Article', { content: 'red' })
+      // Metadata present and the vector absent, so a null answer can only come
+      // from the vector column.
+      await seed('Article', { content: 'red', contentEmbeddingMetadata: metadata })
 
       const stored = await database.context(null).db.Article.where({}).first()
 
@@ -171,9 +174,14 @@ describe.skipIf(!available)(
 
       const matches = await database.context(null).db.Article.nearest('contentEmbedding', [1, 0, 0])
 
-      // Cosine distance from [1,0,0] is 0 for red, 0.2 for reddish, 1 for blue.
+      // cos([1,0,0], [0.8,0.6,0]) = 0.8 / (1 × 1.0) = 0.8, so cosine distance
+      // is 0.2 and `1 - distance` scores it 0.8. blue is orthogonal: 0.
+      // Compared with a tolerance because pgvector stores float4.
       expect(matches.map((match) => match.item.content)).toEqual(['red', 'reddish', 'blue'])
-      expect(matches.map((match) => match.score)).toEqual([1, 0.8, 0])
+      const scores = matches.map((match) => match.score)
+      expect(scores[0]).toBeCloseTo(1, 5)
+      expect(scores[1]).toBeCloseTo(0.8, 5)
+      expect(scores[2]).toBeCloseTo(0, 5)
     })
 
     test('a query vector of the wrong length is refused by the declared dimension', async () => {
@@ -185,53 +193,101 @@ describe.skipIf(!available)(
     describe('write denial', () => {
       const write = { contentEmbedding: { vector: [1, 0, 0], metadata } }
 
-      function fieldAccess(listKey: string, fieldKey: string) {
-        return resolved.lists[listKey].fields[fieldKey].access
-      }
-
-      /** The harness hands out a `StackContext`; the evaluator takes the narrower `AccessContext`. */
+      /** The harness hands out a `StackContext`; the pipeline takes the narrower `AccessContext`. */
       function accessContext(sudo: boolean): AccessContext {
         const context = sudo ? database.context(null).sudo() : database.context(null)
         return { ...context, ormHandle: {}, _resolveOutputChain: [] }
       }
 
-      test('an ordinary create and update are denied', async () => {
-        const context = accessContext(false)
+      /**
+       * The transform+validate span of a write, run over the real list config
+       * the plugin resolved — `write-pipeline.ts` calls exactly this before it
+       * persists.
+       */
+      function pipeline(
+        listKey: string,
+        operation: 'create' | 'update',
+        inputData: Record<string, unknown>,
+        sudo: boolean,
+      ) {
+        return hookPipeline.run({
+          operation,
+          listName: listKey,
+          listConfig: resolved.lists[listKey],
+          inputData,
+          item: undefined,
+          context: accessContext(sudo),
+        })
+      }
 
+      test('an ordinary create or update naming the embedding throws', async () => {
         for (const operation of ['create', 'update'] as const) {
-          expect(
-            await checkFieldAccess(fieldAccess('Article', 'contentEmbedding'), operation, {
-              session: null,
-              context,
-              inputData: write,
-            }),
-          ).toBe(false)
+          await expect(pipeline('Article', operation, write, false)).rejects.toThrow(
+            `Cannot ${operation} "contentEmbedding": field-level access denied.`,
+          )
         }
       })
 
-      test('the plugin’s own sudo write passes the same rule', async () => {
-        const context = accessContext(true)
+      test('the write the throw refused never reaches the columns', async () => {
+        await seed('Article', { content: 'red' })
+        const before = await database.context(null).db.Article.where({}).first()
+        expect(before?.contentEmbedding).toBeNull()
 
-        expect(
-          await checkFieldAccess(fieldAccess('Article', 'contentEmbedding'), 'update', {
-            session: null,
-            context,
-            inputData: write,
-          }),
-        ).toBe(true)
+        await expect(pipeline('Article', 'update', write, false)).rejects.toThrow(
+          'field-level access denied',
+        )
+
+        const after = await database.context(null).db.Article.where({}).first()
+        expect(after?.contentEmbedding).toBeNull()
       })
 
-      test('allowManualWrites leaves an ordinary write allowed', async () => {
-        const context = accessContext(false)
-        const open = embedding({ dimensions: 3, allowManualWrites: true })
+      test('the plugin’s own sudo write produces both columns, and they read back', async () => {
+        const { resolvedData } = await pipeline(
+          'Article',
+          'create',
+          { content: 'red', ...write },
+          true,
+        )
 
-        expect(
-          await checkFieldAccess(open.access, 'update', {
-            session: null,
-            context,
-            inputData: write,
-          }),
-        ).toBe(true)
+        expect(resolvedData).toEqual({
+          content: 'red',
+          contentEmbedding: [1, 0, 0],
+          contentEmbeddingMetadata: metadata,
+        })
+
+        await seed('Article', resolvedData)
+
+        const stored = await database.context(null).db.Article.where({}).first()
+        expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
+      })
+
+      test('allowManualWrites lets an ordinary write through the same pipeline', async () => {
+        const open = await defineConfig({
+          db: { provider: 'postgresql' },
+          plugins: [ragPlugin({ provider: { type: 'fake', dimensions: 3 } })],
+          lists: {
+            Article: {
+              fields: {
+                content: text(),
+                contentEmbedding: embedding({ dimensions: 3, allowManualWrites: true }),
+              },
+            },
+          },
+        })
+
+        const { resolvedData } = await hookPipeline.run({
+          operation: 'update',
+          listName: 'Article',
+          listConfig: open.lists.Article,
+          inputData: write,
+          item: undefined,
+          context: accessContext(false),
+        })
+
+        expect(resolvedData).toEqual({
+          contentEmbedding: [1, 0, 0],
+          contentEmbeddingMetadata: metadata,
+        })
       })
     })
   },

@@ -17,6 +17,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "ai": "^7.0.32",
     "next": "^16.2.10",

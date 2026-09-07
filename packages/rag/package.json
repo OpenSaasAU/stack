@@ -59,6 +59,7 @@
   },
   "peerDependencies": {
     "@opensaas/stack-core": "^0",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "openai": "^6.8.0"
   },
   "peerDependenciesMeta": {
@@ -72,6 +73,7 @@
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
