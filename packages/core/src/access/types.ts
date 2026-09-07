@@ -237,10 +237,14 @@ export type StorageUtils = {
 }
 
 // Uses `interface` rather than `type` so consumers can extend it via module augmentation.
-export interface AccessContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
+export interface AccessContext<
+  TPrisma extends PrismaClientLike = PrismaClientLike,
+  // See the identical `TDb` doc on `StackContext` (context/index.ts) — #1232.
+  TDb = AccessControlledDB<TPrisma>,
+> {
   session: Session | null
   prisma: TPrisma
-  db: AccessControlledDB<TPrisma>
+  db: TDb
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean

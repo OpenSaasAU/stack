@@ -5,13 +5,17 @@ import { withTsExtension } from './extension.js'
 
 // The emitted `getContext`/`rawOpensaasContext` still `as unknown as Context<TSession>`
 // core's returned `StackContext`. #1233 fixed the fragment-`query` overload
-// mismatch between `AccessControlledDB` and the generated `CustomDB`, but two
-// narrower gaps remain and keep the cast unavoidable: a virtual field is
-// required on `CustomDB`'s payload but `AccessControlledDB`'s isn't aware of
-// virtuals at all (#1232), and singleton `get()` has no `AccessControlledDB`
-// counterpart (core's delegate map only knows Prisma's own model shape, which
-// has no concept of a singleton list). Neither is in scope for a types-only
-// fix here.
+// mismatch between `AccessControlledDB` and the generated `CustomDB`. #1232
+// fixed a HOOK's `context.db` (typed via `TypeInfo['db']`) to describe the
+// same virtual-augmented rows `CustomDB` does — but this cast is a different
+// seam: `getOpensaasContext()` (core's runtime `getContext`) always returns
+// `StackContext<PrismaClient>` with its `db` defaulted to plain
+// `AccessControlledDB<PrismaClient>`, which is still not assignable to
+// `CustomDB` for any list with a virtual field, since `AccessControlledDB`'s
+// per-list payload doesn't require virtual keys `CustomDB`'s does. Singleton
+// `get()` has no `AccessControlledDB` counterpart either (core's delegate map
+// only knows Prisma's own model shape, which has no concept of a singleton
+// list). Neither gap is in scope for a types-only fix here.
 export function generateContext(config: OpenSaasConfig, configImport?: string): string {
   // Defaults to the legacy `../opensaas.config` (bundle one level below the
   // project root); the output-path resolver supplies a recomputed value when
