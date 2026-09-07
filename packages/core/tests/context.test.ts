@@ -204,11 +204,11 @@ describe('getContext', () => {
 
     describe('removeRelated (relationship-table row removal)', () => {
       // Disconnect is an UPDATE on the related list nulling the back-reference,
-      // never a delete — but the engine does not lower relation input yet
-      // (#1153), so that update is refused by name instead of reaching the
-      // driver as a column value. The payload's own shape is pinned again when
-      // #1153 lands and this refusal goes.
-      it('refuses the to-one back-reference it disconnects, naming the field (#1153)', async () => {
+      // never a delete — but it is still spelt as nested `disconnect` input,
+      // which ADR-0050 removes from the payload outright in favour of assigning
+      // `null` to the field. The update is refused by name until this branch is
+      // converted to that assignment (#1153).
+      it('refuses the to-one back-reference it disconnects, naming the field', async () => {
         const existing = { id: 'p1', title: 'T', content: 'c', authorId: 'u1' }
         mockPrisma.Post.first.mockResolvedValue(existing)
 
@@ -227,7 +227,7 @@ describe('getContext', () => {
         expect(result).toMatchObject({ removed: false })
         const failure = result as { error?: string }
         expect(failure.error).toContain('"author"')
-        expect(failure.error).toContain('#1153')
+        expect(failure.error).toContain('`null`')
       })
 
       it('deletes the related row when mode is delete', async () => {
@@ -247,7 +247,7 @@ describe('getContext', () => {
         expect(result).toEqual({ removed: true })
       })
 
-      it('refuses the to-many back-reference it disconnects, naming the field (#1153)', async () => {
+      it('refuses the to-many back-reference it disconnects, naming the field', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = { Lesson: rc8Collection({ first: [{ id: 'l1', title: 'L' }] }) }
         const m2mConfig: OpenSaasConfig = {
@@ -298,7 +298,7 @@ describe('getContext', () => {
         expect(result).toMatchObject({ removed: false })
         const failure = result as { error?: string }
         expect(failure.error).toContain('"teachers"')
-        expect(failure.error).toContain('#1153')
+        expect(failure.error).toContain('`null`')
       })
 
       it('returns a generic error (Silent failure) when the update is access-denied', async () => {
@@ -686,8 +686,18 @@ describe('getContext', () => {
       // Security-critical invariant (#758): the server sets the back-reference by
       // spreading client `data` and THEN overwriting `data[field]` from the
       // trusted `parentId`, so a HOSTILE client-supplied `data[field]` can never
-      // re-target the link to a different parent. These lock that overwrite for
-      // both the to-one and the to-many back-reference shapes.
+      // re-target the link to a different parent.
+      //
+      // Known limits, until #1153 lowers `connect`: the refusal is all these can
+      // observe, so they prove the hostile scalar was REPLACED by relation input
+      // — not what it was replaced with. Neither the link target's identity nor
+      // the to-one/to-many arity of the back-reference is pinned; a server that
+      // built `{ connect: { id: <client value> } }`, or that emitted the to-one
+      // shape for both branches, passes them. Nothing is exploitable while the
+      // refusal stands, because no `connect` reaches the database at all — and
+      // both gaps go live again with the lowering, which turns these tests red
+      // (they assert `create` was never called) and forces the identity and
+      // arity assertions back in.
       it('overwrites a hostile client-supplied to-one back-reference with the trusted parentId', async () => {
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -704,7 +714,8 @@ describe('getContext', () => {
         // column value the engine would have carried to the create, while the
         // server's own trusted `connect` is relation input the engine refuses
         // until #1153. A refusal naming `author` is therefore proof the
-        // spread-in evil id was replaced before the write.
+        // spread-in evil id was replaced by relation input — see the Known
+        // limits above for what that stops short of proving.
         expect(mockPrisma.Post.create).not.toHaveBeenCalled()
         const failure = result as { error?: string }
         expect(failure.error).toContain('"author"')

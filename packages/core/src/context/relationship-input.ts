@@ -2,30 +2,30 @@ import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 
 /**
- * The nested-write spellings a payload no longer carries. Each was a second
- * write against another list hidden inside one call — N hook chains staged
- * against one atomic decision — and Prisma 8 has no construct to lower six of
- * them onto (ADR-0050). A caller writing several rows authors them inside
- * `context.transaction`.
+ * The spellings ADR-0050 removes from a write payload. The nested writes among
+ * them have no replacement in the payload at all: each was a second write
+ * against another list hidden inside one call — N hook chains staged against
+ * one atomic decision — so a caller writing several rows authors them inside
+ * `context.transaction`. `disconnect` is removed with a named replacement
+ * instead: assigning `null` to the same relationship field.
  */
 const REFUSED_KINDS = [
   'create',
   'update',
   'delete',
   'connectOrCreate',
+  'disconnect',
   'set',
   'updateMany',
   'deleteMany',
 ] as const
 
 /**
- * The two spellings ADR-0050 keeps — an edge is a foreign-key assignment on the
- * row being written, and clearing one is `null` on the same field — which the
- * engine has no lowering for yet. #1153 owns that lowering and removes this
- * refusal with it. Until then the payload reaches the driver as a column value
- * and fails as a raw type error naming neither the list nor the field.
+ * The one relationship spelling ADR-0050 keeps — an edge is a foreign-key
+ * assignment on the row being written — which the engine has no lowering for
+ * yet. #1153 owns that lowering and removes this refusal with it.
  */
-const UNLOWERED_KINDS = ['connect', 'disconnect'] as const
+const UNLOWERED_KINDS = ['connect'] as const
 
 /**
  * Thrown when a write payload spells a nested operation on a relationship
@@ -42,19 +42,42 @@ export class NestedRelationInputError extends Error {
   ) {
     super(
       `Cannot write "${listName}" — "${fieldKey}" carries a nested ` +
-        `${kinds.map((kind) => `\`${kind}\``).join(', ')} operation, which the write payload no ` +
-        `longer accepts. A payload holds this list's own scalars; write the related rows ` +
-        `yourself and wrap them in \`context.transaction\` when they must land together.`,
+        `${quoteKinds(kinds)} operation, which the write payload no longer accepts. A payload ` +
+        `holds this list's own scalars; ${replacementFor(fieldKey, kinds)}.`,
     )
     this.name = 'NestedRelationInputError'
   }
 }
 
+function quoteKinds(kinds: readonly string[]): string {
+  return kinds.map((kind) => `\`${kind}\``).join(', ')
+}
+
+function replacementFor(fieldKey: string, kinds: readonly string[]): string {
+  const parts: string[] = []
+  if (kinds.some((kind) => kind !== 'disconnect')) {
+    parts.push(
+      'write the related rows yourself and wrap them in `context.transaction` when they must ' +
+        'land together',
+    )
+  }
+  if (kinds.includes('disconnect')) {
+    parts.push(`clear an edge by assigning \`null\` to "${fieldKey}"`)
+  }
+  return parts.join('; ')
+}
+
 /**
- * Thrown when a write payload spells `connect`/`disconnect` on a relation. The
- * spelling is the one ADR-0050 keeps, so this is a temporary refusal rather
- * than a contract: it stands only until #1153 lowers relation input onto the
- * rc.8 collection, and goes away there.
+ * Thrown when a write payload carries relation input on a relationship key —
+ * `connect`, or any other object where a column value belongs. The spelling
+ * ADR-0050 keeps is `connect`, so this is a temporary refusal rather than a
+ * contract: it stands only until #1153 lowers relation input onto the rc.8
+ * collection, and goes away there.
+ *
+ * `kinds` is empty when the object names no recognised spelling — a
+ * `{ connect: cond ? … : undefined }` that resolved to nothing, say. The
+ * payload is still refused, because a relationship key carries a foreign key or
+ * `null`, never an object.
  */
 export class RelationInputNotLoweredError extends Error {
   constructor(
@@ -63,10 +86,11 @@ export class RelationInputNotLoweredError extends Error {
     readonly kinds: readonly string[],
   ) {
     super(
-      `Cannot write "${listName}" — "${fieldKey}" carries a ` +
-        `${kinds.map((kind) => `\`${kind}\``).join(', ')} operation, which this engine does not ` +
-        `lower onto the database yet. Relation input arrives in #1153; until then a payload ` +
-        `carries this list's own columns, a to-one relation's foreign key among them.`,
+      `Cannot write "${listName}" — "${fieldKey}" carries ` +
+        `${kinds.length > 0 ? `a ${quoteKinds(kinds)} operation` : 'relation input as an object'}` +
+        `, which this engine does not lower onto the database yet. Relation input arrives in ` +
+        `#1153; until then a payload carries this list's own columns, a to-one relation's ` +
+        `foreign key among them.`,
     )
     this.name = 'RelationInputNotLoweredError'
   }
@@ -110,8 +134,8 @@ function kindsIn(value: unknown, candidates: readonly string[]): string[] {
 
 /**
  * Refuse a payload that spells a nested write, or a not-yet-lowered relation
- * input, on a relation key — naming the field and every refused kind on it at
- * once.
+ * input, on a relation key — naming the field, and every refused kind spelled
+ * on it at once.
  *
  * Runs after the operation-access gate, so a caller with no access to the list
  * gets the silent denial and never learns from the error which fields it
@@ -135,5 +159,9 @@ export function refuseNestedRelationInput(
 
     const unlowered = kindsIn(value, UNLOWERED_KINDS)
     if (unlowered.length > 0) throw new RelationInputNotLoweredError(listName, fieldKey, unlowered)
+
+    if (isPlainObject(value) || Array.isArray(value)) {
+      throw new RelationInputNotLoweredError(listName, fieldKey, [])
+    }
   }
 }

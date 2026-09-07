@@ -5,6 +5,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
+import { WriteMatchedNothingError } from '../index.js'
 import { getContext } from './index.js'
 import { NestedRelationInputError, RelationInputNotLoweredError } from './relationship-input.js'
 
@@ -236,6 +237,7 @@ describe('the write terminals over a real collection', () => {
       const created = await harness.context.db.Post.create({ data: { title: 'before' } })
 
       const settled: string[] = []
+      const reasons: unknown[] = []
       const config: OpenSaasConfig = {
         ...schemaConfig(),
         lists: {
@@ -247,8 +249,9 @@ describe('the write terminals over a real collection', () => {
                 if (args.operation !== 'update') return
                 await args.context.db.Post.delete({ where: { id: String(created?.id) } })
               },
-              afterTransaction: async ({ status }) => {
-                settled.push(status)
+              afterTransaction: async (args) => {
+                settled.push(args.status)
+                if (args.status === 'rolled-back') reasons.push(args.error)
               },
             },
           },
@@ -266,6 +269,11 @@ describe('the write terminals over a real collection', () => {
       // The owner's own bracket first (the update, which wrote nothing), then
       // the joined delete's deferred one (ADR-0028), which did commit.
       expect(settled).toEqual(['rolled-back', 'committed'])
+      // The reason reaches the compensator as a named type off the package
+      // root, so telling "matched nothing" from a real rollback does not mean
+      // matching on `error.name`.
+      expect(reasons).toHaveLength(1)
+      expect(reasons[0]).toBeInstanceOf(WriteMatchedNothingError)
       expect(await storedTitles(harness.url)).toEqual([])
     },
     BOOT,
@@ -433,6 +441,7 @@ describe('a nested write in a payload is refused', () => {
     update: { update: { where: { id: 'a1' }, data: { name: 'a' } } },
     delete: { delete: true },
     connectOrCreate: { connectOrCreate: { where: { id: 'a1' }, create: { name: 'a' } } },
+    disconnect: { disconnect: true },
     set: { set: [{ id: 'a1' }] },
     updateMany: { updateMany: { where: {}, data: { name: 'a' } } },
     deleteMany: { deleteMany: {} },
@@ -457,25 +466,42 @@ describe('a nested write in a payload is refused', () => {
   }
 
   /**
-   * `connect`/`disconnect` are the spellings ADR-0050 keeps, and #1153 lowers.
-   * Until it does they must not reach the driver as a column value — the error
-   * there names neither this list nor this field.
+   * `connect` is the one spelling ADR-0050 keeps, and #1153 lowers. Until it
+   * does it must not reach the driver as a column value — the error there names
+   * neither this list nor this field.
    */
-  test.each([
-    ['connect', { connect: { id: 'a1' } }],
-    ['disconnect', { disconnect: true }],
-  ])('%s is refused by name until #1153, and nothing is written', async (kind, payload) => {
+  test('connect is refused by name until #1153, and nothing is written', async () => {
+    const payload = { connect: { id: 'a1' } }
+
     await expect(
       harness.context.db.Post.create({ data: { title: 't', author: payload } }),
     ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
 
     await expect(
       harness.context.db.Post.create({ data: { title: 't', author: payload } }),
-    ).rejects.toThrow(new RegExp(`"Post".+"author".+\`${kind}\``, 's'))
+    ).rejects.toThrow(/"Post".+"author".+`connect`/s)
 
     await expect(
       harness.context.db.Post.create({ data: { title: 't', author: payload } }),
     ).rejects.toThrow(/#1153/)
+
+    expect(await storedTitles(harness.url)).toEqual([])
+  })
+
+  /**
+   * `{ connect: cond ? { id } : undefined }` names no spelling once the
+   * conditional resolves, but an object on a relationship key is not a column
+   * value either. It is refused by name rather than reaching the driver, which
+   * answers `invalid input syntax for type uuid: "{}"`.
+   */
+  test('a relation object carrying no spelling is refused, and nothing is written', async () => {
+    await expect(
+      harness.context.db.Post.create({ data: { title: 't', author: { connect: undefined } } }),
+    ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
+
+    await expect(
+      harness.context.db.Post.create({ data: { title: 't', author: { connect: undefined } } }),
+    ).rejects.toThrow(/"Post".+"author"/s)
 
     expect(await storedTitles(harness.url)).toEqual([])
   })

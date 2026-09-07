@@ -166,6 +166,10 @@ export {
   NestedRelationInputError,
   RelationInputNotLoweredError,
 } from './context/relationship-input.js'
+// Why an `afterTransaction` bracket reports `rolled-back` for a write whose
+// transaction committed: the predicate matched no row. Reachable so a
+// compensator can tell that apart from a real rollback.
+export { WriteMatchedNothingError } from './context/transaction-boundary.js'
 export type {
   SecuredQuery,
   SecuredRefinement,

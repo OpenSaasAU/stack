@@ -49,10 +49,12 @@ Access Filter must now name fields the list declares — a rule that scoped by a
 undeclared column is refused rather than silently passed through.
 
 Nested relation input is gone from the write payload (ADR-0050).
-`create`/`update`/`delete`/`connectOrCreate`/`set`/`updateMany`/`deleteMany`
+`create`/`update`/`delete`/`connectOrCreate`/`disconnect`/`set`/`updateMany`/`deleteMany`
 under a relationship key are a compile error against the generated input types
-and a `NestedRelationInputError` at runtime. Write the related rows yourself and
-wrap them in `context.transaction` when they must land together:
+and a `NestedRelationInputError` at runtime. `disconnect` has a direct
+replacement — assign `null` to the relationship field, which is the same column
+and the same lowering — and the rest have none: write the related rows yourself
+and wrap them in `context.transaction` when they must land together:
 
 ```typescript
 await context.transaction(async (tx) => {
@@ -61,10 +63,11 @@ await context.transaction(async (tx) => {
 })
 ```
 
-`connect` and `disconnect` are the two spellings ADR-0050 keeps, and the engine
-has no lowering for them yet. Until it does they are refused by name with a
+`connect` is the one spelling ADR-0050 keeps, and the engine has no lowering for
+it yet. Until it does, a `connect` — or any other object where a relationship
+key's column value belongs — is refused by name with a
 `RelationInputNotLoweredError` naming the list, the field and the issue that
-brings them back (#1153), rather than reaching the driver as a column value and
+brings it back (#1153), rather than reaching the driver as a column value and
 failing as a raw type error that names none of those. The refusal is checked
 against both the caller's payload and the data a `resolveInput` hook produced,
 and it covers a synthetic `from_<List>_<field>` back-relation key as well.

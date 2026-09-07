@@ -49,14 +49,24 @@ describe('refuseNestedRelationInput', () => {
   })
 
   it('treats an explicitly-undefined nested key as absent', () => {
-    // `{ create: cond ? x : undefined }` requested no nested write, and naming
-    // `create` in the refusal would be a lie about what the caller sent.
-    expect(() =>
+    // `{ create: cond ? x : undefined }` requested no nested write, so naming
+    // `create` in the refusal would be a lie about what the caller sent. The
+    // object is still refused — it is not a column value — just not by a
+    // spelling it does not carry.
+    let thrown: unknown
+    try {
       refuseNestedRelationInput('Post', post, config, {
         title: 't',
         category: { create: undefined, connect: undefined },
-      }),
-    ).not.toThrow()
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(RelationInputNotLoweredError)
+    const message = (thrown as Error).message
+    expect(message).not.toContain('`create`')
+    expect(message).not.toContain('`connect`')
   })
 
   it('refuses a nested write on a synthetic reverse-relation key', () => {
@@ -99,10 +109,44 @@ describe('refuseNestedRelationInput', () => {
     expect(message).not.toContain('c1')
   })
 
-  it('refuses disconnect the same way', () => {
-    expect(() =>
-      refuseNestedRelationInput('Post', post, config, { category: { disconnect: true } }),
-    ).toThrow(RelationInputNotLoweredError)
+  it('refuses disconnect permanently, pointing at the null assignment that replaces it', () => {
+    // ADR-0050 removes `disconnect` rather than deferring it: clearing an edge
+    // is `null` on the same field. A message promising #1153 would name a
+    // spelling that is not coming back.
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Post', post, config, { category: { disconnect: true } })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(NestedRelationInputError)
+    const message = (thrown as Error).message
+    expect(message).toContain('`disconnect`')
+    expect(message).toContain('`null`')
+    expect(message).toContain('"category"')
+    expect(message).not.toContain('#1153')
+  })
+
+  it('refuses a relation object that carries no spelling at all', () => {
+    // `{ connect: cond ? { id } : undefined }` names nothing once the
+    // conditional resolves, but a relationship key carries a foreign key or
+    // `null` — never an object. Left alone it reaches the driver as `{}`.
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Post', post, config, { title: 't', category: {} })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(RelationInputNotLoweredError)
+    expect((thrown as Error).message).toContain('"category"')
+  })
+
+  it('leaves null on a relation key alone', () => {
+    // `null` is what ADR-0050 makes the replacement for `disconnect`; the shape
+    // refusal must not swallow it.
+    expect(() => refuseNestedRelationInput('Post', post, config, { category: null })).not.toThrow()
   })
 
   it('reports the permanent refusal ahead of the temporary one', () => {
