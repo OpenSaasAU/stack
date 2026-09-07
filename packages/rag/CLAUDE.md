@@ -356,13 +356,12 @@ Known limits of the generation hook, all of them consequences of running after
 the commit — none can abort the write:
 
 - A nested record is never embedded: `afterTransaction` carries a persisted
-  `item` for the top-level record only (#1271).
+  `item` for the top-level record only (#1271). No write reaches that today —
+  a nested spelling under a relationship key is refused by
+  `NestedRelationInputError` (ADR-0050) — so the hook's warning is a backstop.
 - A provider failure is logged, not thrown. The row keeps a null embedding and
   there is no regeneration path yet (#1271); `generation-failure.ts` classifies
   a throw as transient or standing and says a standing one once per field.
-- On the `prisma-8` branch the sudo write cannot execute at all, because the
-  secured write surface is not yet ported (#1124, #1127), so every embedding
-  column stays null and searches return nothing.
 
 ### Access Control Integration
 
@@ -539,13 +538,15 @@ const semanticResults = await context.db.Article.nearest('contentEmbedding', que
 ```typescript
 // Find articles similar to a given article
 const article = await context.db.Article.where({ id: { equals: id } }).first()
-const queryVector = article.contentEmbedding.vector
+// `null` is either "no such row" or "the Access Filter denied it" — an
+// access-controlled read never says which, so guard before dereferencing.
+const stored = article?.contentEmbedding
 
-const similar = await context.db.Article.where({ id: { not: id } }).nearest(
-  'contentEmbedding',
-  queryVector,
-  { limit: 5 },
-)
+const similar = stored
+  ? await context.db.Article.where({ id: { not: id } }).nearest('contentEmbedding', stored.vector, {
+      limit: 5,
+    })
+  : []
 ```
 
 ## Testing
@@ -630,10 +631,7 @@ deployment, apply it as a migration instead (see "Applying the change" above).
 Every affected row is then left with a null embedding. There is no re-embedding
 command (#1271); what regenerates one is re-saving the row's source field, which
 works because a null vector reads back as no stored embedding at all, so the
-`sourceHash` gate has nothing to match and does not short-circuit. **On the
-`prisma-8` branch that re-save regenerates nothing** — the plugin's sudo write is
-inert until #1124/#1127 land (see "Known limits" above) — so the column stays
-null regardless.
+`sourceHash` gate has nothing to match and does not short-circuit.
 
 ### Coming from an app whose embeddings were JSON
 

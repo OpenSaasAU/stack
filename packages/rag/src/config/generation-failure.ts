@@ -6,25 +6,12 @@
  * fail identically on every row until something outside the application
  * changes. That is a property of the **error**, not of where in the hook it was
  * thrown: `createEmbeddingProvider` fails permanently on a `type` nothing
- * registered, and the sudo write will fail transiently once the surface #1127
- * ports it onto is real. So the classification is on the error and the reporter
- * is one catch site.
+ * registered, while a provider being down fails transiently. So the
+ * classification is on the error and the reporter is one catch site.
  */
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Whether a throw is the secured write surface still speaking Prisma 6 to a
- * Prisma 8 collection, rather than anything a provider or a row did: `update()`
- * calls a `findUnique` no collection carries, and `create()` passes Prisma 6's
- * `{ data }` to a collection that takes a row (`write-pipeline.ts`, #1124,
- * #1127).
- */
-export function isUnportedWriteSurface(error: unknown): boolean {
-  const text = messageOf(error)
-  return text.includes('findUnique is not a function') || text.includes('Unknown column "data"')
 }
 
 /**
@@ -78,21 +65,6 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
 
   return (failure) => {
     const field = `${failure.listName}.${failure.fieldName}`
-
-    if (isUnportedWriteSurface(failure.error)) {
-      standing(
-        failure,
-        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The sudo write that ` +
-          `carries a generated embedding to its column failed, and on this release it fails the ` +
-          `same way for every row: the secured write surface has not been ported onto the ` +
-          `Prisma 8 collection yet (#1124, #1127). Rows commit normally and the embedding ` +
-          `column stays null, so semantic search over this field returns nothing. There is no ` +
-          `regeneration path (#1271), so rows written before that lands stay null afterwards. ` +
-          `No config change works around it; track #1127.`,
-        '#1124, #1127',
-      )
-      return
-    }
 
     if (isUnregisteredProviderType(failure.error)) {
       standing(

@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
 import { executeFieldResolveInputHooks, splitMultiColumnFields } from '../hooks/index.js'
-import type { FieldConfig } from '../config/types.js'
+import { json } from '../fields/index.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
 /**
@@ -212,6 +214,174 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     expect(result).toEqual({ title: 'no media in payload' })
     expect('m_url' in result).toBe(false)
   })
+})
+
+/**
+ * The same write-access gate, driven through `context.db` rather than through
+ * `splitMultiColumnFields` alone — the surface an application calls. The field
+ * below carries a contract, so its two columns are real ones and a granted
+ * write is asserted by reading the value back rather than by inspecting what
+ * the split returned.
+ */
+function storedMultiColumn(access?: FieldAccess): FieldConfig {
+  const field = json()
+  const columns = ['avatar_filename', 'avatar_filesize']
+  field.access = access
+  field.getContractField = () => ({
+    kind: 'columns',
+    columns: [
+      { name: columns[0], type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: columns[1], type: { pack: 'pg', type: 'int' }, nullable: true },
+    ],
+  })
+  field.getColumnNames = () => columns
+  field.assembleColumns = (_fieldName, row) => {
+    const filename = row[columns[0]]
+    if (filename === null || filename === undefined) return null
+    return { filename, filesize: row[columns[1]] }
+  }
+  field.splitColumns = (_fieldName, value) => {
+    if (value === null || value === undefined) return { [columns[0]]: null, [columns[1]]: null }
+    const metadata: { filename?: unknown; filesize?: unknown } = value
+    return {
+      [columns[0]]: metadata.filename ?? null,
+      [columns[1]]: metadata.filesize ?? null,
+    }
+  }
+  return field
+}
+
+const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
+
+const storedConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql', timestamps: true },
+  lists: {
+    NoUpdate: {
+      fields: { avatar: storedMultiColumn({ update: () => false }) },
+      access: { operation: OPEN },
+    },
+    NoCreate: {
+      fields: { avatar: storedMultiColumn({ create: () => false }) },
+      access: { operation: OPEN },
+    },
+    Granted: {
+      fields: { avatar: storedMultiColumn({ create: () => true, update: () => true }) },
+      access: { operation: OPEN },
+    },
+    Ungated: {
+      fields: { avatar: storedMultiColumn() },
+      access: { operation: OPEN },
+    },
+  },
+}
+
+const media = { filename: 'ada.png', filesize: 99 }
+
+describe('multi-column write access through context.db', () => {
+  const BOOT = 120_000
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(storedConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  beforeEach(async () => {
+    await database.truncate()
+  })
+
+  it(
+    'THROWS when update access is denied, and the columns keep what they had',
+    async () => {
+      const context = database.context(null)
+      const created = await context.db.NoUpdate.create({ data: { avatar: media } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+
+      await expect(
+        context.db.NoUpdate.update({ where: { id }, data: { avatar: { filename: 'other' } } }),
+      ).rejects.toThrow('Cannot update "avatar": field-level access denied.')
+
+      const stored = await context.db.NoUpdate.where({}).first()
+      expect(stored?.avatar).toEqual(media)
+    },
+    BOOT,
+  )
+
+  it(
+    'THROWS when create access is denied, and no row lands',
+    async () => {
+      const context = database.context(null)
+
+      await expect(context.db.NoCreate.create({ data: { avatar: media } })).rejects.toThrow(
+        'Cannot create "avatar": field-level access denied.',
+      )
+
+      expect(await context.db.NoCreate.where({}).first()).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'writes both per-part columns when access is granted',
+    async () => {
+      const context = database.context(null)
+      await context.db.Granted.create({ data: { avatar: media } })
+
+      const stored = await context.db.Granted.where({}).first()
+      expect(stored?.avatar).toEqual(media)
+      expect(stored).not.toHaveProperty('avatar_filename')
+    },
+    BOOT,
+  )
+
+  it(
+    'sudo bypasses the gate and the columns land',
+    async () => {
+      const context = database.context(null)
+      const created = await context.db.NoUpdate.create({ data: { avatar: media } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+
+      await context.sudo().db.NoUpdate.update({
+        where: { id },
+        data: { avatar: { filename: 'other', filesize: 7 } },
+      })
+
+      const stored = await context.db.NoUpdate.where({}).first()
+      expect(stored?.avatar).toEqual({ filename: 'other', filesize: 7 })
+    },
+    BOOT,
+  )
+
+  it(
+    'a field WITHOUT field-level access writes exactly as before',
+    async () => {
+      const context = database.context(null)
+      await context.db.Ungated.create({ data: { avatar: media } })
+
+      expect((await context.db.Ungated.where({}).first())?.avatar).toEqual(media)
+    },
+    BOOT,
+  )
+
+  it(
+    'clearing the field with null clears both columns',
+    async () => {
+      const context = database.context(null)
+      const created = await context.db.Granted.create({ data: { avatar: media } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+
+      await context.db.Granted.update({ where: { id }, data: { avatar: null } })
+
+      expect((await context.db.Granted.where({}).first())?.avatar).toBeNull()
+    },
+    BOOT,
+  )
 })
 
 describe('multi-column write split respects field-level write access', () => {

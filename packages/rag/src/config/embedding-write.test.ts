@@ -2,20 +2,13 @@
 // with its metadata beside it, ranked by `nearest()`, assembled back into one
 // value on the way out, and write-denied to application code (ADR-0045).
 //
-// Known limits: the secured write surface has not been ported onto the Prisma 8
-// collection yet (spec 7, #1124, #1127) — `context.db.<list>.create()` still
-// speaks Prisma 6's `{ data }` to a collection that takes a row, and `update()`
-// calls a `findUnique` no collection carries — so rows are seeded through the
-// Unsafe origin, and the write denial is driven through `hookPipeline`, the
-// transform+validate span `write-pipeline.ts` runs before it persists. The
-// plugin's own sudo write is driven end to end and skips itself by name until
-// then. Re-point all three at `context.db` once #1127 lands.
+// Rows are seeded by writing their source text through `context.db`, so every
+// vector under assertion is one the plugin's own generation hook produced.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import { config as defineConfig } from '@opensaas/stack-core'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
-import { hookPipeline } from '@opensaas/stack-core/internal'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { withOrigin } from '@opensaas/stack-core/origin'
 import {
@@ -28,7 +21,6 @@ import { registerEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import { embedding } from '../fields/embedding.js'
 import { ragPlugin } from './plugin.js'
-import { isUnportedWriteSurface } from './generation-failure.js'
 
 const BOOT = 120_000
 
@@ -42,12 +34,17 @@ const VECTORS: Record<string, number[]> = {
   blue: [0, 1, 0],
 }
 
+/** Texts no field is written with directly — only a hook can produce them. */
+const DERIVED: Record<string, number[]> = {
+  'red hot': [0, 0, 1],
+}
+
 const fakeProvider: EmbeddingProvider = {
   type: 'fake',
   model: 'fake-3',
   dimensions: 3,
   embed: async (input: string) => {
-    const vector = VECTORS[input]
+    const vector = VECTORS[input] ?? DERIVED[input]
     if (vector === undefined) throw new Error(`the fake provider has no vector for "${input}"`)
     return vector
   },
@@ -66,7 +63,25 @@ const source: OpenSaasConfig = {
         content: text(),
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true, update: () => true } },
+    },
+    Derived: {
+      fields: {
+        title: text(),
+        body: text(),
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
+      },
+      hooks: {
+        // The plugin's own sudo write runs this pipeline too, carrying only the
+        // embedding column, so an unguarded derivation would overwrite `content`
+        // with the join of two undefineds on that second pass.
+        resolveInput: ({ resolvedData }) =>
+          typeof resolvedData.title === 'string'
+            ? { ...resolvedData, content: [resolvedData.title, resolvedData.body].join(' ') }
+            : resolvedData,
+      },
+      access: { operation: { query: () => true, create: () => true } },
     },
   },
 }
@@ -78,8 +93,10 @@ const metadata = {
   generatedAt: '2026-01-01T00:00:00.000Z',
 }
 
+/** What the generation hook stamps beside a vector it produced itself. */
+const generatedMetadata = { model: 'fake-3', provider: 'fake', dimensions: 3 }
+
 let database: TestDatabase
-let resolved: OpenSaasConfig
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -92,10 +109,6 @@ function collection(model: string): Record<string, unknown> {
   const found: unknown = Reflect.get(namespace, model)
   if (!isRecord(found)) throw new Error(`no collection "${model}"`)
   return found
-}
-
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -122,13 +135,27 @@ function embeddingWriterOf(
   }
 }
 
-function seed(model: string, row: object): Promise<void> {
+/**
+ * A row built off the secured surface, for the one shape the surface cannot
+ * produce: metadata present with no vector beside it. Do not reach for this to
+ * seed a vector — every other row here is written through `context.db` so the
+ * vector under assertion is the plugin's own output.
+ */
+function seedOffSurface(model: string, row: object): Promise<void> {
   const target = collection(model)
   const create: unknown = target.create
   if (typeof create !== 'function') throw new Error(`collection "${model}" has no create`)
   return withOrigin('unsafe', async () => {
     await create.call(target, row)
   })
+}
+
+/** Writes the source text and lets the plugin's hook produce the vector. */
+async function writeSource(content: string): Promise<string> {
+  const created = await database.context(null).db.Article.create({ data: { content } })
+  const id = created?.id
+  if (typeof id !== 'string') throw new Error('the create returned no row')
+  return id
 }
 
 /**
@@ -158,8 +185,7 @@ describe.skipIf(!available)(
     : `the embedding column [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
   () => {
     beforeAll(async () => {
-      resolved = await defineConfig(source)
-      database = await createTestDatabase(resolved)
+      database = await createTestDatabase(await defineConfig(source))
     }, BOOT)
 
     afterAll(async () => {
@@ -171,22 +197,23 @@ describe.skipIf(!available)(
     })
 
     test('the two columns read back as one stored embedding', async () => {
-      await seed('Article', {
-        content: 'red',
-        contentEmbedding: [1, 0, 0],
-        contentEmbeddingMetadata: metadata,
-      })
+      await writeSource('red')
 
       const stored = await database.context(null).db.Article.where({}).first()
 
-      expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
+      expect(stored?.contentEmbedding).toMatchObject({
+        vector: [1, 0, 0],
+        metadata: generatedMetadata,
+      })
       expect(stored).not.toHaveProperty('contentEmbeddingMetadata')
     })
 
     test('a row with no vector reads back as a null embedding', async () => {
       // Metadata present and the vector absent, so a null answer can only come
-      // from the vector column.
-      await seed('Article', { content: 'red', contentEmbeddingMetadata: metadata })
+      // from the vector column. No write through `context.db` can produce that
+      // row — the generation hook writes both columns or neither — so this one
+      // is built off the surface on purpose.
+      await seedOffSurface('Article', { content: 'red', contentEmbeddingMetadata: metadata })
 
       const stored = await database.context(null).db.Article.where({}).first()
 
@@ -194,12 +221,8 @@ describe.skipIf(!available)(
     })
 
     test('nearest ranks by the column the field declares', async () => {
-      for (const [content, vector] of Object.entries(VECTORS)) {
-        await seed('Article', {
-          content,
-          contentEmbedding: vector,
-          contentEmbeddingMetadata: metadata,
-        })
+      for (const content of Object.keys(VECTORS)) {
+        await writeSource(content)
       }
 
       const matches = await database.context(null).db.Article.nearest('contentEmbedding', [1, 0, 0])
@@ -214,6 +237,21 @@ describe.skipIf(!available)(
       expect(scores[2]).toBeCloseTo(0, 5)
     })
 
+    test('the embedded text is the persisted source, not the caller’s input', async () => {
+      // `content` is named nowhere in the write — a list-level resolveInput
+      // derives it — so a hook reading `inputData` instead of the committed row
+      // would find nothing to embed.
+      await database.context(null).db.Derived.create({ data: { title: 'red', body: 'hot' } })
+
+      const stored = await database.context(null).db.Derived.where({}).first()
+
+      expect(stored?.content).toBe('red hot')
+      expect(stored?.contentEmbedding).toMatchObject({
+        vector: [0, 0, 1],
+        metadata: generatedMetadata,
+      })
+    })
+
     test('a query vector of the wrong length is refused by the declared dimension', async () => {
       await expect(
         database.context(null).db.Article.nearest('contentEmbedding', [1, 0]),
@@ -221,71 +259,43 @@ describe.skipIf(!available)(
     })
 
     describe('write denial', () => {
-      const write = { contentEmbedding: { vector: [1, 0, 0], metadata } }
+      const denied = { contentEmbedding: { vector: [1, 0, 0], metadata } }
 
-      /** The harness hands out a `StackContext`; the pipeline takes the narrower `AccessContext`. */
-      function accessContext(sudo: boolean): AccessContext {
-        const context = sudo ? database.context(null).sudo() : database.context(null)
-        return { ...context, ormHandle: {}, _resolveOutputChain: [] }
-      }
+      test('an ordinary create naming the embedding throws', async () => {
+        await expect(
+          database.context(null).db.Article.create({ data: { content: 'red', ...denied } }),
+        ).rejects.toThrow('Cannot create "contentEmbedding": field-level access denied.')
+      })
 
-      /**
-       * The transform+validate span of a write, run over the real list config
-       * the plugin resolved — `write-pipeline.ts` calls exactly this before it
-       * persists.
-       */
-      function pipeline(
-        listKey: string,
-        operation: 'create' | 'update',
-        inputData: Record<string, unknown>,
-        sudo: boolean,
-      ) {
-        return hookPipeline.run({
-          operation,
-          listName: listKey,
-          listConfig: resolved.lists[listKey],
-          inputData,
-          item: undefined,
-          context: accessContext(sudo),
-        })
-      }
+      test('an ordinary update naming the embedding throws', async () => {
+        const id = await writeSource('red')
 
-      test('an ordinary create or update naming the embedding throws', async () => {
-        for (const operation of ['create', 'update'] as const) {
-          await expect(pipeline('Article', operation, write, false)).rejects.toThrow(
-            `Cannot ${operation} "contentEmbedding": field-level access denied.`,
-          )
-        }
+        await expect(
+          database.context(null).db.Article.update({ where: { id }, data: denied }),
+        ).rejects.toThrow('Cannot update "contentEmbedding": field-level access denied.')
       })
 
       test('the write the throw refused never reaches the columns', async () => {
-        await seed('Article', { content: 'red' })
+        // An empty source returns the generation hook early, so the column is
+        // null for the whole test and the refused write is the only thing that
+        // could have filled it.
+        const id = await writeSource('')
         const before = await database.context(null).db.Article.where({}).first()
         expect(before?.contentEmbedding).toBeNull()
 
-        await expect(pipeline('Article', 'update', write, false)).rejects.toThrow(
-          'field-level access denied',
-        )
+        await expect(
+          database.context(null).db.Article.update({ where: { id }, data: denied }),
+        ).rejects.toThrow('field-level access denied')
 
         const after = await database.context(null).db.Article.where({}).first()
         expect(after?.contentEmbedding).toBeNull()
       })
 
-      test('the plugin’s own sudo write produces both columns, and they read back', async () => {
-        const { resolvedData } = await pipeline(
-          'Article',
-          'create',
-          { content: 'red', ...write },
-          true,
-        )
-
-        expect(resolvedData).toEqual({
-          content: 'red',
-          contentEmbedding: [1, 0, 0],
-          contentEmbeddingMetadata: metadata,
-        })
-
-        await seed('Article', resolvedData)
+      test('a sudo write naming the embedding produces both columns, and they read back', async () => {
+        await database
+          .context(null)
+          .sudo()
+          .db.Article.create({ data: { content: '', ...denied } })
 
         const stored = await database.context(null).db.Article.where({}).first()
         expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
@@ -296,83 +306,35 @@ describe.skipIf(!available)(
        * live `getContext` built, over the real column, read back through the
        * secured surface.
        *
-       * It skips itself by name while `context.db.<list>.update()` cannot
-       * execute (#1124, #1127) rather than asserting the call shape against a
-       * double — a green assertion over a path that provably fails is worse
-       * than no coverage. When the surface lands, this starts running.
-       *
        * The source text is empty on purpose. The write commits, so the field's
-       * own `afterTransaction` now runs on the way out; over a non-empty source
-       * it would regenerate the embedding and this assertion would be reading
-       * the hook's output rather than the writer's. An empty source returns the
+       * own `afterTransaction` runs on the way out; over a non-empty source it
+       * would regenerate the embedding and this assertion would be reading the
+       * hook's output rather than the writer's. An empty source returns the
        * hook early, leaving the bytes under test the ones the writer put there.
        */
-      test('the plugin’s sudo write reaches the column', async (ctx) => {
-        await seed('Article', { content: '' })
+      test('the plugin\u2019s sudo write reaches the column', async () => {
+        const id = await writeSource('')
         const seeded = await database.context(null).db.Article.where({}).first()
-        const id = seeded?.id
-        if (typeof id !== 'string') throw new Error('the seeded row has no id')
         expect(seeded?.contentEmbedding).toBeNull()
 
-        const write = embeddingWriterOf(database.context(null))
         const stored = { vector: [1, 0, 0], metadata }
-
-        try {
-          await write('Article', id, 'contentEmbedding', stored)
-        } catch (error) {
-          if (isUnportedWriteSurface(error)) {
-            ctx.skip(
-              `the secured write surface is not on the Prisma 8 collection yet ` +
-                `(#1124, #1127): ${message(error)}`,
-            )
-          }
-          throw error
-        }
+        await embeddingWriterOf(database.context(null))('Article', id, 'contentEmbedding', stored)
 
         const after = await database.context(null).db.Article.where({}).first()
         expect(after?.contentEmbedding).toEqual(stored)
-      })
-
-      test('allowManualWrites lets an ordinary write through the same pipeline', async () => {
-        const open = await defineConfig({
-          db: { provider: 'postgresql' },
-          plugins: [ragPlugin({ provider: { type: 'fake', dimensions: 3 } })],
-          lists: {
-            Article: {
-              fields: {
-                content: text(),
-                contentEmbedding: embedding({ dimensions: 3, allowManualWrites: true }),
-              },
-            },
-          },
-        })
-
-        const { resolvedData } = await hookPipeline.run({
-          operation: 'update',
-          listName: 'Article',
-          listConfig: open.lists.Article,
-          inputData: write,
-          item: undefined,
-          context: accessContext(false),
-        })
-
-        expect(resolvedData).toEqual({
-          contentEmbedding: [1, 0, 0],
-          contentEmbeddingMetadata: metadata,
-        })
       })
     })
   },
 )
 
 /**
- * The same write denial, driven through `context.db` rather than through
- * `hookPipeline` alone: `embedding()` is a multi-column field, so its refusal
- * comes from `splitMultiColumnFields` (#568), which the Write Pipeline (#1152)
- * reaches only after the operation gate has had its say. The two rules meet
- * here — a field-denied write throws and names the field, while a caller the
- * operation gate turned away gets the silent `null` and learns nothing
- * (ADR-0031).
+ * Where the write denial meets the two rules around it. `embedding()` is a
+ * multi-column field, so its refusal comes from `splitMultiColumnFields`
+ * (#568), which the Write Pipeline (#1152) reaches only after the operation
+ * gate has had its say: a field-denied write throws and names the field, while
+ * a caller the operation gate turned away gets the silent `null` and learns
+ * nothing (ADR-0031). `allowManualWrites` is the third case — the same payload
+ * on a field that opted out of the denial.
  */
 const combined: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -391,6 +353,13 @@ const combined: OpenSaasConfig = {
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
       },
       access: { operation: { query: () => true, create: () => false } },
+    },
+    Manual: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ dimensions: 3, allowManualWrites: true }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
     },
   },
 }
@@ -444,6 +413,18 @@ describe.skipIf(!available)(
 
         const stored = await db.context(null).db.Article.where({}).first()
         expect(stored?.contentEmbedding).toMatchObject({ vector: [1, 0, 0] })
+      },
+      BOOT,
+    )
+
+    test(
+      'allowManualWrites lets the same payload reach the columns',
+      async () => {
+        const created = await db.context(null).db.Manual.create({ data: write })
+        expect(created).toMatchObject({ content: 'red' })
+
+        const stored = await db.context(null).db.Manual.where({}).first()
+        expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
       },
       BOOT,
     )

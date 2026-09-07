@@ -110,29 +110,21 @@ provider and saying `ollamaEmbeddings({ dimensions })` is required — a generat
 refusal rather than a compile error. Use the `ollamaEmbeddings()` / `openaiEmbeddings()`
 helpers, whose parameters are the concrete config types, to get the error from `tsc`.
 
-**Embedding generation does not run in this release (#1124, #1127).** Everything above —
-the column, its dimension, the index declaration, the write denial, `nearest()` — is real
-and works. Generation itself does not: the plugin writes a generated embedding through the
-secured write surface under sudo, and that surface has not been ported onto the Prisma 8
-collection yet, so the write throws on **every** invocation.
+**Embedding generation runs end to end.** `context.db.Article.create({ data: { content } })`
+commits the row, and once that transaction settles the plugin embeds the **persisted**
+source text and writes the vector and its metadata to the column under sudo. Writing the
+source text again regenerates it; a write that leaves the source text alone does not,
+because the `sourceHash` on the stored metadata short-circuits.
 
-What an application sees today: `context.db.Article.create({ data: { content } })`
-succeeds and the row commits normally; the embedding column stays `null`; and the log says
-so, naming #1124 and #1127. Semantic search over that field returns nothing, because there
-is nothing in the column. There is no config change that works around it.
+When a generation does fail, the log distinguishes a **standing** defect from a transient
+one by the **error**, not by where in the hook it was raised. A provider `type` no factory
+answers to is standing: it is said once in full per field and then one line per row, naming
+what has to change and saying that retrying will not help. Anything else is reported per
+occurrence as transient, saying the row is committed and to retry by writing the source
+field again.
 
-The log says it once in full per field, and then one line per row after that, because it
-is a standing defect rather than a per-row event. Which of the two you get is decided by
-the **error**, not by where in the hook it was raised: a failure that matches the unported
-write surface, or a provider `type` no factory answers to, is reported as standing —
-naming what has to change and saying that retrying will not help. Anything else is
-reported per occurrence as transient, saying the row is committed and to retry by writing
-the source field again.
-
-There is also no regeneration path (#1271), so rows written before #1127 lands keep their
-null embeddings afterwards — plan to re-save the source field, or backfill, once it does.
-If you need vectors before then, use `embedding({ allowManualWrites: true })` and write
-them yourself.
+There is no regeneration command (#1271), so a row whose generation failed keeps its null
+embedding until its source field is written again.
 
 **Further known limits on generation (#1271).** Embeddings are generated in an
 `afterTransaction` hook, after the row commits, which bounds what it can do:
@@ -141,8 +133,9 @@ them yourself.
   it as a failure would invite a retry that duplicates the row. The row keeps a null
   embedding, and there is no regeneration path yet.
 - A **nested** record is never embedded — `afterTransaction` carries a persisted row for
-  the top-level record only, so `User.create({ data: { articles: { create: [...] } } })`
-  leaves those Articles with a null embedding, with a warning naming the list.
+  the top-level record only. On this release that row cannot be created in the first place:
+  a nested spelling under a relationship key is refused by `NestedRelationInputError`
+  (ADR-0050), so the hook's warning is a backstop rather than something a write reaches.
 
 Generation keys on the **persisted** source text, not the caller's input, so a source
 field a `resolveInput` hook derives is embedded like any other.

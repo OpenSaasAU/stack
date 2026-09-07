@@ -245,11 +245,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
               //    the caller made did succeed, and reporting it as a failure
               //    would invite a retry that duplicates the row. The row keeps
               //    a null embedding and there is no regeneration path yet.
-              //  - #1124/#1127: the sudo write cannot execute at all on this
-              //    branch, because the secured write surface still speaks
-              //    Prisma 6 to a Prisma 8 collection. `generation-failure.ts`
-              //    recognises that throw and says the feature is inert rather
-              //    than that one row missed out.
               afterTransaction: async (args) => {
                 if (args.status !== 'committed') return
                 if (args.operation !== 'create' && args.operation !== 'update') return

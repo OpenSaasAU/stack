@@ -1,10 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import { config as defineConfig } from '@opensaas/stack-core'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { AccessContext } from '@opensaas/stack-core'
-import { hookPipeline } from '@opensaas/stack-core/internal'
 import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
 import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
@@ -637,10 +635,9 @@ describe('ragPlugin', () => {
     })
 
     it('reports a transient write failure as transient, not as the standing defect', async () => {
-      // The write is where the standing #1127 defect surfaces, so a reporter
-      // that keys on the code path rather than on the error calls this one
-      // standing too — and tells the reader no config change works around a
-      // connection that dropped.
+      // A reporter that keys on the code path rather than on the error calls
+      // every write failure standing, and tells the reader no config change
+      // works around a connection that dropped.
       const { hook, context } = await generationHook('counting', () => {
         throw new Error('connection reset by peer')
       })
@@ -659,7 +656,6 @@ describe('ragPlugin', () => {
       expect(said).toContain('"Article.contentEmbedding" was not embedded for Article a1')
       expect(said).toContain('retry by writing the source field again')
       expect(said).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
-      expect(said).not.toContain('#1127')
       logged.mockRestore()
     })
 
@@ -692,43 +688,6 @@ describe('ragPlugin', () => {
       // Said in full once, then one line per row, like the other standing one.
       expect(logged.mock.calls[1][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
       expect(logged.mock.calls[1][0]).toContain('Article a2')
-      logged.mockRestore()
-    })
-
-    it('reports a write that cannot execute as the standing defect it is', async () => {
-      // What the sudo write does on this release: `context.db.<list>.update()`
-      // calls a `findUnique` no Prisma 8 collection carries, so it fails
-      // identically on every row rather than transiently (#1124, #1127).
-      const { hook, context } = await generationHook('counting', () => {
-        throw new TypeError('model.findUnique is not a function')
-      })
-      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const committed = async (id: string) =>
-        await hook!({
-          listKey: 'Article',
-          operation: 'create',
-          status: 'committed',
-          inputData: { content: 'four' },
-          item: { id, content: 'four', contentEmbedding: null },
-          context,
-        })
-
-      await expect(committed('a1')).resolves.toBeUndefined()
-      await expect(committed('a2')).resolves.toBeUndefined()
-
-      const first = logged.mock.calls[0][0]
-      expect(first).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
-      expect(first).toContain('#1124')
-      expect(first).toContain('#1127')
-      expect(first).toContain('the embedding column')
-      // Not the transient wording: no config change works around this one.
-      expect(first).not.toContain('retry by writing the source field again')
-      // Said in full once; the row after it says which row and points back.
-      const second = logged.mock.calls[1][0]
-      expect(second).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
-      expect(second).toContain('Article a2')
-      expect(second).toContain('#1127')
       logged.mockRestore()
     })
 
@@ -804,56 +763,6 @@ describe('ragPlugin', () => {
       expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
     })
 
-    it('embeds a source value a list-level resolveInput produced', async () => {
-      const resolved = await defineConfig({
-        db: { provider: 'postgresql' },
-        plugins: [ragPlugin({ provider: { type: 'counting', dimensions: 1 } })],
-        lists: {
-          Article: {
-            fields: {
-              title: text(),
-              body: text(),
-              content: text(),
-              contentEmbedding: embedding({ sourceField: 'content', dimensions: 1 }),
-            },
-            hooks: {
-              resolveInput: ({ resolvedData }) => ({
-                ...resolvedData,
-                content: [resolvedData.title, resolvedData.body].join(' '),
-              }),
-            },
-          },
-        },
-      })
-      const recorder = writeRecorder()
-      const inputData = { title: 'Four', body: 'score' }
-
-      // The real transform span: `content` is derived here and named nowhere
-      // in the input, which is what the old guard keyed on.
-      const { resolvedData } = await hookPipeline.run({
-        operation: 'create',
-        listName: 'Article',
-        listConfig: resolved.lists.Article,
-        inputData,
-        item: undefined,
-        context: recorder.context,
-      })
-      expect(resolvedData.content).toBe('Four score')
-
-      await resolved.lists.Article.hooks!.afterTransaction!({
-        listKey: 'Article',
-        operation: 'create',
-        status: 'committed',
-        inputData,
-        item: { id: 'a1', ...resolvedData },
-        context: recorder.context,
-      })
-
-      // 'Four score' is 10 characters, and the counting provider embeds a text
-      // as its length.
-      expect(recorder.writes.map((write) => write.stored.vector)).toEqual([[10]])
-    })
-
     it('refuses to write when the context carries no rag services', async () => {
       const { hook } = await generationHook()
 
@@ -905,9 +814,8 @@ describe('ragPlugin', () => {
       // The escalation is the whole reason the writer lives on Plugin.runtime
       // (ADR-0045): a hook's AccessContext cannot derive a sudo one, and
       // without sudo the field's own write denial refuses the plugin's output.
-      // What the write then calls on the delegate is deliberately not pinned —
-      // that call shape changes when #1127 lands, and pinning it is what made
-      // the previous test green over a path that could not execute.
+      // Which context the write runs on is the assertion; what it calls on the
+      // delegate is `embedding-write.test.ts`'s job, against a real column.
       const requestReached: string[] = []
       const sudoReached: string[] = []
       let escalations = 0
