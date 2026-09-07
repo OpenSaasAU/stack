@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
 import { config as defineConfig } from '@opensaas/stack-core'
@@ -59,6 +59,22 @@ function stubContext(overrides: Partial<AccessContext>): AccessContext {
     _resolveOutputChain: [],
     ...overrides,
   }
+}
+
+/**
+ * A `db` surface that records which list keys were reached through it, and
+ * answers every method on the delegate. It pins no call shape: the point is
+ * which context a write ran on, not what it called.
+ */
+function recordingDb(reached: string[]): AccessContext['db'] {
+  const surface: AccessContext['db'] = {}
+  return new Proxy(surface, {
+    get: (_target, key) => {
+      if (typeof key !== 'string') return undefined
+      reached.push(key)
+      return new Proxy({}, { get: () => async () => null })
+    },
+  })
 }
 
 type EmbeddingWriter = (
@@ -130,6 +146,13 @@ function pluginContext(config: Partial<OpenSaasConfig> & { lists: OpenSaasConfig
 
   return { context, live, extensions, mcpTools, pluginData }
 }
+
+// vi.spyOn returns the EXISTING mock when the property is already spied, so a
+// test that fails before its own mockRestore() hands its console spy — and its
+// recorded calls — to the next test.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('ragPlugin', () => {
   describe('plugin shape', () => {
@@ -352,6 +375,9 @@ describe('ragPlugin', () => {
         providers: {
           counting: { type: 'counting', dimensions: 1 },
           flaky: { type: 'flaky', dimensions: 1 },
+          // Declared by ragPlugin, but no factory answers to the type — the
+          // permanent configuration defect createEmbeddingProvider refuses.
+          ghost: { type: 'ghost', dimensions: 1 },
         },
       }).init!(harness.context)
 
@@ -442,6 +468,68 @@ describe('ragPlugin', () => {
         expect.objectContaining({ message: '429 Too Many Requests' }),
       )
       expect(logged.mock.calls[0][0]).toContain('#1271')
+      // A provider that is down is this row, this minute — reporting it as the
+      // standing defect is the inverted misreport the split exists to prevent.
+      expect(logged.mock.calls[0][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      logged.mockRestore()
+    })
+
+    it('reports a transient write failure as transient, not as the standing defect', async () => {
+      // The write is where the standing #1127 defect surfaces, so a reporter
+      // that keys on the code path rather than on the error calls this one
+      // standing too — and tells the reader no config change works around a
+      // connection that dropped.
+      const { hook, context } = await generationHook('counting', () => {
+        throw new Error('connection reset by peer')
+      })
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
+
+      const said = logged.mock.calls[0][0]
+      expect(said).toContain('"Article.contentEmbedding" was not embedded for Article a1')
+      expect(said).toContain('retry by writing the source field again')
+      expect(said).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      expect(said).not.toContain('#1127')
+      logged.mockRestore()
+    })
+
+    it('reports an unregistered provider type as a standing defect, not as transient', async () => {
+      // Building the provider is where a permanent configuration defect
+      // surfaces, so a reporter that keys on the code path calls this one
+      // transient — and tells the reader to retry a write that will fail
+      // identically forever.
+      const { hook, writes, context } = await generationHook('ghost')
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const committed = async (id: string) =>
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id, content: 'four', contentEmbedding: null },
+          context,
+        })
+
+      await expect(committed('a1')).resolves.toBeUndefined()
+      await expect(committed('a2')).resolves.toBeUndefined()
+
+      expect(writes).toEqual([])
+      const first = logged.mock.calls[0][0]
+      expect(first).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+      expect(first).toContain('registerEmbeddingProvider')
+      expect(first).not.toContain('retry by writing the source field again')
+      // Said in full once, then one line per row, like the other standing one.
+      expect(logged.mock.calls[1][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      expect(logged.mock.calls[1][0]).toContain('Article a2')
       logged.mockRestore()
     })
 
@@ -472,6 +560,8 @@ describe('ragPlugin', () => {
       expect(first).toContain('#1124')
       expect(first).toContain('#1127')
       expect(first).toContain('the embedding column')
+      // Not the transient wording: no config change works around this one.
+      expect(first).not.toContain('retry by writing the source field again')
       // Said in full once; the row after it says which row and points back.
       const second = logged.mock.calls[1][0]
       expect(second).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
@@ -631,6 +721,57 @@ describe('ragPlugin', () => {
         'generateEmbeddings',
       ])
     })
+
+    it('refuses an undeclared provider at runtime, the way generation refuses it', async () => {
+      // Falling back to the default here embeds with a model of a different
+      // width than the column the same name fixed, so the two paths have to
+      // give the same answer.
+      const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
+        stubContext({}),
+        () => stubContext({}),
+      )
+      const generate: unknown = Reflect.get(Object(services), 'generateEmbedding')
+      if (typeof generate !== 'function') throw new Error('no generateEmbedding service')
+
+      await expect(generate('four', 'ollama')).rejects.toThrow(
+        'RAG plugin: the provider "ollama" is not declared by ragPlugin',
+      )
+      await expect(generate('four')).resolves.toEqual([4])
+    })
+
+    it('runs the escalated write on the context sudo() returns, not on the request one', async () => {
+      // The escalation is the whole reason the writer lives on Plugin.runtime
+      // (ADR-0045): a hook's AccessContext cannot derive a sudo one, and
+      // without sudo the field's own write denial refuses the plugin's output.
+      // What the write then calls on the delegate is deliberately not pinned —
+      // that call shape changes when #1127 lands, and pinning it is what made
+      // the previous test green over a path that could not execute.
+      const requestReached: string[] = []
+      const sudoReached: string[] = []
+      let escalations = 0
+
+      const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
+        stubContext({ db: recordingDb(requestReached) }),
+        () => {
+          escalations += 1
+          return stubContext({ db: recordingDb(sudoReached), _isSudo: true })
+        },
+      )
+
+      await writeEmbeddingOf(services).write('Article', 'a1', 'contentEmbedding', {
+        vector: [4],
+        metadata: {
+          model: 'counting-1',
+          provider: 'counting',
+          dimensions: 1,
+          generatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      })
+
+      expect(escalations).toBe(1)
+      expect(sudoReached).toEqual(['Article'])
+      expect(requestReached).toEqual([])
+    })
   })
 
   describe('beforeGenerate', () => {
@@ -730,6 +871,19 @@ describe('ragPlugin', () => {
           "does not declare. The provider fixes the column's dimension, so resolving this to " +
           'the default one would emit a column of the wrong width. Declared providers: ' +
           'default, openai, large.',
+      )
+    })
+
+    it('refuses a provider name the prototype chain answers to', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+        providers: { large: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' } },
+      })
+
+      // `'toString' in providers` is true of every object literal, so the
+      // lookup has to ask what this map declares, not what it inherits.
+      expect(() => plugin.beforeGenerate!(listsWith(1536, 'toString'))).toThrow(
+        'names the provider "toString", which ragPlugin does not declare',
       )
     })
 

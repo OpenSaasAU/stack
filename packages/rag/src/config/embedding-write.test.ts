@@ -28,6 +28,7 @@ import { registerEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import { embedding } from '../fields/embedding.js'
 import { ragPlugin } from './plugin.js'
+import { isUnportedWriteSurface } from './generation-failure.js'
 
 const BOOT = 120_000
 
@@ -95,17 +96,6 @@ function collection(model: string): Record<string, unknown> {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Whether a throw is the secured write surface still speaking Prisma 6 to a
- * Prisma 8 collection, rather than anything this field did: `update()` calls a
- * `findUnique` no collection carries, and `create()` passes Prisma 6's `{ data }`
- * to a collection that takes a row (`write-pipeline.ts`, #1124, #1127).
- */
-function isUnportedWriteSurface(error: unknown): boolean {
-  const text = message(error)
-  return text.includes('findUnique is not a function') || text.includes('Unknown column "data"')
 }
 
 /**

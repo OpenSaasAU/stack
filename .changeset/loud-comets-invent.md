@@ -97,6 +97,17 @@ omitted `dimensions` type-checked and reached the provider as `undefined`. The h
 `OLLAMA_EMBEDDING_DIMENSIONS`, defaulting to 768 (`nomic-embed-text`), and refuse a value
 that is not a positive integer.
 
+**What that type does and does not catch.** It closes the `createEmbeddingProvider(…)`
+call site only. Everywhere a provider config is written against the union itself — most
+importantly `ragPlugin({ provider: … })` and `ragPlugin({ providers: { … } })` — the
+catch-all still absorbs a built-in `type` with a member missing, because TypeScript cannot
+subtract `'ollama'` from `string` and closing it would mean a breaking change to a public
+type. So `ragPlugin({ provider: { type: 'ollama', model: 'nomic-embed-text' } })` still
+compiles. What stops it is `beforeGenerate`, which fails `pnpm generate` naming the
+provider and saying `ollamaEmbeddings({ dimensions })` is required — a generate-time
+refusal rather than a compile error. Use the `ollamaEmbeddings()` / `openaiEmbeddings()`
+helpers, whose parameters are the concrete config types, to get the error from `tsc`.
+
 **Embedding generation does not run in this release (#1124, #1127).** Everything above —
 the column, its dimension, the index declaration, the write denial, `nearest()` — is real
 and works. Generation itself does not: the plugin writes a generated embedding through the
@@ -104,10 +115,17 @@ secured write surface under sudo, and that surface has not been ported onto the 
 collection yet, so the write throws on **every** invocation.
 
 What an application sees today: `context.db.Article.create({ data: { content } })`
-succeeds and the row commits normally; the embedding column stays `null`; and one
-`console.error` per field says so, naming #1124 and #1127. Semantic search over that field
-returns nothing, because there is nothing in the column. There is no config change that
-works around it.
+succeeds and the row commits normally; the embedding column stays `null`; and the log says
+so, naming #1124 and #1127. Semantic search over that field returns nothing, because there
+is nothing in the column. There is no config change that works around it.
+
+The log says it once in full per field, and then one line per row after that, because it
+is a standing defect rather than a per-row event. Which of the two you get is decided by
+the **error**, not by where in the hook it was raised: a failure that matches the unported
+write surface, or a provider `type` no factory answers to, is reported as standing —
+naming what has to change and saying that retrying will not help. Anything else is
+reported per occurrence as transient, saying the row is committed and to retry by writing
+the source field again.
 
 There is also no regeneration path (#1271), so rows written before #1127 lands keep their
 null embeddings afterwards — plan to re-save the source field, or backfill, once it does.
