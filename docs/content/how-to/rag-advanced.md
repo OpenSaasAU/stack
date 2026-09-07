@@ -243,6 +243,7 @@ export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConf
 **Usage:**
 
 ```typescript
+import { config } from '@opensaas/stack-core'
 import { ragPlugin } from '@opensaas/stack-rag'
 import { cohereEmbeddings } from '@/lib/providers/cohere'
 
@@ -255,6 +256,8 @@ export default config({
       }),
     }),
   ],
+  db: { provider: 'postgresql' },
+  // ... lists
 })
 ```
 
@@ -621,6 +624,9 @@ const matches = await context.db.Article.where({
 
 Both the `where` and the `minScore` are lowered into the same query as the
 ranking, so narrowing the search genuinely narrows the work the database does.
+Filtering on `createdAt` assumes the list has it: auto-timestamps are off by
+default (ADR-0004), so `Article` here either declares the field or sets
+`db: { timestamps: true }`.
 Pick `minScore` on the column's own scale — a `cosine` column scores the raw
 cosine on `[-1, 1]`, so `0.7` is tight and `0` is merely "more alike than
 opposite".

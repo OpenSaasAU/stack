@@ -205,9 +205,13 @@ This only affects a caller-supplied `include` that explicitly reaches past the c
 
 ## System Fields
 
-Fields `id`, `createdAt`, `updatedAt` are automatically:
+`id` is the only column the generator adds on its own. `createdAt`/`updatedAt`
+are **off by default** ([ADR-0004](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0004-generator-emits-keystone-compatible-defaults.md)):
+a list opts in by declaring the two fields itself or by setting
+`db: { timestamps: true }`, per list or on `db` for every list at once.
 
-- Added to Prisma schema
+All three names, where the list has them, are:
+
 - Excluded from access control (always readable)
 - Excluded from field-level write operations
 

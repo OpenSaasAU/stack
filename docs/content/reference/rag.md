@@ -48,10 +48,7 @@ export default config({
       }),
     }),
   ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -313,8 +310,13 @@ only datasource RAG runs on — `pnpm generate` refuses any other one.
 `ragPlugin` declares the pgvector extension pack, so nothing in your config
 names it and no SQL is yours to run. The declaration is a generator emission
 (ADR-0065): `pnpm generate` writes the extension's own migration under
-`migrations/pgvector/`, and `pnpm db:update` — or `opensaas db migrate` in
-production — enables the extension ahead of your tables.
+`migrations/pgvector/`, and applying the contract enables the extension ahead of
+your tables. Locally that is `pnpm db:update` with `pnpm dev` up in another
+terminal — the command opens no connection of its own, hands the request to that
+loop, and exits non-zero when none is listening; add `--confirm postgres` when
+the plan is destructive. In a deployment there is no loop, so it is
+`prisma migration plan` once, committed, then `prisma db migrate`. There is no
+`opensaas db migrate` — `opensaas db` carries only `update`.
 
 What the deployment owns is provisioning:
 
@@ -498,6 +500,7 @@ export default config({
       enableMcpTools: true, // Enable semantic_search_article tool
     }),
   ],
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: { type: 'better-auth', loginPage: '/sign-in' },

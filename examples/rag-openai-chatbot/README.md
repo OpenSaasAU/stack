@@ -292,6 +292,7 @@ export default config({
       }),
     }),
   ],
+  db: { provider: 'postgresql' },
   lists: {
     KnowledgeBase: list({
       fields: {
@@ -314,7 +315,8 @@ export default config({
       access: {
         operation: {
           query: () => true,
-          create: () => true,
+          // Denied so the seed script can demonstrate sudo() bypassing it
+          create: () => false,
           update: () => true,
           delete: () => true,
         },
@@ -328,13 +330,18 @@ export default config({
 
 `pnpm generate` emits the app's contract — the schema the app's own migration is
 later planned from — so `KnowledgeBase` carries `id`, `title`, `content`,
-`category`, `published` and the timestamps, plus two columns for the one
-`contentEmbedding` field:
+`category` and `published`, plus two columns for the one `contentEmbedding`
+field:
 
 | Column                     | Type           |
 | -------------------------- | -------------- |
 | `contentEmbedding`         | `vector(1536)` |
 | `contentEmbeddingMetadata` | `jsonb`        |
+
+There is no `createdAt`/`updatedAt` pair. `id` is the only column added for you;
+auto-timestamps are off by default (ADR-0004) and this config opts into them
+nowhere. A list that wants them either declares the two fields itself or sets
+`db: { timestamps: true }` — on the list, or on `db` for every list at once.
 
 The vector is a native pgvector column, not JSON, and the field reassembles the
 pair into a single value on read:

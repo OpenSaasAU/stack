@@ -21,10 +21,11 @@ Adds vector embeddings and semantic search to OpenSaas Stack apps with minimal c
 packages/rag/
 ├── src/
 │   ├── config/         # ragPlugin(), provider helpers
-│   ├── fields/         # embedding() field type
+│   ├── fields/         # embedding() field type, searchable() wrapper
 │   ├── providers/      # OpenAI, Ollama embedding providers
 │   ├── runtime/        # generateEmbeddings(), semanticSearch()
-│   └── mcp/            # MCP tool generators
+│   └── mcp/            # Types for custom MCP tools — no tools, no generators;
+│                       # ragPlugin registers the semantic search tools itself
 ```
 
 ## Package Exports
@@ -73,10 +74,7 @@ import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -114,7 +112,7 @@ import { embedding } from '@opensaas/stack-rag/fields'
 export default config({
   // Postgres with pgvector is the only datasource RAG runs on: every column
   // the plugin emits is a pgvector column.
-  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
+  db: { provider: 'postgresql' },
   lists: {
     Document: list({
       fields: {
@@ -265,7 +263,7 @@ import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 export default config({
-  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: { type: 'better-auth', loginPage: '/sign-in' },
@@ -537,9 +535,9 @@ const similar = await context.db.Article.where({ id: { not: id } }).nearest(
 ## Testing
 
 ```typescript
-// packages/rag/__tests__/providers.test.ts
+// packages/rag/src/providers/providers.test.ts
 import { describe, it, expect } from 'vitest'
-import { createOpenAIProvider } from '../src/providers/openai'
+import { createOpenAIProvider } from './openai.js'
 
 describe('OpenAIEmbeddingProvider', () => {
   it('should generate embeddings', async () => {

@@ -46,10 +46,7 @@ export default config({
       }),
     }),
   ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -150,7 +147,8 @@ export default config({
       }),
     }),
   ],
-  // ... rest of config
+  db: { provider: 'postgresql' },
+  // ... lists
 })
 ```
 
@@ -291,6 +289,7 @@ export default config({
       enableMcpTools: true, // Enables semantic_search_article tool
     }),
   ],
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: { type: 'better-auth', loginPage: '/sign-in' },

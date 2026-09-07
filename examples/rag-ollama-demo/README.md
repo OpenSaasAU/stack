@@ -148,6 +148,7 @@ Top 3 Results:
 The RAG plugin is configured in `opensaas.config.ts`:
 
 ```typescript
+import { config } from '@opensaas/stack-core'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 
 export default config({
@@ -161,7 +162,7 @@ export default config({
     }),
   ],
   db: { provider: 'postgresql' },
-  // ... rest of config
+  // ... lists
 })
 ```
 
@@ -265,8 +266,6 @@ rag-ollama-demo/
 - `summary` (text)
 - `contentEmbedding` (embedding) - Auto-generated from `content`
 - `published` (checkbox)
-- `createdAt` (timestamp)
-- `updatedAt` (timestamp)
 
 ### Article List
 
@@ -275,6 +274,12 @@ rag-ollama-demo/
 - `category` (text)
 - `bodyEmbedding` (embedding) - Auto-generated from `body`
 - `published` (checkbox)
+
+Both lists also carry `id`, which is the only column added for you. Neither
+carries `createdAt`/`updatedAt`: auto-timestamps are off by default (ADR-0004)
+and this config opts into them nowhere. A list that wants them either declares
+the two fields itself or sets `db: { timestamps: true }` — on the list, or on
+`db` for every list at once.
 
 ## Storage Format
 
