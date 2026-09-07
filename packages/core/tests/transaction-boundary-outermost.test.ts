@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
+import { AfterTransactionError } from '../src/context/transaction-boundary.js'
+import { isSerializationFailure } from '../src/lib/database-errors.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
 import type { Session } from '../src/access/types.js'
@@ -463,26 +465,34 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
   })
 })
 
-describe('ADR-0028 / #899: a serialization failure still propagates unwrapped, with compensators run', () => {
-  it('P2034 rejects the caller unwrapped; the deferred afterTransaction still fired (rolled-back)', async () => {
+describe('ADR-0028 / #899: a serialization failure keeps precedence, with compensators run', () => {
+  it('rejects the caller with SerializationFailure; the deferred afterTransaction still fired (rolled-back)', async () => {
     const mock = createFaithfulTxPrisma()
     const after = vi.fn()
     const testConfig = await baseConfig({ user: { afterTransaction: after } })
     const context = mock.context(testConfig, { userId: '1' })
 
     const serializationError = Object.assign(new Error('could not serialize access'), {
-      code: 'P2034',
+      kind: 'sql_query',
+      sqlState: '40001',
+      constraint: undefined,
     })
 
-    await expect(
-      context.transaction(async (tx) => {
+    const raised = await context
+      .transaction(async (tx) => {
         await tx.db.User.create({ data: { name: 'jane' } })
         throw serializationError
-      }),
-    ).rejects.toMatchObject({ code: 'P2034' })
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
 
-    // The error propagated UNWRAPPED (not an AfterTransactionError) — transaction
-    // errors keep precedence over hook errors, so a P2034 retry loop still works.
+    // The transaction error reached the caller ahead of any hook error (it is
+    // not an AfterTransactionError), normalised rather than raw — ADR-0028's
+    // precedence rule over ADR-0042's normalisation.
+    expect(isSerializationFailure(raised)).toBe(true)
+    expect(raised).not.toBeInstanceOf(AfterTransactionError)
     expect(after).toHaveBeenCalledTimes(1)
     expect(after.mock.calls[0][0].status).toBe('rolled-back')
     expect(mock.tables.User.size).toBe(0)

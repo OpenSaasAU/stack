@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext, TransactionUnavailableError } from '../src/context/index.js'
+import { isSerializationFailure } from '../src/lib/database-errors.js'
 import { config, list } from '../src/config/index.js'
 import { text } from '../src/fields/index.js'
 
 /**
  * #614: interactive, hook-firing transaction on the stack `Context`.
  *
- * `context.transaction(fn, options)` runs `fn` against a `txContext` whose
- * `db.*` operations are access-checked and hook-firing (identical to the normal
+ * `context.transaction(fn)` runs `fn` against a `txContext` whose `db.*`
+ * operations are access-checked and hook-firing (identical to the normal
  * context) but persist against ONE underlying interactive transaction, so every
- * write in the callback is atomic. The transaction `options` (notably
- * `isolationLevel`) are passed through to the underlying Prisma transaction, and
- * serialization failures propagate to the caller (rather than being swallowed)
- * so a caller-owned retry loop can react to them.
+ * write in the callback is atomic. It takes no options and runs at the
+ * connection's default isolation level (ADR-0042); a driver failure reaches the
+ * caller as a stack-owned error rather than being swallowed, so a caller-owned
+ * retry loop can react to it.
  *
  * These tests use an in-memory Prisma mock. The `tx` client handed to the
  * `$transaction` callback intentionally has NO `$transaction` of its own —
@@ -20,17 +21,13 @@ import { text } from '../src/fields/index.js'
  * `context.db` writes join the outer transaction instead of opening their own.
  */
 
-/** A Prisma-style serialization failure (write conflict / deadlock). */
-function makeSerializationError(): Error & { code: string } {
-  const err = new Error('could not serialize access due to concurrent update') as Error & {
-    code: string
-  }
-  err.code = 'P2034'
-  return err
-}
-
-function isSerializationError(err: unknown): boolean {
-  return !!err && typeof err === 'object' && 'code' in err && err.code === 'P2034'
+/** A driver serialization failure, shaped the way Prisma 8's `SqlQueryError` is. */
+function makeSerializationError(): Error {
+  return Object.assign(new Error('could not serialize access due to concurrent update'), {
+    kind: 'sql_query',
+    sqlState: '40001',
+    constraint: undefined,
+  })
 }
 
 /**
@@ -87,10 +84,7 @@ function createTxPrisma() {
     Post: makeModel('Post'),
   }
 
-  const capturedOptions: unknown[] = []
-
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>, options?: unknown) => {
-    capturedOptions.push(options)
+  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
     const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
     for (const [name, map] of Object.entries(tables)) {
       snapshot[name] = new Map(map)
@@ -109,7 +103,7 @@ function createTxPrisma() {
     }
   }
 
-  return { client, tables, capturedOptions }
+  return { client, tables }
 }
 
 const baseConfig = () =>
@@ -170,21 +164,6 @@ describe('#614 context.transaction (interactive transaction)', () => {
     expect(mock.tables.Post.size).toBe(0)
   })
 
-  it('passes transaction options (isolationLevel) through to the underlying client', async () => {
-    const context = getContext(await baseConfig(), mock.client, { userId: '1' })
-
-    await context.transaction(
-      async (tx) => {
-        await tx.db.User.create({ data: { name: 'jane' } })
-      },
-      { isolationLevel: 'Serializable' },
-    )
-
-    expect(mock.capturedOptions).toContainEqual(
-      expect.objectContaining({ isolationLevel: 'Serializable' }),
-    )
-  })
-
   it('enforces access control inside the transaction (denied create returns null)', async () => {
     const denyConfig = await config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
@@ -223,14 +202,21 @@ describe('#614 context.transaction (interactive transaction)', () => {
     expect(created).toEqual(expect.objectContaining({ name: 'transformed' }))
   })
 
-  it('propagates serialization failures to the caller (not swallowed to null)', async () => {
+  it('normalises a serialization failure raised at the settle, not swallowing it to null', async () => {
     const context = getContext(await baseConfig(), mock.client, { userId: '1' })
 
-    await expect(
-      context.transaction(async () => {
+    const raised = await context
+      .transaction(async () => {
         throw makeSerializationError()
-      }),
-    ).rejects.toMatchObject({ code: 'P2034' })
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+
+    expect(isSerializationFailure(raised)).toBe(true)
+    if (!isSerializationFailure(raised)) throw new Error('not normalised')
+    expect(raised.message).toBe('could not serialize access due to concurrent update')
   })
 
   it('the tx context carries the same session and a working sudo()', async () => {
@@ -292,158 +278,5 @@ describe('#614 context.transaction (interactive transaction)', () => {
     ).rejects.toBeInstanceOf(TransactionUnavailableError)
 
     expect(tables.size).toBe(0)
-  })
-})
-
-/**
- * Serializable-isolation emulation for the capacity-gate use case.
- *
- * Each transaction reads a snapshot taken at begin and buffers its writes. At
- * commit, if a transaction that committed during this tx's lifetime wrote to a
- * table this tx READ (a predicate/phantom conflict) or WROTE, this tx fails with
- * a P2034 serialization error — exactly the conflict a `Serializable` capacity
- * gate must surface. With a caller-owned retry loop this yields exactly-N.
- */
-function createSerializablePrisma() {
-  const committed: Record<string, Map<string, Record<string, unknown>>> = { booking: new Map() }
-  let version = 0
-  let idCounter = 0
-  const log: { writeTables: Set<string>; version: number }[] = []
-
-  function snapshotTables() {
-    const snap: Record<string, Map<string, Record<string, unknown>>> = {}
-    for (const [name, map] of Object.entries(committed)) snap[name] = new Map(map)
-    return snap
-  }
-
-  const client: Record<string, unknown> = {
-    // Direct (non-tx) access is not used by these tests, but keep a booking model
-    // so getContext can build a delegate.
-    Booking: {
-      findUnique: vi.fn(async () => null),
-      findMany: vi.fn(async () => Array.from(committed.booking.values())),
-      count: vi.fn(async () => committed.booking.size),
-      create: vi.fn(),
-    },
-  }
-
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>, _options?: unknown) => {
-    const beganAt = version
-    const view = snapshotTables()
-    const buffer = new Map<string, Record<string, unknown>>()
-    const readTables = new Set<string>()
-    const writeTables = new Set<string>()
-
-    const tx: Record<string, unknown> = {
-      Booking: {
-        findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-          readTables.add('booking')
-          return buffer.get(where.id) ?? view.booking.get(where.id) ?? null
-        }),
-        findMany: vi.fn(async () => {
-          readTables.add('booking')
-          return [...view.booking.values(), ...buffer.values()]
-        }),
-        count: vi.fn(async ({ where }: { where?: { slotId?: string } } = {}) => {
-          readTables.add('booking')
-          const all = [...view.booking.values(), ...buffer.values()]
-          if (where?.slotId) return all.filter((r) => r.slotId === where.slotId).length
-          return all.length
-        }),
-        create: vi.fn(async (data: Record<string, unknown>) => {
-          writeTables.add('booking')
-          const id = `b-${++idCounter}`
-          const record = { ...data, id }
-          buffer.set(id, record)
-          return record
-        }),
-      },
-    }
-
-    const result = await fn(tx)
-
-    // Commit: detect serialization conflicts against tx that committed after we began.
-    for (const entry of log) {
-      if (entry.version <= beganAt) continue
-      const conflictsRead = [...entry.writeTables].some((t) => readTables.has(t))
-      const conflictsWrite = [...entry.writeTables].some((t) => writeTables.has(t))
-      if (conflictsRead || conflictsWrite) {
-        const err = new Error('serialization failure') as Error & { code: string }
-        err.code = 'P2034'
-        throw err
-      }
-    }
-
-    // No conflict: apply buffered writes and advance the version.
-    for (const [id, record] of buffer) committed.booking.set(id, record)
-    version += 1
-    log.push({ writeTables, version })
-    return result
-  }
-
-  return { client, committed }
-}
-
-function makeBarrier(n: number) {
-  let count = 0
-  let release: () => void = () => {}
-  const gate = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  return async () => {
-    count += 1
-    if (count >= n) release()
-    await gate
-  }
-}
-
-describe('#614 capacity gate under Serializable contention', () => {
-  it('N concurrent transactions against a capacity-N slot commit exactly N', async () => {
-    const capacity = 2
-    const racers = 4
-    const slotId = 'slot-1'
-
-    const mock = createSerializablePrisma()
-    const cfg = await config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Booking: list({
-          fields: { slotId: text() },
-          access: { operation: { query: () => true, create: () => true } },
-        }),
-      },
-    })
-    const context = getContext(cfg, mock.client, { userId: '1' })
-
-    // All racers must READ the count before any of them COMMITS, to create the
-    // contention. Only the first attempt waits at the barrier; retries proceed.
-    const barrier = makeBarrier(racers)
-
-    async function book(): Promise<boolean> {
-      for (let attempt = 0; attempt < 50; attempt++) {
-        try {
-          return await context.transaction(
-            async (tx) => {
-              const count = await tx.db.Booking.count({ where: { slotId } })
-              if (attempt === 0) await barrier()
-              if (count >= capacity) return false
-              await tx.db.Booking.create({ data: { slotId } })
-              return true
-            },
-            { isolationLevel: 'Serializable' },
-          )
-        } catch (err) {
-          if (isSerializationError(err)) continue
-          throw err
-        }
-      }
-      throw new Error('exceeded retry budget')
-    }
-
-    const results = await Promise.all(Array.from({ length: racers }, () => book()))
-
-    const booked = results.filter(Boolean).length
-    expect(booked).toBe(capacity)
-    expect(mock.committed.booking.size).toBe(capacity)
   })
 })

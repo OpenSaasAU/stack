@@ -2026,7 +2026,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *
      * When timestamps resolve to on but the list already declares its own `createdAt`/
      * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
-     * never sees a duplicate (`P1012`).
+     * never sees a duplicate column.
      *
      * @example Opt a single list out of timestamps even when enabled globally
      * ```typescript
@@ -2610,7 +2610,7 @@ export type DatabaseConfig = {
    * A per-list `db.timestamps` override takes precedence over this global setting. When
    * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
    * field, the auto column is skipped for the declared field(s) so Prisma never sees a
-   * duplicate (`P1012`).
+   * duplicate column.
    *
    * @default false
    *

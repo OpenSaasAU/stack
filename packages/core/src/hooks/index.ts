@@ -16,18 +16,7 @@ export class ValidationError extends Error {
   }
 }
 
-/** Used for Prisma errors like unique constraint violations. */
-export class DatabaseError extends Error {
-  public fieldErrors: Record<string, string>
-  public code?: string
-
-  constructor(message: string, fieldErrors: Record<string, string> = {}, code?: string) {
-    super(message)
-    this.name = 'DatabaseError'
-    this.fieldErrors = fieldErrors
-    this.code = code
-  }
-}
+export { DatabaseError } from '../lib/database-errors.js'
 
 export async function executeResolveInput<
   TOutput = Record<string, unknown>,

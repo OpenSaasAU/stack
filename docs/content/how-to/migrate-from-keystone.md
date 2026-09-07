@@ -188,7 +188,7 @@ Production: list({
 })
 ```
 
-When timestamps resolve to on **and** a list already declares its own `createdAt` / `updatedAt`, the auto column is skipped for the declared field(s) so Prisma never sees a duplicate (`P1012`). If your Keystone lists declared timestamps explicitly, keep declaring them as fields and leave `db.timestamps` off.
+When timestamps resolve to on **and** a list already declares its own `createdAt` / `updatedAt`, the auto column is skipped for the declared field(s) so Prisma never sees a duplicate column. If your Keystone lists declared timestamps explicitly, keep declaring them as fields and leave `db.timestamps` off.
 
 ### Keystone-compat mode: empty-string text defaults
 

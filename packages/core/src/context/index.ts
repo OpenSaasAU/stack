@@ -22,7 +22,7 @@ import type {
   CountAccessDenialTree,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
-import { uniqueConstraintOf } from '../lib/prisma-errors.js'
+import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import type { OpenedTransaction, OrmClient, TransactionOpener } from '../access/types.js'
 import { createSecuredRead } from '../secured/read.js'
 import {
@@ -257,126 +257,17 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
-// A camelCase field name (e.g. a relationship's `tenantId` foreign key) needs
-// its word boundary split before title-casing, or it reads as one run-together
-// word ("Tenantid") in a user-facing unique-constraint message.
-function humanizeFieldName(fieldName: string): string {
-  const spaced = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'code' in error &&
-    'meta' in error &&
-    typeof error.code === 'string'
-  ) {
-    const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
-
-    // P2002 is Prisma's unique constraint violation code.
-    if (prismaError.code === 'P2002') {
-      const target = uniqueConstraintOf(prismaError)?.fields
-      const fieldErrors: Record<string, string> = {}
-
-      if (target && target.length > 0) {
-        for (const fieldName of target) {
-          const fieldConfig = listConfig.fields[fieldName]
-
-          if (fieldConfig) {
-            fieldErrors[fieldName] =
-              `This ${humanizeFieldName(fieldName).toLowerCase()} is already in use`
-          } else {
-            fieldErrors[fieldName] = `This value is already in use`
-          }
-        }
-
-        const fieldLabels = target.map(humanizeFieldName).join(', ')
-        return new DatabaseError(
-          `${fieldLabels} must be unique. The value you entered is already in use.`,
-          fieldErrors,
-          prismaError.code,
-        )
-      }
-
-      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
-    }
-
-    return new DatabaseError(
-      prismaError.message || 'A database error occurred',
-      {},
-      prismaError.code,
-    )
-  }
-
-  if (error instanceof Error) {
-    return error
-  }
-
-  return new Error('An unknown error occurred')
-}
-
 /**
- * Mirrors Prisma's `TransactionIsolationLevel`. Provider support varies —
- * e.g. `Serializable` requires PostgreSQL.
- */
-export type TransactionIsolationLevel =
-  'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
-
-/**
- * Options for {@link StackContext.transaction}, forwarded verbatim to a Prisma
- * 7 interactive transaction. A Prisma 8 client's transaction takes none of
- * them, and refuses the call rather than downgrading it silently — see
- * {@link TransactionOptionsUnsupportedError}.
- */
-export interface TransactionOptions {
-  /** Max ms to wait to acquire a transaction from the pool. */
-  maxWait?: number
-  /** Max ms the interactive transaction may run before timing out. */
-  timeout?: number
-  /** Isolation level for the transaction (e.g. `'Serializable'`). */
-  isolationLevel?: TransactionIsolationLevel
-}
-
-/**
- * Minimal shape of a Prisma 7 client that can open an interactive transaction.
- * A Prisma 7 transaction client (the `tx` handed to the callback) does NOT
- * expose `$transaction`, which is how a nested `transaction()` detects it is
- * already inside one and joins it rather than opening another.
+ * Minimal shape of a client that can open an interactive transaction by
+ * exposing `$transaction`. A transaction client (the `tx` handed to the
+ * callback) does NOT expose it, which is how a nested `transaction()` detects
+ * it is already inside one and joins it rather than opening another.
  *
- * It is tried before {@link TransactionOpener} because it is the only shape
- * that carries the transaction options; on a Prisma 8 client this member is
- * absent and the opener runs instead.
+ * It is tried before {@link TransactionOpener}; on a Prisma 8 client this
+ * member is absent and the opener runs instead.
  */
 interface TransactionCapable {
-  $transaction?: (
-    fn: (tx: OrmClient) => Promise<unknown>,
-    options?: TransactionOptions,
-  ) => Promise<unknown>
-}
-
-/**
- * Thrown when `transaction()` is given options it cannot honour.
- *
- * Prisma 8's `transaction()` takes the callback and nothing else, so an
- * isolation level asked for here would be accepted and then run at the
- * server's default — a lost update the caller believed was closed. Refusing is
- * the alternative to that silence; ADR-0042 removes the options from the
- * signature, at which point this stops being reachable.
- */
-export class TransactionOptionsUnsupportedError extends Error {
-  constructor(readonly options: readonly string[]) {
-    super(
-      `context.transaction() cannot honour ${options.join(', ')} on a Prisma 8 client: its ` +
-        `transaction takes the callback and nothing else. Running anyway would silently use the ` +
-        `server's default isolation level, so the call is refused instead. Express the ` +
-        `constraint in the statements themselves — a row lock on the contended parent — or ` +
-        `drop the options.`,
-    )
-    this.name = 'TransactionOptionsUnsupportedError'
-  }
+  $transaction?: (fn: (tx: OrmClient) => Promise<unknown>) => Promise<unknown>
 }
 
 /**
@@ -547,16 +438,25 @@ function transactionOpenerFor(
  * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
  * errors reject with {@link AfterTransactionError} even though the callback
  * succeeded and the transaction committed.
+ *
+ * The settle is the second normalisation site (ADR-0042). PostgreSQL raises
+ * some failures at `COMMIT`, after every terminal in the callback has already
+ * returned — a `23505` on a `DEFERRABLE INITIALLY DEFERRED` constraint, by
+ * design — so the error the owner observes is normalised here, BEFORE the
+ * deferred-hook flush, which keeps ADR-0028's precedence rule operating on a
+ * normalised value.
  */
 async function settleTransactionOwner<T>(
   settled: Promise<T>,
   registry: TransactionRegistry,
+  config: OpenSaasConfig,
 ): Promise<T> {
   const errors: unknown[] = []
   let result: T
   try {
     result = await settled
-  } catch (err) {
+  } catch (raised) {
+    const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
     await registry.drain(outcome, errors)
     throw err
@@ -743,8 +643,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
         if (error instanceof ValidationError || error instanceof DatabaseError) {
           return { bulkAction: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
-        // A recognised Prisma error carries a user-safe, translated message.
+        const dbError = databaseErrorMessage(error, config)
+        // A normalised database error carries a user-safe, translated message.
         if (dbError instanceof DatabaseError) {
           return { bulkAction: false, error: dbError.message }
         }
@@ -792,7 +692,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         if (error instanceof ValidationError || error instanceof DatabaseError) {
           return { removed: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
         return { removed: false, error: dbError.message }
       }
     }
@@ -852,7 +752,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         if (error instanceof ValidationError || error instanceof DatabaseError) {
           return { created: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
         return {
           created: false,
           error: dbError.message,
@@ -880,7 +780,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         if (error instanceof ValidationError || error instanceof DatabaseError) {
           return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
         return {
           updated: false,
           error: dbError.message,
@@ -954,7 +854,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
       }
 
-      const dbError = parsePrismaError(error, listConfig)
+      const dbError = databaseErrorMessage(error, config)
       if (dbError instanceof DatabaseError) {
         return {
           success: false,
@@ -1018,7 +918,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // rather than creating a second one.
   function transaction<T>(
     fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
-    options?: TransactionOptions,
   ): Promise<T> {
     if (context._transactionOwner) {
       return fn(returned)
@@ -1027,16 +926,15 @@ export function getContext<TConfig extends OpenSaasConfig>(
     const registry = new TransactionRegistry()
     const ormClient = ormHandle as unknown as TransactionCapable
 
-    const settled = runTransactionBody(fn, registry, ormClient, options)
+    const settled = runTransactionBody(fn, registry, ormClient)
 
-    return settleTransactionOwner(settled, registry)
+    return settleTransactionOwner(settled, registry, config)
   }
 
   function runTransactionBody<T>(
     fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
     registry: TransactionRegistry,
     ormClient: TransactionCapable,
-    options?: TransactionOptions,
   ): Promise<T> {
     const child = (
       ormHandle: OrmClient,
@@ -1062,7 +960,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // this branch, the scope has to be derived here too or `tx.unsafe` starts
     // executing outside the transaction it opened.
     if (typeof ormClient.$transaction === 'function') {
-      return ormClient.$transaction((tx) => fn(child(tx)), options) as Promise<T>
+      return ormClient.$transaction((tx) => fn(child(tx))) as Promise<T>
     }
 
     // Prisma 8's transaction holds a pooled connection for the whole callback,
@@ -1071,8 +969,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // transaction, or wait forever for a second connection the dev database's
     // single-connection pool never frees (ADR-0056, ADR-0063).
     if (openTransaction !== undefined) {
-      const asked = options === undefined ? [] : Object.keys(options)
-      if (asked.length > 0) return Promise.reject(new TransactionOptionsUnsupportedError(asked))
       return openTransaction(async (opened) => fn(child(opened.ormHandle, opened.unsafe)))
     }
 
@@ -1102,6 +998,31 @@ export function getContext<TConfig extends OpenSaasConfig>(
 }
 
 /**
+ * Complete the normalisation the engine terminal started, for a write.
+ *
+ * A terminal classifies by SQLSTATE alone — it holds no config, so a `23505`
+ * leaves it as a `UniqueConstraintViolation` carrying the constraint
+ * name and the generic message. Resolving that name to the OpenSaas fields it
+ * covers needs the generated constraint map, which is reached through the
+ * config, so the write operations close the gap here (ADR-0042).
+ *
+ * Reads are not wrapped: no read raises a unique violation, and every other
+ * driver failure is already final at the terminal.
+ */
+function resolvingConstraints<Args extends unknown[], Result>(
+  operation: (...args: Args) => Promise<Result>,
+  config: OpenSaasConfig,
+): (...args: Args) => Promise<Result> {
+  return async (...args: Args): Promise<Result> => {
+    try {
+      return await operation(...args)
+    } catch (error) {
+      throw normalizeDatabaseError(error, config)
+    }
+  }
+}
+
+/**
  * Populate `target` with the access-controlled CRUD operations for every list,
  * each bound to `ormHandle` and `context`. Used both by {@link getContext} (at
  * request setup) and by the Write Pipeline to rebuild a `db` delegate against a
@@ -1119,21 +1040,33 @@ export function populateDbDelegate(
   context: AccessContext,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const createOp = createCreate(listName, listConfig, ormHandle, context, config)
+    const createOp = resolvingConstraints(
+      createCreate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
     const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
-    const updateOp = createUpdate(listName, listConfig, ormHandle, context, config)
+    const updateOp = resolvingConstraints(
+      createUpdate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
     const operations: Record<string, unknown> = {
       findUnique: createFindUnique(listName, listConfig, ormHandle, context, config),
       findMany: findManyOp,
       findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
-      delete: createDelete(listName, listConfig, ormHandle, context, config),
+      delete: resolvingConstraints(
+        createDelete(listName, listConfig, ormHandle, context, config),
+        config,
+      ),
       count: createCount(listName, listConfig, ormHandle, context, config),
     }
 
     if (isSingletonList(listConfig)) {
-      operations.get = createGet(listName, listConfig, ormHandle, context, config, createOp)
+      operations.get = resolvingConstraints(
+        createGet(listName, listConfig, ormHandle, context, config, createOp),
+        config,
+      )
     } else {
       const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
       operations.where = read.where

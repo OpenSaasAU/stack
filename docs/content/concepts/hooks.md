@@ -184,9 +184,10 @@ hooks split into two families by where they run relative to that transaction:
     - **A rejected `context.transaction()` no longer implies rollback.** If the
       transaction commits and a deferred `afterTransaction` then throws,
       `context.transaction()` rejects with `AfterTransactionError` over data
-      that is already final. A transaction/serialization error (e.g. `P2034`)
-      still takes precedence and propagates unwrapped — a retry loop that
-      catches broadly should not treat every rejection as "not committed".
+      that is already final. A transaction error — `SerializationFailure` among
+      them — still takes precedence, so a retry loop keyed on it is unaffected;
+      one that catches broadly should not treat every rejection as "not
+      committed".
     - **`beforeTransaction` can now run with the transaction already open.**
       Under `context.transaction()` it runs on the write's way in, so it holds
       that transaction open for its duration. Keep it fast, or hoist slow
