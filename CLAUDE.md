@@ -1102,7 +1102,7 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
 1. **Define the field type** in `packages/core/src/config/types.ts`:
 
    ```typescript
-   export type MyCustomField = BaseFieldConfig & {
+   export type MyCustomField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
      type: 'myCustom'
      customOption?: string
    }
@@ -1258,7 +1258,7 @@ The stack supports third-party field packages as separate npm packages. This all
 packages/my-field/
 ├── src/
 │   ├── fields/
-│   │   └── myField.ts          # Field builder with Zod/Prisma/TS generators
+│   │   └── myField.ts          # Field builder: Zod schema + contract descriptor
 │   ├── components/
 │   │   └── MyFieldComponent.tsx # React component (client-side)
 │   ├── styles/
@@ -1273,23 +1273,29 @@ packages/my-field/
 1. **Field Builder** - Must implement `BaseFieldConfig`:
 
    ```typescript
-   import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+   import type {
+     BaseFieldConfig,
+     ContractFieldDescriptor,
+     TypeInfo,
+   } from '@opensaas/stack-core/extend'
+   import { z } from 'zod'
 
-   export type MyField = BaseFieldConfig & {
+   export type MyField = BaseFieldConfig<TypeInfo> & {
      type: 'myField'
      // Your custom options
    }
 
-   export function myField(options?): MyField {
+   export function myField(options?: Omit<MyField, 'type'>): MyField {
      return {
        type: 'myField',
        ...options,
-       getZodSchema: (fieldName, operation) => {
-         /* ... */
-       },
-       getContractField: (fieldName, listKey, config) => {
-         /* ... */
-       },
+       getZodSchema: (fieldName, operation) => z.string().optional(),
+       getContractField: (fieldName): ContractFieldDescriptor => ({
+         kind: 'column',
+         name: fieldName,
+         type: { pack: 'pg', type: 'text' },
+         nullable: true,
+       }),
      }
    }
    ```
@@ -1331,12 +1337,9 @@ packages/my-field/
 
 4. **FieldConfig Extensibility** - Core types support third-party fields:
    ```typescript
-   // FieldConfig union includes BaseFieldConfig to allow custom types
-   export type FieldConfig =
-     | TextField
-     | IntegerField
-     | ...
-     | BaseFieldConfig; // Allows third-party fields
+   // FieldConfig is BaseFieldConfig itself, so any field a third-party
+   // package builds is already a FieldConfig — no union to extend.
+   export type FieldConfig = BaseFieldConfig<TypeInfo>
    ```
 
 **See:**

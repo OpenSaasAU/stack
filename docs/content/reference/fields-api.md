@@ -2083,15 +2083,15 @@ getContractField: (fieldName) => ({
 
 ### `outputType`
 
-The field's TypeScript read face, when it differs from the type its contract column's codec already gives it (ADR-0052). Not a method — a value on the field config, either a type string or a `TypeDescriptor`.
+The field's TypeScript read face, when it differs from the type its contract column's codec already gives it (ADR-0052). Not a method — a value on the field config, a `TypeDescriptor`.
 
 **Signature:**
 
 ```typescript
-outputType?: string | TypeDescriptor
+outputType?: TypeDescriptor
 ```
 
-A type string is used as written; `import('pkg').Name` is inlined, so no separate import declaration is needed. A `TypeDescriptor` — `{ value: SomeClass, from: 'pkg', name?: 'Exported' }` — is normalised to the same thing.
+`TypeDescriptor` is itself `string | { value: SomeClass; from: 'pkg'; name?: 'Exported' }`. A type string is used as written; `import('pkg').Name` is inlined, so no separate import declaration is needed. The object form is normalised to the same thing.
 
 **Required** on a virtual field and on a field whose descriptor is `kind: 'columns'`: neither has a single column to be typed from, so without it the field would type its consumers as `unknown`. `opensaas generate` refuses a config where one is missing, naming the list and field.
 
@@ -2112,7 +2112,7 @@ The field's TypeScript write face, when it differs from the read face — an `im
 **Signature:**
 
 ```typescript
-inputType?: string | TypeDescriptor
+inputType?: TypeDescriptor
 ```
 
 `opensaas generate` never requires it. On a single-column field, absence means the column's own input type, which is correct for every field that reads and writes the same shape. A `kind: 'columns'` field has no single column for that to name, so declare `inputType` alongside `outputType` there.
@@ -2133,6 +2133,7 @@ import { z } from 'zod'
 
 export type EmailField = BaseFieldConfig<TypeInfo> & {
   type: 'email'
+  validation?: { isRequired?: boolean }
   requireVerification?: boolean
 }
 

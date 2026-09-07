@@ -368,7 +368,10 @@ The Tiptap package follows OpenSaas's third-party field pattern:
 The field builder implements the `BaseFieldConfig` interface:
 
 - **`getContractField()`** - Returns one `pg/jsonb` column, nullable unless the field is required
-- **`outputType`** / **`inputType`** - `JSONContent` from `@tiptap/core`, `| null` when the field is not required. An override of the column's own type: a `jsonb` codec cannot know the editor's document shape
+- **`outputType`** / **`inputType`** - `import('@opensaas/stack-tiptap').JSONContent`, `| null` when the field is not required. An override of the column's own type: a `jsonb` codec cannot know the editor's document shape.
+
+  The type is Tiptap's own — this package re-exports it from `@tiptap/react` — but the declared face names it through `@opensaas/stack-tiptap`, and must. The generated types are compiled in the **consuming app**, where `@tiptap/react` is this package's dependency rather than the app's, and so is not resolvable under a strict `node_modules` layout. Writing `import('@tiptap/core').JSONContent` in a field's `outputType` produces types that fail to compile there.
+
 - **`getZodSchema()`** - Returns Zod validation schema
 
 ### React Component (`TiptapField`)

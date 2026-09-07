@@ -5,7 +5,7 @@
 
 Field builders declare their contract contribution as a structured descriptor, and `needs` accepts stored columns
 
-Every core field builder now carries `getContractField(fieldName, listKey, config)`, returning a `ContractFieldDescriptor`: a stored column as a pack-qualified type constructor (`{ pack, type, args }`) with native type, nullability and column mapping; for a relationship, the relation and the foreign-key column this side owns; for a virtual field, `{ kind: 'computed' }`. It sits beside the PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation`, which keep working until core's contract derivation lands on it.
+Every core field builder now carries `getContractField(fieldName, listKey, config)`, returning a `ContractFieldDescriptor`: a stored column as a pack-qualified type constructor (`{ pack, type, args }`) with native type, nullability and column mapping; for a relationship, the relation and the foreign-key column this side owns; for a virtual field, `{ kind: 'computed' }`. It is the only way a field describes its storage: the PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation` it replaces are removed from the contract in this same release.
 
 ```typescript
 import type { BaseFieldConfig } from '@opensaas/stack-core/extend'

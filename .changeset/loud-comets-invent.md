@@ -34,10 +34,10 @@ export default config({
 `ragPlugin` declares the pgvector extension pack itself through `addExtension`, so no
 config names it.
 
-`embedding()` declares its two columns through `getContractField` alone. It carries no
-`getPrismaType`/`getTypeScriptType`: one field of two differently-typed columns has no
-honest single PSL type, and nothing reads them. That needs the matching
-`@opensaas/stack-core` change in this release, which lets `getContractField` satisfy the
+`embedding()` declares its two columns through `getContractField` alone — one field of two
+differently-typed columns has no honest single PSL type to give, which is part of why the
+PSL-shaped members are removed from the field-builder contract in this same release. That
+needs the matching `@opensaas/stack-core` change, which lets `getContractField` satisfy the
 field self-containment gate.
 
 The operator class is derived from `distanceFunction` and the column type, and a declared
