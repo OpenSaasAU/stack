@@ -471,9 +471,12 @@ content: searchable(text(), {
 ```
 
 A field's `chunking` is a `ChunkingConfig`, measured in **tokens** — not the
-`ChunkingOptions` that `chunkText()` above takes, which are in characters. The
-two are separate types with separate units; at roughly 4 characters per token,
-`maxTokens: 250` is about the same span of text as `chunkSize: 1000`.
+`ChunkingOptions` that `chunkText()` above takes. They are separate types, and
+`ChunkingOptions` does not have one unit: `chunkSize` and `chunkOverlap` are
+characters under `recursive`, `sentence` and `sliding-window`, and tokens under
+`token-aware`, which scales them by the same ~4 characters per token. At that
+ratio, `maxTokens: 250` is about the same span of text as a recursive
+`chunkSize: 1000`.
 
 **How it works:**
 
@@ -998,49 +1001,18 @@ export async function monitoredEmbedGeneration(text: string, provider: Embedding
 
 ### 3. Rate Limiting
 
-Implement rate limiting to avoid API limits:
+`RateLimiter` is a shipped export of `@opensaas/stack-rag/runtime`, so there is
+nothing to write. It admits `requestsPerMinute` requests in any rolling minute
+and `waitForSlot()` resolves when the next one is free:
 
 ```typescript
-// lib/rate-limiter.ts
-export class RateLimiter {
-  private tokens: number
-  private lastRefill: number
-  private maxTokens: number
-  private refillRate: number
+import { RateLimiter } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 
-  constructor(maxTokens: number, refillRate: number) {
-    this.maxTokens = maxTokens
-    this.refillRate = refillRate
-    this.tokens = maxTokens
-    this.lastRefill = Date.now()
-  }
-
-  async acquire() {
-    this.refill()
-
-    while (this.tokens < 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      this.refill()
-    }
-
-    this.tokens -= 1
-  }
-
-  private refill() {
-    const now = Date.now()
-    const elapsed = (now - this.lastRefill) / 1000 // seconds
-    const tokensToAdd = elapsed * this.refillRate
-
-    this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd)
-    this.lastRefill = now
-  }
-}
-
-// Usage
-const limiter = new RateLimiter(100, 100 / 60) // 100 tokens, refill 100/min
+const limiter = new RateLimiter(100)
 
 export async function rateLimitedEmbed(text: string, provider: EmbeddingProvider) {
-  await limiter.acquire()
+  await limiter.waitForSlot()
   return provider.embed(text)
 }
 ```

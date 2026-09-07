@@ -579,7 +579,7 @@ yourself.
 Search results pair the row with its score:
 
 ```typescript
-type SearchResult<T> = {
+type SearchResult<T = unknown> = {
   item: T // The matching record, through Field Visibility like any other read
   score: number // Higher is more similar; the range is the column's own
 }
