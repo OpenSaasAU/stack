@@ -73,7 +73,7 @@
     "@opensaas/stack-cli": "workspace:*",
     "@opensaas/stack-core": "workspace:*",
     "@types/node": "^26.1.1",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
