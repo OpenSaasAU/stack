@@ -369,6 +369,8 @@ the commit — none can abort the write:
 All searches use the access-controlled context:
 
 ```typescript
+import { getContext } from '@/.opensaas/context'
+
 // Search respects access control
 const context = await getContext({ userId: 'user-123' })
 
@@ -405,10 +407,14 @@ Providers are pluggable and extensible:
 import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
+  const model = typeof config.model === 'string' ? config.model : 'custom-embed'
+  const dimensions =
+    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+
   return {
     type: 'custom',
-    model: config.model,
-    dimensions: config.dimensions,
+    model,
+    dimensions,
     async embed(text) {
       // Your implementation
       return [/* vector */]
@@ -420,6 +426,16 @@ registerEmbeddingProvider('custom', (config) => {
   }
 })
 ```
+
+The factory is handed the whole `EmbeddingProviderConfig` union, whose custom
+member is an open `{ type: string; [key: string]: unknown }`. So `config.model`
+arrives as `unknown`. `config.dimensions` is required on `OllamaEmbeddingConfig`
+and supplied by the custom member's index signature, but it is absent from
+`OpenAIEmbeddingConfig`, so it is not on every member and therefore not readable
+off the union — which is exactly why the `in` guard is the right narrowing.
+Narrow both, as above, rather than reading them straight onto the returned
+`EmbeddingProvider`, whose `model` and `dimensions` are a required `string` and
+`number`.
 
 ## Provisioning pgvector
 
@@ -495,12 +511,12 @@ import { chunkText } from '@opensaas/stack-rag/runtime'
 
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
-  maxTokens: 500,
-  overlap: 50,
+  chunkSize: 500,
+  chunkOverlap: 50,
 })
 
 // Generate embeddings for each chunk
-const vectors = await provider.embedBatch(chunks)
+const vectors = await provider.embedBatch(chunks.map((chunk) => chunk.text))
 ```
 
 ### Hybrid Search (Keyword + Semantic)
