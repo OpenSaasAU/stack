@@ -6,6 +6,7 @@ import { withOrigin } from '../origin.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { AccessScopeDepthExceededError } from '../access/errors.js'
+import { ValidationError } from '../hooks/index.js'
 import { buildAccessScopedInclude } from '../access/access-filter.js'
 import {
   DuplicateIncludeError,
@@ -135,6 +136,15 @@ let database: TestDatabase
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** The one refusal a key gets, whichever of its reasons applies (ADR-0031). */
+function unqueryable(key: string, listName = 'Post'): string {
+  return `Validation failed: Cannot query "${listName}" — "${key}" is not a queryable field of this list.`
 }
 
 /** The client's own collection, as the harness exposes it (ADR-0057). */
@@ -644,13 +654,14 @@ describe('key validation inside a refinement', () => {
           .catch((error: unknown) => error)
       const denied = await refusal('editorNotes')
       const undeclared = await refusal('nope')
-      const messageOf = (error: unknown): string =>
-        error instanceof Error ? error.message : String(error)
 
-      expect(messageOf(denied)).toMatch(/not a queryable field/)
-      // "Identically" is the guarantee, so the messages are compared and not
-      // only matched: two different ones both match the pattern above.
-      expect(messageOf(denied)).toBe(messageOf(undeclared).replaceAll('nope', 'editorNotes'))
+      expect(denied).toBeInstanceOf(ValidationError)
+      expect(undeclared).toBeInstanceOf(ValidationError)
+      // "Identically" is the guarantee, so each message is pinned to the one
+      // refusal outright: deriving one from the other holds just as well when
+      // both are wrong in the same way.
+      expect(messageOf(denied)).toBe(unqueryable('editorNotes'))
+      expect(messageOf(undeclared)).toBe(unqueryable('nope'))
     },
     BOOT,
   )

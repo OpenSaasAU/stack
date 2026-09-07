@@ -346,7 +346,8 @@ describe('Field Visibility', () => {
 
       expect(undeclared).toBeInstanceOf(ValidationError)
       expect(denied).toBeInstanceOf(ValidationError)
-      expect(messageOf(denied)).toBe(messageOf(undeclared).replace('nope', 'editorNotes'))
+      expect(messageOf(denied)).toBe(unqueryable('editorNotes'))
+      expect(messageOf(undeclared)).toBe(unqueryable('nope'))
     },
     BOOT,
   )
@@ -630,17 +631,19 @@ describe('distinct, distinctOn and cursor', () => {
       // Ada's three posts carry two kinds; the five in the table carry three.
       expect(await db.Post.distinct('kind').all()).toHaveLength(2)
       expect(await unscoped.Post.distinct('kind').all()).toHaveLength(3)
-      // And the divergence survives a caller `where` composed beside it.
+      // A caller `where` reaches the distinct as well, and its answers differ
+      // from the unfiltered ones above on both sides — so this pair falsifies
+      // on a dropped predicate, not only on a dropped Access Filter.
       expect(
-        await db.Post.where({ published: { equals: true } })
+        await db.Post.where({ views: { lt: 6 } })
+          .distinct('kind')
+          .all(),
+      ).toHaveLength(1)
+      expect(
+        await unscoped.Post.where({ views: { lt: 6 } })
           .distinct('kind')
           .all(),
       ).toHaveLength(2)
-      expect(
-        await unscoped.Post.where({ published: { equals: true } })
-          .distinct('kind')
-          .all(),
-      ).toHaveLength(3)
     },
     BOOT,
   )
