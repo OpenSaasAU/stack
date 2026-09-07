@@ -1414,35 +1414,6 @@ type ParseTypeString<T extends string> = T extends 'string'
                 : unknown // Fallback
 
 /**
- * What {@link ExtractFieldValueType} answers for a field declaring no
- * `outputType`, so {@link GetFieldValueType} can tell that case apart from a
- * field that declares one and resolve it against the list's stored row.
- */
-type NoDeclaredOutputType = { readonly __opensaasOutputType: 'undeclared' }
-
-/**
- * Extract field value type from a field config: its `outputType` descriptor,
- * in either spelling, and {@link NoDeclaredOutputType} when it declares none.
- * A stored field's type comes from its contract column (ADR-0052), which this
- * type has no access to — {@link GetFieldValueType} resolves it from the
- * generated `Lists.<List>.Item` instead.
- *
- * @example
- * ExtractFieldValueType<VirtualField & { outputType: 'number' }> => number
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any BaseFieldConfig
-type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends {
-  outputType: infer O extends string
-}
-  ? ParseTypeString<O>
-  : TField extends {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
-        outputType: { value: new (...args: any[]) => infer I }
-      }
-    ? I
-    : NoDeclaredOutputType
-
-/**
  * Extract field names as union of string literals
  *
  * @example
@@ -1480,9 +1451,26 @@ type StoredFieldValueType<TTypeInfo extends TypeInfo, TFieldKey extends Property
       : unknown
 
 /**
- * Get value type for a specific field: its declared `outputType` when it has
- * one, and otherwise the stored row's property — so a stored field is typed
- * by its contract column rather than left open.
+ * Whether `TKey` names more than one field. Every branch below is written
+ * non-distributively over a single key, so a union has to be turned away
+ * before it reaches them.
+ */
+type IsSeveralKeys<TKey, TAll = TKey> = TKey extends unknown
+  ? [TAll] extends [TKey]
+    ? false
+    : true
+  : never
+
+/**
+ * One field's value type: its declared `outputType` when its static type
+ * declares one, and otherwise the stored row's property — so a stored field is
+ * typed by its contract column rather than left open.
+ *
+ * `unknown` when `TFieldKey` names several fields. {@link BaseFieldConfig}'s
+ * `hooks` cannot pin a field key — a builder is written before it knows where
+ * it is mounted — so `FieldHooks<TTypeInfo>` instantiates this with every key
+ * on the list. Resolving that union would type each field's hook by the whole
+ * row: a `text()` hook would accept a `Date` and reject its own `string`.
  *
  * @example
  * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string
@@ -1491,11 +1479,27 @@ export type GetFieldValueType<
   TTypeInfo extends TypeInfo,
   TFieldKey extends FieldKeys<TTypeInfo['fields']>,
 > =
-  ExtractFieldValueType<GetFieldConfig<TTypeInfo['fields'], TFieldKey>> extends infer TDeclared
-    ? [TDeclared] extends [NoDeclaredOutputType]
-      ? StoredFieldValueType<TTypeInfo, TFieldKey>
-      : TDeclared
-    : never
+  IsSeveralKeys<TFieldKey> extends false ? DeclaredOrStoredValueType<TTypeInfo, TFieldKey> : unknown
+
+/**
+ * The resolution for a single field key: `outputType` in either spelling,
+ * falling through to the stored row. Written as tuple comparisons so nothing
+ * distributes and no marker type is needed to spell "declared none" — a
+ * sentinel here would surface verbatim in a consumer's error message.
+ */
+type DeclaredOrStoredValueType<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> = [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+  { outputType: infer O extends string },
+]
+  ? ParseTypeString<O>
+  : [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
+        { outputType: { value: new (...args: any[]) => infer I } },
+      ]
+    ? I
+    : StoredFieldValueType<TTypeInfo, TFieldKey>
 
 /**
  * TypeInfo interface for list type information
@@ -2634,9 +2638,19 @@ export type DatabaseConfig = {
    *
    * A column default also makes the column optional on the generated create
    * input, so the compat default is carried only where the field's own create
-   * validator accepts `''`. A `validation: { isRequired: true }` text column —
-   * or one with a non-empty `length.min` — keeps no default, since the
-   * generated input would otherwise permit an omission the validator refuses.
+   * validator accepts the omission it fills.
+   *
+   * **Known limit — the flag is inert for `validation: { isRequired: true }`,
+   * Keystone's commonest text column.** Keystone 6 renders that column as
+   * `NOT NULL DEFAULT ''`, but here its create validator refuses an omission,
+   * so carrying a default would type-check a `create` that then threw
+   * `ValidationError`. Full parity would need the flag to relax the create
+   * validator too, which `getZodSchema` has no config to read. Until then a
+   * migrating project sees `DROP DEFAULT` in `migrate diff` for those columns
+   * and must set `defaultValue: ''` on them by hand. A column made non-null
+   * through `db: { isNullable: false }` alone — with or without a `length.min`,
+   * which constrains a supplied value rather than an omitted one — still gets
+   * the default.
    *
    * @default false
    *

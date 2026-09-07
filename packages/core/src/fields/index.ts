@@ -181,15 +181,16 @@ export function text<
       // reaches parity without hand-setting `defaultValue: ''`.
       //
       // A column default makes the field optional on `CreateInput`
-      // (`RequiredCreateColumn`, `types/inputs.ts`), so carrying `''` where
-      // this field's own create validator rejects `''` would type-check an
-      // omission the runtime then throws on. The validator is asked rather
-      // than its rules restated, so the two cannot drift apart.
+      // (`RequiredCreateColumn`, `types/inputs.ts`), so the column may only
+      // carry one where the runtime accepts the omission that default is
+      // there to fill. That is the question asked here — validation runs over
+      // the data as given, and the database supplies the value — rather than
+      // the rules being restated, so the two cannot drift apart.
       const compatDefault =
         options?.defaultValue === undefined &&
         config.db.keystoneCompat === true &&
         !nullable &&
-        zodSchema(fieldName, 'create').safeParse('').success
+        zodSchema(fieldName, 'create').safeParse(undefined).success
       const defaultSource = compatDefault ? '' : options?.defaultValue
       return scalarColumn(fieldName, {
         type: pgType('text'),

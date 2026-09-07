@@ -33,7 +33,7 @@ Field builder functions, each returning object with:
 - `getZodSchema(fieldName, operation)` - Validation schema
 - `getContractField(fieldName, listKey, config)` - the column(s), relation, or `{ kind: 'computed' }` the field contributes to the contract
 - `outputType` - the TypeScript read face, when it differs from the column's codec type. Required on a virtual field and on one whose descriptor is `kind: 'columns'`, neither of which has a single column to be typed from
-- `inputType` - the write face, when it differs from the read face. Never required: absent means the column's own input type
+- `inputType` - the write face, when it differs from the read face. Never required by `opensaas generate`: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it there alongside `outputType`
 
 Built-in fields:
 

@@ -953,7 +953,9 @@ The field's TypeScript read face, when its contract column's codec does not alre
 outputType: "import('@opensaas/stack-storage').ImageMetadata | null"
 ```
 
-Required on a virtual field and on a `kind: 'columns'` field: neither has a single column to be typed from, so `opensaas generate` refuses one that omits it. Optional everywhere else, where it is an override. `inputType` follows the same shape for the write face and is never required — absent means the column's own input type.
+Required on a virtual field and on a `kind: 'columns'` field: neither has a single column to be typed from, so `opensaas generate` refuses one that omits it. Optional everywhere else, where it is an override.
+
+`inputType` follows the same shape for the write face. `opensaas generate` never requires it: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it alongside `outputType` — every multi-column field in this repo does.
 
 ## Best Practices
 

@@ -364,6 +364,38 @@ describe('Generate Command Integration', () => {
       expect(message).toContain('Post.title')
       expect(message).toContain('User.name')
     })
+
+    /**
+     * `getContractField` is a field's own refusal seam — `@opensaas/stack-rag`'s
+     * `embedding()` throws out of it for an impossible `dimensions` or an
+     * `opclass` that disagrees with the distance function. `generate` runs the
+     * field gate before the guard that catches such a throw and turns it into
+     * `❌ Error: <message>` plus `GenerationFailedError`, so the gate reading a
+     * descriptor must not let one past it.
+     */
+    it('leaves a field descriptor’s refusal to the derivation step that reports it', () => {
+      const refusalMessage = 'embedding "Article.embedding": dimensions must be at most 2000'
+      const refusing: FieldConfig = {
+        type: 'embedding',
+        outputType: 'string',
+        getZodSchema: () => text().getZodSchema!('embedding', 'create'),
+        getContractField: () => {
+          throw new Error(refusalMessage)
+        },
+      }
+
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'sqlite',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          prismaClientConstructor: (() => null) as any,
+        },
+        lists: { Article: { fields: { embedding: refusing } } },
+      }
+
+      expect(validateConfigFields(config)).toEqual([])
+      expect(() => deriveContract(config)).toThrow(refusalMessage)
+    })
   })
 
   describe('Declared dependency (`needs`, ADR-0025) validation', () => {

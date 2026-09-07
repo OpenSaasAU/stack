@@ -223,6 +223,67 @@ describe('validateFieldConfig', () => {
       expect(text().outputType).toBeUndefined()
       expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post', CONFIG)).toEqual([])
     })
+
+    /**
+     * Without a config the descriptor cannot be read, so `getColumnNames`
+     * stands in for its `kind`. The public three-argument form is what a field
+     * author is pointed at, and a gate that silently checks nothing there is
+     * the hole #1292 was about.
+     */
+    describe('without a config to read the descriptor with', () => {
+      const spanningWithColumnNames: FieldConfig = {
+        ...twoColumns,
+        getColumnNames: () => ['embedding', 'embeddingMetadata'],
+      }
+
+      it('requires outputType from a field declaring getColumnNames', () => {
+        const field: FieldConfig = { ...spanningWithColumnNames }
+        delete field.outputType
+
+        expect(
+          validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMember),
+        ).toEqual(['outputType'])
+      })
+
+      it('accepts the same field once it declares its face', () => {
+        expect(validateFieldConfig(spanningWithColumnNames, 'embedding', 'Article')).toEqual([])
+      })
+
+      it('leaves a single-column field alone', () => {
+        expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post')).toEqual([])
+      })
+    })
+
+    /**
+     * `getContractField` is a field's refusal seam (`embedding()` throws out of
+     * it for an impossible `dimensions`). The CLI runs this gate before the
+     * guard that catches such a throw, so it must not propagate one.
+     */
+    describe('a field whose descriptor throws', () => {
+      const refusing: FieldConfig = {
+        type: 'embedding',
+        outputType: 'string',
+        getZodSchema: () => json().getZodSchema!('embedding', 'create'),
+        getContractField: () => {
+          throw new Error('embedding "Article.embedding": dimensions must be at most 2000')
+        },
+      }
+
+      it('does not escape validateFieldConfig', () => {
+        expect(() => validateFieldConfig(refusing, 'embedding', 'Article', CONFIG)).not.toThrow()
+        expect(validateFieldConfig(refusing, 'embedding', 'Article', CONFIG)).toEqual([])
+      })
+
+      it('does not escape validateConfigFields, which the generate path runs', () => {
+        const config: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: { Article: { fields: { embedding: refusing } } },
+        }
+
+        expect(() => validateConfigFields(config)).not.toThrow()
+        expect(validateConfigFields(config)).toEqual([])
+      })
+    })
   })
 })
 

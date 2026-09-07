@@ -75,9 +75,10 @@ function buildMessage(
  * @param fieldKey - The field's key within its list (for messages).
  * @param listKey - The owning list's key (optional, for messages).
  * @param config - The config the descriptor is read with. Without it — and
- *   without a `listKey` to read it under — the `columns` requirement cannot be
- *   evaluated and is skipped; `validateConfigFields`, which the generate path
- *   runs, always supplies both.
+ *   without a `listKey` to read it under — the descriptor cannot be evaluated
+ *   and the optional `getColumnNames` stands in for its `kind`, so the
+ *   `columns` requirement still applies to every field that declares one.
+ *   `validateConfigFields`, which the generate path runs, always supplies both.
  * @returns Zero or more structured errors; empty means the field is compliant.
  */
 export function validateFieldConfig(
@@ -125,8 +126,17 @@ export function validateFieldConfig(
 
 /**
  * Whether the field's contract descriptor covers several physical columns.
- * `false` when the descriptor cannot be read — a caller that supplied no
- * config, or a field with no `getContractField`, which is already reported.
+ *
+ * `getContractField` is a field's own refusal seam — `embedding()` throws out
+ * of it for an impossible `dimensions` or a mismatched `opclass`. That refusal
+ * is designed to surface from `deriveContract`, which the CLI runs inside a
+ * guard that prints the message and exits; this gate runs before that guard,
+ * so a throw here would escape as a raw stack trace. Swallowing it leaves the
+ * field un-gated for one run and lets derivation report it as it always did.
+ *
+ * Without a config to read the descriptor with, `getColumnNames` stands in for
+ * its `kind`: the two travel together on every multi-column field in practice,
+ * and checking the proxy is strictly better than checking nothing.
  */
 function spansSeveralColumns(
   field: FieldConfig,
@@ -134,8 +144,14 @@ function spansSeveralColumns(
   listKey: string | undefined,
   config: OpenSaasConfig | undefined,
 ): boolean {
-  if (config === undefined || listKey === undefined) return false
-  return field.getContractField?.(fieldKey, listKey, config)?.kind === 'columns'
+  if (config === undefined || listKey === undefined) {
+    return hasFieldMethod(field, 'getColumnNames')
+  }
+  try {
+    return field.getContractField?.(fieldKey, listKey, config)?.kind === 'columns'
+  } catch {
+    return false
+  }
 }
 
 /**

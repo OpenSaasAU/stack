@@ -25,11 +25,11 @@ const keystoneCompatConfig: OpenSaasConfig = {
   lists: {
     User: {
       fields: {
-        // Non-null through validation: its create schema refuses `''`.
+        // Non-null through validation: its create schema refuses an omission.
         name: text({ validation: { isRequired: true } }),
-        // Non-null at the database only: its create schema accepts `''`.
+        // Non-null at the database only: its create schema permits an omission.
         phone: text({ db: { isNullable: false } }),
-        // Non-null with a non-empty minimum: refuses `''` as `name` does.
+        // A minimum length constrains a supplied value, not an omitted one.
         code: text({ db: { isNullable: false }, validation: { length: { min: 2 } } }),
         bio: text(),
       },
@@ -58,11 +58,11 @@ function columnDefault(columns: Record<string, unknown>, column: string): unknow
   return entry.default
 }
 
-/** Whether the field's create validator accepts the `''` the compat default fills. */
-function createAcceptsEmptyString(fieldKey: string): boolean {
+/** Whether the field's create validator accepts the omission a default fills. */
+function createAcceptsOmission(fieldKey: string): boolean {
   const field = keystoneCompatConfig.lists.User?.fields[fieldKey]
   if (field?.getZodSchema === undefined) throw new Error(`"${fieldKey}" declares no getZodSchema`)
-  return field.getZodSchema(fieldKey, 'create').safeParse('').success
+  return field.getZodSchema(fieldKey, 'create').safeParse(undefined).success
 }
 
 describe('db.keystoneCompat, on the emitted column, the validator and the create input', () => {
@@ -81,22 +81,22 @@ describe('db.keystoneCompat, on the emitted column, the validator and the create
     fixture?.cleanup()
   })
 
-  it('carries the compat default only on the non-null column whose validator accepts ""', () => {
+  it('carries the compat default only on a non-null column whose validator permits an omission', () => {
     expect(columnDefault(columns, 'phone')).toEqual({ kind: 'literal', value: '' })
+    expect(columnDefault(columns, 'code')).toEqual({ kind: 'literal', value: '' })
     expect(columnDefault(columns, 'name')).toBeUndefined()
-    expect(columnDefault(columns, 'code')).toBeUndefined()
     expect(columnDefault(columns, 'bio')).toBeUndefined()
   })
 
-  it('gives a default only where the validator accepts the value it fills', () => {
-    expect(createAcceptsEmptyString('name')).toBe(false)
-    expect(createAcceptsEmptyString('code')).toBe(false)
-    expect(createAcceptsEmptyString('phone')).toBe(true)
-    expect(createAcceptsEmptyString('bio')).toBe(true)
+  it('gives a default only where the validator accepts the omission it fills', () => {
+    expect(createAcceptsOmission('name')).toBe(false)
+    expect(createAcceptsOmission('code')).toBe(true)
+    expect(createAcceptsOmission('phone')).toBe(true)
+    expect(createAcceptsOmission('bio')).toBe(true)
   })
 
   it(
-    'leaves required on create every field whose validator refuses ""',
+    'leaves required on create every field whose validator refuses an omission',
     { timeout: 300_000 },
     () => {
       const output = fixture.check(`${CONSUMER_PRELUDE}
@@ -105,16 +105,11 @@ import type { Context } from './.opensaas/types.ts'
 declare const context: Context
 
 async function run() {
-  await context.db.User.create({ data: { name: 'Ada', code: 'AB' } })
+  await context.db.User.create({ data: { name: 'Ada' } })
 
   await context.db.User.create({
-    // @ts-expect-error \`name\`'s validator refuses '', so it carries no default and stays required
+    // @ts-expect-error \`name\`'s validator refuses an omission, so it carries no default and stays required
     data: { code: 'AB' },
-  })
-
-  await context.db.User.create({
-    // @ts-expect-error \`code\`'s validator refuses '', so it carries no default and stays required
-    data: { name: 'Ada' },
   })
 
   await context.db.User.create({ data: { name: 'Ada', code: 'AB', phone: '+61', bio: null } })

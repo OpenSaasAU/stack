@@ -199,8 +199,29 @@ describe('Embedding Field', () => {
   describe('the self-containment gate', () => {
     it('passes the check `pnpm generate` runs over every stored field', () => {
       expect(
-        validateFieldConfig(embedding({ sourceField: 'content' }), 'contentEmbedding', 'Article'),
+        validateFieldConfig(
+          embedding({ sourceField: 'content' }),
+          'contentEmbedding',
+          'Article',
+          CONFIG,
+        ),
       ).toEqual([])
+    })
+
+    /**
+     * The gate is what stands between a multi-column field and an `unknown`
+     * everywhere it is read (#1292), so the passing case above only means
+     * something if the failing one is reachable.
+     */
+    it('is the check that would catch a dropped outputType', () => {
+      const field = embedding({ sourceField: 'content' })
+      delete field.outputType
+
+      expect(
+        validateFieldConfig(field, 'contentEmbedding', 'Article', CONFIG).map(
+          (e) => e.missingMember,
+        ),
+      ).toEqual(['outputType'])
     })
 
     it('passes it on the contract and its own TypeScript face', () => {

@@ -2115,7 +2115,7 @@ The field's TypeScript write face, when it differs from the read face — an `im
 inputType?: string | TypeDescriptor
 ```
 
-Never required. Absent means the column's own input type, which is correct for every field that reads and writes the same shape.
+`opensaas generate` never requires it. On a single-column field, absence means the column's own input type, which is correct for every field that reads and writes the same shape. A `kind: 'columns'` field has no single column for that to name, so declare `inputType` alongside `outputType` there.
 
 ---
 
