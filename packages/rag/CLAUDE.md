@@ -427,8 +427,11 @@ registerEmbeddingProvider('custom', (config) => {
 
 The factory is handed the whole `EmbeddingProviderConfig` union, whose custom
 member is an open `{ type: string; [key: string]: unknown }`. So `config.model`
-arrives as `unknown` and `config.dimensions` is not on the union at all —
-narrow both, as above, rather than reading them straight onto the returned
+arrives as `unknown`. `config.dimensions` is required on `OllamaEmbeddingConfig`
+and supplied by the custom member's index signature, but it is absent from
+`OpenAIEmbeddingConfig`, so it is not on every member and therefore not readable
+off the union — which is exactly why the `in` guard is the right narrowing.
+Narrow both, as above, rather than reading them straight onto the returned
 `EmbeddingProvider`, whose `model` and `dimensions` are a required `string` and
 `number`.
 

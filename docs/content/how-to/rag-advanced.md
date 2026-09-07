@@ -236,7 +236,16 @@ class CohereEmbeddingProvider {
 }
 
 // Register the provider
-registerEmbeddingProvider('cohere', (config) => new CohereEmbeddingProvider(config))
+registerEmbeddingProvider('cohere', (config) => {
+  if (!('apiKey' in config) || typeof config.apiKey !== 'string') {
+    throw new Error('cohere embeddings require an apiKey')
+  }
+  return new CohereEmbeddingProvider({
+    type: 'cohere',
+    apiKey: config.apiKey,
+    model: typeof config.model === 'string' ? config.model : undefined,
+  })
+})
 
 // Export helper
 export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConfig {
@@ -306,7 +315,22 @@ class HuggingFaceEmbeddingProvider {
   }
 }
 
-registerEmbeddingProvider('huggingface', (config) => new HuggingFaceEmbeddingProvider(config))
+registerEmbeddingProvider('huggingface', (config) => {
+  if (
+    !('apiKey' in config) ||
+    typeof config.apiKey !== 'string' ||
+    !('dimensions' in config) ||
+    typeof config.dimensions !== 'number'
+  ) {
+    throw new Error('huggingface embeddings require an apiKey and dimensions')
+  }
+  return new HuggingFaceEmbeddingProvider({
+    type: 'huggingface',
+    apiKey: config.apiKey,
+    dimensions: config.dimensions,
+    model: typeof config.model === 'string' ? config.model : undefined,
+  })
+})
 
 export function huggingfaceEmbeddings(config: Omit<HuggingFaceConfig, 'type'>): HuggingFaceConfig {
   return { type: 'huggingface', ...config }
@@ -431,8 +455,8 @@ content: searchable(text(), {
   dimensions: 1536,
   chunking: {
     strategy: 'recursive',
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    maxTokens: 1000,
+    overlap: 200,
   },
 })
 ```

@@ -197,7 +197,6 @@ ragPlugin({
   provider: openaiEmbeddings({
     apiKey: process.env.OPENAI_API_KEY!,
     model: 'text-embedding-3-small', // or 'text-embedding-3-large'
-    dimensions: 1536, // 1536 for small, 3072 for large
   }),
 })
 ```
@@ -422,8 +421,8 @@ content: searchable(text(), {
   chunking: {
     // Text chunking for long content
     strategy: 'recursive',
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    maxTokens: 1000,
+    overlap: 200,
   },
 })
 ```
@@ -439,7 +438,7 @@ contentEmbedding: embedding({
   chunking: {
     // Text chunking configuration
     strategy: 'sentence',
-    chunkSize: 500,
+    maxTokens: 500,
   },
 })
 ```

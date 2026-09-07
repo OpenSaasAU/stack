@@ -369,6 +369,7 @@ To use a different model:
 ```typescript
 provider: ollamaEmbeddings({
   model: 'mxbai-embed-large',
+  dimensions: 1024,
 })
 ```
 

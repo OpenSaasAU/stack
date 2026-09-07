@@ -24,9 +24,10 @@ Sweeping the rest of the file against the source turned up the same class in the
 custom-provider example. `registerEmbeddingProvider`'s factory is handed the
 whole `EmbeddingProviderConfig` union, whose custom member is an open
 `{ type: string; [key: string]: unknown }`, so `config.model` arrives as
-`unknown` and `config.dimensions` is not on the union at all. Reading them
-straight onto the returned `EmbeddingProvider` was two type errors; the example
-now narrows both, and says why:
+`unknown` and `config.dimensions` is absent from `OpenAIEmbeddingConfig`, so it
+is not readable off the union. Reading them straight onto the returned
+`EmbeddingProvider` was two type errors; the example now narrows both, and says
+why:
 
 ```typescript
 registerEmbeddingProvider('custom', (config) => {
@@ -39,7 +40,10 @@ registerEmbeddingProvider('custom', (config) => {
     model,
     dimensions,
     async embed(text) {
-      /* … */
+      return [/* vector */]
+    },
+    async embedBatch(texts) {
+      return [[/* vectors */]]
     },
   }
 })
