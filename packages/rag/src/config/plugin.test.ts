@@ -39,6 +39,31 @@ const flaky: EmbeddingProvider = {
 
 registerEmbeddingProvider('flaky', () => flaky)
 
+/**
+ * Two providers of different widths, so a query vector says which one embedded
+ * it. `nearest()` validates the vector against the column's declared dimension,
+ * so on a real database the wrong one is a hard error rather than a bad answer.
+ */
+const narrow: EmbeddingProvider = {
+  type: 'narrow',
+  model: 'narrow-1',
+  dimensions: 2,
+  embed: async () => [1, 0],
+  embedBatch: async (inputs: string[]) => inputs.map(() => [1, 0]),
+}
+
+registerEmbeddingProvider('narrow', () => narrow)
+
+const wide: EmbeddingProvider = {
+  type: 'wide',
+  model: 'wide-1',
+  dimensions: 4,
+  embed: async () => [0, 0, 0, 1],
+  embedBatch: async (inputs: string[]) => inputs.map(() => [0, 0, 0, 1]),
+}
+
+registerEmbeddingProvider('wide', () => wide)
+
 function unreachable(): never {
   throw new Error('this member of the double was not expected to be reached')
 }
@@ -323,6 +348,121 @@ describe('ragPlugin', () => {
       await ragPlugin({ ...openai, enableMcpTools: false }).init!(harness.context)
 
       expect(harness.mcpTools).toEqual([])
+    })
+
+    /**
+     * The search tool over a list whose embedding field names `wide` while the
+     * plugin's default provider is `narrow`, plus a `nearest()` that records
+     * what it was handed.
+     */
+    async function searchTool() {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: {
+              content: text(),
+              contentEmbedding: embedding({
+                sourceField: 'content',
+                provider: 'wide',
+                dimensions: 4,
+              }),
+            },
+          },
+        },
+      })
+
+      await ragPlugin({
+        provider: { type: 'narrow', dimensions: 2 },
+        providers: { wide: { type: 'wide', dimensions: 4 } },
+      }).init!(harness.context)
+
+      const calls: { field: string; vector: readonly number[]; options: unknown }[] = []
+      const surface: AccessContext['db'] = {}
+      const db = new Proxy(surface, {
+        get: (_target, _listKey) =>
+          new Proxy(
+            {},
+            {
+              get: (_delegate, member) =>
+                member === 'nearest'
+                  ? async (field: string, vector: readonly number[], options: unknown) => {
+                      calls.push({ field, vector, options })
+                      return []
+                    }
+                  : unreachable,
+            },
+          ),
+      })
+
+      return { tool: harness.mcpTools[0], calls, context: stubContext({ db }) }
+    }
+
+    it("embeds the query with the searched field's own provider, not the default", async () => {
+      const { tool, calls, context } = await searchTool()
+
+      await tool.handler({ input: { query: 'anything' }, context })
+
+      // `wide` answers [0, 0, 0, 1]; the default `narrow` answers [1, 0]. The
+      // column is vector(4), so the default's vector is refused outright by a
+      // real `nearest()`.
+      expect(calls).toHaveLength(1)
+      expect(calls[0].field).toBe('contentEmbedding')
+      expect(calls[0].vector).toEqual([0, 0, 0, 1])
+    })
+
+    it('bounds the search at a score of 0 when the caller names none', async () => {
+      const { tool, calls, context } = await searchTool()
+
+      await tool.handler({ input: { query: 'anything' }, context })
+
+      // A cosine column scores the raw cosine on [-1, 1], so 0 is "more alike
+      // than opposite" — the same bound the deleted normalised (cos + 1) / 2
+      // scoring expressed as its 0.5 default.
+      expect(calls[0].options).toEqual({ limit: 10, minScore: 0 })
+      expect(tool.inputSchema.properties.minScore.default).toBe(0)
+    })
+
+    it('passes the caller-supplied bounds through unchanged', async () => {
+      const { tool, calls, context } = await searchTool()
+
+      await tool.handler({ input: { query: 'anything', limit: 3, minScore: -0.25 }, context })
+
+      expect(calls[0].options).toEqual({ limit: 3, minScore: -0.25 })
+    })
+
+    it('describes minScore on the distance function rather than as a 0-1 score', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
+          },
+        },
+      })
+
+      await ragPlugin(openai).init!(harness.context)
+
+      const description: unknown = harness.mcpTools[0].inputSchema.properties.minScore.description
+      expect(description).toEqual(expect.stringContaining('[-1, 1]'))
+      expect(description).toEqual(expect.stringContaining('unbounded'))
+      expect(description).not.toEqual(expect.stringContaining('(0-1)'))
+    })
+
+    it('refuses a field the list carries no embedding on', async () => {
+      const { tool, calls, context } = await searchTool()
+
+      await expect(
+        tool.handler({ input: { query: 'anything', field: 'content' }, context }),
+      ).rejects.toThrow('"content" is not an embedding field of Article')
+      expect(calls).toEqual([])
+    })
+
+    it('refuses a query that is not a string', async () => {
+      const { tool, calls, context } = await searchTool()
+
+      await expect(tool.handler({ input: { query: 42 }, context })).rejects.toThrow(
+        '"query" is required and must be a string',
+      )
+      expect(calls).toEqual([])
     })
   })
 

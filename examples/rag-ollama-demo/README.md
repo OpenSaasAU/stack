@@ -18,6 +18,10 @@ Perfect for local development and applications that need semantic search without
 
 ## Prerequisites
 
+A Postgres with pgvector available. Leave `DATABASE_URL` unset and `pnpm dev`
+starts a Dev database that carries it — see
+[Provisioning pgvector](#provisioning-pgvector) to bring your own.
+
 ### 1. Install Ollama
 
 Download and install Ollama from [https://ollama.ai](https://ollama.ai)
@@ -290,6 +294,36 @@ it — that read back as one value:
 
 Both columns are Postgres-only, and pgvector is the only vector backend: this example
 needs a Postgres with the `vector` extension available.
+
+### Provisioning pgvector
+
+You do not enable the extension yourself, and there is no install script.
+`ragPlugin` declares the pgvector extension pack, `pnpm generate` writes the
+extension's own migration alongside the app's, and `pnpm dev` (or
+`pnpm db:update`) enables it.
+
+Leave `DATABASE_URL` unset and the Dev database `pnpm dev` starts carries
+pgvector already. Pointing at a Postgres of your own adds two requirements:
+
+- The extension has to be **available** on that server — `brew install pgvector`,
+  `postgresql-16-pgvector`, the `pgvector/pgvector` Docker images, or a managed
+  service that offers it.
+- The connecting role needs the privilege to **create** it. pgvector is not a
+  trusted extension, so that is superuser or a provider grant. Where a
+  locked-down server offers neither, have someone who holds the privilege
+  pre-create the extension in that database once; the migration prechecks for it
+  and records the step as already satisfied.
+
+A server with no pgvector fails the migration with Prisma's own error, naming
+the `pgvector` space and SQL state `58P01`.
+
+### Ollama's dimension
+
+`OLLAMA_EMBEDDING_DIMENSIONS` in `.env` is the model's output size, defaulting to
+768 (`nomic-embed-text`). It is read rather than discovered because it is a
+column's type and Ollama reports it only from a live embed call — which
+generation must not depend on. Change the model and you change this number, the
+`dimensions` in `opensaas.config.ts`, and the column: that is a migration.
 
 ## Ollama Models
 

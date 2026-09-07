@@ -15,7 +15,9 @@ export async function searchKnowledge(
   query: string,
   options?: { limit?: number; minScore?: number }
 ): Promise<SearchResult[]> {
-  const { limit = 5, minScore = 0.5 } = options || {}
+  // `contentEmbedding` is a cosine column, so a score is the raw cosine on
+  // [-1, 1] rather than a normalised 0-1: 0.2 is a loose floor, not a strict one.
+  const { limit = 5, minScore = 0.2 } = options || {}
 
   if (!query || query.trim().length === 0) {
     return []

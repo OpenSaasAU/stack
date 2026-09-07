@@ -50,6 +50,24 @@ function rowId(value: unknown): string | number | undefined {
 }
 
 /**
+ * MCP tool arguments arrive as whatever the assistant sent — `McpCustomTool`
+ * types `input` loosely — so each one is narrowed rather than trusted.
+ */
+function toolArg(input: unknown, key: string): unknown {
+  return typeof input === 'object' && input !== null ? Reflect.get(input, key) : undefined
+}
+
+function stringArg(input: unknown, key: string): string | undefined {
+  const value = toolArg(input, key)
+  return typeof value === 'string' ? value : undefined
+}
+
+function numberArg(input: unknown, key: string): number | undefined {
+  const value = toolArg(input, key)
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/**
  * A provider's output dimension where it is known without calling anything.
  * OpenAI's models each have a fixed size; Ollama declares its own; a custom
  * provider that declares none is exempt from the generate-time check.
@@ -288,12 +306,16 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
       if (normalized.enableMcpTools && context.registerMcpTool) {
         for (const [listName, listConfig] of Object.entries(context.config.lists)) {
-          const embeddingFields = Object.entries(listConfig.fields).filter(([, fieldConfig]) =>
-            isEmbeddingField(fieldConfig),
+          const embeddingFields = Object.entries(listConfig.fields).filter(
+            (entry): entry is [string, EmbeddingField] => isEmbeddingField(entry[1]),
           )
 
           if (embeddingFields.length > 0) {
             const toolName = `semantic_search_${listName.toLowerCase()}`
+            const defaultField = embeddingFields[0][0]
+            const providerNames = new Map(
+              embeddingFields.map(([name, fieldConfig]) => [name, fieldConfig.provider]),
+            )
 
             context.registerMcpTool({
               name: toolName,
@@ -305,24 +327,51 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   limit: { type: 'number', description: 'Maximum results', default: 10 },
                   minScore: {
                     type: 'number',
-                    description: 'Minimum similarity score (0-1)',
-                    default: 0.5,
+                    description:
+                      "Minimum similarity score, on the searched field's own distance function " +
+                      'rather than a normalised 0-1 scale: "cosine" scores the raw cosine on ' +
+                      '[-1, 1], "l2" scores 1 / (1 + distance) on (0, 1], and "inner_product" ' +
+                      'scores the dot product, which is unbounded. The default of 0 keeps every ' +
+                      'result a cosine column counts as more alike than opposite; lower it to ' +
+                      'search further.',
+                    default: 0,
                   },
                   field: {
                     type: 'string',
                     description: 'Embedding field to search',
-                    default: embeddingFields[0][0],
+                    default: defaultField,
                     enum: embeddingFields.map(([name]) => name),
                   },
                 },
                 required: ['query'],
               },
               handler: async ({ input, context }) => {
-                const { query, limit = 10, minScore = 0.5, field = embeddingFields[0][0] } = input
+                const query = stringArg(input, 'query')
+                if (query === undefined) {
+                  throw new Error(`${toolName}: "query" is required and must be a string`)
+                }
+                const limit = numberArg(input, 'limit') ?? 10
+                const minScore = numberArg(input, 'minScore') ?? 0
+                const field = stringArg(input, 'field') ?? defaultField
 
-                const providerConfig = normalized.provider
+                // The field's own provider, not the plugin's default: a
+                // provider fixes the width of the vector it produces, and
+                // `nearest()` validates the query vector against the column's
+                // declared dimension.
+                if (!providerNames.has(field)) {
+                  throw new Error(
+                    `${toolName}: "${field}" is not an embedding field of ${listName}. Searchable ` +
+                      `fields: ${embeddingFields.map(([name]) => name).join(', ')}.`,
+                  )
+                }
+                const providerName = providerNames.get(field)
+                const providerConfig = providerFor(providerName)
                 if (!providerConfig) {
-                  throw new Error('RAG plugin: No default provider configured')
+                  throw new Error(
+                    `${toolName}: "${listName}.${field}" names the provider ` +
+                      `"${String(providerName ?? 'default')}", which ragPlugin does not declare. ` +
+                      `Declared providers: ${declaredProviderNames().join(', ') || 'none'}.`,
+                  )
                 }
 
                 const provider = createEmbeddingProvider(providerConfig)

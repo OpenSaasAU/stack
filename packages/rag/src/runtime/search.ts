@@ -4,20 +4,14 @@
  * Nothing here builds a query: `nearest()` is core-owned, so the Access
  * Filter, Field Visibility, the `minScore` distance bound and the ranking all
  * live inside one scoped query (ADR-0045). This module turns text into a
- * vector and names the list.
+ * vector and hands it to a list the caller already named.
  */
 
-import type { AccessContext, Where } from '@opensaas/stack-core'
+import type { SecuredQuery, Where } from '@opensaas/stack-core'
 import type { SearchResult } from '../config/types.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 
-function listFor(context: AccessContext, listKey: string) {
-  const list = context.db[listKey]
-  if (list === undefined) {
-    throw new Error(`List "${listKey}" is not on this context's db surface`)
-  }
-  return list
-}
+type Row = Record<string, unknown>
 
 function bounds(limit: number | undefined, minScore: number | undefined) {
   return {
@@ -26,17 +20,24 @@ function bounds(limit: number | undefined, minScore: number | undefined) {
   }
 }
 
-export interface SemanticSearchOptions {
-  listKey: string
+export interface SemanticSearchOptions<TRow extends Row = Row> {
+  /** The list to search, off the secured `db` surface: `context.db.Article`. */
+  list: SecuredQuery<TRow>
   fieldName: string
   query: string
   provider: EmbeddingProvider
-  context: AccessContext
 
   /** @default 10 */
   limit?: number
 
-  /** Lowered to a distance bound inside the query, not filtered afterwards. */
+  /**
+   * Lowered to a distance bound inside the query, not filtered afterwards.
+   *
+   * The scale is the column's own distance function, not a normalised 0–1:
+   * a `cosine` score is the raw cosine on `[-1, 1]`, an `l2` score is
+   * `1 / (1 + distance)` on `(0, 1]`, and an `inner_product` score is the dot
+   * product, which is unbounded.
+   */
   minScore?: number
 
   where?: Where
@@ -48,38 +49,39 @@ export interface SemanticSearchOptions {
  *
  * @example
  * ```typescript
+ * const context = await getContext()
+ *
  * const results = await semanticSearch({
- *   listKey: 'Article',
+ *   list: context.db.Article,
  *   fieldName: 'contentEmbedding',
  *   query: 'articles about machine learning',
  *   provider: createEmbeddingProvider({ type: 'openai', apiKey: '...' }),
- *   context: await getContext(),
  *   limit: 10,
  *   minScore: 0.7,
  * })
  * ```
  */
-export async function semanticSearch(
-  options: SemanticSearchOptions,
-): Promise<SearchResult<Record<string, unknown>>[]> {
-  const { listKey, fieldName, query, provider, context, limit, minScore, where } = options
+export async function semanticSearch<TRow extends Row = Row>(
+  options: SemanticSearchOptions<TRow>,
+): Promise<SearchResult<TRow>[]> {
+  const { list, fieldName, query, provider, limit, minScore, where } = options
 
   const queryVector = await provider.embed(query)
-  const list = listFor(context, listKey)
   const scoped = where === undefined ? list : list.where(where)
 
   return await scoped.nearest(fieldName, queryVector, bounds(limit, minScore))
 }
 
-export interface FindSimilarOptions {
-  listKey: string
+export interface FindSimilarOptions<TRow extends Row = Row> {
+  /** The list to search, off the secured `db` surface: `context.db.Article`. */
+  list: SecuredQuery<TRow>
   fieldName: string
   itemId: string
-  context: AccessContext
 
   /** @default 10 */
   limit?: number
 
+  /** See {@link SemanticSearchOptions.minScore} for the scale. */
   minScore?: number
 
   /** @default true */
@@ -89,7 +91,7 @@ export interface FindSimilarOptions {
 }
 
 /** The vector off a stored embedding, or `null` when the item carries none. */
-function storedVector(item: Record<string, unknown>, fieldName: string): number[] | null {
+function storedVector(item: Row, fieldName: string): number[] | null {
   const stored: unknown = item[fieldName]
   if (stored === null || typeof stored !== 'object') return null
   const vector: unknown = Reflect.get(stored, 'vector')
@@ -102,33 +104,24 @@ function storedVector(item: Record<string, unknown>, fieldName: string): number[
  *
  * @example
  * ```typescript
+ * const context = await getContext()
+ *
  * const similar = await findSimilar({
- *   listKey: 'Article',
+ *   list: context.db.Article,
  *   fieldName: 'contentEmbedding',
  *   itemId: 'article-123',
- *   context: await getContext(),
  *   limit: 5,
  * })
  * ```
  */
-export async function findSimilar(
-  options: FindSimilarOptions,
-): Promise<SearchResult<Record<string, unknown>>[]> {
-  const {
-    listKey,
-    fieldName,
-    itemId,
-    context,
-    limit,
-    minScore,
-    excludeSelf = true,
-    where = {},
-  } = options
+export async function findSimilar<TRow extends Row = Row>(
+  options: FindSimilarOptions<TRow>,
+): Promise<SearchResult<TRow>[]> {
+  const { list, fieldName, itemId, limit, minScore, excludeSelf = true, where = {} } = options
 
-  const list = listFor(context, listKey)
   const item = await list.where({ id: { equals: itemId } }).first()
   if (item === null) {
-    throw new Error(`Item with id "${itemId}" not found in list "${listKey}"`)
+    throw new Error(`Item with id "${itemId}" was not found, or this session may not read it`)
   }
 
   const vector = storedVector(item, fieldName)

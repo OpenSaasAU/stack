@@ -71,12 +71,16 @@ export default config({
 - Embeddings are auto-generated whenever `content` changes
 - The embedding field respects all your existing access control rules
 
-### 2. Generate schema and push to database
+### 2. Generate the schema and update the database
 
 ```bash
 pnpm generate
-pnpm db:push
+pnpm db:update
 ```
+
+`db:update` enables pgvector along the way — see
+[Provisioning pgvector](#provisioning-pgvector) for what the server has to
+offer for that to succeed.
 
 ### 3. Create content (embeddings generated automatically)
 
@@ -114,7 +118,7 @@ export async function searchArticles(query: string) {
   // apply exactly as they do to any other read.
   return await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
-    minScore: 0.7,
+    minScore: 0.25,
   })
 }
 ```
@@ -166,11 +170,28 @@ contentEmbedding: embedding({
 })
 ```
 
-Setup:
+### Provisioning pgvector
 
-```sql
-CREATE EXTENSION vector;
-```
+`ragPlugin` declares the pgvector extension pack, so `pnpm generate` writes the
+extension's migration alongside the app's and `pnpm db:update` enables the
+extension for you. There is no install step to run and no SQL to paste.
+
+What the server has to offer is the extension itself:
+
+- pgvector must be **available** on the Postgres server — installed as a server
+  extension, or bundled, as it is on the Dev database and on Neon, Supabase and
+  RDS.
+- The role that runs the migration needs the privilege to **create** it.
+  pgvector is not a trusted extension, so that means superuser or a provider
+  grant. Managed Postgres services generally grant it to the app role.
+
+Where neither is on offer, a DBA pre-creates the extension by hand once, as a
+superuser. The migration then records it as already satisfied — Prisma prechecks
+for the extension before creating it and skips the step. Either route arrives in
+the same place.
+
+A server without pgvector at all fails the migration with Prisma's own error,
+naming the `pgvector` space and SQL state `58P01`.
 
 ## Field Configuration Patterns
 
@@ -293,16 +314,22 @@ import { semanticSearch } from '@opensaas/stack-rag/runtime'
 import { createEmbeddingProvider } from '@opensaas/stack-rag'
 import { getContext } from '@/.opensaas/context'
 
+const context = await getContext()
+
 const results = await semanticSearch({
-  listKey: 'Article',
+  list: context.db.Article,
   fieldName: 'contentEmbedding',
   query: 'articles about machine learning',
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),
-  context: await getContext(),
   limit: 10,
-  minScore: 0.7,
+  minScore: 0.25,
 })
 ```
+
+`minScore` is a bound on the column's own distance function, not on a
+normalised 0–1 scale. A `cosine` column scores the raw cosine on `[-1, 1]`, an
+`l2` column scores `1 / (1 + distance)` on `(0, 1]`, and an `inner_product`
+column scores the dot product, which is unbounded.
 
 ### Find Similar Items
 
@@ -311,11 +338,12 @@ Find items similar to a given item by ID:
 ```typescript
 import { findSimilar } from '@opensaas/stack-rag/runtime'
 
+const context = await getContext()
+
 const similar = await findSimilar({
-  listKey: 'Article',
+  list: context.db.Article,
   fieldName: 'contentEmbedding',
   itemId: 'article-123',
-  context: await getContext(),
   limit: 5,
   excludeSelf: true, // Don't include the source article
 })
