@@ -9,7 +9,6 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
-    "db:studio": "prisma studio",
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {

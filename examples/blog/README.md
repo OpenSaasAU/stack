@@ -294,10 +294,12 @@ if (!post) {
 
 ## Database Management
 
-View your data with Prisma Studio:
+Prisma 8 ships no Studio, so browse the data with any Postgres client
+pointed at the connection string `pnpm dev` prints on startup (or at your
+own `DATABASE_URL`):
 
 ```bash
-pnpm db:studio
+psql "$DATABASE_URL"
 ```
 
 Reset the database (stop `pnpm dev` first — the data directory is open while it runs):

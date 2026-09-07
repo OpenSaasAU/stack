@@ -610,7 +610,7 @@ curl -X POST http://localhost:3000/api/mcp \
 
 **Debug Steps:**
 
-1. Check database directly: `pnpm db:studio`
+1. Check the database directly with a Postgres client (`psql "$DATABASE_URL"`)
 2. Test access control with direct context calls
 3. Verify session is being passed to context
 

@@ -83,13 +83,15 @@ pnpm dev
 
 Visit [http://localhost:3005/admin](http://localhost:3005/admin)
 
-### Open Prisma Studio
+### Browse the data
+
+Prisma 8 ships no Studio, so browse the data with any Postgres client
+pointed at the connection string `pnpm dev` prints on startup (or at your
+own `DATABASE_URL`):
 
 ```bash
-pnpm db:studio
+psql "$DATABASE_URL"
 ```
-
-Explore your database visually.
 
 ## Usage Patterns
 

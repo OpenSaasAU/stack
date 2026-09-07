@@ -92,9 +92,6 @@ pnpm db:push
 # Generate Prisma Client
 npx prisma generate
 
-# Open Prisma Studio
-pnpm db:studio
-
 # Run development server
 pnpm dev
 
