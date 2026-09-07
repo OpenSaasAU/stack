@@ -7,6 +7,8 @@ import {
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
+import { relationship, text } from '../fields/index.js'
+import type { OpenSaasConfig } from '../config/types.js'
 
 // A non-sudo access context. The cast is localized to test setup (mirrors the
 // existing sudo-context casts in this file): the runtime AccessContext carries
@@ -690,6 +692,67 @@ describe('filterWritableFields', () => {
     })
 
     expect(filtered).toHaveProperty('authorId', 'user-123')
+  })
+
+  it('rejects the FK-shaped key on the non-owning side of a one-to-one, rather than writing a column that does not exist (#1326)', async () => {
+    // `User.profile` is the NON-owning side (`Profile.user` claims the FK via
+    // `db.foreignKey: true`, ADR-0064) — the User model has no `profileId`
+    // column at all. A naive "every to-one owns `<field>Id`" heuristic would
+    // treat `profileId` as a legitimate write here and hand it to the ORM,
+    // which has no such column. It must instead be refused as the undeclared
+    // key it is (#564), the same outcome as any other unrecognised key.
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { name: text(), profile: relationship({ ref: 'Profile.user' }) } },
+        Profile: {
+          fields: { user: relationship({ ref: 'User.profile', db: { foreignKey: true } }) },
+        },
+      },
+    }
+    const data = { name: 'Ada', profileId: 'p1' }
+
+    await expect(
+      filterWritableFields(data, config.lists.User.fields, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+        listName: 'User',
+        config,
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields(data, config.lists.User.fields, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+        listName: 'User',
+        config,
+      }),
+    ).rejects.toThrow(/profileId/)
+  })
+
+  it('keeps the FK-shaped key on the owning side of the same one-to-one', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { name: text(), profile: relationship({ ref: 'Profile.user' }) } },
+        Profile: {
+          fields: { user: relationship({ ref: 'User.profile', db: { foreignKey: true } }) },
+        },
+      },
+    }
+    const data = { userId: 'u1' }
+
+    const filtered = await filterWritableFields(data, config.lists.Profile.fields, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: data,
+      listName: 'Profile',
+      config,
+    })
+
+    expect(filtered).toHaveProperty('userId', 'u1')
   })
 
   // ── #568: field-access-denied keys must THROW, not be silently stripped ──────
