@@ -1,5 +1,18 @@
 # @opensaas/stack-cli
 
+## 0.42.1
+
+### Patch Changes
+
+- [#1268](https://github.com/OpenSaasAU/stack/pull/1268) [`2976f57`](https://github.com/OpenSaasAU/stack/commit/2976f57a0d80687c3a27e11c3b7ec7fa9830cdb7) Thanks [@borisno2](https://github.com/borisno2)! - Fix a hook's `context.db` under-describing rows: `TypeInfo` now carries a `db` member (the generator points it at the generated `CustomDB`), so a hook reading a virtual or transformed field off `context.db.<list>` type-checks instead of failing with `TS2339`.
+  Run `opensaas generate` after upgrading to pick up the new member on `Lists.<List>.TypeInfo`.
+
+- [#1264](https://github.com/OpenSaasAU/stack/pull/1264) [`2e1ee3d`](https://github.com/OpenSaasAU/stack/commit/2e1ee3de446639f24331c5cebd01aeed37ca3e31) Thanks [@borisno2](https://github.com/borisno2)! - Fix `context.db.<list>.findUnique`/`findFirst`/`findMany` (and singleton `get`) in the generated `CustomDB` silently losing fragment narrowing: passing a `query` fragment compiled but the result stayed typed as the unnarrowed list payload instead of `ResultOf<typeof fragment>`. These methods now carry the same fragment overload as core's `AccessControlledDB`, so an unselected field is a compile error on the result.
+
+- [#1277](https://github.com/OpenSaasAU/stack/pull/1277) [`3501b65`](https://github.com/OpenSaasAU/stack/commit/3501b653c803763801e0f1931e3bf22f9224fc0a) Thanks [@borisno2](https://github.com/borisno2)! - Fix the generated `Context`/`BaseContext` types to derive from core's `StackContext` instead of hand-restating its members, so `context.transaction(...)` now typechecks with no cast and `tx.db.<list>` carries the generated per-list types.
+- Updated dependencies [[`2976f57`](https://github.com/OpenSaasAU/stack/commit/2976f57a0d80687c3a27e11c3b7ec7fa9830cdb7), [`2e1ee3d`](https://github.com/OpenSaasAU/stack/commit/2e1ee3de446639f24331c5cebd01aeed37ca3e31)]:
+  - @opensaas/stack-core@0.42.1
+
 ## 0.42.0
 
 ### Minor Changes
