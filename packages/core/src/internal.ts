@@ -19,8 +19,8 @@ export type {
   FindManyQueryArgs,
 } from './access/types.js'
 
-// Typed-query internals (Fragment/FieldSelection appear in generated types)
-export type { Fragment, FieldSelection } from './query/index.js'
+// Typed-query internals (Fragment/FieldSelection/ResultOf appear in generated types)
+export type { Fragment, FieldSelection, ResultOf } from './query/index.js'
 
 // Password hashing internals (the password field emits HashedPassword into generated types)
 export {

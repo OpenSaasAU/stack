@@ -171,6 +171,24 @@ export type ServerActionProps = unknown
 export type AccessControlledDB<P> = Record<string, unknown>
 export type Fragment<A, B> = unknown
 export type FieldSelection<A> = unknown
+export type ResultOf<F> = unknown
+
+// Condensed mirror of core's AugmentedFind*/access/types.ts (#1233): each
+// keeps the real shape (a fragment-\`query\` overload plus a passthrough
+// overload derived from the wrapped signature) without pulling in the real
+// Fragment/ResultOf machinery, which this fixture doesn't otherwise exercise.
+export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> {
+  (args: { where: Record<string, unknown>; query: unknown }): Promise<unknown>
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
+export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
+  (args: { where?: Record<string, unknown>; query: unknown }): Promise<unknown>
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
+export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
+  (args: { where?: Record<string, unknown>; query: unknown }): Promise<unknown[]>
+  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+}
 `
 
 const PLUGIN_TYPES_STUB = `export type PluginServices = unknown\n`
