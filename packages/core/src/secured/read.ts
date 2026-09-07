@@ -122,6 +122,11 @@ export interface SecuredQuery<TRow = OrmRow> {
    * takes its bound from `options.limit`, so this shapes `all()` alone.
    */
   limit(count: number): SecuredQuery<TRow>
+  /**
+   * Skip this many rows. Replaces any previous call rather than accumulating,
+   * and shapes `all()` alone for the reason `limit` does.
+   */
+  offset(count: number): SecuredQuery<TRow>
   /** Collapse rows that agree on every named column. */
   distinct(...fields: string[]): SecuredQuery<TRow>
   /**
@@ -247,6 +252,7 @@ interface ReadableCollection extends RefinableCollection {
   orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
   include(name: string, refine: (child: RefinableCollection) => IncludeBranch): ReadableCollection
   limit(rows: number): ReadableCollection
+  offset(rows: number): ReadableCollection
   distinct(...fields: string[]): ReadableCollection
   distinctOn(...fields: string[]): ReadableCollection
   cursor(values: Record<string, unknown>): ReadableCollection
@@ -295,6 +301,7 @@ interface QueryState {
   readonly includes: readonly IncludeRequest[]
   readonly fields?: readonly string[]
   readonly limit?: number
+  readonly offset?: number
   readonly distincts: readonly DistinctRequest[]
   readonly cursor?: Record<string, unknown>
 }
@@ -312,6 +319,8 @@ interface ReadPlan {
   readonly additions: DependencyAdditions
   /** The caller's own row bound, applied by `all()` alone. */
   readonly limit?: number
+  /** The caller's own row offset, applied by `all()` alone. */
+  readonly offset?: number
   readonly distinct?: { readonly kind: 'all' | 'on'; readonly columns: readonly ColumnPlan[] }
   readonly cursor?: Record<string, unknown>
 }
@@ -403,6 +412,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     selection: selectionScope(projection, includes),
     additions: dependencyAdditions(includes),
     limit: state.limit,
+    offset: state.offset,
     ...(distinct ? { distinct } : {}),
     ...(cursor ? { cursor } : {}),
   }
@@ -696,7 +706,8 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
   const scoped = scope(binding, plan, await whereCombinators())
-  const collection = plan.limit === undefined ? scoped : scoped.limit(plan.limit)
+  const offsetted = plan.offset === undefined ? scoped : scoped.offset(plan.offset)
+  const collection = plan.limit === undefined ? offsetted : offsetted.limit(plan.limit)
   const rows = await withOrigin('engine', () => collection.all())
   return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
@@ -903,6 +914,7 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery {
       query(binding, { ...state, orders: [...state.orders, ...orderList(order)] }),
     select: (...fields: readonly string[]) => query(binding, { ...state, fields }),
     limit: (count: number) => query(binding, { ...state, limit: count }),
+    offset: (count: number) => query(binding, { ...state, offset: count }),
     include: (name: string, refinement?: Refinement) =>
       query(binding, {
         ...state,
