@@ -49,8 +49,8 @@ packages/rag/
 ### Runtime (`@opensaas/stack-rag/runtime`)
 
 - `generateEmbeddings(config, text, provider)` - Generate embeddings
-- `semanticSearch({ listKey, fieldName, query, provider, context, ... })` - Embed a query and rank through `nearest()`
-- `findSimilar({ listKey, fieldName, itemId, context, ... })` - Rank by an item's own embedding
+- `semanticSearch({ list, fieldName, query, provider, ... })` - Embed a query and rank through `nearest()`
+- `findSimilar({ list, fieldName, itemId, ... })` - Rank by an item's own embedding
 - `chunkText(text, strategy)` - Text chunking utilities
 
 ### MCP (`@opensaas/stack-rag/mcp`)
@@ -108,7 +108,9 @@ import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 export default config({
-  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  // Postgres with pgvector is the only datasource RAG runs on: every column
+  // the plugin emits is a pgvector column.
+  db: { provider: 'postgresql', url: process.env.DATABASE_URL! },
   lists: {
     Document: list({
       fields: {
@@ -178,7 +180,7 @@ const vector = await provider.embed('Hello world')
 
 // Store manually
 const context = await getContext()
-await context.db.article.create({
+await context.db.Article.create({
   data: {
     title: 'Hello',
     contentEmbedding: {
@@ -214,7 +216,7 @@ export async function searchArticles(query: string) {
   // bound and the ranking are all inside one scoped query (ADR-0045).
   const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
-    minScore: 0.7,
+    minScore: 0.25,
   })
 
   return matches.map((match) => ({
@@ -223,6 +225,11 @@ export async function searchArticles(query: string) {
   }))
 }
 ```
+
+`minScore` is read on the column's own distance function, not a normalised
+0–1 scale: `cosine` scores the raw cosine on `[-1, 1]`, `l2` scores
+`1 / (1 + distance)` on `(0, 1]`, and `inner_product` scores the dot product,
+which is unbounded.
 
 ### MCP Integration (Automatic)
 
@@ -299,7 +306,7 @@ contentEmbedding: embedding({
           const provider = getEmbeddingProvider(ragConfig)
           const vector = await provider.embed(sourceText)
 
-          await context.db.article.update({
+          await context.db.Article.update({
             where: { id: item.id },
             data: {
               contentEmbedding: {
@@ -372,20 +379,39 @@ registerEmbeddingProvider('custom', (config) => {
 })
 ```
 
-## Database Setup
+## Provisioning pgvector
 
-### PostgreSQL with pgvector
+`ragPlugin` declares the pgvector extension pack, so the extension's own
+migration is a generator emission (ADR-0065) and `pnpm db:update` enables the
+extension. No DDL here is hand-written and there is no install script.
 
-```sql
--- Enable pgvector extension
-CREATE EXTENSION vector;
+What the deployment owns is provisioning:
 
--- Prisma will generate schema with Json fields
--- For optimal performance, create indexes:
-CREATE INDEX article_embedding_vector_idx
-ON "Article" USING ivfflat (("contentEmbedding"->>'vector')::vector(1536))
-WITH (lists = 100);
+- pgvector must be **available** on the server. The Dev database and CI's
+  container carry it; Neon, Supabase and RDS offer it.
+- The migrating role needs the privilege to **create** it. pgvector is not a
+  trusted extension, so that is superuser or a provider grant.
+- Where a locked-down server offers neither, a DBA pre-creates the extension by
+  hand once, as a superuser. Prisma's op carries a precheck, so the migration
+  then records it as already satisfied and skips it.
+
+A server without pgvector fails with Prisma's own error, naming the `pgvector`
+space, the missing `vector.control` file and SQL state `58P01`.
+
+The index is declared on the field, not written as SQL:
+
+```typescript
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
+})
 ```
+
+Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
+types, so an `index` declaration derives the column type and the operator class
+and is not yet lowered to a `CREATE INDEX` (#1265).
 
 ## Type Safety
 
@@ -410,7 +436,7 @@ const embedding: StoredEmbedding = {
 ## Performance Considerations
 
 1. **Batch embedding generation**: Use `embedBatch()` for multiple texts
-2. **Index embeddings**: Create vector indexes in production (pgvector)
+2. **Index embeddings**: Declare `index` on the `embedding()` field rather than writing SQL
 3. **Chunking strategy**: Configure chunking for long texts
 4. **Rate limiting**: Configure `rateLimit` in RAG config to avoid API limits
 5. **Caching**: Hash source text to avoid regenerating unchanged embeddings
@@ -436,7 +462,7 @@ const vectors = await provider.embedBatch(chunks)
 
 ```typescript
 // Combine traditional search with semantic search
-const keywordResults = await context.db.article.findMany({
+const keywordResults = await context.db.Article.findMany({
   where: {
     OR: [{ title: { contains: query } }, { content: { contains: query } }],
   },

@@ -8,7 +8,7 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 - 🔍 **Semantic Search** - Search articles using natural language with vector similarity scoring
 - 📚 **Knowledge Base** - 18 pre-loaded articles about OpenSaas Stack with automatic embedding generation
 - ⚡ **Automatic Embeddings** - Uses OpenAI's `text-embedding-3-small` model with automatic regeneration on content changes
-- 🗄️ **pgvector Storage** - Production-ready PostgreSQL vector storage with cosine similarity search
+- 🗄️ **Native pgvector Column** - a `vector(1536)` column ranked in the database by `nearest()`
 - 🎯 **RAG Implementation** - Retrieves relevant context from knowledge base to enhance AI responses
 - 📊 **Source Citations** - Chatbot responses include citations to the knowledge base articles used
 - 🔒 **No Authentication** - Simplified demo without auth requirements
@@ -26,20 +26,22 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 ## Prerequisites
 
 - Node.js 18+ and pnpm
-- PostgreSQL 15+ with pgvector extension
+- PostgreSQL 15+ with pgvector available (the Dev database `pnpm dev` starts carries it)
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 
 ## Setup Instructions
 
-### 1. Install PostgreSQL and pgvector
+### 1. Make pgvector available (only if you bring your own Postgres)
+
+Skip this whole step to develop on the Dev database `pnpm dev` starts — it
+carries pgvector already. To point the example at a Postgres of your own, the
+extension has to be present on that server:
 
 **macOS (using Homebrew):**
 
 ```bash
 brew install postgresql@15
 brew services start postgresql@15
-
-# Install pgvector
 brew install pgvector
 ```
 
@@ -58,36 +60,32 @@ docker run -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=rag_chatbot \
   -p 5432:5432 \
-  ankane/pgvector
+  pgvector/pgvector:pg16
 ```
 
-### 2. Create Database
+Then create the database:
 
 ```bash
-# Using psql
 createdb rag_chatbot
-
-# Or connect to PostgreSQL and run:
-CREATE DATABASE rag_chatbot;
 ```
 
-### 3. Enable pgvector Extension
+You do **not** enable the extension yourself, and there is no install script to
+run. `ragPlugin` declares the pgvector extension pack, `pnpm generate` writes
+the extension's own migration alongside the app's, and `pnpm dev` (or
+`pnpm db:update`) enables it.
 
-```bash
-psql rag_chatbot
+pgvector is not a trusted extension, so the role in your `DATABASE_URL` needs
+superuser or a provider grant to enable it. If it has neither, have someone who
+does pre-create the extension in that database once — the migration prechecks
+for it and records the step as already satisfied.
 
-# In the PostgreSQL shell:
-CREATE EXTENSION vector;
-\q
-```
-
-### 4. Install Dependencies
+### 2. Install Dependencies
 
 ```bash
 pnpm install
 ```
 
-### 5. Configure Environment Variables
+### 3. Configure Environment Variables
 
 ```bash
 cp .env.example .env
@@ -102,7 +100,7 @@ OPENAI_API_KEY="sk-..."
 Leave `DATABASE_URL` unset to develop on the Dev database, or set it to reach a
 Postgres of your own.
 
-### 6. Generate Schema
+### 4. Generate Schema
 
 ```bash
 pnpm generate
@@ -110,7 +108,7 @@ pnpm generate
 
 `pnpm dev` runs this for you and reconciles the database with what it emits.
 
-### 7. Run Development Server
+### 5. Run Development Server
 
 ```bash
 pnpm dev
@@ -123,7 +121,7 @@ Visit:
 - **Search:** [http://localhost:3000/search](http://localhost:3000/search)
 - **Admin:** [http://localhost:3000/admin](http://localhost:3000/admin)
 
-### 8. Seed the Database
+### 6. Seed the Database
 
 With `pnpm dev` running in another terminal:
 
@@ -216,9 +214,9 @@ content: searchable(text(), {
 The `searchable()` wrapper:
 
 - Automatically creates a `contentEmbedding` field
-- Adds a `resolveInput` hook that generates embeddings on create/update
+- Adds an `afterTransaction` hook that embeds the persisted text once the write commits
 - Uses OpenAI's `text-embedding-3-small` model (1536 dimensions)
-- Stores embeddings as JSON with metadata (model, provider, dimensions, source hash)
+- Stores the vector in a pgvector `vector(1536)` column, with its metadata (model, provider, dimensions, source hash) in a `jsonb` column beside it
 
 ### 2. Semantic Search
 
@@ -232,8 +230,11 @@ const provider = createEmbeddingProvider({
 
 const queryVector = await provider.embed(query)
 
-// Calculate similarity with stored embeddings
-const score = cosineSimilarity(queryVector, article.contentEmbedding.vector)
+// One scoped query: the Access Filter, the minScore bound and the ranking all
+// live inside nearest().
+const matches = await context.db.KnowledgeBase.where({
+  published: { equals: true },
+}).nearest('contentEmbedding', queryVector, { limit, minScore })
 ```
 
 ### 3. RAG Chat Flow
@@ -248,7 +249,8 @@ When chatting (in `app/api/chat/route.ts`):
 // Perform semantic search
 const searchResults = await searchKnowledge(userQuery, {
   limit: 3,
-  minScore: 0.6,
+  // Raw cosine, not a normalised 0-1 score: 0.25 is a loose floor.
+  minScore: 0.25,
 })
 
 // Build system message with RAG context
@@ -286,9 +288,6 @@ export default config({
       provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-      }),
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine',
       }),
     }),
   ],
@@ -360,13 +359,19 @@ Embeddings are stored as JSON:
 
 ### Indexing (Optional)
 
-For large datasets, create a pgvector index:
+For large datasets, declare an index on the embedding field rather than writing
+SQL:
 
-```sql
-CREATE INDEX knowledge_base_embedding_idx
-ON "KnowledgeBase" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (lists = 100);
+```typescript
+contentEmbedding: embedding({
+  sourceField: 'content',
+  index: { method: 'ivfflat', lists: 100 },
+})
 ```
+
+Known limits: the pgvector pack this example ships against registers no index
+types, so the declaration derives the column type and the operator class and is
+not yet lowered to a real index ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
 
 ### Change Detection
 
@@ -412,13 +417,26 @@ Use the Admin UI at `/admin` or seed script in `scripts/seed.ts`.
 
 ## Troubleshooting
 
-### pgvector Extension Not Found
+### pgvector Not Available
 
 ```
-ERROR: extension "vector" is not available
+MIGRATION.RUNNER_FAILED ... could not open extension control file ... vector.control
 ```
 
-**Solution:** Install pgvector extension for your PostgreSQL version.
+**Solution:** the server your `DATABASE_URL` points at has no pgvector. Install
+it for that PostgreSQL version, or unset `DATABASE_URL` to use the Dev database,
+which carries it.
+
+### Permission Denied Enabling pgvector
+
+```
+ERROR: permission denied to create extension "vector"
+```
+
+**Solution:** pgvector is not a trusted extension, so the connecting role needs
+superuser or a provider grant. Either grant it, or have someone who already
+holds the privilege pre-create the extension in that database once — the
+migration prechecks for it and skips the step.
 
 ### OpenAI Rate Limit Errors
 

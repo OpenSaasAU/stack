@@ -142,6 +142,52 @@ void run
     expect(output).toBe('')
   })
 
+  /**
+   * The search helpers' own seam. `semanticSearch()` typed its list as core's
+   * `SecuredQuery`, which a generated `ArticleList` is not assignable to —
+   * every documented call was `TS2322` for an app author, and the rag suite
+   * missed it by passing the engine's untyped delegate. Only a generated list
+   * reaching the real parameter closes this.
+   */
+  it('compiles the search helpers against a generated list', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+import { semanticSearch, findSimilar } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
+declare const context: Context
+declare const provider: EmbeddingProvider
+
+async function run() {
+  const hits = await semanticSearch({
+    list: context.db.Article,
+    fieldName: 'contentEmbedding',
+    query: 'articles about machine learning',
+    provider,
+    limit: 10,
+    minScore: 0.25,
+  })
+
+  const similar = await findSimilar({
+    list: context.db.Article,
+    fieldName: 'contentEmbedding',
+    itemId: 'article-123',
+    limit: 5,
+  })
+
+  // The row type reaches the caller off the list it passed, rather than
+  // degrading to the \`Record<string, unknown>\` default.
+  assertType<Exact<(typeof hits)[number]['score'], number>>()
+  assertType<Exact<(typeof hits)[number]['item']['title'], string>>()
+  assertType<Exact<(typeof similar)[number]['item']['content'], string | null>>()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
   it('reads the embedding back as the value the field declares', { timeout: 300_000 }, () => {
     const output = fixture.check(`${CONSUMER_PRELUDE}
 import type { Context } from './.opensaas/types.ts'

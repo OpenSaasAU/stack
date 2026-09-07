@@ -8,7 +8,7 @@ Before adding RAG to your application, ensure you have:
 
 - **Stack** installed and configured
 - **Node.js 18+** and pnpm
-- **Database** (PostgreSQL, SQLite, or any Prisma-supported database)
+- **PostgreSQL with pgvector available** — embeddings are pgvector columns, so `postgresql` is the only datasource RAG runs on
 - **OpenAI API key** (for OpenAI embeddings) OR **Ollama** installed (for local embeddings)
 
 ## Installation
@@ -31,15 +31,23 @@ pnpm add openai
 
 ## Database Setup
 
-The RAG package supports three storage backends. Choose the one that best fits your needs.
+Embeddings live in a native pgvector `vector(n)` column beside the row, with
+their metadata in a `jsonb` column next to it. There is no storage backend to
+choose, and nothing in your config names pgvector — `ragPlugin` declares the
+extension pack itself.
 
-### PostgreSQL with pgvector (Recommended for Production)
+Because every column the plugin emits is a pgvector column, `postgresql` is the
+only datasource RAG runs on. `pnpm generate` refuses any other one, naming the
+datasource it found.
 
-pgvector is the best option for production applications using PostgreSQL. It provides efficient vector similarity search with index support.
+### Making pgvector available
 
-#### Installation
+The extension has to be present on the Postgres server before a migration can
+enable it. The Dev database `opensaas dev` starts carries it, and the managed
+services generally offer it — Neon, Supabase and RDS among them. For a server
+you run yourself:
 
-**Using Docker (Easiest):**
+**Using Docker (easiest):**
 
 ```bash
 docker run -d \
@@ -54,11 +62,9 @@ docker run -d \
 **Using Homebrew (macOS):**
 
 ```bash
-# Install PostgreSQL if not already installed
 brew install postgresql@16
 brew services start postgresql@16
 
-# Install pgvector extension
 brew install pgvector
 brew services restart postgresql@16
 ```
@@ -66,142 +72,70 @@ brew services restart postgresql@16
 **Using apt (Ubuntu/Debian):**
 
 ```bash
-# Install PostgreSQL and pgvector
 sudo apt install postgresql-16 postgresql-16-pgvector
-
-# Restart PostgreSQL
 sudo systemctl restart postgresql
 ```
 
-#### Enable pgvector Extension
+### Enabling it
 
-After installing PostgreSQL with pgvector, enable the extension in your database:
-
-```bash
-# Connect to your database
-psql -U postgres -d your_database
-
-# Enable the extension
-CREATE EXTENSION IF NOT EXISTS vector;
-
-# Verify installation
-\dx vector
-```
-
-You should see:
-
-```
-                              List of installed extensions
-  Name   | Version | Schema |                      Description
----------+---------+--------+-------------------------------------------------------
- vector  | 0.7.0   | public | vector data type and ivfflat and hnsw access methods
-```
-
-#### Configure in OpenSaas
-
-```typescript
-// opensaas.config.ts
-import { ragPlugin, pgvectorStorage } from '@opensaas/stack-rag'
-
-export default config({
-  plugins: [
-    ragPlugin({
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine', // 'cosine', 'l2', or 'innerProduct'
-      }),
-    }),
-  ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
-})
-```
-
-#### Performance Optimization (Optional)
-
-For large datasets, create indexes to speed up vector searches:
-
-```sql
--- Create IVFFlat index (for datasets with 10k+ vectors)
-CREATE INDEX article_embedding_idx
-ON "Article" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (lists = 100);
-
--- OR create HNSW index (better quality, slower build)
-CREATE INDEX article_embedding_hnsw_idx
-ON "Article" USING hnsw ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (m = 16, ef_construction = 64);
-```
-
-**Index Guidelines:**
-
-- **IVFFlat**: Faster to build, good for 10k-1M vectors
-- **HNSW**: Better search quality, good for 100k+ vectors
-- **lists parameter**: Set to sqrt(rows) for IVFFlat
-- **m parameter**: Higher = better quality but more memory for HNSW
-
-### SQLite with VSS (Good for SQLite Apps)
-
-If you're using SQLite, the sqlite-vss extension provides efficient vector search.
-
-#### Installation
+You do not run any SQL for this, and there is no install script. `ragPlugin`'s
+declaration is a generator emission: `pnpm generate` writes the extension's own
+migration under `migrations/pgvector/`, alongside your app's, and the migration
+enables the extension ahead of your tables.
 
 ```bash
-# Install sqlite-vss extension (method varies by OS)
-# See: https://github.com/asg017/sqlite-vss
-
-# For macOS with Homebrew:
-brew install sqlite-vss
+pnpm generate
+pnpm db:update
 ```
 
-#### Configure in OpenSaas
+In production the same committed migration runs under `opensaas db migrate`.
+
+### The privilege it needs
+
+pgvector is not a trusted extension, so enabling it is not something an
+unprivileged role can do. One of these has to hold:
+
+- The role your migration connects as is a **superuser**, or your provider has
+  **granted** it the extension. The Dev database and CI's container run as
+  superuser; managed Postgres services generally grant it to the app role.
+- Or the extension is **pre-created** in the database by hand, once, by someone
+  who does have that privilege. The migration prechecks for it, finds it
+  present, and records the step as already satisfied rather than failing.
+
+Either route arrives in the same place, and a following `db:update` is a no-op.
+
+If the server has no pgvector at all, the migration stops with Prisma's own
+error — it names the `pgvector` space, the missing `vector.control` file and SQL
+state `58P01`. The app's own tables are untouched, because each apply runs in
+one transaction.
+
+### Indexes
+
+A vector index is declared on the field that owns the column, not written as
+SQL:
 
 ```typescript
-// opensaas.config.ts
-import { ragPlugin, sqliteVssStorage } from '@opensaas/stack-rag'
-
-export default config({
-  plugins: [
-    ragPlugin({
-      storage: sqliteVssStorage({
-        distanceFunction: 'cosine',
-      }),
-    }),
-  ],
-  db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-  },
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
 })
 ```
 
-### JSON Storage (Development Only)
+**Index guidelines:**
 
-JSON storage requires no database extensions and works with any database. Good for development and small datasets (<10k documents).
+- **`ivfflat`**: faster to build, good for 10k–1M vectors. Set `lists` to about
+  the square root of the row count.
+- **`hnsw`**: better search quality, good for 100k+ vectors. A higher `m` buys
+  quality with memory.
+- The operator class is derived from the field's `distanceFunction` and column
+  type, so the two cannot disagree.
 
-```typescript
-// opensaas.config.ts
-import { ragPlugin, jsonStorage } from '@opensaas/stack-rag'
-
-export default config({
-  plugins: [
-    ragPlugin({
-      storage: jsonStorage(), // No setup required
-    }),
-  ],
-  db: {
-    provider: 'sqlite', // Works with any database
-    url: 'file:./dev.db',
-  },
-})
-```
-
-**Limitations:**
-
-- O(n) search complexity (slower for large datasets)
-- Similarity computed in JavaScript (no database-level optimization)
-- Best for development and <10k documents
+Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
+types, so an `index` declaration derives the column type and the operator class
+but is not yet lowered to a `CREATE INDEX`. Searches are correct without it;
+they are unindexed scans until the pack ships index support.
 
 ## Provider Configuration
 
@@ -273,6 +207,9 @@ ragPlugin({
   provider: ollamaEmbeddings({
     baseURL: 'http://localhost:11434',
     model: 'nomic-embed-text',
+    // Required. Ollama reports its output size only from a live embed call,
+    // and generation must not depend on a running Ollama.
+    dimensions: 768,
   }),
 })
 ```
@@ -304,9 +241,9 @@ ragPlugin({
     }),
     ollama: ollamaEmbeddings({
       model: 'nomic-embed-text',
+      dimensions: 768,
     }),
   },
-  storage: pgvectorStorage(),
 })
 
 // Use different providers for different fields
@@ -348,7 +285,7 @@ OPENAI_API_KEY=sk-...
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text, select, checkbox, timestamp } from '@opensaas/stack-core/fields'
-import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
@@ -357,9 +294,6 @@ export default config({
       provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-      }),
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine',
       }),
     }),
   ],
@@ -435,7 +369,7 @@ you save the config.
 // lib/search.ts
 'use server'
 
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
 export async function searchArticles(query: string, limit = 10) {
@@ -448,24 +382,34 @@ export async function searchArticles(query: string, limit = 10) {
   })
   const queryVector = await provider.embed(query)
 
-  // Perform search
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
-    limit,
-    minScore: 0.7,
-    context,
-    where: { published: { equals: true } },
-  })
+  // One scoped query: the Access Filter, the minScore bound and the ranking
+  // all live inside nearest().
+  const matches = await context.db.Article.where({
+    published: { equals: true },
+  }).nearest('contentEmbedding', queryVector, { limit, minScore: 0.25 })
 
-  return results.map((r) => ({
-    id: r.item.id,
-    title: r.item.title,
-    content: r.item.content,
-    category: r.item.category,
-    similarity: r.score,
+  return matches.map((match) => ({
+    id: match.item.id,
+    title: match.item.title,
+    content: match.item.content,
+    category: match.item.category,
+    similarity: match.score,
   }))
 }
 ```
+
+`minScore` is read on the column's own distance function, not on a normalised
+0–1 scale:
+
+| `distanceFunction` | `score`         | Range     |
+| ------------------ | --------------- | --------- |
+| `cosine` (default) | the raw cosine  | `[-1, 1]` |
+| `l2`               | `1 / (1 + d)`   | `(0, 1]`  |
+| `inner_product`    | the dot product | unbounded |
+
+So on a cosine column `minScore: 0` admits everything more alike than opposite,
+and anything above about `0.5` is a tight bound most real corpora will not
+reach. Start loose and tighten against your own data.
 
 ### Use in a Component
 
@@ -539,7 +483,6 @@ export default config({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
       }),
-      storage: pgvectorStorage(),
     }),
   ],
   lists: {
@@ -570,11 +513,14 @@ export default config({
 // lib/knowledge-search.ts
 'use server'
 
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
-export async function searchKnowledge(query: string, options = {}) {
-  const { limit = 3, minScore = 0.6 } = options
+export async function searchKnowledge(
+  query: string,
+  options: { limit?: number; minScore?: number } = {},
+) {
+  const { limit = 3, minScore = 0.25 } = options
   const context = await getContext()
 
   const provider = createEmbeddingProvider({
@@ -583,19 +529,15 @@ export async function searchKnowledge(query: string, options = {}) {
   })
   const queryVector = await provider.embed(query)
 
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const results = await storage.search('KnowledgeBase', 'contentEmbedding', queryVector, {
-    limit,
-    minScore,
-    context,
-    where: { published: { equals: true } },
-  })
+  const matches = await context.db.KnowledgeBase.where({
+    published: { equals: true },
+  }).nearest('contentEmbedding', queryVector, { limit, minScore })
 
-  return results.map((r) => ({
-    id: r.item.id,
-    title: r.item.title,
-    content: r.item.content,
-    score: r.score,
+  return matches.map((match) => ({
+    id: match.item.id,
+    title: match.item.title,
+    content: match.item.content,
+    score: match.score,
   }))
 }
 ```
@@ -615,7 +557,7 @@ export async function POST(req: Request) {
   // Retrieve relevant context from knowledge base
   const searchResults = await searchKnowledge(lastMessage.content, {
     limit: 3,
-    minScore: 0.6,
+    minScore: 0.25,
   })
 
   // Build system message with RAG context
@@ -718,7 +660,6 @@ export default function ChatPage() {
 ```typescript
 // scripts/seed-knowledge.ts
 import { getContext } from '@/.opensaas/context'
-import { sudo } from '@opensaas/stack-core/context'
 
 const articles = [
   {
@@ -735,16 +676,13 @@ const articles = [
 ]
 
 async function seed() {
-  const context = await getContext()
+  // `sudo()` returns a context that bypasses access control, for a script
+  // that runs with no session.
+  const context = (await getContext()).sudo()
 
   for (const article of articles) {
-    // Use sudo() to bypass access control during seeding
-    const created = await sudo(
-      context.db.knowledgeBase.create({
-        data: article,
-      }),
-    )
-    console.log(`Created: ${created.title}`)
+    await context.db.KnowledgeBase.create({ data: article })
+    console.log(`Created: ${article.title}`)
   }
 }
 
@@ -765,7 +703,7 @@ Embeddings will be automatically generated for each article!
 
 ```typescript
 // scripts/test-embeddings.ts
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 async function test() {
   const provider = createEmbeddingProvider({
@@ -788,7 +726,7 @@ test()
 ```typescript
 // scripts/test-search.ts
 import { getContext } from '@/.opensaas/context'
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 async function test() {
   const context = await getContext()
@@ -802,15 +740,13 @@ async function test() {
   })
   const queryVector = await provider.embed(query)
 
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+  const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 5,
-    context,
   })
 
-  console.log(`Found ${results.length} results:`)
-  results.forEach((r, i) => {
-    console.log(`${i + 1}. ${r.item.title} (Score: ${r.score.toFixed(3)})`)
+  console.log(`Found ${matches.length} results:`)
+  matches.forEach((match, i) => {
+    console.log(`${i + 1}. ${String(match.item.title)} (Score: ${match.score.toFixed(3)})`)
   })
 }
 
@@ -819,23 +755,39 @@ test()
 
 ## Troubleshooting
 
-### pgvector Extension Not Found
+### pgvector Not Available
 
 **Error:**
 
 ```
-ERROR: extension "vector" is not available
+MIGRATION.RUNNER_FAILED ... could not open extension control file ... vector.control
 ```
 
 **Solution:**
 
-The pgvector extension is not installed. Follow the installation steps for your platform:
+pgvector is not present on the server. Make it available, then re-run
+`pnpm db:update`:
 
-- **Docker**: Use `pgvector/pgvector:pg16` image
+- **Docker**: use the `pgvector/pgvector:pg16` image
 - **Homebrew**: `brew install pgvector`
 - **apt**: `sudo apt install postgresql-16-pgvector`
+- **Managed Postgres**: Neon, Supabase and RDS offer it; check your provider's
+  extension list
 
-Or switch to JSON storage for development.
+### Permission Denied Enabling pgvector
+
+**Error:**
+
+```
+ERROR: permission denied to create extension "vector"
+```
+
+**Solution:**
+
+pgvector is not a trusted extension, so the migrating role needs superuser or a
+provider grant. Either grant the role that privilege, or have someone who
+already holds it pre-create the extension in the database once — the migration
+prechecks for it and records the step as already satisfied.
 
 ### OpenAI Rate Limit Errors
 
@@ -875,27 +827,29 @@ Error: Rate limit exceeded
 
 **Solutions:**
 
-1. **Create indexes** (for pgvector):
-
-   ```sql
-   CREATE INDEX article_embedding_idx
-   ON "Article" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
-   WITH (lists = 100);
-   ```
-
-2. **Reduce result limit**:
+1. **Declare an index** on the embedding field:
 
    ```typescript
-   storage.search(..., { limit: 5 }) // Instead of 100
+   contentEmbedding: embedding({
+     sourceField: 'content',
+     index: { method: 'hnsw', m: 16, efConstruction: 64 },
+   })
    ```
 
-3. **Use minScore filter**:
+   See [Indexes](#indexes) for what the pack builds today.
+
+2. **Reduce the result limit**:
 
    ```typescript
-   storage.search(..., { minScore: 0.7 }) // Only high-quality matches
+   context.db.Article.nearest('contentEmbedding', queryVector, { limit: 5 })
    ```
 
-4. **Consider pgvector** if using JSON storage with large dataset
+3. **Bound the search with `minScore`**, which is lowered into the query as a
+   distance bound rather than filtered afterwards:
+
+   ```typescript
+   context.db.Article.nearest('contentEmbedding', queryVector, { minScore: 0.25 })
+   ```
 
 ### Database Connection Issues
 

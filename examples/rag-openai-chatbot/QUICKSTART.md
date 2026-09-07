@@ -4,9 +4,12 @@ Get the RAG OpenAI Chatbot demo running in 5 minutes!
 
 ## Prerequisites
 
-- PostgreSQL with pgvector extension installed and running
 - OpenAI API key
 - Node.js 18+ and pnpm
+
+That is all you need: leave `DATABASE_URL` unset and `pnpm dev` starts a Dev
+database that already carries pgvector. To bring your own Postgres, see
+[Using your own PostgreSQL](#using-your-own-postgresql) below.
 
 ## Quick Setup
 
@@ -36,9 +39,10 @@ pnpm db:seed
 - **Search:** http://localhost:3000/search
 - **Admin:** http://localhost:3000/admin
 
-## Try These Commands
+## Using your own PostgreSQL
 
-### Using Docker for PostgreSQL (easiest)
+The server needs pgvector **available**; enabling it is the migration's job, not
+yours. Docker is the shortest route:
 
 ```bash
 docker run -d \
@@ -46,21 +50,25 @@ docker run -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=rag_chatbot \
   -p 5432:5432 \
-  ankane/pgvector
+  pgvector/pgvector:pg16
 ```
 
-Then use this in `.env`:
+Then point `.env` at it:
 
 ```
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/rag_chatbot?schema=public"
 ```
 
-### Create Database Manually
+On an existing server, create the database and let `pnpm dev` do the rest:
 
 ```bash
 createdb rag_chatbot
-psql rag_chatbot -c "CREATE EXTENSION vector;"
 ```
+
+pgvector is not a trusted extension, so the role in your `DATABASE_URL` needs
+superuser or a provider grant to enable it. If it has neither, have someone who
+does pre-create the extension in that database once — the migration prechecks
+for it and records the step as already satisfied.
 
 ## Test the Features
 
