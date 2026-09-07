@@ -184,6 +184,45 @@ describe('connect on the foreign-key-owning field', () => {
   )
 
   /**
+   * The filter-returning branch of the reachability gate is what the test
+   * above exercises. A target list whose `query` is a hard `false` never
+   * reaches a filter at all, and is the branch that stops a wholly-denied list
+   * from being linkable — so it is asserted on its own, against the same
+   * caller that CAN link the very same row when the deny is lifted.
+   */
+  test(
+    'a hard-denied target list is not linkable, and answers as an absent target does',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const denied = contextAt(
+        schemaConfig(() => false),
+        { userId: 'u1' },
+      )
+
+      const unreadable = await denied.db.Post.create({
+        data: { title: 'denied', author: { connect: { id: authorId } } },
+      })
+      expect(unreadable).toBeNull()
+
+      const absent = await denied.db.Post.create({
+        data: { title: 'absent', author: { connect: { id: ABSENT_ID } } },
+      })
+      expect(absent).toEqual(unreadable)
+      expect(await storedLinks(harness.url)).toEqual([])
+
+      // The same row, the same id, through a context whose target list is not
+      // denied: the answers must differ, or the fixture proves nothing.
+      expect(
+        await harness.context.db.Post.create({
+          data: { title: 'seen', author: { connect: { id: authorId } } },
+        }),
+      ).toMatchObject({ title: 'seen' })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'seen', author: authorId }])
+    },
+    BOOT,
+  )
+
+  /**
    * The arity rule (ADR-0050): an edge is a column on the row being written,
    * and only the foreign-key-owning end holds that column. Connecting through
    * `Author.posts` would be N updates against `Post`, each owing that list's

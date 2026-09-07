@@ -1,4 +1,5 @@
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 
 /** JSON Schema for one field's own value — shared by the create/update `data` schema and the `query` tool's `fields` projection schema. */
 export function fieldToJsonSchema(
@@ -38,7 +39,13 @@ export function fieldToJsonSchema(
       }
       break
     case 'relationship':
-      baseSchema.type = 'object'
+      // `null` is the only spelling that clears the edge — nested `disconnect`
+      // is refused (ADR-0050) — so the schema has to admit it alongside
+      // `connect`, or a client cannot express half of what the write surface
+      // supports.
+      baseSchema.type = ['object', 'null']
+      baseSchema.description =
+        'Link this record to a row of the related list with { "connect": { "id": "..." } }, or clear the link with null.'
       baseSchema.properties = {
         connect: {
           type: 'object',
@@ -56,7 +63,9 @@ export function fieldToJsonSchema(
 }
 
 export function generateFieldSchemas(
+  listKey: string,
   fields: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
   operation: 'create' | 'update',
 ): {
   properties: Record<string, unknown>
@@ -68,10 +77,14 @@ export function generateFieldSchemas(
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
 
-    // A to-many relationship owns no foreign key on this row, so `connect`
-    // through it is refused by the engine (ADR-0050). Advertising it would
+    // A relationship whose foreign key lives on the related row — a to-many,
+    // and the non-owning end of a one-to-one — has no column here to lower a
+    // `connect` onto, so the engine refuses it (ADR-0050). Advertising it would
     // invite a tool call that can only fail.
-    if (fieldConfig.type === 'relationship' && 'many' in fieldConfig && fieldConfig.many === true) {
+    if (
+      isRelationshipField(fieldConfig) &&
+      !shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)
+    ) {
       continue
     }
 

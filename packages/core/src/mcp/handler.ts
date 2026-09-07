@@ -264,7 +264,7 @@ async function handleToolsList(
     }
 
     if (enabledTools.create) {
-      const fieldSchemas = generateFieldSchemas(listConfig.fields, 'create')
+      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'create')
       tools.push({
         name: `list_${toolKey}_create`,
         description: `Create a new ${listKey} record`,
@@ -284,7 +284,7 @@ async function handleToolsList(
     }
 
     if (enabledTools.update) {
-      const fieldSchemas = generateFieldSchemas(listConfig.fields, 'update')
+      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'update')
       tools.push({
         name: `list_${toolKey}_update`,
         description: `Update an existing ${listKey} record`,

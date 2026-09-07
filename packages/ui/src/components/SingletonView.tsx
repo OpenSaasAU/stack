@@ -121,7 +121,7 @@ export async function SingletonView({
       serializableFields: createFields,
       initialData: createInitialData,
       relationshipData: createRelationshipData,
-    } = await prepareItemForm(context, config, listConfig, {})
+    } = await prepareItemForm(context, config, listKey, listConfig, {})
 
     return (
       <div className="p-8 max-w-4xl">
@@ -154,6 +154,7 @@ export async function SingletonView({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     listConfig,
     record,
   )

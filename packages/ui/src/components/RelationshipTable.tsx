@@ -175,6 +175,7 @@ async function resolveCreateForm(
   const { serializableFields, relationshipData } = await prepareItemForm(
     context,
     config,
+    section.relatedListKey,
     formListConfig,
     {},
   )

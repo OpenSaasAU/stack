@@ -213,6 +213,7 @@ async function ItemViewLayoutView({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     detailsListConfig,
     detailsItemData,
   )
@@ -366,6 +367,7 @@ export async function ItemForm({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     listConfig,
     itemData,
   )

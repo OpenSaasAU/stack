@@ -802,12 +802,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
-    // The back-reference to the parent is set here from `field`/`parentId` (a
-    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
-    // many-to-many, connects the parent by id), so the client can never
-    // re-target the link. Honours Silent failure: an access-denied create
-    // returns `null`, surfaced as `{ created: false }` with a generic reason
-    // (no denied-vs-absent leak).
+    // The back-reference to the parent is set here from `field`/`parentId`, so
+    // the client can never re-target the link. Only a to-one back-reference
+    // owns a column to hold it; a to-many one is refused below. Honours Silent
+    // failure: an access-denied create returns `null`, surfaced as
+    // `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always

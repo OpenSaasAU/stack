@@ -26,6 +26,15 @@ export type SerializableFieldConfig = {
    * fields have no column to order by.
    */
   virtual?: boolean
+  /**
+   * Set when an item form must not offer this field as an editable control,
+   * because a value it collected could not be written. `FieldRenderer` forces
+   * read-only presentation for it and surfaces {@link readOnlyReason}, and the
+   * submit transform sends nothing for it.
+   */
+  readOnly?: boolean
+  /** Why {@link readOnly} is set — shown to the user beneath the field. */
+  readOnlyReason?: string
   ui?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
@@ -44,6 +53,15 @@ export type SerializableFieldConfig = {
     [key: string]: unknown
   }
 }
+
+/**
+ * Shown beneath a relationship an item form cannot write, in place of the
+ * picker it would otherwise render. Exported so `prepareItemForm` marks the
+ * non-owning end of a one-to-one — which needs the whole config to recognise —
+ * with the same wording this module applies to a to-many.
+ */
+export const UNWRITABLE_RELATIONSHIP_REASON =
+  'Not editable here — the related record holds this link. Edit it from the other list.'
 
 /**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
@@ -82,6 +100,16 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
 
   if ('virtual' in fieldConfig && fieldConfig.virtual === true) {
     config.virtual = true
+  }
+
+  // A to-many relationship's foreign key lives on the related row, so a value
+  // collected here has no column to land in and the engine refuses it
+  // (ADR-0050). Marking it read-only is what stops the form offering an edit it
+  // would then have to discard. The non-owning end of a one-to-one is the same
+  // case but needs the whole config to recognise — `prepareItemForm` adds it.
+  if (config.type === 'relationship' && config.many === true) {
+    config.readOnly = true
+    config.readOnlyReason = UNWRITABLE_RELATIONSHIP_REASON
   }
 
   return config

@@ -84,6 +84,12 @@ function FieldRendererInner({
     }
   }
 
+  // Why the control is read-only takes precedence over any configured help
+  // text: without it the field is simply inert, and the user is left to guess.
+  if (fieldConfig.readOnly && fieldConfig.readOnlyReason) {
+    specificProps.helpText = fieldConfig.readOnlyReason
+  }
+
   const allProps = { ...baseProps, ...specificProps }
   return <Component {...allProps} />
 }
@@ -150,7 +156,9 @@ export function FieldRenderer(props: FieldRendererProps) {
 
   // Virtual fields are computed and unwritable — force read-only regardless of
   // requested mode (issue #821; see `VirtualField`'s defence-in-depth doc).
-  const effectiveMode = fieldConfig.virtual ? 'read' : mode
+  // `readOnly` is the same treatment for a field the form must not collect a
+  // value for, carrying its own reason to show the user.
+  const effectiveMode = fieldConfig.virtual || fieldConfig.readOnly ? 'read' : mode
 
   return <FieldRendererInner {...props} mode={effectiveMode} Component={Component} />
 }

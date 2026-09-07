@@ -3,12 +3,20 @@ import {
   transformItemFormData,
   transformInitialData,
   getEditableFields,
+  UnwritableRelationshipError,
 } from '../../src/lib/useItemForm.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
 
 const text = (): SerializableFieldConfig => ({ type: 'text' })
 const singleRel = (): SerializableFieldConfig => ({ type: 'relationship', many: false })
 const manyRel = (): SerializableFieldConfig => ({ type: 'relationship', many: true })
+/** A to-many as `prepareItemForm` hands it to the form: rendered read-only. */
+const readOnlyManyRel = (): SerializableFieldConfig => ({
+  type: 'relationship',
+  many: true,
+  readOnly: true,
+  readOnlyReason: 'Not editable here — the related record holds this link.',
+})
 const password = (): SerializableFieldConfig => ({ type: 'password' })
 const virtual = (): SerializableFieldConfig => ({ type: 'virtual', virtual: true })
 
@@ -32,11 +40,24 @@ describe('transformItemFormData', () => {
     expect(transformItemFormData(fields, { author: null })).toEqual({})
   })
 
-  it('drops a many relationship, which owns no column on this row', () => {
+  it('sends nothing for a relationship the form rendered read-only', () => {
     // ADR-0050: an edge is a foreign-key assignment, and a to-many's key lives
-    // on the related list — those rows are written against their own list.
-    const fields = { tags: manyRel() }
+    // on the related list. The value here is the one the server sent — a
+    // read-only control never calls `onChange` — so nothing of the user's is
+    // lost by omitting it.
+    const fields = { tags: readOnlyManyRel() }
     expect(transformItemFormData(fields, { tags: ['a', 'b'] })).toEqual({})
+  })
+
+  it('refuses a to-many selection rather than discarding it when no control marked it read-only', () => {
+    // The regression this guards: the field rendered as an editable, populated
+    // multi-select, the selection vanished from the payload, and the save
+    // reported success. Whatever else happens, the user must be told.
+    const fields = { title: text(), tags: manyRel() }
+    expect(() => transformItemFormData(fields, { title: 'Hi', tags: ['a', 'b'] })).toThrow(
+      UnwritableRelationshipError,
+    )
+    expect(() => transformItemFormData(fields, { title: 'Hi', tags: ['a', 'b'] })).toThrow(/"tags"/)
   })
 
   it('omits an empty many relationship', () => {
@@ -72,7 +93,7 @@ describe('transformItemFormData', () => {
     const fields = {
       title: text(),
       author: singleRel(),
-      tags: manyRel(),
+      tags: readOnlyManyRel(),
       password: password(),
     }
     const out = transformItemFormData(fields, {
@@ -132,5 +153,13 @@ describe('getEditableFields', () => {
   it('drops virtual fields for create mode — there is no item yet to compute a value from', () => {
     const fields = { title: text(), fullName: virtual() }
     expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title'])
+  })
+
+  it('keeps a read-only field in both modes, so the form can show why it is not editable', () => {
+    // Dropping it would leave the user with no field and no explanation for
+    // where it went. `FieldRenderer` renders it read-only with its reason.
+    const fields = { title: text(), tags: readOnlyManyRel() }
+    expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title', 'tags'])
+    expect(getEditableFields(fields, 'update').map(([k]) => k)).toEqual(['title', 'tags'])
   })
 })

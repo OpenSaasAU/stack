@@ -15,6 +15,7 @@ export interface RelationshipFieldProps {
   required?: boolean
   mode?: 'read' | 'edit'
   isLoading?: boolean
+  helpText?: string
   many?: boolean
   relatedListKey?: string
   basePath?: string
@@ -35,6 +36,7 @@ export function RelationshipField({
   required,
   mode = 'edit',
   isLoading = false,
+  helpText,
   many = false,
   relatedListKey,
   basePath,
@@ -54,6 +56,7 @@ export function RelationshipField({
         required={required}
         mode={mode}
         isLoading={isLoading}
+        helpText={helpText}
         relatedListKey={relatedListKey}
         basePath={basePath}
         listKey={listKey}
@@ -74,6 +77,7 @@ export function RelationshipField({
       required={required}
       mode={mode}
       isLoading={isLoading}
+      helpText={helpText}
       listKey={listKey}
       serverAction={serverAction}
     />

@@ -36,6 +36,16 @@ Three refusals name what a payload may carry on a relationship key:
 The relationship table's remove control follows the same rule: removing a row
 through a to-one back-reference assigns `null` to it and the row survives,
 while removing a junction row deletes it under that list's own delete access.
-The admin item form no longer emits `connect` for a to-many relationship, and
-the MCP field schema no longer advertises one — those edges are written
-against the related list.
+
+A relationship whose foreign key lives on the related row — a to-many, or the
+non-owning half of a one-to-one — is not writable through the surfaces that
+carry a payload for a single row, so neither surface offers it any more:
+
+- The admin item form renders it read-only, stating that the related record
+  holds the link, instead of a picker whose selection had nowhere to go.
+- The MCP create/update tools omit it from the advertised `data` properties,
+  so a client cannot spell a call that could only fail.
+
+On the end that does hold the column, the MCP schema now advertises `null`
+alongside `connect`, so both spellings of an edge the engine accepts are
+describable through the tool surface.
