@@ -458,7 +458,7 @@ See the [packages/tiptap](https://github.com/OpenSaasAU/stack/tree/main/packages
 Key requirements:
 
 1. Implement `BaseFieldConfig` interface
-2. Provide `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()` methods
+2. Provide `getZodSchema()` and `getContractField()`, plus `outputType` when the field has no single column to be typed from — a virtual field, or one spanning several columns
 3. Export field builder function and React component
 4. Document client-side registration requirements
 

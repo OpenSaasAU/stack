@@ -143,12 +143,18 @@ describe('validateFieldConfig', () => {
   })
 
   describe('contract-era fields', () => {
-    /** Two columns of different types, which no single column type describes. */
+    const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+    /**
+     * Two columns of different types, which no single column type describes.
+     * `getColumnNames` is deliberately absent: the obligation follows the
+     * descriptor's `kind`, and a fixture declaring both markers would let the
+     * gate read either one and still pass.
+     */
     const twoColumns: FieldConfig = {
       type: 'embedding',
       outputType: "import('@opensaas/stack-rag').StoredEmbedding | null",
       getZodSchema: () => json().getZodSchema!('embedding', 'create'),
-      getColumnNames: () => ['embedding', 'embeddingMetadata'],
       getContractField: () => ({
         kind: 'columns',
         columns: [
@@ -162,15 +168,33 @@ describe('validateFieldConfig', () => {
       }),
     }
 
+    /**
+     * The converse: one column, but `getColumnNames` present anyway — the
+     * shape a builder takes when it declares the member unconditionally and
+     * narrows to a single column in some mode. Its codec types it, so no
+     * `outputType` is owed.
+     */
+    const oneColumnWithColumnNames: FieldConfig = {
+      type: 'embedding',
+      getZodSchema: () => json().getZodSchema!('embedding', 'create'),
+      getColumnNames: () => ['embedding'],
+      getContractField: () => ({
+        kind: 'column',
+        name: 'embedding',
+        type: { pack: 'pg', type: 'jsonb' },
+        nullable: true,
+      }),
+    }
+
     it('accepts a multi-column field that declares its own TypeScript face', () => {
-      expect(validateFieldConfig(twoColumns, 'embedding', 'Article')).toEqual([])
+      expect(validateFieldConfig(twoColumns, 'embedding', 'Article', CONFIG)).toEqual([])
     })
 
     it('still requires getZodSchema, which no contract supplies', () => {
       const field: FieldConfig = { ...twoColumns }
       delete field.getZodSchema
 
-      const errors = validateFieldConfig(field, 'embedding', 'Article')
+      const errors = validateFieldConfig(field, 'embedding', 'Article', CONFIG)
 
       expect(errors.map((e) => e.missingMember)).toEqual(['getZodSchema'])
     })
@@ -179,18 +203,25 @@ describe('validateFieldConfig', () => {
      * A field spanning several columns has no single column to be typed from,
      * so an absent `outputType` leaves it `unknown` everywhere (#1292).
      */
-    it('requires outputType from a multi-column field', () => {
+    it('requires outputType from a field whose descriptor spans several columns', () => {
       const field: FieldConfig = { ...twoColumns }
       delete field.outputType
 
       expect(
-        validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMember),
+        validateFieldConfig(field, 'embedding', 'Article', CONFIG).map((e) => e.missingMember),
       ).toEqual(['outputType'])
+    })
+
+    it('does not require outputType from a single-column field that declares getColumnNames', () => {
+      expect(oneColumnWithColumnNames.outputType).toBeUndefined()
+      expect(validateFieldConfig(oneColumnWithColumnNames, 'embedding', 'Article', CONFIG)).toEqual(
+        [],
+      )
     })
 
     it('does not require outputType from a single-column field, whose codec types it', () => {
       expect(text().outputType).toBeUndefined()
-      expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post')).toEqual([])
+      expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post', CONFIG)).toEqual([])
     })
   })
 })
@@ -251,5 +282,32 @@ describe('validateConfigFields', () => {
     const byField = Object.fromEntries(errors.map((e) => [`${e.listKey}.${e.fieldKey}`, e]))
     expect(byField['User.name'].missingMember).toBe('getZodSchema')
     expect(byField['Post.title'].missingMember).toBe('getContractField')
+  })
+
+  /**
+   * The config is what makes the descriptor readable, so the `columns`
+   * requirement is only reachable through this entry point.
+   */
+  it('reads the descriptor it is given the config for', () => {
+    const spanning: FieldConfig = {
+      type: 'spanning',
+      getZodSchema: () => json().getZodSchema!('spanning', 'create'),
+      getContractField: () => ({
+        kind: 'columns',
+        columns: [
+          { name: 'spanning_a', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'spanning_b', type: { pack: 'pg', type: 'int' }, nullable: true },
+        ],
+      }),
+    }
+
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Article: { fields: { spanning } } },
+    }
+
+    expect(validateConfigFields(config).map((e) => [e.fieldKey, e.missingMember])).toEqual([
+      ['spanning', 'outputType'],
+    ])
   })
 })

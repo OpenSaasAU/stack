@@ -10,8 +10,12 @@ import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../c
  * `defaultValue` carries `''` on its contract column, so a migrating project
  * reaches schema parity without hand-setting it on dozens of columns.
  *
- * These tests pin the precise on/off/explicit-default/nullable/non-text matrix
- * from the issue's acceptance criteria.
+ * A column default also drops the column from the required half of the
+ * generated create input, so the compat default is carried only where this
+ * field's own create validator accepts `''`. `types-keystone-compat.test.ts`
+ * in `@opensaas/stack-cli` pins that input face against a real emitted
+ * contract; these tests pin the column, plus the on/off/explicit-default/
+ * nullable/non-text matrix from the issue's acceptance criteria.
  */
 const ON: OpenSaasConfig = { db: { provider: 'postgresql', keystoneCompat: true }, lists: {} }
 const OFF: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
@@ -35,11 +39,20 @@ function columnOf(
 
 describe('text() Keystone-compat empty-string default', () => {
   describe('with keystoneCompat ON', () => {
-    it('defaults a required (non-null) text field with no explicit default to ""', () => {
+    it('gives a validation.isRequired text field no default, which its own validator rejects', () => {
       const column = columnOf(text({ validation: { isRequired: true } }), 'name', ON)
 
       expect(column.type).toEqual({ pack: 'pg', type: 'text' })
-      expect(column.default).toEqual({ kind: 'literal', value: '' })
+      expect(column.nullable).toBe(false)
+      expect(column.default).toBeUndefined()
+    })
+
+    it('gives a non-null text field with a non-empty minimum length no default', () => {
+      const field = text({ db: { isNullable: false }, validation: { length: { min: 2 } } })
+      const column = columnOf(field, 'code', ON)
+
+      expect(column.nullable).toBe(false)
+      expect(column.default).toBeUndefined()
     })
 
     it('defaults a text field made non-null via db.isNullable: false to ""', () => {
@@ -84,9 +97,8 @@ describe('text() Keystone-compat empty-string default', () => {
 
     it('carries the default alongside the field’s other column facts', () => {
       const field = text({
-        validation: { isRequired: true },
         isIndexed: 'unique',
-        db: { nativeType: 'Text', map: 'full_name' },
+        db: { isNullable: false, nativeType: 'Text', map: 'full_name' },
       })
 
       expect(columnOf(field, 'fullName', ON)).toEqual({
@@ -121,6 +133,53 @@ describe('text() Keystone-compat empty-string default', () => {
         kind: 'literal',
         value: 'PLEASE_UPDATE',
       })
+    })
+  })
+
+  describe('the compat default and the create validator agree', () => {
+    /**
+     * Both columns are computed by hand: `acceptsEmpty` is what this field's
+     * own create schema does with `''`, and `hasDefault` is whether the
+     * compat branch may carry one. They must never disagree — a default the
+     * validator rejects is exactly the create-input/runtime split this
+     * narrowing closes.
+     */
+    const shapes: {
+      name: string
+      field: FieldConfig
+      acceptsEmpty: boolean
+      hasDefault: boolean
+    }[] = [
+      {
+        name: 'name',
+        field: text({ validation: { isRequired: true } }),
+        acceptsEmpty: false,
+        hasDefault: false,
+      },
+      {
+        name: 'phone',
+        field: text({ db: { isNullable: false } }),
+        acceptsEmpty: true,
+        hasDefault: true,
+      },
+      {
+        name: 'code',
+        field: text({ db: { isNullable: false }, validation: { length: { min: 2 } } }),
+        acceptsEmpty: false,
+        hasDefault: false,
+      },
+      {
+        name: 'title',
+        field: text({ db: { isNullable: false }, validation: { length: { max: 10 } } }),
+        acceptsEmpty: true,
+        hasDefault: true,
+      },
+      { name: 'bio', field: text(), acceptsEmpty: true, hasDefault: false },
+    ]
+
+    it.each(shapes)('$name', ({ name, field, acceptsEmpty, hasDefault }) => {
+      expect(field.getZodSchema?.(name, 'create').safeParse('').success).toBe(acceptsEmpty)
+      expect(columnOf(field, name, ON).default !== undefined).toBe(hasDefault)
     })
   })
 

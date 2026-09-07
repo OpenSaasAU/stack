@@ -136,51 +136,61 @@ function scalarColumn(fieldName: string, column: ScalarColumn): ContractFieldDes
 export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
 >(options?: Omit<TextField<TTypeInfo>, 'type'>): TextField<TTypeInfo> {
+  const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
+    const validation = options?.validation
+    const isRequired = validation?.isRequired
+    const length = validation?.length
+    const minLength = length?.min && length.min > 0 ? length.min : 1
+
+    const baseSchema = z.string({
+      message: `${formatFieldName(fieldName)} must be text`,
+    })
+
+    const withMin =
+      isRequired || length?.min !== undefined
+        ? baseSchema.min(minLength, {
+            message:
+              minLength > 1
+                ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
+                : `${formatFieldName(fieldName)} is required`,
+          })
+        : baseSchema
+
+    const withMax =
+      length?.max !== undefined
+        ? withMin.max(length.max, {
+            message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
+          })
+        : withMin
+
+    if (isRequired && operation === 'update') {
+      return withMax.optional()
+    }
+
+    return !isRequired ? withMax.optional().nullable() : withMax
+  }
+
   return {
     type: 'text',
     ...options,
-    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const validation = options?.validation
-      const isRequired = validation?.isRequired
-      const length = validation?.length
-      const minLength = length?.min && length.min > 0 ? length.min : 1
-
-      const baseSchema = z.string({
-        message: `${formatFieldName(fieldName)} must be text`,
-      })
-
-      const withMin =
-        isRequired || length?.min !== undefined
-          ? baseSchema.min(minLength, {
-              message:
-                minLength > 1
-                  ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
-                  : `${formatFieldName(fieldName)} is required`,
-            })
-          : baseSchema
-
-      const withMax =
-        length?.max !== undefined
-          ? withMin.max(length.max, {
-              message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
-            })
-          : withMin
-
-      if (isRequired && operation === 'update') {
-        return withMax.optional()
-      }
-
-      return !isRequired ? withMax.optional().nullable() : withMax
-    },
+    getZodSchema: zodSchema,
     getContractField: (fieldName: string, listKey: string, config: OpenSaasConfig) => {
       const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
       // Keystone 6 gives every non-null text column an implicit empty-string
       // default; `db.keystoneCompat` mirrors that so a migrating project
       // reaches parity without hand-setting `defaultValue: ''`.
-      const defaultSource =
-        options?.defaultValue === undefined && config.db.keystoneCompat === true && !nullable
-          ? ''
-          : options?.defaultValue
+      //
+      // A column default makes the field optional on `CreateInput`
+      // (`RequiredCreateColumn`, `types/inputs.ts`), so carrying `''` where
+      // this field's own create validator rejects `''` would type-check an
+      // omission the runtime then throws on. The validator is asked rather
+      // than its rules restated, so the two cannot drift apart.
+      const compatDefault =
+        options?.defaultValue === undefined &&
+        config.db.keystoneCompat === true &&
+        !nullable &&
+        zodSchema(fieldName, 'create').safeParse('').success
+      const defaultSource = compatDefault ? '' : options?.defaultValue
       return scalarColumn(fieldName, {
         type: pgType('text'),
         nullable,

@@ -433,10 +433,11 @@ access: {
       'custom-fields': {
         description: 'Creating custom field types',
         code: `// In your field definition file
-import type { BaseFieldConfig, ContractFieldDescriptor } from '@opensaas/stack-core/extend'
+import type { BaseFieldConfig, ContractFieldDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
+import { text } from '@opensaas/stack-core/fields'
 import { z } from 'zod'
 
-export type SlugField = BaseFieldConfig & {
+export type SlugField = BaseFieldConfig<TypeInfo> & {
   type: 'slug'
   sourceField?: string
 }
@@ -463,8 +464,8 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
   }
 }
 
-// Usage in config
-fields: {
+// Usage in config — the fields of a list({ ... })
+export const fields = {
   title: text({ validation: { isRequired: true } }),
   urlSlug: slug({ sourceField: 'title' }),
 }`,

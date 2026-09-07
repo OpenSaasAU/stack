@@ -32,7 +32,8 @@ Field builder functions, each returning object with:
 
 - `getZodSchema(fieldName, operation)` - Validation schema
 - `getContractField(fieldName, listKey, config)` - the column(s), relation, or `{ kind: 'computed' }` the field contributes to the contract
-- `outputType` / `inputType` - the TypeScript face, when it differs from the column's codec type (required on a virtual or multi-column field)
+- `outputType` - the TypeScript read face, when it differs from the column's codec type. Required on a virtual field and on one whose descriptor is `kind: 'columns'`, neither of which has a single column to be typed from
+- `inputType` - the write face, when it differs from the read face. Never required: absent means the column's own input type
 
 Built-in fields:
 

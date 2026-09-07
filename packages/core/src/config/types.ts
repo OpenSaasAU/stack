@@ -259,7 +259,7 @@ export type FieldResolveOutputHookArgs<
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 > = {
   operation: 'query'
-  value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+  value: GetFieldValueType<TTypeInfo, TFieldKey>
   /**
    * Exactly the field's declared dependency set plus the list's system
    * fields — what the runtime fetches for it (ADR-0051). Reading a column
@@ -314,8 +314,8 @@ export type FieldHooks<
   resolveInput?: (
     args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
 
   /**
@@ -458,9 +458,9 @@ export type FieldHooks<
   resolveOutput?: (
     args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
 }
 
 export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
@@ -1414,11 +1414,18 @@ type ParseTypeString<T extends string> = T extends 'string'
                 : unknown // Fallback
 
 /**
+ * What {@link ExtractFieldValueType} answers for a field declaring no
+ * `outputType`, so {@link GetFieldValueType} can tell that case apart from a
+ * field that declares one and resolve it against the list's stored row.
+ */
+type NoDeclaredOutputType = { readonly __opensaasOutputType: 'undeclared' }
+
+/**
  * Extract field value type from a field config: its `outputType` descriptor,
- * in either spelling, and `unknown` when it declares none. A stored field's
- * type comes from its contract column (ADR-0052), which this type has no
- * access to — a hook reading a stored column reaches it through the generated
- * `Lists.<List>.Item`, not through here.
+ * in either spelling, and {@link NoDeclaredOutputType} when it declares none.
+ * A stored field's type comes from its contract column (ADR-0052), which this
+ * type has no access to — {@link GetFieldValueType} resolves it from the
+ * generated `Lists.<List>.Item` instead.
  *
  * @example
  * ExtractFieldValueType<VirtualField & { outputType: 'number' }> => number
@@ -1433,7 +1440,7 @@ type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends
         outputType: { value: new (...args: any[]) => infer I }
       }
     ? I
-    : unknown
+    : NoDeclaredOutputType
 
 /**
  * Extract field names as union of string literals
@@ -1456,16 +1463,39 @@ export type GetFieldConfig<
   TFieldKey extends FieldKeys<TFields>,
 > = TFields[TFieldKey]
 
+/** Whether `T` is `any`, which `keyof` would otherwise widen a lookup through. */
+type IsAny<T> = 0 extends 1 & T ? true : false
+
 /**
- * Get value type for a specific field
+ * A stored field's value type: the property the generated `Lists.<List>.Item`
+ * carries for it (ADR-0052 — the contract column types the field, and `item`
+ * is where that lands). `unknown` only for a hand-authored `TypeInfo`, whose
+ * `item` carries no per-field facts to read.
+ */
+type StoredFieldValueType<TTypeInfo extends TypeInfo, TFieldKey extends PropertyKey> =
+  IsAny<TTypeInfo['item']> extends true
+    ? unknown
+    : TFieldKey extends keyof TTypeInfo['item']
+      ? TTypeInfo['item'][TFieldKey]
+      : unknown
+
+/**
+ * Get value type for a specific field: its declared `outputType` when it has
+ * one, and otherwise the stored row's property — so a stored field is typed
+ * by its contract column rather than left open.
  *
  * @example
- * GetFieldValueType<{ title: TextField }, 'title'> => string
+ * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string
  */
 export type GetFieldValueType<
-  TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
-  TFieldKey extends FieldKeys<TFields>,
-> = ExtractFieldValueType<GetFieldConfig<TFields, TFieldKey>>
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> =
+  ExtractFieldValueType<GetFieldConfig<TTypeInfo['fields'], TFieldKey>> extends infer TDeclared
+    ? [TDeclared] extends [NoDeclaredOutputType]
+      ? StoredFieldValueType<TTypeInfo, TFieldKey>
+      : TDeclared
+    : never
 
 /**
  * TypeInfo interface for list type information
@@ -2592,23 +2622,29 @@ export type DatabaseConfig = {
    * Opt into Keystone-compat mode for generated schema defaults.
    *
    * Keystone 6 gives every non-null text column an implicit empty-string
-   * default. With `keystoneCompat: true`, the generator mirrors that: any
-   * non-null `text()` column that has no explicit `defaultValue` emits
-   * `@default("")`, so a migrating project reaches Schema parity without
-   * hand-setting `defaultValue: ''` on dozens of columns.
+   * default. With `keystoneCompat: true`, the contract mirrors that: a
+   * non-null `text()` column that has no explicit `defaultValue` carries `''`,
+   * so a migrating project reaches schema parity without hand-setting
+   * `defaultValue: ''` on dozens of columns.
    *
    * Stays opt-in (default `false`) because a greenfield project would not want
    * implicit empty-string text defaults cluttering its schema. The flag never
    * affects nullable text, fields with an explicit `defaultValue`, or any
    * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
    *
+   * A column default also makes the column optional on the generated create
+   * input, so the compat default is carried only where the field's own create
+   * validator accepts `''`. A `validation: { isRequired: true }` text column —
+   * or one with a non-empty `length.min` — keeps no default, since the
+   * generated input would otherwise permit an omission the validator refuses.
+   *
    * @default false
    *
-   * @example Reach Schema parity when migrating from Keystone
+   * @example Reach schema parity when migrating from Keystone
    * ```typescript
    * db: {
    *   provider: 'postgresql',
-   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   keystoneCompat: true, // non-null text without a default → default ''
    *   // ... rest of config
    * }
    * ```

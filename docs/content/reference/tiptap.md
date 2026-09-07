@@ -365,10 +365,10 @@ The Tiptap package follows OpenSaas's third-party field pattern:
 
 ### Field Builder (`richText()`)
 
-The field builder implements the `BaseFieldConfig` interface with three key methods:
+The field builder implements the `BaseFieldConfig` interface:
 
-- **`getPrismaType()`** - Returns `Json` type for database storage
-- **`getTypeScriptType()`** - Returns `any` type (JSON structure)
+- **`getContractField()`** - Returns one `pg/jsonb` column, nullable unless the field is required
+- **`outputType`** / **`inputType`** - `JSONContent` from `@tiptap/core`, `| null` when the field is not required. An override of the column's own type: a `jsonb` codec cannot know the editor's document shape
 - **`getZodSchema()`** - Returns Zod validation schema
 
 ### React Component (`TiptapField`)

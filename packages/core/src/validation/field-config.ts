@@ -61,9 +61,12 @@ function buildMessage(
  *     input of their own, so only `getContractField` is required.
  *   - `virtual` fields have no column for the contract to type them from, so
  *     they must declare `outputType` (ADR-0052) as well as `getZodSchema`.
- *   - a `columns` field — one field over several physical columns, which
- *     `getColumnNames` is the marker of — has no single column to type it
- *     from either, so it must declare `outputType` too.
+ *   - a field whose contract descriptor is `kind: 'columns'` — one field over
+ *     several physical columns — has no single column to type it from either,
+ *     so it must declare `outputType` too. The descriptor is read for this,
+ *     not a proxy for it: a `columns` field that happens not to implement the
+ *     optional `getColumnNames` is the same shape and carries the same
+ *     obligation.
  *   - every other (stored scalar) field must provide `getContractField` and
  *     `getZodSchema`; its TypeScript face comes from its contract column, and
  *     `outputType` is an override it may omit.
@@ -71,12 +74,17 @@ function buildMessage(
  * @param field - The field config produced by a field builder.
  * @param fieldKey - The field's key within its list (for messages).
  * @param listKey - The owning list's key (optional, for messages).
+ * @param config - The config the descriptor is read with. Without it — and
+ *   without a `listKey` to read it under — the `columns` requirement cannot be
+ *   evaluated and is skipped; `validateConfigFields`, which the generate path
+ *   runs, always supplies both.
  * @returns Zero or more structured errors; empty means the field is compliant.
  */
 export function validateFieldConfig(
   field: FieldConfig,
   fieldKey: string,
   listKey?: string,
+  config?: OpenSaasConfig,
 ): FieldConfigValidationError[] {
   const errors: FieldConfigValidationError[] = []
   const fieldType = describeFieldType(field)
@@ -107,12 +115,27 @@ export function validateFieldConfig(
   }
 
   requireMember('getContractField', hasFieldMethod(field, 'getContractField'))
-  if (hasFieldMethod(field, 'getColumnNames')) {
+  if (spansSeveralColumns(field, fieldKey, listKey, config)) {
     requireMember('outputType', field.outputType !== undefined)
   }
   requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
 
   return errors
+}
+
+/**
+ * Whether the field's contract descriptor covers several physical columns.
+ * `false` when the descriptor cannot be read — a caller that supplied no
+ * config, or a field with no `getContractField`, which is already reported.
+ */
+function spansSeveralColumns(
+  field: FieldConfig,
+  fieldKey: string,
+  listKey: string | undefined,
+  config: OpenSaasConfig | undefined,
+): boolean {
+  if (config === undefined || listKey === undefined) return false
+  return field.getContractField?.(fieldKey, listKey, config)?.kind === 'columns'
 }
 
 /**
@@ -130,7 +153,7 @@ export function validateConfigFields(config: OpenSaasConfig): FieldConfigValidat
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     if (!listConfig?.fields) continue
     for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-      errors.push(...validateFieldConfig(fieldConfig, fieldKey, listKey))
+      errors.push(...validateFieldConfig(fieldConfig, fieldKey, listKey, config))
     }
   }
 
