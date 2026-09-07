@@ -1,4 +1,5 @@
 import type { SecuredQuery } from '../secured/read.js'
+import type { UnsafeTransactionScope } from '../unsafe.js'
 import type { TransactionRegistry } from './transaction-registry.js'
 
 /**
@@ -72,15 +73,36 @@ export type PrismaModelDelegate = {
  */
 export interface OrmClient {
   /**
-   * Prisma 7's interactive-transaction opener. Optional because the Write
-   * Pipeline and `context.transaction()` probe for it rather than requiring it
-   * (ADR-0010) — and because no Prisma 8 client carries it at all: their opener
-   * is named `transaction`, so both probes are constant-false on `prisma-8`
-   * until #1124 rewires them.
+   * Prisma 7's interactive-transaction opener, which `context.transaction()`
+   * still accepts because it is the only shape that carries the transaction
+   * options. No Prisma 8 client has it — theirs is `transaction` on the
+   * client, reached through {@link TransactionOpener} — so on `prisma-8` this
+   * member is only ever populated by a double.
    */
   $transaction?: unknown
   [modelKey: string]: unknown
 }
+
+/**
+ * A transaction the stack opened, as the engine consumes it: the ORM handle
+ * rebound to the transaction's own collections, and the scope the Unsafe
+ * surface binds its executors to.
+ */
+export interface OpenedTransaction {
+  readonly ormHandle: OrmClient
+  readonly unsafe: UnsafeTransactionScope
+}
+
+/**
+ * Opens one transaction and runs `run` inside it, resolving with `run`'s value
+ * and rolling back if it throws.
+ *
+ * Present on a context built over a Prisma 8 client that is not already inside
+ * a transaction, and absent otherwise — so a handle bound to an enclosing
+ * transaction, or a hand-built double, joins rather than nesting (ADR-0028).
+ * That absence is the signal, not a probe for a method name.
+ */
+export type TransactionOpener = <T>(run: (opened: OpenedTransaction) => Promise<T>) => Promise<T>
 
 /**
  * The arguments an ORM operation takes, before the engine lowers them.
@@ -242,6 +264,15 @@ export interface AccessContext {
    * @internal
    */
   _transactionOwner?: TransactionRegistry
+  /**
+   * Opens the transaction a write brackets itself with (ADR-0010), when this
+   * context is over a client that can open one and is not already inside one.
+   * Absent on a context rebound to a transaction, on a joined write, and on a
+   * context over a hand-built double — each of which runs directly against the
+   * handle it was given.
+   * @internal
+   */
+  _transactionOpener?: TransactionOpener
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

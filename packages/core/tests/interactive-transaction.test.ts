@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getContext } from '../src/context/index.js'
+import { getContext, TransactionUnavailableError } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text } from '../src/fields/index.js'
 
@@ -261,8 +261,7 @@ describe('#614 context.transaction (interactive transaction)', () => {
     expect(mock.tables.User.size).toBe(1)
   })
 
-  it('falls back to running directly when the client has no $transaction', async () => {
-    // A client without `$transaction` (e.g. a plain mock or an already-open tx).
+  it('refuses when nothing can open a transaction, rather than running the callback unatomically', async () => {
     const tables = new Map<string, Record<string, unknown>>()
     const plainClient: Record<string, unknown> = {
       User: {
@@ -280,13 +279,11 @@ describe('#614 context.transaction (interactive transaction)', () => {
     }
     const context = getContext(await baseConfig(), plainClient, { userId: '1' })
 
-    const created = await context.transaction(async (tx) => {
-      expect(tx.db).toBeDefined()
-      return tx.db.User.create({ data: { name: 'jane' } })
-    })
+    await expect(
+      context.transaction(async (tx) => tx.db.User.create({ data: { name: 'jane' } })),
+    ).rejects.toBeInstanceOf(TransactionUnavailableError)
 
-    expect(created).toEqual(expect.objectContaining({ name: 'jane' }))
-    expect(tables.size).toBe(1)
+    expect(tables.size).toBe(0)
   })
 })
 

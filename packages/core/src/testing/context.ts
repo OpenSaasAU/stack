@@ -423,7 +423,16 @@ export async function createTestDatabase(
     await applySchema(instance.url, migrationsDir, contract, control)
 
     const pg = await pgModule()
-    pool = new pg.Pool({ connectionString: instance.url, max: 1 })
+    // `max: 1` matches the dev database's single connection, which a write's
+    // transaction now holds for its whole duration: anything reaching the
+    // database beside that transaction waits on a connection it can never get.
+    // `connectionTimeoutMillis` turns that into `timeout exceeded when trying
+    // to connect` rather than a test that hangs until the runner kills it.
+    pool = new pg.Pool({
+      connectionString: instance.url,
+      max: 1,
+      connectionTimeoutMillis: 10_000,
+    })
     const client = postgres<PrismaContract>({
       contract,
       pg: pool,

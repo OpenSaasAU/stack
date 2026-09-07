@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
+import type { Session } from '../src/access/types.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
+import { prisma8Double } from './prisma8-double.js'
 
 /**
  * ADR-0028 / #899: a transaction-boundary hook reports the OUTERMOST
@@ -12,11 +15,13 @@ import { text, relationship } from '../src/fields/index.js'
  * plain top-level write) defers its `afterTransaction` bracket until the
  * transaction OWNER observes the real settle, instead of firing immediately.
  *
- * Per the ADR's verification note, these tests use a FAITHFUL transaction
- * mock — the `tx` client handed to `$transaction`'s callback omits
- * `$transaction` itself, mirroring real Prisma — because the bug is invisible
- * under a mock whose transaction client still exposes `$transaction` (a
- * nested write would open its own transaction rather than joining).
+ * Per the ADR's verification note, the bug is invisible under a double whose
+ * transaction client can itself open another transaction, because a nested
+ * write would open its own rather than joining. `prisma8Double` refuses a
+ * second transaction while one is in flight, so a regression in either guard —
+ * the engine binding the callback's context to the transaction it opened, or
+ * that bound context carrying no opener — fails here immediately rather than
+ * only against a real single-connection pool, where it is a deadlock.
  */
 
 function createFaithfulTxPrisma(extraTables: string[] = []) {
@@ -112,27 +117,14 @@ function createFaithfulTxPrisma(extraTables: string[] = []) {
   }
   for (const table of extraTables) client[table] = makeModel(table)
 
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-    const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
-    for (const [name, map] of Object.entries(tables)) {
-      snapshot[name] = new Map(map)
-    }
-    // Faithful to real Prisma: the tx client has the model delegates but NOT
-    // `$transaction` — this is how a nested write detects it must join rather
-    // than open a second transaction.
-    const { $transaction: _omit, ...models } = client
-    void _omit
-    try {
-      return await fn(models)
-    } catch (err) {
-      for (const [name, map] of Object.entries(snapshot)) {
-        tables[name] = map
-      }
-      throw err
-    }
-  }
+  const prisma8 = prisma8Double(client, tables)
 
-  return { client, tables }
+  return {
+    client,
+    tables,
+    context: (cfg: OpenSaasConfig, session: Session | null) =>
+      getContext(cfg, client, session, undefined, false, undefined, undefined, prisma8),
+  }
 }
 
 const baseConfig = (hooks: {
@@ -174,7 +166,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     const after = vi.fn(() => events.push('after'))
 
     const testConfig = await baseConfig({ user: { afterTransaction: after } })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     const result = await context.transaction(async (tx) => {
       const user = await tx.db.User.create({ data: { name: 'jane' } })
@@ -196,7 +188,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
   it('rollback: afterTransaction fires exactly once with status rolled-back and the callback error', async () => {
     const after = vi.fn()
     const testConfig = await baseConfig({ user: { afterTransaction: after } })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await expect(
       context.transaction(async (tx) => {
@@ -222,7 +214,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
         afterTransaction: () => order.push('after'),
       },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await context.transaction(async (tx) => {
       order.push('callback-start')
@@ -241,7 +233,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
         afterTransaction: ({ inputData }) => order.push(`after:${inputData?.name}`),
       },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await context.transaction(async (tx) => {
       await tx.db.User.create({ data: { name: 'a' } })
@@ -273,7 +265,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
         }),
       },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     const result = await context.transaction(async (tx) => {
       let userError: unknown
@@ -314,7 +306,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
         },
       },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await expect(
       context.transaction(async (tx) => {
@@ -335,12 +327,12 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
       user: { afterTransaction: () => order.push('user-after') },
       post: { afterTransaction: () => order.push('post-after') },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await context.transaction(async (tx) => {
       await tx.db.User.create({ data: { name: 'jane' } })
-      // Nested call: same underlying tx client (no $transaction), so it runs
-      // directly — and per ADR-0028 must join the OUTER owner's queue.
+      // Nested call: already inside a transaction, so it runs directly — and
+      // per ADR-0028 must join the OUTER owner's queue.
       await tx.transaction(async (inner) => {
         await inner.db.Post.create({ data: { title: 'nested' } })
         order.push('inner-callback-done')
@@ -369,7 +361,7 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
         },
       },
     })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await expect(
       context.transaction(async (tx) => {
@@ -452,7 +444,7 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
     const auditAfter = vi.fn()
     const testConfig = await makeConfig({ commentThrows: true, auditAfter })
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.update({
@@ -484,7 +476,7 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
     const auditAfter = vi.fn()
     const testConfig = await makeConfig({ commentThrows: false, auditAfter })
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -508,7 +500,7 @@ describe('ADR-0028 / #899: a serialization failure still propagates unwrapped, w
     const mock = createFaithfulTxPrisma()
     const after = vi.fn()
     const testConfig = await baseConfig({ user: { afterTransaction: after } })
-    const context = getContext(testConfig, mock.client, { userId: '1' })
+    const context = mock.context(testConfig, { userId: '1' })
 
     const serializationError = Object.assign(new Error('could not serialize access'), {
       code: 'P2034',

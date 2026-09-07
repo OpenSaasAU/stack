@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
+import type { Session } from '../src/access/types.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
+import { prisma8Double } from './prisma8-double.js'
 
 /**
  * #569 / ADR-0010: nested create/update/delete must run the SAME full hook
@@ -17,11 +20,9 @@ import { text, relationship } from '../src/fields/index.js'
  */
 
 /**
- * A tiny in-memory Prisma mock supporting interactive transactions.
- *
- * `$transaction(fn)` snapshots every table, runs `fn` against a tx client whose
- * writes mutate the live tables, and on throw restores the snapshot (rollback).
- * Nested writes are supported for to-one/to-many `create`/`update`/`delete`.
+ * A tiny in-memory Prisma mock, with the Prisma-8-shaped client the engine
+ * opens its transactions through beside it. Nested writes are supported for
+ * to-one/to-many `create`/`update`/`delete`.
  */
 function createTxPrisma() {
   const tables: Record<string, Map<string, Record<string, unknown>>> = {
@@ -119,23 +120,14 @@ function createTxPrisma() {
     Comment: makeModel('Comment'),
   }
 
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-    const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
-    for (const [name, map] of Object.entries(tables)) {
-      snapshot[name] = new Map(map)
-    }
-    try {
-      return await fn(client)
-    } catch (err) {
-      // Roll back: restore every table from the snapshot.
-      for (const [name, map] of Object.entries(snapshot)) {
-        tables[name] = map
-      }
-      throw err
-    }
-  }
+  const prisma8 = prisma8Double(client, tables)
 
-  return { client, tables }
+  return {
+    client,
+    tables,
+    context: (cfg: OpenSaasConfig, session: Session | null) =>
+      getContext(cfg, client, session, undefined, false, undefined, undefined, prisma8),
+  }
 }
 
 describe('#569 nested writes — full hook pipeline + transaction', () => {
@@ -186,7 +178,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -233,7 +225,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     mock.tables.Post.set('p1', { id: 'p1', title: 'P', authorLink: 'u1' })
     mock.tables.User.set('u1', { id: 'u1', name: 'old name' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -278,7 +270,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
     mock.tables.Comment.set('c1', { id: 'c1', body: 'doomed' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -322,12 +314,12 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
       })
 
     // Top-level create.
-    const ctx1 = getContext(await makeConfig(), mock.client, { userId: '1' })
+    const ctx1 = mock.context(await makeConfig(), { userId: '1' })
     await ctx1.db.User.create({ data: { name: 'top-level' } })
 
     // Nested create (same logical operation).
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const ctx2 = getContext(await makeConfig(), mock.client, { userId: '1' })
+    const ctx2 = mock.context(await makeConfig(), { userId: '1' })
     await ctx2.db.Post.update({
       where: { id: 'p1' },
       data: { author: { create: { name: 'nested' } } },
@@ -361,7 +353,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.update({
@@ -399,7 +391,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.update({
@@ -432,7 +424,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -461,7 +453,7 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.update({
@@ -474,26 +466,28 @@ describe('#569 nested writes — full hook pipeline + transaction', () => {
     expect(mock.tables.Post.get('p1')?.title).toBe('Original')
   })
 
-  it('every write is transactional — top-level create uses $transaction', async () => {
-    const txSpy = vi.spyOn(
-      mock.client as { $transaction: unknown } & Record<string, unknown>,
-      '$transaction',
-    )
-
+  it('every write is transactional — a top-level create with no nested writes rolls back', async () => {
     const testConfig = config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
       lists: {
         User: list({
           fields: { name: text() },
           access: { operation: { query: () => true, create: () => true } },
+          hooks: {
+            afterOperation: () => {
+              throw new Error('after the row went in')
+            },
+          },
         }),
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
-    await context.db.User.create({ data: { name: 'solo' } })
+    const context = mock.context(await testConfig, { userId: '1' })
+    await expect(context.db.User.create({ data: { name: 'solo' } })).rejects.toThrow(
+      'after the row went in',
+    )
 
-    expect(txSpy).toHaveBeenCalledTimes(1)
+    expect(mock.tables.User.size).toBe(0)
   })
 })
 
@@ -651,22 +645,15 @@ function createToManyPrisma() {
     Comment: makeCommentModel(),
   }
 
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-    const snapshot = {
-      post: new Map(tables.Post),
-      comment: new Map(tables.Comment),
-      links: new Map(commentToPost),
-    }
-    try {
-      return await fn(client)
-    } catch (err) {
-      tables.Post = snapshot.post
-      tables.Comment = snapshot.comment
-      commentToPost.clear()
-      for (const [k, v] of snapshot.links) commentToPost.set(k, v)
-      throw err
-    }
-  }
+  const prisma8 = prisma8Double(client, tables, {
+    snapshot: () => {
+      const links = new Map(commentToPost)
+      return () => {
+        commentToPost.clear()
+        for (const [id, postId] of links) commentToPost.set(id, postId)
+      }
+    },
+  })
 
   /** Link a pre-existing comment to a post (test setup helper). */
   function seedComment(postId: string, comment: Record<string, unknown>) {
@@ -674,7 +661,14 @@ function createToManyPrisma() {
     commentToPost.set(comment.id as string, postId)
   }
 
-  return { client, tables, seedComment, linkedComments }
+  return {
+    client,
+    tables,
+    seedComment,
+    linkedComments,
+    context: (cfg: OpenSaasConfig, session: Session | null) =>
+      getContext(cfg, client, session, undefined, false, undefined, undefined, prisma8),
+  }
 }
 
 describe('#569 nested writes — created-row recovery by id-diff (findings 1 + 2)', () => {
@@ -706,7 +700,7 @@ describe('#569 nested writes — created-row recovery by id-diff (findings 1 + 2
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(await makeConfig(afterOp), mock.client, { userId: '1' })
+    const context = mock.context(await makeConfig(afterOp), { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -740,7 +734,7 @@ describe('#569 nested writes — created-row recovery by id-diff (findings 1 + 2
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
     mock.seedComment('p1', { id: 'pre-1', body: 'pre-existing' })
 
-    const context = getContext(await makeConfig(afterOp), mock.client, { userId: '1' })
+    const context = mock.context(await makeConfig(afterOp), { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },
@@ -803,7 +797,7 @@ describe('#569 nested writes — context.db inside hooks is transactional (findi
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.update({
@@ -846,7 +840,7 @@ describe('#569 nested writes — context.db inside hooks is transactional (findi
     })
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await context.db.Post.update({
       where: { id: 'p1' },

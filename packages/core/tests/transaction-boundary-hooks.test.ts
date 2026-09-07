@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
+import type { Session } from '../src/access/types.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
 import { enumerateInvolvedLists } from '../src/context/transaction-boundary.js'
+import { prisma8Double } from './prisma8-double.js'
 
 /**
  * #590 / ADR-0010: transaction-boundary hooks (`beforeTransaction` /
@@ -122,22 +125,14 @@ function createTxPrisma(extraTables: string[] = []) {
   }
   for (const table of extraTables) client[table] = makeModel(table)
 
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-    const snapshot: Record<string, Map<string, Record<string, unknown>>> = {}
-    for (const [name, map] of Object.entries(tables)) {
-      snapshot[name] = new Map(map)
-    }
-    try {
-      return await fn(client)
-    } catch (err) {
-      for (const [name, map] of Object.entries(snapshot)) {
-        tables[name] = map
-      }
-      throw err
-    }
-  }
+  const prisma8 = prisma8Double(client, tables)
 
-  return { client, tables }
+  return {
+    client,
+    tables,
+    context: (cfg: OpenSaasConfig, session: Session | null) =>
+      getContext(cfg, client, session, undefined, false, undefined, undefined, prisma8),
+  }
 }
 
 describe('#590 transaction-boundary hooks', () => {
@@ -163,7 +158,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     const created = await context.db.User.create({ data: { name: 'jane' } })
 
     expect(created).toBeTruthy()
@@ -198,7 +193,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     await context.db.User.create({ data: { name: 'jane' } })
 
     expect(order).toEqual(['before:size=0', 'after:size=1'])
@@ -224,7 +219,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(context.db.User.create({ data: { name: 'jane' } })).rejects.toThrow('in-tx boom')
 
@@ -282,7 +277,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(
       context.db.Post.create({ data: { title: 'T', author: { create: { name: 'x' } } } }),
@@ -323,7 +318,7 @@ describe('#590 transaction-boundary hooks', () => {
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     await context.db.Post.update({
       where: { id: 'p1' },
       data: { title: 'Updated', author: { create: { name: 'john' } } },
@@ -380,7 +375,7 @@ describe('#590 transaction-boundary hooks', () => {
 
     mock.tables.Post.set('p1', { id: 'p1', title: 'Original' })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     // The write itself committed; surfaced error is the afterTransaction failure.
     await expect(
@@ -414,7 +409,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     await context.db.User.create({ data: { name: 'jane' } })
 
     expect(fieldBefore).toHaveBeenCalledWith(
@@ -441,7 +436,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
     const created = await context.db.User.create({ data: { name: 'sudo-made' } })
 
     expect(created).toBeTruthy()
@@ -464,7 +459,7 @@ describe('#590 transaction-boundary hooks', () => {
       },
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     const created = await context.db.User.create({ data: { name: 'jane' } })
 
     // Silent failure: a denied create returns null and takes no external action.
@@ -672,7 +667,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
       lists: chainLists(8, 6),
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
 
     await expect(context.db.L1.create({ data: chainInputData(8) })).rejects.toThrow(
       /access denied/i,
@@ -706,7 +701,7 @@ describe('#835 deep nested writes remain access-checked at every depth', () => {
       lists,
     })
 
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
+    const context = mock.context(await testConfig, { userId: '1' })
     await context.db.L1.create({ data: chainInputData(8) })
 
     for (let i = 1; i <= 8; i++) {

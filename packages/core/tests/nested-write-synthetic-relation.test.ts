@@ -3,6 +3,9 @@ import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
 import { ValidationError } from '../src/hooks/index.js'
+import type { Session } from '../src/access/types.js'
+import type { OpenSaasConfig } from '../src/config/types.js'
+import { prisma8Double } from './prisma8-double.js'
 
 /**
  * #978: a nested write through a list-only ref's SYNTHETIC reverse relation
@@ -173,29 +176,29 @@ function createAccountPrisma() {
     ChargeRequest: makeChargeRequestModel(),
   }
 
-  client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
-    const snapshot = {
-      account: new Map(tables.Account),
-      chargeRequest: new Map(tables.ChargeRequest),
-      links: new Map(chargeToAccount),
-    }
-    try {
-      return await fn(client)
-    } catch (err) {
-      tables.Account = snapshot.account
-      tables.ChargeRequest = snapshot.chargeRequest
-      chargeToAccount.clear()
-      for (const [k, v] of snapshot.links) chargeToAccount.set(k, v)
-      throw err
-    }
-  }
+  const prisma8 = prisma8Double(client, tables, {
+    snapshot: () => {
+      const links = new Map(chargeToAccount)
+      return () => {
+        chargeToAccount.clear()
+        for (const [id, accountId] of links) chargeToAccount.set(id, accountId)
+      }
+    },
+  })
 
   function seedChargeRequest(accountId: string, row: Record<string, unknown>) {
     tables.ChargeRequest.set(row.id as string, row)
     chargeToAccount.set(row.id as string, accountId)
   }
 
-  return { client, tables, seedChargeRequest, linkedChargeRequests }
+  return {
+    client,
+    tables,
+    seedChargeRequest,
+    linkedChargeRequests,
+    context: (cfg: OpenSaasConfig, session: Session | null) =>
+      getContext(cfg, client, session, undefined, false, undefined, undefined, prisma8),
+  }
 }
 
 function buildConfig(hooks: Parameters<typeof list>[0]['hooks'] = {}) {
@@ -238,7 +241,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
   it('a non-sudo write through the synthetic key is still refused — unchanged', async () => {
     const mock = createAccountPrisma()
     mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
-    const context = getContext(await buildConfig(), mock.client, { userId: '1' })
+    const context = mock.context(await buildConfig(), { userId: '1' })
 
     await expect(
       context.db.Account.update({
@@ -259,7 +262,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
         }
       },
     })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await expect(
       context.db.Account.update({
@@ -292,7 +295,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
         expect((item as Record<string, unknown>).id).toBeDefined()
       },
     })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await context.db.Account.update({
       where: { id: 'a1' },
@@ -317,7 +320,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
         if (operation === 'create') createdItems.push(item as Record<string, unknown>)
       },
     })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await context.db.Account.update({
       where: { id: 'a1' },
@@ -347,7 +350,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
 
     const afterOp = vi.fn()
     const testConfig = buildConfig({ afterOperation: afterOp })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await context.db.Account.update({
       where: { id: 'a1' },
@@ -373,7 +376,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
     const listBefore = vi.fn()
     const listAfter = vi.fn()
     const testConfig = buildConfig({ beforeOperation: listBefore, afterOperation: listAfter })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await context.db.Account.update({
       where: { id: 'a1' },
@@ -404,7 +407,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
         if (operation === 'create') throw new Error('synthetic afterOperation boom')
       },
     })
-    const context = getContext(await testConfig, mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await testConfig, { userId: '1' }).sudo()
 
     await expect(
       context.db.Account.update({
@@ -423,7 +426,7 @@ describe('#978 nested writes through a synthetic reverse relation', () => {
   it('a genuinely unknown key (not a synthetic reverse relation) is refused even under sudo', async () => {
     const mock = createAccountPrisma()
     mock.tables.Account.set('a1', { id: 'a1', name: 'Acme' })
-    const context = getContext(await buildConfig(), mock.client, { userId: '1' }).sudo()
+    const context = mock.context(await buildConfig(), { userId: '1' }).sudo()
 
     await expect(
       context.db.Account.update({
