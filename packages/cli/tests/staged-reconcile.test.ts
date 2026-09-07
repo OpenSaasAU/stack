@@ -238,6 +238,13 @@ describe('staged reconcile under opensaas dev', () => {
     )
     expect(promoted.pid, 'an additive promote must not restart the app').toBe(booted.pid)
 
+    // A promotion moves a set of files and the filesystem offers no multi-file
+    // commit, so the app answering with the new contract only means the file
+    // it reads has landed — the root config is promoted after it. The loop's
+    // own line is the one signal emitted once the whole set is in place, so
+    // the stamp below waits for that rather than for the app.
+    await waitForOutput(loop, 'Database updated and the new contract promoted.')
+
     // Stamped so the next assertion can tell "left alone" from "rewritten
     // with the same bytes": the root config is contract-derived, and a change
     // the loop parks must not reach it.
