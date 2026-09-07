@@ -173,6 +173,7 @@ export default config({
 Use the `searchable()` wrapper to automatically add embeddings to any field:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -194,6 +195,7 @@ fields: {
 **Alternative (manual pattern):**
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -369,6 +371,7 @@ To use a different model:
 ```typescript
 provider: ollamaEmbeddings({
   model: 'mxbai-embed-large',
+  dimensions: 1024,
 })
 ```
 
@@ -449,7 +452,7 @@ ollama pull nomic-embed-text
 3. **Chunk long texts**:
    ```typescript
    import { chunkText } from '@opensaas/stack-rag/runtime'
-   const chunks = chunkText(longDocument, { maxTokens: 500 })
+   const chunks = chunkText(longDocument, { chunkSize: 500 })
    ```
 
 ## Next Steps
