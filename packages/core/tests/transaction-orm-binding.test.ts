@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { getContext, TransactionOptionsUnsupportedError } from '../src/context/index.js'
+import {
+  getContext,
+  OrmHandleUnresolvableError,
+  TransactionOptionsUnsupportedError,
+  TransactionUnavailableError,
+} from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text } from '../src/fields/index.js'
 import type { OrmClient } from '../src/access/types.js'
@@ -170,14 +175,31 @@ describe('the transaction context is bound to the transaction', () => {
     expect(double.committed()).toEqual([])
   })
 
-  test('a context with no Prisma 8 client opens no transaction and still runs', async () => {
+  test('a context with no Prisma 8 client refuses rather than running unatomically', async () => {
     const double = createDouble('starved')
     const context = getContext(testConfig, double.handle, null)
 
-    await context.transaction(async (tx) => {
-      await tx.db.Post.create({ data: { title: 'no client' } })
-    })
+    await expect(
+      context.transaction(async (tx) => {
+        await tx.db.Post.create({ data: { title: 'no client' } })
+      }),
+    ).rejects.toBeInstanceOf(TransactionUnavailableError)
 
-    expect(double.committed().map((row) => row.title)).toEqual(['no client'])
+    expect(double.committed()).toEqual([])
+  })
+
+  test('a client whose collections do not cover the config refuses at construction', async () => {
+    const double = createDouble('spare')
+    const client: UnsafeCapableClient = { ...double.client, orm: { public: {} } }
+
+    expect(() =>
+      getContext(testConfig, double.handle, null, undefined, false, undefined, undefined, client),
+    ).toThrow(OrmHandleUnresolvableError)
+
+    try {
+      getContext(testConfig, double.handle, null, undefined, false, undefined, undefined, client)
+    } catch (error) {
+      expect(error).toMatchObject({ list: 'Post', namespace: 'public' })
+    }
   })
 })

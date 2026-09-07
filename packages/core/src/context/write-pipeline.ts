@@ -102,10 +102,17 @@ export interface WriteStrategy {
  * Run `fn` inside ONE transaction, used as the persistence target for the
  * parent and all nested writes (ADR-0010).
  *
- * With no `opener` this write is a Joined write — the Unowned join of
- * ADR-0028 — and `fn` runs directly against the handle it was given, inside
- * whatever transaction is already open around it. Hook ordering and arguments
- * are identical either way.
+ * With no `opener`, `fn` runs directly against the handle it was given. Hook
+ * ordering and arguments are identical either way, but only a real transaction
+ * carries the rollback guarantee.
+ *
+ * Known limits — the absent opener does not by itself mean an enclosing
+ * transaction is open. It covers two shapes and cannot tell them apart:
+ * a Joined write, the Unowned join of ADR-0028, whose context was rebound to a
+ * transaction someone else opened; and a context assembled without a Prisma 8
+ * client at all — a hand-built ORM double — where nothing is open around the
+ * write and it simply has no rollback guarantee. The signal that a write is
+ * joined is `existingOwner` in {@link runWritePipeline}, not this parameter.
  */
 async function runInTransaction(
   opener: TransactionOpener | undefined,

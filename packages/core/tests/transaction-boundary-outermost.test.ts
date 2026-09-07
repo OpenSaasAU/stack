@@ -17,9 +17,11 @@ import { prisma8Double } from './prisma8-double.js'
  *
  * Per the ADR's verification note, the bug is invisible under a double whose
  * transaction client can itself open another transaction, because a nested
- * write would open its own rather than joining. Nothing here arranges that:
- * the engine binds the callback's context to the transaction it opened, and a
- * context so bound carries no opener.
+ * write would open its own rather than joining. `prisma8Double` refuses a
+ * second transaction while one is in flight, so a regression in either guard —
+ * the engine binding the callback's context to the transaction it opened, or
+ * that bound context carrying no opener — fails here immediately rather than
+ * only against a real single-connection pool, where it is a deadlock.
  */
 
 function createFaithfulTxPrisma(extraTables: string[] = []) {

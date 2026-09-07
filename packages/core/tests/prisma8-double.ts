@@ -14,6 +14,13 @@ export type MockTables = Record<string, Map<string, Record<string, unknown>>>
  * the restore rather than staged — indistinguishable from the outside, and it
  * keeps the double's `findUnique`/`findMany` reading its own uncommitted rows
  * the way a real transaction does.
+ *
+ * It also models the single connection a Prisma 8 transaction holds for its
+ * whole callback: a second `transaction` opened while one is in flight throws
+ * rather than nesting. Against a real single-connection pool that shape does
+ * not fail, it waits for a connection that is never freed — so the ADR-0028
+ * invariant that a nested write JOINS rather than opening its own is
+ * falsifiable here as an immediate error instead of a multi-minute deadlock.
  */
 export interface Prisma8DoubleOptions {
   /** The namespace the collections hang off `orm`, matching `db.schema`. */
@@ -34,12 +41,19 @@ export function prisma8Double(
     throw new Error('the double runs no plans')
   }
   const orm = { [options.namespace ?? 'public']: models }
+  let open = false
   return {
     sql: {},
     raw: {},
     orm,
     runtime: () => ({ query: unreachable, execute: unreachable }),
     transaction: async <R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R> => {
+      if (open) {
+        throw new Error(
+          'the double holds one connection: a write inside a transaction must join it, not open a second',
+        )
+      }
+      open = true
       const rows: MockTables = {}
       for (const [name, table] of Object.entries(tables)) rows[name] = new Map(table)
       const restoreExtra = options.snapshot?.()
@@ -49,6 +63,8 @@ export function prisma8Double(
         for (const [name, table] of Object.entries(rows)) tables[name] = table
         restoreExtra?.()
         throw error
+      } finally {
+        open = false
       }
     },
   }
