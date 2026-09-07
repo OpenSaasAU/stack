@@ -63,11 +63,14 @@ function makeConfig(): OpenSaasConfig {
     db: { provider: 'sqlite', url: 'file:./test.db' },
     lists: {
       Author: {
-        fields: { name: { type: 'text' } },
+        fields: {
+          name: { type: 'text' },
+          posts: { type: 'relationship', ref: 'Post.author', many: true },
+        },
         access: { operation: { query: () => true } },
       },
       Tag: {
-        fields: { name: { type: 'text' } },
+        fields: { name: { type: 'text' }, posts: { type: 'relationship', ref: 'Post.tags' } },
         access: { operation: { query: () => true } },
       },
       Post: {
@@ -76,6 +79,16 @@ function makeConfig(): OpenSaasConfig {
           author: { type: 'relationship', ref: 'Author.posts' },
           tags: { type: 'relationship', ref: 'Tag.posts', many: true },
         },
+        access: { operation: { query: () => true } },
+      },
+      // A one-to-one: both ends are `many: false` and exactly one holds the
+      // column. `Profile` sorts before `User`, so `Profile.user` owns it.
+      User: {
+        fields: { name: { type: 'text' }, profile: { type: 'relationship', ref: 'Profile.user' } },
+        access: { operation: { query: () => true } },
+      },
+      Profile: {
+        fields: { bio: { type: 'text' }, user: { type: 'relationship', ref: 'User.profile' } },
         access: { operation: { query: () => true } },
       },
     },
@@ -95,7 +108,7 @@ describe('prepareItemForm', () => {
       },
     } as unknown as OpenSaasConfig
 
-    const { initialData } = await prepareItemForm(context, config, config.lists.Event, {
+    const { initialData } = await prepareItemForm(context, config, 'Event', config.lists.Event, {
       id: '1',
       occurredAtMs: 9007199254740993n,
     })
@@ -112,7 +125,13 @@ describe('prepareItemForm', () => {
     const context = makeContext({ Author: author, Tag: tag })
     const config = makeConfig()
 
-    const { relationshipData } = await prepareItemForm(context, config, config.lists.Post, {})
+    const { relationshipData } = await prepareItemForm(
+      context,
+      config,
+      'Post',
+      config.lists.Post,
+      {},
+    )
 
     expect(relationshipData.author).toEqual([
       { id: 'a1', label: 'Ada Lovelace' },
@@ -140,7 +159,13 @@ describe('prepareItemForm', () => {
     const config = makeConfig()
 
     const itemData = { id: 'p1', title: 'Post', author: { id: 'a9', name: 'Currently Selected' } }
-    const { relationshipData } = await prepareItemForm(context, config, config.lists.Post, itemData)
+    const { relationshipData } = await prepareItemForm(
+      context,
+      config,
+      'Post',
+      config.lists.Post,
+      itemData,
+    )
 
     expect(relationshipData.author).toEqual(
       expect.arrayContaining([{ id: 'a9', label: 'Currently Selected' }]),
@@ -162,7 +187,13 @@ describe('prepareItemForm', () => {
         { id: 't9', name: 'design' },
       ],
     }
-    const { relationshipData } = await prepareItemForm(context, config, config.lists.Post, itemData)
+    const { relationshipData } = await prepareItemForm(
+      context,
+      config,
+      'Post',
+      config.lists.Post,
+      itemData,
+    )
 
     expect(relationshipData.tags).toEqual(
       expect.arrayContaining([
@@ -199,7 +230,7 @@ describe('prepareItemForm', () => {
     const context = makeContext({ Author: author, Tag: tag })
     const config = makeConfig()
 
-    const promise = prepareItemForm(context, config, config.lists.Post, {})
+    const promise = prepareItemForm(context, config, 'Post', config.lists.Post, {})
 
     expect(authorCalled).toBe(true)
     expect(tagCalled).toBe(true)
@@ -214,9 +245,67 @@ describe('prepareItemForm', () => {
     const context = makeContext({ Author: author, Tag: makeDelegate(async () => []) })
     const config = makeConfig()
 
-    await prepareItemForm(context, config, config.lists.Post, {})
+    await prepareItemForm(context, config, 'Post', config.lists.Post, {})
 
     // Only the primary bounded read runs — no second, id-scoped one.
     expect(author.calls).toHaveLength(1)
+  })
+})
+
+/**
+ * Which relationships the form may collect a value for (ADR-0050): only the
+ * end that holds the foreign-key column. Everything else is marked read-only
+ * here, which is what stops a control rendering for it — the alternative,
+ * dropping the value later in the submit transform, reports success on input
+ * that never reached the database.
+ */
+describe('prepareItemForm relationship writability', () => {
+  const emptyContext = () =>
+    makeContext({
+      Author: makeDelegate(async () => []),
+      Tag: makeDelegate(async () => []),
+      User: makeDelegate(async () => []),
+      Profile: makeDelegate(async () => []),
+    })
+
+  it('marks a to-many read-only and leaves the foreign-key-owning to-one editable', async () => {
+    const config = makeConfig()
+
+    const { serializableFields } = await prepareItemForm(
+      emptyContext(),
+      config,
+      'Post',
+      config.lists.Post,
+      {},
+    )
+
+    expect(serializableFields.tags.readOnly).toBe(true)
+    expect(serializableFields.tags.readOnlyReason).toEqual(expect.stringContaining('Not editable'))
+    expect(serializableFields.author.readOnly).toBeUndefined()
+  })
+
+  it('marks only the non-owning end of a one-to-one read-only', async () => {
+    // Both ends are `many: false`, so arity cannot tell them apart; only
+    // ownership of the column can. `Profile.user` holds it.
+    const config = makeConfig()
+
+    const { serializableFields: userFields } = await prepareItemForm(
+      emptyContext(),
+      config,
+      'User',
+      config.lists.User,
+      {},
+    )
+    const { serializableFields: profileFields } = await prepareItemForm(
+      emptyContext(),
+      config,
+      'Profile',
+      config.lists.Profile,
+      {},
+    )
+
+    expect(userFields.profile.readOnly).toBe(true)
+    expect(userFields.profile.readOnlyReason).toEqual(expect.stringContaining('Not editable'))
+    expect(profileFields.user.readOnly).toBeUndefined()
   })
 })

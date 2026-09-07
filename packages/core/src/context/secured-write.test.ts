@@ -7,7 +7,11 @@ import { createTestContext, ormClientFor, type TestContext } from '../testing/co
 import type { StackContext } from '../types/context.js'
 import { WriteMatchedNothingError } from '../index.js'
 import { getContext } from './index.js'
-import { NestedRelationInputError, RelationInputNotLoweredError } from './relationship-input.js'
+import {
+  MalformedRelationInputError,
+  NestedRelationInputError,
+  NonOwningRelationInputError,
+} from './relationship-input.js'
 
 /**
  * #1152: the write terminals over a real rc.8 collection.
@@ -31,6 +35,23 @@ function schemaConfig(): OpenSaasConfig {
         access: { operation: OPEN },
       },
     },
+  }
+}
+
+/**
+ * The foreign key each post carries, straight off the driver. The column is
+ * named for the field (`author`), the contract member for the key it holds
+ * (`authorId`) — so this reads what was actually stored, not what the engine
+ * chose to return.
+ */
+async function storedAuthorIds(url: string): Promise<Array<string | null>> {
+  const client = new pg.Client({ connectionString: url })
+  await client.connect()
+  try {
+    const result = await client.query('select "author" from "public"."Post" order by "title"')
+    return result.rows.map((row: { author: string | null }) => row.author)
+  } finally {
+    await client.end()
   }
 }
 
@@ -466,29 +487,6 @@ describe('a nested write in a payload is refused', () => {
   }
 
   /**
-   * `connect` is the one spelling ADR-0050 keeps, and #1153 lowers. Until it
-   * does it must not reach the driver as a column value — the error there names
-   * neither this list nor this field.
-   */
-  test('connect is refused by name until #1153, and nothing is written', async () => {
-    const payload = { connect: { id: 'a1' } }
-
-    await expect(
-      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
-    ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
-
-    await expect(
-      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
-    ).rejects.toThrow(/"Post".+"author".+`connect`/s)
-
-    await expect(
-      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
-    ).rejects.toThrow(/#1153/)
-
-    expect(await storedTitles(harness.url)).toEqual([])
-  })
-
-  /**
    * `{ connect: cond ? { id } : undefined }` names no spelling once the
    * conditional resolves, but an object on a relationship key is not a column
    * value either. It is refused by name rather than reaching the driver, which
@@ -497,7 +495,7 @@ describe('a nested write in a payload is refused', () => {
   test('a relation object carrying no spelling is refused, and nothing is written', async () => {
     await expect(
       harness.context.db.Post.create({ data: { title: 't', author: { connect: undefined } } }),
-    ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
+    ).rejects.toBeInstanceOf(MalformedRelationInputError)
 
     await expect(
       harness.context.db.Post.create({ data: { title: 't', author: { connect: undefined } } }),
@@ -507,13 +505,13 @@ describe('a nested write in a payload is refused', () => {
   })
 
   /**
-   * The pre-transaction refusal reads the caller's payload, which a hook has
-   * not touched yet. A `resolveInput` that assembles relation input — the shape
+   * The pre-transaction pass reads the caller's payload, which a hook has not
+   * touched yet. A `resolveInput` that assembles relation input — the shape
    * `examples/starter-auth` uses to preset an author — is only visible after
-   * the hooks run, so the refusal has to look again.
+   * the hooks run, so the lowering has to look again.
    */
   test(
-    'relation input a resolveInput hook assembles is refused too',
+    'relation input a resolveInput hook assembles is lowered too',
     async () => {
       const config: OpenSaasConfig = {
         ...relationConfig(() => true),
@@ -532,11 +530,13 @@ describe('a nested write in a payload is refused', () => {
         },
       }
 
+      const author = await harness.context.db.Author.create({ data: { name: 'a' } })
+
       const orm = ormClientFor(harness.data, harness.client.orm)
       const context = getContext(
         config,
         orm,
-        { userId: 'u1' },
+        { userId: String(author?.id) },
         undefined,
         false,
         undefined,
@@ -544,10 +544,8 @@ describe('a nested write in a payload is refused', () => {
         harness.client,
       )
 
-      await expect(context.db.Post.create({ data: { title: 't' } })).rejects.toBeInstanceOf(
-        RelationInputNotLoweredError,
-      )
-      expect(await storedTitles(harness.url)).toEqual([])
+      expect(await context.db.Post.create({ data: { title: 't' } })).toMatchObject({ title: 't' })
+      expect(await storedAuthorIds(harness.url)).toEqual([author?.id])
     },
     BOOT,
   )
@@ -572,7 +570,7 @@ describe('a nested write in a payload is refused', () => {
         sudo.db.Author.create({
           data: { name: 'a', from_Post_author: { connect: { id: 'p1' } } },
         }),
-      ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
+      ).rejects.toBeInstanceOf(NonOwningRelationInputError)
 
       expect(await storedTitles(harness.url)).toEqual([])
     },

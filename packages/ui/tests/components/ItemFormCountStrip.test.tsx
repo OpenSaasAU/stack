@@ -101,6 +101,7 @@ describe('ItemForm derived item-view pipeline (issue #797 regression)', () => {
     const { serializableFields, initialData } = await prepareItemForm(
       context,
       config,
+      'Post',
       detailsListConfig,
       detailsItemData,
     )

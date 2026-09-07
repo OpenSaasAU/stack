@@ -137,15 +137,15 @@ describe('RelationshipTableClient', () => {
     const removeButtons = screen.getAllByRole('button', { name: /disconnect posts row/i })
     await user.click(removeButtons[0])
 
-    // Disconnect is an UPDATE on the RELATED list, nulling the back-reference —
-    // never a delete, and never the parent's list.
+    // Disconnect is an UPDATE on the RELATED list, assigning `null` to the
+    // back-reference — never a delete, and never the parent's list. The parent
+    // id names no part of that write (ADR-0050).
     expect(serverAction).toHaveBeenCalledWith({
       listKey: 'Post',
       action: 'removeRelated',
       mode: 'disconnect',
       id: 'p1',
       field: 'author',
-      parentId: 'u1',
     })
     // Optimistically hidden, then the table refreshes so the re-fetch is source of truth.
     expect(screen.queryByText('First')).not.toBeInTheDocument()

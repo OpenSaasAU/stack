@@ -5,14 +5,26 @@ import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
-import type { FieldConfig } from '@opensaas/stack-core'
-import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  markUnwritableRelationships,
+  serializeFieldConfigs,
+} from '../../lib/serializeFieldConfig.js'
 import { useItemForm } from '../../lib/useItemForm.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
+  /**
+   * The list these `fields` belong to, and the config it lives in. Supply both
+   * to have the non-owning end of a one-to-one rendered read-only with an
+   * explanation, the way the admin item form does — it is not answerable from
+   * a field config alone (ADR-0064). Without them that field renders as a
+   * picker whose selection the engine refuses at save.
+   */
+  listKey?: string
+  config?: OpenSaasConfig
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
@@ -38,6 +50,8 @@ export interface ItemCreateFormProps<TData = Record<string, unknown>> {
  */
 export function ItemCreateForm<TData = Record<string, unknown>>({
   fields,
+  listKey,
+  config,
   onSubmit,
   onCancel,
   relationshipData = {},
@@ -46,7 +60,11 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   className,
   classNames,
 }: ItemCreateFormProps<TData>) {
-  const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
+  const serializedFields = useMemo(() => {
+    const serialized = serializeFieldConfigs(fields)
+    if (listKey && config) markUnwritableRelationships(serialized, listKey, fields, config)
+    return serialized
+  }, [fields, listKey, config])
 
   const {
     formData,

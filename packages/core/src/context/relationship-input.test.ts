@@ -2,27 +2,31 @@ import { describe, expect, it } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
 import {
+  MalformedRelationInputError,
   NestedRelationInputError,
-  RelationInputNotLoweredError,
+  NonOwningRelationInputError,
   refuseNestedRelationInput,
 } from './relationship-input.js'
 
 /**
- * The payload-shape refusal on its own (ADR-0050, #1152). What reaches the
- * database with it is covered over a real collection in `secured-write.test.ts`;
- * this pins which keys it inspects and which spellings it recognises on them.
+ * The payload-shape refusal on its own (ADR-0050, #1152, #1153). What reaches
+ * the database with it is covered over a real collection in
+ * `secured-write.test.ts`; this pins which keys it inspects and which
+ * spellings it recognises on them.
  */
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },
   lists: {
     Category: { fields: { name: text() } },
+    Author: { fields: { name: text(), posts: relationship({ ref: 'Post.author', many: true }) } },
     Post: {
       fields: {
         title: text(),
         // A list-only ref, so `Category` carries the synthetic back-relation
         // `from_Post_category` rather than a declared field.
         category: relationship({ ref: 'Category' }),
+        author: relationship({ ref: 'Author.posts' }),
       },
     },
   },
@@ -30,6 +34,7 @@ const config: OpenSaasConfig = {
 
 const post = config.lists.Post
 const category = config.lists.Category
+const author = config.lists.Author
 
 describe('refuseNestedRelationInput', () => {
   it('refuses a nested write spelling on a declared relationship', () => {
@@ -63,10 +68,9 @@ describe('refuseNestedRelationInput', () => {
       thrown = error
     }
 
-    expect(thrown).toBeInstanceOf(RelationInputNotLoweredError)
+    expect(thrown).toBeInstanceOf(MalformedRelationInputError)
     const message = (thrown as Error).message
     expect(message).not.toContain('`create`')
-    expect(message).not.toContain('`connect`')
   })
 
   it('refuses a nested write on a synthetic reverse-relation key', () => {
@@ -80,39 +84,45 @@ describe('refuseNestedRelationInput', () => {
     ).toThrow(NestedRelationInputError)
   })
 
-  it('refuses a synthetic key carrying relation input the engine cannot lower', () => {
+  it('refuses connect on a synthetic reverse-relation key, which owns no column', () => {
     expect(() =>
       refuseNestedRelationInput('Category', category, config, {
         from_Post_category: { connect: { id: 'p1' } },
       }),
-    ).toThrow(RelationInputNotLoweredError)
+    ).toThrow(NonOwningRelationInputError)
   })
 
-  it('names the list, the field and the ticket when relation input is not lowered yet', () => {
+  it('refuses connect through a to-many inverse field', () => {
+    // `Author.posts` is keyed by `Post.authorId`, so connecting through it is
+    // N updates against `Post` — the hidden second write ADR-0050 removes.
     let thrown: unknown
     try {
-      refuseNestedRelationInput('Post', post, config, {
-        title: 't',
-        category: { connect: { id: 'c1' } },
+      refuseNestedRelationInput('Author', author, config, {
+        name: 'a',
+        posts: { connect: { id: 'p1' } },
       })
     } catch (error) {
       thrown = error
     }
 
-    expect(thrown).toBeInstanceOf(RelationInputNotLoweredError)
+    expect(thrown).toBeInstanceOf(NonOwningRelationInputError)
     const message = (thrown as Error).message
-    expect(message).toContain('"Post"')
-    expect(message).toContain('"category"')
-    expect(message).toContain('`connect`')
-    expect(message).toContain('#1153')
-    // The caller's own payload is never echoed back into the message.
-    expect(message).not.toContain('c1')
+    expect(message).toContain('"Author"')
+    expect(message).toContain('"posts"')
+  })
+
+  it('accepts connect on the foreign-key-owning side', () => {
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, {
+        title: 't',
+        author: { connect: { id: 'a1' } },
+      }),
+    ).not.toThrow()
   })
 
   it('refuses disconnect permanently, pointing at the null assignment that replaces it', () => {
     // ADR-0050 removes `disconnect` rather than deferring it: clearing an edge
-    // is `null` on the same field. A message promising #1153 would name a
-    // spelling that is not coming back.
+    // is `null` on the same field.
     let thrown: unknown
     try {
       refuseNestedRelationInput('Post', post, config, { category: { disconnect: true } })
@@ -125,13 +135,9 @@ describe('refuseNestedRelationInput', () => {
     expect(message).toContain('`disconnect`')
     expect(message).toContain('`null`')
     expect(message).toContain('"category"')
-    expect(message).not.toContain('#1153')
   })
 
   it('refuses a relation object that carries no spelling at all', () => {
-    // `{ connect: cond ? { id } : undefined }` names nothing once the
-    // conditional resolves, but a relationship key carries a foreign key or
-    // `null` — never an object. Left alone it reaches the driver as `{}`.
     let thrown: unknown
     try {
       refuseNestedRelationInput('Post', post, config, { title: 't', category: {} })
@@ -139,8 +145,22 @@ describe('refuseNestedRelationInput', () => {
       thrown = error
     }
 
-    expect(thrown).toBeInstanceOf(RelationInputNotLoweredError)
+    expect(thrown).toBeInstanceOf(MalformedRelationInputError)
     expect((thrown as Error).message).toContain('"category"')
+  })
+
+  it('refuses a bare column value on a relationship key', () => {
+    // A relationship field takes the row to link to, never the foreign key
+    // spelled onto the field itself.
+    expect(() => refuseNestedRelationInput('Post', post, config, { category: 'c1' })).toThrow(
+      MalformedRelationInputError,
+    )
+  })
+
+  it('refuses a connect carrying anything but an id', () => {
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, { category: { connect: { name: 'c' } } }),
+    ).toThrow(MalformedRelationInputError)
   })
 
   it('leaves null on a relation key alone', () => {
@@ -149,8 +169,8 @@ describe('refuseNestedRelationInput', () => {
     expect(() => refuseNestedRelationInput('Post', post, config, { category: null })).not.toThrow()
   })
 
-  it('reports the permanent refusal ahead of the temporary one', () => {
-    // A payload spelling both gets the message that stays true after #1153.
+  it('reports the nested-write refusal ahead of the shape one', () => {
+    // A payload spelling both gets the message naming the spelling that left.
     expect(() =>
       refuseNestedRelationInput('Post', post, config, {
         category: { connect: { id: 'c1' }, create: { name: 'c' } },
