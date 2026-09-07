@@ -140,14 +140,15 @@ export function text<
     const validation = options?.validation
     const isRequired = validation?.isRequired
     const length = validation?.length
-    const minLength = length?.min && length.min > 0 ? length.min : 1
+    const declaredMin = length?.min !== undefined && length.min > 0 ? length.min : undefined
+    const minLength = declaredMin ?? 1
 
     const baseSchema = z.string({
       message: `${formatFieldName(fieldName)} must be text`,
     })
 
     const withMin =
-      isRequired || length?.min !== undefined
+      isRequired || declaredMin !== undefined
         ? baseSchema.min(minLength, {
             message:
               minLength > 1
@@ -182,15 +183,18 @@ export function text<
       //
       // A column default makes the field optional on `CreateInput`
       // (`RequiredCreateColumn`, `types/inputs.ts`), so the column may only
-      // carry one where the runtime accepts the omission that default is
-      // there to fill. That is the question asked here — validation runs over
-      // the data as given, and the database supplies the value — rather than
-      // the rules being restated, so the two cannot drift apart.
+      // carry one where the create validator both accepts the omission it
+      // fills and accepts `''` itself. Both are asked of the schema rather
+      // than restated, so the column and the validator cannot drift apart —
+      // and an implicit compat default reaches the same verdict as the
+      // explicit `defaultValue: ''` that `applyCreateDefaults` fills.
+      const createSchema = zodSchema(fieldName, 'create')
       const compatDefault =
         options?.defaultValue === undefined &&
         config.db.keystoneCompat === true &&
         !nullable &&
-        zodSchema(fieldName, 'create').safeParse(undefined).success
+        createSchema.safeParse(undefined).success &&
+        createSchema.safeParse('').success
       const defaultSource = compatDefault ? '' : options?.defaultValue
       return scalarColumn(fieldName, {
         type: pgType('text'),

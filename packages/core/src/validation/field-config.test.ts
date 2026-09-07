@@ -13,6 +13,8 @@ import {
 } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 
+const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
 describe('validateFieldConfig', () => {
   describe('well-formed fields pass', () => {
     it.each([
@@ -24,12 +26,12 @@ describe('validateFieldConfig', () => {
       ['select', select({ options: [{ label: 'A', value: 'a' }] })],
       ['json', json()],
     ])('a built-in %s field is self-contained', (_name, field) => {
-      expect(validateFieldConfig(field as FieldConfig, 'myField', 'MyList')).toEqual([])
+      expect(validateFieldConfig(field as FieldConfig, 'myField', 'MyList', CONFIG)).toEqual([])
     })
 
     it('a relationship field is self-contained via getContractField alone', () => {
       const field = relationship({ ref: 'User.posts' })
-      expect(validateFieldConfig(field as FieldConfig, 'author', 'Post')).toEqual([])
+      expect(validateFieldConfig(field as FieldConfig, 'author', 'Post', CONFIG)).toEqual([])
     })
 
     it('a virtual field is self-contained without a column', () => {
@@ -37,7 +39,7 @@ describe('validateFieldConfig', () => {
         type: 'string',
         hooks: { resolveOutput: () => 'x' },
       })
-      expect(validateFieldConfig(field as FieldConfig, 'fullName', 'User')).toEqual([])
+      expect(validateFieldConfig(field as FieldConfig, 'fullName', 'User', CONFIG)).toEqual([])
     })
   })
 
@@ -46,7 +48,7 @@ describe('validateFieldConfig', () => {
       const field = text()
       delete field.getContractField
 
-      const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
+      const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post', CONFIG)
 
       expect(errors).toHaveLength(1)
       expect(errors[0]).toMatchObject({
@@ -64,7 +66,7 @@ describe('validateFieldConfig', () => {
       const field = text()
       delete field.getZodSchema
 
-      const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
+      const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post', CONFIG)
 
       expect(errors).toHaveLength(1)
       expect(errors[0].missingMember).toBe('getZodSchema')
@@ -74,7 +76,7 @@ describe('validateFieldConfig', () => {
     it('reports every missing member when a field declares none', () => {
       const field: FieldConfig = { type: 'custom' }
 
-      const errors = validateFieldConfig(field, 'mystery', 'Widget')
+      const errors = validateFieldConfig(field, 'mystery', 'Widget', CONFIG)
 
       expect(errors.map((e) => e.missingMember).sort()).toEqual([
         'getContractField',
@@ -86,12 +88,12 @@ describe('validateFieldConfig', () => {
       }
     })
 
-    it('works without a listKey (bare field validation)', () => {
+    it('names the list and the field in the message', () => {
       const field: FieldConfig = { type: 'custom' }
-      const errors = validateFieldConfig(field, 'mystery')
+      const errors = validateFieldConfig(field, 'mystery', 'Widget', CONFIG)
       expect(errors).toHaveLength(2)
-      expect(errors[0].listKey).toBeUndefined()
-      expect(errors[0].message).toContain('Field "mystery"')
+      expect(errors[0].listKey).toBe('Widget')
+      expect(errors[0].message).toContain('Field "Widget.mystery"')
     })
   })
 
@@ -99,7 +101,7 @@ describe('validateFieldConfig', () => {
     it('reports a relationship missing getContractField', () => {
       const field: FieldConfig = { type: 'relationship' }
 
-      const errors = validateFieldConfig(field, 'author', 'Post')
+      const errors = validateFieldConfig(field, 'author', 'Post', CONFIG)
 
       expect(errors).toHaveLength(1)
       expect(errors[0].missingMember).toBe('getContractField')
@@ -109,14 +111,14 @@ describe('validateFieldConfig', () => {
     it('reports a virtual field missing outputType and getZodSchema', () => {
       const field: FieldConfig = { type: 'virtual', virtual: true }
 
-      const errors = validateFieldConfig(field, 'fullName', 'User')
+      const errors = validateFieldConfig(field, 'fullName', 'User', CONFIG)
 
       expect(errors.map((e) => e.missingMember).sort()).toEqual(['getZodSchema', 'outputType'])
     })
 
     it('does not require getContractField for virtual fields', () => {
       const field: FieldConfig = { type: 'virtual', virtual: true }
-      const errors = validateFieldConfig(field, 'fullName', 'User')
+      const errors = validateFieldConfig(field, 'fullName', 'User', CONFIG)
       expect(errors.some((e) => e.missingMember === 'getContractField')).toBe(false)
     })
 
@@ -133,7 +135,7 @@ describe('validateFieldConfig', () => {
         getZodSchema: () => json().getZodSchema!('x', 'create'),
       }
 
-      const errors = validateFieldConfig(field, 'fullName', 'User')
+      const errors = validateFieldConfig(field, 'fullName', 'User', CONFIG)
 
       expect(errors).toHaveLength(1)
       expect(errors[0].missingMember).toBe('outputType')
@@ -143,8 +145,6 @@ describe('validateFieldConfig', () => {
   })
 
   describe('contract-era fields', () => {
-    const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
-
     /**
      * Two columns of different types, which no single column type describes.
      * `getColumnNames` is deliberately absent: the obligation follows the
@@ -225,39 +225,32 @@ describe('validateFieldConfig', () => {
     })
 
     /**
-     * Without a config the descriptor cannot be read, so `getColumnNames`
-     * stands in for its `kind`. The public three-argument form is what a field
-     * author is pointed at, and a gate that silently checks nothing there is
-     * the hole #1292 was about.
+     * The two fixtures above make the descriptor's `kind` and the optional
+     * `getColumnNames` disagree in opposite directions, so a gate reading
+     * either one gives a different verdict on each. Reading the proxy would
+     * miss `twoColumns` (#1292's hole) and wrongly flag
+     * `oneColumnWithColumnNames`.
      */
-    describe('without a config to read the descriptor with', () => {
-      const spanningWithColumnNames: FieldConfig = {
-        ...twoColumns,
-        getColumnNames: () => ['embedding', 'embeddingMetadata'],
-      }
+    it('reads the descriptor rather than getColumnNames, which disagrees with it', () => {
+      expect(twoColumns.getColumnNames).toBeUndefined()
+      expect(oneColumnWithColumnNames.getColumnNames).toBeTypeOf('function')
 
-      it('requires outputType from a field declaring getColumnNames', () => {
-        const field: FieldConfig = { ...spanningWithColumnNames }
-        delete field.outputType
+      const spanning: FieldConfig = { ...twoColumns }
+      delete spanning.outputType
 
-        expect(
-          validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMember),
-        ).toEqual(['outputType'])
-      })
-
-      it('accepts the same field once it declares its face', () => {
-        expect(validateFieldConfig(spanningWithColumnNames, 'embedding', 'Article')).toEqual([])
-      })
-
-      it('leaves a single-column field alone', () => {
-        expect(validateFieldConfig(text() as FieldConfig, 'title', 'Post')).toEqual([])
-      })
+      expect(
+        validateFieldConfig(spanning, 'embedding', 'Article', CONFIG).map((e) => e.missingMember),
+      ).toEqual(['outputType'])
+      expect(validateFieldConfig(oneColumnWithColumnNames, 'embedding', 'Article', CONFIG)).toEqual(
+        [],
+      )
     })
 
     /**
      * `getContractField` is a field's refusal seam (`embedding()` throws out of
-     * it for an impossible `dimensions`). The CLI runs this gate before the
-     * guard that catches such a throw, so it must not propagate one.
+     * it for an impossible `dimensions`). This gate is the first step
+     * `opensaas generate` runs, ahead of the config-surface step that reports
+     * such a throw, so it must not propagate one.
      */
     describe('a field whose descriptor throws', () => {
       const refusing: FieldConfig = {

@@ -39,10 +39,9 @@ import type {
 
 export function formatFieldValidationErrors(errors: FieldConfigValidationError[]): string {
   const lines = errors.map((error) => {
-    const location = error.listKey ? `${error.listKey}.${error.fieldKey}` : error.fieldKey
     const spelling =
       error.missingMember === 'outputType' ? error.missingMember : `${error.missingMember}()`
-    return `  • ${location} (type "${error.fieldType}") is missing ${spelling}`
+    return `  • ${error.listKey}.${error.fieldKey} (type "${error.fieldType}") is missing ${spelling}`
   })
 
   return [

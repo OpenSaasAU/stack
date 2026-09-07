@@ -208,6 +208,8 @@ export default config({
 
 The flag is opt-in (a greenfield project would not want it) and only affects **non-null** text columns with **no explicit `defaultValue`**. An explicit `text({ defaultValue: 'x' })` always wins, and nullable text / non-text fields are untouched.
 
+It also stops short of any column whose own create validator would refuse the default: a column default drops the field from the required half of the generated create input, and the value the database inserts is never seen by validation. So `validation: { isRequired: true }` and `validation: { length: { min: N } }` with `N` above zero get **no** default — the first refuses the omission, the second refuses the `''`. Those are Keystone's commonest text columns, so expect `DROP DEFAULT` for them in the first `migrate diff`. Closing that gap means relaxing the field's validation as well as setting `defaultValue: ''` on it, because the explicit spelling is refused for the same reason.
+
 ### Singleton `id` is bare
 
 Singleton lists (`isSingleton: true`) emit `id Int @id` with no `@default(1)`, matching Keystone 6.

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { text, integer } from './index.js'
+import { applyCreateDefaults } from '../context/apply-defaults.js'
 import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 
 /**
@@ -12,7 +13,8 @@ import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../c
  *
  * A column default also drops the column from the required half of the
  * generated create input, so the compat default is carried only where this
- * field's own create validator accepts the omission it fills.
+ * field's own create validator accepts both the omission it fills and the
+ * `''` it inserts.
  * `types-keystone-compat.test.ts` in `@opensaas/stack-cli` pins that input
  * face against a real emitted contract; these tests pin the column, plus the
  * on/off/explicit-default/nullable/non-text matrix from the issue's
@@ -48,27 +50,24 @@ describe('text() Keystone-compat empty-string default', () => {
       expect(column.default).toBeUndefined()
     })
 
-    /**
-     * `length.min` constrains a value that is supplied; it says nothing about
-     * an omission, which is the only thing a column default fills.
-     */
-    it('defaults a non-null text field with a minimum length, which its validator lets be omitted', () => {
+    it('gives a non-null text field with a minimum length no default, which its validator rejects', () => {
       const field = text({ db: { isNullable: false }, validation: { length: { min: 2 } } })
       const column = columnOf(field, 'code', ON)
 
       expect(column.nullable).toBe(false)
-      expect(column.default).toEqual({ kind: 'literal', value: '' })
+      expect(column.default).toBeUndefined()
     })
 
-    /**
-     * `text()` turns `length.min: 0` into `min(1)`, so asking the schema about
-     * `''` would drop this column's default over a quirk of the builder rather
-     * than anything the runtime does.
-     */
     it('defaults a non-null text field declaring a zero minimum length', () => {
       const field = text({ db: { isNullable: false }, validation: { length: { min: 0 } } })
 
       expect(columnOf(field, 'slug', ON).default).toEqual({ kind: 'literal', value: '' })
+    })
+
+    it('defaults a non-null text field constrained only by a maximum length', () => {
+      const field = text({ db: { isNullable: false }, validation: { length: { max: 10 } } })
+
+      expect(columnOf(field, 'title', ON).default).toEqual({ kind: 'literal', value: '' })
     })
 
     it('defaults a text field made non-null via db.isNullable: false to ""', () => {
@@ -154,51 +153,104 @@ describe('text() Keystone-compat empty-string default', () => {
 
   describe('the compat default and the create validator agree', () => {
     /**
-     * Both columns are computed by hand: `acceptsOmission` is what this
-     * field's own create schema does with an absent value — the only case a
-     * column default is reached for — and `hasDefault` is whether the compat
-     * branch may carry one. They must never disagree: a default under a
-     * validator that refuses the omission is exactly the create-input/runtime
-     * split this narrowing closes.
+     * Every column is computed by hand. `acceptsOmission` is what this field's
+     * own create schema does with an absent value — the only case a column
+     * default is reached for — `acceptsEmptyString` is what it does with the
+     * value that default inserts, and `hasDefault` is whether the compat
+     * branch may carry one. A default under a validator that refuses the
+     * omission is the create-input/runtime split; a default under one that
+     * refuses `''` writes a row the config forbids.
      */
     const shapes: {
       name: string
       field: FieldConfig
       acceptsOmission: boolean
+      acceptsEmptyString: boolean
       hasDefault: boolean
     }[] = [
       {
         name: 'name',
         field: text({ validation: { isRequired: true } }),
         acceptsOmission: false,
+        acceptsEmptyString: false,
         hasDefault: false,
       },
       {
         name: 'phone',
         field: text({ db: { isNullable: false } }),
         acceptsOmission: true,
+        acceptsEmptyString: true,
         hasDefault: true,
       },
       {
         name: 'code',
         field: text({ db: { isNullable: false }, validation: { length: { min: 2 } } }),
         acceptsOmission: true,
+        acceptsEmptyString: false,
+        hasDefault: false,
+      },
+      {
+        name: 'slug',
+        field: text({ db: { isNullable: false }, validation: { length: { min: 0 } } }),
+        acceptsOmission: true,
+        acceptsEmptyString: true,
         hasDefault: true,
       },
       {
         name: 'title',
         field: text({ db: { isNullable: false }, validation: { length: { max: 10 } } }),
         acceptsOmission: true,
+        acceptsEmptyString: true,
         hasDefault: true,
       },
-      { name: 'bio', field: text(), acceptsOmission: true, hasDefault: false },
+      {
+        name: 'bio',
+        field: text(),
+        acceptsOmission: true,
+        acceptsEmptyString: true,
+        hasDefault: false,
+      },
     ]
 
-    it.each(shapes)('$name', ({ name, field, acceptsOmission, hasDefault }) => {
-      expect(field.getZodSchema?.(name, 'create').safeParse(undefined).success).toBe(
-        acceptsOmission,
-      )
+    it.each(shapes)('$name', ({ name, field, acceptsOmission, acceptsEmptyString, hasDefault }) => {
+      const schema = field.getZodSchema?.(name, 'create')
+      expect(schema?.safeParse(undefined).success).toBe(acceptsOmission)
+      expect(schema?.safeParse('').success).toBe(acceptsEmptyString)
       expect(columnOf(field, name, ON).default !== undefined).toBe(hasDefault)
+    })
+  })
+
+  /**
+   * Two spellings of "this column defaults to an empty string": the flag,
+   * whose `''` the database inserts on an omitted create, and
+   * `defaultValue: ''`, whose `''` `applyCreateDefaults` fills into
+   * `resolvedData` before validation runs. A non-null column may carry the
+   * implicit one only where the explicit one survives — otherwise the same
+   * declared intent stores `''` under one spelling and is refused under the
+   * other.
+   */
+  describe('the implicit compat default and an explicit defaultValue: "" agree', () => {
+    const shapes: { name: string; options: Parameters<typeof text>[0] }[] = [
+      { name: 'name', options: { validation: { isRequired: true } } },
+      { name: 'phone', options: { db: { isNullable: false } } },
+      { name: 'code', options: { db: { isNullable: false }, validation: { length: { min: 2 } } } },
+      { name: 'slug', options: { db: { isNullable: false }, validation: { length: { min: 0 } } } },
+      {
+        name: 'title',
+        options: { db: { isNullable: false }, validation: { length: { max: 10 } } },
+      },
+    ]
+
+    it.each(shapes)('$name', ({ name, options }) => {
+      const implicitCarriesDefault = columnOf(text(options), name, ON).default !== undefined
+
+      const explicit = text({ ...options, defaultValue: '' })
+      const resolved = applyCreateDefaults({}, { [name]: explicit })
+      const explicitSurvivesValidation =
+        explicit.getZodSchema?.(name, 'create').safeParse(resolved[name]).success === true
+
+      expect(resolved[name]).toBe('')
+      expect(implicitCarriesDefault).toBe(explicitSurvivesValidation)
     })
   })
 

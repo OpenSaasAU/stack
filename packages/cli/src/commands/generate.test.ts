@@ -369,11 +369,13 @@ describe('Generate Command Integration', () => {
      * `getContractField` is a field's own refusal seam — `@opensaas/stack-rag`'s
      * `embedding()` throws out of it for an impossible `dimensions` or an
      * `opclass` that disagrees with the distance function. `generate` runs the
-     * field gate before the guard that catches such a throw and turns it into
-     * `❌ Error: <message>` plus `GenerationFailedError`, so the gate reading a
-     * descriptor must not let one past it.
+     * field gate first of all, and the config-surface step after it re-reads
+     * every descriptor and turns such a throw into a `field-descriptor-error`
+     * refusal — `❌ Error: <message>` plus `GenerationFailedError`. So the gate
+     * reading a descriptor must not let one past it, and derivation is never
+     * reached.
      */
-    it('leaves a field descriptor’s refusal to the derivation step that reports it', () => {
+    it('leaves a field descriptor’s refusal to the config-surface step that reports it', () => {
       const refusalMessage = 'embedding "Article.embedding": dimensions must be at most 2000'
       const refusing: FieldConfig = {
         type: 'embedding',
@@ -385,16 +387,25 @@ describe('Generate Command Integration', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'sqlite' },
         lists: { Article: { fields: { embedding: refusing } } },
       }
 
       expect(validateConfigFields(config)).toEqual([])
-      expect(() => deriveContract(config)).toThrow(refusalMessage)
+      expect(validateNeedsDeclarations(config)).toEqual([])
+
+      const refusals = [...validateDatabaseConfig(config), ...validateRelations(config)]
+      expect(refusals).toEqual([
+        {
+          listKey: 'Article',
+          entry: 'fields.embedding',
+          reason: 'field-descriptor-error',
+          message:
+            'List "Article": fields.embedding cannot describe its contract column — ' +
+            refusalMessage,
+        },
+      ])
+      expect(formatConfigRefusals(refusals)).toContain(refusalMessage)
     })
   })
 

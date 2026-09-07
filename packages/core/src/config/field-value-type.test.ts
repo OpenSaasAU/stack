@@ -44,6 +44,23 @@ type GeneratedTypeInfo = {
   inputs: { create: unknown; update: unknown }
 }
 
+/**
+ * The same, with no computed field. A virtual key contributes `unknown` to any
+ * union it appears in, which would mask a resolution that distributed over the
+ * rest — so the surface assertions below run over a list whose every field has
+ * a column.
+ */
+type GeneratedStoredTypeInfo = {
+  key: 'Post'
+  fields: {
+    title: TextField<GeneratedStoredTypeInfo>
+    publishedAt: TimestampField<GeneratedStoredTypeInfo>
+    badge: BaseFieldConfig<GeneratedStoredTypeInfo>
+  }
+  item: PostStoredRow
+  inputs: { create: unknown; update: unknown }
+}
+
 /** A field package's own type, which declares its face rather than inheriting it. */
 type BadgeField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'badge'
@@ -125,24 +142,64 @@ describe('GetFieldValueType', () => {
  * The instantiation the config surface actually produces. A field builder's
  * `hooks` reach `FieldHooks<TTypeInfo>` with no key pinned, so this is the
  * only shape that exercises the union — and the one that regressed when the
- * resolution distributed over it.
+ * resolution distributed over it. `expectTypeOf` inside the hook pins what the
+ * builder is handed, which merely compiling the surface does not: `String()`
+ * accepts anything the resolution could produce.
  */
-export const GeneratedPost = list<GeneratedTypeInfo>({
-  fields: {
-    title: text({
-      hooks: { resolveOutput: ({ value }) => ({ formatted: String(value) }) },
-    }),
-    publishedAt: timestamp(),
-    wordCount: virtual({ type: 'number', hooks: { resolveOutput: () => 1 } }),
-  },
-})
+describe('a field builder’s hooks through the config surface', () => {
+  it('hands the hook an open value, and takes back a shape no column carries', () => {
+    void list<GeneratedStoredTypeInfo>({
+      fields: {
+        title: text({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<unknown>()
+              return { formatted: String(value) }
+            },
+          },
+        }),
+        publishedAt: timestamp(),
+      },
+    })
+  })
 
-/** The same, over a record mixing in a field whose static type declares a face. */
-export const MixedPost = list<MixedTypeInfo>({
-  fields: {
-    title: text({
-      hooks: { resolveOutput: ({ value }) => ({ formatted: String(value) }) },
-    }),
-    publishedAt: timestamp({ hooks: { resolveOutput: () => new Date() } }),
-  },
+  it('does the same on a list carrying a computed field', () => {
+    void list<GeneratedTypeInfo>({
+      fields: {
+        title: text({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<unknown>()
+              return { formatted: String(value) }
+            },
+          },
+        }),
+        publishedAt: timestamp(),
+        wordCount: virtual({ type: 'number', hooks: { resolveOutput: () => 1 } }),
+      },
+    })
+  })
+
+  it('does the same over a record mixing in a field whose static type declares a face', () => {
+    void list<MixedTypeInfo>({
+      fields: {
+        title: text({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<unknown>()
+              return { formatted: String(value) }
+            },
+          },
+        }),
+        publishedAt: timestamp({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<unknown>()
+              return new Date()
+            },
+          },
+        }),
+      },
+    })
+  })
 })

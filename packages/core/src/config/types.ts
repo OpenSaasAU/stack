@@ -1471,6 +1471,8 @@ type IsSeveralKeys<TKey, TAll = TKey> = TKey extends unknown
  * it is mounted — so `FieldHooks<TTypeInfo>` instantiates this with every key
  * on the list. Resolving that union would type each field's hook by the whole
  * row: a `text()` hook would accept a `Date` and reject its own `string`.
+ * Narrowing it needs the field key threaded into `BaseFieldConfig`, tracked in
+ * issue #1306.
  *
  * @example
  * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string
@@ -2638,19 +2640,23 @@ export type DatabaseConfig = {
    *
    * A column default also makes the column optional on the generated create
    * input, so the compat default is carried only where the field's own create
-   * validator accepts the omission it fills.
+   * validator accepts both the omission it fills and `''` itself — the same
+   * verdict an explicit `defaultValue: ''` reaches through
+   * `applyCreateDefaults`.
    *
-   * **Known limit — the flag is inert for `validation: { isRequired: true }`,
-   * Keystone's commonest text column.** Keystone 6 renders that column as
-   * `NOT NULL DEFAULT ''`, but here its create validator refuses an omission,
-   * so carrying a default would type-check a `create` that then threw
-   * `ValidationError`. Full parity would need the flag to relax the create
-   * validator too, which `getZodSchema` has no config to read. Until then a
-   * migrating project sees `DROP DEFAULT` in `migrate diff` for those columns
-   * and must set `defaultValue: ''` on them by hand. A column made non-null
-   * through `db: { isNullable: false }` alone — with or without a `length.min`,
-   * which constrains a supplied value rather than an omitted one — still gets
-   * the default.
+   * **Known limit — the flag is inert for `validation: { isRequired: true }`
+   * and for `validation: { length: { min: N } }` with `N > 0`, and
+   * `isRequired` is Keystone's commonest text column.** Keystone 6 renders
+   * both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own
+   * validator refuses (and `isRequired` refuses the omission besides), so
+   * carrying the default would write a row the config forbids. Full parity
+   * would need the flag to relax the create validator too, which
+   * `getZodSchema` has no config to read. Until then a migrating project sees
+   * `DROP DEFAULT` in `migrate diff` for those columns and must set
+   * `defaultValue: ''` on them by hand — which is refused at runtime for the
+   * same reason, so the validation has to be relaxed alongside it. A column
+   * made non-null through `db: { isNullable: false }` alone still gets the
+   * default, as does one declaring `length: { min: 0 }` or a `length.max`.
    *
    * @default false
    *

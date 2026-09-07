@@ -11,8 +11,8 @@ import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
  * enough context to act on.
  */
 export interface FieldConfigValidationError {
-  /** The list the offending field belongs to (`undefined` when validating a bare field). */
-  listKey?: string
+  /** The list the offending field belongs to. */
+  listKey: string
   /** The field key (property name) within the list. */
   fieldKey: string
   /** The field's declared `type` discriminator (e.g. `'text'`, `'virtual'`). */
@@ -40,12 +40,11 @@ function buildMessage(
   fieldType: string,
   member: FieldConfigValidationError['missingMember'],
   fieldKey: string,
-  listKey?: string,
+  listKey: string,
 ): string {
-  const location = listKey ? `Field "${listKey}.${fieldKey}"` : `Field "${fieldKey}"`
   const spelling = member === 'outputType' ? member : `${member}()`
   return (
-    `${location} (type "${fieldType}") is not self-contained: it does not declare ` +
+    `Field "${listKey}.${fieldKey}" (type "${fieldType}") is not self-contained: it does not declare ` +
     `${spelling}. Field builders must provide this so the generator can produce the ` +
     `contract and types without inspecting field internals.`
   )
@@ -66,26 +65,26 @@ function buildMessage(
  *     so it must declare `outputType` too. The descriptor is read for this,
  *     not a proxy for it: a `columns` field that happens not to implement the
  *     optional `getColumnNames` is the same shape and carries the same
- *     obligation.
+ *     obligation, and a single-column field that happens to implement it
+ *     carries none.
  *   - every other (stored scalar) field must provide `getContractField` and
  *     `getZodSchema`; its TypeScript face comes from its contract column, and
  *     `outputType` is an override it may omit.
  *
+ * Reading the descriptor is what makes that rule decidable, so `listKey` and
+ * `config` — the two things `getContractField` takes — are required.
+ *
  * @param field - The field config produced by a field builder.
- * @param fieldKey - The field's key within its list (for messages).
- * @param listKey - The owning list's key (optional, for messages).
- * @param config - The config the descriptor is read with. Without it — and
- *   without a `listKey` to read it under — the descriptor cannot be evaluated
- *   and the optional `getColumnNames` stands in for its `kind`, so the
- *   `columns` requirement still applies to every field that declares one.
- *   `validateConfigFields`, which the generate path runs, always supplies both.
+ * @param fieldKey - The field's key within its list.
+ * @param listKey - The owning list's key.
+ * @param config - The config the descriptor is read with.
  * @returns Zero or more structured errors; empty means the field is compliant.
  */
 export function validateFieldConfig(
   field: FieldConfig,
   fieldKey: string,
-  listKey?: string,
-  config?: OpenSaasConfig,
+  listKey: string,
+  config: OpenSaasConfig,
 ): FieldConfigValidationError[] {
   const errors: FieldConfigValidationError[] = []
   const fieldType = describeFieldType(field)
@@ -128,25 +127,19 @@ export function validateFieldConfig(
  * Whether the field's contract descriptor covers several physical columns.
  *
  * `getContractField` is a field's own refusal seam — `embedding()` throws out
- * of it for an impossible `dimensions` or a mismatched `opclass`. That refusal
- * is designed to surface from `deriveContract`, which the CLI runs inside a
- * guard that prints the message and exits; this gate runs before that guard,
- * so a throw here would escape as a raw stack trace. Swallowing it leaves the
- * field un-gated for one run and lets derivation report it as it always did.
- *
- * Without a config to read the descriptor with, `getColumnNames` stands in for
- * its `kind`: the two travel together on every multi-column field in practice,
- * and checking the proxy is strictly better than checking nothing.
+ * of it for an impossible `dimensions` or a mismatched `opclass`. This gate is
+ * the first thing `opensaas generate` runs, ahead of the config-surface step
+ * whose `validateExtensionPacks` re-reads every descriptor and reports a throw
+ * as a `field-descriptor-error` refusal carrying the field's own message. So a
+ * throw is swallowed here: the field goes un-gated for one run, and the run
+ * fails at the step designed to name it.
  */
 function spansSeveralColumns(
   field: FieldConfig,
   fieldKey: string,
-  listKey: string | undefined,
-  config: OpenSaasConfig | undefined,
+  listKey: string,
+  config: OpenSaasConfig,
 ): boolean {
-  if (config === undefined || listKey === undefined) {
-    return hasFieldMethod(field, 'getColumnNames')
-  }
   try {
     return field.getContractField?.(fieldKey, listKey, config)?.kind === 'columns'
   } catch {
