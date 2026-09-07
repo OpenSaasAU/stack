@@ -23,6 +23,16 @@ type Row = Record<string, unknown>
  * both fail the contravariance check. Naming only `where`, `nearest` and
  * `first` accepts the generated list and the engine's own delegate alike, and
  * infers `TRow` from whichever it is given.
+ *
+ * What it does *not* carry is the engine's refusal of a list that has no
+ * vector column. Core types `nearest`'s field as a literal union of that
+ * list's embedding columns, so on such a list the union is `never` and calling
+ * `nearest` is a compile error. Method syntax makes the parameter comparison
+ * bivariant — the same bivariance that lets a generated list through — and
+ * bivariance admits `field: never`. So `semanticSearch` and `findSimilar`
+ * accept a list with no embedding column and fail at runtime rather than at
+ * the call site. Tracked as
+ * {@link https://github.com/OpenSaasAU/stack/issues/1303 | #1303}.
  */
 export interface SearchableList<TRow extends Row = Row> {
   where(predicate: Where): SearchableList<TRow>

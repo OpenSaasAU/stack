@@ -403,7 +403,7 @@ ollama pull nomic-embed-text
 3. Check logs for errors during document creation
 4. Manually trigger update:
    ```typescript
-   await context.db.document.update({
+   await context.db.Document.update({
      where: { id: 'doc-id' },
      data: { content: 'Updated content' },
    })

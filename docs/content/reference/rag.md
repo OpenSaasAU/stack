@@ -90,7 +90,7 @@ import { getContext } from '@/.opensaas/context'
 const context = await getContext()
 
 // Embedding is automatically generated from content
-await context.db.article.create({
+await context.db.Article.create({
   data: {
     title: 'Introduction to AI',
     content: 'Artificial intelligence is...',

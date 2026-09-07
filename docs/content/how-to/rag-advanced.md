@@ -470,7 +470,7 @@ const chunkEmbeddings = await Promise.all(
 )
 
 // Store chunks in database
-await context.db.documentChunk.createMany({
+await context.db.DocumentChunk.createMany({
   data: chunkEmbeddings.map((ce) => ({
     documentId: documentId,
     chunkIndex: ce.chunkIndex,
@@ -1009,7 +1009,7 @@ import { writeFile } from 'fs/promises'
 export async function backupEmbeddings() {
   const context = await getContext()
 
-  const articles = await context.db.article.findMany({
+  const articles = await context.db.Article.findMany({
     select: {
       id: true,
       title: true,

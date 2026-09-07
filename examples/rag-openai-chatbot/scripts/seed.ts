@@ -121,7 +121,7 @@ async function seed() {
 
   try {
     // Check if articles already exist
-    const existing = await context.db.knowledgeBase.count()
+    const existing = await context.db.KnowledgeBase.count()
 
     if (existing > 0) {
       console.log(`⚠️  Database already contains ${existing} article(s). Skipping seed.`)
@@ -134,7 +134,7 @@ async function seed() {
     let created = 0
     for (const article of sampleArticles) {
       try {
-        await context.db.knowledgeBase.create({
+        await context.db.KnowledgeBase.create({
           data: article,
         })
         created++

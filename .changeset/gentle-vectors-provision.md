@@ -28,6 +28,14 @@ const similar = await findSimilar({
 })
 ```
 
+The type that `list` accepts is exported as `SearchableList` from
+`@opensaas/stack-rag/runtime`: the `where` / `nearest` / `first` members these
+helpers actually call, so a generated `context.db.Article` and the engine's own
+delegate both satisfy it and the row type is inferred from whichever is passed.
+Note that it does not carry the engine's compile-time refusal of a list with no
+vector column — that gap is tracked as
+[#1303](https://github.com/OpenSaasAU/stack/issues/1303).
+
 The generated `semantic_search_<list>` MCP tool now resolves its embedding
 provider from the **searched field's** own `provider`, the way the generation
 hook does, instead of always using the plugin's default. `nearest()` validates

@@ -473,7 +473,8 @@ describe('ragPlugin', () => {
      * narrowing is the only check there is. Defaulting a wrongly-typed
      * argument answers a different question than the caller asked: `field: 42`
      * had reached the default column *past* the unknown-field refusal, and
-     * `minScore: "0.8"` had searched with no bound rather than the tight one.
+     * `minScore: "0.8"` had become a bound of `0` — on a cosine column a real
+     * predicate (cosine ≥ 0), the loosest one, not the tight one asked for.
      */
     it.each([
       ['field', { query: 'anything', field: 42 }, '"field" must be a string'],

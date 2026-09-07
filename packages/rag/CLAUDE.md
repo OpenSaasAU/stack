@@ -180,7 +180,7 @@ const vector = await provider.embed('Hello world')
 
 // Store manually
 const context = await getContext()
-await context.db.article.create({
+await context.db.Article.create({
   data: {
     title: 'Hello',
     contentEmbedding: {
@@ -306,7 +306,7 @@ contentEmbedding: embedding({
           const provider = getEmbeddingProvider(ragConfig)
           const vector = await provider.embed(sourceText)
 
-          await context.db.article.update({
+          await context.db.Article.update({
             where: { id: item.id },
             data: {
               contentEmbedding: {
@@ -462,7 +462,7 @@ const vectors = await provider.embedBatch(chunks)
 
 ```typescript
 // Combine traditional search with semantic search
-const keywordResults = await context.db.article.findMany({
+const keywordResults = await context.db.Article.findMany({
   where: {
     OR: [{ title: { contains: query } }, { content: { contains: query } }],
   },
