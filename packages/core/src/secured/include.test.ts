@@ -636,17 +636,21 @@ describe('key validation inside a refinement', () => {
   test(
     'a nested where naming a denied field is refused, and identically',
     async () => {
-      const denied = database
-        .context(ada)
-        .db.User.include('posts', (posts) => posts.where({ editorNotes: 'secret' }))
-        .all()
-      const undeclared = database
-        .context(ada)
-        .db.User.include('posts', (posts) => posts.where({ nope: 'x' }))
-        .all()
+      const refusal = (key: string): Promise<unknown> =>
+        database
+          .context(ada)
+          .db.User.include('posts', (posts) => posts.where({ [key]: 'x' }))
+          .all()
+          .catch((error: unknown) => error)
+      const denied = await refusal('editorNotes')
+      const undeclared = await refusal('nope')
+      const messageOf = (error: unknown): string =>
+        error instanceof Error ? error.message : String(error)
 
-      await expect(denied).rejects.toThrow(/not a queryable field/)
-      await expect(undeclared).rejects.toThrow(/not a queryable field/)
+      expect(messageOf(denied)).toMatch(/not a queryable field/)
+      // "Identically" is the guarantee, so the messages are compared and not
+      // only matched: two different ones both match the pattern above.
+      expect(messageOf(denied)).toBe(messageOf(undeclared).replaceAll('nope', 'editorNotes'))
     },
     BOOT,
   )

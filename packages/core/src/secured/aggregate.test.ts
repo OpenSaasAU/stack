@@ -127,6 +127,8 @@ async function seedUser(handle: string): Promise<Session> {
 /**
  * Two authors, five posts. Ada has three (two published, one draft) and Bob
  * two (one published, one draft), so no two sessions agree on any count below.
+ * Bob's `poem` is a kind ada never wrote, so a distinct over `kind` answers a
+ * different number inside her Access Filter than outside it.
  */
 async function seedBlog(): Promise<void> {
   ada = await seedUser('ada')
@@ -159,7 +161,7 @@ async function seedBlog(): Promise<void> {
     title: 'bob one',
     published: true,
     views: 5,
-    kind: 'essay',
+    kind: 'poem',
     author: bob.userId,
     reviewer: bob.userId,
   })
@@ -181,6 +183,11 @@ function count(result: Record<string, number>): number {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** The one refusal a key gets, whichever of its reasons applies (ADR-0031). */
+function unqueryable(key: string, listName = 'Post'): string {
+  return `Validation failed: Cannot query "${listName}" — "${key}" is not a queryable field of this list.`
 }
 
 function byHandle(rows: readonly Record<string, unknown>[]): Record<string, unknown> {
@@ -505,9 +512,18 @@ describe('combine', () => {
       const attempt = (key: string): Promise<unknown> =>
         db.User.include('posts', (posts) =>
           posts.combine({ hits: posts.where({ [key]: { equals: 'x' } }).count() }),
-        ).all()
-      await expect(attempt('editorNotes')).rejects.toBeInstanceOf(ValidationError)
-      await expect(attempt('nope')).rejects.toBeInstanceOf(ValidationError)
+        )
+          .all()
+          .catch((error: unknown) => error)
+      const denied = await attempt('editorNotes')
+      const undeclared = await attempt('nope')
+
+      expect(denied).toBeInstanceOf(ValidationError)
+      expect(undeclared).toBeInstanceOf(ValidationError)
+      // The class alone is not the guarantee: two refusals of one class that
+      // said different things would tell the caller which reason applied.
+      expect(messageOf(denied)).toBe(unqueryable('editorNotes'))
+      expect(messageOf(undeclared)).toBe(unqueryable('nope'))
     },
     BOOT,
   )
@@ -593,6 +609,10 @@ describe('what a count refuses', () => {
         total: rows.count(),
       }))
       const plain = await db.Post.aggregate((rows) => ({ total: rows.count() }))
+      // Pinned on both sides: an equality alone holds just as well when the
+      // projection and the bare read are wrong together.
+      expect(projected).toEqual({ total: 3 })
+      expect(plain).toEqual({ total: 3 })
       expect(projected).toEqual(plain)
     },
     BOOT,
@@ -604,15 +624,23 @@ describe('distinct, distinctOn and cursor', () => {
     'distinct collapses rows that agree on the named column, within the Access Filter',
     async () => {
       const db = database.context(ada).db
-      // Ada's three posts carry two kinds, and the five in the table carry the
-      // same two — so a distinct that ran unscoped would answer the same
-      // number. The scoped read below is what makes the pair meaningful.
+      // The same read outside the Access Filter, so the pair below cannot
+      // agree unless the filter reached the distinct.
+      const unscoped = database.context(ada).sudo().db
+      // Ada's three posts carry two kinds; the five in the table carry three.
       expect(await db.Post.distinct('kind').all()).toHaveLength(2)
+      expect(await unscoped.Post.distinct('kind').all()).toHaveLength(3)
+      // And the divergence survives a caller `where` composed beside it.
       expect(
-        await db.Post.where({ kind: { equals: 'note' } })
+        await db.Post.where({ published: { equals: true } })
           .distinct('kind')
           .all(),
-      ).toHaveLength(1)
+      ).toHaveLength(2)
+      expect(
+        await unscoped.Post.where({ published: { equals: true } })
+          .distinct('kind')
+          .all(),
+      ).toHaveLength(3)
     },
     BOOT,
   )
@@ -643,14 +671,52 @@ describe('distinct, distinctOn and cursor', () => {
   )
 
   test(
-    'distinct and a cursor name columns through the same read gate a where does',
+    'distinct names columns through the same read gate a where does',
     async () => {
       const db = database.context(ada).db
-      await expect(db.Post.distinct('editorNotes').all()).rejects.toBeInstanceOf(ValidationError)
-      await expect(db.Post.distinct('nope').all()).rejects.toBeInstanceOf(ValidationError)
-      await expect(
-        db.Post.orderBy({ views: 'asc' }).cursor({ editorNotes: 'secret' }).all(),
-      ).rejects.toBeInstanceOf(ValidationError)
+      const denied = await db.Post.distinct('editorNotes')
+        .all()
+        .catch((error: unknown) => error)
+      const undeclared = await db.Post.distinct('nope')
+        .all()
+        .catch((error: unknown) => error)
+
+      expect(denied).toBeInstanceOf(ValidationError)
+      expect(undeclared).toBeInstanceOf(ValidationError)
+      expect(messageOf(denied)).toBe(unqueryable('editorNotes'))
+      expect(messageOf(undeclared)).toBe(unqueryable('nope'))
+      expect(await db.Post.distinct('kind').all()).toHaveLength(2)
+    },
+    BOOT,
+  )
+
+  test(
+    'a cursor key is refused by the axis it names, indistinguishably for all three reasons',
+    async () => {
+      const db = database.context(ada).db
+      const sorted = db.Post.orderBy({ views: 'asc' })
+      // `editorNotes` is both unreadable and absent from the sort, so its bare
+      // refusal names neither gate. `title` is readable and declared and only
+      // absent from the sort; that the two answer the same message is what
+      // says the cursor's own axis check is the gate that fired.
+      for (const key of ['editorNotes', 'nope', 'title']) {
+        const refused = await sorted
+          .cursor({ [key]: 'x' })
+          .all()
+          .catch((error: unknown) => error)
+        expect(refused).toBeInstanceOf(ValidationError)
+        expect(messageOf(refused)).toBe(unqueryable(key))
+      }
+      // Sorting by the unreadable column so a cursor could name it is refused
+      // upstream by the read gate, and with the same message again.
+      const onDeniedAxis = await db.Post.orderBy({ editorNotes: 'asc' })
+        .cursor({ editorNotes: 'secret' })
+        .all()
+        .catch((error: unknown) => error)
+      expect(onDeniedAxis).toBeInstanceOf(ValidationError)
+      expect(messageOf(onDeniedAxis)).toBe(unqueryable('editorNotes'))
+      // Falsifiable: the same shape on the sorted axis is answered.
+      expect(await sorted.cursor({ views: 2 }).all()).toHaveLength(2)
     },
     BOOT,
   )
