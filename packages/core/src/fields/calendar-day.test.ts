@@ -200,24 +200,20 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
   })
 
   describe('end-to-end via context.db.*.create/update (#621 repro)', () => {
-    // Prisma 7's client validator rejects a bare YYYY-MM-DD string for a
-    // `@db.Date` column. Assert the value actually forwarded to the Prisma
-    // client is a Date, not the string the caller passed in.
+    // Prisma's column codec rejects a bare YYYY-MM-DD string for a date
+    // column. Assert the value actually forwarded to the ORM is a Date, not
+    // the string the caller passed in.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock Prisma client
     let mockPrisma: any
 
     function buildConfig(): OpenSaasConfig {
-      mockPrisma = {
-        Event: {
-          findFirst: vi.fn(),
-          findUnique: vi.fn(),
-          findMany: vi.fn(),
-          create: vi.fn(),
-          update: vi.fn(),
-          delete: vi.fn(),
-          count: vi.fn(),
-        },
+      const event: Record<string, unknown> = {
+        where: vi.fn(() => event),
+        first: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
       }
+      mockPrisma = { Event: event }
       return {
         db: { provider: 'postgresql' },
         lists: {
@@ -249,15 +245,15 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       await context.db.Event.create({ data: { startsOn: '2025-01-15' } })
 
       expect(mockPrisma.Event.create).toHaveBeenCalledTimes(1)
-      const callArgs = mockPrisma.Event.create.mock.calls[0][0]
-      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
-      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
+      const written = mockPrisma.Event.create.mock.calls[0][0]
+      expect(written.startsOn).toBeInstanceOf(Date)
+      expect((written.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
     })
 
     it('update: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
       const config = buildConfig()
       const existing = { id: '1', startsOn: new Date('2025-01-15T00:00:00.000Z') }
-      mockPrisma.Event.findUnique.mockResolvedValue(existing)
+      mockPrisma.Event.first.mockResolvedValue(existing)
       mockPrisma.Event.update.mockResolvedValue({
         ...existing,
         startsOn: new Date('2025-02-20T00:00:00.000Z'),
@@ -267,9 +263,9 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       await context.db.Event.update({ where: { id: '1' }, data: { startsOn: '2025-02-20' } })
 
       expect(mockPrisma.Event.update).toHaveBeenCalledTimes(1)
-      const callArgs = mockPrisma.Event.update.mock.calls[0][0]
-      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
-      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
+      const written = mockPrisma.Event.update.mock.calls[0][0]
+      expect(written.startsOn).toBeInstanceOf(Date)
+      expect((written.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
     })
 
     it('the read result is still normalised back to a YYYY-MM-DD string', async () => {

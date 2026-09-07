@@ -618,24 +618,28 @@ const chunkEmbeddings = await Promise.all(
   }),
 )
 
-// Store chunks in database
-await context.db.documentChunk.createMany({
-  data: chunkEmbeddings.map((ce) => ({
-    documentId: documentId,
-    chunkIndex: ce.chunkIndex,
-    content: ce.chunkText,
-    embedding: {
-      vector: ce.embedding,
-      metadata: {
-        model: provider.model,
-        provider: provider.type,
-        dimensions: provider.dimensions,
-        generatedAt: new Date().toISOString(),
+// Store chunks in database, all in one transaction
+await context.transaction(async (tx) => {
+  for (const ce of chunkEmbeddings) {
+    await tx.db.DocumentChunk.create({
+      data: {
+        documentId: documentId,
+        chunkIndex: ce.chunkIndex,
+        content: ce.chunkText,
+        embedding: {
+          vector: ce.embedding,
+          metadata: {
+            model: provider.model,
+            provider: provider.type,
+            dimensions: provider.dimensions,
+            generatedAt: new Date().toISOString(),
+          },
+        },
+        startOffset: ce.startOffset,
+        endOffset: ce.endOffset,
       },
-    },
-    startOffset: ce.startOffset,
-    endOffset: ce.endOffset,
-  })),
+    })
+  }
 })
 ```
 

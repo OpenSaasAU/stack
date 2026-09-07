@@ -10,6 +10,7 @@ import { InvalidCreateAccessResultError } from '../src/access/errors.js'
 import { text } from '../src/fields/index.js'
 import type { OpenSaasConfig, ListConfig } from '../src/config/types.js'
 import type { AccessContext, OrmClient } from '../src/access/types.js'
+import { rc8Collection } from './rc8-collection.js'
 
 /**
  * Unit tests for the Write Pipeline — the single module that owns the canonical
@@ -30,8 +31,12 @@ import type { AccessContext, OrmClient } from '../src/access/types.js'
 let events: string[]
 
 /**
- * Build a fake Prisma model whose methods log their calls. The pipeline
- * resolves the model dynamically by list key ('Post').
+ * Build a fake rc.8 collection whose members log their calls. The pipeline
+ * resolves the collection dynamically by list key ('Post').
+ *
+ * `existing` answers the target read and `filterMatch` the second read a
+ * filter result triggers — the two `first()` calls the update/delete strategy
+ * makes, in that order.
  */
 function makeFakePrisma(overrides?: {
   existing?: Record<string, unknown> | null
@@ -39,38 +44,16 @@ function makeFakePrisma(overrides?: {
   created?: Record<string, unknown>
   updated?: Record<string, unknown>
   deleted?: Record<string, unknown>
-  count?: number
+  rows?: number
 }) {
-  const created = overrides?.created ?? { id: '1', title: 'created' }
-  const updated = overrides?.updated ?? { id: '1', title: 'updated' }
-  const deleted = overrides?.deleted ?? { id: '1', title: 'deleted' }
-
-  const post = {
-    findUnique: vi.fn(async () => {
-      events.push('db:findUnique')
-      return overrides?.existing ?? null
-    }),
-    findFirst: vi.fn(async () => {
-      events.push('db:findFirst')
-      return overrides?.filterMatch ?? null
-    }),
-    count: vi.fn(async () => {
-      events.push('db:count')
-      return overrides?.count ?? 0
-    }),
-    create: vi.fn(async () => {
-      events.push('db:create')
-      return created
-    }),
-    update: vi.fn(async () => {
-      events.push('db:update')
-      return updated
-    }),
-    delete: vi.fn(async () => {
-      events.push('db:delete')
-      return deleted
-    }),
-  }
+  const post = rc8Collection({
+    first: [overrides?.existing ?? null, overrides?.filterMatch ?? null],
+    create: overrides?.created ?? { id: '1', title: 'created' },
+    update: overrides?.updated ?? { id: '1', title: 'updated' },
+    delete: overrides?.deleted ?? { id: '1', title: 'deleted' },
+    rows: overrides?.rows ?? 0,
+    onCall: (member) => events.push(`db:${member}`),
+  })
 
   return { ormHandle: { Post: post } as unknown as OrmClient, post }
 }
@@ -109,6 +92,10 @@ function makeListConfig(opts?: {
     fields: {
       // Use the real text() builder so built-in field rules (isRequired) and
       // getZodSchema actually exist, while spying on each hook phase.
+      // The Access Filter below scopes by this column, and it is lowered
+      // through the Where vocabulary like any other predicate — so the list
+      // has to declare it.
+      authorId: text(),
       title: text({
         validation: { isRequired: true },
         hooks: {
@@ -215,12 +202,14 @@ describe('Write Pipeline — phase order', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: '1' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toEqual({ id: '1', title: 'new' })
     expect(events).toEqual([
-      'db:findUnique',
+      'db:first',
       'list:resolveInput',
       'field:resolveInput',
       'list:validate',
@@ -247,13 +236,15 @@ describe('Write Pipeline — phase order', () => {
       context,
       config: makeConfig(listConfig),
       inputData: undefined,
-      strategy: deleteWriteStrategy('Post', listConfig, context, { id: '1' }),
+      strategy: deleteWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toEqual(existing)
     // Delete runs only validate/field-validate — NO resolveInput.
     expect(events).toEqual([
-      'db:findUnique',
+      'db:first',
       'list:validate',
       'field:validate',
       'field:beforeOperation',
@@ -330,12 +321,14 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: 'missing' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: 'missing',
+      }),
     })
 
     expect(result).toBeNull()
     expect(post.update).not.toHaveBeenCalled()
-    expect(events).toEqual(['db:findUnique'])
+    expect(events).toEqual(['db:first'])
   })
 
   it('update: filter non-match short-circuits to null before DB and beforeOperation', async () => {
@@ -354,13 +347,15 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: '1' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toBeNull()
     expect(post.update).not.toHaveBeenCalled()
     // Resolution ran findUnique then findFirst (the filter re-check), then bailed.
-    expect(events).toEqual(['db:findUnique', 'db:findFirst'])
+    expect(events).toEqual(['db:first', 'db:first'])
   })
 
   it('update: a filter that matches the target proceeds through the full pipeline', async () => {
@@ -382,12 +377,18 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: '1' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toEqual({ id: '1', title: 'new' })
-    expect(post.findFirst).toHaveBeenCalledTimes(1)
+    // The target read, then the filter re-check that gates the hooks.
+    expect(post.first).toHaveBeenCalledTimes(2)
     expect(post.update).toHaveBeenCalledTimes(1)
+    // …and the update itself runs under both predicates, not the identity
+    // alone: two `where` calls per read plus two for the write.
+    expect(post.where).toHaveBeenCalledTimes(5)
   })
 
   it('delete: access denied short-circuits to null before DB', async () => {
@@ -403,7 +404,9 @@ describe('Write Pipeline — short-circuit to null (silent failure)', () => {
       context,
       config: makeConfig(listConfig),
       inputData: undefined,
-      strategy: deleteWriteStrategy('Post', listConfig, context, { id: '1' }),
+      strategy: deleteWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toBeNull()
@@ -478,12 +481,15 @@ describe('Write Pipeline — sudo mode', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: '1' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     expect(result).toEqual({ id: '1', title: 'new' })
     expect(accessSpy).not.toHaveBeenCalled()
-    expect(post.findFirst).not.toHaveBeenCalled() // no filter re-check under sudo
+    // The target read happens; the filter re-check does not.
+    expect(post.first).toHaveBeenCalledTimes(1)
     expect(post.update).toHaveBeenCalledTimes(1)
   })
 
@@ -491,17 +497,11 @@ describe('Write Pipeline — sudo mode', () => {
     // A field whose create access is false would normally be stripped by
     // filterWritableFields; under sudo it must survive into the DB payload.
     const captured: Record<string, unknown>[] = []
-    const post = {
-      findUnique: vi.fn(),
-      findFirst: vi.fn(),
-      count: vi.fn(async () => 0),
-      create: vi.fn(async (args: { data: Record<string, unknown> }) => {
-        captured.push(args.data)
-        return { id: '1', ...args.data }
-      }),
-      update: vi.fn(),
-      delete: vi.fn(),
-    }
+    const post = rc8Collection()
+    post.create.mockImplementation(async (data: Record<string, unknown>) => {
+      captured.push(data)
+      return { id: '1', ...data }
+    })
     const ormHandle = { Post: post } as unknown as OrmClient
 
     const listConfig = {
@@ -579,7 +579,9 @@ describe('Write Pipeline — afterOperation originalItem', () => {
       context,
       config: makeConfig(listConfig),
       inputData: { title: 'new' },
-      strategy: updateWriteStrategy(listConfig, context, { id: '1' }),
+      strategy: updateWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     const arg = afterOp.mock.calls[0][0]
@@ -607,7 +609,9 @@ describe('Write Pipeline — afterOperation originalItem', () => {
       context,
       config: makeConfig(listConfig),
       inputData: undefined,
-      strategy: deleteWriteStrategy('Post', listConfig, context, { id: '1' }),
+      strategy: deleteWriteStrategy('Post', listConfig, makeConfig(listConfig), context, {
+        id: '1',
+      }),
     })
 
     const arg = afterOp.mock.calls[0][0]

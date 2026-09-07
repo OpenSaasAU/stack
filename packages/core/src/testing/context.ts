@@ -355,11 +355,8 @@ async function startInstance(
  * {@link TestDatabase.client} is refused unless it enters an origin.
  *
  * Known limits:
- * - The secured surface's terminals arrive in a later spec, so a context built
- *   here is the real engine over a real database but `context.db` cannot yet
- *   execute. Rows go in and come back through `context.unsafe` — which marks
- *   itself — or through {@link TestDatabase.client} under
- *   `withOrigin('unsafe', …)`, which does not, until then.
+ * - `context.db` reads and writes for real; `connect` and the row lock arrive
+ *   in later specs, so a payload here carries this list's own scalars.
  * - PGlite serialises every transaction, so nothing contention-shaped is
  *   observable on the default harness. Those guarantees are escape-only.
  * - Only `pgvector` is mapped to a PGlite extension. A pack outside that map
@@ -381,11 +378,10 @@ async function startInstance(
  * - `truncate()` empties the tables the contract declares. It does not touch
  *   Prisma's own marker tables, which the schema apply owns. A contract
  *   declaring no model has nothing to empty and `truncate()` is a no-op.
- * - Until the secured terminals land, a test seeds and reads through
- *   {@link TestDatabase.client} — the raw Prisma collections, which carry
- *   none of the engine's access control or hooks. That is the construction
- *   option, not a seam on the secured wrapper, and it is the reason the
- *   round-trip below proves the database rather than the engine.
+ * - {@link TestDatabase.client} is the raw Prisma collections, which carry none
+ *   of the engine's access control or hooks. It is the construction option,
+ *   not a seam on the secured wrapper: seed through it when a fixture must
+ *   bypass the engine, and through `context.db` when the engine is the subject.
  *
  * @example
  * ```typescript

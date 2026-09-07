@@ -65,20 +65,25 @@ function createDouble(pool: 'starved' | 'spare'): Double {
   let open = false
   let id = 0
 
-  const collection = (sink: Row[], outer: boolean): Row => ({
-    create: async (args: Row): Promise<Row> => {
-      if (outer && open && pool === 'starved') throw new PoolExhausted()
-      const data = args.data
-      const row = { id: `id-${++id}`, ...(typeof data === 'object' && data !== null ? data : {}) }
-      sink.push(row)
-      return row
-    },
-    findUnique: async ({ where }: { where: Row }): Promise<Row | null> =>
-      [...store, ...sink].find((row) => row.id === where.id) ?? null,
-    findFirst: async (): Promise<Row | null> => [...store, ...sink][0] ?? null,
-    findMany: async (): Promise<Row[]> => [...store, ...sink],
-    count: async (): Promise<number> => [...store, ...sink].length,
-  })
+  const collection = (sink: Row[], outer: boolean): Row => {
+    const self: Row = {
+      where: () => self,
+      first: async (): Promise<Row | null> => [...store, ...sink][0] ?? null,
+      aggregate: async (): Promise<Row> => ({ rows: [...store, ...sink].length }),
+      create: async (data: Row): Promise<Row> => {
+        if (outer && open && pool === 'starved') throw new PoolExhausted()
+        const row = { id: `id-${++id}`, ...data }
+        sink.push(row)
+        return row
+      },
+      findUnique: async ({ where }: { where: Row }): Promise<Row | null> =>
+        [...store, ...sink].find((row) => row.id === where.id) ?? null,
+      findFirst: async (): Promise<Row | null> => [...store, ...sink][0] ?? null,
+      findMany: async (): Promise<Row[]> => [...store, ...sink],
+      count: async (): Promise<number> => [...store, ...sink].length,
+    }
+    return self
+  }
 
   const outerCollection = collection(store, true)
   const txCollection = collection(staged, false)

@@ -1,6 +1,5 @@
-import type { OpenSaasConfig, ListConfig, FieldConfig } from '../config/types.js'
+import type { ListConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
-import { getRelatedListConfig } from '../access/index.js'
 import {
   executeBeforeTransaction,
   executeAfterTransaction,
@@ -21,154 +20,22 @@ import type {
  * write's `afterTransaction` defers to the transaction owner.
  */
 
-/**
- * One list involved in a write, enumerated purely from the input tree (no DB
- * reads). `item`/`originalItem` are populated only for the top-level record
- * (`isTopLevel`) — a nested list's persisted row isn't reliably recoverable
- * outside the transaction, so handing it the top-level row instead would be
- * silently wrong.
- */
+/** One list involved in a write, and the row the bracket reports on. */
 export interface InvolvedList {
   listKey: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   operation: WriteOperation
-  isTopLevel: boolean
   /** `undefined` for delete, which has no input payload. */
   inputData: Record<string, unknown> | undefined
   originalItem: Record<string, unknown> | undefined
 }
 
-const NESTED_OP_OPERATIONS: ReadonlyArray<{ kind: string; operation: WriteOperation }> = [
-  { kind: 'create', operation: 'create' },
-  { kind: 'update', operation: 'update' },
-  { kind: 'delete', operation: 'delete' },
-  // connectOrCreate's create branch may create; treat as a possible create involvement.
-  { kind: 'connectOrCreate', operation: 'create' },
-]
-
-const DISTINCT_OPERATION_COUNT = new Set(NESTED_OP_OPERATIONS.map((o) => o.operation)).size
-
-function isRelationshipField(fieldConfig: FieldConfig | undefined): boolean {
-  return fieldConfig?.type === 'relationship'
-}
-
 /**
- * Distinct (listKey, operation) pairs reachable from `startListName` via the
- * CONFIG's relationship graph (not the payload) — the saturation bound
- * `walkNested` stops at once it has recorded this many. Bounding by reachable
- * pairs rather than a depth cap (#835) avoids losing hooks for payloads
- * nested deeper than any fixed cap, while still terminating promptly on
- * payloads that repeat the same few lists.
- */
-function countReachableInvolvementPairs(
-  startListName: string,
-  startListConfig: ListConfig<any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  config: OpenSaasConfig,
-): number {
-  const visited = new Set<string>([startListName])
-  const queue: Array<ListConfig<any>> = [startListConfig] // eslint-disable-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    for (const fieldConfig of Object.values(current.fields)) {
-      if (!isRelationshipField(fieldConfig)) continue
-      const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
-      const related = getRelatedListConfig(relationshipField.ref, config)
-      if (!related || visited.has(related.listName)) continue
-      visited.add(related.listName)
-      queue.push(related.listConfig)
-    }
-  }
-
-  return visited.size * DISTINCT_OPERATION_COUNT
-}
-
-function asRecordArray(value: unknown): Array<Record<string, unknown>> {
-  if (value == null) return []
-  if (Array.isArray(value)) return value.filter((v) => v && typeof v === 'object')
-  if (typeof value === 'object') return [value as Record<string, unknown>]
-  return []
-}
-
-/** Extract a nested-op entry's create/update payload so its `beforeTransaction` receives meaningful `inputData`. */
-function nestedInputData(
-  kind: string,
-  entry: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  if (kind === 'update') {
-    const data = entry.data
-    return data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined
-  }
-  if (kind === 'connectOrCreate') {
-    const create = entry.create
-    return create && typeof create === 'object' ? (create as Record<string, unknown>) : undefined
-  }
-  if (kind === 'delete') return undefined
-  // create
-  return entry
-}
-
-/**
- * Recursively walk a write payload's relationship fields, appending one
- * {@link InvolvedList} per nested create/update/delete involvement. De-dups
- * by (listKey, operation): these hooks are a per-LIST compensation bracket,
- * not per-record, so a list with many nested records of the same operation
- * fires its bracket once.
- */
-function walkNested(
-  data: Record<string, unknown> | undefined,
-  fieldConfigs: Record<string, FieldConfig>,
-  config: OpenSaasConfig,
-  out: InvolvedList[],
-  seen: Set<string>,
-  maxPairs: number,
-): void {
-  // Saturated: no further pair can be new (see countReachableInvolvementPairs).
-  if (!data || seen.size >= maxPairs) return
-
-  for (const [fieldName, value] of Object.entries(data)) {
-    const fieldConfig = fieldConfigs[fieldName]
-    if (!isRelationshipField(fieldConfig) || value == null || typeof value !== 'object') continue
-
-    const relationshipField = fieldConfig as { type: 'relationship'; ref: string }
-    const related = getRelatedListConfig(relationshipField.ref, config)
-    if (!related) continue
-    const { listName: relatedListName, listConfig: relatedListConfig } = related
-
-    const valueRecord = value as Record<string, unknown>
-    for (const { kind, operation } of NESTED_OP_OPERATIONS) {
-      const opValue = valueRecord[kind]
-      if (opValue === undefined) continue
-
-      const entries = asRecordArray(opValue)
-      const dedupeKey = `${relatedListName}:${operation}`
-      if (!seen.has(dedupeKey)) {
-        seen.add(dedupeKey)
-        out.push({
-          listKey: relatedListName,
-          listConfig: relatedListConfig,
-          operation,
-          isTopLevel: false,
-          inputData: entries.length > 0 ? nestedInputData(kind, entries[0]) : undefined,
-          originalItem: undefined,
-        })
-      }
-
-      if (seen.size >= maxPairs) return
-
-      for (const entry of entries) {
-        const childData = nestedInputData(kind, entry)
-        walkNested(childData, relatedListConfig.fields, config, out, seen, maxPairs)
-      }
-    }
-  }
-}
-
-/**
- * Enumerate the lists involved in a write — the top-level list plus every
- * nested create/update/delete target — without DB reads. The top-level list
- * is always first.
+ * Enumerate the lists involved in a write. A payload carries this list's own
+ * scalars and nothing that writes another list, so the answer is always the
+ * one list (ADR-0050); the shape stays a list because the bracket, the
+ * deferral queue and `runAfterTransactionForList` are all written over a set.
  */
 export function enumerateInvolvedLists(args: {
   listName: string
@@ -176,28 +43,19 @@ export function enumerateInvolvedLists(args: {
   listConfig: ListConfig<any>
   operation: WriteOperation
   inputData: Record<string, unknown> | undefined
-  /** Top-level existing row (update/delete), resolved before the transaction by the caller. */
-  topLevelOriginalItem: Record<string, unknown> | undefined
-  config: OpenSaasConfig
+  /** The existing row for update/delete, resolved before the transaction by the caller. */
+  originalItem: Record<string, unknown> | undefined
 }): InvolvedList[] {
-  const { listName, listConfig, operation, inputData, topLevelOriginalItem, config } = args
-
-  const out: InvolvedList[] = [
+  const { listName, listConfig, operation, inputData, originalItem } = args
+  return [
     {
       listKey: listName,
       listConfig,
       operation,
-      isTopLevel: true,
       inputData,
-      originalItem: topLevelOriginalItem,
+      originalItem,
     },
   ]
-  const seen = new Set<string>([`${listName}:${operation}`])
-  const maxPairs = countReachableInvolvementPairs(listName, listConfig, config)
-
-  walkNested(inputData, listConfig.fields, config, out, seen, maxPairs)
-
-  return out
 }
 
 /** Runs one involved list's `beforeTransaction` hooks. A throw propagates to the caller (which aborts the write). */
@@ -254,16 +112,11 @@ export async function runAfterTransactionForList(
   context: AccessContext,
   errors: unknown[],
 ): Promise<void> {
-  const { listKey, listConfig, operation, isTopLevel, inputData, originalItem } = involved
+  const { listKey, listConfig, operation, inputData, originalItem } = involved
 
-  // The persisted row (`outcome.item`) is the TOP-LEVEL row only. Handing it to
-  // a nested list's hook would silently mis-type as that list's own item — for
-  // nested lists `item`/`originalItem` stay `undefined`; per-record nested
-  // compensation belongs in the in-transaction `afterOperation`, which gets the
-  // correct row.
   try {
     if (outcome.status === 'committed') {
-      const committedItem = isTopLevel ? outcome.item : undefined
+      const committedItem = outcome.item
       if (operation === 'create') {
         await executeAfterTransaction(listConfig.hooks, {
           listKey,
@@ -279,7 +132,7 @@ export async function runAfterTransactionForList(
           operation: 'update',
           status: 'committed',
           inputData: inputData ?? {},
-          originalItem: isTopLevel ? originalItem : undefined,
+          originalItem,
           item: committedItem,
           context,
         })
@@ -288,7 +141,7 @@ export async function runAfterTransactionForList(
           listKey,
           operation: 'delete',
           status: 'committed',
-          originalItem: isTopLevel ? originalItem : undefined,
+          originalItem,
           context,
         })
       }
@@ -336,7 +189,6 @@ export async function runAfterTransactionForList(
       operation,
       context,
       listKey,
-      isTopLevel,
       originalItem,
     )
   } catch (err) {

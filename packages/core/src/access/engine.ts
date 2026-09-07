@@ -66,10 +66,9 @@ export interface SyntheticReverseRelation {
  * schema with) rather than re-deriving the `from_<List>_<field>` format by
  * string parsing, so the two cannot drift (#978).
  *
- * Returns the declared relationship field that owns the relation — the write
- * pipeline treats a resolved synthetic key exactly like a nested write through
- * that field, so it runs the same hooks/access/recovery machinery a declared
- * relationship field gets. Returns `null` when `fieldName` isn't one of these
+ * Returns the declared relationship field that owns the relation, so the write
+ * pipeline treats a resolved synthetic key exactly like that declared field.
+ * Returns `null` when `fieldName` isn't one of these
  * on `parentListName` (a genuinely unknown key, or a bidirectional relation's
  * ref, which never synthesizes a back-relation).
  */
@@ -247,7 +246,7 @@ function findUndefinedCondition(value: unknown, trail: readonly string[]): strin
  * reads `undefined` as "no constraint", so passing it through widens the read
  * to every row. This is the same total-lowering rule the secured builder's
  * Where vocabulary applies, so the guarantee holds on the legacy
- * `findMany`/`count`/`updateMany`/`delete` paths too. The caller's own
+ * `findMany`/`count`/`delete` paths too. The caller's own
  * `userFilter` is left alone — it can only ever be narrowed by this clause,
  * and `undefined` there is the caller's own optional key, not a scoping rule
  * that failed to resolve.

@@ -372,12 +372,9 @@ export type TransactionOutcome =
  *
  * Runs each field's `afterTransaction` (side effects only) with the settled
  * transaction outcome. On commit the field receives the persisted `item`/
- * `originalItem` — but ONLY for the top-level list (`isTopLevel`); for nested
- * lists they are `undefined`, since `outcome.item` is the top-level persisted
- * row and handing it to a nested field's hook would be unsound. On rollback the
- * field receives the `error` and NO `item`. Unlike the field `afterOperation`
- * gate, EVERY field with the hook runs (compensation must not depend on the
- * field appearing in the payload).
+ * `originalItem`; on rollback the `error` and NO `item`. Unlike the field
+ * `afterOperation` gate, EVERY field with the hook runs (compensation must not
+ * depend on the field appearing in the payload).
  */
 export async function executeFieldAfterTransactionHooks(
   outcome: TransactionOutcome,
@@ -386,11 +383,10 @@ export async function executeFieldAfterTransactionHooks(
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
-  isTopLevel: boolean,
   originalItem?: Record<string, unknown>,
 ): Promise<void> {
-  const committedItem = outcome.status === 'committed' && isTopLevel ? outcome.item : undefined
-  const committedOriginalItem = isTopLevel ? originalItem : undefined
+  const committedItem = outcome.status === 'committed' ? outcome.item : undefined
+  const committedOriginalItem = originalItem
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.afterTransaction) continue

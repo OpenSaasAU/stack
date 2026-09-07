@@ -1092,16 +1092,6 @@ export function populateDbDelegate(
       update: updateOp,
       delete: createDelete(listName, listConfig, ormHandle, context, config),
       count: createCount(listName, listConfig, ormHandle, context, config),
-      createMany: createCreateMany(listName, listConfig, ormHandle, context, config, createOp),
-      updateMany: createUpdateMany(
-        listName,
-        listConfig,
-        ormHandle,
-        context,
-        config,
-        findManyOp,
-        updateOp,
-      ),
     }
 
     if (isSingletonList(listConfig)) {
@@ -1515,30 +1505,6 @@ function createCreate(
   }
 }
 
-// Runs create in a loop (not Prisma's native createMany) so every item still
-// gets its own hooks and access control.
-function createCreateMany(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
-  context: AccessContext,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createFn: any,
-) {
-  return async (args: { data: Record<string, unknown>[] }) => {
-    const results = []
-
-    for (const item of args.data) {
-      const result = await createFn({ data: item })
-      results.push(result)
-    }
-
-    return results
-  }
-}
-
 function createUpdate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1557,35 +1523,8 @@ function createUpdate(
       context,
       config,
       inputData: args.data,
-      strategy: updateWriteStrategy(listConfig, context, args.where),
+      strategy: updateWriteStrategy(listName, listConfig, config, context, args.where),
     })
-  }
-}
-
-// Finds matching records, then updates each individually (not Prisma's native
-// updateMany) so every item still gets its own hooks and access control.
-function createUpdateMany(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
-  context: AccessContext,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  findManyFn: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updateFn: any,
-) {
-  return async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
-    const items = await findManyFn({ where: args.where })
-
-    const results = []
-    for (const item of items) {
-      const result = await updateFn({ where: { id: item.id }, data: args.data })
-      results.push(result)
-    }
-
-    return results
   }
 }
 
@@ -1607,7 +1546,7 @@ function createDelete(
       context,
       config,
       inputData: undefined,
-      strategy: deleteWriteStrategy(listName, listConfig, context, args.where),
+      strategy: deleteWriteStrategy(listName, listConfig, config, context, args.where),
     })
   }
 }

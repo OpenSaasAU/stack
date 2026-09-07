@@ -25,8 +25,8 @@ export default defineConfig({
       ],
       // Per-glob, per-file coverage gates on the security-critical core paths:
       // the access-control engine (`src/access`), the read/write context
-      // pipeline (`src/context` — Write Pipeline, Hook Pipeline, nested-op
-      // registry), and the config validator (`src/validation`). `perFile: true`
+      // pipeline (`src/context` — Write Pipeline, Hook Pipeline, the
+      // transaction bracket), and the config validator (`src/validation`). `perFile: true`
       // applies each threshold to every covered file in the glob, so the
       // numbers sit a couple of points below the *current lowest-covered file*
       // in each group — a real regression fails `test:coverage` (and the PR),
@@ -42,8 +42,8 @@ export default defineConfig({
           functions: 62,
           lines: 65,
         },
-        // Lowest current file: nested-operations.ts (stmts/lines 89.47,
-        // branch 69.23, funcs 100).
+        // Lowest current file: transaction-boundary.ts (stmts 97.5, branch
+        // 82, funcs 100, lines 97.33).
         'src/context/**': {
           statements: 85,
           branches: 65,

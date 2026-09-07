@@ -33,6 +33,14 @@ describe('Password Field Type Safety', () => {
         email: 'test@example.com',
         password: '$2a$10$hashedpassword',
       }),
+      // The write path reads its target through the collection's own `first`,
+      // and composes the predicate through `where`.
+      where: () => mockPrismaClient.User,
+      first: async () => ({
+        id: '1',
+        email: 'test@example.com',
+        password: '$2a$10$hashedpassword',
+      }),
       delete: async () => ({
         id: '1',
         email: 'test@example.com',

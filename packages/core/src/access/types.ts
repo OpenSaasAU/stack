@@ -136,8 +136,8 @@ export interface OrmModelDelegate {
 /**
  * One list's access-controlled delegate. Every operation runs the list's
  * access rules and hooks, and denial is silent rather than thrown: a
- * single-record terminal returns `null`, a read of many returns `[]`, and
- * `createMany`/`updateMany` return `null` per denied item (Silent failure).
+ * single-record terminal returns `null` and a read of many returns `[]`
+ * (Silent failure).
  *
  * Rows are untyped here on purpose: the per-list shapes live in the generated
  * bundle, which instantiates `SecuredList` from the emitted contract
@@ -151,8 +151,6 @@ export interface AccessControlledDelegate extends SecuredQuery {
   update: (args: OrmOperationArgs) => Promise<OrmRow | null>
   delete: (args: OrmOperationArgs) => Promise<OrmRow | null>
   count: (args?: OrmOperationArgs) => Promise<number>
-  createMany: (args: OrmOperationArgs) => Promise<(OrmRow | null)[]>
-  updateMany: (args: OrmOperationArgs) => Promise<(OrmRow | null)[]>
   /** Present only on a list declared `isSingleton` (ADR-0039). */
   get?: (args?: OrmOperationArgs) => Promise<OrmRow | null>
 }

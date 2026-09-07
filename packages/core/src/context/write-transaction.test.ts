@@ -3,22 +3,22 @@ import pg from 'pg'
 import type { AccessControlledDB, Session } from '../access/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
-import { withOrigin } from '../origin.js'
-import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
-import type { UnsafeCapableClient, UnsafeTransactionScope } from '../unsafe.js'
-import { getContext, requireOrmHandle } from './index.js'
+import { getContext } from './index.js'
 
 /**
  * #1205 / ADR-0010: every write through `context.db` opens a transaction, so a
- * write that fails partway leaves nothing behind. The assertions here read the
- * tables through the driver — a row that survived a rollback is the failure,
- * whatever the engine returned.
+ * write that fails partway leaves nothing behind. #1152: the write path drives
+ * the rc.8 collection itself, so these contexts sit directly on the harness's
+ * client — the Prisma-7-shaped delegate that used to stand between them is
+ * gone.
+ *
+ * The assertions read the tables through the driver — a row that survived a
+ * rollback is the failure, whatever the engine returned.
  */
 
 const BOOT = 120_000
-
-const LISTS = ['Job', 'Audit'] as const
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -32,76 +32,28 @@ function schemaConfig(): OpenSaasConfig {
 
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function collectionOf(orm: unknown, model: string): Record<string, unknown> {
-  const namespace: unknown = isRecord(orm) ? Reflect.get(orm, 'public') : undefined
-  const found: unknown = isRecord(namespace) ? Reflect.get(namespace, model) : undefined
-  if (!isRecord(found)) throw new Error(`the client exposes no collection "${model}"`)
-  return found
+function openConfig(): OpenSaasConfig {
+  return {
+    ...schemaConfig(),
+    lists: {
+      Job: { fields: { name: text() }, access: { operation: OPEN } },
+      Audit: { fields: { note: text() }, access: { operation: OPEN } },
+    },
+  }
 }
 
 /**
- * The Prisma 7 delegate shape the Write Pipeline still calls, over an rc.8
- * collection: `create({ data })` onto `create(row)`, under the origin the
- * write terminals do not yet enter. #1152 moves the pipeline itself onto the
- * rc.8 names and this goes away with it; until then it is the only way to run
- * a secured write against a real database.
+ * A context over the harness's own client at a config of this test's choosing —
+ * the same client `database.context()` uses, so the schema is the one that was
+ * applied and only the hooks and access rules vary.
  */
-function delegateFor(collection: Record<string, unknown>): Record<string, unknown> {
-  const create: unknown = collection.create
-  if (typeof create !== 'function') throw new Error('the collection has no create')
-  return {
-    create: ({ data }: { data: Record<string, unknown> }) =>
-      withOrigin('engine', () => Promise.resolve(create.call(collection, data))),
-  }
-}
-
-function shapedOrm(orm: unknown): object {
-  const models: Record<string, unknown> = {}
-  for (const model of LISTS) models[model] = delegateFor(collectionOf(orm, model))
-  return { public: models }
-}
-
-/**
- * The real Prisma 8 client with {@link delegateFor} in front of each
- * collection — its own `transaction`, so the transaction the engine opens is
- * the database's.
- */
-function shapedClient(client: TestDatabase['client']): UnsafeCapableClient {
-  const unreachable = (): never => {
-    throw new Error('this test runs no plans through the Unsafe surface')
-  }
-  return {
-    sql: client.sql,
-    raw: client.raw,
-    orm: shapedOrm(client.orm),
-    runtime: () => ({ query: unreachable, execute: unreachable }),
-    transaction: <R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R> =>
-      client.transaction((tx) =>
-        fn({ sql: tx.sql, orm: shapedOrm(tx.orm), query: unreachable, execute: unreachable }),
-      ),
-  }
-}
-
 function contextOver(
   database: TestDatabase,
   config: OpenSaasConfig,
   session: Session | null = null,
 ): StackContext<AccessControlledDB> {
-  const client = shapedClient(database.client)
-  return getContext(
-    config,
-    requireOrmHandle(config, client.orm),
-    session,
-    undefined,
-    false,
-    undefined,
-    undefined,
-    client,
-  )
+  const orm = ormClientFor(database.data, database.client.orm)
+  return getContext(config, orm, session, undefined, false, undefined, undefined, database.client)
 }
 
 async function rows(url: string, table: string): Promise<Record<string, unknown>[]> {
@@ -132,15 +84,9 @@ describe('every write through context.db opens a transaction', () => {
   test(
     'a write nothing rejects commits its row',
     async () => {
-      const config: OpenSaasConfig = {
-        ...schemaConfig(),
-        lists: {
-          Job: { fields: { name: text() }, access: { operation: OPEN } },
-          Audit: { fields: { note: text() }, access: { operation: OPEN } },
-        },
-      }
-
-      const created = await contextOver(database, config).db.Job.create({ data: { name: 'ship' } })
+      const created = await contextOver(database, openConfig()).db.Job.create({
+        data: { name: 'ship' },
+      })
 
       expect(created).toMatchObject({ name: 'ship' })
       expect(await rows(database.url, 'Job')).toHaveLength(1)
@@ -218,16 +164,8 @@ describe('every write through context.db opens a transaction', () => {
   test(
     'a write inside context.transaction joins it rather than committing on its own',
     async () => {
-      const config: OpenSaasConfig = {
-        ...schemaConfig(),
-        lists: {
-          Job: { fields: { name: text() }, access: { operation: OPEN } },
-          Audit: { fields: { note: text() }, access: { operation: OPEN } },
-        },
-      }
-
       await expect(
-        contextOver(database, config).transaction(async (tx) => {
+        contextOver(database, openConfig()).transaction(async (tx) => {
           await tx.db.Job.create({ data: { name: 'ship' } })
           await tx.db.Audit.create({ data: { note: 'job created' } })
           throw new Error('the caller rejected the transaction')
@@ -243,15 +181,7 @@ describe('every write through context.db opens a transaction', () => {
   test(
     'a write inside context.transaction commits with it',
     async () => {
-      const config: OpenSaasConfig = {
-        ...schemaConfig(),
-        lists: {
-          Job: { fields: { name: text() }, access: { operation: OPEN } },
-          Audit: { fields: { note: text() }, access: { operation: OPEN } },
-        },
-      }
-
-      await contextOver(database, config).transaction(async (tx) => {
+      await contextOver(database, openConfig()).transaction(async (tx) => {
         await tx.db.Job.create({ data: { name: 'ship' } })
         await tx.db.Audit.create({ data: { note: 'job created' } })
       })

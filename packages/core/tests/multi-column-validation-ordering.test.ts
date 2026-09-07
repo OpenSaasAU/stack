@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
-import { text, relationship } from '../src/fields/index.js'
+import { text } from '../src/fields/index.js'
 import { ValidationError } from '../src/hooks/index.js'
 import type { FieldConfig } from '../src/config/types.js'
 import type { FieldAccess } from '../src/access/types.js'
@@ -54,86 +54,54 @@ function mediaField(access?: FieldAccess): FieldConfig {
   } as unknown as FieldConfig
 }
 
-/**
- * A tiny in-memory Prisma mock supporting a single nested to-one relation
- * (`author` on `post`), for both nested create and nested update, mirroring
- * the harness used by the other write-pipeline test suites.
- */
+/** A tiny in-memory ORM double over one table, in the rc.8 collection's shape. */
 function createTxPrisma() {
-  const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    Post: new Map(),
-    Author: new Map(),
-  }
+  const tables: Record<string, Map<string, Record<string, unknown>>> = { Post: new Map() }
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
 
-  function applyNested(
-    table: string,
-    record: Record<string, unknown>,
-    data: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const result = { ...record }
-    for (const [key, value] of Object.entries(data)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const nested = value as Record<string, unknown>
-        if (nested.create || nested.update) {
-          if (nested.create) {
-            const created = doCreate('Author', nested.create as Record<string, unknown>)
-            result[`${key}Link`] = created.id
-            result[key] = created
-          }
-          if (nested.update) {
-            const upd = nested.update as { where: { id: string }; data: Record<string, unknown> }
-            const updated = doUpdate('Author', upd.where, upd.data)
-            result[key] = updated
-          }
-          continue
-        }
-      }
-      result[key] = value
-    }
-    return result
-  }
-
   function doCreate(table: string, data: Record<string, unknown>): Record<string, unknown> {
     const id = (data.id as string) ?? nextId()
-    const record = applyNested(table, { id }, data)
+    const record = { id, ...data }
     tables[table].set(id, record)
     return record
   }
 
   function doUpdate(
     table: string,
-    where: { id: string },
+    id: string,
     data: Record<string, unknown>,
   ): Record<string, unknown> {
-    const existing = tables[table].get(where.id) ?? { id: where.id }
-    const updated = applyNested(table, existing, data)
-    tables[table].set(where.id, updated)
+    const updated = { ...(tables[table].get(id) ?? { id }), ...data }
+    tables[table].set(id, updated)
     return updated
   }
 
   function makeModel(table: string) {
-    return {
+    // The double answers `first()` with the row the composed predicate would
+    // have matched — the suite writes one row per table, so the first row is
+    // that row.
+    const model = {
+      where: vi.fn(() => model),
+      first: vi.fn(async () => tables[table].values().next().value ?? null),
+      aggregate: vi.fn(async () => ({ rows: tables[table].size })),
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) => tables[table].get(where.id) ?? null,
       ),
       findFirst: vi.fn(async () => tables[table].values().next().value ?? null),
       findMany: vi.fn(async () => Array.from(tables[table].values())),
       count: vi.fn(async () => tables[table].size),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => doCreate(table, data)),
-      update: vi.fn(
-        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) =>
-          doUpdate(table, where, data),
-      ),
+      create: vi.fn(async (data: Record<string, unknown>) => doCreate(table, data)),
+      update: vi.fn(async (data: Record<string, unknown>) => {
+        const target = tables[table].values().next().value
+        return doUpdate(table, (target?.id as string) ?? nextId(), data)
+      }),
       delete: vi.fn(),
     }
+    return model
   }
 
-  const client: Record<string, unknown> = {
-    Post: makeModel('Post'),
-    Author: makeModel('Author'),
-  }
+  const client: Record<string, unknown> = { Post: makeModel('Post') }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client)
 
   return { client, tables }
@@ -216,90 +184,5 @@ describe('#789 top-level write — multi-column validation runs BEFORE the split
     })
 
     expect(mock.tables.Post.get('p1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 5 })
-  })
-})
-
-describe('#789 nested write — multi-column validation runs BEFORE the split', () => {
-  let mock: ReturnType<typeof createTxPrisma>
-
-  beforeEach(() => {
-    mock = createTxPrisma()
-    vi.clearAllMocks()
-  })
-
-  function makeTestConfig() {
-    return config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Author: list({
-          fields: { name: text(), media: mediaField() },
-          access: { operation: { query: () => true, create: () => true, update: () => true } },
-        }),
-        Post: list({
-          fields: { title: text(), author: relationship({ ref: 'Author' }) },
-          access: { operation: { query: () => true, create: () => true, update: () => true } },
-        }),
-      },
-    })
-  }
-
-  it('nested create: an unrecognised media value throws ValidationError and nothing persists', async () => {
-    const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
-
-    await expect(
-      context.db.Post.create({
-        data: { title: 'p', author: { create: { name: 'a', media: 'not-a-valid-shape' } } },
-      }),
-    ).rejects.toBeInstanceOf(ValidationError)
-
-    expect(mock.tables.Post.size).toBe(0)
-    expect(mock.tables.Author.size).toBe(0)
-  })
-
-  it('nested create: a valid media value is split into physical columns on the nested row', async () => {
-    const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
-
-    await context.db.Post.create({
-      data: {
-        title: 'p',
-        author: { create: { name: 'a', media: { url: 'https://x/y.jpg', size: 3 } } },
-      },
-    })
-
-    const author = mock.tables.Author.values().next().value
-    expect(author).toMatchObject({ m_url: 'https://x/y.jpg', m_size: 3 })
-    expect('media' in (author ?? {})).toBe(false)
-  })
-
-  it('nested update: an unrecognised media value throws ValidationError and nothing persists', async () => {
-    mock.tables.Post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
-    mock.tables.Author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
-    const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
-
-    await expect(
-      context.db.Post.update({
-        where: { id: 'p1' },
-        data: { author: { update: { where: { id: 'a1' }, data: { media: [] } } } },
-      }),
-    ).rejects.toBeInstanceOf(ValidationError)
-
-    expect(mock.tables.Author.get('a1')).toMatchObject({ name: 'old', m_url: null, m_size: null })
-  })
-
-  it('nested update: a valid media value is split into physical columns on the nested row', async () => {
-    mock.tables.Post.set('p1', { id: 'p1', title: 'p', authorLink: 'a1' })
-    mock.tables.Author.set('a1', { id: 'a1', name: 'old', m_url: null, m_size: null })
-    const context = getContext(await makeTestConfig(), mock.client, { userId: '1' })
-
-    await context.db.Post.update({
-      where: { id: 'p1' },
-      data: {
-        author: {
-          update: { where: { id: 'a1' }, data: { media: { url: 'https://x/new.jpg', size: 8 } } },
-        },
-      },
-    })
-
-    expect(mock.tables.Author.get('a1')).toMatchObject({ m_url: 'https://x/new.jpg', m_size: 8 })
   })
 })

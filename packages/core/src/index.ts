@@ -128,9 +128,7 @@ export type {
   FindManyArgs,
   CountArgs,
   CreateArgs,
-  CreateManyArgs,
   UpdateArgs,
-  UpdateManyArgs,
   DeleteArgs,
   GetArgs,
   StackBaseContext,
@@ -160,6 +158,10 @@ export { RelationSelectError } from './secured/read.js'
 // The vector-search terminal: how many rows it returns by default, and the
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
 export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
+// The secured write surface: the collection the Write Pipeline drives, and the
+// payload shape it refuses (ADR-0050).
+export { WriteCollectionMissingError } from './secured/write.js'
+export { NestedRelationInputError } from './context/relationship-input.js'
 export type {
   SecuredQuery,
   SecuredRefinement,

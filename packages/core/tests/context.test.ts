@@ -7,33 +7,16 @@ import {
 } from '../src/access/index.js'
 import { READ_INCLUDE_MAX_DEPTH } from '../src/access/depth-limits.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
+import { rc8Collection } from './rc8-collection.js'
 
 /**
- * One list's collection: the legacy model operations plus the composed-read
- * members the secured surface drives (ADR-0041). Each composition step returns
- * the collection itself, so a test asserts on the calls and stubs `all()`.
+ * One list's collection: the legacy model operations the Prisma-7 read path
+ * still calls, plus the rc.8 members the secured read and write surfaces drive
+ * (ADR-0041). Each composition step returns the collection itself, so a test
+ * asserts on the calls and stubs the terminals.
  */
 function mockModel() {
-  const model = {
-    findFirst: vi.fn(),
-    findUnique: vi.fn(),
-    findMany: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    count: vi.fn(),
-    select: vi.fn(),
-    where: vi.fn(),
-    orderBy: vi.fn(),
-    limit: vi.fn(),
-    include: vi.fn(),
-    all: vi.fn(async () => []),
-    first: vi.fn(async () => null),
-  }
-  for (const member of ['select', 'where', 'orderBy', 'limit', 'include'] as const) {
-    model[member].mockImplementation(() => model)
-  }
-  return model
+  return rc8Collection()
 }
 
 describe('getContext', () => {
@@ -118,7 +101,8 @@ describe('getContext', () => {
       })
 
       expect(mockPrisma.User.create).toHaveBeenCalledWith({
-        data: { name: 'John', email: 'john@example.com' },
+        name: 'John',
+        email: 'john@example.com',
       })
       expect(result).toEqual({ success: true, data: mockCreatedUser })
     })
@@ -126,8 +110,8 @@ describe('getContext', () => {
     it('should update an item', async () => {
       const existingUser = { id: '1', name: 'John', email: 'john@example.com' }
       const mockUpdatedUser = { id: '1', name: 'John Updated', email: 'john@example.com' }
-      // Update operation first fetches the existing item
-      mockPrisma.User.findUnique.mockResolvedValue(existingUser)
+      // Update operation first reads the target through the collection.
+      mockPrisma.User.first.mockResolvedValue(existingUser)
       mockPrisma.User.update.mockResolvedValue(mockUpdatedUser)
 
       const context = await getContext(config, mockPrisma, null)
@@ -138,15 +122,15 @@ describe('getContext', () => {
         data: { name: 'John Updated' },
       })
 
-      expect(mockPrisma.User.findUnique).toHaveBeenCalled()
+      expect(mockPrisma.User.first).toHaveBeenCalled()
       expect(mockPrisma.User.update).toHaveBeenCalled()
       expect(result).toEqual({ success: true, data: mockUpdatedUser })
     })
 
     it('should delete an item', async () => {
       const mockDeletedUser = { id: '1', name: 'John', email: 'john@example.com' }
-      // Delete operation first fetches the existing item
-      mockPrisma.User.findUnique.mockResolvedValue(mockDeletedUser)
+      // Delete operation first reads the target through the collection.
+      mockPrisma.User.first.mockResolvedValue(mockDeletedUser)
       mockPrisma.User.delete.mockResolvedValue(mockDeletedUser)
 
       const context = await getContext(config, mockPrisma, null)
@@ -156,7 +140,7 @@ describe('getContext', () => {
         id: '1',
       })
 
-      expect(mockPrisma.User.findUnique).toHaveBeenCalled()
+      expect(mockPrisma.User.first).toHaveBeenCalled()
       expect(mockPrisma.User.delete).toHaveBeenCalled()
       expect(result).toEqual({ success: true, data: mockDeletedUser })
     })
@@ -221,7 +205,7 @@ describe('getContext', () => {
     describe('removeRelated (relationship-table row removal)', () => {
       it('unlinks a to-one back-reference via an update on the related list', async () => {
         const existing = { id: 'p1', title: 'T', content: 'c', authorId: 'u1' }
-        mockPrisma.Post.findUnique.mockResolvedValue(existing)
+        mockPrisma.Post.first.mockResolvedValue(existing)
         mockPrisma.Post.update.mockResolvedValue({ id: 'p1', title: 'T', authorId: null })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
@@ -238,15 +222,13 @@ describe('getContext', () => {
         // (a to-one back-ref disconnects with `true`), never a delete. The
         // distinct `{ removed }` shape avoids a redirect-on-success wrapper.
         expect(mockPrisma.Post.update).toHaveBeenCalled()
-        const updateArg = mockPrisma.Post.update.mock.calls[0][0]
-        expect(updateArg.where).toEqual({ id: 'p1' })
-        expect(updateArg.data.author).toEqual({ disconnect: true })
+        expect(mockPrisma.Post.update.mock.calls[0][0].author).toEqual({ disconnect: true })
         expect(mockPrisma.Post.delete).not.toHaveBeenCalled()
         expect(result).toEqual({ removed: true })
       })
 
       it('deletes the related row when mode is delete', async () => {
-        mockPrisma.Post.findUnique.mockResolvedValue({ id: 'p1', title: 'T', authorId: 'u1' })
+        mockPrisma.Post.first.mockResolvedValue({ id: 'p1', title: 'T', authorId: 'u1' })
         mockPrisma.Post.delete.mockResolvedValue({ id: 'p1', title: 'T' })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
@@ -264,13 +246,8 @@ describe('getContext', () => {
 
       it('disconnects a to-many back-reference by parent id (many-to-many)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const m2mPrisma: any = {
-          Lesson: {
-            findUnique: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
-            update: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
-            delete: vi.fn(),
-          },
-        }
+        const m2mPrisma: any = { Lesson: rc8Collection({ first: [{ id: 'l1', title: 'L' }] }) }
+        m2mPrisma.Lesson.update.mockResolvedValue({ id: 'l1', title: 'L' })
         const m2mConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
           lists: {
@@ -315,9 +292,10 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        const updateArg = m2mPrisma.Lesson.update.mock.calls[0][0]
         // A to-many back-reference disconnects the specific parent by id.
-        expect(updateArg.data.teachers).toEqual({ disconnect: { id: 't1' } })
+        expect(m2mPrisma.Lesson.update.mock.calls[0][0].teachers).toEqual({
+          disconnect: { id: 't1' },
+        })
       })
 
       it('returns a generic error (Silent failure) when the update is access-denied', async () => {
@@ -399,12 +377,8 @@ describe('getContext', () => {
       }
 
       it('runs the handler over the selected ids through the secured context', async () => {
-        mockPrisma.Post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
-          Promise.resolve({ id: where.id, title: 'T', content: 'c' }),
-        )
-        mockPrisma.Post.update.mockImplementation(({ where }: { where: { id: string } }) =>
-          Promise.resolve({ id: where.id, status: 'published' }),
-        )
+        mockPrisma.Post.first.mockResolvedValue({ id: 'p1', title: 'T', content: 'c' })
+        mockPrisma.Post.update.mockResolvedValue({ id: 'p1', status: 'published' })
 
         const context = await getContext(configWithPublishAction(), mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -432,17 +406,14 @@ describe('getContext', () => {
             delete: () => true,
           },
         }
-        // The access filter merges into the existence pre-check: only p1 is
-        // visible, so p2's update is denied (Silent failure → null) before it
-        // ever reaches the update delegate.
-        mockPrisma.Post.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
-          where.id === 'p1'
-            ? Promise.resolve({ id: 'p1', title: 'T', content: 'c' })
-            : Promise.resolve(null),
-        )
-        // The filter-match re-check (mergeFilters) only ever runs for the row
-        // that passed the existence pre-check (p1), so returning it is enough.
-        mockPrisma.Post.findFirst.mockResolvedValue({ id: 'p1', title: 'T', content: 'c' })
+        // Both rows exist, so each id's target read finds one; the Access
+        // Filter is what separates them, and only p2's re-read under it comes
+        // back empty. Drop the filter and p2 would be published too.
+        mockPrisma.Post.first
+          .mockResolvedValueOnce({ id: 'p1', title: 'T', content: 'c' })
+          .mockResolvedValueOnce({ id: 'p1', title: 'T', content: 'c' })
+          .mockResolvedValueOnce({ id: 'p2', title: 'T', content: 'c' })
+          .mockResolvedValueOnce(null)
         mockPrisma.Post.update.mockResolvedValue({ id: 'p1', status: 'published' })
 
         const context = await getContext(scopedConfig, mockPrisma, { userId: 'u1' })
@@ -524,7 +495,7 @@ describe('getContext', () => {
 
     describe('updateRelated (relationship-table inline cell edit)', () => {
       it('updates a single field on the related row through the secured context', async () => {
-        mockPrisma.Post.findUnique.mockResolvedValue({
+        mockPrisma.Post.first.mockResolvedValue({
           id: 'p1',
           title: 'Old',
           content: 'c',
@@ -549,9 +520,7 @@ describe('getContext', () => {
         // The edit is an UPDATE on the RELATED list, one field only. The distinct
         // `{ updated }` shape avoids a redirect-on-success wrapper.
         expect(mockPrisma.Post.update).toHaveBeenCalled()
-        const updateArg = mockPrisma.Post.update.mock.calls[0][0]
-        expect(updateArg.where).toEqual({ id: 'p1' })
-        expect(updateArg.data.title).toBe('New')
+        expect(mockPrisma.Post.update.mock.calls[0][0].title).toBe('New')
         expect(mockPrisma.Post.delete).not.toHaveBeenCalled()
         expect(result).toEqual({ updated: true })
       })
@@ -607,7 +576,7 @@ describe('getContext', () => {
             },
           },
         }
-        mockPrisma.Post.findUnique.mockResolvedValue({
+        mockPrisma.Post.first.mockResolvedValue({
           id: 'p1',
           title: 'Old',
           content: 'c',
@@ -652,8 +621,8 @@ describe('getContext', () => {
         // single parent), so the new row links to exactly the parent being edited.
         expect(mockPrisma.Post.create).toHaveBeenCalled()
         const createArg = mockPrisma.Post.create.mock.calls[0][0]
-        expect(createArg.data.title).toBe('New')
-        expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
+        expect(createArg.title).toBe('New')
+        expect(createArg.author).toEqual({ connect: { id: 'u1' } })
         // Distinct `{ created }` shape (never a single-op `success`).
         expect(result).toEqual({ created: true, id: 'p1' })
       })
@@ -661,19 +630,10 @@ describe('getContext', () => {
       it('connects a to-many back-reference by parent id (many-to-many)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
-          Lesson: {
-            findUnique: vi.fn(),
-            update: vi.fn(),
-            delete: vi.fn(),
-            create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
-          },
-          Teacher: {
-            findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
-            update: vi.fn(),
-            delete: vi.fn(),
-            create: vi.fn(),
-          },
+          Lesson: rc8Collection({ create: { id: 'l1', title: 'L' } }),
+          Teacher: rc8Collection({ first: [{ id: 't1' }] }),
         }
+        m2mPrisma.Teacher.findUnique.mockResolvedValue({ id: 't1' })
         const m2mConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
           lists: {
@@ -717,9 +677,10 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        const createArg = m2mPrisma.Lesson.create.mock.calls[0][0]
         // A to-many back-reference connects the parent by id.
-        expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
+        expect(m2mPrisma.Lesson.create.mock.calls[0][0].teachers).toEqual({
+          connect: [{ id: 't1' }],
+        })
       })
 
       // Security-critical invariant (#758): the server sets the back-reference by
@@ -747,26 +708,17 @@ describe('getContext', () => {
         // The server OVERWRITES the spread-in hostile value with a connect to the
         // trusted parentId — the evil id never reaches the secured create.
         const createArg = mockPrisma.Post.create.mock.calls[0][0]
-        expect(createArg.data.author).toEqual({ connect: { id: 'u1' } })
-        expect(createArg.data.author).not.toBe('evil-id')
+        expect(createArg.author).toEqual({ connect: { id: 'u1' } })
+        expect(createArg.author).not.toBe('evil-id')
       })
 
       it('overwrites a hostile client-supplied to-many back-reference with the trusted parentId', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
-          Lesson: {
-            findUnique: vi.fn(),
-            update: vi.fn(),
-            delete: vi.fn(),
-            create: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
-          },
-          Teacher: {
-            findUnique: vi.fn().mockResolvedValue({ id: 't1' }),
-            update: vi.fn(),
-            delete: vi.fn(),
-            create: vi.fn(),
-          },
+          Lesson: rc8Collection({ create: { id: 'l1', title: 'L' } }),
+          Teacher: rc8Collection({ first: [{ id: 't1' }] }),
         }
+        m2mPrisma.Teacher.findUnique.mockResolvedValue({ id: 't1' })
         const m2mConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
           lists: {
@@ -813,8 +765,9 @@ describe('getContext', () => {
 
         // The to-many back-reference is overwritten to connect exactly the trusted
         // parent by id — the hostile connect is discarded.
-        const createArg = m2mPrisma.Lesson.create.mock.calls[0][0]
-        expect(createArg.data.teachers).toEqual({ connect: [{ id: 't1' }] })
+        expect(m2mPrisma.Lesson.create.mock.calls[0][0].teachers).toEqual({
+          connect: [{ id: 't1' }],
+        })
       })
 
       // Defensive guard (#758): malformed direct calls (unreachable from the
@@ -1622,16 +1575,6 @@ describe('getContext', () => {
           /bogusKey/,
         )
         expect(mockPrisma.Post.findMany).not.toHaveBeenCalled()
-      })
-
-      it('updateMany inherits the check through findMany, with no second copy', async () => {
-        const context = await getContext(config, mockPrisma, null)
-
-        await expect(
-          context.db.User.updateMany({ where: { bogusKey: 'x' }, data: { name: 'y' } }),
-        ).rejects.toThrow(/bogusKey/)
-        expect(mockPrisma.User.findMany).not.toHaveBeenCalled()
-        expect(mockPrisma.User.update).not.toHaveBeenCalled()
       })
 
       it('an ordinary read using only declared keys is unaffected', async () => {
@@ -2694,7 +2637,7 @@ describe('getContext', () => {
     it('should delegate update to prisma with access control and hooks', async () => {
       const existingUser = { id: '1', name: 'John', email: 'john@example.com' }
       const updatedUser = { id: '1', name: 'John Updated', email: 'john@example.com' }
-      mockPrisma.User.findUnique.mockResolvedValue(existingUser)
+      mockPrisma.User.first.mockResolvedValue(existingUser)
       mockPrisma.User.update.mockResolvedValue(updatedUser)
 
       const context = await getContext(config, mockPrisma, null)
@@ -2709,7 +2652,7 @@ describe('getContext', () => {
 
     it('should delegate delete to prisma with access control and hooks', async () => {
       const mockUser = { id: '1', name: 'John', email: 'john@example.com' }
-      mockPrisma.User.findUnique.mockResolvedValue(mockUser)
+      mockPrisma.User.first.mockResolvedValue(mockUser)
       mockPrisma.User.delete.mockResolvedValue(mockUser)
 
       const context = await getContext(config, mockPrisma, null)
@@ -2727,154 +2670,6 @@ describe('getContext', () => {
 
       expect(mockPrisma.User.count).toHaveBeenCalled()
       expect(result).toBe(5)
-    })
-
-    it('should batch create items via createMany', async () => {
-      const mockUsers = [
-        { id: '1', name: 'John', email: 'john@example.com' },
-        { id: '2', name: 'Jane', email: 'jane@example.com' },
-        { id: '3', name: 'Bob', email: 'bob@example.com' },
-      ]
-
-      // Mock create to return each user in sequence
-      mockPrisma.User.create
-        .mockResolvedValueOnce(mockUsers[0])
-        .mockResolvedValueOnce(mockUsers[1])
-        .mockResolvedValueOnce(mockUsers[2])
-
-      const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.User.createMany({
-        data: [
-          { name: 'John', email: 'john@example.com' },
-          { name: 'Jane', email: 'jane@example.com' },
-          { name: 'Bob', email: 'bob@example.com' },
-        ],
-      })
-
-      // Should call create 3 times (once for each item)
-      expect(mockPrisma.User.create).toHaveBeenCalledTimes(3)
-      expect(result).toEqual(mockUsers)
-    })
-
-    it('should batch update items via updateMany', async () => {
-      const mockUsers = [
-        { id: '1', name: 'John', email: 'john@example.com' },
-        { id: '2', name: 'Jane', email: 'jane@example.com' },
-      ]
-
-      const updatedUsers = [
-        { id: '1', name: 'John Updated', email: 'john@example.com' },
-        { id: '2', name: 'Jane Updated', email: 'jane@example.com' },
-      ]
-
-      // Mock findMany to return the users
-      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
-
-      // Mock findUnique for each update's access check
-      mockPrisma.User.findUnique
-        .mockResolvedValueOnce(mockUsers[0])
-        .mockResolvedValueOnce(mockUsers[1])
-
-      // Mock update to return updated users
-      mockPrisma.User.update
-        .mockResolvedValueOnce(updatedUsers[0])
-        .mockResolvedValueOnce(updatedUsers[1])
-
-      const context = await getContext(config, mockPrisma, null)
-      const result = await context.db.User.updateMany({
-        where: { id: { in: ['1', '2'] } },
-        data: { name: 'Updated' },
-      })
-
-      // Should call findMany once to get records
-      expect(mockPrisma.User.findMany).toHaveBeenCalledWith({
-        where: { id: { in: ['1', '2'] } },
-        take: undefined,
-        skip: undefined,
-        include: undefined,
-      })
-
-      // Should call update twice (once for each item)
-      expect(mockPrisma.User.update).toHaveBeenCalledTimes(2)
-      expect(result).toEqual(updatedUsers)
-    })
-
-    it('should run hooks and access control for each item in createMany', async () => {
-      // Test that hooks are called for each item
-      const mockUsers = [
-        { id: '1', name: 'John', email: 'john@example.com' },
-        { id: '2', name: 'Jane', email: 'jane@example.com' },
-      ]
-
-      mockPrisma.User.create.mockResolvedValueOnce(mockUsers[0]).mockResolvedValueOnce(mockUsers[1])
-
-      // Config with hook
-      const configWithHook: OpenSaasConfig = {
-        ...config,
-        lists: {
-          ...config.lists,
-          User: {
-            ...config.lists.User,
-            hooks: {
-              resolveInput: vi.fn(async ({ resolvedData }) => resolvedData),
-            },
-          },
-        },
-      }
-
-      const context = await getContext(configWithHook, mockPrisma, null)
-      await context.db.User.createMany({
-        data: [
-          { name: 'John', email: 'john@example.com' },
-          { name: 'Jane', email: 'jane@example.com' },
-        ],
-      })
-
-      // Hook should be called twice (once for each item)
-      expect(configWithHook.lists.User.hooks?.resolveInput).toHaveBeenCalledTimes(2)
-    })
-
-    it('should run hooks and access control for each item in updateMany', async () => {
-      const mockUsers = [
-        { id: '1', name: 'John', email: 'john@example.com' },
-        { id: '2', name: 'Jane', email: 'jane@example.com' },
-      ]
-
-      const updatedUsers = [
-        { id: '1', name: 'John Updated', email: 'john@example.com' },
-        { id: '2', name: 'Jane Updated', email: 'jane@example.com' },
-      ]
-
-      mockPrisma.User.findMany.mockResolvedValue(mockUsers)
-      mockPrisma.User.findUnique
-        .mockResolvedValueOnce(mockUsers[0])
-        .mockResolvedValueOnce(mockUsers[1])
-      mockPrisma.User.update
-        .mockResolvedValueOnce(updatedUsers[0])
-        .mockResolvedValueOnce(updatedUsers[1])
-
-      // Config with hook
-      const configWithHook: OpenSaasConfig = {
-        ...config,
-        lists: {
-          ...config.lists,
-          User: {
-            ...config.lists.User,
-            hooks: {
-              resolveInput: vi.fn(async ({ resolvedData }) => resolvedData),
-            },
-          },
-        },
-      }
-
-      const context = await getContext(configWithHook, mockPrisma, null)
-      await context.db.User.updateMany({
-        where: { id: { in: ['1', '2'] } },
-        data: { name: 'Updated' },
-      })
-
-      // Hook should be called twice (once for each item)
-      expect(configWithHook.lists.User.hooks?.resolveInput).toHaveBeenCalledTimes(2)
     })
   })
 

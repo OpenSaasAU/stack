@@ -229,9 +229,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     /**
      * The list being written and the full config — used ONLY to recognise a
      * synthetic reverse-relation key (`from_<List>_<field>`, #978) among the
-     * undeclared keys sudo would otherwise pass through unchecked. Both
-     * production call sites (the write pipeline, nested-operations) supply
-     * these; a direct unit test that omits them keeps the pre-#978 sudo
+     * undeclared keys sudo would otherwise pass through unchecked. The write
+     * pipeline supplies these; a direct unit test that omits them keeps the
+     * pre-#978 sudo
      * behaviour of passing any undeclared key through, since it has no config
      * to resolve a synthetic key against.
      */
@@ -325,16 +325,15 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // A key with no entry in `fieldConfigs` is not a field the list config
     // exposes. The generated Prisma model has MORE fields than the config
     // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
-    // an undeclared key to pass through lets a non-sudo caller drive ungated
-    // nested writes on undeclared back-relations. Mirror Keystone's
-    // GraphQL-schema behaviour and reject it.
+    // an undeclared key to pass through lets a non-sudo caller reach a column
+    // the config never exposed. Mirror Keystone's GraphQL-schema behaviour and
+    // reject it.
     if (!fieldConfig) {
       if (isSudo) {
         // #978 — sudo bypasses ACCESS CONTROL, not the hooks/validation a
         // recognised relation is entitled to. A synthetic reverse-relation key
-        // (a list-only ref's back-relation) is handed to the caller unchanged
-        // so processNestedOperations can run its target list's full pipeline,
-        // exactly as it would for a declared relationship field. Any other
+        // (a list-only ref's back-relation) is handed to the caller unchanged,
+        // exactly as a declared relationship field is. Any other
         // undeclared key has no such route to hooks — passing it straight to
         // Prisma is the same silent-bypass shape this issue closed for
         // relations, so it is refused even under sudo. `listName`/`config`

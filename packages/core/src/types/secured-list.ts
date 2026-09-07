@@ -178,23 +178,11 @@ export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> =
   K
 > & { data: CreateInput<C, R, K> }
 
-export type CreateManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { data: CreateInput<C, R, K>[] }
-
 export type UpdateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
 > & { where: ListUniqueWhere<C, R, K>; data: UpdateInput<C, R, K> }
-
-export type UpdateManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { where?: ListWhere<C, R, K>; data: UpdateInput<C, R, K> }
 
 export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
@@ -625,31 +613,12 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
     include?: I
   }) => Promise<QueryResult<C, R, K, S, I> | null>
 
-  createMany: <
-    S extends ListSelect<C, R, K> = never,
-    I extends ListInclude<C, R, K> = never,
-  >(args: {
-    data: CreateInput<C, R, K>[]
-    select?: S
-    include?: I
-  }) => Promise<(QueryResult<C, R, K, S, I> | null)[]>
-
   update: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
     where: ListUniqueWhere<C, R, K>
     data: UpdateInput<C, R, K>
     select?: S
     include?: I
   }) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  updateMany: <
-    S extends ListSelect<C, R, K> = never,
-    I extends ListInclude<C, R, K> = never,
-  >(args: {
-    where?: ListWhere<C, R, K>
-    data: UpdateInput<C, R, K>
-    select?: S
-    include?: I
-  }) => Promise<(QueryResult<C, R, K, S, I> | null)[]>
 
   delete: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
     where: ListUniqueWhere<C, R, K>
@@ -663,9 +632,8 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
 /**
  * One list's access-controlled surface, keyed by the emitted contract and the
  * generated remainder. Denial is silent rather than thrown, so a caller checks
- * rather than catches: a single-record terminal returns `null`, a read of many
- * returns `[]`, and `createMany`/`updateMany` — which run one secured write per
- * item — return `null` in the position of each item that was denied.
+ * rather than catches: a single-record terminal returns `null` and a read of
+ * many returns `[]`.
  *
  * This is the type `.opensaas/types.ts` names per list:
  *
