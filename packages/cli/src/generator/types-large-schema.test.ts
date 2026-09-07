@@ -160,10 +160,23 @@ export interface AccessContext<P> {
 // hook each, list- and field-level) to exercise the #1211 'prisma' member
 // threading through many lists' worth of generics without dragging in
 // core's full field-config type graph.
+export interface TransactionOptions {
+  maxWait?: number
+  timeout?: number
+  isolationLevel?: string
+}
+
 export interface StackContext<P> {
   db: Record<string, unknown>
   session: Session | null
   prisma: P
+  storage: unknown
+  plugins: Record<string, unknown>
+  serverAction: (props: unknown) => Promise<unknown>
+  transaction: <T>(fn: (tx: StackContext<P>) => Promise<T>, options?: TransactionOptions) => Promise<T>
+  sudo: () => StackContext<P>
+  withSession: (session: Session | null) => StackContext<P>
+  _isSudo: boolean
 }
 
 export interface TypeInfo<
@@ -272,6 +285,13 @@ async function run() {
   void model0
   void created
   void nested
+
+  // #1261: context.transaction() typechecks, and the callback's txContext is
+  // the generated Context (tx.db.<list> carries the generated payload types).
+  const txResult = await context.transaction(async (tx) => {
+    return tx.db.model3.findMany({ where: { id: '1' } })
+  })
+  void txResult
 }
 
 void run
