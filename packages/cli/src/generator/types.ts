@@ -1176,7 +1176,16 @@ function generateCustomDBType(config: OpenSaasConfig): string {
 }
 
 /**
- * Generate BaseContext and Context types that are compatible with AccessContext.
+ * Generate BaseContext and Context types derived from core's `StackContext`
+ * — the interface `getContext()` actually returns (#1261) — rather than
+ * re-declaring its extra members (`serverAction`, `transaction`, `sudo`,
+ * `withSession`) by hand. `BaseContext` omits `db`/`session` (replaced with
+ * the generated `CustomDB`/`TSession`) plus those four, matching its
+ * existing "database and session only" contract; `Context` re-adds them so
+ * any newly added `StackContext` member reaches `Context` through plain
+ * inheritance with no generator change, while the four whose return type is
+ * self-referential are re-declared here so they resolve to the generated
+ * `Context`, not core's `StackContext`.
  *
  * Both are declared as `interface`s rather than `type` aliases. `Context`'s
  * `sudo(): Context` return type is self-referential, and a self-referential
@@ -1196,7 +1205,7 @@ function generateContextType(_config: OpenSaasConfig): string {
   lines.push(' * Use this type for services that should work in both contexts')
   lines.push(' */')
   lines.push(
-    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<AccessContext<PrismaClient>, 'db' | 'session'> {",
+    "export interface BaseContext<TSession extends OpensaasSession = OpensaasSession> extends Omit<StackContext<PrismaClient>, 'db' | 'session' | 'serverAction' | 'transaction' | 'sudo' | 'withSession'> {",
   )
   lines.push('  db: CustomDB')
   lines.push('  session: TSession')
@@ -1205,7 +1214,9 @@ function generateContextType(_config: OpenSaasConfig): string {
 
   lines.push('/**')
   lines.push(' * Full context type with server action capabilities and virtual field typing')
-  lines.push(' * Extends BaseContext and adds serverAction, sudo, and withSession methods')
+  lines.push(
+    ' * Extends BaseContext and adds serverAction, transaction, sudo, and withSession methods',
+  )
   lines.push(
     ' * Use this type in server actions and components that need full context capabilities',
   )
@@ -1214,6 +1225,10 @@ function generateContextType(_config: OpenSaasConfig): string {
     'export interface Context<TSession extends OpensaasSession = OpensaasSession> extends BaseContext<TSession> {',
   )
   lines.push('  serverAction: (props: ServerActionProps) => Promise<unknown>')
+  lines.push('  transaction: <T>(')
+  lines.push('    fn: (txContext: Context<TSession>) => Promise<T>,')
+  lines.push('    options?: TransactionOptions,')
+  lines.push('  ) => Promise<T>')
   lines.push('  sudo: () => Context<TSession>')
   lines.push('  withSession: (session: TSession | null) => Context<TSession>')
   lines.push('}')
@@ -1267,10 +1282,12 @@ export function generateTypes(config: OpenSaasConfig): string {
   lines.push('')
 
   // Use alias for Session to avoid conflicts if user has a list named "Session".
-  // Session and AccessContext stay on the public root entry point (Session is the
-  // module-augmentation target); the rest are unstable runtime plumbing on /internal.
+  // Session, StackContext and TransactionOptions stay on the public root entry
+  // point (Session is the module-augmentation target; StackContext is what
+  // BaseContext/Context derive from, #1261); the rest are unstable runtime
+  // plumbing on /internal.
   lines.push(
-    "import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'",
+    "import type { Session as OpensaasSession, StackContext, TransactionOptions } from '@opensaas/stack-core'",
   )
   lines.push(
     "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection, ResultOf } from '@opensaas/stack-core/internal'",

@@ -97,6 +97,23 @@ export namespace Prisma {
 const CORE_STUB = `
 export interface Session { [key: string]: unknown }
 export type AccessContext<P> = { db: unknown; session: Session }
+export interface TransactionOptions {
+  maxWait?: number
+  timeout?: number
+  isolationLevel?: string
+}
+export interface StackContext<P> {
+  db: unknown
+  session: Session | null
+  prisma: P
+  storage: unknown
+  plugins: Record<string, unknown>
+  serverAction: (props: unknown) => Promise<unknown>
+  transaction: <T>(fn: (tx: StackContext<P>) => Promise<T>, options?: TransactionOptions) => Promise<T>
+  sudo: () => StackContext<P>
+  withSession: (session: Session | null) => StackContext<P>
+  _isSudo: boolean
+}
 
 export type FieldSelection<T> = {
   readonly [K in keyof T]?: true

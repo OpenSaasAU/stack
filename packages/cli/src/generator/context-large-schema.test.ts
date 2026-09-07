@@ -152,6 +152,23 @@ export interface AccessContext<P> {
   plugins: Record<string, unknown>
   _isSudo: boolean
 }
+export interface TransactionOptions {
+  maxWait?: number
+  timeout?: number
+  isolationLevel?: string
+}
+export interface StackContext<P> {
+  db: unknown
+  session: Session | null
+  prisma: P
+  storage: unknown
+  plugins: Record<string, unknown>
+  serverAction: (props: unknown) => Promise<unknown>
+  transaction: <T>(fn: (tx: StackContext<P>) => Promise<T>, options?: TransactionOptions) => Promise<T>
+  sudo: () => StackContext<P>
+  withSession: (session: Session | null) => StackContext<P>
+  _isSudo: boolean
+}
 export type OpenSaasConfig = {
   db: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
