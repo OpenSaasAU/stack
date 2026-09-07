@@ -1,5 +1,13 @@
 # @opensaas/stack-cli
 
+## 0.42.2
+
+### Patch Changes
+
+- [#1289](https://github.com/OpenSaasAU/stack/pull/1289) [`6a66454`](https://github.com/OpenSaasAU/stack/commit/6a664543345aa0e268d21ec1854a52b81a3b4953) Thanks [@borisno2](https://github.com/borisno2)! - Fix a regression from 0.42.1 ([#1264](https://github.com/OpenSaasAU/stack/issues/1264)): the generated `findUnique`/`findFirst`/`findMany` (and singleton `get`) delegates were not assignable to a plain structural seam, and `Parameters<>` over them resolved to `never`. Restores 0.42.0's behavior for both.
+- Updated dependencies []:
+  - @opensaas/stack-core@0.42.2
+
 ## 0.42.1
 
 ### Patch Changes
