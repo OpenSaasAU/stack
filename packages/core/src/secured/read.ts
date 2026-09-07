@@ -43,7 +43,6 @@ import {
   dependencyAdditions,
   resolveProjection,
   selectionScope,
-  UNPROJECTED,
   type ProjectionPlan,
 } from './select.js'
 import type { DependencyAdditions, FieldSelectionScope } from '../access/declared-dependencies.js'
@@ -123,8 +122,10 @@ export interface SecuredQuery<TRow = OrmRow> {
    */
   limit(count: number): SecuredQuery<TRow>
   /**
-   * Skip this many rows. Replaces any previous call rather than accumulating,
-   * and shapes `all()` alone for the reason `limit` does.
+   * Skip this many rows. Replaces any previous call rather than accumulating.
+   * `all()` and `first()` both honour it — `first()` has no offset of its own,
+   * so `.offset(10).first()` is the eleventh row. `aggregate()` and
+   * `nearest()` refuse it rather than answer a different question.
    */
   offset(count: number): SecuredQuery<TRow>
   /** Collapse rows that agree on every named column. */
@@ -317,12 +318,67 @@ interface ReadPlan {
   readonly selection: FieldSelectionScope | undefined
   /** The relation branches only the widening asked for, level by level (ADR-0051). */
   readonly additions: DependencyAdditions
-  /** The caller's own row bound, applied by `all()` alone. */
+  /** The caller's own row bound. */
   readonly limit?: number
-  /** The caller's own row offset, applied by `all()` alone. */
+  /** The caller's own row offset. */
   readonly offset?: number
   readonly distinct?: { readonly kind: 'all' | 'on'; readonly columns: readonly ColumnPlan[] }
   readonly cursor?: Record<string, unknown>
+}
+
+/**
+ * What one terminal does with one member of a resolved plan.
+ *
+ * - `applied` — carried into the query (or, for `selection`/`additions`, into
+ *   {@link visible}).
+ * - `refused` — the terminal cannot honour it and says so, at the cost of a
+ *   `ValidationError` rather than a wrong answer.
+ * - `inapplicable` — the terminal owns this axis itself, so there is nothing
+ *   for the caller's value to change. `first()`'s own row bound and
+ *   `nearest()`'s `options.limit` are the two.
+ */
+type PlanDisposition = 'applied' | 'refused' | 'inapplicable'
+
+/**
+ * Every {@link ReadPlan} member, and what a terminal does with it.
+ *
+ * The `Record<keyof ReadPlan, …>` is the whole point: a member added to
+ * `ReadPlan` is a compile error in each terminal until that terminal says what
+ * it does with it, and {@link scope} is the only way to the collection — so a
+ * terminal cannot drop a plan member without writing the word down.
+ *
+ * That is a rule with three counterexamples behind it. `runNearest` once
+ * bypassed the include tree, `runAggregate` rebuilt the plan as a hand-written
+ * literal, and `offset` reached `all()` alone; each was a member ignored in
+ * silence, and each was found by review rather than by a test.
+ */
+type PlanDispositions = Record<keyof ReadPlan, PlanDisposition>
+
+/** Whether the plan actually carries this member — an empty one refuses nothing. */
+function carried(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0
+  return value !== undefined
+}
+
+/**
+ * Refuse every member this terminal marked `refused` that the plan carries,
+ * naming all of them at once.
+ *
+ * It takes the resolved plan rather than the composed state, so it runs after
+ * the operation-access check for the reason {@link resolvePlan} orders its own
+ * work that way: a denied caller gets the Silent failure and never learns
+ * which members the read composed (#912, #915).
+ */
+function refuseCarried(
+  plan: ReadPlan,
+  dispositions: PlanDispositions,
+  refuse: (members: readonly string[]) => never,
+): void {
+  const table: Record<string, PlanDisposition> = dispositions
+  const refused = Object.entries(plan)
+    .filter(([member, value]) => table[member] === 'refused' && carried(value))
+    .map(([member]) => member)
+  if (refused.length > 0) refuse(refused.sort())
 }
 
 function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
@@ -550,30 +606,52 @@ function refine(
   return refined
 }
 
-function scope(binding: ReadBinding, plan: ReadPlan, ops: WhereCombinators): ReadableCollection {
+/**
+ * Build the scoped collection, member by member, under this terminal's
+ * {@link PlanDispositions}.
+ *
+ * Every terminal reaches the database through here, so the dispositions are
+ * not advice: a member the terminal did not mark `applied` is either refused
+ * out loud or declared `inapplicable` beside the reason.
+ */
+function scope(
+  binding: ReadBinding,
+  plan: ReadPlan,
+  ops: WhereCombinators,
+  dispositions: PlanDispositions,
+  refuse: (members: readonly string[]) => never,
+): ReadableCollection {
+  refuseCarried(plan, dispositions, refuse)
+  const applies = (member: keyof ReadPlan): boolean => dispositions[member] === 'applied'
   let collection = collectionFor(binding.ormHandle, binding.listName)
-  for (const predicate of plan.predicates) {
-    collection = collection.where((model) => lowerWhere(predicate, model, ops))
+  if (applies('predicates')) {
+    for (const predicate of plan.predicates) {
+      collection = collection.where((model) => lowerWhere(predicate, model, ops))
+    }
   }
-  if (plan.projection.columns !== undefined) {
+  if (applies('projection') && plan.projection.columns !== undefined) {
     collection = collection.select(...plan.projection.columns)
   }
-  if (plan.orders.length > 0) {
+  if (applies('orders') && plan.orders.length > 0) {
     collection = collection.orderBy(
       plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
     )
   }
-  if (plan.distinct !== undefined) {
+  if (applies('distinct') && plan.distinct !== undefined) {
     const fields = plan.distinct.columns.map((column) => column.column)
     collection =
       plan.distinct.kind === 'on'
         ? collection.distinctOn(...fields)
         : collection.distinct(...fields)
   }
-  if (plan.cursor !== undefined) collection = collection.cursor(plan.cursor)
-  for (const include of plan.includes) {
-    collection = collection.include(include.relation, (child) => refine(child, include, ops))
+  if (applies('cursor') && plan.cursor !== undefined) collection = collection.cursor(plan.cursor)
+  if (applies('includes')) {
+    for (const include of plan.includes) {
+      collection = collection.include(include.relation, (child) => refine(child, include, ops))
+    }
   }
+  if (applies('offset') && plan.offset !== undefined) collection = collection.offset(plan.offset)
+  if (applies('limit') && plan.limit !== undefined) collection = collection.limit(plan.limit)
   return collection
 }
 
@@ -702,12 +780,48 @@ async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promi
   return filtered
 }
 
+/** `all()` is the terminal every plan member was designed for. */
+const ALL_DISPOSITIONS: PlanDispositions = {
+  predicates: 'applied',
+  orders: 'applied',
+  includes: 'applied',
+  projection: 'applied',
+  selection: 'applied',
+  additions: 'applied',
+  limit: 'applied',
+  offset: 'applied',
+  distinct: 'applied',
+  cursor: 'applied',
+}
+
+/**
+ * `first()` differs from `all()` in one member: the terminal is its own row
+ * bound, so a `limit` beside it changes nothing.
+ *
+ * `offset` is NOT that — `first()` has no offset of its own, so
+ * `.orderBy(…).offset(10).first()` is `LIMIT 1 OFFSET 10` and answers with the
+ * eleventh row rather than the first.
+ */
+const FIRST_DISPOSITIONS: PlanDispositions = { ...ALL_DISPOSITIONS, limit: 'inapplicable' }
+
+/**
+ * What `all()` and `first()` pass, which mark no member `refused` — reached
+ * only if one of their dispositions above ever becomes one.
+ */
+function unreachableRefusal(members: readonly string[]): never {
+  throw new ValidationError([`Nothing is refused here, yet ${quoted(members)} was.`])
+}
+
 async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
-  const scoped = scope(binding, plan, await whereCombinators())
-  const offsetted = plan.offset === undefined ? scoped : scoped.offset(plan.offset)
-  const collection = plan.limit === undefined ? offsetted : offsetted.limit(plan.limit)
+  const collection = scope(
+    binding,
+    plan,
+    await whereCombinators(),
+    ALL_DISPOSITIONS,
+    unreachableRefusal,
+  )
   const rows = await withOrigin('engine', () => collection.all())
   return await Promise.all(rows.map((row) => visible(binding, row, plan)))
 }
@@ -715,7 +829,13 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow | null> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return null
-  const collection = scope(binding, plan, await whereCombinators())
+  const collection = scope(
+    binding,
+    plan,
+    await whereCombinators(),
+    FIRST_DISPOSITIONS,
+    unreachableRefusal,
+  )
   const row = await withOrigin('engine', () => collection.first())
   return row === null ? null : await visible(binding, row, plan)
 }
@@ -732,14 +852,43 @@ function countOf(result: Record<string, unknown>, listName: string, key: string)
 }
 
 /**
+ * An aggregate counts the rows the predicates match.
+ *
+ * A sort, an include and a projection cannot change that count — an include is
+ * an eager load, a sort is over rows this terminal returns none of (and
+ * Postgres refuses an `ORDER BY` beside a bare aggregate outright), and a count
+ * materialises no rows for a projection to narrow or for Field Visibility to
+ * strip. `distinct`, `cursor`, `limit` and `offset` all WOULD change the
+ * answer, and none of them can be expressed beside a bare aggregate — SQL's
+ * `LIMIT`/`OFFSET` bound the aggregate's own single result row, not the rows
+ * it counts — so each is refused rather than dropped.
+ */
+const AGGREGATE_DISPOSITIONS: PlanDispositions = {
+  predicates: 'applied',
+  orders: 'inapplicable',
+  includes: 'inapplicable',
+  projection: 'inapplicable',
+  selection: 'inapplicable',
+  additions: 'inapplicable',
+  limit: 'refused',
+  offset: 'refused',
+  distinct: 'refused',
+  cursor: 'refused',
+}
+
+function refuseUncountable(listName: string): (members: readonly string[]) => never {
+  return (members) => {
+    throw new ValidationError([
+      `Cannot aggregate "${listName}" over a read that composed ${quoted(members)} — an ` +
+        `aggregate counts the rows the predicates match, which is not what any of those would ` +
+        `return. Aggregate the predicates alone, or read the rows.`,
+    ])
+  }
+}
+
+/**
  * Run an aggregate: the same scoped read every other terminal runs, counted in
  * the database instead of materialised.
- *
- * The read's own `orderBy`, `include`, `distinct` and `cursor` are not carried
- * across. An include is an eager load and a sort is over rows this terminal
- * returns none of, so neither can change how many rows match — and Postgres
- * refuses an `ORDER BY` beside a bare aggregate outright. `distinct` and a
- * cursor WOULD change the answer, so they are refused rather than dropped.
  *
  * Known limits: `count()` throws rather than rounding beyond
  * ±(2^53 − 1) — the guarded integer codec the ORM decodes it through
@@ -751,13 +900,6 @@ async function runAggregate(
   state: QueryState,
   build: AggregateBuild,
 ): Promise<Record<string, number>> {
-  if (state.distincts.length > 0 || state.cursor !== undefined) {
-    throw new ValidationError([
-      `Cannot aggregate "${binding.listName}" over a read that composed distinct or cursor — ` +
-        `an aggregate counts the rows the predicates match, which is not what either would ` +
-        `return. Aggregate the predicates alone, or read the rows.`,
-    ])
-  }
   const spec = build(aggregations)
   const keys = specKeys(spec)
 
@@ -767,17 +909,10 @@ async function runAggregate(
 
   const collection = scope(
     binding,
-    {
-      predicates: plan.predicates,
-      orders: [],
-      includes: [],
-      // A count materialises no rows, so there is nothing to project and
-      // nothing for Field Visibility to strip.
-      projection: UNPROJECTED,
-      selection: undefined,
-      additions: dependencyAdditions([]),
-    },
+    plan,
     await whereCombinators(),
+    AGGREGATE_DISPOSITIONS,
+    refuseUncountable(binding.listName),
   )
   const result = await withOrigin('engine', () =>
     collection.aggregate((aggregate) =>
@@ -801,22 +936,39 @@ function present(near: NearestPlan): WherePlan {
 }
 
 /**
- * Refuse a search over a read that composed `distinct` or a cursor.
+ * A search ranks by distance, and the ranking is this query's leading order.
  *
- * Both are refused rather than carried for the reason `runAggregate` refuses
- * them: neither can be honoured here, and dropping them would answer a
- * different question in silence. The ranking is this query's leading order, so
- * a cursor has no axis left to resume along and a `distinctOn` can never be
+ * So a cursor has no axis left to resume along and a `distinctOn` can never be
  * the leading sort; a plain `distinct` would collapse rows the top-K has
- * already been computed over, which makes `limit` inexact.
+ * already been computed over, which makes `limit` inexact; and an `offset`
+ * would page a ranking whose scores are recomputed here in float64 over a
+ * float4 column, so the page boundary is exactly where the two can disagree.
+ * `options.limit` is this terminal's own bound (ADR-0045), and `orders` is
+ * rebuilt distance-first below so a caller's own sort becomes the tiebreak
+ * rather than competing with the ranking.
  */
-function refuseUnrankable(listName: string, plan: ReadPlan): void {
-  if (plan.distinct === undefined && plan.cursor === undefined) return
-  throw new ValidationError([
-    `Cannot search "${listName}" over a read that composed distinct or cursor — the ranking is ` +
-      `this query's leading order, so a cursor has no axis to resume along and a distinct would ` +
-      `collapse rows the nearest limit is already counted over. Search the predicates alone.`,
-  ])
+const NEAREST_DISPOSITIONS: PlanDispositions = {
+  predicates: 'applied',
+  orders: 'inapplicable',
+  includes: 'applied',
+  projection: 'applied',
+  selection: 'applied',
+  additions: 'applied',
+  limit: 'inapplicable',
+  offset: 'refused',
+  distinct: 'refused',
+  cursor: 'refused',
+}
+
+function refuseUnrankable(listName: string): (members: readonly string[]) => never {
+  return (members) => {
+    throw new ValidationError([
+      `Cannot search "${listName}" over a read that composed ${quoted(members)} — the ranking is ` +
+        `this query's leading order, so a cursor has no axis to resume along, an offset pages a ` +
+        `ranking whose scores this engine recomputes, and a distinct would collapse rows the ` +
+        `nearest limit is already counted over. Search the predicates alone.`,
+    ])
+  }
 }
 
 /**
@@ -846,7 +998,6 @@ async function runNearest(
 ): Promise<NearestMatch<OrmRow>[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
-  refuseUnrankable(binding.listName, plan)
 
   const near = await resolveNearest(
     field,
@@ -860,18 +1011,12 @@ async function runNearest(
   const bound = near.distanceBound
 
   // Derived from the resolved plan rather than rebuilt beside it, so a member
-  // added to `ReadPlan` reaches this query too. `orders` is the one deliberate
-  // difference: the sort is rebuilt in one call below, distance first, so a
-  // caller's own `orderBy` becomes the tiebreak rather than competing with the
-  // ranking.
+  // added to `ReadPlan` reaches this query too.
   let collection = scope(
     binding,
     {
       ...plan,
       predicates: [...plan.predicates, present(near)],
-      orders: [],
-      // `options.limit` is this terminal's own bound (ADR-0045).
-      limit: undefined,
       // The score is recomputed from the row's own vector, so the column has
       // to survive the projection even when the caller did not name it. It is
       // outside `projection.caller`, so Field Visibility strips it back out.
@@ -881,6 +1026,8 @@ async function runNearest(
           : { ...plan.projection, columns: [...plan.projection.columns, near.column] },
     },
     ops,
+    NEAREST_DISPOSITIONS,
+    refuseUnrankable(binding.listName),
   ).orderBy([
     (model) => vectors.order(near, model),
     ...plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),

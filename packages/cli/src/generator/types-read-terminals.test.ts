@@ -77,6 +77,10 @@ const config: OpenSaasConfig = {
         embedding: embedding(1536, 'cosine'),
       },
     },
+    Settings: {
+      isSingleton: true,
+      fields: { siteName: text({ validation: { isRequired: true } }) },
+    },
   },
 }
 
@@ -221,6 +225,155 @@ async function run() {
 
   // @ts-expect-error a cursor value has the column's own type
   await context.db.Post.cursor({ title: 7 }).all()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  /**
+   * `populateDbDelegate` wires the composed read in the `else` of
+   * `isSingletonList`, so a singleton carries `get` and the CRUD delegate and
+   * none of these. The type has to say the same thing, or every one of them
+   * type-checks and throws `TypeError: … is not a function`.
+   */
+  it('leaves the composed read off a singleton list', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+declare const queryVector: number[]
+
+async function run() {
+  // What a singleton does carry.
+  const settings = await context.db.Settings.get()
+  assertType<Exact<NonNullable<typeof settings>['siteName'], string>>()
+  await context.db.Settings.findMany()
+  await context.db.Settings.count()
+
+  // @ts-expect-error a singleton has no composed read to start
+  context.db.Settings.where
+  // @ts-expect-error nor a terminal for one
+  context.db.Settings.all
+  // @ts-expect-error nor the single-row terminal
+  context.db.Settings.first
+  // @ts-expect-error nor orderBy
+  context.db.Settings.orderBy
+  // @ts-expect-error nor include
+  context.db.Settings.include
+  // @ts-expect-error nor select
+  context.db.Settings.select
+  // @ts-expect-error nor limit
+  context.db.Settings.limit
+  // @ts-expect-error nor offset
+  context.db.Settings.offset
+  // @ts-expect-error nor distinct
+  context.db.Settings.distinct
+  // @ts-expect-error nor distinctOn
+  context.db.Settings.distinctOn
+  // @ts-expect-error nor cursor
+  context.db.Settings.cursor
+  // @ts-expect-error nor aggregate
+  context.db.Settings.aggregate
+  // @ts-expect-error nor nearest
+  context.db.Settings.nearest
+
+  // The non-singleton keeps every one of them.
+  await context.db.Post.where({ published: { equals: true } }).offset(1).first()
+  await context.db.Article.nearest('embedding', queryVector)
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('lets a consumer name the aggregate builder it factors out', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Aggregations, CountReduction, NearestMatch } from '@opensaas/stack-core'
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+// Inference covers a builder written inline; a factored-out one needs the
+// parameter's type to be importable.
+const totals = (aggregate: Aggregations): { total: CountReduction } => ({
+  total: aggregate.count(),
+})
+
+async function run() {
+  const { total } = await context.db.Post.aggregate(totals)
+  assertType<Exact<typeof total, number>>()
+
+  const hits = await context.db.Article.nearest('embedding', [])
+  assertType<Exact<typeof hits, NearestMatch<(typeof hits)[number]['item']>[]>>()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('reduces a to-many relation only, and only a where()', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // The reduction the engine can honour.
+  const ok = await context.db.User.include('posts', (posts) =>
+    posts.where({ published: { equals: true } }).count(),
+  ).all()
+  assertType<Exact<(typeof ok)[number]['posts'], number>>()
+
+  // @ts-expect-error a to-one reads as one row or null, so there is nothing to count
+  await context.db.Post.include('author', (author) => author.count()).all()
+
+  // @ts-expect-error nor to combine
+  await context.db.Post.include('author', (author) => author.combine({ n: author.count() })).all()
+
+  // @ts-expect-error a count honours where() alone — not a select()
+  await context.db.User.include('posts', (posts) => posts.select('title').count()).all()
+
+  // @ts-expect-error nor a limit()
+  await context.db.User.include('posts', (posts) => posts.limit(3).count()).all()
+
+  // @ts-expect-error nor an orderBy()
+  await context.db.User.include('posts', (posts) => posts.orderBy({ title: 'asc' }).count()).all()
+
+  // Including a to-one as rows is untouched.
+  const rows = await context.db.Post.include('author', (author) =>
+    author.select('name'),
+  ).all()
+  assertType<Exact<NonNullable<(typeof rows)[number]['author']>['name'], string>>()
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('searches a vector column and no other', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+declare const queryVector: number[]
+
+async function run() {
+  await context.db.Article.nearest('embedding', queryVector)
+
+  // @ts-expect-error "title" is a stored column, but it carries no distance function
+  await context.db.Article.nearest('title', queryVector)
+
+  // @ts-expect-error and a list with no vector column has nothing to search
+  await context.db.Post.nearest('title', queryVector)
 }
 
 void run

@@ -42,7 +42,7 @@ export type {
   ListReduction,
   ListCursor,
   StoredKey,
-  NearestHit,
+  VectorKey,
   SubArgs,
   ListFilterArgs,
   FindUniqueArgs,

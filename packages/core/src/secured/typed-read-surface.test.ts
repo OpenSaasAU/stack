@@ -81,6 +81,10 @@ const config: OpenSaasConfig = {
       fields: { title: text(), embedding: embedding(3) },
       access: { operation: { query: () => true } },
     },
+    Locked: {
+      fields: { title: text() },
+      access: { operation: { query: () => false } },
+    },
   },
 }
 
@@ -210,7 +214,9 @@ describe('the members the generated surface promises', () => {
   })
 
   test('and every refinement member is callable on the value a refinement is handed', async () => {
-    let seen: readonly string[] = []
+    // A sentinel rather than `[]`: the assertion below is on the absent
+    // members, and `[]` is also what "the callback never ran" looks like.
+    let seen: readonly string[] = ['<the refinement callback never ran>']
     await database
       .context(ada)
       .db.User.include('posts', (posts) => {
@@ -237,6 +243,57 @@ describe('each promised member answers', () => {
       'beta',
       'gamma',
     ])
+  })
+
+  test('first() honours offset — it has no offset of its own', async () => {
+    const db = database.context(ada).db.Post
+    expect((await db.orderBy({ title: 'asc' }).first())?.title).toBe('alpha')
+    expect((await db.orderBy({ title: 'asc' }).offset(1).first())?.title).toBe('beta')
+    expect((await db.orderBy({ title: 'asc' }).offset(2).first())?.title).toBe('gamma')
+    // Past the end of the scoped set is absent, not the last row.
+    expect(await db.orderBy({ title: 'asc' }).offset(3).first()).toBeNull()
+  })
+
+  test('first() pages inside the Access Filter, not around it', async () => {
+    const other = await seed('User', { handle: 'bob' })
+    await seed('Post', { title: 'delta', kind: 'essay', views: 9, author: other.id })
+
+    // Four rows exist and `delta` sorts second, so an offset of one over the
+    // whole table would answer with it rather than with ada's own `beta`.
+    expect(
+      (await database.context(ada).db.Post.orderBy({ title: 'asc' }).offset(1).first())?.title,
+    ).toBe('beta')
+  })
+
+  test('aggregate refuses a composed offset rather than counting past it', async () => {
+    const db = database.context(ada).db.Post
+    expect(await db.aggregate((a) => ({ total: a.count() }))).toEqual({ total: 3 })
+
+    await expect(db.offset(1).aggregate((a) => ({ total: a.count() }))).rejects.toThrow(
+      /composed "offset"/,
+    )
+    // The same class, and the same refusal: neither bounds the rows an
+    // aggregate counts.
+    await expect(db.limit(1).aggregate((a) => ({ total: a.count() }))).rejects.toThrow(
+      /composed "limit"/,
+    )
+    await expect(
+      db
+        .limit(1)
+        .offset(1)
+        .aggregate((a) => ({ total: a.count() })),
+    ).rejects.toThrow(/composed "limit", "offset"/)
+  })
+
+  test('a denied read answers 0 rather than that refusal', async () => {
+    await seed('Locked', { title: 'sealed' })
+    const locked = database.context(ada).db.Locked
+    // The refusal runs after the access check, so a caller who may not read at
+    // all never learns which members the read composed (#912, #915).
+    expect(await locked.aggregate((a) => ({ total: a.count() }))).toEqual({ total: 0 })
+    expect(await locked.offset(1).aggregate((a) => ({ total: a.count() }))).toEqual({ total: 0 })
+    expect(await locked.offset(1).first()).toBeNull()
+    expect(await locked.offset(1).all()).toEqual([])
   })
 
   test('offset pages within the Access Filter, not around it', async () => {

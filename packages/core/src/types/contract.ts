@@ -158,6 +158,17 @@ type ColumnEntry<C, K extends string, F> =
     ? TableColumns<C, K>[PhysicalColumn<C, K, F>]
     : never
 
+/**
+ * Whether the column is one pgvector codes.
+ *
+ * `nearest()` orders by a column's contents, so a column with no distance
+ * function has nothing to rank by. The emitted contract carries the codec the
+ * column decodes through, which is what says which columns do — read from the
+ * artifact rather than from a hand-kept list of field types.
+ */
+export type IsVectorColumn<C, K extends string, F> =
+  ColumnEntry<C, K, F> extends { readonly codecId: 'pg/vector@1' } ? true : false
+
 /** Whether the column carries any database default — literal or function. */
 export type HasColumnDefault<C, K extends string, F> =
   ColumnEntry<C, K, F> extends { readonly default: unknown } ? true : false

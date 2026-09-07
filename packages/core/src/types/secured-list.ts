@@ -1,6 +1,14 @@
 import type { Aggregations, CountReduction } from '../secured/aggregate.js'
+import type { NearestMatch } from '../secured/read.js'
 import type { NearestOptions } from '../secured/vocabulary.js'
-import type { IsToOne, ListId, RelationKey, RelationTarget, RemainderBase } from './contract.js'
+import type {
+  IsToOne,
+  IsVectorColumn,
+  ListId,
+  RelationKey,
+  RelationTarget,
+  RemainderBase,
+} from './contract.js'
 import type { CreateInput, UpdateInput } from './inputs.js'
 import type { RelationValue, Row, StoredRow, SystemFieldKey } from './rows.js'
 
@@ -343,6 +351,24 @@ export type StoredKey<C, R extends RemainderBase, K extends keyof R & string> = 
   string
 >
 
+/**
+ * The list's vector columns — what `nearest()` may search.
+ *
+ * `never` for a list that declares none, which makes the member uncallable
+ * there rather than a runtime "is not a vector column".
+ */
+export type VectorKey<C, R extends RemainderBase, K extends keyof R & string> = {
+  [F in StoredKey<C, R, K>]: IsVectorColumn<C, K, F> extends true ? F : never
+}[StoredKey<C, R, K>]
+
+/**
+ * The relations that read as rows rather than as one row or null — the only
+ * ones a `.count()` or `.combine()` can reduce (`ReducedToOneIncludeError`).
+ */
+type ToManyKey<C, K extends string> = {
+  [Rel in RelationKey<C, K>]: IsToOne<C, K, Rel> extends true ? never : Rel
+}[RelationKey<C, K>]
+
 /** Where a `cursor` resumes from: values on the columns the read sorts by. */
 export type ListCursor<C, R extends RemainderBase, K extends keyof R & string> = {
   [F in keyof StoredRow<C, R, K>]?: StoredRow<C, R, K>[F]
@@ -361,17 +387,6 @@ export type ListCursor<C, R extends RemainderBase, K extends keyof R & string> =
 export interface ListReduction<V> {
   readonly reduction: 'relation'
   readonly reduced: V
-}
-
-/** One vector-search hit: the row through the caller's projection, and its score. */
-export interface NearestHit<Item> {
-  item: Item
-  /**
-   * Similarity in the field's own terms. The database owns the ordering and
-   * this is the same function recomputed from the row's own vector, so at a
-   * tie two rows can arrive in an order their scores do not reproduce.
-   */
-  score: number
 }
 
 /**
@@ -397,37 +412,64 @@ type ReducedRelation<Rel, Red> = {
  * A related read composed inside `.include()`. It carries no terminal: the
  * parent's terminal is the only thing that runs, and `limit`/`offset` here
  * page the related rows per parent row.
+ *
+ * `Reducible` says whether `.count()` and `.combine()` are still on it. It
+ * starts `false` for a to-one relation, which reads as one row or null rather
+ * than as rows to count (`ReducedToOneIncludeError`), and every member but
+ * `where` turns it off, because a count honours `where()` alone
+ * (`UnreducibleRefinementError`). Both refusals are therefore compile errors
+ * rather than throws.
  */
 export type ListRefinement<
   C,
   R extends RemainderBase,
   K extends keyof R & string,
   Selected extends string = never,
+  Reducible extends boolean = true,
+> = ComposableRefinement<C, R, K, Selected, Reducible> &
+  (Reducible extends true ? Reducers : Record<never, never>)
+
+type ComposableRefinement<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Selected extends string,
+  Reducible extends boolean,
 > = {
-  where: (predicate: ListPredicate<C, R, K>) => ListRefinement<C, R, K, Selected>
+  where: (predicate: ListPredicate<C, R, K>) => ListRefinement<C, R, K, Selected, Reducible>
   orderBy: (
     order: ListSort<C, R, K> | readonly ListSort<C, R, K>[],
-  ) => ListRefinement<C, R, K, Selected>
-  limit: (count: number) => ListRefinement<C, R, K, Selected>
-  offset: (count: number) => ListRefinement<C, R, K, Selected>
+  ) => ListRefinement<C, R, K, Selected, false>
+  limit: (count: number) => ListRefinement<C, R, K, Selected, false>
+  offset: (count: number) => ListRefinement<C, R, K, Selected, false>
   /**
    * Return exactly these of the related list's own fields. Replaces any
    * previous call rather than accumulating, and leaves relations this
    * refinement includes on the row.
    */
-  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListRefinement<C, R, K, F>
+  select: <F extends SelectableKey<C, R, K>>(...fields: F[]) => ListRefinement<C, R, K, F, false>
   include: <Rel extends RelationKey<C, K>, Sel extends string = never>(
     name: Rel,
     refine?: (
-      refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
+      refinement: ListRefinement<
+        C,
+        R,
+        IncludeTargetOf<C, R, K, Rel>,
+        never,
+        IsToOne<C, K, Rel> extends true ? false : true
+      >,
     ) =>
-      | ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel>
+      | ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel, boolean>
       | ListReduction<number>
       | ListReduction<Record<string, number>>,
-  ) => ListRefinement<C, R, K, Selected>
+  ) => ListRefinement<C, R, K, Selected, false>
+}
+
+/** What a refinement that has composed nothing but `where()` can still be reduced to. */
+type Reducers = {
   /**
    * Reduce the related rows to how many of them this session may see, in
-   * place of the rows themselves. To-many only, and `where()` only.
+   * place of the rows themselves.
    */
   count: () => ListReduction<number>
   /**
@@ -469,15 +511,21 @@ export type ListQuery<
    * signature below; anything else keeps the rows.
    */
   include: {
-    <Rel extends RelationKey<C, K>, Red extends ListReduction<unknown>>(
+    <Rel extends ToManyKey<C, K>, Red extends ListReduction<unknown>>(
       name: Rel,
       refine: (refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>) => Red,
     ): ListQuery<C, R, K, Included & ReducedRelation<Rel, Red>, Selected>
     <Rel extends RelationKey<C, K>, Sel extends string = never>(
       name: Rel,
       refine?: (
-        refinement: ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>>,
-      ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel>,
+        refinement: ListRefinement<
+          C,
+          R,
+          IncludeTargetOf<C, R, K, Rel>,
+          never,
+          IsToOne<C, K, Rel> extends true ? false : true
+        >,
+      ) => ListRefinement<C, R, IncludeTargetOf<C, R, K, Rel>, Sel, boolean>,
     ): ListQuery<C, R, K, Included & IncludedRelation<C, R, K, Rel, Sel>, Selected>
   }
   /**
@@ -518,12 +566,15 @@ export type ListQuery<
    *
    * `item` honours this read's projection and includes; the score sits beside
    * it rather than arriving as a field the list does not have (ADR-0045).
+   *
+   * `field` is one of this list's vector columns and nothing else — a list
+   * that declares none has no callable `nearest`.
    */
   nearest: (
-    field: StoredKey<C, R, K>,
+    field: VectorKey<C, R, K>,
     vector: readonly number[],
     options?: NearestOptions,
-  ) => Promise<NearestHit<IncludedRow<ComposedRow<C, R, K, Selected>, Included>>[]>
+  ) => Promise<NearestMatch<IncludedRow<ComposedRow<C, R, K, Selected>, Included>>[]>
   /**
    * Reduce the read to named aggregates over the rows this session may see.
    * A denied read answers `0` under every key rather than throwing.
@@ -533,7 +584,24 @@ export type ListQuery<
   ) => Promise<{ [P in keyof S]: number }>
 }
 
-type ListOps<C, R extends RemainderBase, K extends keyof R & string> = ListQuery<C, R, K> & {
+/**
+ * The composed read exists on a list and not on a singleton, mirroring
+ * `populateDbDelegate`: a singleton gets `get` plus the CRUD delegate, and the
+ * read wiring sits in the other branch. A `Pick` over a key union that is
+ * empty for a singleton rather than a conditional over the whole type, for the
+ * reason {@link SingletonOpKey} is one — a generated interface still extends
+ * the whole {@link SecuredList}.
+ */
+type ComposedReadKey<C, R extends RemainderBase, K extends keyof R & string> = R[K] extends {
+  singleton: true
+}
+  ? never
+  : keyof ListQuery<C, R, K>
+
+type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
+  ListQuery<C, R, K>,
+  ComposedReadKey<C, R, K>
+> & {
   findUnique: <
     S extends ListSelect<C, R, K> = never,
     I extends ListInclude<C, R, K> = never,
