@@ -148,6 +148,7 @@ Top 3 Results:
 The RAG plugin is configured in `opensaas.config.ts`:
 
 ```typescript
+import { config } from '@opensaas/stack-core'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 
 export default config({
@@ -161,7 +162,7 @@ export default config({
     }),
   ],
   db: { provider: 'postgresql' },
-  // ... rest of config
+  // ... lists
 })
 ```
 
@@ -265,8 +266,6 @@ rag-ollama-demo/
 - `summary` (text)
 - `contentEmbedding` (embedding) - Auto-generated from `content`
 - `published` (checkbox)
-- `createdAt` (timestamp)
-- `updatedAt` (timestamp)
 
 ### Article List
 
@@ -275,6 +274,12 @@ rag-ollama-demo/
 - `category` (text)
 - `bodyEmbedding` (embedding) - Auto-generated from `body`
 - `published` (checkbox)
+
+Both lists also carry `id`, which is the only column added for you. Neither
+carries `createdAt`/`updatedAt`: auto-timestamps are off by default (ADR-0004)
+and this config opts into them nowhere. A list that wants them either declares
+the two fields itself or sets `db: { timestamps: true }` — on the list, or on
+`db` for every list at once.
 
 ## Storage Format
 
@@ -300,9 +305,10 @@ needs a Postgres with the `vector` extension available.
 ### Provisioning pgvector
 
 You do not enable the extension yourself, and there is no install script.
-`ragPlugin` declares the pgvector extension pack, `pnpm generate` writes the
-extension's own migration alongside the app's, and `pnpm dev` (or
-`pnpm db:update`) enables it.
+`ragPlugin` declares the pgvector extension pack, `pnpm generate` seeds that
+pack's contract space under `migrations/` — it writes no app migration of its
+own — and `pnpm dev` enables the extension when it reconciles. `pnpm dev` has to
+be running for `pnpm db:update` to have anything to talk to.
 
 Leave `DATABASE_URL` unset and the Dev database `pnpm dev` starts carries
 pgvector already. Pointing at a Postgres of your own adds two requirements:

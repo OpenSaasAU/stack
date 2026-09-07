@@ -46,10 +46,7 @@ export default config({
       }),
     }),
   ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -78,7 +75,14 @@ pnpm generate
 pnpm db:update
 ```
 
-`db:update` enables pgvector along the way — see
+`opensaas db update` opens no connection of its own: it hands the request to a
+running `opensaas dev` loop and exits non-zero when none is listening. So keep
+`pnpm dev` running in another terminal — or just save `opensaas.config.ts` with
+the loop up, which reconciles without a second command. In a deployment there is
+no loop; plan and apply the change with `prisma migration plan` and
+`prisma db migrate` instead.
+
+Either route enables pgvector along the way — see
 [Provisioning pgvector](#provisioning-pgvector) for what the server has to
 offer for that to succeed.
 
@@ -143,7 +147,8 @@ export default config({
       }),
     }),
   ],
-  // ... rest of config
+  db: { provider: 'postgresql' },
+  // ... lists
 })
 ```
 
@@ -172,9 +177,10 @@ contentEmbedding: embedding({
 
 ### Provisioning pgvector
 
-`ragPlugin` declares the pgvector extension pack, so `pnpm generate` writes the
-extension's migration alongside the app's and `pnpm db:update` enables the
-extension for you. There is no install step to run and no SQL to paste.
+`ragPlugin` declares the pgvector extension pack, so `pnpm generate` seeds that
+pack's contract space under `migrations/` — it writes no app migration of its
+own — and the dev loop enables the extension when it reconciles. There is no
+install step to run and no SQL to paste.
 
 What the server has to offer is the extension itself:
 
@@ -283,6 +289,7 @@ export default config({
       enableMcpTools: true, // Enables semantic_search_article tool
     }),
   ],
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: { type: 'better-auth', loginPage: '/sign-in' },

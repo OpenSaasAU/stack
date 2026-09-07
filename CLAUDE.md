@@ -826,9 +826,14 @@ if (!post) {
 
 ### 4. System Fields
 
-Fields `id`, `createdAt`, `updatedAt` are automatically:
+`id` is the only column the generator adds on its own. `createdAt`/`updatedAt`
+are **off by default** (ADR-0004, `resolveListTimestamps` in
+`packages/core/src/contract/derive.ts`): a list opts in by declaring the two
+fields itself or by setting `db: { timestamps: true }`, per list or on `db` for
+every list at once.
 
-- Added to Prisma schema
+All three names, where the list has them, are:
+
 - Excluded from access control (always readable)
 - Excluded from field-level write operations
 

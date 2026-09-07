@@ -79,16 +79,24 @@ sudo systemctl restart postgresql
 ### Enabling it
 
 You do not run any SQL for this, and there is no install script. `ragPlugin`'s
-declaration is a generator emission: `pnpm generate` writes the extension's own
-migration under `migrations/pgvector/`, alongside your app's, and the migration
-enables the extension ahead of your tables.
+declaration is a generator emission: `pnpm generate` seeds the pack's contract
+space under `migrations/pgvector/` — it writes no app migration of its own — and
+that space enables the extension ahead of your tables.
 
 ```bash
 pnpm generate
 pnpm db:update
 ```
 
-In production the same committed migration runs under `opensaas db migrate`.
+`opensaas db update` opens no connection of its own: it hands the request to a
+running `opensaas dev` loop and exits non-zero when none is listening. Keep
+`pnpm dev` up in another terminal for the command above.
+
+In a deployment there is no loop for `db:update` to talk to, so the same
+committed space is applied as a migration instead: `prisma migration plan` once
+against a database you are willing to open a planning connection to, commit the
+result, then `prisma db migrate`. There is no `opensaas db migrate` — `opensaas
+db` carries only `update`.
 
 ### The privilege it needs
 
@@ -102,7 +110,8 @@ unprivileged role can do. One of these has to hold:
   who does have that privilege. The migration prechecks for it, finds it
   present, and records the step as already satisfied rather than failing.
 
-Either route arrives in the same place, and a following `db:update` is a no-op.
+Either route arrives in the same place, and a following `pnpm db:update` — with
+`pnpm dev` still up, as above — is a no-op.
 
 If the server has no pgvector at all, the migration stops with Prisma's own
 error — it names the `pgvector` space, the missing `vector.control` file and SQL
@@ -297,10 +306,7 @@ export default config({
       }),
     }),
   ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -327,26 +333,16 @@ export default config({
         published: checkbox({
           defaultValue: false,
         }),
-        publishedAt: timestamp({
-          db: { updatedAt: false },
-        }),
+        publishedAt: timestamp(),
       },
       access: {
         operation: {
-          query: () => true,
+          // A rule scopes a read by returning a filter rather than a boolean;
+          // there is no separate `access.filter` block.
+          query: ({ session }) => (session ? true : { published: { equals: true } }),
           create: ({ session }) => !!session,
           update: ({ session }) => !!session,
           delete: ({ session }) => !!session,
-        },
-        filter: {
-          query: ({ session }) => {
-            // Anonymous users see only published articles
-            if (!session) {
-              return { published: { equals: true } }
-            }
-            // Authenticated users see all
-            return {}
-          },
         },
       },
     }),
@@ -485,6 +481,7 @@ export default config({
       }),
     }),
   ],
+  db: { provider: 'postgresql' },
   lists: {
     KnowledgeBase: list({
       fields: {
@@ -766,7 +763,9 @@ MIGRATION.RUNNER_FAILED ... could not open extension control file ... vector.con
 **Solution:**
 
 pgvector is not present on the server. Make it available, then re-run
-`pnpm db:update`:
+`pnpm db:update` with `pnpm dev` up in another terminal — the command hands the
+request to that loop and exits non-zero when none is listening. In a deployment,
+re-run `prisma db migrate` instead:
 
 - **Docker**: use the `pgvector/pgvector:pg16` image
 - **Homebrew**: `brew install pgvector`
