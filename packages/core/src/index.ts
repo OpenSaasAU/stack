@@ -116,6 +116,7 @@ export type {
   ListWhere,
   ListOrderBy,
   ListUniqueWhere,
+  ListIdentityWhere,
   ListSelect,
   ListInclude,
   ListReduction,
@@ -161,7 +162,10 @@ export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 // The secured write surface: the collection the Write Pipeline drives, and the
 // payload shape it refuses (ADR-0050).
 export { WriteCollectionMissingError } from './secured/write.js'
-export { NestedRelationInputError } from './context/relationship-input.js'
+export {
+  NestedRelationInputError,
+  RelationInputNotLoweredError,
+} from './context/relationship-input.js'
 export type {
   SecuredQuery,
   SecuredRefinement,

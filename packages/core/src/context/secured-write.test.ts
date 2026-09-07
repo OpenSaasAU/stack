@@ -6,7 +6,7 @@ import { relationship, text } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
-import { NestedRelationInputError } from './relationship-input.js'
+import { NestedRelationInputError, RelationInputNotLoweredError } from './relationship-input.js'
 
 /**
  * #1152: the write terminals over a real rc.8 collection.
@@ -171,6 +171,137 @@ describe('the write terminals over a real collection', () => {
     BOOT,
   )
 
+  /**
+   * Defence in depth for the Access Filter reaching the write STATEMENT, not
+   * just the gate. The target read and the filter re-check both pass; a
+   * `beforeOperation` hook then moves the row out of the filter from inside the
+   * same transaction. Only a write whose own predicate carries the filter can
+   * answer `null` here — one scoped by identity alone still matches the row.
+   */
+  test(
+    'a row that leaves the filter mid-transaction is not written',
+    async () => {
+      const created = await harness.context.db.Post.create({
+        data: { title: 'before', authorId: 'u1' },
+      })
+
+      const mine = ({ session }: { session: Session | null }) => ({
+        authorId: { equals: session?.userId },
+      })
+
+      const config: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          Post: {
+            fields: { title: text(), authorId: text() },
+            access: {
+              operation: { query: () => true, create: () => true, update: mine, delete: mine },
+            },
+            hooks: {
+              beforeOperation: async (args) => {
+                // Only the caller's own update reassigns; the nested one below
+                // must not re-enter this hook.
+                if (args.operation !== 'update') return
+                if (args.resolvedData?.title !== 'after') return
+                await args.context.db.Post.update({
+                  where: { id: String(created?.id) },
+                  data: { authorId: 'u2' },
+                })
+              },
+            },
+          },
+        },
+      }
+
+      const scoped = contextAt(config, { userId: 'u1' })
+      expect(
+        await scoped.db.Post.update({
+          where: { id: String(created?.id) },
+          data: { title: 'after' },
+        }),
+      ).toBeNull()
+
+      expect(await storedTitles(harness.url)).toEqual(['before'])
+    },
+    BOOT,
+  )
+
+  /**
+   * The bracket reports what happened, not what was attempted: the write above
+   * persisted nothing, so a compensator keyed on `committed` must not run.
+   */
+  test(
+    'a write that persisted nothing reports rolled-back to afterTransaction',
+    async () => {
+      const created = await harness.context.db.Post.create({ data: { title: 'before' } })
+
+      const settled: string[] = []
+      const config: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          Post: {
+            fields: { title: text(), authorId: text() },
+            access: { operation: OPEN },
+            hooks: {
+              beforeOperation: async (args) => {
+                if (args.operation !== 'update') return
+                await args.context.db.Post.delete({ where: { id: String(created?.id) } })
+              },
+              afterTransaction: async ({ status }) => {
+                settled.push(status)
+              },
+            },
+          },
+        },
+      }
+
+      const context = contextAt(config, { userId: 'u1' })
+      expect(
+        await context.db.Post.update({
+          where: { id: String(created?.id) },
+          data: { title: 'after' },
+        }),
+      ).toBeNull()
+
+      // The owner's own bracket first (the update, which wrote nothing), then
+      // the joined delete's deferred one (ADR-0028), which did commit.
+      expect(settled).toEqual(['rolled-back', 'committed'])
+      expect(await storedTitles(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * `findUnique` beside these terminals rejects a non-unique `where` loudly
+   * rather than answering the denied-or-gone `null`; a write selector the
+   * engine cannot lower is the same class of caller mistake.
+   */
+  test(
+    'update and delete by anything but `id` are a loud caller-shape error',
+    async () => {
+      await harness.context.db.Post.create({ data: { title: 'keep', authorId: 'u1' } })
+
+      await expect(
+        harness.context.db.Post.update({ where: { authorId: 'u1' }, data: { title: 'moved' } }),
+      ).rejects.toThrow(/requires `where: \{ id \}`/)
+
+      await expect(harness.context.db.Post.delete({ where: { authorId: 'u1' } })).rejects.toThrow(
+        /requires `where: \{ id \}`/,
+      )
+
+      await expect(
+        harness.context.db.Post.update({ where: {}, data: { title: 'moved' } }),
+      ).rejects.toThrow(/requires `where: \{ id \}`/)
+
+      await expect(
+        harness.context.db.Post.update({ where: { id: undefined }, data: { title: 'moved' } }),
+      ).rejects.toThrow(/requires `where: \{ id \}`/)
+
+      expect(await storedTitles(harness.url)).toEqual(['keep'])
+    },
+    BOOT,
+  )
+
   test(
     'the in-transaction and boundary hooks fire once per write, in order',
     async () => {
@@ -324,6 +455,103 @@ describe('a nested write in a payload is refused', () => {
       BOOT,
     )
   }
+
+  /**
+   * `connect`/`disconnect` are the spellings ADR-0050 keeps, and #1153 lowers.
+   * Until it does they must not reach the driver as a column value — the error
+   * there names neither this list nor this field.
+   */
+  test.each([
+    ['connect', { connect: { id: 'a1' } }],
+    ['disconnect', { disconnect: true }],
+  ])('%s is refused by name until #1153, and nothing is written', async (kind, payload) => {
+    await expect(
+      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
+    ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
+
+    await expect(
+      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
+    ).rejects.toThrow(new RegExp(`"Post".+"author".+\`${kind}\``, 's'))
+
+    await expect(
+      harness.context.db.Post.create({ data: { title: 't', author: payload } }),
+    ).rejects.toThrow(/#1153/)
+
+    expect(await storedTitles(harness.url)).toEqual([])
+  })
+
+  /**
+   * The pre-transaction refusal reads the caller's payload, which a hook has
+   * not touched yet. A `resolveInput` that assembles relation input — the shape
+   * `examples/starter-auth` uses to preset an author — is only visible after
+   * the hooks run, so the refusal has to look again.
+   */
+  test(
+    'relation input a resolveInput hook assembles is refused too',
+    async () => {
+      const config: OpenSaasConfig = {
+        ...relationConfig(() => true),
+        lists: {
+          ...relationConfig(() => true).lists,
+          Post: {
+            fields: { title: text(), author: relationship({ ref: 'Author' }) },
+            access: { operation: OPEN },
+            hooks: {
+              resolveInput: ({ resolvedData, context }) => ({
+                ...resolvedData,
+                author: { connect: { id: context.session?.userId } },
+              }),
+            },
+          },
+        },
+      }
+
+      const orm = ormClientFor(harness.data, harness.client.orm)
+      const context = getContext(
+        config,
+        orm,
+        { userId: 'u1' },
+        undefined,
+        false,
+        undefined,
+        undefined,
+        harness.client,
+      )
+
+      await expect(context.db.Post.create({ data: { title: 't' } })).rejects.toBeInstanceOf(
+        RelationInputNotLoweredError,
+      )
+      expect(await storedTitles(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * A synthetic back-relation key is undeclared by design and rides through
+   * `filterWritableFields` under sudo, so the refusal is the only thing between
+   * it and the driver.
+   */
+  test(
+    'a sudo payload naming a synthetic back-relation is refused too',
+    async () => {
+      const sudo = harness.context.sudo()
+
+      await expect(
+        sudo.db.Author.create({
+          data: { name: 'a', from_Post_author: { create: { title: 't' } } },
+        }),
+      ).rejects.toBeInstanceOf(NestedRelationInputError)
+
+      await expect(
+        sudo.db.Author.create({
+          data: { name: 'a', from_Post_author: { connect: { id: 'p1' } } },
+        }),
+      ).rejects.toBeInstanceOf(RelationInputNotLoweredError)
+
+      expect(await storedTitles(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
 
   test(
     'a caller with no create access gets the silent denial, not the refusal',

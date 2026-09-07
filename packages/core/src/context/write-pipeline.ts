@@ -162,7 +162,7 @@ export interface WritePipelineArgs {
  *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
 export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow | null> {
-  const { ormHandle, listName, listConfig, context, inputData, strategy } = args
+  const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
   const ops = await whereCombinators()
 
   // ── Pre-transaction access gate (#590) ──────────────────────────────────────
@@ -179,7 +179,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
 
   // A payload-shape refusal, after the access gate so a denied caller learns
   // nothing about this list's fields from it (ADR-0031).
-  refuseNestedRelationInput(listName, listConfig, inputData)
+  refuseNestedRelationInput(listName, listConfig, config, inputData)
 
   const involvedLists = enumerateInvolvedLists({
     listName,
@@ -318,6 +318,11 @@ async function runWriteInTransaction(
     item: originalItem,
     context,
   })
+
+  // The same payload-shape refusal, over what the hooks produced: a
+  // `resolveInput` that assembles a relation payload writes it into
+  // `resolvedData`, which the pre-transaction check could not see.
+  refuseNestedRelationInput(listName, listConfig, config, resolvedData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
   const data = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
@@ -599,7 +604,7 @@ function resolveExistingTarget(
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  where: { id: string | number },
   access: 'update' | 'delete',
 ): (collection: WriteCollection, ops: WhereCombinators) => Promise<TargetResolution> {
   return async (collection, ops) => {
@@ -651,7 +656,7 @@ export function updateWriteStrategy(
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  where: { id: string | number },
 ): WriteStrategy {
   return {
     operation: 'update',
@@ -677,7 +682,7 @@ export function deleteWriteStrategy(
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  where: { id: string | number },
 ): WriteStrategy {
   const resolveTarget = resolveExistingTarget(
     listName,

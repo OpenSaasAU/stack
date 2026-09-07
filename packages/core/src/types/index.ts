@@ -37,6 +37,7 @@ export type {
   ListWhere,
   ListOrderBy,
   ListUniqueWhere,
+  ListIdentityWhere,
   ListSelect,
   ListInclude,
   ListReduction,

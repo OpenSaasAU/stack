@@ -67,6 +67,15 @@ export type ListUniqueWhere<C, R extends RemainderBase, K extends keyof R & stri
   [F in keyof StoredRow<C, R, K>]?: StoredRow<C, R, K>[F]
 }
 
+/**
+ * What `update` and `delete` target: the row's identity, and nothing else. The
+ * engine lowers `id` alone into the write's predicate, so a secondary unique
+ * column is a caller-shape error rather than a second way to name a row — a
+ * compile error here, and a throw at runtime for a payload that arrived
+ * untyped.
+ */
+export type ListIdentityWhere<C, K extends string> = { id: ListId<C, K> }
+
 // ── selection ─────────────────────────────────────────────────────────────
 
 /** Nested `select`/`include` on a relation the caller named. */
@@ -182,13 +191,13 @@ export type UpdateArgs<C, R extends RemainderBase, K extends keyof R & string> =
   C,
   R,
   K
-> & { where: ListUniqueWhere<C, R, K>; data: UpdateInput<C, R, K> }
+> & { where: ListIdentityWhere<C, K>; data: UpdateInput<C, R, K> }
 
 export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,
   K
-> & { where: ListUniqueWhere<C, R, K> }
+> & { where: ListIdentityWhere<C, K> }
 
 export type GetArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<C, R, K>
 
@@ -614,14 +623,14 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string> = Pick<
   }) => Promise<QueryResult<C, R, K, S, I> | null>
 
   update: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
-    where: ListUniqueWhere<C, R, K>
+    where: ListIdentityWhere<C, K>
     data: UpdateInput<C, R, K>
     select?: S
     include?: I
   }) => Promise<QueryResult<C, R, K, S, I> | null>
 
   delete: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
-    where: ListUniqueWhere<C, R, K>
+    where: ListIdentityWhere<C, K>
     select?: S
     include?: I
   }) => Promise<QueryResult<C, R, K, S, I> | null>

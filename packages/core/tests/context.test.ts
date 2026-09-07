@@ -203,10 +203,14 @@ describe('getContext', () => {
     })
 
     describe('removeRelated (relationship-table row removal)', () => {
-      it('unlinks a to-one back-reference via an update on the related list', async () => {
+      // Disconnect is an UPDATE on the related list nulling the back-reference,
+      // never a delete — but the engine does not lower relation input yet
+      // (#1153), so that update is refused by name instead of reaching the
+      // driver as a column value. The payload's own shape is pinned again when
+      // #1153 lands and this refusal goes.
+      it('refuses the to-one back-reference it disconnects, naming the field (#1153)', async () => {
         const existing = { id: 'p1', title: 'T', content: 'c', authorId: 'u1' }
         mockPrisma.Post.first.mockResolvedValue(existing)
-        mockPrisma.Post.update.mockResolvedValue({ id: 'p1', title: 'T', authorId: null })
 
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
@@ -218,13 +222,12 @@ describe('getContext', () => {
           parentId: 'u1',
         })
 
-        // Disconnect is an UPDATE on the related list nulling the back-reference
-        // (a to-one back-ref disconnects with `true`), never a delete. The
-        // distinct `{ removed }` shape avoids a redirect-on-success wrapper.
-        expect(mockPrisma.Post.update).toHaveBeenCalled()
-        expect(mockPrisma.Post.update.mock.calls[0][0].author).toEqual({ disconnect: true })
+        expect(mockPrisma.Post.update).not.toHaveBeenCalled()
         expect(mockPrisma.Post.delete).not.toHaveBeenCalled()
-        expect(result).toEqual({ removed: true })
+        expect(result).toMatchObject({ removed: false })
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"author"')
+        expect(failure.error).toContain('#1153')
       })
 
       it('deletes the related row when mode is delete', async () => {
@@ -244,10 +247,9 @@ describe('getContext', () => {
         expect(result).toEqual({ removed: true })
       })
 
-      it('disconnects a to-many back-reference by parent id (many-to-many)', async () => {
+      it('refuses the to-many back-reference it disconnects, naming the field (#1153)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = { Lesson: rc8Collection({ first: [{ id: 'l1', title: 'L' }] }) }
-        m2mPrisma.Lesson.update.mockResolvedValue({ id: 'l1', title: 'L' })
         const m2mConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
           lists: {
@@ -283,7 +285,7 @@ describe('getContext', () => {
         }
 
         const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
-        await context.serverAction({
+        const result = await context.serverAction({
           listKey: 'Lesson',
           action: 'removeRelated',
           mode: 'disconnect',
@@ -292,10 +294,11 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        // A to-many back-reference disconnects the specific parent by id.
-        expect(m2mPrisma.Lesson.update.mock.calls[0][0].teachers).toEqual({
-          disconnect: { id: 't1' },
-        })
+        expect(m2mPrisma.Lesson.update).not.toHaveBeenCalled()
+        expect(result).toMatchObject({ removed: false })
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"teachers"')
+        expect(failure.error).toContain('#1153')
       })
 
       it('returns a generic error (Silent failure) when the update is access-denied', async () => {
@@ -602,12 +605,11 @@ describe('getContext', () => {
     })
 
     describe('createRelated (relationship-table pre-linked create)', () => {
-      it('creates a row on the related list with the to-one back-reference preset to the parent', async () => {
-        const created = { id: 'p1', title: 'New', content: 'c', authorId: 'u1' }
-        mockPrisma.Post.create.mockResolvedValue(created)
-        // The connect target must be reachable (the related list's read access).
-        mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
-
+      // The back-reference is set on the SERVER as relation input, which the
+      // engine does not lower yet (#1153): the create is refused by name rather
+      // than reaching the driver as a column value. The payload's own shape is
+      // pinned again when #1153 lands and this refusal goes.
+      it('refuses the to-one back-reference it presets, naming the field (#1153)', async () => {
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
         const result = await context.serverAction({
           listKey: 'Post',
@@ -617,17 +619,14 @@ describe('getContext', () => {
           parentId: 'u1',
         })
 
-        // The back-reference is set on the SERVER (a to-one back-ref connects a
-        // single parent), so the new row links to exactly the parent being edited.
-        expect(mockPrisma.Post.create).toHaveBeenCalled()
-        const createArg = mockPrisma.Post.create.mock.calls[0][0]
-        expect(createArg.title).toBe('New')
-        expect(createArg.author).toEqual({ connect: { id: 'u1' } })
-        // Distinct `{ created }` shape (never a single-op `success`).
-        expect(result).toEqual({ created: true, id: 'p1' })
+        expect(mockPrisma.Post.create).not.toHaveBeenCalled()
+        expect(result).toMatchObject({ created: false })
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"author"')
+        expect(failure.error).toContain('#1153')
       })
 
-      it('connects a to-many back-reference by parent id (many-to-many)', async () => {
+      it('refuses the to-many back-reference it presets, naming the field (#1153)', async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const m2mPrisma: any = {
           Lesson: rc8Collection({ create: { id: 'l1', title: 'L' } }),
@@ -669,7 +668,7 @@ describe('getContext', () => {
         }
 
         const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
-        await context.serverAction({
+        const result = await context.serverAction({
           listKey: 'Lesson',
           action: 'createRelated',
           data: { title: 'L' },
@@ -677,10 +676,11 @@ describe('getContext', () => {
           parentId: 't1',
         })
 
-        // A to-many back-reference connects the parent by id.
-        expect(m2mPrisma.Lesson.create.mock.calls[0][0].teachers).toEqual({
-          connect: [{ id: 't1' }],
-        })
+        expect(m2mPrisma.Lesson.create).not.toHaveBeenCalled()
+        expect(result).toMatchObject({ created: false })
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"teachers"')
+        expect(failure.error).toContain('#1153')
       })
 
       // Security-critical invariant (#758): the server sets the back-reference by
@@ -689,13 +689,8 @@ describe('getContext', () => {
       // re-target the link to a different parent. These lock that overwrite for
       // both the to-one and the to-many back-reference shapes.
       it('overwrites a hostile client-supplied to-one back-reference with the trusted parentId', async () => {
-        const created = { id: 'p1', title: 'New', authorId: 'u1' }
-        mockPrisma.Post.create.mockResolvedValue(created)
-        // The connect target must be reachable (the related list's read access).
-        mockPrisma.User.findUnique.mockResolvedValue({ id: 'u1' })
-
         const context = await getContext(config, mockPrisma, { userId: 'u1' })
-        await context.serverAction({
+        const result = await context.serverAction({
           listKey: 'Post',
           action: 'createRelated',
           // Hostile: the client tries to re-target the link to a different parent
@@ -705,11 +700,15 @@ describe('getContext', () => {
           parentId: 'u1',
         })
 
-        // The server OVERWRITES the spread-in hostile value with a connect to the
-        // trusted parentId — the evil id never reaches the secured create.
-        const createArg = mockPrisma.Post.create.mock.calls[0][0]
-        expect(createArg.author).toEqual({ connect: { id: 'u1' } })
-        expect(createArg.author).not.toBe('evil-id')
+        // The overwrite is what this turns on: the hostile scalar is a plain
+        // column value the engine would have carried to the create, while the
+        // server's own trusted `connect` is relation input the engine refuses
+        // until #1153. A refusal naming `author` is therefore proof the
+        // spread-in evil id was replaced before the write.
+        expect(mockPrisma.Post.create).not.toHaveBeenCalled()
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"author"')
+        expect(failure.error).toContain('#1153')
       })
 
       it('overwrites a hostile client-supplied to-many back-reference with the trusted parentId', async () => {
@@ -754,20 +753,22 @@ describe('getContext', () => {
         }
 
         const context = await getContext(m2mConfig, m2mPrisma, { userId: 'u1' })
-        await context.serverAction({
+        const result = await context.serverAction({
           listKey: 'Lesson',
           action: 'createRelated',
-          // Hostile: the client tries to connect a different teacher.
-          data: { title: 'L', teachers: { connect: [{ id: 'evil-id' }] } },
+          // Hostile: the client tries to re-target the link by supplying the
+          // back-reference field itself. Spelt as a plain value rather than a
+          // `connect`, so that the assertion below can tell an overwritten
+          // payload from an un-overwritten one — see the to-one case above.
+          data: { title: 'L', teachers: 'evil-id' },
           field: 'teachers',
           parentId: 't1',
         })
 
-        // The to-many back-reference is overwritten to connect exactly the trusted
-        // parent by id — the hostile connect is discarded.
-        expect(m2mPrisma.Lesson.create.mock.calls[0][0].teachers).toEqual({
-          connect: [{ id: 't1' }],
-        })
+        expect(m2mPrisma.Lesson.create).not.toHaveBeenCalled()
+        const failure = result as { error?: string }
+        expect(failure.error).toContain('"teachers"')
+        expect(failure.error).toContain('#1153')
       })
 
       // Defensive guard (#758): malformed direct calls (unreachable from the
@@ -849,8 +850,6 @@ describe('getContext', () => {
           listKey: 'Post',
           action: 'createRelated',
           data: { title: 'Dup' },
-          field: 'author',
-          parentId: 'u1',
         })
 
         // Parsed to a distinct { created: false } with per-field errors the drawer
@@ -889,8 +888,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup', content: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           expect(result).toMatchObject({ created: false })
@@ -920,8 +917,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           const created = result as { created: boolean; fieldErrors?: Record<string, string> }
@@ -952,8 +947,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           const created = result as { created: boolean; fieldErrors?: Record<string, string> }
@@ -994,8 +987,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           const created = result as { created: boolean; fieldErrors?: Record<string, string> }
@@ -1025,8 +1016,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           const created = result as { created: boolean; fieldErrors?: Record<string, string> }
@@ -1042,8 +1031,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           expect(result).toEqual({
@@ -1066,8 +1053,6 @@ describe('getContext', () => {
             listKey: 'Post',
             action: 'createRelated',
             data: { title: 'Dup' },
-            field: 'author',
-            parentId: 'u1',
           })
 
           expect(result).toEqual({

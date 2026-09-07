@@ -195,6 +195,44 @@ function assertUniqueWhere(
   }
 }
 
+/**
+ * `update` and `delete` target a row by its identity: the engine lowers `id`
+ * alone into the write's predicate, so a `where` naming anything else — a
+ * secondary unique column included — selects nothing. That is a caller-shape
+ * error, not an access denial, so it THROWS rather than returning the
+ * denied-or-gone `null` (the stance `assertUniqueWhere` takes above).
+ *
+ * `ListIdentityWhere` makes it a compile error for a typed caller; this is the
+ * runtime half, for a payload that reached the engine untyped.
+ */
+function assertIdentityWhere(
+  where: Record<string, unknown> | undefined,
+  listName: string,
+  terminal: 'update' | 'delete',
+): asserts where is { id: string | number } {
+  const keys = where ? Object.keys(where) : []
+  const id = where?.id
+  if (keys.length === 1 && keys[0] === 'id' && (typeof id === 'string' || typeof id === 'number')) {
+    return
+  }
+
+  const received =
+    keys.length === 0
+      ? '{}'
+      : keys.length === 1 && keys[0] === 'id'
+        ? `{ id: ${id === null ? 'null' : typeof id} }`
+        : `{ ${keys.join(', ')} }`
+
+  throw new ValidationError(
+    [
+      `${terminal} on "${listName}" requires \`where: { id }\` — a row is written by its ` +
+        `identity, and no other column selects one. Received: ${received}. Find the row first ` +
+        `(\`findUnique\`, or \`where(…).first()\`) and write it by its \`id\`.`,
+    ],
+    {},
+  )
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
@@ -1515,7 +1553,11 @@ function createUpdate(
 ) {
   // Thin adapter over the Write Pipeline: pick the update strategy, run the
   // canonical secured write sequence, return its result.
-  return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+  return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+    // Runs before the pipeline's access gate — a `where` the engine cannot
+    // lower is the caller's own shape error, not a denial.
+    assertIdentityWhere(args.where, listName, 'update')
+
     return runWritePipeline({
       listName,
       listConfig,
@@ -1538,7 +1580,9 @@ function createDelete(
 ) {
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
-  return async (args: { where: { id: string } }) => {
+  return async (args: { where: Record<string, unknown> }) => {
+    assertIdentityWhere(args.where, listName, 'delete')
+
     return runWritePipeline({
       listName,
       listConfig,

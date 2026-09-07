@@ -197,6 +197,23 @@ export async function runAfterTransactionForList(
 }
 
 /**
+ * The reason an `afterTransaction` bracket reports `rolled-back` for a write
+ * whose transaction did commit: the write's own predicate matched no row, so
+ * nothing was written and there is nothing for a compensator to act on. Never
+ * thrown to the caller — the terminal answers `null`, denied-or-gone, as it
+ * does for every other no-write outcome.
+ */
+export class WriteMatchedNothingError extends Error {
+  constructor(readonly listKeys: readonly string[]) {
+    super(
+      `The write on ${listKeys.map((key) => `"${key}"`).join(', ')} matched no row, so nothing ` +
+        `was written.`,
+    )
+    this.name = 'WriteMatchedNothingError'
+  }
+}
+
+/**
  * Aggregated error surfaced when one or more `afterTransaction` hooks throw.
  * The DB state is already final; all compensators still ran.
  */
@@ -296,7 +313,17 @@ export async function runWithTransactionBoundary(args: {
   let txError: unknown
   try {
     result = await runTransaction()
-    outcome = { status: 'committed', item: result ?? {} }
+    // `null` is the write that did not happen — its predicate matched no row.
+    // The transaction still commits (a joined write below it may well have
+    // persisted), but this bracket must not tell its own list's compensator
+    // that a write committed when none did.
+    outcome =
+      result === null
+        ? {
+            status: 'rolled-back',
+            error: new WriteMatchedNothingError(involvedLists.map((involved) => involved.listKey)),
+          }
+        : { status: 'committed', item: result }
   } catch (err) {
     txError = err
     outcome = { status: 'rolled-back', error: err }

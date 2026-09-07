@@ -35,7 +35,8 @@ import {
  *    column itself stays writable (ADR-0050);
  *  - a nested `create`/`update`/`delete`/`connectOrCreate`/`set`/`updateMany`/
  *    `deleteMany` under a relation key is a compile error (ADR-0050, #1152);
- *  - update is partial;
+ *  - update is partial, and targeted by `id` alone — the engine lowers no
+ *    other column into a write's predicate (#1152);
  *  - every write terminal admits silent denial — `create` is `| null`.
  *
  * The `@ts-expect-error` markers make a zero-diagnostic compile the proof:
@@ -128,6 +129,18 @@ async function run() {
 
   // @ts-expect-error \`titel\` is not a column on this list
   await context.db.Event.update({ where: { id: 'e1' }, data: { titel: 't' } })
+
+  // A write targets a row by identity. The engine lowers \`id\` alone into the
+  // write's predicate, so a secondary column is refused here rather than
+  // selecting nothing at runtime.
+  // @ts-expect-error a write is targeted by \`id\`, not by another column
+  await context.db.Event.update({ where: { title: 't' }, data: { day: '2026-01-02' } })
+
+  // @ts-expect-error \`id\` is required — an empty \`where\` targets no row
+  await context.db.Event.delete({ where: {} })
+
+  // @ts-expect-error a write is targeted by \`id\`, not by another column
+  await context.db.Event.delete({ where: { title: 't' } })
 }
 
 // The standalone export and the terminal's parameter are the same type (#608).
