@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { embedding } from './embedding.js'
 import type { EmbeddingField } from './embedding.js'
 import { z } from 'zod'
+import { validateFieldConfig } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 
 /** `getContractField` takes the full config; an embedding column reads nothing from it. */
@@ -13,7 +14,16 @@ describe('Embedding Field', () => {
       const field = embedding()
 
       expect(field.type).toBe('embedding')
-      expect(field.dimensions).toBe(1536) // Default OpenAI dimensions
+      // Left undeclared, so ragPlugin can resolve it from the provider; the
+      // column falls back to OpenAI's 1536 when nothing declares one.
+      expect(field.dimensions).toBeUndefined()
+      const descriptor = field.getContractField!('contentEmbedding', 'Article', CONFIG)
+      if (descriptor.kind !== 'columns') throw new Error('an embedding emits columns')
+      expect(descriptor.columns[0].type).toEqual({
+        pack: 'pgvector',
+        type: 'Vector',
+        args: [1536],
+      })
       expect(field.autoGenerate).toBe(false) // No sourceField
     })
 
@@ -183,6 +193,14 @@ describe('Embedding Field', () => {
 
       expect(() => createSchema.parse(validEmbedding)).not.toThrow()
       expect(() => updateSchema.parse(validEmbedding)).not.toThrow()
+    })
+  })
+
+  describe('the self-containment gate', () => {
+    it('passes the check `pnpm generate` runs over every stored field', () => {
+      expect(
+        validateFieldConfig(embedding({ sourceField: 'content' }), 'contentEmbedding', 'Article'),
+      ).toEqual([])
     })
   })
 

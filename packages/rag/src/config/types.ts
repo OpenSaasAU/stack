@@ -155,7 +155,7 @@ export type StoredEmbedding = {
 /** One match from a semantic search, in the shape `nearest()` returns (ADR-0045). */
 export type SearchResult<T = unknown> = {
   item: T
-  /** 0-1, higher is more similar. */
+  /** Higher is more similar. The range depends on the column's distance function. */
   score: number
 }
 

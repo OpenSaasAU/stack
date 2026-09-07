@@ -52,6 +52,9 @@ export type ResolvedEmbeddingIndex = {
 const VECTOR_INDEX_DIMENSION_CAP = 2_000
 const HALFVEC_INDEX_DIMENSION_CAP = 4_000
 
+/** The dimension of a field neither the author nor its provider gave one. */
+const DEFAULT_DIMENSIONS = 1536
+
 const OPERATOR_CLASS_SUFFIX: Record<VectorDistanceFunction, string> = {
   cosine: 'cosine_ops',
   l2: 'l2_ops',
@@ -83,10 +86,13 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
 
   /**
    * The column's dimension. A schema fact: changing it is a migration, and
-   * `ragPlugin`'s `beforeGenerate` refuses a value that disagrees with a
-   * statically known provider dimension.
+   * `ragPlugin`'s `beforeGenerate` refuses a declared value that disagrees
+   * with a statically known provider dimension.
    *
-   * @default 1536 (OpenAI text-embedding-3-small)
+   * Left undeclared, `ragPlugin` resolves it from the field's provider, so
+   * only a provider that declares no dimension of its own reaches the default.
+   *
+   * @default the provider's dimension, else 1536 (OpenAI text-embedding-3-small)
    */
   dimensions?: number
 
@@ -239,7 +245,7 @@ function indexParameters(index: EmbeddingIndexConfig): Record<string, number> {
 export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
   options?: Omit<EmbeddingField<TTypeInfo>, 'type'>,
 ): EmbeddingField<TTypeInfo> {
-  const dimensions = options?.dimensions ?? 1536
+  const dimensions = options?.dimensions ?? DEFAULT_DIMENSIONS
   const distanceFunction: VectorDistanceFunction = options?.distanceFunction ?? 'cosine'
   const autoGenerate = options?.autoGenerate ?? options?.sourceField != null
   const index = options?.index
@@ -273,7 +279,6 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
     type: 'embedding',
     ...options,
     ...(access === undefined ? {} : { access }),
-    dimensions,
     distanceFunction,
     autoGenerate,
     allowManualWrites,
@@ -298,6 +303,16 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
       // writes it after the write's transaction settles, not on input.
       return embeddingSchema.nullable().optional() as unknown as z.ZodTypeAny
     },
+
+    // The columns come from `getContractField` below; these two answer core's
+    // field self-containment gate, which `pnpm generate` runs over every
+    // stored field before it reads any contract (`validateConfigFields`).
+    getPrismaType: () => ({ type: 'Json', modifiers: '?' }),
+
+    getTypeScriptType: () => ({
+      type: "import('@opensaas/stack-rag').StoredEmbedding | null",
+      optional: true,
+    }),
 
     getContractField: (fieldName: string, listKey: string): ContractFieldDescriptor => {
       const columnType = resolveColumnType(fieldName, listKey, dimensions, index)

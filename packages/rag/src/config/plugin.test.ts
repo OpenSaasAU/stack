@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { config as defineConfig } from '@opensaas/stack-core'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { AccessContext } from '@opensaas/stack-core'
 import type { AccessControlledDelegate } from '@opensaas/stack-core/internal'
-import type { Plugin, PluginContext } from '@opensaas/stack-core/extend'
+import { hookPipeline } from '@opensaas/stack-core/internal'
+import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
 import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
 import { registerEmbeddingProvider } from '../providers/index.js'
@@ -22,6 +24,21 @@ const counting: EmbeddingProvider = {
 }
 
 registerEmbeddingProvider('counting', () => counting)
+
+/** A provider that is down, the way OpenAI is down when it answers 429. */
+const flaky: EmbeddingProvider = {
+  type: 'flaky',
+  model: 'flaky-1',
+  dimensions: 1,
+  embed: async () => {
+    throw new Error('429 Too Many Requests')
+  },
+  embedBatch: async () => {
+    throw new Error('429 Too Many Requests')
+  },
+}
+
+registerEmbeddingProvider('flaky', () => flaky)
 
 function unreachable(): never {
   throw new Error('this member of the double was not expected to be reached')
@@ -223,6 +240,58 @@ describe('ragPlugin', () => {
       expect(harness.live.lists.Article.hooks?.afterTransaction).toBeUndefined()
     })
 
+    /** The vector column the field would be lowered onto, as generation reads it. */
+    function vectorColumn(
+      field: FieldConfig,
+      fieldName: string,
+      live: OpenSaasConfig,
+    ): ContractColumnDescriptor {
+      const descriptor = field.getContractField?.(fieldName, 'Article', live)
+      if (descriptor === undefined || descriptor.kind !== 'columns') {
+        throw new Error(`"${fieldName}" emits no columns`)
+      }
+      return descriptor.columns[0]
+    }
+
+    it('takes an undeclared dimension from the provider, so searchable() need not repeat it', async () => {
+      const searchableField = { ...text(), _searchable: { provider: 'ollama' } }
+      const harness = pluginContext({
+        lists: { Article: { fields: { content: searchableField } } },
+      })
+      const plugin = ragPlugin({
+        provider: { type: 'ollama', model: 'nomic-embed-text', dimensions: 768 },
+      })
+
+      await plugin.init!(harness.context)
+
+      const injected = harness.live.lists.Article.fields.contentEmbedding
+      expect(vectorColumn(injected, 'contentEmbedding', harness.live).type).toEqual({
+        pack: 'pgvector',
+        type: 'Vector',
+        args: [768],
+      })
+      expect(() => plugin.beforeGenerate!(harness.live)).not.toThrow()
+    })
+
+    it('reaches the 1536 default only when the provider declares no dimension', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
+          },
+        },
+      })
+
+      await ragPlugin({ provider: { type: 'in-memory' } }).init!(harness.context)
+
+      const column = vectorColumn(
+        harness.live.lists.Article.fields.contentEmbedding,
+        'contentEmbedding',
+        harness.live,
+      )
+      expect(column.type).toEqual({ pack: 'pgvector', type: 'Vector', args: [1536] })
+    })
+
     it('stores the normalized config for runtime access', async () => {
       const harness = pluginContext({ lists: { Article: { fields: { title: text() } } } })
 
@@ -266,36 +335,16 @@ describe('ragPlugin', () => {
 
   describe('the generation path', () => {
     /**
-     * The `afterTransaction` hook the plugin injects, plus the writes the
-     * runtime service it calls would make.
+     * A context carrying the plugin's own sudo write, keyed by the symbol a
+     * live runtime uses — the only key the plugin's hook looks under.
      */
-    async function generationHook() {
-      const harness = pluginContext({
-        lists: {
-          Article: {
-            fields: {
-              content: text(),
-              contentEmbedding: embedding({
-                sourceField: 'content',
-                provider: 'counting',
-                dimensions: 1,
-              }),
-            },
-          },
-        },
-      })
-      await ragPlugin({
-        providers: { counting: { type: 'counting', dimensions: 1 } },
-      }).init!(harness.context)
-
+    function writeRecorder() {
       const writes: {
         listKey: string
         id: string | number
         fieldName: string
         stored: StoredEmbedding
       }[] = []
-      // Keyed by the symbol a live runtime uses, since that is the only key the
-      // plugin's own hook looks under.
       const { key } = writeEmbeddingOf(
         ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(stubContext({}), () =>
           stubContext({}),
@@ -306,10 +355,39 @@ describe('ragPlugin', () => {
           writes.push({ listKey, id, fieldName, stored })
         },
       }
-      const context = stubContext({ plugins: { rag: services } })
+      return { writes, context: stubContext({ plugins: { rag: services } }) }
+    }
+
+    /**
+     * The `afterTransaction` hook the plugin injects, plus the writes the
+     * runtime service it calls would make.
+     */
+    async function generationHook(providerName = 'counting') {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: {
+              content: text(),
+              contentEmbedding: embedding({
+                sourceField: 'content',
+                provider: providerName,
+                dimensions: 1,
+              }),
+            },
+          },
+        },
+      })
+      await ragPlugin({
+        providers: {
+          counting: { type: 'counting', dimensions: 1 },
+          flaky: { type: 'flaky', dimensions: 1 },
+        },
+      }).init!(harness.context)
+
+      const recorder = writeRecorder()
       const hook = harness.live.lists.Article.hooks?.afterTransaction
 
-      return { hook, writes, context }
+      return { hook, writes: recorder.writes, context: recorder.context }
     }
 
     it('writes the embedding a committed create never named', async () => {
@@ -356,20 +434,65 @@ describe('ragPlugin', () => {
       expect(writes).toEqual([])
     })
 
-    it('writes nothing when the update did not name the source field', async () => {
+    it('embeds the persisted source text an update never named', async () => {
       const { hook, writes, context } = await generationHook()
 
       await hook!({
         listKey: 'Article',
         operation: 'update',
         status: 'committed',
-        inputData: { contentEmbedding: { vector: [4], metadata: {} } },
+        inputData: { published: true },
         originalItem: { id: 'a1', content: 'four' },
         item: { id: 'a1', content: 'four' },
         context,
       })
 
+      expect(writes.map((write) => write.stored.vector)).toEqual([[4]])
+    })
+
+    it('logs rather than throws when the provider fails, since the row is committed', async () => {
+      const { hook, writes, context } = await generationHook('flaky')
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(
+        hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id: 'a1', content: 'four', contentEmbedding: null },
+          context,
+        }),
+      ).resolves.toBeUndefined()
+
       expect(writes).toEqual([])
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('"Article.contentEmbedding" was not embedded for Article a1'),
+        expect.objectContaining({ message: '429 Too Many Requests' }),
+      )
+      expect(logged.mock.calls[0][0]).toContain('#1271')
+      logged.mockRestore()
+    })
+
+    it('warns that a nested record, which carries no persisted row, was not embedded', async () => {
+      const { hook, writes, context } = await generationHook()
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: undefined,
+        context,
+      })
+
+      expect(writes).toEqual([])
+      expect(warned).toHaveBeenCalledWith(
+        expect.stringContaining('"Article.contentEmbedding" was not embedded'),
+      )
+      expect(warned.mock.calls[0][0]).toContain('#1271')
+      warned.mockRestore()
     })
 
     it('writes nothing when the source text hashes to what is already stored', async () => {
@@ -421,6 +544,56 @@ describe('ragPlugin', () => {
       })
 
       expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
+    })
+
+    it('embeds a source value a list-level resolveInput produced', async () => {
+      const resolved = await defineConfig({
+        db: { provider: 'postgresql' },
+        plugins: [ragPlugin({ provider: { type: 'counting', dimensions: 1 } })],
+        lists: {
+          Article: {
+            fields: {
+              title: text(),
+              body: text(),
+              content: text(),
+              contentEmbedding: embedding({ sourceField: 'content', dimensions: 1 }),
+            },
+            hooks: {
+              resolveInput: ({ resolvedData }) => ({
+                ...resolvedData,
+                content: [resolvedData.title, resolvedData.body].join(' '),
+              }),
+            },
+          },
+        },
+      })
+      const recorder = writeRecorder()
+      const inputData = { title: 'Four', body: 'score' }
+
+      // The real transform span: `content` is derived here and named nowhere
+      // in the input, which is what the old guard keyed on.
+      const { resolvedData } = await hookPipeline.run({
+        operation: 'create',
+        listName: 'Article',
+        listConfig: resolved.lists.Article,
+        inputData,
+        item: undefined,
+        context: recorder.context,
+      })
+      expect(resolvedData.content).toBe('Four score')
+
+      await resolved.lists.Article.hooks!.afterTransaction!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData,
+        item: { id: 'a1', ...resolvedData },
+        context: recorder.context,
+      })
+
+      // 'Four score' is 10 characters, and the counting provider embeds a text
+      // as its length.
+      expect(recorder.writes.map((write) => write.stored.vector)).toEqual([[10]])
     })
 
     it('refuses to write when the context carries no rag services', async () => {
@@ -544,6 +717,17 @@ describe('ragPlugin', () => {
 
       expect(() => plugin.beforeGenerate!(listsWith(768))).not.toThrow()
       expect(() => plugin.beforeGenerate!(listsWith(1536))).toThrow('produces 768')
+    })
+
+    it('refuses a datasource no embedding column can be lowered onto', () => {
+      const plugin = ragPlugin({ provider: { type: 'openai', apiKey: 'k' } })
+      const onSqlite = listsWith(1536)
+      Reflect.set(onSqlite.db, 'provider', 'sqlite')
+
+      expect(() => plugin.beforeGenerate!(onSqlite)).toThrow(
+        'RAG plugin: the datasource is "sqlite", and every column this plugin emits is ' +
+          'Postgres-only',
+      )
     })
 
     it('exempts a custom provider that declares no dimension', () => {

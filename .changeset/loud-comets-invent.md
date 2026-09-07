@@ -44,13 +44,41 @@ registers no index types, so nothing lowers the declaration to a `CREATE INDEX`.
 derives the column type and the operator class — and applies both dimension caps above —
 and nothing else. Declare it to pin the shape you want; re-check when the pack reaches GA.
 
-`ragPlugin`'s `beforeGenerate` refuses a declared dimension that disagrees with a
-statically known provider dimension, and `OllamaEmbeddingConfig.dimensions` is now
-required — generation must never depend on a running Ollama:
+A field that declares no `dimensions` takes its provider's, so the number is written
+once — in the provider — rather than at every `searchable()`/`embedding()` call site:
+
+```typescript
+ragPlugin({ provider: ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 }) })
+// content: searchable(text())  →  vector(768), with no dimension repeated on the field
+```
+
+Only a provider that declares no dimension of its own (a custom provider) reaches the
+1536 default. `ragPlugin`'s `beforeGenerate` still refuses a **declared** dimension that
+disagrees with a statically known provider dimension, and `OllamaEmbeddingConfig.dimensions`
+is now required — generation must never depend on a running Ollama:
 
 ```typescript
 ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 })
 ```
+
+`beforeGenerate` also refuses a non-Postgres datasource by name. Every column the plugin
+emits is Postgres-only — a pgvector vector column plus a `pg.jsonb` column beside it — and
+the plugin declares the pgvector pack for every config, so a `ragPlugin` on any other
+provider now fails generation with a message saying so instead of producing a contract
+nothing can lower.
+
+**Known limits on generation (#1271).** Embeddings are generated in an `afterTransaction`
+hook, after the row commits, which bounds what it can do:
+
+- A provider or write failure is logged, not thrown. The caller's write did succeed, and
+  reporting it as a failure would invite a retry that duplicates the row. The row keeps a
+  null embedding, and there is no regeneration path yet.
+- A **nested** record is never embedded — `afterTransaction` carries a persisted row for
+  the top-level record only, so `User.create({ data: { articles: { create: [...] } } })`
+  leaves those Articles with a null embedding, with a warning naming the list.
+
+Generation keys on the **persisted** source text, not the caller's input, so a source
+field a `resolveInput` hook derives is embedded like any other.
 
 The embedding and its metadata are write-denied to application code: an ordinary create or
 update naming them throws. The plugin writes them itself under sudo, after the write's

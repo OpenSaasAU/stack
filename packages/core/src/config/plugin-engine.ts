@@ -55,6 +55,18 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   return sorted
 }
 
+/** Two side-effect hooks as one, the list's own first and the plugin's after it. */
+function chainSideEffects<TArgs>(
+  first: ((args: TArgs) => Promise<void> | void) | undefined,
+  second: ((args: TArgs) => Promise<void> | void) | undefined,
+): ((args: TArgs) => Promise<void>) | undefined {
+  if (!first && !second) return undefined
+  return async (args: TArgs) => {
+    if (first) await first(args)
+    if (second) await second(args)
+  }
+}
+
 function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): Hooks | undefined {
   if (!extension) return existing
   if (!existing) return extension
@@ -73,38 +85,26 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
     }
   }
 
-  if (existing.validateInput || extension.validateInput) {
-    if (existing.validateInput && extension.validateInput) {
-      merged.validateInput = async (args) => {
-        await existing.validateInput!(args)
-        await extension.validateInput!(args)
-      }
-    } else {
-      merged.validateInput = existing.validateInput || extension.validateInput
-    }
-  }
+  const validate = chainSideEffects(existing.validate, extension.validate)
+  if (validate) merged.validate = validate
 
-  if (existing.beforeOperation || extension.beforeOperation) {
-    if (existing.beforeOperation && extension.beforeOperation) {
-      merged.beforeOperation = async (args) => {
-        await existing.beforeOperation!(args)
-        await extension.beforeOperation!(args)
-      }
-    } else {
-      merged.beforeOperation = existing.beforeOperation || extension.beforeOperation
-    }
-  }
+  const validateInput = chainSideEffects(existing.validateInput, extension.validateInput)
+  if (validateInput) merged.validateInput = validateInput
 
-  if (existing.afterOperation || extension.afterOperation) {
-    if (existing.afterOperation && extension.afterOperation) {
-      merged.afterOperation = async (args) => {
-        await existing.afterOperation!(args)
-        await extension.afterOperation!(args)
-      }
-    } else {
-      merged.afterOperation = existing.afterOperation || extension.afterOperation
-    }
-  }
+  const beforeOperation = chainSideEffects(existing.beforeOperation, extension.beforeOperation)
+  if (beforeOperation) merged.beforeOperation = beforeOperation
+
+  const afterOperation = chainSideEffects(existing.afterOperation, extension.afterOperation)
+  if (afterOperation) merged.afterOperation = afterOperation
+
+  const beforeTransaction = chainSideEffects(
+    existing.beforeTransaction,
+    extension.beforeTransaction,
+  )
+  if (beforeTransaction) merged.beforeTransaction = beforeTransaction
+
+  const afterTransaction = chainSideEffects(existing.afterTransaction, extension.afterTransaction)
+  if (afterTransaction) merged.afterTransaction = afterTransaction
 
   return Object.keys(merged).length > 0 ? (merged as Hooks) : undefined
 }

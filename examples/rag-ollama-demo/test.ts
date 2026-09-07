@@ -1,5 +1,5 @@
 /**
- * Test script demonstrating RAG integration with Ollama and SQLite VSS
+ * Test script demonstrating RAG integration with Ollama and pgvector
  *
  * This script:
  * 1. Creates sample documents and articles
@@ -42,7 +42,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 async function main() {
-  console.log('🚀 RAG Demo with Ollama + SQLite VSS\n')
+  console.log('🚀 RAG Demo with Ollama + pgvector\n')
 
   // Step 1: Initialize context and provider
   console.log('📝 Initializing...')

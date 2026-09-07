@@ -2,7 +2,6 @@ import { config, list } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   plugins: [
@@ -15,11 +14,7 @@ export default config({
     }),
   ],
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
   lists: {
     Document: list({
@@ -33,10 +28,7 @@ export default config({
           text({
             validation: { isRequired: true },
           }),
-          {
-            provider: 'ollama',
-            dimensions: 768,
-          },
+          { provider: 'ollama' },
         ),
         summary: text(),
         published: checkbox({
@@ -64,7 +56,6 @@ export default config({
           }),
           {
             provider: 'ollama',
-            dimensions: 768,
             embeddingFieldName: 'bodyEmbedding', // Optional: customize the embedding field name
           },
         ),

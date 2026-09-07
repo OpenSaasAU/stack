@@ -139,6 +139,24 @@ export function ragPlugin(config: RAGConfig): Plugin {
         }
       }
 
+      // A field that declares no dimension takes its provider's, so an app on a
+      // 768-dimension model writes `searchable(text())` without repeating the
+      // number at every call site. Only a provider that declares none of its
+      // own reaches `embedding()`'s default.
+      for (const [listName, listConfig] of Object.entries(context.config.lists)) {
+        for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+          if (!isEmbeddingField(fieldConfig) || fieldConfig.dimensions !== undefined) continue
+
+          const providerConfig = providerFor(fieldConfig.provider)
+          const dimensions = providerConfig ? knownDimensions(providerConfig) : undefined
+          if (dimensions === undefined) continue
+
+          context.extendList(listName, {
+            fields: { [fieldName]: embedding({ ...fieldConfig, dimensions }) },
+          })
+        }
+      }
+
       // Also catches embedding fields injected by the pass above (extendList
       // mutates context.config.lists in place, so this loop sees them too).
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
@@ -160,17 +178,34 @@ export function ragPlugin(config: RAGConfig): Plugin {
               // transaction settles, because the provider call is a network
               // round trip that has no business holding a connection
               // (ADR-0045).
+              //
+              // Known limits (#1271): the row is already committed by the time
+              // this runs, so neither of the two gaps below can abort it.
+              //  - A nested record is never embedded: `afterTransaction`
+              //    carries a persisted `item` for the top-level record only.
+              //  - A provider or write failure is logged, not thrown: the write
+              //    the caller made did succeed, and reporting it as a failure
+              //    would invite a retry that duplicates the row. The row keeps
+              //    a null embedding and there is no regeneration path yet.
               afterTransaction: async (args) => {
                 if (args.status !== 'committed') return
                 if (args.operation !== 'create' && args.operation !== 'update') return
-                // The sudo write below names the embedding, not the source, so
-                // this is what stops it re-entering.
-                if (!(sourceField in args.inputData)) return
 
                 const item = args.item
-                if (item === undefined) return
+                if (item === undefined) {
+                  console.warn(
+                    `RAG plugin: "${listName}.${fieldName}" was not embedded — a nested ` +
+                      `${listName} has no persisted row outside its transaction, so the record ` +
+                      `keeps a null embedding (#1271).`,
+                  )
+                  return
+                }
                 const id = rowId(item.id)
                 if (id === undefined) return
+                // The persisted text, not the caller's input: a source field a
+                // resolveInput hook derived is embedded like any other, and the
+                // stored source hash below is what stops the sudo write from
+                // re-entering.
                 const sourceText = item[sourceField]
                 if (typeof sourceText !== 'string' || sourceText.length === 0) return
 
@@ -186,21 +221,32 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 const current = item[fieldName]
                 if (storedSourceHash(current) === sourceHash) return
 
-                const provider = createEmbeddingProvider(providerConfig)
-                const vector = await provider.embed(sourceText)
+                const write = embeddingWriter(args.context)
 
-                const stored: StoredEmbedding = {
-                  vector,
-                  metadata: {
-                    model: provider.model,
-                    provider: provider.type,
-                    dimensions: provider.dimensions,
-                    generatedAt: new Date().toISOString(),
-                    sourceHash,
-                  },
+                try {
+                  const provider = createEmbeddingProvider(providerConfig)
+                  const vector = await provider.embed(sourceText)
+
+                  const stored: StoredEmbedding = {
+                    vector,
+                    metadata: {
+                      model: provider.model,
+                      provider: provider.type,
+                      dimensions: provider.dimensions,
+                      generatedAt: new Date().toISOString(),
+                      sourceHash,
+                    },
+                  }
+
+                  await write(listName, id, fieldName, stored)
+                } catch (error) {
+                  console.error(
+                    `RAG plugin: "${listName}.${fieldName}" was not embedded for ${listName} ` +
+                      `${id}. The row is committed and keeps a null embedding, and there is no ` +
+                      `regeneration path yet (#1271).`,
+                    error,
+                  )
                 }
-
-                await embeddingWriter(args.context)(listName, id, fieldName, stored)
               },
             },
           })
@@ -269,12 +315,24 @@ export function ragPlugin(config: RAGConfig): Plugin {
     },
 
     /**
-     * Refuse a schema fact that is already known to be wrong: a declared
-     * dimension that disagrees with its provider's, and an Ollama provider
-     * with no dimension at all. Both are checked here rather than in the
-     * generator, which knows nothing about embedding providers (ADR-0045).
+     * Refuse a schema fact that is already known to be wrong: a datasource no
+     * embedding column can be lowered onto, a declared dimension that
+     * disagrees with its provider's, and an Ollama provider with no dimension
+     * at all. All three are checked here rather than in the generator, which
+     * knows nothing about embedding providers (ADR-0045).
      */
     beforeGenerate: (generateConfig: OpenSaasConfig) => {
+      const dbProvider: string = generateConfig.db.provider
+      if (dbProvider !== 'postgresql') {
+        throw new Error(
+          `RAG plugin: the datasource is "${dbProvider}", and every column this plugin emits is ` +
+            `Postgres-only — an embedding is a pgvector vector column with its metadata in a ` +
+            `jsonb column beside it, and the plugin declares the pgvector extension pack for ` +
+            `every config. Move the datasource to postgresql with pgvector available, or remove ` +
+            `ragPlugin.`,
+        )
+      }
+
       for (const [name, provider] of Object.entries({
         ...normalized.providers,
         ...(normalized.provider ? { default: normalized.provider } : {}),
@@ -293,16 +351,20 @@ export function ragPlugin(config: RAGConfig): Plugin {
       for (const [listName, listConfig] of Object.entries(generateConfig.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
           if (!isEmbeddingField(fieldConfig)) continue
+          // A field that declared nothing took its provider's dimension in
+          // `init`, so only an author's own value can disagree here.
+          const declared = fieldConfig.dimensions
+          if (declared === undefined) continue
           const providerName = fieldConfig.provider
           const providerConfig = providerFor(providerName)
           if (!providerConfig) continue
 
           const providerDimensions = knownDimensions(providerConfig)
           if (providerDimensions === undefined) continue
-          if (fieldConfig.dimensions === providerDimensions) continue
+          if (declared === providerDimensions) continue
 
           throw new Error(
-            `RAG plugin: "${listName}.${fieldName}" declares ${fieldConfig.dimensions} ` +
+            `RAG plugin: "${listName}.${fieldName}" declares ${declared} ` +
               `dimensions, but its ${providerLabel(providerName ?? 'default', providerConfig)} ` +
               `produces ${providerDimensions}. The dimension is a column's type, so the two have ` +
               `to agree before a migration is planned.`,

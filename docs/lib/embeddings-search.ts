@@ -18,15 +18,17 @@ export interface DocsChunkMatch {
   score: number
 }
 
-let cached: EmbeddingsIndex | undefined
+const cached = new Map<string, EmbeddingsIndex>()
 
 function loadIndex(filePath: string): EmbeddingsIndex {
-  if (cached) return cached
+  const hit = cached.get(filePath)
+  if (hit) return hit
   if (!existsSync(filePath)) {
     throw new Error(`Embeddings file not found: ${filePath}. Run embeddings generation first.`)
   }
-  cached = JSON.parse(readFileSync(filePath, 'utf-8')) as EmbeddingsIndex
-  return cached
+  const index = JSON.parse(readFileSync(filePath, 'utf-8')) as EmbeddingsIndex
+  cached.set(filePath, index)
+  return index
 }
 
 function dot(a: readonly number[], b: readonly number[]): number {
