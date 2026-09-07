@@ -4,7 +4,7 @@
 
 Drop transaction options and make database errors stack-owned
 
-`context.transaction(fn)` takes no options and runs at the connection's default isolation level — Read Committed on PostgreSQL. `isolationLevel`, `maxWait`, `timeout`, the `TransactionIsolationLevel` union, `TransactionOptions` and `TransactionOptionsUnsupportedError` are deleted, so asking for an isolation level is a compile error at the call site rather than a value the client silently downgrades. Express an invariant a stricter level would have closed as a lock on the contended row inside the callback.
+`context.transaction(fn)` takes no options and runs at the connection's default isolation level — Read Committed on PostgreSQL. `isolationLevel`, `maxWait`, `timeout`, the `TransactionIsolationLevel` union, `TransactionOptions` and `TransactionOptionsUnsupportedError` are deleted, so asking for an isolation level is a compile error at the call site rather than a value the client silently downgrades.
 
 Every engine terminal now raises a stack-owned error in place of the driver's own, each with an `is*` predicate:
 
@@ -26,6 +26,10 @@ try {
 A unique violation resolves through the constraint map the generator emits, so it names the OpenSaas **fields** the violated constraint covers. A constraint managed by hand in the database is not in that map and falls through to the generic `'A record with this value already exists'` with no fields — the map's limit, stated rather than hidden.
 
 Errors raised at `COMMIT` are normalised the same way, at the transaction owner's settle and before the deferred-hook flush, so a `DEFERRABLE INITIALLY DEFERRED` constraint never escapes as a raw driver error and ADR-0028's precedence rule (transaction errors ahead of hook errors) keeps operating on a normalised value.
+
+A `DatabaseError`'s message is always stack-authored; the driver's own text — which names columns, tables and constraint names — is on `cause`, for a server-side log rather than a browser. A failure the classification does not recognise carries `'The database refused this operation'`.
+
+An application's own error wins over the stack's. Catching a stack error and rethrowing your own with `{ cause }` reaches the caller as your error, not as the `UniqueConstraintViolation` underneath it.
 
 `context.unsafe` is deliberately excluded and still rejects with the driver's own error, consistent with its bypassing everything else.
 

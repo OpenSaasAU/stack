@@ -506,6 +506,36 @@ describe('getContext', () => {
           consoleError.mockRestore()
         }
       })
+
+      // A driver failure now classifies into a DatabaseError, so it takes the
+      // branch above the plain-Error fallback. Its message is stack-authored,
+      // so the column and constraint the driver named still do not travel.
+      it('keeps the driver text off the client when the handler hits a database failure', async () => {
+        const context = await getContext(
+          configWithPublishAction({
+            handler: async () => {
+              throw driverQueryError(
+                'null value in column "status" of relation "Post" violates not-null constraint',
+                { sqlState: '23502', constraint: undefined },
+              )
+            },
+          }),
+          mockPrisma,
+          { userId: 'u1' },
+        )
+
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'publish',
+          ids: ['p1'],
+        })
+
+        expect(result).toEqual({
+          bulkAction: false,
+          error: 'The database refused this operation',
+        })
+      })
     })
 
     describe('updateRelated (relationship-table inline cell edit)', () => {
@@ -935,7 +965,10 @@ describe('getContext', () => {
           })
         })
 
-        it('leaves a driver error that is not a unique violation with its own message', async () => {
+        // The driver's own text names the column and the constraint. A server
+        // action's `error` is handed to a client, so an unclassified failure
+        // reports the stack's message and keeps the driver's on `cause`.
+        it('keeps the driver text off the client for a failure it cannot classify', async () => {
           const result = await createDuplicate(
             driverQueryError('null value in column "title" violates not-null constraint', {
               sqlState: '23502',
@@ -945,7 +978,7 @@ describe('getContext', () => {
 
           expect(result).toEqual({
             created: false,
-            error: 'null value in column "title" violates not-null constraint',
+            error: 'The database refused this operation',
             fieldErrors: {},
           })
         })

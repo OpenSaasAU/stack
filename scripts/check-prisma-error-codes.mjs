@@ -12,15 +12,9 @@ const allowlistPath = path.join(repoRoot, 'scripts', 'prisma-error-code-allowlis
 const allowlistRelative = path.relative(repoRoot, allowlistPath)
 
 const literal = /\bP[1-6]\d{3}\b/g
-// A decision record and a changelog are dated, superseded-not-edited accounts
-// of what was true when they were written, and ADR-0042's own decision is about
-// these codes — it cannot be stated without naming them. Neither is a place an
-// agent or a developer copies a live discriminant from, which is what this check
-// exists to prevent.
 const unscanned = [
   /(^|\/)pnpm-lock\.yaml$/,
   /(^|\/)CHANGELOG\.md$/,
-  /^docs\/adr\//,
   /^docs\/\.embeddings\//,
   /\.(png|jpe?g|gif|ico|svg|webp|woff2?|ttf|otf|db|pdf)$/i,
 ]

@@ -158,7 +158,16 @@ Key points:
   a transaction that already committed.
 - **Errors raised at `COMMIT` are normalised the same way**, at the transaction
   owner's settle and before the deferred-hook flush, so a deferred constraint
-  never escapes as a raw driver error.
+  never escapes as a raw driver error and an `afterTransaction` hook's
+  `outcome.error` is the normalised one.
+- **A `DatabaseError`'s message is stack-authored, never the driver's.** The
+  driver's text names columns, tables and constraint names, and that message is
+  what a server action hands a client; the driver's own error stays on `cause`
+  for a server-side log.
+- **Your error wins over the stack's.** Catching a stack error in a hook and
+  rethrowing your own with `{ cause }` reaches the caller as your error — the
+  normalisation stops at the first `DatabaseError` in the chain rather than
+  reaching past it to re-raise the driver failure underneath.
 - **The Unsafe surface is excluded**: a query issued through `context.unsafe`
   rejects with the driver's own error, consistent with its bypassing everything
   else.

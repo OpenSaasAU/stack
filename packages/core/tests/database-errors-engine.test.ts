@@ -15,9 +15,17 @@ import { createTestDatabase, type TestDatabase } from '../src/testing/context.js
 const BOOT = 120_000
 
 const afterTransaction = vi.fn()
+const wrapperResolveInput = vi.fn(({ resolvedData }) => resolvedData)
 
 const open = {
   operation: { query: () => true, create: () => true, update: () => true, delete: () => true },
+}
+
+class SlugTakenError extends Error {
+  constructor(cause: unknown) {
+    super('That slug belongs to another tenant', { cause })
+    this.name = 'SlugTakenError'
+  }
 }
 
 const testConfig: OpenSaasConfig = {
@@ -42,6 +50,11 @@ const testConfig: OpenSaasConfig = {
       fields: { gone: text() },
       access: open,
     },
+    Wrapper: {
+      fields: { label: text() },
+      access: open,
+      hooks: { resolveInput: wrapperResolveInput },
+    },
   },
 }
 
@@ -60,6 +73,11 @@ function driverSqlState(error: unknown): string | undefined {
   if (!(error instanceof Error) || !('sqlState' in error)) return undefined
   const { sqlState } = error
   return typeof sqlState === 'string' ? sqlState : undefined
+}
+
+/** The error class a boundary hook was handed, named for a legible assertion. */
+function errorName(value: unknown): string {
+  return value instanceof Error ? value.name : String(value)
 }
 
 async function raised(work: Promise<unknown>): Promise<unknown> {
@@ -103,6 +121,8 @@ describe('a database refusal through the secured surface', () => {
   beforeEach(async () => {
     await database.truncate()
     afterTransaction.mockReset()
+    wrapperResolveInput.mockReset()
+    wrapperResolveInput.mockImplementation(({ resolvedData }) => resolvedData)
   })
 
   test(
@@ -196,6 +216,39 @@ describe('a database refusal through the secured surface', () => {
       expect(afterTransaction.mock.calls.every((call) => call[0].status === 'rolled-back')).toBe(
         true,
       )
+      // The normalisation happens BEFORE the deferred-hook flush, so the
+      // outcome a boundary hook is handed is the normalised error, not the
+      // driver's own.
+      expect([
+        ...new Set(afterTransaction.mock.calls.map((call) => errorName(call[0].error))),
+      ]).toEqual(['UniqueConstraintViolation'])
+    },
+    BOOT,
+  )
+
+  test(
+    "an application's own error survives, rather than being replaced by the stack's",
+    async () => {
+      const context = database.context()
+      await context.db.Tenant.create({ data: { slug: 'taken', name: 'First' } })
+
+      wrapperResolveInput.mockImplementation(async ({ resolvedData, context: hookContext }) => {
+        try {
+          await hookContext.db.Tenant.create({ data: { slug: 'taken', name: 'Second' } })
+        } catch (caught) {
+          throw new SlugTakenError(caught)
+        }
+        return resolvedData
+      })
+
+      const error = await raised(context.db.Wrapper.create({ data: { label: 'anything' } }))
+
+      expect(error).toBeInstanceOf(SlugTakenError)
+      expect(isUniqueConstraintViolation(error)).toBe(false)
+      if (!(error instanceof SlugTakenError)) throw new Error('the application error was replaced')
+      expect(error.message).toBe('That slug belongs to another tenant')
+      // The stack's error is still reachable, as the application put it.
+      expect(isUniqueConstraintViolation(error.cause)).toBe(true)
     },
     BOOT,
   )

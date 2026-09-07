@@ -216,7 +216,62 @@ describe('#614 context.transaction (interactive transaction)', () => {
 
     expect(isSerializationFailure(raised)).toBe(true)
     if (!isSerializationFailure(raised)) throw new Error('not normalised')
-    expect(raised.message).toBe('could not serialize access due to concurrent update')
+    expect(raised.message).toBe('This operation conflicted with another and was rolled back')
+    expect(raised.cause).toBeInstanceOf(Error)
+  })
+
+  // The caller owns the retry loop (ADR-0028): the stack ships no helper, so
+  // what it owes a caller is a context that is still usable after a rejected
+  // transaction, and a second attempt that starts clean.
+  it('a caller-owned retry after a rejection runs a clean second attempt', async () => {
+    const resolveInput = vi.fn(({ resolvedData }) => resolvedData)
+    const canCreate = vi.fn(() => true)
+    const afterTransaction = vi.fn()
+    const retryConfig = await config({
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      lists: {
+        User: list({
+          fields: { name: text() },
+          access: { operation: { query: () => true, create: canCreate } },
+          hooks: { resolveInput, afterTransaction },
+        }),
+      },
+    })
+    const context = getContext(retryConfig, mock.client, { userId: '1' })
+
+    let attempts = 0
+    const attempt = () =>
+      context.transaction(async (tx) => {
+        attempts += 1
+        const user = await tx.db.User.create({ data: { name: `attempt-${attempts}` } })
+        if (attempts === 1) throw makeSerializationError()
+        return user
+      })
+
+    const rejection = await attempt().then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect(isSerializationFailure(rejection)).toBe(true)
+    expect(mock.tables.User.size).toBe(0)
+    expect(afterTransaction.mock.calls.map((call) => call[0].status)).toEqual(['rolled-back'])
+
+    const committed = await attempt()
+
+    expect(attempts).toBe(2)
+    expect(committed).toEqual(expect.objectContaining({ name: 'attempt-2' }))
+    expect(mock.tables.User.size).toBe(1)
+    // The second attempt drains its OWN registry: exactly one further flush,
+    // not the rolled-back write from the first attempt again.
+    expect(afterTransaction.mock.calls.map((call) => call[0].status)).toEqual([
+      'rolled-back',
+      'committed',
+    ])
+    // Hooks and access ran again on the second attempt rather than being
+    // memoised on the context the first attempt rejected through.
+    expect(resolveInput).toHaveBeenCalledTimes(2)
+    expect(canCreate).toHaveBeenCalledTimes(2)
   })
 
   it('the tx context carries the same session and a working sudo()', async () => {

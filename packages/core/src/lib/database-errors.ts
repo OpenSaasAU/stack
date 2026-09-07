@@ -13,27 +13,34 @@ const SERIALIZATION_FAILURE_SQLSTATE = '40001'
  * The part of a driver's query error this module reads. Prisma 8's
  * `SqlQueryError` satisfies it structurally, which is what lets the
  * classification run without importing the ORM into a leaf module.
+ *
+ * `kind` alone identifies the error; the fields it carries stay `unknown` and
+ * are narrowed where they are read. A driver that reports one of them in an
+ * unexpected shape then loses only that field, rather than disabling the whole
+ * classification — including the `40001` branch, which reads neither.
  */
 interface DriverQueryError {
   readonly kind: 'sql_query'
-  readonly sqlState: string | undefined
-  readonly constraint: string | undefined
+  readonly sqlState?: unknown
+  readonly constraint?: unknown
 }
 
 function isDriverQueryError(error: unknown): error is Error & DriverQueryError {
   if (!(error instanceof Error) || !('kind' in error)) return false
-  const candidate: { kind?: unknown; sqlState?: unknown; constraint?: unknown } = error
-  return (
-    candidate.kind === 'sql_query' &&
-    (candidate.sqlState === undefined || typeof candidate.sqlState === 'string') &&
-    (candidate.constraint === undefined || typeof candidate.constraint === 'string')
-  )
+  const candidate: { kind?: unknown } = error
+  return candidate.kind === 'sql_query'
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
 }
 
 /**
  * A database failure the stack owns, raised in place of the driver's own error
  * by every engine terminal (ADR-0042). Carries a message safe to show a user
- * and, where the failure names columns, one message per field.
+ * and, where the failure names columns, one message per field. The driver's own
+ * text is never the message — it is on {@link Error.cause}, for a server-side
+ * log.
  *
  * The Unsafe surface is deliberately excluded: a query issued through it
  * rejects with the driver's own error, consistent with its bypassing
@@ -114,6 +121,18 @@ export function isUniqueConstraintViolation(error: unknown): error is UniqueCons
 /** The generic message a unique violation carries when no field could be resolved. */
 export const GENERIC_UNIQUE_VIOLATION_MESSAGE = 'A record with this value already exists'
 
+/** The message a serialization failure carries. */
+export const SERIALIZATION_FAILURE_MESSAGE =
+  'This operation conflicted with another and was rolled back'
+
+/**
+ * The message an unclassified driver failure carries. The driver's own text
+ * names columns, tables and constraint names, and a {@link DatabaseError}'s
+ * message is what a server action hands a client, so the driver's text stays on
+ * {@link Error.cause} for a server-side log rather than travelling to a browser.
+ */
+export const GENERIC_DATABASE_ERROR_MESSAGE = 'The database refused this operation'
+
 /**
  * How far down a `cause` chain the driver's own error is looked for.
  *
@@ -125,9 +144,16 @@ export const GENERIC_UNIQUE_VIOLATION_MESSAGE = 'A record with this value alread
  */
 const CAUSE_DEPTH = 4
 
+// The walk stops at a DatabaseError rather than descending past it: an
+// application that catches a stack error and rethrows its own with
+// `{ cause }` — the standard Node idiom — has decided what its caller sees,
+// and reaching through that decision to re-raise the driver failure would
+// replace the application's error with the stack's. Prisma's own commit
+// wrapper carries no DatabaseError, so the COMMIT case is unaffected.
 function driverErrorWithin(error: unknown): (Error & DriverQueryError) | undefined {
   let candidate = error
   for (let depth = 0; depth <= CAUSE_DEPTH; depth++) {
+    if (candidate instanceof DatabaseError) return undefined
     if (isDriverQueryError(candidate)) return candidate
     if (!(candidate instanceof Error)) return undefined
     candidate = candidate.cause
@@ -146,21 +172,22 @@ function driverErrorWithin(error: unknown): (Error & DriverQueryError) | undefin
  * where the config is in scope.
  */
 export function classifyDriverError(error: unknown): DatabaseError | undefined {
-  if (error instanceof DatabaseError) return undefined
   const driver = driverErrorWithin(error)
   if (driver === undefined) return undefined
 
-  if (driver.sqlState === SERIALIZATION_FAILURE_SQLSTATE) {
-    return new SerializationFailure(driver.message, { cause: error })
+  const sqlState = asString(driver.sqlState)
+
+  if (sqlState === SERIALIZATION_FAILURE_SQLSTATE) {
+    return new SerializationFailure(SERIALIZATION_FAILURE_MESSAGE, { cause: error })
   }
 
-  if (driver.sqlState === UNIQUE_VIOLATION_SQLSTATE) {
+  if (sqlState === UNIQUE_VIOLATION_SQLSTATE) {
     return new UniqueConstraintViolation(
       GENERIC_UNIQUE_VIOLATION_MESSAGE,
-      { constraintName: driver.constraint },
+      { constraintName: asString(driver.constraint) },
       { cause: error },
     )
   }
 
-  return new DatabaseError(driver.message, {}, { cause: error })
+  return new DatabaseError(GENERIC_DATABASE_ERROR_MESSAGE, {}, { cause: error })
 }

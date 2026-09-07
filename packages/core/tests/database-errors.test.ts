@@ -67,15 +67,54 @@ describe('classifyDriverError', () => {
     expect(classified.fields).toEqual([])
   })
 
-  it('wraps any other driver query error as a DatabaseError keeping its message', () => {
-    const classified = classifyDriverError(
-      driverQueryError('null value in column "title"', { sqlState: '23502' }),
-    )
+  it('wraps any other driver query error as a DatabaseError with a stack-authored message', () => {
+    const raised = driverQueryError('null value in column "title"', { sqlState: '23502' })
+    const classified = classifyDriverError(raised)
 
     expect(classified).toBeInstanceOf(DatabaseError)
     expect(isSerializationFailure(classified)).toBe(false)
     expect(isUniqueConstraintViolation(classified)).toBe(false)
-    expect(classified?.message).toBe('null value in column "title"')
+    expect(classified?.message).toBe('The database refused this operation')
+    expect(classified?.cause).toBe(raised)
+  })
+
+  it('gives a serialization failure a stack-authored message too', () => {
+    const raised = driverQueryError('could not serialize access due to concurrent update', {
+      sqlState: '40001',
+    })
+    const classified = classifyDriverError(raised)
+
+    expect(classified?.message).toBe('This operation conflicted with another and was rolled back')
+    expect(classified?.cause).toBe(raised)
+  })
+
+  it('classifies when the driver reports no sqlState at all', () => {
+    const classified = classifyDriverError(driverQueryError('connection reset'))
+
+    expect(classified).toBeInstanceOf(DatabaseError)
+    expect(classified?.message).toBe('The database refused this operation')
+  })
+
+  it('classifies a 40001 whose constraint field is not a string', () => {
+    const raised = Object.assign(new Error('could not serialize access'), {
+      kind: 'sql_query',
+      sqlState: '40001',
+      constraint: null,
+    })
+
+    expect(isSerializationFailure(classifyDriverError(raised))).toBe(true)
+  })
+
+  it('drops a constraint the driver reported in an unexpected shape rather than the classification', () => {
+    const raised = Object.assign(new Error('duplicate key'), {
+      kind: 'sql_query',
+      sqlState: '23505',
+      constraint: 42,
+    })
+    const classified = classifyDriverError(raised)
+
+    if (!isUniqueConstraintViolation(classified)) throw new Error('not classified')
+    expect(classified.constraintName).toBeUndefined()
   })
 
   it('preserves the raised error as the cause', () => {
@@ -117,6 +156,28 @@ describe('classifyDriverError', () => {
   it('is idempotent: an already-classified error is not reclassified', () => {
     const once = classifyDriverError(driverQueryError('dup', { sqlState: '23505' }))
     expect(classifyDriverError(once)).toBeUndefined()
+  })
+
+  // An application that catches a stack error and rethrows its own with
+  // `{ cause }` has decided what its caller sees; reaching past that decision
+  // to the driver error underneath would replace it.
+  it("stops at a stack error an application wrapped, leaving the application's error alone", () => {
+    const classified = classifyDriverError(
+      driverQueryError('duplicate key', { sqlState: '23505', constraint: 'Author_email_key' }),
+    )
+    const application = new Error('That slug is taken', { cause: classified })
+
+    expect(classifyDriverError(application)).toBeUndefined()
+    expect(normalizeDatabaseError(application, config)).toBe(application)
+  })
+
+  it('stops at a stack error wrapped several levels down', () => {
+    const classified = classifyDriverError(driverQueryError('dup', { sqlState: '23505' }))
+    const application = new Error('outer', {
+      cause: new Error('middle', { cause: classified }),
+    })
+
+    expect(classifyDriverError(application)).toBeUndefined()
   })
 })
 
