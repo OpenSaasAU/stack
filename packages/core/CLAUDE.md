@@ -121,50 +121,56 @@ Hook types:
 
 - `createContext(config, ormHandle, session?)` - Creates context wrapper
 - Returns `{ db, session }` where `db` is Prisma client with access control
-- `context.transaction(fn, options?)` - Interactive, hook-firing transaction (see below)
+- `context.transaction(fn)` - Interactive, hook-firing transaction (see below)
 
 #### Interactive transactions (`context.transaction`)
 
-`context.transaction(async (txContext) => { … }, { isolationLevel })` runs the
-callback inside **one** Prisma interactive transaction. `txContext` is a full
-context whose `db.*` operations are access-checked and hook-firing exactly like
-the request context, but persist against the transaction client — so every write
-in the callback is **atomic** and a throw anywhere rolls the whole transaction
-back. This is the secured alternative to raw `prisma.$transaction`, which
-bypasses access control and hooks.
-
-Use it to atomically enforce concurrency-sensitive invariants (e.g. a
-capacity/quota gate) while preserving the access/hook boundary:
+`context.transaction(async (txContext) => { … })` runs the callback inside
+**one** interactive transaction. `txContext` is a full context whose `db.*`
+operations are access-checked and hook-firing exactly like the request context,
+but persist against the transaction client — so every write in the callback is
+**atomic** and a throw anywhere rolls the whole transaction back. This is the
+secured alternative to the Unsafe surface's transaction, which bypasses access
+control and hooks.
 
 ```typescript
-async function bookSlot(context: StackContext, slotId: string) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      return await context.transaction(
-        async (tx) => {
-          const count = await tx.db.booking.count({ where: { slotId } })
-          if (count >= CAPACITY) return { booked: false }
-          return { booked: true, item: await tx.db.booking.create({ data: { slotId } }) }
-        },
-        { isolationLevel: 'Serializable' },
-      )
-    } catch (err) {
-      // Serialization failures (Prisma P2034) PROPAGATE — the caller owns retry.
-      if (err && typeof err === 'object' && 'code' in err && err.code === 'P2034') continue
-      throw err
-    }
-  }
-  throw new Error('exceeded retry budget')
-}
+await context.transaction(async (tx) => {
+  const order = await tx.db.Order.create({ data: { customerId } })
+  await tx.db.AuditEntry.create({ data: { orderId: order.id, action: 'placed' } })
+})
 ```
 
 Key points:
 
-- **Options pass through** to Prisma — `isolationLevel` (incl. `'Serializable'`),
-  `maxWait`, `timeout`.
-- **Serialization failures propagate** (they are NOT converted to a silent
-  `null`), so the caller can implement a retry loop. Built-in retry is not
-  provided — the caller owns it (matching Keystone 6's `context.transaction`).
+- **It takes no options** and runs at the connection's default isolation level —
+  Read Committed on PostgreSQL (ADR-0042). `isolationLevel`, `maxWait` and
+  `timeout` are deleted, so asking for one is a compile error rather than a
+  silent downgrade. An invariant a stricter level would have closed is expressed
+  as a lock on the contended row inside the callback instead (ADR-0047).
+
+- **Driver errors are stack-owned.** A serialization failure reaches the caller
+  as `SerializationFailure` and a unique violation as
+  `UniqueConstraintViolation` carrying per-field messages, each with an `is*`
+  predicate (`isSerializationFailure`, `isUniqueConstraintViolation`). They are
+  NOT converted to a silent `null`, so the caller can write a retry loop; built-in
+  retry is not provided — the caller owns it (matching Keystone 6's
+  `context.transaction`). Keep the loop narrow: a broadly-catching one re-applies
+  a transaction that already committed.
+- **Errors raised at `COMMIT` are normalised the same way**, at the transaction
+  owner's settle and before the deferred-hook flush, so a deferred constraint
+  never escapes as a raw driver error and an `afterTransaction` hook's
+  `outcome.error` is the normalised one.
+- **A `DatabaseError`'s message is stack-authored, never the driver's.** The
+  driver's text names columns, tables and constraint names, and that message is
+  what a server action hands a client; the driver's own error stays on `cause`
+  for a server-side log.
+- **Your error wins over the stack's.** Catching a stack error in a hook and
+  rethrowing your own with `{ cause }` reaches the caller as your error — the
+  normalisation stops at the first `DatabaseError` in the chain rather than
+  reaching past it to re-raise the driver failure underneath.
+- **The Unsafe surface is excluded**: a query issued through `context.unsafe`
+  rejects with the driver's own error, consistent with its bypassing everything
+  else.
 - **Nested `context.db` writes join** the outer transaction: a context bound to
   an open transaction carries no transaction opener, so the Write Pipeline runs
   them against the active handle rather than opening a second one.
@@ -188,8 +194,8 @@ Key points:
   the same transaction leaves it stale). Because of this, a **rejected
   `context.transaction()` no longer implies rollback**: a deferred hook that
   throws after a successful commit rejects the call with `AfterTransactionError`
-  over already-final data, though a transaction/serialization error (e.g.
-  `P2034`) still takes precedence and propagates unwrapped. A write with no
+  over already-final data, though a transaction error — `SerializationFailure`
+  among them — still takes precedence. A write with no
   transaction owner at all (an app-managed `prisma.$transaction`, or a client —
   e.g. a bare test mock — that cannot open one) still fires `afterTransaction`
   optimistically at write time, unchanged. See ADR-0028 and the hooks concept
