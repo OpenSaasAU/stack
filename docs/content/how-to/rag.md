@@ -660,7 +660,6 @@ export default function ChatPage() {
 ```typescript
 // scripts/seed-knowledge.ts
 import { getContext } from '@/.opensaas/context'
-import { sudo } from '@opensaas/stack-core/context'
 
 const articles = [
   {
@@ -677,16 +676,13 @@ const articles = [
 ]
 
 async function seed() {
-  const context = await getContext()
+  // `sudo()` returns a context that bypasses access control, for a script
+  // that runs with no session.
+  const context = (await getContext()).sudo()
 
   for (const article of articles) {
-    // Use sudo() to bypass access control during seeding
-    const created = await sudo(
-      context.db.knowledgeBase.create({
-        data: article,
-      }),
-    )
-    console.log(`Created: ${created.title}`)
+    await context.db.KnowledgeBase.create({ data: article })
+    console.log(`Created: ${article.title}`)
   }
 }
 
@@ -707,7 +703,7 @@ Embeddings will be automatically generated for each article!
 
 ```typescript
 // scripts/test-embeddings.ts
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 async function test() {
   const provider = createEmbeddingProvider({

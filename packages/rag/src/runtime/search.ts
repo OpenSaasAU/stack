@@ -7,11 +7,32 @@
  * vector and hands it to a list the caller already named.
  */
 
-import type { SecuredQuery, Where } from '@opensaas/stack-core'
+import type { Where } from '@opensaas/stack-core'
 import type { SearchResult } from '../config/types.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 
 type Row = Record<string, unknown>
+
+/**
+ * The composed-read members these two functions drive.
+ *
+ * Structural rather than core's `SecuredQuery`, for the same reason
+ * `RelationshipOptionsQuery` is: a generated project reaches its list as
+ * `SecuredList<Contract, Remainder, K>`, which is *not* assignable to
+ * `SecuredQuery` — `include`'s optional `refine` and `orderBy`'s array union
+ * both fail the contravariance check. Naming only `where`, `nearest` and
+ * `first` accepts the generated list and the engine's own delegate alike, and
+ * infers `TRow` from whichever it is given.
+ */
+export interface SearchableList<TRow extends Row = Row> {
+  where(predicate: Where): SearchableList<TRow>
+  nearest(
+    field: string,
+    vector: readonly number[],
+    options?: { limit?: number; minScore?: number },
+  ): Promise<SearchResult<TRow>[]>
+  first(): Promise<TRow | null>
+}
 
 function bounds(limit: number | undefined, minScore: number | undefined) {
   return {
@@ -22,7 +43,7 @@ function bounds(limit: number | undefined, minScore: number | undefined) {
 
 export interface SemanticSearchOptions<TRow extends Row = Row> {
   /** The list to search, off the secured `db` surface: `context.db.Article`. */
-  list: SecuredQuery<TRow>
+  list: SearchableList<TRow>
   fieldName: string
   query: string
   provider: EmbeddingProvider
@@ -57,7 +78,7 @@ export interface SemanticSearchOptions<TRow extends Row = Row> {
  *   query: 'articles about machine learning',
  *   provider: createEmbeddingProvider({ type: 'openai', apiKey: '...' }),
  *   limit: 10,
- *   minScore: 0.7,
+ *   minScore: 0.25,
  * })
  * ```
  */
@@ -74,7 +95,7 @@ export async function semanticSearch<TRow extends Row = Row>(
 
 export interface FindSimilarOptions<TRow extends Row = Row> {
   /** The list to search, off the secured `db` surface: `context.db.Article`. */
-  list: SecuredQuery<TRow>
+  list: SearchableList<TRow>
   fieldName: string
   itemId: string
 

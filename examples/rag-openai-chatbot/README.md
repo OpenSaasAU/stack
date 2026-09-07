@@ -249,7 +249,8 @@ When chatting (in `app/api/chat/route.ts`):
 // Perform semantic search
 const searchResults = await searchKnowledge(userQuery, {
   limit: 3,
-  minScore: 0.6,
+  // Raw cosine, not a normalised 0-1 score: 0.25 is a loose floor.
+  minScore: 0.25,
 })
 
 // Build system message with RAG context

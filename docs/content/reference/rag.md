@@ -686,7 +686,7 @@ const chunks = chunkText(document, {
 
 ```typescript
 import { batchProcess } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const result = await batchProcess({
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),

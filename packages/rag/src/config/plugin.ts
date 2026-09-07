@@ -51,20 +51,34 @@ function rowId(value: unknown): string | number | undefined {
 
 /**
  * MCP tool arguments arrive as whatever the assistant sent — `McpCustomTool`
- * types `input` loosely — so each one is narrowed rather than trusted.
+ * types `input` loosely, and `handleCustomTool` validates an `inputSchema`
+ * only when it is a Zod schema, so this tool's plain JSON Schema is never
+ * enforced and its arguments reach the handler raw.
+ *
+ * A wrongly-typed argument is refused by name rather than replaced by the
+ * default: silently answering a different question than the one asked is
+ * worse for an assistant caller than an error it can correct.
  */
 function toolArg(input: unknown, key: string): unknown {
   return typeof input === 'object' && input !== null ? Reflect.get(input, key) : undefined
 }
 
-function stringArg(input: unknown, key: string): string | undefined {
+function stringArg(input: unknown, key: string, toolName: string): string | undefined {
   const value = toolArg(input, key)
-  return typeof value === 'string' ? value : undefined
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') {
+    throw new Error(`${toolName}: "${key}" must be a string`)
+  }
+  return value
 }
 
-function numberArg(input: unknown, key: string): number | undefined {
+function numberArg(input: unknown, key: string, toolName: string): number | undefined {
   const value = toolArg(input, key)
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${toolName}: "${key}" must be a finite number`)
+  }
+  return value
 }
 
 /**
@@ -331,10 +345,9 @@ export function ragPlugin(config: RAGConfig): Plugin {
                       "Minimum similarity score, on the searched field's own distance function " +
                       'rather than a normalised 0-1 scale: "cosine" scores the raw cosine on ' +
                       '[-1, 1], "l2" scores 1 / (1 + distance) on (0, 1], and "inner_product" ' +
-                      'scores the dot product, which is unbounded. The default of 0 keeps every ' +
-                      'result a cosine column counts as more alike than opposite; lower it to ' +
-                      'search further.',
-                    default: 0,
+                      'scores the dot product, which is unbounded. Omitted, the search is ' +
+                      'ranked with no bound at all — the only default that means the same ' +
+                      'thing on all three scales.',
                   },
                   field: {
                     type: 'string',
@@ -346,13 +359,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 required: ['query'],
               },
               handler: async ({ input, context }) => {
-                const query = stringArg(input, 'query')
+                const query = stringArg(input, 'query', toolName)
                 if (query === undefined) {
                   throw new Error(`${toolName}: "query" is required and must be a string`)
                 }
-                const limit = numberArg(input, 'limit') ?? 10
-                const minScore = numberArg(input, 'minScore') ?? 0
-                const field = stringArg(input, 'field') ?? defaultField
+                const limit = numberArg(input, 'limit', toolName) ?? 10
+                const minScore = numberArg(input, 'minScore', toolName)
+                const field = stringArg(input, 'field', toolName) ?? defaultField
 
                 // The field's own provider, not the plugin's default: a
                 // provider fixes the width of the vector it produces, and
@@ -379,7 +392,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                 const matches = await context.db[listName].nearest(field, queryVector, {
                   limit,
-                  minScore,
+                  ...(minScore === undefined ? {} : { minScore }),
                 })
 
                 return {

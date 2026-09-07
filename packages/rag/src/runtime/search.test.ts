@@ -33,12 +33,23 @@ const VECTORS: Record<string, number[]> = {
   blue: [0, 1, 0],
 }
 
+/**
+ * Vectors along the query axis, for the `l2` and `inner_product` columns.
+ * Every component is exactly representable in `float4`, so the scores are
+ * `1`, `0.5` and `-1` exactly rather than values that land near them.
+ */
+const AXIS: Record<string, number[]> = {
+  strong: [1, 0, 0],
+  weak: [0.5, 0, 0],
+  opposed: [-1, 0, 0],
+}
+
 const searchProvider: EmbeddingProvider = {
   type: 'search-fake',
   model: 'search-fake-3',
   dimensions: 3,
   embed: async (input: string) => {
-    const vector = VECTORS[input]
+    const vector = VECTORS[input] ?? AXIS[input]
     if (vector === undefined) throw new Error(`the fake provider has no vector for "${input}"`)
     return vector
   },
@@ -57,6 +68,28 @@ const source: OpenSaasConfig = {
         content: text(),
         published: checkbox(),
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Signal: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          dimensions: 3,
+          distanceFunction: 'inner_product',
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Reading: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          dimensions: 3,
+          distanceFunction: 'l2',
+        }),
       },
       access: { operation: { query: () => true } },
     },
@@ -98,6 +131,16 @@ async function seedPalette(published = true): Promise<void> {
     await seed('Article', {
       content,
       published,
+      contentEmbedding: vector,
+      contentEmbeddingMetadata: metadata,
+    })
+  }
+}
+
+async function seedAxis(model: string): Promise<void> {
+  for (const [content, vector] of Object.entries(AXIS)) {
+    await seed(model, {
+      content,
       contentEmbedding: vector,
       contentEmbeddingMetadata: metadata,
     })
@@ -227,6 +270,76 @@ describe.skipIf(!available)(
         })
 
         expect(results.map((result) => result.item.content)).toEqual(['red'])
+      })
+
+      /**
+       * `0` is not one bound but three. Only omitting `minScore` means the
+       * same thing on every distance function, which is why the MCP tool
+       * declares no default rather than the `0` it used to.
+       */
+      describe('the meaning of no minScore, per distance function', () => {
+        test('an inner_product column ranks an opposed row when none is given', async () => {
+          await seedAxis('Signal')
+
+          const results = await semanticSearch({
+            list: database.context(null).db.Signal,
+            fieldName: 'contentEmbedding',
+            query: 'strong',
+            provider: searchProvider,
+          })
+
+          // Dot products against [1,0,0] are 1, 0.5 and -1 exactly.
+          expect(results.map((result) => result.item.content)).toEqual([
+            'strong',
+            'weak',
+            'opposed',
+          ])
+          expect(results[2].score).toBeCloseTo(-1, 5)
+        })
+
+        test('a minScore of 0 drops it — the bound the old default imposed', async () => {
+          await seedAxis('Signal')
+
+          const results = await semanticSearch({
+            list: database.context(null).db.Signal,
+            fieldName: 'contentEmbedding',
+            query: 'strong',
+            provider: searchProvider,
+            minScore: 0,
+          })
+
+          // 1 clear of the bound, so nothing here turns on float4 accumulation.
+          expect(results.map((result) => result.item.content)).toEqual(['strong', 'weak'])
+        })
+
+        test('an l2 column bounds nothing at 0, so the two agree there', async () => {
+          await seedAxis('Reading')
+
+          const unbounded = await semanticSearch({
+            list: database.context(null).db.Reading,
+            fieldName: 'contentEmbedding',
+            query: 'strong',
+            provider: searchProvider,
+          })
+          const atZero = await semanticSearch({
+            list: database.context(null).db.Reading,
+            fieldName: 'contentEmbedding',
+            query: 'strong',
+            provider: searchProvider,
+            minScore: 0,
+          })
+
+          // Distances 0, 0.5 and 2 score 1, 2/3 and 1/3 — all above 0, so a
+          // bound at 0 is no predicate here however it is lowered.
+          expect(unbounded.map((result) => result.item.content)).toEqual([
+            'strong',
+            'weak',
+            'opposed',
+          ])
+          expect(atZero.map((result) => result.item.content)).toEqual(
+            unbounded.map((r) => r.item.content),
+          )
+        })
       })
 
       test('caps the result set at limit', async () => {

@@ -441,7 +441,7 @@ content: searchable(text(), {
 
 ```typescript
 import { chunkText, generateEmbedding } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const provider = createEmbeddingProvider({
   type: 'openai',
@@ -532,7 +532,7 @@ Generate embeddings in batches to reduce API overhead and respect rate limits.
 
 ```typescript
 import { batchProcess } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const provider = createEmbeddingProvider({
   type: 'openai',
@@ -615,7 +615,7 @@ For frequently searched content, pre-compute embeddings at build time or during 
 ```typescript
 // scripts/precompute-embeddings.ts
 import { getContext } from '@/.opensaas/context'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const commonQueries = [
   'How do I get started?',
@@ -1040,7 +1040,7 @@ export async function backupEmbeddings() {
 ```typescript
 // __tests__/providers/openai.test.ts
 import { describe, it, expect } from 'vitest'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 describe('OpenAI Provider', () => {
   it('should generate embeddings', async () => {
@@ -1078,21 +1078,19 @@ describe('OpenAI Provider', () => {
 import { describe, it, expect, beforeAll } from 'vitest'
 import { getContext } from '@/.opensaas/context'
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
-import { sudo } from '@opensaas/stack-core/context'
 
 describe('Semantic Search', () => {
   beforeAll(async () => {
-    const context = await getContext()
+    // `sudo()` returns a context that bypasses access control, so the seed
+    // does not depend on the fixture's session.
+    const context = (await getContext()).sudo()
 
-    // Seed test data
-    await sudo(
-      context.db.Article.create({
-        data: {
-          title: 'Machine Learning Basics',
-          content: 'Machine learning is a subset of artificial intelligence...',
-        },
-      }),
-    )
+    await context.db.Article.create({
+      data: {
+        title: 'Machine Learning Basics',
+        content: 'Machine learning is a subset of artificial intelligence...',
+      },
+    })
   })
 
   it('should find relevant articles', async () => {

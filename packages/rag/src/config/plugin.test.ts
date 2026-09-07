@@ -410,16 +410,18 @@ describe('ragPlugin', () => {
       expect(calls[0].vector).toEqual([0, 0, 0, 1])
     })
 
-    it('bounds the search at a score of 0 when the caller names none', async () => {
+    it('names no bound at all when the caller names none', async () => {
       const { tool, calls, context } = await searchTool()
 
       await tool.handler({ input: { query: 'anything' }, context })
 
-      // A cosine column scores the raw cosine on [-1, 1], so 0 is "more alike
-      // than opposite" — the same bound the deleted normalised (cos + 1) / 2
-      // scoring expressed as its 0.5 default.
-      expect(calls[0].options).toEqual({ limit: 10, minScore: 0 })
-      expect(tool.inputSchema.properties.minScore.default).toBe(0)
+      // `0` is a different bound on each of the three distance functions — no
+      // predicate on `l2`, raw cosine >= 0 on `cosine`, and dot >= 0 on
+      // `inner_product`, which silently drops every opposed row. Omitting it
+      // is the only default that means the same thing on all three; see
+      // `search.test.ts`'s per-distance-function tests.
+      expect(calls[0].options).toEqual({ limit: 10 })
+      expect(tool.inputSchema.properties.minScore.default).toBeUndefined()
     })
 
     it('passes the caller-supplied bounds through unchanged', async () => {
@@ -460,8 +462,27 @@ describe('ragPlugin', () => {
       const { tool, calls, context } = await searchTool()
 
       await expect(tool.handler({ input: { query: 42 }, context })).rejects.toThrow(
-        '"query" is required and must be a string',
+        '"query" must be a string',
       )
+      expect(calls).toEqual([])
+    })
+
+    /**
+     * `handleCustomTool` validates an `inputSchema` only when it is a Zod
+     * schema, and this tool's is a plain JSON Schema — so the handler's own
+     * narrowing is the only check there is. Defaulting a wrongly-typed
+     * argument answers a different question than the caller asked: `field: 42`
+     * had reached the default column *past* the unknown-field refusal, and
+     * `minScore: "0.8"` had searched with no bound rather than the tight one.
+     */
+    it.each([
+      ['field', { query: 'anything', field: 42 }, '"field" must be a string'],
+      ['minScore', { query: 'anything', minScore: '0.8' }, '"minScore" must be a finite number'],
+      ['limit', { query: 'anything', limit: '3' }, '"limit" must be a finite number'],
+    ])('refuses a wrongly-typed %s rather than defaulting it', async (_name, input, message) => {
+      const { tool, calls, context } = await searchTool()
+
+      await expect(tool.handler({ input, context })).rejects.toThrow(message)
       expect(calls).toEqual([])
     })
   })

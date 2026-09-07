@@ -102,7 +102,7 @@ await context.db.article.create({
 ### 4. Perform semantic search
 
 ```typescript
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
@@ -311,7 +311,7 @@ Simplified API that handles embedding generation and search in one call:
 
 ```typescript
 import { semanticSearch } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()

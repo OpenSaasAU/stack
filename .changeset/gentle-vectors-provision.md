@@ -35,14 +35,23 @@ the query vector against the column's declared dimension, so on a config whose
 field named a provider of a different width the tool raised a validation error
 on every call.
 
-The same tool's `minScore` default drops from `0.5` to `0`, and its description
-now states the real range. A score is read on the column's own distance
-function, not a normalised 0–1: `cosine` scores the raw cosine on `[-1, 1]`,
-`l2` scores `1 / (1 + distance)` on `(0, 1]`, and `inner_product` scores the dot
-product, which is unbounded. The unchanged `0.5` had silently tightened from
-"raw cosine at or above 0" to "at or above 0.5" when scoring moved into
-`nearest()`, so an assistant calling the tool with no `minScore` got far fewer
-results, or none, on a corpus that used to answer.
+The same tool's `minScore` default of `0.5` is gone entirely: omitted, the
+search is now ranked with no bound at all. Its description states the real
+range, which is the column's own distance function rather than a normalised
+0–1: `cosine` scores the raw cosine on `[-1, 1]`, `l2` scores
+`1 / (1 + distance)` on `(0, 1]`, and `inner_product` scores the dot product,
+which is unbounded. The unchanged `0.5` had silently tightened from "raw cosine
+at or above 0" to "at or above 0.5" when scoring moved into `nearest()`, so an
+assistant calling the tool with no `minScore` got far fewer results, or none, on
+a corpus that used to answer. No bound is the only default that means the same
+thing on all three scales — `0` would still have cut every anti-correlated row
+on an `inner_product` column.
+
+That tool also refuses a wrongly-typed argument by name instead of falling back
+to a default. Its `inputSchema` is a plain JSON Schema, which the MCP handler
+does not enforce, so `field: 42` had bypassed the unknown-field check and
+searched the default column, and `minScore: "0.8"` had become `0` — each one
+silently answering a different question than the caller asked.
 
 The README and agent guidance describe pgvector **provisioning** rather than
 installation: `ragPlugin` declares the extension pack, `pnpm generate` writes
