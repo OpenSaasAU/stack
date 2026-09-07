@@ -1,86 +1,109 @@
-type PrismaP2002Meta = {
-  target?: string[]
-  driverAdapterError?: {
-    cause?: {
-      originalMessage?: string
-      constraint?: { fields?: unknown[] }
-    }
+// The config-aware half of error normalisation (ADR-0042): resolving a
+// classified unique violation to the OpenSaas fields it hit, through the
+// constraint map the generator emitted. The classification itself, and the
+// error classes, live in `database-errors.ts` — a leaf the Engine stamp can
+// import.
+
+import type { OpenSaasConfig } from '../config/types.js'
+import type { ConstraintMap } from '../contract/dependencies.js'
+import { deriveConstraintMap } from '../contract/dependencies.js'
+import { deriveContract } from '../contract/derive.js'
+import {
+  UniqueConstraintViolation,
+  classifyDriverError,
+  isUniqueConstraintViolation,
+} from './database-errors.js'
+
+const derived = new WeakMap<OpenSaasConfig, ConstraintMap>()
+
+/**
+ * The constraint map for `config`: the one `pnpm generate` emitted when the
+ * generated context supplied it, otherwise the same computation, memoised per
+ * config rather than recomputed per failure — the shape
+ * `getDependencyTable` uses for the other emitted table.
+ *
+ * A config the derivation refuses (two constraints colliding on one name)
+ * resolves to an empty map here rather than throwing: this runs while an
+ * error is already in flight, and replacing a unique violation with a
+ * generation error would lose the failure the caller is handling. The same
+ * config fails loudly at `pnpm generate`, which is where that collision is
+ * meant to surface.
+ */
+export function getConstraintMap(config: OpenSaasConfig): ConstraintMap {
+  const emitted = config._tables?.constraints
+  if (emitted) return emitted
+  const cached = derived.get(config)
+  if (cached) return cached
+  let map: ConstraintMap = {}
+  try {
+    map = deriveConstraintMap(config, deriveContract(config))
+  } catch {
+    map = {}
   }
+  derived.set(config, map)
+  return map
 }
 
-// Postgres quotes an identifier in `constraint.fields` only when it needed
-// quoting (e.g. camelCase columns), so `"tenantId"` and `slug` are both valid
-// entries for the same array.
-function stripIdentifierQuotes(field: string): string {
-  const match = field.match(/^"(.*)"$/)
-  return match ? match[1] : field
+// A camelCase field name (e.g. a relationship's `tenantId` foreign key) needs
+// its word boundary split before title-casing, or it reads as one run-together
+// word ("Tenantid") in a user-facing unique-constraint message.
+function humanizeFieldName(fieldName: string): string {
+  const spaced = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-export interface UniqueConstraintInfo {
-  /** Column names covered by the violated constraint, quote-stripped. */
-  fields: string[]
-  /**
-   * The violated constraint's name, when recoverable from the error.
-   *
-   * Known limit: this is parsed out of Postgres' English-locale error text
-   * (`cause.originalMessage`) — the adapter exposes no structured field for
-   * it. A server running under a non-English `lc_messages` locale will not
-   * match, leaving this `undefined` while `fields` (structured data) still
-   * resolves correctly.
-   */
-  constraintName?: string
+function resolveUniqueViolation(
+  error: UniqueConstraintViolation,
+  config: OpenSaasConfig,
+): UniqueConstraintViolation {
+  const { constraintName } = error
+  if (constraintName === undefined || error.fields.length > 0) return error
+
+  const entry = getConstraintMap(config)[constraintName]
+  if (entry === undefined || entry.fields.length === 0) return error
+
+  const listConfig = config.lists[entry.list]
+  const fieldErrors: Record<string, string> = {}
+  for (const fieldKey of entry.fields) {
+    fieldErrors[fieldKey] = listConfig?.fields[fieldKey]
+      ? `This ${humanizeFieldName(fieldKey).toLowerCase()} is already in use`
+      : 'This value is already in use'
+  }
+
+  const labels = entry.fields.map(humanizeFieldName).join(', ')
+  return new UniqueConstraintViolation(
+    `${labels} must be unique. The value you entered is already in use.`,
+    { constraintName, list: entry.list, fields: entry.fields, fieldErrors },
+    { cause: error.cause },
+  )
 }
 
 /**
- * Resolve which columns — and, where recoverable, which named constraint — a
- * Prisma `P2002` unique-constraint violation hit.
+ * The stack-owned error for `error`, or `error` itself when it is not a driver
+ * failure (ADR-0042).
  *
- * Prisma documents `error.meta.target` for this. Under Prisma 7 driver
- * adapters (verified against `@prisma/adapter-pg` and PGlite; see issue #979)
- * that field is `undefined` instead — the same information sits at
- * `error.meta.driverAdapterError.cause`, with the constraint name only
- * recoverable as free text inside `cause.originalMessage`. This normalises
- * both shapes to one stable result so callers never need to reach into that
- * adapter-specific structure themselves.
- *
- * A derived constraint name is truncated by Postgres at its 63-character
- * identifier limit, and one row can violate two unique indexes at once (with
- * Postgres reporting whichever it checked first) — an index an application
- * means to branch on should be named explicitly, and a caller may still need
- * to re-read the colliding row to fully disambiguate.
- *
- * Returns `undefined` when `error` isn't a `P2002` with any recoverable
- * column or constraint information — never throws, since the adapter error
- * shape is untrusted and every level of it may be absent.
+ * Idempotent: an error the engine terminals already classified passes through
+ * with its fields resolved a second time only if the first attempt had no
+ * constraint map to resolve them against. That is what lets the transaction
+ * owner's settle apply the same normalisation to a failure raised at `COMMIT`,
+ * after every terminal in the callback has already returned.
  */
-export function uniqueConstraintOf(error: unknown): UniqueConstraintInfo | undefined {
-  if (
-    !error ||
-    typeof error !== 'object' ||
-    !('code' in error) ||
-    (error as { code?: unknown }).code !== 'P2002'
-  ) {
-    return undefined
-  }
+export function normalizeDatabaseError(error: unknown, config: OpenSaasConfig): unknown {
+  const classified = classifyDriverError(error) ?? error
+  return isUniqueConstraintViolation(classified)
+    ? resolveUniqueViolation(classified, config)
+    : classified
+}
 
-  const meta = (error as { meta?: PrismaP2002Meta }).meta
-
-  if (meta?.target && Array.isArray(meta.target)) {
-    return { fields: meta.target }
-  }
-
-  const cause = meta?.driverAdapterError?.cause
-  const rawFields = cause?.constraint?.fields
-  const fields = Array.isArray(rawFields)
-    ? rawFields.filter((f): f is string => typeof f === 'string').map(stripIdentifierQuotes)
-    : []
-
-  const constraintName =
-    typeof cause?.originalMessage === 'string'
-      ? cause.originalMessage.match(/unique constraint "([^"]+)"/)?.[1]
-      : undefined
-
-  if (fields.length === 0 && !constraintName) return undefined
-
-  return constraintName ? { fields, constraintName } : { fields }
+/**
+ * The user-facing message and per-field messages for an error caught around a
+ * `context.db` operation — what a server action returns to a form.
+ *
+ * A {@link DatabaseError} already carries both. Anything else is a hook's own
+ * throw or a bug, and reaches the caller as its own message.
+ */
+export function databaseErrorMessage(error: unknown, config: OpenSaasConfig): Error {
+  const normalized = normalizeDatabaseError(error, config)
+  if (normalized instanceof Error) return normalized
+  return new Error('An unknown error occurred')
 }

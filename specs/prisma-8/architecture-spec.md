@@ -212,7 +212,7 @@ The execution inventory the map accumulated, regrouped by package. Every item is
 **Documentation and agent guidance**
 
 - `docs/content/reference/context-api.md`'s `prisma` section becomes the Unsafe surface's SQL recipe; `docs/content/how-to/write-a-plugin.md`'s `$executeRawUnsafe` placeholder is rewritten; the deploy guide's bundling section loses the `outputFileTracingIncludes` pin and every `prisma-client/**` mention and gains the extension-privilege paragraph beside the Database escape; the RAG how-to and reference rewrite their pgvector sections; the migration guide's fragment references go.
-- Root `CLAUDE.md`: the interactive-transaction example becomes the lock form; the synchronous-client recipe becomes `db.client.pg` plus the JSON import; the `P2034` line and every `P####` mention go; the generator, Prisma 7 configuration, `prismaClientConstructor`, `extendPrismaSchema`, join-table naming and SQLite sections are rewritten or removed; the auth paragraphs stop naming `prismaAdapter`. `packages/core/CLAUDE.md` and `packages/auth/CLAUDE.md` follow.
+- Root `CLAUDE.md`: the interactive-transaction example becomes the lock form; the synchronous-client recipe becomes `db.client.pg` plus the JSON import; the serialization-failure retry line and every `P####` mention go; the generator, Prisma 7 configuration, `prismaClientConstructor`, `extendPrismaSchema`, join-table naming and SQLite sections are rewritten or removed; the auth paragraphs stop naming `prismaAdapter`. `packages/core/CLAUDE.md` and `packages/auth/CLAUDE.md` follow.
 
 **CI, e2e and repository hygiene**
 

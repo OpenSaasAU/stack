@@ -153,7 +153,7 @@ Same shape as #1, at function-doc granularity rather than a file header: nothing
 
 CLAUDE.md keeps TSDoc only on "exported config options, field builders, and plugin surfaces" — because that's what the consumer's editor shows. It's a narrow exception, not a blanket pass for anything exported. Two examples from the same file show the line:
 
-**Kept in full** — `StackContext.transaction`, the method every `context.transaction(fn, options)` caller sees in autocomplete:
+**Kept in full** — `StackContext.transaction`, the method every `context.transaction(fn)` caller sees in autocomplete:
 
 ```ts
 /**
@@ -163,12 +163,12 @@ CLAUDE.md keeps TSDoc only on "exported config options, field builders, and plug
  * client, so every write in the callback is atomic — a throw anywhere rolls the
  * whole transaction back.
  *
- * `options` (notably `isolationLevel`) is forwarded to the underlying Prisma
- * transaction. Serialization failures (e.g. Prisma `P2034`) propagate to the
- * caller rather than being swallowed, so the caller can own a retry loop. If
- * the client cannot open an interactive transaction (e.g. a plain mock, or we
- * are already inside a transaction), `fn` runs directly against the current
- * client with identical hook/access semantics.
+ * The transaction takes the callback and nothing else, and runs at the
+ * connection's default isolation level. Serialization failures reach the
+ * caller as `SerializationFailure` rather than being swallowed, so the caller
+ * can own a retry loop. If the client cannot open an interactive transaction
+ * (e.g. a plain mock, or we are already inside a transaction), `fn` runs
+ * directly against the current client with identical hook/access semantics.
  *
  * Caveat: plugin runtime services (`txContext.plugins`) stay bound to the
  * top-level (non-transaction) client — they are shared services initialised
@@ -177,10 +177,7 @@ CLAUDE.md keeps TSDoc only on "exported config options, field builders, and plug
  * escape the transaction and survive a rollback. Use `txContext.db` (not a
  * plugin service) for writes that must be atomic with the transaction.
  */
-transaction: <T>(
-  fn: (txContext: StackContext<TPrisma>) => Promise<T>,
-  options?: TransactionOptions,
-) => Promise<T>
+transaction: <T>(fn: (txContext: StackContext<TPrisma>) => Promise<T>) => Promise<T>
 ```
 
 Every paragraph earns its place under the general rule too — the plugin-services caveat in particular is exactly the "obvious edit is wrong" case (reaching for `txContext.plugins` inside a transaction looks correct and silently isn't atomic). It would survive even without the public-API exception; being on `StackContext` is why it's this thorough.

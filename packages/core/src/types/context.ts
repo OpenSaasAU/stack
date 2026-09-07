@@ -1,5 +1,5 @@
 import type { AccessControlledDB, Session, StackDb, StorageUtils } from '../access/types.js'
-import type { ServerActionProps, TransactionOptions } from '../context/index.js'
+import type { ServerActionProps } from '../context/index.js'
 import type { UnsafeSurface } from '../unsafe.js'
 
 export type { StackDb }
@@ -79,14 +79,12 @@ export interface StackContext<
    * the callback asks the pool for a second one, and on a single-connection
    * pool (the dev database's, ADR-0063) waits for one that will not come.
    *
-   * `options` is refused rather than ignored on a Prisma 8 client, whose
-   * transaction takes the callback and nothing else — see
-   * `TransactionOptionsUnsupportedError`.
+   * The transaction takes the callback and nothing else, and runs at the
+   * connection's default isolation level — Read Committed on PostgreSQL. An
+   * invariant that a stricter level would have closed is expressed as a lock
+   * on the contended row inside the callback (ADR-0042).
    */
-  transaction: <T>(
-    fn: (txContext: StackTransactionContext<DB, S, P>) => Promise<T>,
-    options?: TransactionOptions,
-  ) => Promise<T>
+  transaction: <T>(fn: (txContext: StackTransactionContext<DB, S, P>) => Promise<T>) => Promise<T>
 }
 
 /**
