@@ -181,7 +181,7 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
         '[@opensaas/stack-auth] `betterAuthOptions.advanced.database.generateId` does not ' +
           "support a custom function or `'serial'` — the database mints auth ids " +
           "(`db.idField: 'uuid7'`, pinned on every list the auth plugin injects), so either " +
-          'would write an id the schema does not expect. `false`, `\'uuid\'`, and `undefined` ' +
+          "would write an id the schema does not expect. `false`, `'uuid'`, and `undefined` " +
           'are accepted. Change the strategy through `db.idField` in `opensaas.config.ts` ' +
           'instead.',
       )
