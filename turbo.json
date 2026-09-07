@@ -13,7 +13,8 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "cache": false
+      "cache": false,
+      "env": ["DATABASE_URL"]
     },
     "test:coverage": {
       "dependsOn": ["build"],

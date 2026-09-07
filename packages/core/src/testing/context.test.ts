@@ -167,18 +167,54 @@ describe('the test database stands a blog-shaped config up', () => {
   )
 })
 
+/** How long the probe keeps redialling a server it cannot reach yet. */
+const PROBE_DEADLINE = 30_000
+const PROBE_CONNECT_TIMEOUT = 5_000
+const PROBE_BACKOFF = 500
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** node-postgres reports a refused dial as an `AggregateError` whose own message is empty. */
+function describeFault(fault: unknown): string {
+  if (fault instanceof AggregateError) {
+    return fault.errors.map(describeFault).join('; ') || fault.name
+  }
+  return fault instanceof Error ? `${fault.name}: ${fault.message}` : String(fault)
+}
+
 /**
- * PGlite bundles pgvector, so the default harness always runs this. A server
- * reached through the escape has to have been provisioned with it (ADR-0065),
- * and one that was not skips by name rather than failing on a missing control
- * file — the skip says which server and why.
+ * Whether the escape's server carries pgvector.
+ *
+ * Only an answer from the server is an answer. A server that is not accepting
+ * connections yet is redialled until {@link PROBE_DEADLINE} and then thrown on,
+ * so a container still coming up can never be recorded as one without pgvector:
+ * a skip here reads as coverage in the reporter, and the only skip this may
+ * emit is a server that answered and said no.
+ *
+ * @throws when the server stays unreachable for the whole deadline.
  */
-const escape = readDatabaseEscape()
-const vectorAvailable =
-  escape.kind !== 'postgres' ||
-  (await (async () => {
-    const client = new pg.Client({ connectionString: escape.url })
-    await client.connect()
+async function probeVector(url: string): Promise<boolean> {
+  const until = Date.now() + PROBE_DEADLINE
+  let attempts = 0
+  let unreachable: unknown
+
+  do {
+    attempts++
+    const client = new pg.Client({
+      connectionString: url,
+      connectionTimeoutMillis: PROBE_CONNECT_TIMEOUT,
+    })
+    try {
+      await client.connect()
+    } catch (fault) {
+      unreachable = fault
+      await pause(PROBE_BACKOFF)
+      continue
+    }
+    // Connected: whatever the server says now is the truth about pgvector, and
+    // a query that fails from here is a real fault rather than a slow boot.
     try {
       const result = await client.query(
         `select 1 from pg_available_extensions where name = 'vector'`,
@@ -187,7 +223,23 @@ const vectorAvailable =
     } finally {
       await client.end()
     }
-  })())
+  } while (Date.now() < until)
+
+  throw new Error(
+    `Could not reach the ${ESCAPE_VARIABLE} server to probe for pgvector after ${attempts} ` +
+      `attempts over ${PROBE_DEADLINE}ms. This is a broken connection, not a server without ` +
+      `pgvector, so the suite fails rather than skipping. Last fault: ${describeFault(unreachable)}`,
+  )
+}
+
+/**
+ * PGlite bundles pgvector, so the default harness always runs this. A server
+ * reached through the escape has to have been provisioned with it (ADR-0065),
+ * and one that was not skips by name rather than failing on a missing control
+ * file — the skip says which server and why.
+ */
+const escape = readDatabaseEscape()
+const vectorAvailable = escape.kind !== 'postgres' || (await probeVector(escape.url))
 
 const vectorSuite = vectorAvailable
   ? 'a pgvector-declaring config stands up on the default harness'

@@ -18,6 +18,12 @@ jobs:
     # variable is absent, and a skip that reads as coverage is what this guards
     # against (ADR-0063). PRs into `main` keep the SQLite string that branch
     # still uses; the integration branch names the service container below.
+    #
+    # Setting it here is necessary but not sufficient: turbo's strict env mode
+    # (the default since 2.x) strips any variable a task does not declare, so
+    # every task that dials the escape must also list `DATABASE_URL` under
+    # `env` in turbo.json. `test` did not, and silently ran on PGlite while
+    # `test:coverage` ran on the container beside it.
     env:
       DATABASE_URL: ${{ github.base_ref == 'main' && 'file:./dev.db' || 'postgres://postgres:postgres@localhost:5432/postgres' }}
 
