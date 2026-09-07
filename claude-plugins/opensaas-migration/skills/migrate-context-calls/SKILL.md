@@ -358,7 +358,7 @@ if (!updated) {
 
 > **`set` replaces, `connect` adds.** On a to-many relation, Keystone's `set: [...]` and Prisma's `set: [...]` both _replace_ the entire list of links; `connect` only adds. To clear all links use `set: []`.
 >
-> **Never write the scalar FK directly.** Use the relation field (`author: { connect: { id } }`), not `authorId: …`. `filterWritableFields` strips `<field>Id` keys when a relationship field exists, so writing the FK directly is silently dropped.
+> **`connect` and the scalar FK are the same write.** `author: { connect: { id } }` and `authorId: id` both set the same column and enforce the same field-level write access (ADR-0050) — prefer the relation field (`connect`) for readability, since it names the relationship rather than its physical column.
 
 ## Recipe 3 — gql.tada typed documents → `defineFragment` + `ResultOf`
 

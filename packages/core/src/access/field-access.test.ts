@@ -305,7 +305,7 @@ describe('isFieldReadableForPredicate (#915)', () => {
 })
 
 describe('filterWritableFields', () => {
-  it('should filter out foreign key fields when their corresponding relationship field exists', async () => {
+  it('keeps a directly-written foreign-key column alongside its relationship field (#1326)', async () => {
     // Setup: Define field configs with a relationship field
     const fieldConfigs = {
       title: {
@@ -324,8 +324,8 @@ describe('filterWritableFields', () => {
     // Data that includes both the foreign key (authorId) and other fields
     const data = {
       title: 'Test Post',
-      authorId: 'user-123', // This should be filtered out
-      tagsId: 'tag-456', // This should NOT be filtered (tags is many:true)
+      authorId: 'user-123', // A legitimate spelling of the same edge `connect` lowers to (#1326)
+      tagsId: 'tag-456', // Not a foreign key at all (tags is many:true) — an ordinary key
       author: {
         connect: { id: 'user-123' },
       },
@@ -341,8 +341,8 @@ describe('filterWritableFields', () => {
       inputData: data,
     })
 
-    // authorId should be filtered out
-    expect(filtered).not.toHaveProperty('authorId')
+    // authorId is a real column write, not a silent drop (#1326)
+    expect(filtered).toHaveProperty('authorId', 'user-123')
 
     // title should remain
     expect(filtered).toHaveProperty('title', 'Test Post')
@@ -397,7 +397,7 @@ describe('filterWritableFields', () => {
 
     const data = {
       title: 'Updated Title',
-      authorId: 'user-456', // Should be filtered out
+      authorId: 'user-456', // A legitimate direct column write (#1326)
       author: {
         connect: { id: 'user-456' },
       },
@@ -414,12 +414,12 @@ describe('filterWritableFields', () => {
       inputData: data,
     })
 
-    expect(filtered).not.toHaveProperty('authorId')
+    expect(filtered).toHaveProperty('authorId', 'user-456')
     expect(filtered).toHaveProperty('title', 'Updated Title')
     expect(filtered).toHaveProperty('author')
   })
 
-  it('should not filter fields that happen to end with "Id" but are not foreign keys', async () => {
+  it('distinguishes a regular field that happens to end with "Id" from a real foreign key', async () => {
     const fieldConfigs = {
       trackingId: { type: 'text' }, // Regular field that happens to end with "Id"
       author: {
@@ -429,8 +429,8 @@ describe('filterWritableFields', () => {
     }
 
     const data = {
-      trackingId: 'track-123', // Should NOT be filtered (it's a regular field)
-      authorId: 'user-456', // SHOULD be filtered (it's a foreign key)
+      trackingId: 'track-123', // An ordinary declared field
+      authorId: 'user-456', // The author relationship's foreign-key column (#1326)
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
@@ -446,8 +446,8 @@ describe('filterWritableFields', () => {
     // trackingId is a defined field, so it should remain
     expect(filtered).toHaveProperty('trackingId', 'track-123')
 
-    // authorId is a foreign key for author relationship, so it should be filtered
-    expect(filtered).not.toHaveProperty('authorId')
+    // authorId is a foreign key for author relationship — a real column write, not dropped
+    expect(filtered).toHaveProperty('authorId', 'user-456')
   })
 
   // ── #564: undeclared data keys must fail CLOSED (throw) for non-sudo writes ──
@@ -511,7 +511,7 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('from_Enrolment_student')
   })
 
-  it('still skips system fields and relationship FK fields cleanly for a non-sudo write', async () => {
+  it('still skips system fields, and keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
     const fieldConfigs = {
       title: { type: 'text' },
       author: { type: 'relationship', many: false },
@@ -521,7 +521,7 @@ describe('filterWritableFields', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       title: 'Test',
-      authorId: 'user-1', // FK skipped, not rejected
+      authorId: 'user-1', // No `access` on `author` — `checkFieldAccess` allows (#1326)
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
@@ -533,7 +533,7 @@ describe('filterWritableFields', () => {
     expect(filtered).not.toHaveProperty('id')
     expect(filtered).not.toHaveProperty('createdAt')
     expect(filtered).not.toHaveProperty('updatedAt')
-    expect(filtered).not.toHaveProperty('authorId')
+    expect(filtered).toHaveProperty('authorId', 'user-1')
     expect(filtered).toHaveProperty('title', 'Test')
   })
 
@@ -620,6 +620,76 @@ describe('filterWritableFields', () => {
 
     expect(filtered).toHaveProperty('media_url', 'https://x/y.jpg')
     expect(filtered).toHaveProperty('media_size', 99)
+  })
+
+  // ── #1326: a directly-written foreign-key column must not be silently
+  // dropped, and must enforce the same write access as the owning
+  // relationship field (`connect` lowers to the same column, ADR-0050) ──────
+
+  it('THROWS when a directly-written foreign-key column is supplied for a relationship whose write access is DENIED (non-sudo)', async () => {
+    const fieldConfigs = {
+      author: {
+        type: 'relationship',
+        many: false,
+        access: { create: () => false, update: () => false },
+      },
+    }
+    const data = { authorId: 'user-123' }
+
+    // Throws ValidationError, and the message names the owning field — never a
+    // silent drop of the key (the original defect this pins).
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+      }),
+    ).rejects.toThrow(/author/)
+  })
+
+  it('passes a directly-written foreign-key column through when the owning relationship field ALLOWS (non-sudo)', async () => {
+    const fieldConfigs = {
+      author: {
+        type: 'relationship',
+        many: false,
+        access: { create: () => true, update: () => true },
+      },
+    }
+    const data = { authorId: 'user-123' }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('authorId', 'user-123')
+  })
+
+  it('passes a directly-written foreign-key column through under sudo regardless of denied owning-field access', async () => {
+    const fieldConfigs = {
+      author: {
+        type: 'relationship',
+        many: false,
+        access: { create: () => false, update: () => false },
+      },
+    }
+    const data = { authorId: 'user-123' }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: sudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('authorId', 'user-123')
   })
 
   // ── #568: field-access-denied keys must THROW, not be silently stripped ──────

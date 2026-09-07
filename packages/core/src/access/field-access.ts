@@ -241,8 +241,11 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
-  // Foreign keys must not appear in `data` when using Prisma's relation syntax.
-  const foreignKeyFields = new Set<string>()
+  // A to-one relationship's foreign-key column (`<field>Id`) is not its own
+  // declared field, but writing it directly is a legitimate spelling of the
+  // same edge `connect` lowers to (ADR-0050) — gated below by the OWNING
+  // relationship field's write access, exactly like `connect` is (#1326).
+  const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
   // declared field. These columns are injected into the write payload by the
@@ -265,7 +268,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
       const relConfig = fieldConfig as { many?: boolean }
       if (!relConfig.many) {
-        foreignKeyFields.add(`${fieldName}Id`)
+        foreignKeyOwners.set(`${fieldName}Id`, { fieldName, access: fieldConfig.access })
       }
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
@@ -290,9 +293,24 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Prevents conflicts with Prisma's relation syntax (e.g.,
-    // `author: { connect: { id } }`).
-    if (foreignKeyFields.has(fieldName)) {
+    // A directly-written foreign-key column (`authorId`) — gated by the OWNING
+    // relationship field's write access, same as `connect` (#1326). Denied
+    // (non-sudo) throws rather than being silently dropped; allowed (or sudo)
+    // passes through unchanged, so the column is not a way around the
+    // relationship field's write gate.
+    const foreignKeyOwner = foreignKeyOwners.get(fieldName)
+    if (foreignKeyOwner) {
+      const canWrite = await checkFieldAccess(foreignKeyOwner.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      })
+      if (!canWrite) {
+        throw new ValidationError([
+          `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
+            `field-level access denied.`,
+        ])
+      }
+      filtered[fieldName] = value
       continue
     }
 
