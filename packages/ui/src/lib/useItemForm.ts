@@ -17,8 +17,8 @@ const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']
  * Behaviour (the superset applied by all forms):
  * - Keys with no corresponding entry in `fields` are dropped (defense-in-depth:
  *   guards against a non-field key like `_count` reaching the submit payload).
- * - Relationship fields are converted to Prisma `connect` shape (single or many).
- *   Empty single relationships and empty many-arrays are omitted.
+ * - A to-one relationship is converted to `connect` shape; an empty one is
+ *   omitted. A to-many is dropped — see the note at that branch.
  * - Password fields whose value is an `{ isSet }` sentinel (an unchanged password
  *   read back from the server) are skipped, so they are not re-submitted.
  * - All other fields pass through unchanged (including `File` objects, which the
@@ -51,11 +51,14 @@ export function transformItemFormData(
     }
 
     if (fieldConfig.type === 'relationship') {
+      // A to-many relationship owns no foreign key on this row, so its edges
+      // are not writable through this payload at all (ADR-0050) — they are
+      // written against the related list, which the Relationship table's own
+      // controls do. Only the foreign-key-owning side connects here.
       if (fieldConfig.many) {
-        if (Array.isArray(value) && value.length > 0) {
-          transformed[fieldName] = { connect: value.map((id: string) => ({ id })) }
-        }
-      } else if (value) {
+        continue
+      }
+      if (value) {
         transformed[fieldName] = { connect: { id: value } }
       }
     } else {

@@ -68,6 +68,13 @@ export function generateFieldSchemas(
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
 
+    // A to-many relationship owns no foreign key on this row, so `connect`
+    // through it is refused by the engine (ADR-0050). Advertising it would
+    // invite a tool call that can only fail.
+    if (fieldConfig.type === 'relationship' && 'many' in fieldConfig && fieldConfig.many === true) {
+      continue
+    }
+
     properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
 
     if (

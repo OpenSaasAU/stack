@@ -32,11 +32,11 @@ describe('transformItemFormData', () => {
     expect(transformItemFormData(fields, { author: null })).toEqual({})
   })
 
-  it('converts a many relationship to connect-array shape', () => {
+  it('drops a many relationship, which owns no column on this row', () => {
+    // ADR-0050: an edge is a foreign-key assignment, and a to-many's key lives
+    // on the related list — those rows are written against their own list.
     const fields = { tags: manyRel() }
-    expect(transformItemFormData(fields, { tags: ['a', 'b'] })).toEqual({
-      tags: { connect: [{ id: 'a' }, { id: 'b' }] },
-    })
+    expect(transformItemFormData(fields, { tags: ['a', 'b'] })).toEqual({})
   })
 
   it('omits an empty many relationship', () => {
@@ -84,7 +84,6 @@ describe('transformItemFormData', () => {
     expect(out).toEqual({
       title: 'Post',
       author: { connect: { id: 'u1' } },
-      tags: { connect: [{ id: 't1' }] },
     })
   })
 })
