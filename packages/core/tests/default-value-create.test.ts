@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
-import { text, integer, checkbox, select, relationship } from '../src/fields/index.js'
+import { text, integer, checkbox, select } from '../src/fields/index.js'
 import { hookPipeline } from '../src/context/hook-pipeline.js'
 import { ValidationError } from '../src/hooks/index.js'
 import type { ListConfig } from '../src/config/types.js'
@@ -157,58 +157,36 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
  * nested to-one `create`, mirroring the harness used by the nested-write tests.
  */
 function createTxPrisma() {
-  const tables: Record<string, Map<string, Record<string, unknown>>> = {
-    Account: new Map(),
-    Profile: new Map(),
-  }
+  const tables: Record<string, Map<string, Record<string, unknown>>> = { Account: new Map() }
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
 
-  function applyNested(
-    record: Record<string, unknown>,
-    data: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const result = { ...record }
-    for (const [key, value] of Object.entries(data)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const nested = value as Record<string, unknown>
-        if (nested.create) {
-          const created = doCreate('Profile', nested.create as Record<string, unknown>)
-          result[`${key}Link`] = created.id
-          result[key] = created
-          continue
-        }
-      }
-      result[key] = value
-    }
-    return result
-  }
-
   function doCreate(table: string, data: Record<string, unknown>): Record<string, unknown> {
     const id = (data.id as string) ?? nextId()
-    const record = applyNested({ id }, data)
+    const record = { id, ...data }
     tables[table].set(id, record)
     return record
   }
 
   function makeModel(table: string) {
-    return {
+    const model = {
+      where: vi.fn(() => model),
+      first: vi.fn(async () => tables[table].values().next().value ?? null),
+      aggregate: vi.fn(async () => ({ rows: tables[table].size })),
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) => tables[table].get(where.id) ?? null,
       ),
       findFirst: vi.fn(async () => tables[table].values().next().value ?? null),
       findMany: vi.fn(async () => Array.from(tables[table].values())),
       count: vi.fn(async () => tables[table].size),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => doCreate(table, data)),
+      create: vi.fn(async (data: Record<string, unknown>) => doCreate(table, data)),
       update: vi.fn(),
       delete: vi.fn(),
     }
+    return model
   }
 
-  const client: Record<string, unknown> = {
-    Account: makeModel('Account'),
-    Profile: makeModel('Profile'),
-  }
+  const client: Record<string, unknown> = { Account: makeModel('Account') }
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(client)
 
   return { client, tables }
@@ -254,46 +232,6 @@ describe('#615 context.db create — defaultValue resolves through the full pipe
     // The DB received the resolved default in its `data` payload.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const createMock = (mock.client.Account as any).create as ReturnType<typeof vi.fn>
-    expect(createMock.mock.calls[0][0].data).toMatchObject({ kind: 'STANDARD', count: 7 })
-  })
-
-  it('nested-relation create omitting a required-with-default select stores the default', async () => {
-    const testConfig = config({
-      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
-      lists: {
-        Account: list({
-          fields: {
-            name: text({ validation: { isRequired: true } }),
-            profile: relationship({ ref: 'Profile.account' }),
-          },
-          access: { operation: { query: () => true, create: () => true } },
-        }),
-        Profile: list({
-          fields: {
-            kind: select({
-              validation: { isRequired: true },
-              options: [
-                { label: 'Standard', value: 'STANDARD' },
-                { label: 'Trial', value: 'TRIAL' },
-              ],
-              defaultValue: 'STANDARD',
-            }),
-            account: relationship({ ref: 'Account.profile' }),
-          },
-          access: { operation: { query: () => true, create: () => true } },
-        }),
-      },
-    })
-
-    const context = getContext(await testConfig, mock.client, { userId: '1' })
-
-    const created = await context.db.Account.create({
-      data: { name: 'Acme', profile: { create: {} } },
-    })
-
-    expect(created).toBeTruthy()
-    // The nested Profile was created with its default `kind` despite being omitted.
-    const profile = mock.tables.Profile.values().next().value
-    expect(profile?.kind).toBe('STANDARD')
+    expect(createMock.mock.calls[0][0]).toMatchObject({ kind: 'STANDARD', count: 7 })
   })
 })

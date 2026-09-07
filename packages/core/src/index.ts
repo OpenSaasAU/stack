@@ -116,6 +116,7 @@ export type {
   ListWhere,
   ListOrderBy,
   ListUniqueWhere,
+  ListIdentityWhere,
   ListSelect,
   ListInclude,
   ListReduction,
@@ -128,9 +129,7 @@ export type {
   FindManyArgs,
   CountArgs,
   CreateArgs,
-  CreateManyArgs,
   UpdateArgs,
-  UpdateManyArgs,
   DeleteArgs,
   GetArgs,
   StackBaseContext,
@@ -160,6 +159,17 @@ export { RelationSelectError } from './secured/read.js'
 // The vector-search terminal: how many rows it returns by default, and the
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
 export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
+// The secured write surface: the collection the Write Pipeline drives, and the
+// payload shape it refuses (ADR-0050).
+export { WriteCollectionMissingError } from './secured/write.js'
+export {
+  NestedRelationInputError,
+  RelationInputNotLoweredError,
+} from './context/relationship-input.js'
+// Why an `afterTransaction` bracket reports `rolled-back` for a write whose
+// transaction committed: the predicate matched no row. Reachable so a
+// compensator can tell that apart from a real rollback.
+export { WriteMatchedNothingError } from './context/transaction-boundary.js'
 export type {
   SecuredQuery,
   SecuredRefinement,

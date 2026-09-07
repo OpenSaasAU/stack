@@ -1,10 +1,14 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
-import { ormModel } from '../access/orm-client.js'
-import type { AccessContext, OrmClient, TransactionOpener } from '../access/types.js'
+import type {
+  AccessContext,
+  OrmClient,
+  OrmRow,
+  PrismaFilter,
+  TransactionOpener,
+} from '../access/types.js'
 import {
   checkAccess,
   checkCreateAccess,
-  mergeFilters,
   filterReadableFields,
   filterWritableFields,
 } from '../access/index.js'
@@ -17,9 +21,22 @@ import {
   executeFieldAfterOperationHooks,
   ValidationError,
 } from '../hooks/index.js'
+import {
+  countRows,
+  deleteFirst,
+  firstMatching,
+  identityPredicate,
+  insertRow,
+  updateFirst,
+  whereCombinators,
+  writeCollection,
+  type WhereCombinators,
+  type WriteCollection,
+  type WriteScope,
+} from '../secured/write.js'
+import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
-import { processNestedOperations, runAfterTasks } from './nested-operations.js'
-import type { AfterTask } from './nested-operations.js'
+import { refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
@@ -41,29 +58,14 @@ export type WriteOperation = 'create' | 'update' | 'delete'
  * Result of resolving a write target (axis 1). `denied` covers access denial,
  * a missing target, or a filter non-match alike, and short-circuits to `null`
  * before any hooks or the DB call.
+ *
+ * `scope` is the predicate the write itself then runs under: the engine's own
+ * identity predicate, and the Access Filter beside it when the list's rule
+ * returned one, so an `UPDATE` is scoped by the same filter the target read
+ * was (ADR-0044).
  */
 export type TargetResolution =
-  { status: 'ok'; originalItem: Record<string, unknown> | undefined } | { status: 'denied' }
-
-/**
- * Minimal dynamic Prisma model surface used by the write pipeline. Model names
- * are generated at runtime, so the concrete client type is not known here.
- */
-export interface PrismaModel {
-  findUnique: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>
-  findFirst: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown> | null>
-  count: () => Promise<number>
-  create: (args: {
-    data: Record<string, unknown>
-    include?: Record<string, unknown>
-  }) => Promise<Record<string, unknown>>
-  update: (args: {
-    where: Record<string, unknown>
-    data: Record<string, unknown>
-    include?: Record<string, unknown>
-  }) => Promise<Record<string, unknown>>
-  delete: (args: { where: Record<string, unknown> }) => Promise<Record<string, unknown>>
-}
+  { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope } | { status: 'denied' }
 
 /**
  * Per-operation strategy. Supplies the three axes on which create/update/delete
@@ -76,31 +78,30 @@ export interface WriteStrategy {
    * Axis 1: resolve the target row and check operation-level access.
    * Implementations must honour `context._isSudo`.
    */
-  resolveTarget(model: PrismaModel): Promise<TargetResolution>
+  resolveTarget(collection: WriteCollection, ops: WhereCombinators): Promise<TargetResolution>
 
   /**
    * Axis 2: whether to run the input-shaping phases (resolveInput → validate
-   * hooks → built-in field rules → filter-writable → nested ops). Delete runs
-   * only its `validate`/field-validate hooks and skips the rest.
+   * hooks → built-in field rules → filter-writable). Delete runs only its
+   * `validate`/field-validate hooks and skips the rest.
    */
   runInputPhases: boolean
 
   /**
-   * Axis 3: execute the database write and return the persisted/deleted row.
-   * `data` is the fully-resolved write payload (empty object for delete).
-   * `include` (create/update) asks the DB to return nested relations so nested
-   * `afterOperation` can recover its persisted `item`; delete ignores it.
+   * Axis 3: execute the database write and return the persisted/deleted row,
+   * or `null` when the scope matched nothing. `data` is the fully-resolved
+   * write payload (empty object for delete).
    */
   persist(
-    model: PrismaModel,
+    collection: WriteCollection,
+    ops: WhereCombinators,
+    scope: WriteScope,
     data: Record<string, unknown>,
-    include?: Record<string, unknown>,
-  ): Promise<Record<string, unknown>>
+  ): Promise<OrmRow | null>
 }
 
 /**
- * Run `fn` inside ONE transaction, used as the persistence target for the
- * parent and all nested writes (ADR-0010).
+ * Run `fn` inside ONE transaction (ADR-0010).
  *
  * With no `opener`, `fn` runs directly against the handle it was given. Hook
  * ordering and arguments are identical either way, but only a real transaction
@@ -117,8 +118,8 @@ export interface WriteStrategy {
 async function runInTransaction(
   opener: TransactionOpener | undefined,
   ormHandle: OrmClient,
-  fn: (tx: OrmClient) => Promise<Record<string, unknown> | null>,
-): Promise<Record<string, unknown> | null> {
+  fn: (tx: OrmClient) => Promise<OrmRow | null>,
+): Promise<OrmRow | null> {
   if (opener === undefined) return fn(ormHandle)
   return opener((opened) => fn(opened.ormHandle))
 }
@@ -160,10 +161,9 @@ export interface WritePipelineArgs {
  *     create).
  *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
-export async function runWritePipeline(
-  args: WritePipelineArgs,
-): Promise<Record<string, unknown> | null> {
+export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow | null> {
   const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
+  const ops = await whereCombinators()
 
   // ── Pre-transaction access gate (#590) ──────────────────────────────────────
   // Resolves the top-level target + access OUTSIDE the transaction so a denied
@@ -172,19 +172,21 @@ export async function runWritePipeline(
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(ormModel(ormHandle, listName))
+  const gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
   if (gate.status === 'denied') {
     return null
   }
 
-  // ── Enumerate involved lists from the input tree (no DB reads) ──────────────
+  // A payload-shape refusal, after the access gate so a denied caller learns
+  // nothing about this list's fields from it (ADR-0031).
+  refuseNestedRelationInput(listName, listConfig, config, inputData)
+
   const involvedLists = enumerateInvolvedLists({
     listName,
     listConfig,
     operation: strategy.operation,
     inputData,
-    topLevelOriginalItem: gate.originalItem,
-    config,
+    originalItem: gate.originalItem,
   })
 
   // ── Transaction ownership for the transaction-boundary hooks (ADR-0028) ────
@@ -206,17 +208,19 @@ export async function runWritePipeline(
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
-      // ADR-0010: parent + nested writes share `tx` as their persistence target.
       runInTransaction(opener, ormHandle, (tx) =>
-        runWriteInTransaction({
-          ...args,
-          ormHandle: tx,
-          // Reuse the pre-transaction target resolution (#569 call-count semantics).
-          preResolvedTarget: gate,
-          // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
-          // transaction owner (ADR-0028) — see bindContextToTransaction below.
-          context: bindContextToTransaction(args, tx, transactionOwnerForBody),
-        }),
+        runWriteInTransaction(
+          {
+            ...args,
+            ormHandle: tx,
+            // Reuse the pre-transaction target resolution (#569 call-count semantics).
+            preResolvedTarget: gate,
+            // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
+            // transaction owner (ADR-0028) — see bindContextToTransaction below.
+            context: bindContextToTransaction(args, tx, transactionOwnerForBody),
+          },
+          ops,
+        ),
       ),
   })
 }
@@ -267,24 +271,34 @@ function bindContextToTransaction(
  */
 async function runWriteInTransaction(
   args: WritePipelineArgs,
-): Promise<Record<string, unknown> | null> {
+  ops: WhereCombinators,
+): Promise<OrmRow | null> {
   const { listName, listConfig, ormHandle: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
-  const model = ormModel(tx, listName)
+  const collection = writeCollection(tx, listName)
 
   // ── Phase 1: resolve target + operation-level access ──────────────────────
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than
   // reading the target twice; falls back to resolving here when invoked
   // directly (e.g. a unit test) without that bracket.
-  const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(model))
+  const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
   if (resolution.status === 'denied') {
     return null
   }
-  const originalItem = resolution.originalItem
+  const { originalItem, scope } = resolution
 
   // ── Delete path: skip input phases, run only validate/field-validate ────────
   if (!strategy.runInputPhases) {
-    return runDeletePath({ listName, listConfig, context, originalItem, model, strategy })
+    return runDeletePath({
+      listName,
+      listConfig,
+      context,
+      originalItem,
+      collection,
+      ops,
+      scope,
+      strategy,
+    })
   }
 
   // Only create/update reach here (delete short-circuited above); narrow so
@@ -305,8 +319,13 @@ async function runWriteInTransaction(
     context,
   })
 
+  // The same payload-shape refusal, over what the hooks produced: a
+  // `resolveInput` that assembles a relation payload writes it into
+  // `resolvedData`, which the pre-transaction check could not see.
+  refuseNestedRelationInput(listName, listConfig, config, resolvedData)
+
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
-  const filteredData = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
+  const data = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
@@ -314,25 +333,6 @@ async function runWriteInTransaction(
     listName,
     config,
   })
-
-  // ── Phase 5.5: process nested relationship operations ───────────────────────
-  // Runs each nested record's resolveInput/validate/field-rules AND its
-  // `beforeOperation` inside this transaction, returning deferred
-  // `afterOperation` tasks plus the relation fields to `include` so those tasks
-  // can recover their persisted `item`.
-  const { data, afterTasks, includeFields } = await processNestedOperations(
-    filteredData,
-    listConfig.fields,
-    config,
-    { ...context, ormHandle: tx },
-    writeOp,
-    listName,
-    originalItem,
-    // Same `inputData` Phase 5's filterWritableFields used, so the connect-site
-    // owning-field gate evaluates identically and can't diverge into a
-    // spurious connect denial (#588).
-    input,
-  )
 
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
   await executeFieldBeforeOperationHooks(
@@ -367,10 +367,13 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 8: DB write ───────────────────────────────────────────────────────
-  // `include` returns the nested relations with deferred `afterOperation`
-  // tasks so they can recover their persisted `item`.
-  const include = buildIncludeFromFields(includeFields)
-  const item = await strategy.persist(model, data, include)
+  const item = await strategy.persist(collection, ops, scope, data)
+  // The scope matched nothing this time: the target was read under the same
+  // predicate moments earlier in this transaction, so the row is gone —
+  // dropped by a `beforeOperation` hook's own write, typically. `null` is
+  // denied-or-gone on every terminal, and no after-hook fires for a write
+  // that did not happen.
+  if (item === null) return null
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
   await executeAfterOperation(
@@ -408,12 +411,6 @@ async function runWriteInTransaction(
     originalItem, // undefined for create, original row for update
   )
 
-  // ── Phase 10.5: nested afterOperation (deferred, in this transaction) ────────
-  // Each nested create/update/delete's `afterOperation` fires now, with the
-  // persisted nested row recovered from the parent's included relations. A throw
-  // here rolls the whole transaction back (parent write included).
-  await runNestedAfterTasks(afterTasks, item)
-
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
   return filterReadableFields(
     item,
@@ -429,34 +426,6 @@ async function runWriteInTransaction(
 }
 
 /**
- * Build a Prisma `include` from the set of relation field names that have
- * deferred nested `afterOperation` tasks, so the parent write returns those
- * relations and the tasks can recover their persisted `item`.
- */
-function buildIncludeFromFields(includeFields: Set<string>): Record<string, unknown> | undefined {
-  if (includeFields.size === 0) return undefined
-  const include: Record<string, unknown> = {}
-  for (const field of includeFields) {
-    include[field] = true
-  }
-  return include
-}
-
-/**
- * Run the deferred nested `afterOperation` tasks against the persisted parent
- * row (`?? {}` is only a type-narrowing guard — parent is always a record
- * here). Each task recovers its own nested row by id-diff/known id and THROWS
- * if it can't, rather than firing with a fabricated item (ADR-0010).
- */
-async function runNestedAfterTasks(
-  afterTasks: AfterTask[],
-  item: Record<string, unknown>,
-): Promise<void> {
-  if (afterTasks.length === 0) return
-  await runAfterTasks(afterTasks, item ?? {})
-}
-
-/**
  * The delete tail of the pipeline: skips the input-shaping phases and runs
  * only validate/field-validate before the DB delete, then the after-hooks.
  * Returns the deleted row as-is (no Field Visibility pass).
@@ -466,11 +435,13 @@ async function runDeletePath(args: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   context: AccessContext
-  originalItem: Record<string, unknown> | undefined
-  model: PrismaModel
+  originalItem: OrmRow | undefined
+  collection: WriteCollection
+  ops: WhereCombinators
+  scope: WriteScope
   strategy: WriteStrategy
-}): Promise<Record<string, unknown>> {
-  const { listName, listConfig, context, originalItem, model, strategy } = args
+}): Promise<OrmRow | null> {
+  const { listName, listConfig, context, originalItem, collection, ops, scope, strategy } = args
   const item = originalItem as Record<string, unknown>
 
   // ── Phase 3: list-level validate (delete) ──────────────────────────────────
@@ -512,7 +483,8 @@ async function runDeletePath(args: {
   })
 
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
-  const deleted = await strategy.persist(model, {})
+  const deleted = await strategy.persist(collection, ops, scope, {})
+  if (deleted === null) return null
 
   // ── Phase 9: list-level afterOperation (delete) ─────────────────────────────
   await executeAfterOperation(listConfig.hooks, {
@@ -547,7 +519,7 @@ async function runDeletePath(args: {
  * create has no row to re-check a filter against, unlike update/delete
  * (#1009). Enforces the singleton-create constraint even under sudo.
  * Axis 2: runs all input phases.
- * Axis 3: `model.create({ data })`, prepending `id: 1` for singleton lists.
+ * Axis 3: `collection.create(row)`, prepending `id: 1` for singleton lists.
  */
 export function createWriteStrategy(
   listName: string,
@@ -559,11 +531,11 @@ export function createWriteStrategy(
   return {
     operation: 'create',
     runInputPhases: true,
-    async resolveTarget(model) {
+    async resolveTarget(collection) {
       // Singleton constraint is enforced even under sudo.
       if (singleton) {
-        const existingCount = await model.count()
-        if (existingCount > 0) {
+        const existing = await countRows(collection, listName)
+        if (existing > 0) {
           throw new ValidationError(
             [`Cannot create: ${listName} is a singleton list with an existing record`],
             {},
@@ -581,80 +553,117 @@ export function createWriteStrategy(
         }
       }
 
-      return { status: 'ok', originalItem: undefined }
+      return { status: 'ok', originalItem: undefined, scope: [] }
     },
-    async persist(model, data, include) {
+    async persist(collection, _ops, _scope, data) {
       // Singleton lists use Int @id with value always 1 (matching Keystone 6).
-      const createData = singleton ? { id: 1, ...data } : data
-      return model.create(include ? { data: createData, include } : { data: createData })
+      return insertRow(collection, singleton ? { id: 1, ...data } : data)
     },
   }
 }
 
 /**
- * Build the shared target resolution for update/delete: fetch the row (missing
- * → denied), check operation-level access (false → denied), and if access
- * returns a filter, re-check via `findFirst(mergeFilters(where, filter))`
- * (no match → denied). An access result of `true` proceeds with no re-check.
+ * The Access Filter as a predicate to AND into the write's own, lowered
+ * through the same seam a read lowers it through: trusted config, so its keys
+ * are not read-gated, but total, so a rule that resolved to `undefined` is
+ * refused rather than dropped (ADR-0022, ADR-0055).
  */
-function resolveExistingTarget(
+async function accessFilterPlan(
+  listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  filter: PrismaFilter,
+): Promise<WherePlan> {
+  return await resolveWhere(filter, {
+    listName,
+    listConfig,
+    config,
+    session: context.session,
+    context,
+    checkFieldRead: false,
+    applyRelationAccess: true,
+    accessFilterPath: [listName],
+  })
+}
+
+/**
+ * Build the shared target resolution for update/delete: read the row by
+ * identity (missing → denied), check operation-level access (false → denied),
+ * and if access returns a filter, re-read under the filter as well (no match →
+ * denied) and carry it forward as part of the write's own predicate.
+ *
+ * The second read is what gates the hooks: a filter non-match must short-
+ * circuit to `null` before `beforeOperation` runs, which a scope merged into
+ * the write alone could not do.
+ */
+function resolveExistingTarget(
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+  context: AccessContext,
+  where: { id: string | number },
   access: 'update' | 'delete',
-): (model: PrismaModel) => Promise<TargetResolution> {
-  return async (model) => {
-    const item = await model.findUnique({ where })
+): (collection: WriteCollection, ops: WhereCombinators) => Promise<TargetResolution> {
+  return async (collection, ops) => {
+    const identity = identityPredicate(listName, where.id)
+    const item = await firstMatching(collection, [identity], ops)
     if (!item) {
       return { status: 'denied' }
     }
 
-    if (!context._isSudo) {
-      const accessResult = await checkAccess(listConfig.access?.operation?.[access], {
-        session: context.session,
-        item,
-        context,
-      })
-
-      if (accessResult === false) {
-        return { status: 'denied' }
-      }
-
-      // A filter result must additionally match the target row.
-      if (typeof accessResult === 'object') {
-        const matchesFilter = await model.findFirst({
-          where: mergeFilters(where, accessResult) ?? {},
-        })
-        if (!matchesFilter) {
-          return { status: 'denied' }
-        }
-      }
+    if (context._isSudo) {
+      return { status: 'ok', originalItem: item, scope: [identity] }
     }
 
-    return { status: 'ok', originalItem: item }
+    const accessResult = await checkAccess(listConfig.access?.operation?.[access], {
+      session: context.session,
+      item,
+      context,
+    })
+
+    if (accessResult === false) {
+      return { status: 'denied' }
+    }
+
+    if (accessResult === true) {
+      return { status: 'ok', originalItem: item, scope: [identity] }
+    }
+
+    const filter = await accessFilterPlan(listName, listConfig, config, context, accessResult)
+    const scope: WriteScope = [identity, filter]
+    const scopedItem = await firstMatching(collection, scope, ops)
+    if (!scopedItem) {
+      return { status: 'denied' }
+    }
+
+    return { status: 'ok', originalItem: item, scope }
   }
 }
 
 /**
  * Update strategy for {@link WriteStrategy}.
  *
- * Axis 1: fetch row, check `update` access, re-check filter results.
+ * Axis 1: read the row, check `update` access, re-read under a filter result.
  * Axis 2: runs all input phases.
- * Axis 3: `model.update({ where, data })`; afterOperation gets `originalItem`.
+ * Axis 3: `collection.where(scope).update(row)`; afterOperation gets `originalItem`.
  */
 export function updateWriteStrategy(
+  listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  where: { id: string | number },
 ): WriteStrategy {
   return {
     operation: 'update',
     runInputPhases: true,
-    resolveTarget: resolveExistingTarget(listConfig, context, where, 'update'),
-    async persist(model, data, include) {
-      return model.update(include ? { where, data, include } : { where, data })
+    resolveTarget: resolveExistingTarget(listName, listConfig, config, context, where, 'update'),
+    async persist(collection, ops, scope, data) {
+      return updateFirst(collection, scope, ops, data)
     },
   }
 }
@@ -662,31 +671,39 @@ export function updateWriteStrategy(
 /**
  * Delete strategy for {@link WriteStrategy}.
  *
- * Axis 1: enforce singleton constraint (even under sudo), fetch row, check
- * `delete` access, re-check filter results.
+ * Axis 1: enforce singleton constraint (even under sudo), read the row, check
+ * `delete` access, re-read under a filter result.
  * Axis 2: skips input phases (runs only validate/field-validate).
- * Axis 3: `model.delete({ where })`; afterOperation gets `originalItem`.
+ * Axis 3: `collection.where(scope).delete()`; afterOperation gets `originalItem`.
  */
 export function deleteWriteStrategy(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
   context: AccessContext,
-  where: { id: string },
+  where: { id: string | number },
 ): WriteStrategy {
-  const resolveTarget = resolveExistingTarget(listConfig, context, where, 'delete')
+  const resolveTarget = resolveExistingTarget(
+    listName,
+    listConfig,
+    config,
+    context,
+    where,
+    'delete',
+  )
   return {
     operation: 'delete',
     runInputPhases: false,
-    async resolveTarget(model) {
+    async resolveTarget(collection, ops) {
       // Singleton lists may not be deleted (enforced even under sudo).
       if (isSingletonList(listConfig)) {
         throw new ValidationError([`Cannot delete: ${listName} is a singleton list`], {})
       }
-      return resolveTarget(model)
+      return resolveTarget(collection, ops)
     },
-    async persist(model) {
-      return model.delete({ where })
+    async persist(collection, ops, scope) {
+      return deleteFirst(collection, scope, ops)
     },
   }
 }

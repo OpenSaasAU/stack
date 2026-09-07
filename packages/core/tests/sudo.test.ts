@@ -1,23 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
-import { text, integer, relationship } from '../src/fields/index.js'
+import { text, integer } from '../src/fields/index.js'
 import type { Plugin } from '../src/config/types.js'
 import type { AccessContext } from '../src/access/types.js'
+import { rc8Collection } from './rc8-collection.js'
 
 describe('Sudo Context', () => {
   // Mock Prisma client
-  const mockPrisma = {
-    Post: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      count: vi.fn(),
-    },
-  }
+  const mockPrisma = { Post: rc8Collection() }
 
   // Track hook execution
   const hookExecutions: string[] = []
@@ -141,9 +132,7 @@ describe('Sudo Context', () => {
       expect(sudoResult).toMatchObject({ title: 'New Post' })
       // `views` declares `defaultValue: 0`, so the omitted value is resolved to
       // its default before persistence (#615 resolve-then-validate).
-      expect(mockPrisma.Post.create).toHaveBeenCalledWith({
-        data: { title: 'New Post', views: 0 },
-      })
+      expect(mockPrisma.Post.create).toHaveBeenCalledWith({ title: 'New Post', views: 0 })
     })
 
     it('should bypass field-level write access control with sudo()', async () => {
@@ -162,7 +151,9 @@ describe('Sudo Context', () => {
       // `defaultValue: 0`, so the omitted value is resolved to its default
       // before persistence (#615 resolve-then-validate).
       expect(mockPrisma.Post.create).toHaveBeenCalledWith({
-        data: { title: 'New Post', secretField: 'secret', views: 0 },
+        title: 'New Post',
+        secretField: 'secret',
+        views: 0,
       })
     })
 
@@ -208,8 +199,7 @@ describe('Sudo Context', () => {
       const existingPost = { id: '1', title: 'Old Title', views: 5 }
       const updatedPost = { id: '1', title: 'New Title', views: 5 }
 
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
-      mockPrisma.Post.findFirst.mockResolvedValue(null)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       mockPrisma.Post.update.mockResolvedValue(updatedPost)
 
       // Regular context should return null (access denied)
@@ -220,7 +210,7 @@ describe('Sudo Context', () => {
       expect(regularResult).toBeNull()
 
       // Reset mocks
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       hookExecutions.length = 0
 
       // Sudo context should update successfully
@@ -238,7 +228,7 @@ describe('Sudo Context', () => {
       const existingPost = { id: '1', title: 'Old Title', secretField: 'old-secret', views: 5 }
       const updatedPost = { id: '1', title: 'Old Title', secretField: 'new-secret', views: 5 }
 
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       mockPrisma.Post.update.mockResolvedValue(updatedPost)
 
       // Sudo context should allow updating secretField
@@ -248,10 +238,7 @@ describe('Sudo Context', () => {
       })
 
       // Verify that secretField was passed to Prisma
-      expect(mockPrisma.Post.update).toHaveBeenCalledWith({
-        where: { id: '1' },
-        data: { secretField: 'new-secret' },
-      })
+      expect(mockPrisma.Post.update).toHaveBeenCalledWith({ secretField: 'new-secret' })
     })
 
     it('should execute all hooks with sudo()', async () => {
@@ -261,7 +248,7 @@ describe('Sudo Context', () => {
       const existingPost = { id: '1', title: 'Old Title', views: 5 }
       const updatedPost = { id: '1', title: 'New Title', views: 5 }
 
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       mockPrisma.Post.update.mockResolvedValue(updatedPost)
 
       await sudoContext.db.Post.update({
@@ -287,8 +274,7 @@ describe('Sudo Context', () => {
 
       const existingPost = { id: '1', title: 'Post to Delete', views: 5 }
 
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
-      mockPrisma.Post.findFirst.mockResolvedValue(null)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       mockPrisma.Post.delete.mockResolvedValue(existingPost)
 
       // Regular context should return null (access denied)
@@ -298,7 +284,7 @@ describe('Sudo Context', () => {
       expect(regularResult).toBeNull()
 
       // Reset mocks
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       hookExecutions.length = 0
 
       // Sudo context should delete successfully
@@ -314,7 +300,7 @@ describe('Sudo Context', () => {
 
       const existingPost = { id: '1', title: 'Post to Delete', views: 5 }
 
-      mockPrisma.Post.findUnique.mockResolvedValue(existingPost)
+      mockPrisma.Post.first.mockResolvedValue(existingPost)
       mockPrisma.Post.delete.mockResolvedValue(existingPost)
 
       await sudoContext.db.Post.delete({
@@ -394,235 +380,6 @@ describe('Sudo Context', () => {
       // Sudo context allows access
       const sudoResult = await sudoContext.db.Post.findMany()
       expect(sudoResult).toHaveLength(1)
-    })
-  })
-
-  describe('Nested Operations with Sudo Mode', () => {
-    // Mock Prisma client with User and Post models for nested operations
-    const mockPrismaWithRelations = {
-      User: {
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      Post: {
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-    }
-
-    const nestedTestConfig = config({
-      db: {
-        provider: 'sqlite',
-      },
-      lists: {
-        User: list({
-          fields: {
-            email: text({ validation: { isRequired: true } }),
-            name: text(),
-            posts: relationship({ ref: 'Post.author', many: true }),
-          },
-          access: {
-            operation: {
-              create: async () => false, // Block all creates
-              update: async () => false, // Block all updates
-            },
-          },
-        }),
-        Post: list({
-          fields: {
-            title: text({ validation: { isRequired: true } }),
-            content: text(),
-            author: relationship({ ref: 'User.posts' }),
-          },
-          access: {
-            operation: {
-              create: async () => true,
-              update: async () => true,
-            },
-          },
-        }),
-      },
-    })
-
-    beforeEach(() => {
-      vi.clearAllMocks()
-    })
-
-    it('should allow nested create in sudo mode when access control would deny', async () => {
-      const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
-      const sudoContext = context.sudo()
-
-      // Mock successful creation
-      mockPrismaWithRelations.Post.create.mockResolvedValue({
-        id: '1',
-        title: 'Test Post',
-        content: 'Test Content',
-        authorId: 'user-1',
-      })
-
-      // In sudo mode, nested create should succeed despite User access control blocking creates
-      const result = await sudoContext.db.Post.create({
-        data: {
-          title: 'Test Post',
-          content: 'Test Content',
-          author: {
-            create: {
-              email: 'test@example.com',
-              name: 'Test User',
-            },
-          },
-        },
-      })
-
-      expect(result).toBeDefined()
-      expect(mockPrismaWithRelations.Post.create).toHaveBeenCalled()
-    })
-
-    it('should allow nested connect in sudo mode when access control would deny', async () => {
-      const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
-      const sudoContext = context.sudo()
-
-      // Mock existing user
-      mockPrismaWithRelations.User.findUnique.mockResolvedValue({
-        id: 'user-1',
-        email: 'existing@example.com',
-        name: 'Existing User',
-      })
-
-      // Mock successful creation
-      mockPrismaWithRelations.Post.create.mockResolvedValue({
-        id: '1',
-        title: 'Test Post',
-        content: 'Test Content',
-        authorId: 'user-1',
-      })
-
-      // In sudo mode, nested connect should succeed despite User access control blocking updates
-      const result = await sudoContext.db.Post.create({
-        data: {
-          title: 'Test Post',
-          content: 'Test Content',
-          author: {
-            connect: { id: 'user-1' },
-          },
-        },
-      })
-
-      expect(result).toBeDefined()
-      expect(mockPrismaWithRelations.Post.create).toHaveBeenCalled()
-    })
-
-    it('should allow nested update in sudo mode when access control would deny', async () => {
-      const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
-      const sudoContext = context.sudo()
-
-      // Mock existing post (needed for access control check in main operation)
-      mockPrismaWithRelations.Post.findUnique.mockResolvedValue({
-        id: '1',
-        title: 'Original Post',
-        content: 'Original Content',
-        authorId: 'user-1',
-      })
-
-      // Mock existing user (for nested update)
-      mockPrismaWithRelations.User.findUnique.mockResolvedValue({
-        id: 'user-1',
-        email: 'existing@example.com',
-        name: 'Existing User',
-      })
-
-      // Mock successful update
-      mockPrismaWithRelations.Post.update.mockResolvedValue({
-        id: '1',
-        title: 'Updated Post',
-        content: 'Updated Content',
-        authorId: 'user-1',
-      })
-
-      // In sudo mode, nested update should succeed despite User access control blocking updates
-      const result = await sudoContext.db.Post.update({
-        where: { id: '1' },
-        data: {
-          title: 'Updated Post',
-          author: {
-            update: {
-              where: { id: 'user-1' },
-              data: { name: 'Updated Name' },
-            },
-          },
-        },
-      })
-
-      expect(result).toBeDefined()
-      expect(mockPrismaWithRelations.Post.update).toHaveBeenCalled()
-    })
-
-    it('should allow nested connectOrCreate in sudo mode when access control would deny', async () => {
-      const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
-      const sudoContext = context.sudo()
-
-      // Mock existing user check (will find existing user)
-      mockPrismaWithRelations.User.findUnique.mockResolvedValue({
-        id: 'user-1',
-        email: 'existing@example.com',
-        name: 'Existing User',
-      })
-
-      // Mock successful creation
-      mockPrismaWithRelations.Post.create.mockResolvedValue({
-        id: '1',
-        title: 'Test Post',
-        content: 'Test Content',
-        authorId: 'user-1',
-      })
-
-      // In sudo mode, nested connectOrCreate should succeed despite access control
-      const result = await sudoContext.db.Post.create({
-        data: {
-          title: 'Test Post',
-          content: 'Test Content',
-          author: {
-            connectOrCreate: {
-              where: { id: 'user-1' },
-              create: {
-                email: 'new@example.com',
-                name: 'New User',
-              },
-            },
-          },
-        },
-      })
-
-      expect(result).toBeDefined()
-      expect(mockPrismaWithRelations.Post.create).toHaveBeenCalled()
-    })
-
-    it('should still enforce access control in nested operations without sudo mode', async () => {
-      const context = getContext(nestedTestConfig, mockPrismaWithRelations, null)
-
-      // Mock existing user
-      mockPrismaWithRelations.User.findUnique.mockResolvedValue({
-        id: 'user-1',
-        email: 'existing@example.com',
-        name: 'Existing User',
-      })
-
-      // Without sudo, nested connect should fail due to User update access control
-      await expect(
-        context.db.Post.create({
-          data: {
-            title: 'Test Post',
-            content: 'Test Content',
-            author: {
-              connect: { id: 'user-1' },
-            },
-          },
-        }),
-      ).rejects.toThrow('Access denied')
     })
   })
 

@@ -34,80 +34,52 @@ function createFaithfulTxPrisma(extraTables: string[] = []) {
   let idCounter = 0
   const nextId = () => `id-${++idCounter}`
 
-  function applyNested(
-    table: string,
-    record: Record<string, unknown>,
-    data: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const result = { ...record }
-    for (const [key, value] of Object.entries(data)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const nested = value as Record<string, unknown>
-        if (nested.create || nested.update || nested.delete || nested.connect) {
-          const relTable = key === 'author' ? 'User' : key === 'comments' ? 'Comment' : key
-          if (nested.create) {
-            const created = doCreate(relTable, nested.create as Record<string, unknown>)
-            result[key] = created
-          }
-          if (nested.update) {
-            const upd = nested.update as { where: { id: string }; data: Record<string, unknown> }
-            result[key] = doUpdate(relTable, upd.where, upd.data)
-          }
-          if (nested.delete) {
-            doDelete(relTable, nested.delete as { id: string })
-            result[key] = null
-          }
-          continue
-        }
-      }
-      result[key] = value
-    }
-    return result
-  }
-
   function doCreate(table: string, data: Record<string, unknown>): Record<string, unknown> {
     const id = (data.id as string) ?? nextId()
-    let record: Record<string, unknown> = { id }
-    record = applyNested(table, record, data)
+    const record = { id, ...data }
     tables[table].set(id, record)
     return record
   }
 
   function doUpdate(
     table: string,
-    where: { id: string },
+    id: string,
     data: Record<string, unknown>,
   ): Record<string, unknown> {
-    const existing = tables[table].get(where.id) ?? { id: where.id }
-    const updated = applyNested(table, existing, data)
-    tables[table].set(where.id, updated)
+    const updated = { ...(tables[table].get(id) ?? { id }), ...data }
+    tables[table].set(id, updated)
     return updated
   }
 
-  function doDelete(table: string, where: { id: string }): Record<string, unknown> {
-    const existing = tables[table].get(where.id) ?? { id: where.id }
-    tables[table].delete(where.id)
-    return existing
-  }
-
   function makeModel(table: string) {
-    return {
+    // At most one row per table here, so the row the composed predicate would
+    // match is the first — which is what `first()` answers.
+    const target = () => tables[table].values().next().value
+    const model = {
+      where: vi.fn(() => model),
+      first: vi.fn(async () => target() ?? null),
+      aggregate: vi.fn(async () => ({ rows: tables[table].size })),
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) => tables[table].get(where.id) ?? null,
       ),
       findFirst: vi.fn(async ({ where }: { where?: { id?: string } } = {}) => {
         if (where?.id) return tables[table].get(where.id) ?? null
-        return tables[table].values().next().value ?? null
+        return target() ?? null
       }),
       findMany: vi.fn(async () => Array.from(tables[table].values())),
       count: vi.fn(async () => tables[table].size),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => doCreate(table, data)),
-      update: vi.fn(
-        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) =>
-          doUpdate(table, where, data),
+      create: vi.fn(async (data: Record<string, unknown>) => doCreate(table, data)),
+      update: vi.fn(async (data: Record<string, unknown>) =>
+        doUpdate(table, (target()?.id as string) ?? nextId(), data),
       ),
-      delete: vi.fn(async ({ where }: { where: { id: string } }) => doDelete(table, where)),
+      delete: vi.fn(async () => {
+        const row = target()
+        if (row === undefined) return null
+        tables[table].delete(row.id as string)
+        return row
+      }),
     }
+    return model
   }
 
   const client: Record<string, unknown> = {
@@ -223,6 +195,32 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
     })
 
     expect(order).toEqual(['callback-start', 'before', 'callback-end', 'after'])
+  })
+
+  it('a joined write whose beforeTransaction throws defers its compensator to the owner', async () => {
+    const order: string[] = []
+    const testConfig = await baseConfig({
+      user: {
+        beforeTransaction: () => {
+          order.push('before')
+          throw new Error('before boom')
+        },
+        afterTransaction: ({ status }) => order.push(`after:${status}`),
+      },
+    })
+    const context = mock.context(testConfig, { userId: '1' })
+
+    // The write's own error reaches its caller, and the compensator still runs
+    // — but not until the owner settles, which is what puts it after
+    // `callback-end` rather than beside the throw.
+    await context.transaction(async (tx) => {
+      order.push('callback-start')
+      await expect(tx.db.User.create({ data: { name: 'jane' } })).rejects.toThrow('before boom')
+      order.push('callback-end')
+    })
+
+    expect(order).toEqual(['callback-start', 'before', 'callback-end', 'after:rolled-back'])
+    expect(mock.tables.User.size).toBe(0)
   })
 
   it('three writes to the same list in one transaction flush in write order', async () => {
@@ -380,22 +378,27 @@ describe('ADR-0028 / #899: context.transaction() joined writes defer to the owne
 })
 
 describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-level write', () => {
-  // A dedicated config per test in this block: Post's nested `author` (User)
-  // is processed BEFORE its nested `comments` (Comment) — object-literal key
-  // order — and each nested list's own `afterOperation` fires as a DEFERRED
-  // "after task" once the top-level write's own before/after-hooks are done,
-  // in that same order (see `runAfterTasks`). So User's afterOperation (which
-  // issues the hook's own separate `context.db.Audit.create()` write — the
-  // JOINED write under test) always runs, and completes, BEFORE Comment's own
-  // afterOperation gets a chance to fail the whole transaction — letting each
-  // test control whether the ENCLOSING write settles by commit or rollback
-  // strictly AFTER the joined Audit write already happened.
-  function makeConfig(opts: { commentThrows: boolean; auditAfter: (arg: unknown) => void }) {
+  // The joined write under test is the `context.db.Audit.create()` a User hook
+  // issues from inside User's own write. Its `afterTransaction` must report the
+  // OWNER's settle, so each test controls whether the enclosing write commits or
+  // rolls back strictly AFTER that Audit write happened — the field-level
+  // `afterOperation` runs after the list-level one.
+  function makeConfig(opts: { fieldThrows: boolean; auditAfter: (arg: unknown) => void }) {
     return config({
       db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
       lists: {
         User: list({
-          fields: { name: text() },
+          fields: {
+            name: text({
+              hooks: opts.fieldThrows
+                ? {
+                    afterOperation: () => {
+                      throw new Error('name afterOperation boom')
+                    },
+                  }
+                : undefined,
+            }),
+          },
           access: { operation: { query: () => true, create: () => true, update: () => true } },
           hooks: {
             afterOperation: async ({ operation, context: hookContext }) => {
@@ -405,29 +408,10 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
             },
           },
         }),
-        Comment: list({
-          fields: { body: text() },
-          access: { operation: { query: () => true, create: () => true } },
-          hooks: opts.commentThrows
-            ? {
-                afterOperation: () => {
-                  throw new Error('comment afterOperation boom')
-                },
-              }
-            : undefined,
-        }),
         Audit: list({
           fields: { note: text() },
           access: { operation: { query: () => true, create: () => true } },
           hooks: { afterTransaction: opts.auditAfter },
-        }),
-        Post: list({
-          fields: {
-            title: text(),
-            author: relationship({ ref: 'User.posts' }),
-            comments: relationship({ ref: 'Comment', many: true }),
-          },
-          access: { operation: { query: () => true, create: () => true, update: () => true } },
         }),
       },
     })
@@ -440,22 +424,14 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
     vi.clearAllMocks()
   })
 
-  it('defers and reports rolled-back when the enclosing (non-interactive) write later rolls back', async () => {
+  it('defers and reports rolled-back when the enclosing write later rolls back', async () => {
     const auditAfter = vi.fn()
-    const testConfig = await makeConfig({ commentThrows: true, auditAfter })
-    mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
+    const testConfig = await makeConfig({ fieldThrows: true, auditAfter })
     const context = mock.context(testConfig, { userId: '1' })
 
-    await expect(
-      context.db.Post.update({
-        where: { id: 'p1' },
-        data: {
-          title: 'x',
-          author: { create: { name: 'jane' } },
-          comments: { create: [{ body: 'trigger' }] },
-        },
-      }),
-    ).rejects.toThrow('comment afterOperation boom')
+    await expect(context.db.User.create({ data: { name: 'jane' } })).rejects.toThrow(
+      'name afterOperation boom',
+    )
 
     // Nothing persisted — the whole write, including the hook's own Audit
     // write, rolled back together (ADR-0010 atomicity).
@@ -469,23 +445,15 @@ describe('ADR-0028 / #899: a hook-issued context.db write inside a plain top-lev
     const arg = auditAfter.mock.calls[0][0]
     expect(arg.status).toBe('rolled-back')
     expect(arg.error).toBeInstanceOf(Error)
-    expect((arg.error as Error).message).toBe('comment afterOperation boom')
+    expect((arg.error as Error).message).toBe('name afterOperation boom')
   })
 
   it('defers and reports committed with the persisted item when the enclosing write commits', async () => {
     const auditAfter = vi.fn()
-    const testConfig = await makeConfig({ commentThrows: false, auditAfter })
-    mock.tables.Post.set('p1', { id: 'p1', title: 'P' })
+    const testConfig = await makeConfig({ fieldThrows: false, auditAfter })
     const context = mock.context(testConfig, { userId: '1' })
 
-    await context.db.Post.update({
-      where: { id: 'p1' },
-      data: {
-        title: 'x',
-        author: { create: { name: 'jane' } },
-        comments: { create: [{ body: 'fine' }] },
-      },
-    })
+    await context.db.User.create({ data: { name: 'jane' } })
 
     expect(mock.tables.Audit.size).toBe(1)
     expect(auditAfter).toHaveBeenCalledTimes(1)

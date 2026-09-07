@@ -162,20 +162,23 @@ describe('withSession inside context.transaction (#614/#980)', () => {
     const nextId = () => `id-${++idCounter}`
 
     function makeModel(table: string) {
-      return {
+      const model = {
+        where: vi.fn(() => model),
+        first: vi.fn(async () => tables[table].values().next().value ?? null),
         findUnique: vi.fn(
           async ({ where }: { where: { id: string } }) => tables[table].get(where.id) ?? null,
         ),
         findFirst: vi.fn(async () => tables[table].values().next().value ?? null),
         findMany: vi.fn(async () => Array.from(tables[table].values())),
         count: vi.fn(async () => tables[table].size),
-        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        create: vi.fn(async (data: Record<string, unknown>) => {
           const id = (data.id as string) ?? nextId()
           const record = { ...data, id }
           tables[table].set(id, record)
           return record
         }),
       }
+      return model
     }
 
     const client: Record<string, unknown> = { Post: makeModel('Post') }

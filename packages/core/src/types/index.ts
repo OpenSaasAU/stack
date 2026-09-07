@@ -37,6 +37,7 @@ export type {
   ListWhere,
   ListOrderBy,
   ListUniqueWhere,
+  ListIdentityWhere,
   ListSelect,
   ListInclude,
   ListReduction,
@@ -49,9 +50,7 @@ export type {
   FindManyArgs,
   CountArgs,
   CreateArgs,
-  CreateManyArgs,
   UpdateArgs,
-  UpdateManyArgs,
   DeleteArgs,
   GetArgs,
 } from './secured-list.js'

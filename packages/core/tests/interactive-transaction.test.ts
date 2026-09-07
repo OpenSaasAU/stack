@@ -47,33 +47,39 @@ function createTxPrisma() {
   const nextId = () => `id-${++idCounter}`
 
   function makeModel(table: string) {
-    return {
+    // One row per table in this suite, so the composed predicate's target is
+    // the first row — which is what `first()` answers.
+    const model = {
+      where: vi.fn(() => model),
+      first: vi.fn(async () => tables[table].values().next().value ?? null),
+      aggregate: vi.fn(async () => ({ rows: tables[table].size })),
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) => tables[table].get(where.id) ?? null,
       ),
       findFirst: vi.fn(async () => tables[table].values().next().value ?? null),
       findMany: vi.fn(async () => Array.from(tables[table].values())),
       count: vi.fn(async () => tables[table].size),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      create: vi.fn(async (data: Record<string, unknown>) => {
         const id = (data.id as string) ?? nextId()
         const record = { ...data, id }
         tables[table].set(id, record)
         return record
       }),
-      update: vi.fn(
-        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-          const existing = tables[table].get(where.id) ?? { id: where.id }
-          const updated = { ...existing, ...data }
-          tables[table].set(where.id, updated)
-          return updated
-        },
-      ),
-      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
-        const existing = tables[table].get(where.id) ?? { id: where.id }
-        tables[table].delete(where.id)
-        return existing
+      update: vi.fn(async (data: Record<string, unknown>) => {
+        const target = tables[table].values().next().value
+        const id = (target?.id as string) ?? nextId()
+        const updated = { ...(target ?? { id }), ...data }
+        tables[table].set(id, updated)
+        return updated
+      }),
+      delete: vi.fn(async () => {
+        const target = tables[table].values().next().value
+        if (target === undefined) return null
+        tables[table].delete(target.id as string)
+        return target
       }),
     }
+    return model
   }
 
   const client: Record<string, unknown> = {
@@ -265,12 +271,14 @@ describe('#614 context.transaction (interactive transaction)', () => {
     const tables = new Map<string, Record<string, unknown>>()
     const plainClient: Record<string, unknown> = {
       User: {
+        where: vi.fn(() => plainClient.User),
+        first: vi.fn(async () => tables.values().next().value ?? null),
         findUnique: vi.fn(
           async ({ where }: { where: { id: string } }) => tables.get(where.id) ?? null,
         ),
         findMany: vi.fn(async () => Array.from(tables.values())),
         count: vi.fn(async () => tables.size),
-        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        create: vi.fn(async (data: Record<string, unknown>) => {
           const record = { ...data, id: 'u1' }
           tables.set('u1', record)
           return record
@@ -342,7 +350,7 @@ function createSerializablePrisma() {
           if (where?.slotId) return all.filter((r) => r.slotId === where.slotId).length
           return all.length
         }),
-        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        create: vi.fn(async (data: Record<string, unknown>) => {
           writeTables.add('booking')
           const id = `b-${++idCounter}`
           const record = { ...data, id }

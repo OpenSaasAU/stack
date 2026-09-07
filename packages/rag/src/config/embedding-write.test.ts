@@ -300,9 +300,15 @@ describe.skipIf(!available)(
        * execute (#1124, #1127) rather than asserting the call shape against a
        * double — a green assertion over a path that provably fails is worse
        * than no coverage. When the surface lands, this starts running.
+       *
+       * The source text is empty on purpose. The write commits, so the field's
+       * own `afterTransaction` now runs on the way out; over a non-empty source
+       * it would regenerate the embedding and this assertion would be reading
+       * the hook's output rather than the writer's. An empty source returns the
+       * hook early, leaving the bytes under test the ones the writer put there.
        */
       test('the plugin’s sudo write reaches the column', async (ctx) => {
-        await seed('Article', { content: 'red' })
+        await seed('Article', { content: '' })
         const seeded = await database.context(null).db.Article.where({}).first()
         const id = seeded?.id
         if (typeof id !== 'string') throw new Error('the seeded row has no id')
@@ -356,5 +362,90 @@ describe.skipIf(!available)(
         })
       })
     })
+  },
+)
+
+/**
+ * The same write denial, driven through `context.db` rather than through
+ * `hookPipeline` alone: `embedding()` is a multi-column field, so its refusal
+ * comes from `splitMultiColumnFields` (#568), which the Write Pipeline (#1152)
+ * reaches only after the operation gate has had its say. The two rules meet
+ * here — a field-denied write throws and names the field, while a caller the
+ * operation gate turned away gets the silent `null` and learns nothing
+ * (ADR-0031).
+ */
+const combined: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  plugins: [ragPlugin({ provider: { type: 'fake', dimensions: 3 } })],
+  lists: {
+    Article: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Locked: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
+      },
+      access: { operation: { query: () => true, create: () => false } },
+    },
+  },
+}
+
+describe.skipIf(!available)(
+  available
+    ? 'a denied embedding through the write pipeline'
+    : `a denied embedding through the write pipeline [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+  () => {
+    let db: TestDatabase
+    const write = { content: 'red', contentEmbedding: { vector: [1, 0, 0], metadata } }
+
+    beforeAll(async () => {
+      db = await createTestDatabase(await defineConfig(combined))
+    }, BOOT)
+
+    afterAll(async () => {
+      await db?.close()
+    })
+
+    beforeEach(async () => {
+      await db.truncate()
+    })
+
+    test(
+      'a create the operation gate admits throws, naming the denied field',
+      async () => {
+        await expect(db.context(null).db.Article.create({ data: write })).rejects.toThrow(
+          'Cannot create "contentEmbedding": field-level access denied.',
+        )
+
+        expect(await db.context(null).db.Article.where({}).first()).toBeNull()
+      },
+      BOOT,
+    )
+
+    test(
+      'the same payload from an operation-denied caller returns null, naming nothing',
+      async () => {
+        expect(await db.context(null).db.Locked.create({ data: write })).toBeNull()
+        expect(await db.context(null).db.Locked.where({}).first()).toBeNull()
+      },
+      BOOT,
+    )
+
+    test(
+      'the write the plugin owns still lands, so the denial is the field and not the list',
+      async () => {
+        const created = await db.context(null).db.Article.create({ data: { content: 'red' } })
+        expect(created).toMatchObject({ content: 'red' })
+
+        const stored = await db.context(null).db.Article.where({}).first()
+        expect(stored?.contentEmbedding).toMatchObject({ vector: [1, 0, 0] })
+      },
+      BOOT,
+    )
   },
 )

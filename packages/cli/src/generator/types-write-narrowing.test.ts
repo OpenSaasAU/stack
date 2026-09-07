@@ -33,9 +33,11 @@ import {
  *    a `string`, so a `Date` is a compile error);
  *  - `connect` is offered on the foreign-key-owning side, and the foreign-key
  *    column itself stays writable (ADR-0050);
- *  - update is partial;
- *  - every write terminal admits silent denial — `create` is `| null`, and the
- *    per-item batches carry `null` in a denied item's position.
+ *  - a nested `create`/`update`/`delete`/`connectOrCreate`/`set`/`updateMany`/
+ *    `deleteMany` under a relation key is a compile error (ADR-0050, #1152);
+ *  - update is partial, and targeted by `id` alone — the engine lowers no
+ *    other column into a write's predicate (#1152);
+ *  - every write terminal admits silent denial — `create` is `| null`.
  *
  * The `@ts-expect-error` markers make a zero-diagnostic compile the proof:
  * each marker must catch an error, and every other line must type-check.
@@ -127,6 +129,18 @@ async function run() {
 
   // @ts-expect-error \`titel\` is not a column on this list
   await context.db.Event.update({ where: { id: 'e1' }, data: { titel: 't' } })
+
+  // A write targets a row by identity. The engine lowers \`id\` alone into the
+  // write's predicate, so a secondary column is refused here rather than
+  // selecting nothing at runtime.
+  // @ts-expect-error a write is targeted by \`id\`, not by another column
+  await context.db.Event.update({ where: { title: 't' }, data: { day: '2026-01-02' } })
+
+  // @ts-expect-error \`id\` is required — an empty \`where\` targets no row
+  await context.db.Event.delete({ where: {} })
+
+  // @ts-expect-error a write is targeted by \`id\`, not by another column
+  await context.db.Event.delete({ where: { title: 't' } })
 }
 
 // The standalone export and the terminal's parameter are the same type (#608).
@@ -147,13 +161,10 @@ void update
 import type { Context, Event } from './.opensaas/types.ts'
 
 type Created = Awaited<ReturnType<Context['db']['Event']['create']>>
-type CreatedMany = Awaited<ReturnType<Context['db']['Event']['createMany']>>
-type UpdatedMany = Awaited<ReturnType<Context['db']['Event']['updateMany']>>
 type Found = Awaited<ReturnType<Context['db']['Event']['findMany']>>
 
+declare const context: Context
 declare const created: Created
-declare const createdMany: CreatedMany
-declare const updatedMany: UpdatedMany
 declare const found: Found
 
 // A denied create returns null rather than throwing, so the caller must check.
@@ -161,26 +172,92 @@ const maybeCreated: Event | null = created
 // @ts-expect-error a denied create is null
 const alwaysCreated: Event = created
 
-// \`createMany\` and \`updateMany\` run one secured write per item, so a partial
-// denial leaves a null in that item's position.
-const maybeEach: (Event | null)[] = createdMany
-// @ts-expect-error a denied item in the batch is null
-const alwaysEach: Event[] = createdMany
-
-const maybeEachUpdated: (Event | null)[] = updatedMany
-// @ts-expect-error a denied item in the batch is null
-const alwaysEachUpdated: Event[] = updatedMany
-
 // A denied read of many is an empty array, not an array of nulls.
 const alwaysFound: Event[] = found
 
+// The per-item batch terminals are gone: a multi-row write is authored
+// explicitly inside \`context.transaction\` (ADR-0050).
+// @ts-expect-error createMany left the surface
+void context.db.Event.createMany
+// @ts-expect-error updateMany left the surface
+void context.db.Event.updateMany
+
 void maybeCreated
 void alwaysCreated
-void maybeEach
-void alwaysEach
-void maybeEachUpdated
-void alwaysEachUpdated
 void alwaysFound
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('refuses every nested-write spelling in a payload', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // ADR-0050: a relation takes \`connect\` on the foreign-key-owning side and
+  // \`null\` to clear it. Every other nested spelling is gone from the payload,
+  // and each marker below is the compile error that says so.
+  await context.db.Event.create({
+    data: {
+      title: 't',
+      // @ts-expect-error nested create
+      owner: { create: { name: 'u' } },
+    },
+  })
+
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error nested update
+      owner: { update: { where: { id: 'u1' }, data: { name: 'u' } } },
+    },
+  })
+
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error nested delete
+      owner: { delete: true },
+    },
+  })
+
+  await context.db.Event.create({
+    data: {
+      title: 't',
+      // @ts-expect-error nested connectOrCreate
+      owner: { connectOrCreate: { where: { id: 'u1' }, create: { name: 'u' } } },
+    },
+  })
+
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error nested set
+      owner: { set: [{ id: 'u1' }] },
+    },
+  })
+
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error nested updateMany
+      owner: { updateMany: { where: {}, data: { name: 'u' } } },
+    },
+  })
+
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error nested deleteMany
+      owner: { deleteMany: {} },
+    },
+  })
+}
+
+void run
 `)
 
     expect(output).toBe('')

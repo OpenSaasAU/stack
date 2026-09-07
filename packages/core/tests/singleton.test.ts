@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import type { OpenSaasConfig } from '../src/config/types.js'
 import { ValidationError } from '../src/hooks/index.js'
+import { rc8Collection } from './rc8-collection.js'
 
 describe('Singleton Lists', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,26 +11,7 @@ describe('Singleton Lists', () => {
 
   beforeEach(() => {
     // Mock Prisma client
-    mockPrisma = {
-      Settings: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        count: vi.fn(),
-      },
-      Post: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        count: vi.fn(),
-      },
-    }
+    mockPrisma = { Settings: rc8Collection(), Post: rc8Collection() }
 
     // Config with a singleton list
     config = {
@@ -76,7 +58,7 @@ describe('Singleton Lists', () => {
 
   describe('create operation', () => {
     it('should allow creating the first record', async () => {
-      mockPrisma.Settings.count.mockResolvedValue(0)
+      mockPrisma.Settings.aggregate.mockResolvedValue({ rows: 0 })
       mockPrisma.Settings.create.mockResolvedValue({
         id: 1,
         siteName: 'Test Site',
@@ -93,12 +75,12 @@ describe('Singleton Lists', () => {
       })
 
       expect(result).toBeDefined()
-      expect(mockPrisma.Settings.count).toHaveBeenCalled()
+      expect(mockPrisma.Settings.aggregate).toHaveBeenCalled()
       expect(mockPrisma.Settings.create).toHaveBeenCalled()
     })
 
     it('should prevent creating a second record', async () => {
-      mockPrisma.Settings.count.mockResolvedValue(1)
+      mockPrisma.Settings.aggregate.mockResolvedValue({ rows: 1 })
 
       const context = getContext(config, mockPrisma, null)
 
@@ -116,7 +98,7 @@ describe('Singleton Lists', () => {
     })
 
     it('should enforce singleton even in sudo mode', async () => {
-      mockPrisma.Settings.count.mockResolvedValue(1)
+      mockPrisma.Settings.aggregate.mockResolvedValue({ rows: 1 })
 
       const context = getContext(config, mockPrisma, null)
       const sudoContext = context.sudo()
@@ -166,7 +148,7 @@ describe('Singleton Lists', () => {
 
     it('should auto-create record with defaults when none exists (autoCreate: true by default)', async () => {
       mockPrisma.Settings.findFirst.mockResolvedValue(null)
-      mockPrisma.Settings.count.mockResolvedValue(0)
+      mockPrisma.Settings.aggregate.mockResolvedValue({ rows: 0 })
       mockPrisma.Settings.create.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
@@ -182,12 +164,10 @@ describe('Singleton Lists', () => {
       expect(result).toBeDefined()
       expect(result?.siteName).toBe('My Site')
       expect(mockPrisma.Settings.create).toHaveBeenCalledWith({
-        data: {
-          id: 1,
-          siteName: 'My Site',
-          maintenanceMode: false,
-          maxUploadSize: 10,
-        },
+        id: 1,
+        siteName: 'My Site',
+        maintenanceMode: false,
+        maxUploadSize: 10,
       })
     })
 
@@ -230,8 +210,8 @@ describe('Singleton Lists', () => {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const relPrisma: any = {
-        HomePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
-        Author: { findFirst: vi.fn(), findMany: vi.fn() },
+        HomePage: rc8Collection(),
+        Author: rc8Collection(),
       }
       relPrisma.HomePage.findFirst.mockResolvedValue({
         id: 1,
@@ -269,8 +249,8 @@ describe('Singleton Lists', () => {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const relPrisma: any = {
-        HomePage: { findFirst: vi.fn(), create: vi.fn(), count: vi.fn() },
-        Author: { findFirst: vi.fn(), findMany: vi.fn() },
+        HomePage: rc8Collection(),
+        Author: rc8Collection(),
       }
       relPrisma.HomePage.findFirst.mockResolvedValue({
         id: 1,
@@ -298,7 +278,7 @@ describe('Singleton Lists', () => {
 
   describe('delete operation', () => {
     it('should block delete on singleton lists', async () => {
-      mockPrisma.Settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.first.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -317,7 +297,7 @@ describe('Singleton Lists', () => {
     })
 
     it('should block delete even in sudo mode', async () => {
-      mockPrisma.Settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.first.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
@@ -376,7 +356,7 @@ describe('Singleton Lists', () => {
 
   describe('update operation', () => {
     it('should allow updating the singleton record', async () => {
-      mockPrisma.Settings.findUnique.mockResolvedValue({
+      mockPrisma.Settings.first.mockResolvedValue({
         id: 1,
         siteName: 'My Site',
         maintenanceMode: false,
