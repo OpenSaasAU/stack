@@ -3,12 +3,13 @@
 // value on the way out, and write-denied to application code (ADR-0045).
 //
 // Known limits: the secured write surface has not been ported onto the Prisma 8
-// collection yet (spec 7, #1127) — `context.db.<list>.create()` still speaks
-// Prisma 6's `{ data }` to a collection that takes a row, and `update()` calls
-// a `findUnique` no collection carries — so rows are seeded through the Unsafe
-// origin, and the write denial is driven through `hookPipeline`, the
-// transform+validate span `write-pipeline.ts` runs before it persists. Re-point
-// both at `context.db` once #1127 lands.
+// collection yet (spec 7, #1124, #1127) — `context.db.<list>.create()` still
+// speaks Prisma 6's `{ data }` to a collection that takes a row, and `update()`
+// calls a `findUnique` no collection carries — so rows are seeded through the
+// Unsafe origin, and the write denial is driven through `hookPipeline`, the
+// transform+validate span `write-pipeline.ts` runs before it persists. The
+// plugin's own sudo write is driven end to end and skips itself by name until
+// then. Re-point all three at `context.db` once #1127 lands.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
@@ -90,6 +91,45 @@ function collection(model: string): Record<string, unknown> {
   const found: unknown = Reflect.get(namespace, model)
   if (!isRecord(found)) throw new Error(`no collection "${model}"`)
   return found
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Whether a throw is the secured write surface still speaking Prisma 6 to a
+ * Prisma 8 collection, rather than anything this field did: `update()` calls a
+ * `findUnique` no collection carries, and `create()` passes Prisma 6's `{ data }`
+ * to a collection that takes a row (`write-pipeline.ts`, #1124, #1127).
+ */
+function isUnportedWriteSurface(error: unknown): boolean {
+  const text = message(error)
+  return text.includes('findUnique is not a function') || text.includes('Unknown column "data"')
+}
+
+/**
+ * The plugin's escalated write, off the context a live `getContext` built. It
+ * is keyed by a module-private symbol precisely so no string key names it, so a
+ * test reaches it the only way anything can.
+ */
+function embeddingWriterOf(
+  context: unknown,
+): (listKey: string, id: string, fieldName: string, stored: unknown) => Promise<void> {
+  const plugins: unknown = isRecord(context) ? context.plugins : undefined
+  const services: unknown = isRecord(plugins) ? plugins.rag : undefined
+  if (!isRecord(services)) throw new Error('the context carries no rag plugin services')
+
+  const key = Object.getOwnPropertySymbols(services).find(
+    (candidate) => typeof Reflect.get(services, candidate) === 'function',
+  )
+  if (key === undefined) throw new Error('the rag services expose no symbol-keyed write')
+
+  const found: unknown = Reflect.get(services, key)
+  if (typeof found !== 'function') throw new Error('unreachable')
+  return async (listKey, id, fieldName, stored) => {
+    await found(listKey, id, fieldName, stored)
+  }
 }
 
 function seed(model: string, row: object): Promise<void> {
@@ -259,6 +299,42 @@ describe.skipIf(!available)(
 
         const stored = await database.context(null).db.Article.where({}).first()
         expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
+      })
+
+      /**
+       * The plugin's own write, driven end to end: the symbol-keyed service a
+       * live `getContext` built, over the real column, read back through the
+       * secured surface.
+       *
+       * It skips itself by name while `context.db.<list>.update()` cannot
+       * execute (#1124, #1127) rather than asserting the call shape against a
+       * double — a green assertion over a path that provably fails is worse
+       * than no coverage. When the surface lands, this starts running.
+       */
+      test('the plugin’s sudo write reaches the column', async (ctx) => {
+        await seed('Article', { content: 'red' })
+        const seeded = await database.context(null).db.Article.where({}).first()
+        const id = seeded?.id
+        if (typeof id !== 'string') throw new Error('the seeded row has no id')
+        expect(seeded?.contentEmbedding).toBeNull()
+
+        const write = embeddingWriterOf(database.context(null))
+        const stored = { vector: [1, 0, 0], metadata }
+
+        try {
+          await write('Article', id, 'contentEmbedding', stored)
+        } catch (error) {
+          if (isUnportedWriteSurface(error)) {
+            ctx.skip(
+              `the secured write surface is not on the Prisma 8 collection yet ` +
+                `(#1124, #1127): ${message(error)}`,
+            )
+          }
+          throw error
+        }
+
+        const after = await database.context(null).db.Article.where({}).first()
+        expect(after?.contentEmbedding).toEqual(stored)
       })
 
       test('allowManualWrites lets an ordinary write through the same pipeline', async () => {

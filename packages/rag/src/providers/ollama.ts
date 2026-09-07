@@ -124,7 +124,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
  * const provider = createOllamaProvider({
  *   type: 'ollama',
  *   baseURL: 'http://localhost:11434',
- *   model: 'nomic-embed-text'
+ *   model: 'nomic-embed-text',
+ *   dimensions: 768
  * })
  *
  * const embedding = await provider.embed('Hello world')

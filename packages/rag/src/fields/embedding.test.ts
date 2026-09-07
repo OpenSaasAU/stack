@@ -202,6 +202,16 @@ describe('Embedding Field', () => {
         validateFieldConfig(embedding({ sourceField: 'content' }), 'contentEmbedding', 'Article'),
       ).toEqual([])
     })
+
+    it('passes it on the contract alone, declaring no PSL type it could not honour', () => {
+      const field = embedding({ sourceField: 'content' })
+
+      // One field, two columns of different types — there is no single
+      // `Json?`/`String?` that describes it, so it declares neither.
+      expect(field.getPrismaType).toBeUndefined()
+      expect(field.getTypeScriptType).toBeUndefined()
+      expect(typeof field.getContractField).toBe('function')
+    })
   })
 
   describe('getContractField', () => {

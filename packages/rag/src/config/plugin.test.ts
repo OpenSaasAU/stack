@@ -4,7 +4,6 @@ import type { RAGConfig } from './types.js'
 import { config as defineConfig } from '@opensaas/stack-core'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { AccessContext } from '@opensaas/stack-core'
-import type { AccessControlledDelegate } from '@opensaas/stack-core/internal'
 import { hookPipeline } from '@opensaas/stack-core/internal'
 import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
 import { embedding } from '../fields/embedding.js'
@@ -42,35 +41,6 @@ registerEmbeddingProvider('flaky', () => flaky)
 
 function unreachable(): never {
   throw new Error('this member of the double was not expected to be reached')
-}
-
-/** One secured list, with every member it does not exercise left as a tripwire. */
-function delegate(overrides: Partial<AccessControlledDelegate>): AccessControlledDelegate {
-  return {
-    where: unreachable,
-    orderBy: unreachable,
-    include: unreachable,
-    select: unreachable,
-    limit: unreachable,
-    offset: unreachable,
-    distinct: unreachable,
-    distinctOn: unreachable,
-    cursor: unreachable,
-    all: unreachable,
-    first: unreachable,
-    nearest: unreachable,
-    aggregate: unreachable,
-    findUnique: unreachable,
-    findFirst: unreachable,
-    findMany: unreachable,
-    create: unreachable,
-    update: unreachable,
-    delete: unreachable,
-    count: unreachable,
-    createMany: unreachable,
-    updateMany: unreachable,
-    ...overrides,
-  }
 }
 
 function stubContext(overrides: Partial<AccessContext>): AccessContext {
@@ -338,7 +308,7 @@ describe('ragPlugin', () => {
      * A context carrying the plugin's own sudo write, keyed by the symbol a
      * live runtime uses — the only key the plugin's hook looks under.
      */
-    function writeRecorder() {
+    function writeRecorder(onWrite?: () => void) {
       const writes: {
         listKey: string
         id: string | number
@@ -352,6 +322,7 @@ describe('ragPlugin', () => {
       )
       const services: Record<symbol, EmbeddingWriter> = {
         [key]: async (listKey, id, fieldName, stored) => {
+          onWrite?.()
           writes.push({ listKey, id, fieldName, stored })
         },
       }
@@ -362,7 +333,7 @@ describe('ragPlugin', () => {
      * The `afterTransaction` hook the plugin injects, plus the writes the
      * runtime service it calls would make.
      */
-    async function generationHook(providerName = 'counting') {
+    async function generationHook(providerName = 'counting', onWrite?: () => void) {
       const harness = pluginContext({
         lists: {
           Article: {
@@ -384,7 +355,7 @@ describe('ragPlugin', () => {
         },
       }).init!(harness.context)
 
-      const recorder = writeRecorder()
+      const recorder = writeRecorder(onWrite)
       const hook = harness.live.lists.Article.hooks?.afterTransaction
 
       return { hook, writes: recorder.writes, context: recorder.context }
@@ -471,6 +442,41 @@ describe('ragPlugin', () => {
         expect.objectContaining({ message: '429 Too Many Requests' }),
       )
       expect(logged.mock.calls[0][0]).toContain('#1271')
+      logged.mockRestore()
+    })
+
+    it('reports a write that cannot execute as the standing defect it is', async () => {
+      // What the sudo write does on this release: `context.db.<list>.update()`
+      // calls a `findUnique` no Prisma 8 collection carries, so it fails
+      // identically on every row rather than transiently (#1124, #1127).
+      const { hook, context } = await generationHook('counting', () => {
+        throw new TypeError('model.findUnique is not a function')
+      })
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const committed = async (id: string) =>
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id, content: 'four', contentEmbedding: null },
+          context,
+        })
+
+      await expect(committed('a1')).resolves.toBeUndefined()
+      await expect(committed('a2')).resolves.toBeUndefined()
+
+      const first = logged.mock.calls[0][0]
+      expect(first).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+      expect(first).toContain('#1124')
+      expect(first).toContain('#1127')
+      expect(first).toContain('the embedding column')
+      // Said in full once; the row after it says which row and points back.
+      const second = logged.mock.calls[1][0]
+      expect(second).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      expect(second).toContain('Article a2')
+      expect(second).toContain('#1127')
       logged.mockRestore()
     })
 
@@ -611,32 +617,6 @@ describe('ragPlugin', () => {
       ).rejects.toThrow('context.plugins.rag is missing')
     })
 
-    it('writes through sudo, not through the request context', async () => {
-      const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
-      const requestUpdate = vi.fn()
-      const sudoUpdate = vi.fn()
-      const request = stubContext({ db: { Article: delegate({ update: requestUpdate }) } })
-      const elevated = stubContext({ db: { Article: delegate({ update: sudoUpdate }) } })
-
-      const { write } = writeEmbeddingOf(plugin.runtime!(request, () => elevated))
-      const stored: StoredEmbedding = {
-        vector: [4],
-        metadata: {
-          model: 'counting-1',
-          provider: 'counting',
-          dimensions: 1,
-          generatedAt: '2026-01-01T00:00:00.000Z',
-        },
-      }
-      await write('Article', 'a1', 'contentEmbedding', stored)
-
-      expect(requestUpdate).not.toHaveBeenCalled()
-      expect(sudoUpdate).toHaveBeenCalledWith({
-        where: { id: 'a1' },
-        data: { contentEmbedding: stored },
-      })
-    })
-
     it('puts the escalated write on no string key of context.plugins.rag', () => {
       const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
       const services = plugin.runtime!(stubContext({}), () => stubContext({}))
@@ -734,6 +714,35 @@ describe('ragPlugin', () => {
       const plugin = ragPlugin({ provider: { type: 'in-memory' } })
 
       expect(() => plugin.beforeGenerate!(listsWith(7))).not.toThrow()
+    })
+
+    it('refuses a field naming a provider the plugin does not declare', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+        providers: { large: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' } },
+      })
+
+      // Resolving this to the default would emit vector(1536) for a provider
+      // the author never declared, and the dimension check below would agree
+      // with itself, so nothing would refuse it.
+      expect(() => plugin.beforeGenerate!(listsWith(1536, 'ollama'))).toThrow(
+        'RAG plugin: "Article.contentEmbedding" names the provider "ollama", which ragPlugin ' +
+          "does not declare. The provider fixes the column's dimension, so resolving this to " +
+          'the default one would emit a column of the wrong width. Declared providers: ' +
+          'default, openai, large.',
+      )
+    })
+
+    it('accepts a field naming a declared provider, or the default one by its type', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+        providers: { large: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' } },
+      })
+
+      expect(() => plugin.beforeGenerate!(listsWith(3072, 'large'))).not.toThrow()
+      expect(() => plugin.beforeGenerate!(listsWith(1536, 'openai'))).not.toThrow()
+      expect(() => plugin.beforeGenerate!(listsWith(1536, 'default'))).not.toThrow()
+      expect(() => plugin.beforeGenerate!(listsWith(1536))).not.toThrow()
     })
   })
 })

@@ -223,11 +223,25 @@ describe('Embedding Providers', () => {
     it('should throw error for unknown provider type', () => {
       expect(() => {
         createEmbeddingProvider({
-          type: 'unknown' as 'openai',
+          type: 'unknown',
         })
       }).toThrow(/Unknown embedding provider type/)
     })
   })
+
+  /**
+   * `pnpm build` type-checks this file, and an `@ts-expect-error` that does not
+   * fire is itself an error — so `tsc` is the assertion here and nothing needs
+   * to run. Before the funnel was tightened, both of these compiled, because
+   * `CustomEmbeddingConfig`'s open `{ type: string }` absorbed them.
+   */
+  function _refusesABuiltInConfigMissingARequiredMember(): void {
+    // @ts-expect-error `dimensions` is required on OllamaEmbeddingConfig
+    createEmbeddingProvider({ type: 'ollama', model: 'nomic-embed-text' })
+    // @ts-expect-error `apiKey` is required on OpenAIEmbeddingConfig
+    createEmbeddingProvider({ type: 'openai' })
+  }
+  void _refusesABuiltInConfigMissingARequiredMember
 
   describe('Provider interface compliance', () => {
     it('OpenAI provider should implement EmbeddingProvider interface', () => {

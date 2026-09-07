@@ -1,6 +1,9 @@
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { config as defineConfig } from '@opensaas/stack-core'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { config as defineConfig, validateConfigFields } from '@opensaas/stack-core'
+import type { FieldConfigValidationError, OpenSaasConfig } from '@opensaas/stack-core'
+import { executeBeforeGenerateHooks } from '@opensaas/stack-core/config/plugin-engine'
 import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin } from '@opensaas/stack-rag'
 import { embedding } from '@opensaas/stack-rag/fields'
@@ -35,15 +38,58 @@ const source: OpenSaasConfig = {
   },
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** The emitted contract's `Article` model, from `domain.namespaces.public.models`. */
+function emittedArticle(json: string): Record<string, unknown> {
+  let node: unknown = JSON.parse(json)
+  for (const key of ['domain', 'namespaces', 'public', 'models', 'Article']) {
+    if (!isRecord(node)) throw new Error(`the emitted contract has no "${key}" under it`)
+    node = node[key]
+  }
+  if (!isRecord(node)) throw new Error('the emitted contract has no Article model')
+  return node
+}
+
 describe('nearest() over a plugin-injected embedding column', () => {
   let fixture: TypeFixture
+  let fieldErrors: FieldConfigValidationError[]
 
   beforeAll(async () => {
-    fixture = await emitTypeFixture('rag-embedding', await defineConfig(source))
+    // The order `pnpm generate` runs in: the plugins' beforeGenerate hooks,
+    // then core's field self-containment gate, then the contract.
+    const generated = await executeBeforeGenerateHooks(await defineConfig(source))
+    fieldErrors = validateConfigFields(generated)
+    fixture = await emitTypeFixture('rag-embedding', generated)
   }, 300_000)
 
   afterAll(() => {
     fixture?.cleanup()
+  })
+
+  it('passes the self-containment gate, which runs before the contract is read', () => {
+    expect(fieldErrors).toEqual([])
+  })
+
+  it('emits a vector column and a jsonb column beside it, and no Json', () => {
+    const emitted = readFileSync(join(fixture.projectDir, 'prisma', 'contract.json'), 'utf-8')
+    const fields: unknown = Reflect.get(emittedArticle(emitted), 'fields')
+    if (!isRecord(fields)) throw new Error('the emitted Article carries no fields')
+
+    expect(fields.contentEmbedding).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/vector@1', kind: 'scalar', typeParams: { length: 1536 } },
+    })
+    expect(fields.contentEmbeddingMetadata).toEqual({
+      nullable: true,
+      type: { codecId: 'pg/jsonb@1', kind: 'scalar' },
+    })
+
+    // `getPrismaType`'s `Json?` was a declaration nothing consumed and nothing
+    // could have consumed: the field is two columns of different types.
+    expect(emitted).not.toContain('Json')
   })
 
   it('compiles nearest() against the emitted contract', { timeout: 300_000 }, () => {

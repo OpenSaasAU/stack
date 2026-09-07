@@ -52,6 +52,7 @@ async function main() {
     type: 'ollama',
     baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     model: 'nomic-embed-text',
+    dimensions: 768,
   })
 
   console.log(`✓ Provider: ${provider.type}`)

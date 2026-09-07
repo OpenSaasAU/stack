@@ -45,6 +45,7 @@ describe('validateFieldConfig', () => {
     it('reports a missing getPrismaType naming the list, field, and method', () => {
       const field = text()
       delete field.getPrismaType
+      delete field.getContractField
 
       const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
 
@@ -63,6 +64,7 @@ describe('validateFieldConfig', () => {
     it('reports a missing getTypeScriptType naming the method', () => {
       const field = text()
       delete field.getTypeScriptType
+      delete field.getContractField
 
       const errors = validateFieldConfig(field as FieldConfig, 'title', 'Post')
 
@@ -135,6 +137,47 @@ describe('validateFieldConfig', () => {
       expect(errors.some((e) => e.missingMethod === 'getPrismaType')).toBe(false)
     })
   })
+
+  describe('contract-era fields', () => {
+    /** Two columns of different types, which no single `getPrismaType` describes. */
+    const twoColumns: FieldConfig = {
+      type: 'embedding',
+      getZodSchema: () => json().getZodSchema!('embedding', 'create'),
+      getContractField: () => ({
+        kind: 'columns',
+        columns: [
+          {
+            name: 'embedding',
+            type: { pack: 'pgvector', type: 'Vector', args: [3] },
+            nullable: true,
+          },
+          { name: 'embeddingMetadata', type: { pack: 'pg', type: 'jsonb' }, nullable: true },
+        ],
+      }),
+    }
+
+    it('accepts getContractField in lieu of the PSL pair', () => {
+      expect(validateFieldConfig(twoColumns, 'embedding', 'Article')).toEqual([])
+    })
+
+    it('still requires getZodSchema, which no contract supplies', () => {
+      const field: FieldConfig = { ...twoColumns }
+      delete field.getZodSchema
+
+      const errors = validateFieldConfig(field, 'embedding', 'Article')
+
+      expect(errors.map((e) => e.missingMethod)).toEqual(['getZodSchema'])
+    })
+
+    it('still requires the PSL pair from a stored field that declares no contract', () => {
+      const field: FieldConfig = { ...twoColumns }
+      delete field.getContractField
+
+      expect(
+        validateFieldConfig(field, 'embedding', 'Article').map((e) => e.missingMethod),
+      ).toEqual(['getPrismaType', 'getTypeScriptType'])
+    })
+  })
 })
 
 describe('validateConfigFields', () => {
@@ -165,6 +208,7 @@ describe('validateConfigFields', () => {
   it('collects per-field errors across every list and names each location', () => {
     const brokenTitle = text()
     delete brokenTitle.getPrismaType
+    delete brokenTitle.getContractField
 
     const brokenName = text()
     delete brokenName.getZodSchema

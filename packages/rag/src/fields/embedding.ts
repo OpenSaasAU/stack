@@ -304,16 +304,6 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
       return embeddingSchema.nullable().optional() as unknown as z.ZodTypeAny
     },
 
-    // The columns come from `getContractField` below; these two answer core's
-    // field self-containment gate, which `pnpm generate` runs over every
-    // stored field before it reads any contract (`validateConfigFields`).
-    getPrismaType: () => ({ type: 'Json', modifiers: '?' }),
-
-    getTypeScriptType: () => ({
-      type: "import('@opensaas/stack-rag').StoredEmbedding | null",
-      optional: true,
-    }),
-
     getContractField: (fieldName: string, listKey: string): ContractFieldDescriptor => {
       const columnType = resolveColumnType(fieldName, listKey, dimensions, index)
       // Resolved for its refusal: an operator class that disagrees with the

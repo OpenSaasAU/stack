@@ -34,6 +34,12 @@ export default config({
 `ragPlugin` declares the pgvector extension pack itself through `addExtension`, so no
 config names it.
 
+`embedding()` declares its two columns through `getContractField` alone. It carries no
+`getPrismaType`/`getTypeScriptType`: one field of two differently-typed columns has no
+honest single PSL type, and nothing reads them. That needs the matching
+`@opensaas/stack-core` change in this release, which lets `getContractField` satisfy the
+field self-containment gate.
+
 The operator class is derived from `distanceFunction` and the column type, and a declared
 `opclass` that disagrees fails `pnpm generate`. An indexed field over 2,000 dimensions
 emits `halfvec` (which pgvector can index to 4,000); over 4,000 generation fails with a
@@ -67,12 +73,53 @@ the plugin declares the pgvector pack for every config, so a `ragPlugin` on any 
 provider now fails generation with a message saying so instead of producing a contract
 nothing can lower.
 
-**Known limits on generation (#1271).** Embeddings are generated in an `afterTransaction`
-hook, after the row commits, which bounds what it can do:
+A field naming a provider `ragPlugin` does not declare is refused there too. The provider
+fixes the column's dimension, so resolving an unrecognised name to the default one — as it
+used to — emitted a column of the wrong width, and the dimension check then agreed with
+itself and passed:
 
-- A provider or write failure is logged, not thrown. The caller's write did succeed, and
-  reporting it as a failure would invite a retry that duplicates the row. The row keeps a
-  null embedding, and there is no regeneration path yet.
+```typescript
+ragPlugin({ provider: openaiEmbeddings({ apiKey }) })
+// content: embedding({ provider: 'ollama' })
+// Before: vector(1536), silently, for a provider that was never declared.
+// Now:    pnpm generate fails, naming the field, the name, and what is declared.
+```
+
+A name is recognised when it is `'default'`, a key of `providers`, or the default
+provider's own `type` — so `embedding({ provider: 'openai' })` beside
+`ragPlugin({ provider: openaiEmbeddings(…) })` keeps working.
+
+`createEmbeddingProvider` now refuses a built-in provider config that is missing a
+required member. `EmbeddingProviderConfig`'s third member is an open `{ type: string }`
+catch-all for custom providers, and it was absorbing `{ type: 'ollama', model }` — so an
+omitted `dimensions` type-checked and reached the provider as `undefined`. The helpers
+`createProviderFromEnv` / `getProviderConfigFromEnv` now read the Ollama model's size from
+`OLLAMA_EMBEDDING_DIMENSIONS`, defaulting to 768 (`nomic-embed-text`), and refuse a value
+that is not a positive integer.
+
+**Embedding generation does not run in this release (#1124, #1127).** Everything above —
+the column, its dimension, the index declaration, the write denial, `nearest()` — is real
+and works. Generation itself does not: the plugin writes a generated embedding through the
+secured write surface under sudo, and that surface has not been ported onto the Prisma 8
+collection yet, so the write throws on **every** invocation.
+
+What an application sees today: `context.db.Article.create({ data: { content } })`
+succeeds and the row commits normally; the embedding column stays `null`; and one
+`console.error` per field says so, naming #1124 and #1127. Semantic search over that field
+returns nothing, because there is nothing in the column. There is no config change that
+works around it.
+
+There is also no regeneration path (#1271), so rows written before #1127 lands keep their
+null embeddings afterwards — plan to re-save the source field, or backfill, once it does.
+If you need vectors before then, use `embedding({ allowManualWrites: true })` and write
+them yourself.
+
+**Further known limits on generation (#1271).** Embeddings are generated in an
+`afterTransaction` hook, after the row commits, which bounds what it can do:
+
+- A provider failure is logged, not thrown. The caller's write did succeed, and reporting
+  it as a failure would invite a retry that duplicates the row. The row keeps a null
+  embedding, and there is no regeneration path yet.
 - A **nested** record is never embedded — `afterTransaction` carries a persisted row for
   the top-level record only, so `User.create({ data: { articles: { create: [...] } } })`
   leaves those Articles with a null embedding, with a warning naming the list.

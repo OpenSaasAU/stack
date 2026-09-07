@@ -62,6 +62,46 @@ function knownDimensions(provider: EmbeddingProviderConfig): number | undefined 
   return typeof declared === 'number' ? declared : undefined
 }
 
+/**
+ * The sudo write failing is not one row missing out. Until the secured write
+ * surface is ported onto the Prisma 8 collection (#1124, #1127) it cannot
+ * execute at all — `update()` calls a `findUnique` no collection carries — so
+ * it fails identically on every write and `embedding()` generates nothing.
+ * Said in full once per field, so the condition reads as the standing defect it
+ * is rather than as noise on each row.
+ */
+function writeSurfaceReporter(): (
+  listName: string,
+  fieldName: string,
+  id: string | number,
+  error: unknown,
+) => void {
+  const reported = new Set<string>()
+
+  return (listName, fieldName, id, error) => {
+    const field = `${listName}.${fieldName}`
+    if (reported.has(field)) {
+      console.error(
+        `RAG plugin: "${field}" was not embedded for ${listName} ${id} — the sudo write failed ` +
+          `again (#1124, #1127).`,
+        error,
+      )
+      return
+    }
+    reported.add(field)
+    console.error(
+      `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The sudo write that ` +
+        `carries a generated embedding to its column failed, and on this release it fails the ` +
+        `same way for every row: the secured write surface has not been ported onto the ` +
+        `Prisma 8 collection yet (#1124, #1127). Rows commit normally and the embedding column ` +
+        `stays null, so semantic search over this field returns nothing. There is no ` +
+        `regeneration path (#1271), so rows written before that lands stay null afterwards. ` +
+        `No config change works around it; track #1127.`,
+      error,
+    )
+  }
+}
+
 function providerLabel(name: string, provider: EmbeddingProviderConfig): string {
   const model: unknown = Reflect.get(provider, 'model')
   return typeof model === 'string' ? `${name} provider "${model}"` : `${name} provider`
@@ -94,11 +134,23 @@ function providerLabel(name: string, provider: EmbeddingProviderConfig): string 
  */
 export function ragPlugin(config: RAGConfig): Plugin {
   const normalized = normalizeRAGConfig(config)
+  const reportWriteSurfaceFailure = writeSurfaceReporter()
 
   const providerFor = (name: string | undefined): EmbeddingProviderConfig | null => {
     if (name === undefined || name === 'default') return normalized.provider
     return normalized.providers[name] ?? normalized.provider
   }
+
+  /**
+   * Whether `providerFor` would resolve `name` to the provider the author
+   * meant, rather than falling back to the default. The fallback picks a
+   * column's dimension now, so a name that reaches it has to fail generation.
+   */
+  const providerIsDeclared = (name: string | undefined): boolean =>
+    name === undefined ||
+    name === 'default' ||
+    name in normalized.providers ||
+    name === normalized.provider?.type
 
   return {
     name: 'rag',
@@ -179,14 +231,20 @@ export function ragPlugin(config: RAGConfig): Plugin {
               // round trip that has no business holding a connection
               // (ADR-0045).
               //
-              // Known limits (#1271): the row is already committed by the time
-              // this runs, so neither of the two gaps below can abort it.
-              //  - A nested record is never embedded: `afterTransaction`
+              // Known limits: the row is already committed by the time this
+              // runs, so none of the three gaps below can abort it.
+              //  - #1271: a nested record is never embedded — `afterTransaction`
               //    carries a persisted `item` for the top-level record only.
-              //  - A provider or write failure is logged, not thrown: the write
+              //  - #1271: a provider failure is logged, not thrown. The write
               //    the caller made did succeed, and reporting it as a failure
               //    would invite a retry that duplicates the row. The row keeps
               //    a null embedding and there is no regeneration path yet.
+              //  - #1124/#1127: the sudo write cannot execute at all on this
+              //    branch, because the secured write surface still speaks
+              //    Prisma 6 to a Prisma 8 collection. That failure is
+              //    deterministic, not transient, so it is reported separately
+              //    and says the feature is inert rather than that one row
+              //    missed out.
               afterTransaction: async (args) => {
                 if (args.status !== 'committed') return
                 if (args.operation !== 'create' && args.operation !== 'update') return
@@ -223,11 +281,12 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                 const write = embeddingWriter(args.context)
 
+                let stored: StoredEmbedding
                 try {
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
-                  const stored: StoredEmbedding = {
+                  stored = {
                     vector,
                     metadata: {
                       model: provider.model,
@@ -237,15 +296,22 @@ export function ragPlugin(config: RAGConfig): Plugin {
                       sourceHash,
                     },
                   }
-
-                  await write(listName, id, fieldName, stored)
                 } catch (error) {
                   console.error(
-                    `RAG plugin: "${listName}.${fieldName}" was not embedded for ${listName} ` +
-                      `${id}. The row is committed and keeps a null embedding, and there is no ` +
-                      `regeneration path yet (#1271).`,
+                    `RAG plugin: the ${providerLabel(providerName ?? 'default', providerConfig)} ` +
+                      `did not answer, so "${listName}.${fieldName}" was not embedded for ` +
+                      `${listName} ${id}. The row is committed and keeps a null embedding, and ` +
+                      `there is no regeneration path yet (#1271). If the provider is up, retry ` +
+                      `by writing the source field again.`,
                     error,
                   )
+                  return
+                }
+
+                try {
+                  await write(listName, id, fieldName, stored)
+                } catch (error) {
+                  reportWriteSurfaceFailure(listName, fieldName, id, error)
                 }
               },
             },
@@ -316,10 +382,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
     /**
      * Refuse a schema fact that is already known to be wrong: a datasource no
-     * embedding column can be lowered onto, a declared dimension that
-     * disagrees with its provider's, and an Ollama provider with no dimension
-     * at all. All three are checked here rather than in the generator, which
-     * knows nothing about embedding providers (ADR-0045).
+     * embedding column can be lowered onto, a field naming a provider the
+     * plugin does not declare, a declared dimension that disagrees with its
+     * provider's, and an Ollama provider with no dimension at all. All four
+     * are checked here rather than in the generator, which knows nothing about
+     * embedding providers (ADR-0045).
      */
     beforeGenerate: (generateConfig: OpenSaasConfig) => {
       const dbProvider: string = generateConfig.db.provider
@@ -351,11 +418,26 @@ export function ragPlugin(config: RAGConfig): Plugin {
       for (const [listName, listConfig] of Object.entries(generateConfig.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
           if (!isEmbeddingField(fieldConfig)) continue
+
+          const providerName = fieldConfig.provider
+          if (!providerIsDeclared(providerName)) {
+            const declaredNames = [
+              ...(normalized.provider ? ['default', normalized.provider.type] : []),
+              ...Object.keys(normalized.providers),
+            ]
+            throw new Error(
+              `RAG plugin: "${listName}.${fieldName}" names the provider ` +
+                `"${String(providerName)}", which ragPlugin does not declare. The provider ` +
+                `fixes the column's dimension, so resolving this to the default one would emit ` +
+                `a column of the wrong width. Declared providers: ` +
+                `${declaredNames.length > 0 ? declaredNames.join(', ') : 'none'}.`,
+            )
+          }
+
           // A field that declared nothing took its provider's dimension in
           // `init`, so only an author's own value can disagree here.
           const declared = fieldConfig.dimensions
           if (declared === undefined) continue
-          const providerName = fieldConfig.provider
           const providerConfig = providerFor(providerName)
           if (!providerConfig) continue
 
