@@ -40,7 +40,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Code Generation',
-    content: `OpenSaas Stack uses code generators to convert opensaas.config.ts into Prisma schemas and TypeScript types. Running 'pnpm generate' creates prisma/schema.prisma with all models and .opensaas/types.ts with TypeScript types. Generators delegate to field builder methods rather than using switch statements, making the system fully extensible. The generated context factory (.opensaas/context.ts) abstracts Prisma client management and provides getContext() for creating access-controlled database contexts. Plugins can hook into generation with beforeGenerate and afterGenerate lifecycle methods. The system supports custom Prisma client constructors for specialized database drivers like Neon, Turso, or PlanetScale.`,
+    content: `OpenSaas Stack uses code generators to convert opensaas.config.ts into a database contract and TypeScript types. Running 'pnpm generate' emits the contract's migrations under migrations/ and .opensaas/types.ts with TypeScript types. Generators delegate to field builder methods rather than using switch statements, making the system fully extensible. The generated context factory (.opensaas/context.ts) abstracts Prisma client management and provides getContext() for creating access-controlled database contexts. Plugins can hook into generation with beforeGenerate and afterGenerate lifecycle methods. The system supports custom Prisma client constructors for specialized database drivers like Neon, Turso, or PlanetScale.`,
     category: 'software-eng',
     published: true,
   },
@@ -88,7 +88,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Development Workflow',
-    content: `The typical development workflow in OpenSaas Stack: 1) Define lists in opensaas.config.ts with fields, access control, and hooks. 2) Run 'pnpm generate' to create Prisma schema and TypeScript types. 3) Run 'pnpm db:push' to update the database (or 'prisma migrate dev' for migrations). 4) Use context.db in server actions and API routes for database access. 5) Build custom UIs with standalone components or use the full AdminUI. 6) Test access control with different session objects. The monorepo structure has packages/core for the framework, packages/cli for generators, packages/ui for components, and examples/ for reference implementations. Changes to core require rebuilding with 'pnpm build'. Hot reload works for application code but not generated files - regenerate when config changes.`,
+    content: `The typical development workflow in OpenSaas Stack: 1) Define lists in opensaas.config.ts with fields, access control, and hooks. 2) Run 'pnpm generate' to emit the contract's migrations and TypeScript types. 3) Run 'pnpm db:update' to reconcile the database with them. 4) Use context.db in server actions and API routes for database access. 5) Build custom UIs with standalone components or use the full AdminUI. 6) Test access control with different session objects. The monorepo structure has packages/core for the framework, packages/cli for generators, packages/ui for components, and examples/ for reference implementations. Changes to core require rebuilding with 'pnpm build'. Hot reload works for application code but not generated files - regenerate when config changes.`,
     category: 'software-eng',
     published: true,
   },

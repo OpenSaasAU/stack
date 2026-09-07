@@ -79,7 +79,7 @@ pnpm generate
 
 This creates:
 
-- `prisma/schema.prisma` - Database schema from `opensaas.config.ts`
+- `migrations/` - The contract's own migrations, including pgvector's
 - `.opensaas/types.ts` - TypeScript types for your lists
 - `.opensaas/context.ts` - Context factory with access control
 
