@@ -388,6 +388,7 @@ describe('a composed read is an immutable value', () => {
         'include',
         'limit',
         'nearest',
+        'offset',
         'orderBy',
         'select',
         'where',

@@ -1017,6 +1017,7 @@ export function populateDbDelegate(
       operations.include = read.include
       operations.select = read.select
       operations.limit = read.limit
+      operations.offset = read.offset
       operations.distinct = read.distinct
       operations.distinctOn = read.distinctOn
       operations.cursor = read.cursor
