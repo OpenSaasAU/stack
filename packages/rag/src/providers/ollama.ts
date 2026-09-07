@@ -12,33 +12,17 @@ type OllamaEmbeddingResponse = {
 export class OllamaEmbeddingProvider implements EmbeddingProvider {
   readonly type = 'ollama'
   readonly model: string
-  dimensions: number = 0
+  readonly dimensions: number
 
   private baseURL: string
-  private dimensionsInitialized = false
 
   constructor(config: OllamaEmbeddingConfig) {
     this.baseURL = config.baseURL || 'http://localhost:11434'
     this.model = config.model || 'nomic-embed-text'
+    this.dimensions = config.dimensions
 
     if (this.baseURL.endsWith('/')) {
       this.baseURL = this.baseURL.slice(0, -1)
-    }
-  }
-
-  private async initializeDimensions(): Promise<void> {
-    if (this.dimensionsInitialized) {
-      return
-    }
-
-    try {
-      const testEmbedding = await this.embed('test')
-      this.dimensions = testEmbedding.length
-      this.dimensionsInitialized = true
-    } catch (error) {
-      throw new Error(
-        `Failed to initialize Ollama provider (ensure Ollama is running and model '${this.model}' is available): ${(error as Error).message}`,
-      )
     }
   }
 
@@ -79,11 +63,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         prompt: text,
       })
 
-      if (!this.dimensionsInitialized) {
-        this.dimensions = response.embedding.length
-        this.dimensionsInitialized = true
-      }
-
       return response.embedding
     } catch (error) {
       throw new Error(`Ollama embedding generation failed: ${(error as Error).message}`)
@@ -111,11 +90,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
     if (validTexts.length === 0) {
       throw new Error('Cannot generate embeddings for all empty texts')
-    }
-
-    // Ensure dimensions are initialized (only after validating we have valid texts)
-    if (!this.dimensionsInitialized) {
-      await this.initializeDimensions()
     }
 
     try {

@@ -1,678 +1,512 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { AccessContext } from '@opensaas/stack-core'
+import type { AccessControlledDelegate } from '@opensaas/stack-core/internal'
 import type { Plugin, PluginContext } from '@opensaas/stack-core/extend'
+import { embedding } from '../fields/embedding.js'
+import { text } from '@opensaas/stack-core/fields'
+import { registerEmbeddingProvider } from '../providers/index.js'
+import type { EmbeddingProvider } from '../providers/types.js'
+import type { RAGRuntimeServices, StoredEmbedding } from '../index.js'
 
-describe('RAG Plugin', () => {
-  describe('plugin creation', () => {
-    it('should create plugin with minimal config', () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
+const openai: RAGConfig = { provider: { type: 'openai', apiKey: 'test-key' } }
+
+const counting: EmbeddingProvider = {
+  type: 'counting',
+  model: 'counting-1',
+  dimensions: 1,
+  embed: async (input: string) => [input.length],
+  embedBatch: async (inputs: string[]) => inputs.map((input) => [input.length]),
+}
+
+registerEmbeddingProvider('counting', () => counting)
+
+function unreachable(): never {
+  throw new Error('this member of the double was not expected to be reached')
+}
+
+/** One secured list, with every member it does not exercise left as a tripwire. */
+function delegate(overrides: Partial<AccessControlledDelegate>): AccessControlledDelegate {
+  return {
+    where: unreachable,
+    orderBy: unreachable,
+    include: unreachable,
+    select: unreachable,
+    limit: unreachable,
+    offset: unreachable,
+    distinct: unreachable,
+    distinctOn: unreachable,
+    cursor: unreachable,
+    all: unreachable,
+    first: unreachable,
+    nearest: unreachable,
+    aggregate: unreachable,
+    findUnique: unreachable,
+    findFirst: unreachable,
+    findMany: unreachable,
+    create: unreachable,
+    update: unreachable,
+    delete: unreachable,
+    count: unreachable,
+    createMany: unreachable,
+    updateMany: unreachable,
+    ...overrides,
+  }
+}
+
+function stubContext(overrides: Partial<AccessContext>): AccessContext {
+  return {
+    session: null,
+    ormHandle: {},
+    db: {},
+    storage: {
+      uploadFile: unreachable,
+      uploadImage: unreachable,
+      deleteFile: unreachable,
+      deleteImage: unreachable,
+    },
+    plugins: {},
+    _isSudo: false,
+    _resolveOutputChain: [],
+    ...overrides,
+  }
+}
+
+function writeEmbeddingOf(services: unknown): RAGRuntimeServices['writeEmbedding'] {
+  if (
+    typeof services !== 'object' ||
+    services === null ||
+    typeof Reflect.get(services, 'writeEmbedding') !== 'function'
+  ) {
+    throw new Error('the plugin runtime exposes no writeEmbedding')
+  }
+  const found: unknown = Reflect.get(services, 'writeEmbedding')
+  if (typeof found !== 'function') throw new Error('unreachable')
+  return async (listKey, id, fieldName, stored) => {
+    await found(listKey, id, fieldName, stored)
+  }
+}
+
+type McpTool = Parameters<NonNullable<PluginContext['registerMcpTool']>>[0]
+
+/** A `PluginContext` double that records the five verbs a plugin drives it through. */
+function pluginContext(config: Partial<OpenSaasConfig> & { lists: OpenSaasConfig['lists'] }) {
+  const live: OpenSaasConfig = { db: { provider: 'postgresql' }, ...config }
+  const extensions: { name: string; from: string }[] = []
+  const mcpTools: McpTool[] = []
+  const pluginData: Record<string, unknown> = {}
+
+  const context: PluginContext = {
+    config: live,
+    addList: vi.fn(),
+    extendList: vi.fn((listName: string, extension: Record<string, unknown>) => {
+      const target = live.lists[listName]
+      const fields: unknown = extension.fields
+      if (fields && typeof fields === 'object') {
+        Object.assign(target.fields, fields)
       }
+      const hooks: unknown = extension.hooks
+      if (hooks && typeof hooks === 'object') {
+        target.hooks = { ...target.hooks, ...hooks }
+      }
+    }),
+    registerFieldType: vi.fn(),
+    registerMcpTool: vi.fn((tool: McpTool) => {
+      mcpTools.push(tool)
+    }),
+    addExtension: vi.fn((descriptor: { name: string; from: string }) => {
+      extensions.push(descriptor)
+    }),
+    setPluginData: vi.fn((name: string, data: unknown) => {
+      pluginData[name] = data
+    }),
+  }
 
-      const plugin = ragPlugin(config)
+  return { context, live, extensions, mcpTools, pluginData }
+}
+
+describe('ragPlugin', () => {
+  describe('plugin shape', () => {
+    it('names itself and exposes the lifecycle hooks it uses', () => {
+      const plugin = ragPlugin(openai)
 
       expect(plugin.name).toBe('rag')
-      expect(plugin.version).toBe('0.1.0')
-      expect(plugin.init).toBeDefined()
       expect(typeof plugin.init).toBe('function')
+      expect(typeof plugin.beforeGenerate).toBe('function')
+      expect(typeof plugin.runtime).toBe('function')
     })
 
-    it('should create plugin with full config', () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        storage: {
-          type: 'json',
-        },
-        enableMcpTools: true,
-        batchSize: 20,
-        rateLimit: 200,
-      }
-
-      const plugin = ragPlugin(config)
-
-      expect(plugin).toBeDefined()
-      expect(plugin.name).toBe('rag')
-    })
-
-    it('should create plugin with multiple providers', () => {
-      const config: RAGConfig = {
-        providers: {
-          openai: {
-            type: 'openai',
-            apiKey: 'test-key',
-          },
-          ollama: {
-            type: 'ollama',
-            baseURL: 'http://localhost:11434',
-          },
-        },
-        storage: {
-          type: 'json',
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      expect(plugin).toBeDefined()
+    it('conforms to the Plugin interface', () => {
+      const plugin: Plugin = ragPlugin(openai)
       expect(plugin.name).toBe('rag')
     })
   })
 
-  describe('plugin initialization', () => {
-    it('should find and process embedding fields with autoGenerate', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-      }
+  describe('extension pack', () => {
+    it('declares pgvector by package name, so the app never spells it', async () => {
+      const harness = pluginContext({ lists: { Article: { fields: { title: text() } } } })
 
-      const plugin = ragPlugin(config)
+      await ragPlugin(openai).init!(harness.context)
 
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                content: { type: 'text' },
-                contentEmbedding: {
-                  type: 'embedding',
-                  sourceField: 'content',
-                  autoGenerate: true,
-                  provider: 'openai',
-                  dimensions: 1536,
-                },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.extendList).toHaveBeenCalledWith(
-        'Article',
-        expect.objectContaining({
-          hooks: expect.any(Object),
-        }),
-      )
-    })
-
-    it('should throw error if autoGenerate is enabled without sourceField', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                embedding: {
-                  type: 'embedding',
-                  autoGenerate: true,
-                  // Missing sourceField
-                },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await expect(plugin.init!(mockContext as PluginContext)).rejects.toThrow(
-        /has autoGenerate enabled but no sourceField specified/,
-      )
-    })
-
-    it('should skip fields without autoGenerate', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                embedding: {
-                  type: 'embedding',
-                  // autoGenerate is false
-                },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      // Should not extend list for fields without autoGenerate
-      expect(mockContext.extendList).not.toHaveBeenCalled()
-    })
-
-    it('should store normalized config in plugin data', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        storage: {
-          type: 'json',
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {},
-        },
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        extendList: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.setPluginData).toHaveBeenCalledWith(
-        'rag',
-        expect.objectContaining({
-          provider: expect.any(Object),
-          storage: expect.any(Object),
-        }),
-      )
+      expect(harness.extensions).toEqual([
+        { name: 'pgvector', from: '@prisma/orm-extension-pgvector' },
+      ])
     })
   })
 
-  describe('automatic embedding generation', () => {
-    it('should inject afterOperation hook for autoGenerate fields', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
+  describe('init', () => {
+    it('injects an embedding field for each searchable() field', async () => {
+      const searchableField = { ...text(), _searchable: { embeddingFieldName: '' } }
+      const harness = pluginContext({
+        lists: { Article: { fields: { content: searchableField } } },
+      })
+
+      await ragPlugin(openai).init!(harness.context)
+
+      const injected = harness.live.lists.Article.fields.contentEmbedding
+      expect(injected).toBeDefined()
+      expect(injected.type).toBe('embedding')
+    })
+
+    it('honours a custom embedding field name', async () => {
+      const searchableField = { ...text(), _searchable: { embeddingFieldName: 'bodyVector' } }
+      const harness = pluginContext({ lists: { Article: { fields: { body: searchableField } } } })
+
+      await ragPlugin(openai).init!(harness.context)
+
+      expect(harness.live.lists.Article.fields.bodyVector).toBeDefined()
+      expect(harness.live.lists.Article.fields.bodyEmbedding).toBeUndefined()
+    })
+
+    it('refuses autoGenerate without a sourceField', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: { fields: { contentEmbedding: embedding({ autoGenerate: true }) } },
         },
-      }
+      })
 
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                content: { type: 'text' },
-                contentEmbedding: {
-                  type: 'embedding',
-                  sourceField: 'content',
-                  autoGenerate: true,
-                },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.extendList).toHaveBeenCalledWith(
-        'Article',
-        expect.objectContaining({
-          hooks: expect.objectContaining({
-            resolveInput: expect.any(Function),
-          }),
-        }),
+      await expect(ragPlugin(openai).init!(harness.context)).rejects.toThrow(
+        'RAG plugin: Field "Article.contentEmbedding" has autoGenerate enabled but no sourceField specified',
       )
     })
 
-    it('should handle multiple embedding fields in same list', async () => {
-      const config: RAGConfig = {
-        providers: {
-          openai: { type: 'openai', apiKey: 'key1' },
-          ollama: { type: 'ollama' },
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                title: { type: 'text' },
-                content: { type: 'text' },
-                titleEmbedding: {
-                  type: 'embedding',
-                  sourceField: 'title',
-                  autoGenerate: true,
-                  provider: 'ollama',
-                },
-                contentEmbedding: {
-                  type: 'embedding',
-                  sourceField: 'content',
-                  autoGenerate: true,
-                  provider: 'openai',
-                },
-              },
-            },
+    it('leaves a field without autoGenerate unhooked', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: { content: text(), contentEmbedding: embedding({ dimensions: 1536 }) },
           },
         },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+      })
 
-      await plugin.init!(mockContext as PluginContext)
+      await ragPlugin(openai).init!(harness.context)
 
-      // Should be called once per list (hooks are merged)
-      expect(mockContext.extendList).toHaveBeenCalledTimes(2)
+      expect(harness.live.lists.Article.hooks?.afterTransaction).toBeUndefined()
+    })
+
+    it('stores the normalized config for runtime access', async () => {
+      const harness = pluginContext({ lists: { Article: { fields: { title: text() } } } })
+
+      await ragPlugin({ ...openai, batchSize: 25 }).init!(harness.context)
+
+      expect(harness.pluginData.rag).toMatchObject({ batchSize: 25, enableMcpTools: true })
     })
   })
 
-  describe('MCP integration', () => {
-    it('should register MCP tools when enabled', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        enableMcpTools: true,
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                contentEmbedding: {
-                  type: 'embedding',
-                },
-              },
-            },
+  describe('MCP tools', () => {
+    it('registers one search tool per list with an embedding field', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
           },
+          Tag: { fields: { name: text() } },
         },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+      })
 
-      await plugin.init!(mockContext as PluginContext)
+      await ragPlugin(openai).init!(harness.context)
 
-      expect(mockContext.registerMcpTool).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'semantic_search_article',
-          description: expect.stringContaining('Search Article'),
-          inputSchema: expect.any(Object),
-          handler: expect.any(Function),
-        }),
-      )
+      expect(harness.mcpTools.map((tool) => tool.name)).toEqual(['semantic_search_article'])
+      expect(harness.mcpTools[0].inputSchema.properties.field.enum).toEqual(['contentEmbedding'])
     })
 
-    it('should not register MCP tools when disabled', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        enableMcpTools: false,
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                contentEmbedding: {
-                  type: 'embedding',
-                },
-              },
-            },
+    it('registers nothing when MCP tools are disabled', async () => {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
           },
         },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+      })
 
-      await plugin.init!(mockContext as PluginContext)
+      await ragPlugin({ ...openai, enableMcpTools: false }).init!(harness.context)
 
-      expect(mockContext.registerMcpTool).not.toHaveBeenCalled()
+      expect(harness.mcpTools).toEqual([])
     })
+  })
 
-    it('should skip lists without embedding fields for MCP', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        enableMcpTools: true,
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            User: {
-              fields: {
-                name: { type: 'text' },
-                email: { type: 'text' },
-              },
+  describe('the generation path', () => {
+    /**
+     * The `afterTransaction` hook the plugin injects, plus the writes the
+     * runtime service it calls would make.
+     */
+    async function generationHook() {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: {
+              content: text(),
+              contentEmbedding: embedding({
+                sourceField: 'content',
+                provider: 'counting',
+                dimensions: 1,
+              }),
             },
           },
         },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+      })
+      await ragPlugin({
+        providers: { counting: { type: 'counting', dimensions: 1 } },
+      }).init!(harness.context)
 
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.registerMcpTool).not.toHaveBeenCalled()
-    })
-
-    it('should generate correct MCP tool names', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
+      const writes: { listKey: string; id: unknown; fieldName: string; stored: StoredEmbedding }[] =
+        []
+      const services: Pick<RAGRuntimeServices, 'writeEmbedding'> = {
+        writeEmbedding: async (listKey, id, fieldName, stored) => {
+          writes.push({ listKey, id, fieldName, stored })
         },
-        enableMcpTools: true,
       }
+      const context = stubContext({ plugins: { rag: services } })
+      const hook = harness.live.lists.Article.hooks?.afterTransaction
 
-      const plugin = ragPlugin(config)
+      return { hook, writes, context }
+    }
 
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            BlogPost: {
-              fields: {
-                embedding: { type: 'embedding' },
-              },
-            },
-            UserProfile: {
-              fields: {
-                embedding: { type: 'embedding' },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+    it('writes the embedding a committed create never named', async () => {
+      const { hook, writes, context } = await generationHook()
 
-      await plugin.init!(mockContext as PluginContext)
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
 
-      expect(mockContext.registerMcpTool).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'semantic_search_blogpost',
-        }),
-      )
-
-      expect(mockContext.registerMcpTool).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'semantic_search_userprofile',
-        }),
-      )
-    })
-
-    it('should create tool with correct input schema', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-        enableMcpTools: true,
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                embedding1: { type: 'embedding' },
-                embedding2: { type: 'embedding' },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      const toolCall = (
-        mockContext.registerMcpTool as unknown as {
-          mock: { calls: [[{ inputSchema: unknown }]] }
-        }
-      ).mock.calls[0][0]
-
-      expect(toolCall.inputSchema).toEqual(
-        expect.objectContaining({
-          type: 'object',
-          properties: expect.objectContaining({
-            query: expect.any(Object),
-            limit: expect.any(Object),
-            minScore: expect.any(Object),
-            field: expect.objectContaining({
-              enum: ['embedding1', 'embedding2'],
+      expect(writes).toEqual([
+        {
+          listKey: 'Article',
+          id: 'a1',
+          fieldName: 'contentEmbedding',
+          stored: {
+            vector: [4],
+            metadata: expect.objectContaining({
+              model: 'counting-1',
+              provider: 'counting',
+              dimensions: 1,
             }),
-          }),
-          required: ['query'],
-        }),
-      )
-    })
-  })
-
-  describe('provider selection', () => {
-    it('should use default provider when field does not specify one', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-      }
-
-      const plugin = ragPlugin(config)
-
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                embedding: {
-                  type: 'embedding',
-                  sourceField: 'content',
-                  autoGenerate: true,
-                  // No provider specified, should use default
-                },
-              },
-            },
           },
         },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.extendList).toHaveBeenCalled()
+      ])
     })
 
-    it('should use named provider when field specifies one', async () => {
-      const config: RAGConfig = {
-        providers: {
-          openai: { type: 'openai', apiKey: 'key1' },
-          ollama: { type: 'ollama' },
-        },
-      }
+    it('writes nothing for a rolled-back write', async () => {
+      const { hook, writes, context } = await generationHook()
 
-      const plugin = ragPlugin(config)
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'rolled-back',
+        inputData: { content: 'four' },
+        error: new Error('nope'),
+        context,
+      })
 
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {
-            Article: {
-              fields: {
-                embedding: {
-                  type: 'embedding',
-                  sourceField: 'content',
-                  autoGenerate: true,
-                  provider: 'ollama', // Use named provider
-                },
-              },
-            },
-          },
-        },
-        extendList: vi.fn(),
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
-
-      await plugin.init!(mockContext as PluginContext)
-
-      expect(mockContext.extendList).toHaveBeenCalled()
+      expect(writes).toEqual([])
     })
-  })
 
-  describe('configuration normalization', () => {
-    it('should apply default values', async () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
-        },
-      }
+    it('writes nothing when the update did not name the source field', async () => {
+      const { hook, writes, context } = await generationHook()
 
-      const plugin = ragPlugin(config)
+      await hook!({
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { contentEmbedding: { vector: [4], metadata: {} } },
+        originalItem: { id: 'a1', content: 'four' },
+        item: { id: 'a1', content: 'four' },
+        context,
+      })
 
-      const mockContext = {
-        config: {
-          db: { provider: 'postgresql' },
-          lists: {},
-        },
-        setPluginData: vi.fn(),
-        registerMcpTool: vi.fn(),
-        extendList: vi.fn(),
-        addList: vi.fn(),
-        addExtension: vi.fn(),
-      } as PluginContext
+      expect(writes).toEqual([])
+    })
 
-      await plugin.init!(mockContext as PluginContext)
+    it('writes nothing when the source text hashes to what is already stored', async () => {
+      const { hook, writes, context } = await generationHook()
 
-      const normalizedConfig = (
-        mockContext.setPluginData as unknown as { mock: { calls: [[string, unknown]] } }
-      ).mock.calls[0][1]
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
+      const first = writes[0].stored
 
-      expect(normalizedConfig).toMatchObject({
-        enableMcpTools: expect.any(Boolean),
-        batchSize: expect.any(Number),
-        rateLimit: expect.any(Number),
-        storage: expect.any(Object),
-        chunking: expect.objectContaining({
-          strategy: expect.any(String),
-          maxTokens: expect.any(Number),
-          overlap: expect.any(Number),
+      await hook!({
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { content: 'four' },
+        originalItem: { id: 'a1', content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: first },
+        context,
+      })
+
+      expect(writes).toHaveLength(1)
+    })
+
+    it('regenerates when the source text changed', async () => {
+      const { hook, writes, context } = await generationHook()
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { content: 'eleven' },
+        originalItem: { id: 'a1', content: 'four' },
+        item: { id: 'a1', content: 'eleven', contentEmbedding: writes[0].stored },
+        context,
+      })
+
+      expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
+    })
+
+    it('refuses to write when the context carries no rag services', async () => {
+      const { hook } = await generationHook()
+
+      await expect(
+        hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id: 'a1', content: 'four' },
+          context: stubContext({}),
         }),
+      ).rejects.toThrow('context.plugins.rag is missing')
+    })
+
+    it('writes through sudo, not through the request context', async () => {
+      const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
+      const requestUpdate = vi.fn()
+      const sudoUpdate = vi.fn()
+      const request = stubContext({ db: { Article: delegate({ update: requestUpdate }) } })
+      const elevated = stubContext({ db: { Article: delegate({ update: sudoUpdate }) } })
+
+      const writeEmbedding = writeEmbeddingOf(plugin.runtime!(request, () => elevated))
+      const stored: StoredEmbedding = {
+        vector: [4],
+        metadata: {
+          model: 'counting-1',
+          provider: 'counting',
+          dimensions: 1,
+          generatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      }
+      await writeEmbedding('Article', 'a1', 'contentEmbedding', stored)
+
+      expect(requestUpdate).not.toHaveBeenCalled()
+      expect(sudoUpdate).toHaveBeenCalledWith({
+        where: { id: 'a1' },
+        data: { contentEmbedding: stored },
       })
     })
   })
 
-  describe('plugin interface conformance', () => {
-    it('should conform to Plugin interface', () => {
-      const config: RAGConfig = {
-        provider: {
-          type: 'openai',
-          apiKey: 'test-key',
+  describe('beforeGenerate', () => {
+    const listsWith = (dimensions: number, provider?: string): OpenSaasConfig => ({
+      db: { provider: 'postgresql' },
+      lists: {
+        Article: {
+          fields: {
+            content: text(),
+            contentEmbedding: embedding({ sourceField: 'content', dimensions, provider }),
+          },
         },
-      }
+      },
+    })
 
-      const plugin: Plugin = ragPlugin(config)
+    it('passes when the declared dimension matches the provider model', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' },
+      })
 
-      expect(plugin.name).toBeDefined()
-      expect(plugin.version).toBeDefined()
-      expect(plugin.init).toBeDefined()
-      expect(typeof plugin.name).toBe('string')
-      expect(typeof plugin.version).toBe('string')
-      expect(typeof plugin.init).toBe('function')
+      expect(() => plugin.beforeGenerate!(listsWith(3072))).not.toThrow()
+    })
+
+    it('refuses a dimension that disagrees with a statically known provider dimension', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' },
+      })
+
+      expect(() => plugin.beforeGenerate!(listsWith(1536))).toThrow(
+        'RAG plugin: "Article.contentEmbedding" declares 1536 dimensions, but its default ' +
+          'provider "text-embedding-3-large" produces 3072. The dimension is a column\'s type, ' +
+          'so the two have to agree before a migration is planned.',
+      )
+    })
+
+    it('checks the named provider a field selects, not the default', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+        providers: {
+          large: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' },
+        },
+      })
+
+      expect(() => plugin.beforeGenerate!(listsWith(3072, 'large'))).not.toThrow()
+      expect(() => plugin.beforeGenerate!(listsWith(1536, 'large'))).toThrow('produces 3072')
+    })
+
+    it('refuses an Ollama provider that declares no dimensions', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'ollama', model: 'nomic-embed-text' } as never,
+      })
+
+      expect(() => plugin.beforeGenerate!(listsWith(768))).toThrow(
+        'RAG plugin: the default provider "nomic-embed-text" declares no dimensions. Ollama ' +
+          'reports its output size only from a live embed call, and generation must not depend ' +
+          'on a running Ollama, so ollamaEmbeddings({ dimensions }) is required.',
+      )
+    })
+
+    it('accepts an Ollama provider that declares its dimensions', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'ollama', model: 'nomic-embed-text', dimensions: 768 },
+      })
+
+      expect(() => plugin.beforeGenerate!(listsWith(768))).not.toThrow()
+      expect(() => plugin.beforeGenerate!(listsWith(1536))).toThrow('produces 768')
+    })
+
+    it('exempts a custom provider that declares no dimension', () => {
+      const plugin = ragPlugin({ provider: { type: 'in-memory' } })
+
+      expect(() => plugin.beforeGenerate!(listsWith(7))).not.toThrow()
     })
   })
 })

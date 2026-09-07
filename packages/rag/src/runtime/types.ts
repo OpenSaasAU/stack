@@ -15,4 +15,17 @@ export interface RAGRuntimeServices {
    * @param providerName - Provider to use if multiple providers are configured
    */
   generateEmbeddings: (texts: string[], providerName?: string) => Promise<number[][]>
+
+  /**
+   * Write a generated embedding to its write-denied column, under sudo
+   * (ADR-0045). The plugin's own generation hook is the caller; application
+   * code that maintains vectors itself uses `embedding({ allowManualWrites:
+   * true })` and an ordinary update instead.
+   */
+  writeEmbedding: (
+    listKey: string,
+    id: unknown,
+    fieldName: string,
+    stored: import('../config/types.js').StoredEmbedding,
+  ) => Promise<void>
 }

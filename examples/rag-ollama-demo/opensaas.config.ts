@@ -1,6 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
-import { ragPlugin, ollamaEmbeddings, sqliteVssStorage } from '@opensaas/stack-rag'
+import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
@@ -10,9 +10,7 @@ export default config({
       provider: ollamaEmbeddings({
         baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
         model: 'nomic-embed-text',
-      }),
-      storage: sqliteVssStorage({
-        distanceFunction: 'cosine',
+        dimensions: 768,
       }),
     }),
   ],

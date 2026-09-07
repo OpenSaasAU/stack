@@ -37,6 +37,11 @@ export type OllamaEmbeddingConfig = {
   baseURL?: string
   /** @default 'nomic-embed-text' */
   model?: string
+  /**
+   * The model's output dimension. Required, because it is a schema fact and
+   * generation must never depend on a running Ollama to learn it (ADR-0045).
+   */
+  dimensions: number
 }
 
 /**
@@ -50,37 +55,6 @@ export type CustomEmbeddingConfig = {
 
 export type EmbeddingProviderConfig =
   OpenAIEmbeddingConfig | OllamaEmbeddingConfig | CustomEmbeddingConfig
-
-export type VectorStorageBackend = 'pgvector' | 'sqlite-vss' | 'json' | string
-
-export type PgVectorStorageConfig = {
-  type: 'pgvector'
-  /** @default 'cosine' */
-  distanceFunction?: 'cosine' | 'l2' | 'inner_product'
-}
-
-export type SqliteVssStorageConfig = {
-  type: 'sqlite-vss'
-  /** @default 'cosine' */
-  distanceFunction?: 'cosine' | 'l2'
-}
-
-/**
- * JSON-based storage — stores vectors as JSON, uses JavaScript for similarity
- * search. Good for development and small datasets.
- */
-export type JsonStorageConfig = {
-  type: 'json'
-}
-
-/** For custom vector storage backends not covered by the built-in ones. */
-export type CustomStorageConfig = {
-  type: string
-  [key: string]: unknown
-}
-
-export type VectorStorageConfig =
-  PgVectorStorageConfig | SqliteVssStorageConfig | JsonStorageConfig | CustomStorageConfig
 
 export type BuildTimeConfig = {
   enabled: boolean
@@ -128,9 +102,6 @@ export type RAGConfig = {
    */
   providers?: Record<string, EmbeddingProviderConfig>
 
-  /** @default { type: 'json' } */
-  storage?: VectorStorageConfig
-
   /** Can be overridden per field. */
   chunking?: ChunkingConfig
 
@@ -159,7 +130,6 @@ export type RAGConfig = {
 export type NormalizedRAGConfig = {
   provider: EmbeddingProviderConfig | null
   providers: Record<string, EmbeddingProviderConfig>
-  storage: VectorStorageConfig
   chunking: Required<ChunkingConfig>
   buildTime: Required<BuildTimeConfig> | null
   enableMcpTools: boolean
@@ -182,12 +152,11 @@ export type StoredEmbedding = {
   metadata: EmbeddingMetadata
 }
 
+/** One match from a semantic search, in the shape `nearest()` returns (ADR-0045). */
 export type SearchResult<T = unknown> = {
   item: T
   /** 0-1, higher is more similar. */
   score: number
-  /** Depends on storage backend. */
-  distance: number
 }
 
 /** Options for the `searchable()` field wrapper — a simplified subset of the full config for common use cases. */

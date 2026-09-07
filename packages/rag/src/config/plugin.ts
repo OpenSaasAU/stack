@@ -1,8 +1,47 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
-import type { RAGConfig, NormalizedRAGConfig, SearchableMetadata } from './types.js'
+import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import type {
+  EmbeddingProviderConfig,
+  RAGConfig,
+  NormalizedRAGConfig,
+  SearchableMetadata,
+  StoredEmbedding,
+} from './types.js'
 import { normalizeRAGConfig } from './index.js'
 import { createEmbeddingProvider } from '../providers/index.js'
+import { OPENAI_MODEL_DIMENSIONS } from '../providers/openai.js'
 import { embedding } from '../fields/embedding.js'
+import type { EmbeddingField } from '../fields/embedding.js'
+import type { RAGRuntimeServices } from '../runtime/types.js'
+
+/** The pgvector extension pack, which the app author never has to name (ADR-0049). */
+const PGVECTOR_EXTENSION = {
+  name: 'pgvector',
+  from: '@prisma/orm-extension-pgvector',
+} as const
+
+function isEmbeddingField(field: { type?: string }): field is EmbeddingField {
+  return field.type === 'embedding'
+}
+
+/**
+ * A provider's output dimension where it is known without calling anything.
+ * OpenAI's models each have a fixed size; Ollama declares its own; a custom
+ * provider that declares none is exempt from the generate-time check.
+ */
+function knownDimensions(provider: EmbeddingProviderConfig): number | undefined {
+  if (provider.type === 'openai') {
+    const model: unknown = Reflect.get(provider, 'model') ?? 'text-embedding-3-small'
+    return typeof model === 'string' ? OPENAI_MODEL_DIMENSIONS.get(model) : undefined
+  }
+  const declared: unknown = Reflect.get(provider, 'dimensions')
+  return typeof declared === 'number' ? declared : undefined
+}
+
+function providerLabel(name: string, provider: EmbeddingProviderConfig): string {
+  const model: unknown = Reflect.get(provider, 'model')
+  return typeof model === 'string' ? `${name} provider "${model}"` : `${name} provider`
+}
 
 /**
  * RAG plugin for OpenSaas Stack
@@ -12,27 +51,18 @@ import { embedding } from '../fields/embedding.js'
  * ```typescript
  * import { config, list } from '@opensaas/stack-core'
  * import { text } from '@opensaas/stack-core/fields'
- * import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+ * import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
  * import { embedding } from '@opensaas/stack-rag/fields'
  *
  * export default config({
- *   plugins: [
- *     ragPlugin({
- *       provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY }),
- *       storage: pgvectorStorage()
- *     })
- *   ],
- *   db: { provider: 'postgresql', url: process.env.DATABASE_URL },
+ *   plugins: [ragPlugin({ provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY }) })],
+ *   db: { provider: 'postgresql' },
  *   lists: {
  *     Article: list({
  *       fields: {
  *         content: text(),
- *         contentEmbedding: embedding({
- *           sourceField: 'content',
- *           provider: 'openai',
- *           autoGenerate: true
- *         })
- *       }
+ *         contentEmbedding: embedding({ sourceField: 'content', provider: 'openai' }),
+ *       },
  *     })
  *   }
  * })
@@ -40,6 +70,11 @@ import { embedding } from '../fields/embedding.js'
  */
 export function ragPlugin(config: RAGConfig): Plugin {
   const normalized = normalizeRAGConfig(config)
+
+  const providerFor = (name: string | undefined): EmbeddingProviderConfig | null => {
+    if (name === undefined || name === 'default') return normalized.provider
+    return normalized.providers[name] ?? normalized.provider
+  }
 
   return {
     name: 'rag',
@@ -51,6 +86,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
     },
 
     init: async (context) => {
+      context.addExtension(PGVECTOR_EXTENSION)
+
       // Inject embedding fields for searchable() fields first — the pass
       // below, which wires up autoGenerate hooks, must see these before it runs.
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
@@ -82,82 +119,72 @@ export function ragPlugin(config: RAGConfig): Plugin {
       // mutates context.config.lists in place, so this loop sees them too).
       for (const [listName, listConfig] of Object.entries(context.config.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-          if (
-            fieldConfig.type === 'embedding' &&
-            (fieldConfig as { autoGenerate?: boolean }).autoGenerate
-          ) {
-            const embeddingConfig = fieldConfig as {
-              sourceField?: string
-              provider?: string
-              dimensions?: number
-            }
+          if (!isEmbeddingField(fieldConfig) || !fieldConfig.autoGenerate) continue
 
-            const sourceField = embeddingConfig.sourceField
-            if (!sourceField) {
-              throw new Error(
-                `RAG plugin: Field "${listName}.${fieldName}" has autoGenerate enabled but no sourceField specified`,
-              )
-            }
-
-            context.extendList(listName, {
-              hooks: {
-                resolveInput: async (args) => {
-                  if (!args.resolvedData)
-                    throw new Error('RAG plugin: Missing resolvedData in resolveInput hook')
-
-                  const sourceText = args.resolvedData[sourceField] as string | undefined
-                  const currentEmbedding = args.resolvedData[fieldName] as {
-                    vector: number[]
-                    metadata: { sourceHash?: string }
-                  } | null
-
-                  if (!sourceText) return args.resolvedData
-
-                  const sourceHash = await hashText(sourceText)
-                  if (currentEmbedding && currentEmbedding.metadata.sourceHash === sourceHash) {
-                    return args.resolvedData
-                  }
-
-                  const providerName = embeddingConfig.provider || 'default'
-                  const providerConfig =
-                    providerName === 'default'
-                      ? normalized.provider
-                      : normalized.providers[providerName] || normalized.provider
-
-                  if (!providerConfig) {
-                    console.warn(
-                      `RAG plugin: No provider configured for field "${listName}.${fieldName}"`,
-                    )
-                    return args.resolvedData
-                  }
-
-                  const provider = createEmbeddingProvider(providerConfig)
-                  const vector = await provider.embed(sourceText)
-
-                  return {
-                    ...args.resolvedData,
-                    [fieldName]: {
-                      vector,
-                      metadata: {
-                        model: provider.model,
-                        provider: provider.type,
-                        dimensions: provider.dimensions,
-                        generatedAt: new Date().toISOString(),
-                        sourceHash,
-                      },
-                    },
-                  }
-                },
-              },
-            })
+          const sourceField = fieldConfig.sourceField
+          if (!sourceField) {
+            throw new Error(
+              `RAG plugin: Field "${listName}.${fieldName}" has autoGenerate enabled but no sourceField specified`,
+            )
           }
+          const providerName = fieldConfig.provider
+
+          context.extendList(listName, {
+            hooks: {
+              // The embedding is write-denied to application code, so the
+              // plugin writes it under sudo — and after the write's own
+              // transaction settles, because the provider call is a network
+              // round trip that has no business holding a connection
+              // (ADR-0045).
+              afterTransaction: async (args) => {
+                if (args.status !== 'committed') return
+                if (args.operation !== 'create' && args.operation !== 'update') return
+                // The sudo write below names the embedding, not the source, so
+                // this is what stops it re-entering.
+                if (!(sourceField in args.inputData)) return
+
+                const item = args.item
+                if (item === undefined) return
+                const sourceText = item[sourceField]
+                if (typeof sourceText !== 'string' || sourceText.length === 0) return
+
+                const providerConfig = providerFor(providerName)
+                if (!providerConfig) {
+                  console.warn(
+                    `RAG plugin: No provider configured for field "${listName}.${fieldName}"`,
+                  )
+                  return
+                }
+
+                const sourceHash = hashText(sourceText)
+                const current = item[fieldName]
+                if (storedSourceHash(current) === sourceHash) return
+
+                const provider = createEmbeddingProvider(providerConfig)
+                const vector = await provider.embed(sourceText)
+
+                const stored: StoredEmbedding = {
+                  vector,
+                  metadata: {
+                    model: provider.model,
+                    provider: provider.type,
+                    dimensions: provider.dimensions,
+                    generatedAt: new Date().toISOString(),
+                    sourceHash,
+                  },
+                }
+
+                await ragServices(args.context).writeEmbedding(listName, item.id, fieldName, stored)
+              },
+            },
+          })
         }
       }
 
       if (normalized.enableMcpTools && context.registerMcpTool) {
         for (const [listName, listConfig] of Object.entries(context.config.lists)) {
-          const embeddingFields = Object.entries(listConfig.fields).filter(
-            ([, fieldConfig]) => fieldConfig.type === 'embedding',
+          const embeddingFields = Object.entries(listConfig.fields).filter(([, fieldConfig]) =>
+            isEmbeddingField(fieldConfig),
           )
 
           if (embeddingFields.length > 0) {
@@ -196,25 +223,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 const provider = createEmbeddingProvider(providerConfig)
                 const queryVector = await provider.embed(query)
 
-                // Simplified: computes similarity in JS over every item rather
-                // than delegating to the configured VectorStorage backend.
-                const allItems = await context.db[listName].findMany()
-
-                const scored: { item: Record<string, unknown>; score: number }[] = []
-                for (const item of allItems) {
-                  const embedding = item[field]
-                  const vector = readStoredVector(embedding)
-                  if (!vector) continue
-
-                  const score = cosineSimilarity(queryVector, vector)
-                  if (score >= minScore) scored.push({ item, score })
-                }
-
-                const results = scored.sort((a, b) => b.score - a.score).slice(0, limit)
+                const matches = await context.db[listName].nearest(field, queryVector, {
+                  limit,
+                  minScore,
+                })
 
                 return {
-                  results: results.map((r) => ({ ...r.item, _similarity: r.score })),
-                  count: results.length,
+                  results: matches.map((match) => ({ ...match.item, _similarity: match.score })),
+                  count: matches.length,
                 }
               },
             })
@@ -226,28 +242,69 @@ export function ragPlugin(config: RAGConfig): Plugin {
       context.setPluginData<NormalizedRAGConfig>('rag', normalized)
     },
 
-    runtime: () => {
+    /**
+     * Refuse a schema fact that is already known to be wrong: a declared
+     * dimension that disagrees with its provider's, and an Ollama provider
+     * with no dimension at all. Both are checked here rather than in the
+     * generator, which knows nothing about embedding providers (ADR-0045).
+     */
+    beforeGenerate: (generateConfig: OpenSaasConfig) => {
+      for (const [name, provider] of Object.entries({
+        ...normalized.providers,
+        ...(normalized.provider ? { default: normalized.provider } : {}),
+      })) {
+        if (provider.type !== 'ollama') continue
+        const declared: unknown = Reflect.get(provider, 'dimensions')
+        if (typeof declared !== 'number' || !Number.isInteger(declared) || declared < 1) {
+          throw new Error(
+            `RAG plugin: the ${providerLabel(name, provider)} declares no dimensions. Ollama ` +
+              `reports its output size only from a live embed call, and generation must not ` +
+              `depend on a running Ollama, so ollamaEmbeddings({ dimensions }) is required.`,
+          )
+        }
+      }
+
+      for (const [listName, listConfig] of Object.entries(generateConfig.lists)) {
+        for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+          if (!isEmbeddingField(fieldConfig)) continue
+          const providerName = fieldConfig.provider
+          const providerConfig = providerFor(providerName)
+          if (!providerConfig) continue
+
+          const providerDimensions = knownDimensions(providerConfig)
+          if (providerDimensions === undefined) continue
+          if (fieldConfig.dimensions === providerDimensions) continue
+
+          throw new Error(
+            `RAG plugin: "${listName}.${fieldName}" declares ${fieldConfig.dimensions} ` +
+              `dimensions, but its ${providerLabel(providerName ?? 'default', providerConfig)} ` +
+              `produces ${providerDimensions}. The dimension is a column's type, so the two have ` +
+              `to agree before a migration is planned.`,
+          )
+        }
+      }
+
+      return generateConfig
+    },
+
+    runtime: (_context, sudo): RAGRuntimeServices => {
+      const requireProvider = (providerName?: string) => {
+        const providerConfig = providerFor(providerName)
+        if (!providerConfig) {
+          throw new Error('RAG plugin not configured')
+        }
+        return createEmbeddingProvider(providerConfig)
+      }
+
       return {
-        /** Uses the top-level configured provider (not the per-field `providers` map the auto-generate hook honors). */
-        generateEmbedding: async (text: string) => {
-          const ragConfig = normalized
-          if (!ragConfig || !ragConfig.provider) {
-            throw new Error('RAG plugin not configured')
-          }
+        generateEmbedding: async (text: string, providerName?: string) =>
+          await requireProvider(providerName).embed(text),
 
-          const provider = createEmbeddingProvider(ragConfig.provider)
-          return await provider.embed(text)
-        },
+        generateEmbeddings: async (texts: string[], providerName?: string) =>
+          await requireProvider(providerName).embedBatch(texts),
 
-        /** Batch counterpart of {@link generateEmbedding}; same provider selection. */
-        generateEmbeddings: async (texts: string[]) => {
-          const ragConfig = normalized
-          if (!ragConfig || !ragConfig.provider) {
-            throw new Error('RAG plugin not configured')
-          }
-
-          const provider = createEmbeddingProvider(ragConfig.provider)
-          return await provider.embedBatch(texts)
+        writeEmbedding: async (listKey, id, fieldName, stored) => {
+          await sudoWrite(sudo(), listKey, id, fieldName, stored)
         },
       }
     },
@@ -255,48 +312,68 @@ export function ragPlugin(config: RAGConfig): Plugin {
 }
 
 /**
+ * Write a generated embedding past its own write denial. Field-level write
+ * denial throws rather than dropping the key, and `checkFieldAccess` returns
+ * true under sudo — so a sudo context is the only path the plugin's own output
+ * reaches the column by (ADR-0045). A hook's `AccessContext` cannot derive one,
+ * which is why the write is a runtime service closing over the `sudo` factory
+ * `Plugin.runtime` is handed.
+ */
+async function sudoWrite(
+  context: AccessContext,
+  listKey: string,
+  id: unknown,
+  fieldName: string,
+  stored: StoredEmbedding,
+): Promise<void> {
+  const list = context.db[listKey]
+  if (list === undefined) {
+    throw new Error(`RAG plugin: list "${listKey}" is not on this context's db surface`)
+  }
+  await list.update({
+    where: { id },
+    data: { [fieldName]: stored },
+  })
+}
+
+function hasWriteEmbedding(value: unknown): value is RAGRuntimeServices {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'writeEmbedding') === 'function'
+  )
+}
+
+function ragServices(context: AccessContext): RAGRuntimeServices {
+  const services: unknown = context.plugins.rag
+  if (!hasWriteEmbedding(services)) {
+    throw new Error(
+      'RAG plugin: context.plugins.rag is missing, so a generated embedding has no sudo write to ' +
+        'reach its write-denied column through. The context was built without the plugin.',
+    )
+  }
+  return services
+}
+
+/** The `sourceHash` of an already-stored embedding, when there is one. */
+function storedSourceHash(value: unknown): string | undefined {
+  if (value === null || typeof value !== 'object') return undefined
+  const metadata: unknown = Reflect.get(value, 'metadata')
+  if (metadata === null || typeof metadata !== 'object') return undefined
+  const hash: unknown = Reflect.get(metadata, 'sourceHash')
+  return typeof hash === 'string' ? hash : undefined
+}
+
+/**
  * Non-cryptographic hash of `text`, used to detect whether source text
  * changed since the last embedding was generated.
  */
-async function hashText(text: string): Promise<string> {
+function hashText(text: string): string {
   let hash = 0
   for (let i = 0; i < text.length; i++) {
     const char = text.charCodeAt(i)
     hash = (hash << 5) - hash + char
-    hash = hash & hash // Convert to 32-bit integer
+    hash = hash & hash
   }
   return hash.toString(36)
-}
-
-/**
- * Read the embedding off a stored column. The row comes back from the secured
- * surface untyped — the per-list types live in the generated bundle — so the
- * shape this plugin wrote is checked rather than assumed.
- */
-function readStoredVector(value: unknown): number[] | null {
-  if (typeof value !== 'object' || value === null) return null
-  const vector = (value as { vector?: unknown }).vector
-  if (!Array.isArray(vector)) return null
-  return vector.every((entry) => typeof entry === 'number') ? (vector as number[]) : null
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have same dimensions')
-  }
-
-  let dotProduct = 0
-  let normA = 0
-  let normB = 0
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i]
-    normA += a[i] * a[i]
-    normB += b[i] * b[i]
-  }
-
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB)
-  if (denominator === 0) return 0
-
-  return dotProduct / denominator
 }

@@ -63,5 +63,5 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
 }
 
 export * from './types.js'
-export { OpenAIEmbeddingProvider, createOpenAIProvider } from './openai.js'
+export { OpenAIEmbeddingProvider, createOpenAIProvider, OPENAI_MODEL_DIMENSIONS } from './openai.js'
 export { OllamaEmbeddingProvider, createOllamaProvider } from './ollama.js'

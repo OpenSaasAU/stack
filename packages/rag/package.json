@@ -21,10 +21,6 @@
       "types": "./dist/providers/index.d.ts",
       "default": "./dist/providers/index.js"
     },
-    "./storage": {
-      "types": "./dist/storage/index.d.ts",
-      "default": "./dist/storage/index.js"
-    },
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",
       "default": "./dist/runtime/index.js"
@@ -77,10 +73,12 @@
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "openai": "^6.32.0",
+    "pg": "^8.22.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"
   }

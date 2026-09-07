@@ -1077,6 +1077,9 @@ importers:
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.4
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -1089,6 +1092,9 @@ importers:
       openai:
         specifier: ^6.32.0
         version: 6.32.0(ws@8.21.3)(zod@4.4.3)
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'

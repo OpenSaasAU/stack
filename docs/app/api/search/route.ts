@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createJsonFileStorage } from '@opensaas/stack-rag/storage'
+import { searchEmbeddings } from '../../../lib/embeddings-search'
 import { createProviderFromEnv } from '@opensaas/stack-rag/runtime'
 import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { resolve } from 'node:path'
@@ -49,23 +49,7 @@ export async function POST(request: NextRequest) {
     // Generate embedding for the query using stack utilities
     const queryEmbedding = await provider.embed(query)
 
-    // Load storage and perform search
-    const storage = createJsonFileStorage(EMBEDDINGS_PATH)
-
-    const results = await storage.search<{
-      documentId: string
-      title?: string
-      content: string
-      chunkIndex: number
-      metadata?: Record<string, unknown>
-      score: number
-    }>('', '', queryEmbedding, {
-      limit,
-      minScore,
-      titleBoost: 1, // 1.5x boost for title matches (moderate advantage without score saturation)
-      // @ts-expect-error - Context not used in file storage
-      context: null as unknown as { db: Record<string, unknown>; session: unknown }, // Not used for file storage
-    })
+    const results = searchEmbeddings(EMBEDDINGS_PATH, queryEmbedding, { limit, minScore })
 
     // Format and deduplicate results by document ID
     // Track best score for ranking, but prefer content chunks for display
@@ -83,20 +67,20 @@ export async function POST(request: NextRequest) {
     >()
 
     for (const result of results) {
-      const documentId = result.item.documentId
+      const documentId = result.documentId
       if (!documentId) continue
 
       const existing = seenDocuments.get(documentId)
-      const isTitle = result.item.metadata?.isTitle === true
+      const isTitle = result.metadata?.isTitle === true
 
       if (!existing) {
         // First chunk for this document
         seenDocuments.set(documentId, {
           documentId,
-          title: result.item.title,
-          content: result.item.content,
-          chunkIndex: result.item.chunkIndex,
-          metadata: result.item.metadata,
+          title: result.title,
+          content: result.content,
+          chunkIndex: result.chunkIndex,
+          metadata: result.metadata,
           score: result.score,
           bestScore: result.score,
         })
@@ -114,10 +98,10 @@ export async function POST(request: NextRequest) {
         if (shouldReplace) {
           seenDocuments.set(documentId, {
             documentId,
-            title: result.item.title,
-            content: result.item.content,
-            chunkIndex: result.item.chunkIndex,
-            metadata: result.item.metadata,
+            title: result.title,
+            content: result.content,
+            chunkIndex: result.chunkIndex,
+            metadata: result.metadata,
             score: result.score,
             bestScore: newBestScore,
           })

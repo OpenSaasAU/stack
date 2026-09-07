@@ -420,10 +420,7 @@ for (const { chunk, embedding } of chunkedEmbeddings) {
 
 - `ragPlugin(config)` - RAG plugin for OpenSaas Stack (v0.2.0+)
 - `openaiEmbeddings(config)` - OpenAI embedding provider helper
-- `ollamaEmbeddings(config)` - Ollama embedding provider helper
-- `pgvectorStorage(config)` - pgvector storage helper
-- `sqliteVssStorage(config)` - SQLite VSS storage helper
-- `jsonStorage()` - JSON-based storage helper
+- `ollamaEmbeddings(config)` - Ollama embedding provider helper (`dimensions` is required)
 
 ### Field Types (`@opensaas/stack-rag/fields`)
 
@@ -433,11 +430,6 @@ for (const { chunk, embedding } of chunkedEmbeddings) {
 
 - `createEmbeddingProvider(config)` - Factory for creating embedding providers
 - `registerEmbeddingProvider(type, factory)` - Register custom providers
-
-### Storage (`@opensaas/stack-rag/storage`)
-
-- `createVectorStorage(config)` - Factory for creating storage backends
-- `registerVectorStorage(type, factory)` - Register custom storage backends
 
 ### Runtime Utilities (`@opensaas/stack-rag/runtime`)
 

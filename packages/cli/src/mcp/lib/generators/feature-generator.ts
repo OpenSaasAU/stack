@@ -1064,23 +1064,16 @@ Storage provider: ${provider}
       ? `provider: ollamaEmbeddings({
         baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
         model: 'nomic-embed-text',
-      }),
-      storage: sqliteVssStorage({
-        distanceFunction: 'cosine',
+        dimensions: 768,
       }),`
       : `provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-      }),
-      // pgvectorStorage requires the postgresql db provider.
-      // On SQLite, use sqliteVssStorage from '@opensaas/stack-rag' instead.
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine',
       }),`
 
     const ragImports = useOllama
-      ? "import { ragPlugin, ollamaEmbeddings, sqliteVssStorage } from '@opensaas/stack-rag'"
-      : "import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'"
+      ? "import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'"
+      : "import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'"
 
     const targetList = searchableContent[0]?.endsWith('s')
       ? searchableContent[0].slice(0, -1)
@@ -1126,7 +1119,7 @@ export default config({
       'Install the RAG package: `pnpm add @opensaas/stack-rag`',
       useOllama
         ? 'Install and start Ollama, then pull the embedding model: `ollama pull nomic-embed-text`'
-        : 'Set OPENAI_API_KEY in your `.env` file (pgvector storage requires PostgreSQL)',
+        : 'Set OPENAI_API_KEY in your `.env` file',
       'Merge the plugin and searchable() fields into your `opensaas.config.ts`',
       'Run `pnpm generate` to update the Prisma schema',
       'Run `pnpm db:push` to update the database',
