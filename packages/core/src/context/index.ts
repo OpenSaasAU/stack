@@ -313,8 +313,20 @@ interface TransactionCapable<TPrisma> {
  * still runs access control), and `transaction()` (interactive, hook-firing
  * transaction). All access-checked operations run their list/field hooks.
  */
-export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLike> {
-  db: AccessControlledDB<TPrisma>
+export interface StackContext<
+  TPrisma extends PrismaClientLike = PrismaClientLike,
+  // Defaults to the plain Prisma-shaped view (#1232). The generator points a
+  // list's `TypeInfo['db']` at its own generated `CustomDB` — the same
+  // virtual/transformed-field-augmented description `context.db` already
+  // resolves to outside a hook — so a hook's `context: StackContext<TPrisma,
+  // TDb>` (keyed via `TTypeInfo['db']`) describes the same rows. Left
+  // unconstrained (no `extends AccessControlledDB<TPrisma>`) — `CustomDB`'s
+  // per-list payload requires strictly more keys than the raw Prisma payload,
+  // so constraining this parameter would reintroduce the assignability gap
+  // #1233 already worked around for the fragment overload, one level higher.
+  TDb = AccessControlledDB<TPrisma>,
+> {
+  db: TDb
   session: Session | null
   prisma: TPrisma
   storage: StorageUtils
@@ -342,10 +354,10 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
    * plugin service) for writes that must be atomic with the transaction.
    */
   transaction: <T>(
-    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
+    fn: (txContext: StackContext<TPrisma, TDb>) => Promise<T>,
     options?: TransactionOptions,
   ) => Promise<T>
-  sudo: () => StackContext<TPrisma>
+  sudo: () => StackContext<TPrisma, TDb>
   /**
    * Derive a context identical to this one except for its session, reusing
    * the already-resolved config and this context's own client (including a
@@ -362,7 +374,7 @@ export interface StackContext<TPrisma extends PrismaClientLike = PrismaClientLik
    * state (elevated stays elevated), so `context.withSession(s).sudo()` and
    * `context.sudo().withSession(s)` are equivalent.
    */
-  withSession: (session: Session | null) => StackContext<TPrisma>
+  withSession: (session: Session | null) => StackContext<TPrisma, TDb>
   _isSudo: boolean
   /**
    * @internal Present so a hook-bound `StackContext` (issue #1176) satisfies
