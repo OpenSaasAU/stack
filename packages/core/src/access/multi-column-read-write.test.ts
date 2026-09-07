@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
 import { executeFieldResolveInputHooks, splitMultiColumnFields } from '../hooks/index.js'
-import { json } from '../fields/index.js'
+import { json, text } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
-import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
+import {
+  writePluginOwnedField,
+  HandlelessPluginFieldWriteError,
+} from '../context/plugin-field-write.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
 /**
@@ -272,8 +276,31 @@ const storedConfig: OpenSaasConfig = {
       fields: { avatar: storedMultiColumn() },
       access: { operation: OPEN },
     },
+    // A list shaped like one a plugin writes into: a column denied to
+    // application code, beside a field the list's own resolveInput derives
+    // from other input, unguarded — the pattern the root CLAUDE.md documents.
+    Owned: {
+      fields: {
+        title: text(),
+        label: text(),
+        avatar: storedMultiColumn({ update: () => false }),
+      },
+      hooks: {
+        resolveInput: ({ resolvedData }) => ({
+          ...resolvedData,
+          label: `label:${String(resolvedData.title)}`,
+        }),
+        afterOperation: async () => {
+          ownedAfterOperations.push('after')
+        },
+      },
+      access: { operation: OPEN },
+    },
   },
 }
+
+/** One entry per list-level `afterOperation` the `Owned` list fires. */
+const ownedAfterOperations: string[] = []
 
 const media = { filename: 'ada.png', filesize: 99 }
 
@@ -382,6 +409,162 @@ describe('multi-column write access through context.db', () => {
     },
     BOOT,
   )
+})
+
+describe('writePluginOwnedField (ADR-0066)', () => {
+  const BOOT = 120_000
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(storedConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  beforeEach(async () => {
+    await database.truncate()
+    ownedAfterOperations.length = 0
+  })
+
+  /** The AccessContext core hands `Plugin.runtime`, over this database. */
+  function internalContext(): AccessContext {
+    const stack = database.context(null)
+    const internal: AccessContext = {
+      session: null,
+      ormHandle: ormClientFor(database.data, database.client.orm),
+      db: stack.db,
+      storage: stack.storage,
+      plugins: stack.plugins,
+      _isSudo: false,
+      _resolveOutputChain: [],
+    }
+    return internal
+  }
+
+  async function seed(): Promise<string> {
+    const created = await database.context(null).db.Owned.create({ data: { title: 'ada' } })
+    const id = created?.id
+    if (typeof id !== 'string') throw new Error('the create returned no row')
+    return id
+  }
+
+  it(
+    'writes the field\u2019s own columns past its write denial',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'avatar',
+        fieldConfig: storedConfig.lists.Owned.fields.avatar,
+        value: media,
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.avatar).toEqual(media)
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a derived field the list\u2019s resolveInput owns untouched',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'avatar',
+        fieldConfig: storedConfig.lists.Owned.fields.avatar,
+        value: media,
+      })
+
+      // Re-running that resolveInput over a payload naming only `avatar` would
+      // rewrite this as `label:undefined`.
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+      expect(stored?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'fires no list hook of its own',
+    async () => {
+      const id = await seed()
+      expect(ownedAfterOperations).toEqual(['after'])
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'avatar',
+        fieldConfig: storedConfig.lists.Owned.fields.avatar,
+        value: media,
+      })
+
+      expect(ownedAfterOperations).toEqual(['after'])
+    },
+    BOOT,
+  )
+
+  it(
+    'clearing with null clears every column the field owns',
+    async () => {
+      const id = await seed()
+      const context = internalContext()
+      const write = (value: unknown): Promise<void> =>
+        writePluginOwnedField({
+          context,
+          listName: 'Owned',
+          id,
+          fieldName: 'avatar',
+          fieldConfig: storedConfig.lists.Owned.fields.avatar,
+          value,
+        })
+
+      await write(media)
+      await write(null)
+
+      expect((await database.context(null).db.Owned.where({}).first())?.avatar).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'a row that is gone is a silent no-op',
+    async () => {
+      await expect(
+        writePluginOwnedField({
+          context: internalContext(),
+          listName: 'Owned',
+          id: '00000000-0000-7000-8000-000000000000',
+          fieldName: 'avatar',
+          fieldConfig: storedConfig.lists.Owned.fields.avatar,
+          value: media,
+        }),
+      ).resolves.toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it('refuses the returned StackContext, which carries no ORM handle', async () => {
+    await expect(
+      writePluginOwnedField({
+        context: database.context(null) as unknown as AccessContext,
+        listName: 'Owned',
+        id: 'any',
+        fieldName: 'avatar',
+        fieldConfig: storedConfig.lists.Owned.fields.avatar,
+        value: media,
+      }),
+    ).rejects.toBeInstanceOf(HandlelessPluginFieldWriteError)
+  })
 })
 
 describe('multi-column write split respects field-level write access', () => {

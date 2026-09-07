@@ -1,4 +1,5 @@
-import type { Plugin } from '@opensaas/stack-core/extend'
+import type { Plugin, OwnedFieldLayout } from '@opensaas/stack-core/extend'
+import { writePluginOwnedField } from '@opensaas/stack-core/extend'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import type {
   EmbeddingProviderConfig,
@@ -28,11 +29,13 @@ function isEmbeddingField(field: { type?: string }): field is EmbeddingField {
 /**
  * The seat of the plugin's escalated write. Keyed by a module-private symbol
  * and absent from {@link RAGRuntimeServices}, so it is on neither the package's
- * exported surface nor the generated `PluginServices` face — `sudo()` bypasses
- * a list's operation access and its Access Filter as well as this field's own
- * denial, and only the generation hook below may hold that (ADR-0045).
- * Application code that maintains its own vectors uses
- * `embedding({ allowManualWrites: true })` and an ordinary `context.db` write.
+ * exported surface nor the generated `PluginServices` face — the write reaches
+ * the embedding's columns past this field's own denial and past the list's
+ * operation access, and only the generation hook below may hold that
+ * (ADR-0045). It runs no hook: a write carrying this column alone would lie to
+ * every hook it ran (ADR-0066). Application code that maintains its own
+ * vectors uses `embedding({ allowManualWrites: true })` and an ordinary
+ * `context.db` write, which runs the whole pipeline as usual.
  */
 const WRITE_EMBEDDING = Symbol('rag.writeEmbedding')
 
@@ -40,6 +43,7 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
+  fieldConfig: OwnedFieldLayout,
   stored: StoredEmbedding,
 ) => Promise<void>
 
@@ -232,10 +236,10 @@ export function ragPlugin(config: RAGConfig): Plugin {
           context.extendList(listName, {
             hooks: {
               // The embedding is write-denied to application code, so the
-              // plugin writes it under sudo — and after the write's own
+              // plugin writes its own columns past that denial and runs no
+              // hook doing it (ADR-0045, ADR-0066) — and after the write's own
               // transaction settles, because the provider call is a network
-              // round trip that has no business holding a connection
-              // (ADR-0045).
+              // round trip that has no business holding a connection.
               //
               // Known limits: the row is already committed by the time this
               // runs, so none of the three gaps below can abort it.
@@ -261,9 +265,9 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 const id = rowId(item.id)
                 if (id === undefined) return
                 // The persisted text, not the caller's input: a source field a
-                // resolveInput hook derived is embedded like any other, and the
-                // stored source hash below is what stops the sudo write from
-                // re-entering.
+                // resolveInput hook derived is embedded like any other. The
+                // stored source hash below is what stops an update that leaves
+                // the source alone from paying for a second provider call.
                 const sourceText = item[sourceField]
                 if (typeof sourceText !== 'string' || sourceText.length === 0) return
 
@@ -288,7 +292,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
-                  await write(listName, id, fieldName, {
+                  await write(listName, id, fieldName, fieldConfig, {
                     vector,
                     metadata: {
                       model: provider.model,
@@ -478,7 +482,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
       return generateConfig
     },
 
-    runtime: (_context, sudo): RAGInternalServices => {
+    runtime: (context): RAGInternalServices => {
       const requireProvider = (providerName?: string) => {
         const providerConfig = providerFor(providerName)
         if (!providerConfig) {
@@ -500,37 +504,19 @@ export function ragPlugin(config: RAGConfig): Plugin {
         generateEmbeddings: async (texts: string[], providerName?: string) =>
           await requireProvider(providerName).embedBatch(texts),
 
-        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored) => {
-          await sudoWrite(sudo(), listKey, id, fieldName, stored)
+        [WRITE_EMBEDDING]: async (listKey, id, fieldName, fieldConfig, stored) => {
+          await writePluginOwnedField({
+            context,
+            listName: listKey,
+            id,
+            fieldName,
+            fieldConfig,
+            value: stored,
+          })
         },
       }
     },
   }
-}
-
-/**
- * Write a generated embedding past its own write denial. A denied field-level
- * write throws, and `checkFieldAccess` returns true under sudo, so a sudo
- * context is how the plugin's own output reaches the column (ADR-0045). A
- * hook's `AccessContext` cannot derive one, which is why the write is created
- * by `Plugin.runtime`, closing over the `sudo` factory it is handed, and
- * reached only through {@link WRITE_EMBEDDING}.
- */
-async function sudoWrite(
-  context: AccessContext,
-  listKey: string,
-  id: string | number,
-  fieldName: string,
-  stored: StoredEmbedding,
-): Promise<void> {
-  const list = context.db[listKey]
-  if (list === undefined) {
-    throw new Error(`RAG plugin: list "${listKey}" is not on this context's db surface`)
-  }
-  await list.update({
-    where: { id },
-    data: { [fieldName]: stored },
-  })
 }
 
 function hasEmbeddingWriter(value: unknown): value is { [WRITE_EMBEDDING]: EmbeddingWriter } {

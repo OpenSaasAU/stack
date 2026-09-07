@@ -334,9 +334,9 @@ Once the write's own transaction has committed, that hook:
 1. Reads the **persisted** source text off `item`, so a value a `resolveInput`
    hook derived is embedded like any other.
 2. Hashes it and compares the hash with the `sourceHash` on the stored
-   embedding's metadata. Equal means nothing to do — which is what stops the
-   plugin's own write from re-entering, and what stops an unrelated field change
-   from costing an API call.
+   embedding's metadata. Equal means nothing to do, which is what stops an
+   unrelated field change from costing an API call. Re-entry is not what it
+   guards: the plugin's write fires no hook (ADR-0066).
 3. Otherwise calls the provider and writes the vector and its metadata.
 
 Generation runs after the commit, not on input, because calling a provider is a
@@ -346,11 +346,15 @@ inside a transaction (ADR-0045).
 **The column is write-denied to application code.** A plain
 `context.db.Article.update({ where, data: { contentEmbedding } })` throws
 `Cannot update "contentEmbedding": field-level access denied.` — do not write
-that. The plugin's own output reaches the column through a `sudo()` context
-held behind a module-private symbol, which is on neither the package's exported
-surface nor the generated `PluginServices` face. Application code that
-maintains its own vectors declares `embedding({ allowManualWrites: true })` and
-then writes the field like any other.
+that. The plugin's own output reaches the column through core's
+`writePluginOwnedField` (ADR-0066), held behind a module-private symbol which is
+on neither the package's exported surface nor the generated `PluginServices`
+face. That write carries this field's columns and nothing else, and runs **no**
+hook of the list's: driving it through `sudo().db` would re-run `resolveInput`
+over a payload naming only the embedding, which destroys a field the list
+derives from other input. Application code that maintains its own vectors
+declares `embedding({ allowManualWrites: true })` and then writes the field like
+any other, through the ordinary pipeline.
 
 Known limits of the generation hook, all of them consequences of running after
 the commit — none can abort the write:

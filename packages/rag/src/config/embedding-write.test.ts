@@ -11,6 +11,7 @@ import { config as defineConfig } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { withOrigin } from '@opensaas/stack-core/origin'
+import type { OwnedFieldLayout } from '@opensaas/stack-core/extend'
 import {
   createTestDatabase,
   ESCAPE_VARIABLE,
@@ -73,18 +74,25 @@ const source: OpenSaasConfig = {
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
       },
       hooks: {
-        // The plugin's own sudo write runs this pipeline too, carrying only the
-        // embedding column, so an unguarded derivation would overwrite `content`
-        // with the join of two undefineds on that second pass.
-        resolveInput: ({ resolvedData }) =>
-          typeof resolvedData.title === 'string'
-            ? { ...resolvedData, content: [resolvedData.title, resolvedData.body].join(' ') }
-            : resolvedData,
+        // The derive-from-input pattern the root CLAUDE.md documents, written
+        // exactly as an app would write it — unguarded. Run again over a
+        // payload naming only the embedding, it joins two undefineds and
+        // destroys `content` (ADR-0066).
+        resolveInput: ({ resolvedData }) => ({
+          ...resolvedData,
+          content: [resolvedData.title, resolvedData.body].join(' '),
+        }),
+        afterOperation: async () => {
+          derivedAfterOperations.push('after')
+        },
       },
       access: { operation: { query: () => true, create: () => true } },
     },
   },
 }
+
+/** One entry per list-level `afterOperation` the `Derived` list fires. */
+const derivedAfterOperations: string[] = []
 
 const metadata = {
   model: 'fake-3',
@@ -118,7 +126,13 @@ function collection(model: string): Record<string, unknown> {
  */
 function embeddingWriterOf(
   context: unknown,
-): (listKey: string, id: string, fieldName: string, stored: unknown) => Promise<void> {
+): (
+  listKey: string,
+  id: string,
+  fieldName: string,
+  fieldConfig: OwnedFieldLayout,
+  stored: unknown,
+) => Promise<void> {
   const plugins: unknown = isRecord(context) ? context.plugins : undefined
   const services: unknown = isRecord(plugins) ? plugins.rag : undefined
   if (!isRecord(services)) throw new Error('the context carries no rag plugin services')
@@ -130,8 +144,8 @@ function embeddingWriterOf(
 
   const found: unknown = Reflect.get(services, key)
   if (typeof found !== 'function') throw new Error('unreachable')
-  return async (listKey, id, fieldName, stored) => {
-    await found(listKey, id, fieldName, stored)
+  return async (listKey, id, fieldName, fieldConfig, stored) => {
+    await found(listKey, id, fieldName, fieldConfig, stored)
   }
 }
 
@@ -201,9 +215,12 @@ describe.skipIf(!available)(
 
       const stored = await database.context(null).db.Article.where({}).first()
 
-      expect(stored?.contentEmbedding).toMatchObject({
+      // toEqual, not toMatchObject: the assembled value carries these two keys
+      // and no more, which is the same leak the line below checks for on the
+      // row. `generatedAt` and `sourceHash` are the hook's own output.
+      expect(stored?.contentEmbedding).toEqual({
         vector: [1, 0, 0],
-        metadata: generatedMetadata,
+        metadata: { ...generatedMetadata, generatedAt: expect.any(String), sourceHash: '2f0x' },
       })
       expect(stored).not.toHaveProperty('contentEmbeddingMetadata')
     })
@@ -250,6 +267,32 @@ describe.skipIf(!available)(
         vector: [0, 0, 1],
         metadata: generatedMetadata,
       })
+    })
+
+    test('the generation write leaves the derived source it did not name intact', async () => {
+      // The corruption ADR-0066 closes: a generation write that re-ran this
+      // list's resolveInput would rewrite `content` as the join of two
+      // undefineds and embed *that*, silently, in the row the caller just made.
+      await database.context(null).db.Derived.create({ data: { title: 'red', body: 'hot' } })
+
+      const stored = await database.context(null).db.Derived.where({}).first()
+
+      expect(stored?.content).toBe('red hot')
+      expect(stored?.contentEmbedding).toEqual({
+        vector: [0, 0, 1],
+        metadata: { ...generatedMetadata, generatedAt: expect.any(String), sourceHash: 'hvoym6' },
+      })
+    })
+
+    test('the generation write fires no second afterOperation', async () => {
+      derivedAfterOperations.length = 0
+
+      await database.context(null).db.Derived.create({ data: { title: 'red', body: 'hot' } })
+
+      // One logical change, one side effect. A generation write driven through
+      // the secured `db` surface would fire this a second time for the update
+      // it makes to the embedding column.
+      expect(derivedAfterOperations).toEqual(['after'])
     })
 
     test('a query vector of the wrong length is refused by the declared dimension', async () => {
@@ -312,13 +355,19 @@ describe.skipIf(!available)(
        * hook's output rather than the writer's. An empty source returns the
        * hook early, leaving the bytes under test the ones the writer put there.
        */
-      test('the plugin\u2019s sudo write reaches the column', async () => {
+      test('the plugin\u2019s escalated write reaches the column', async () => {
         const id = await writeSource('')
         const seeded = await database.context(null).db.Article.where({}).first()
         expect(seeded?.contentEmbedding).toBeNull()
 
         const stored = { vector: [1, 0, 0], metadata }
-        await embeddingWriterOf(database.context(null))('Article', id, 'contentEmbedding', stored)
+        await embeddingWriterOf(database.context(null))(
+          'Article',
+          id,
+          'contentEmbedding',
+          embedding({ sourceField: 'content', dimensions: 3 }),
+          stored,
+        )
 
         const after = await database.context(null).db.Article.where({}).first()
         expect(after?.contentEmbedding).toEqual(stored)

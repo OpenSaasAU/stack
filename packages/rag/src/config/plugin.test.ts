@@ -3,7 +3,12 @@ import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { AccessContext } from '@opensaas/stack-core'
-import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
+import type {
+  ContractColumnDescriptor,
+  OwnedFieldLayout,
+  Plugin,
+  PluginContext,
+} from '@opensaas/stack-core/extend'
 import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
 import { registerEmbeddingProvider } from '../providers/index.js'
@@ -100,10 +105,33 @@ function recordingDb(reached: string[]): AccessContext['db'] {
   })
 }
 
+/**
+ * An `ormHandle` that records which collections were reached through it and
+ * answers `where(...).update(...)` with a row, which is the shape the engine's
+ * scoped update drives.
+ */
+function recordingCollections(reached: string[]): AccessContext['ormHandle'] {
+  return new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        if (typeof key !== 'string') return undefined
+        reached.push(key)
+        const collection = {
+          where: () => collection,
+          update: async () => ({ id: 'a1' }),
+        }
+        return collection
+      },
+    },
+  )
+}
+
 type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
+  fieldConfig: OwnedFieldLayout,
   stored: StoredEmbedding,
 ) => Promise<void>
 
@@ -126,8 +154,8 @@ function writeEmbeddingOf(services: unknown): { key: symbol; write: EmbeddingWri
   if (typeof found !== 'function') throw new Error('unreachable')
   return {
     key,
-    write: async (listKey, id, fieldName, stored) => {
-      await found(listKey, id, fieldName, stored)
+    write: async (listKey, id, fieldName, fieldConfig, stored) => {
+      await found(listKey, id, fieldName, fieldConfig, stored)
     },
   }
 }
@@ -488,8 +516,8 @@ describe('ragPlugin', () => {
 
   describe('the generation path', () => {
     /**
-     * A context carrying the plugin's own sudo write, keyed by the symbol a
-     * live runtime uses — the only key the plugin's hook looks under.
+     * A context carrying the plugin's own escalated write, keyed by the symbol
+     * a live runtime uses — the only key the plugin's hook looks under.
      */
     function writeRecorder(onWrite?: () => void) {
       const writes: {
@@ -504,7 +532,7 @@ describe('ragPlugin', () => {
         ),
       )
       const services: Record<symbol, EmbeddingWriter> = {
-        [key]: async (listKey, id, fieldName, stored) => {
+        [key]: async (listKey, id, fieldName, _fieldConfig, stored) => {
           onWrite?.()
           writes.push({ listKey, id, fieldName, stored })
         },
@@ -810,37 +838,46 @@ describe('ragPlugin', () => {
       await expect(generate('four')).resolves.toEqual([4])
     })
 
-    it('runs the escalated write on the context sudo() returns, not on the request one', async () => {
-      // The escalation is the whole reason the writer lives on Plugin.runtime
-      // (ADR-0045): a hook's AccessContext cannot derive a sudo one, and
-      // without sudo the field's own write denial refuses the plugin's output.
-      // Which context the write runs on is the assertion; what it calls on the
-      // delegate is `embedding-write.test.ts`'s job, against a real column.
-      const requestReached: string[] = []
-      const sudoReached: string[] = []
+    it('runs the escalated write on the ORM handle, never through the db surface', async () => {
+      // ADR-0066: the write carries this field's columns alone, so running it
+      // through `db` would re-run the list's hooks over a payload naming one
+      // field. It goes to the handle instead, and `sudo()` is never reached.
+      // What lands in the columns is `embedding-write.test.ts`'s job, against
+      // a real column.
+      const dbReached: string[] = []
+      const handleReached: string[] = []
       let escalations = 0
 
       const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
-        stubContext({ db: recordingDb(requestReached) }),
+        stubContext({
+          db: recordingDb(dbReached),
+          ormHandle: recordingCollections(handleReached),
+        }),
         () => {
           escalations += 1
-          return stubContext({ db: recordingDb(sudoReached), _isSudo: true })
+          return stubContext({})
         },
       )
 
-      await writeEmbeddingOf(services).write('Article', 'a1', 'contentEmbedding', {
-        vector: [4],
-        metadata: {
-          model: 'counting-1',
-          provider: 'counting',
-          dimensions: 1,
-          generatedAt: '2026-01-01T00:00:00.000Z',
+      await writeEmbeddingOf(services).write(
+        'Article',
+        'a1',
+        'contentEmbedding',
+        embedding({ sourceField: 'content', dimensions: 1 }),
+        {
+          vector: [4],
+          metadata: {
+            model: 'counting-1',
+            provider: 'counting',
+            dimensions: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+          },
         },
-      })
+      )
 
-      expect(escalations).toBe(1)
-      expect(sudoReached).toEqual(['Article'])
-      expect(requestReached).toEqual([])
+      expect(handleReached).toEqual(['Article'])
+      expect(dbReached).toEqual([])
+      expect(escalations).toBe(0)
     })
   })
 

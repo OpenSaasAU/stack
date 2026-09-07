@@ -10,9 +10,9 @@ execute on the Prisma 8 collection, so the plugin's escalated write threw on eve
 invocation. That surface now executes, and generation with it:
 `context.db.Article.create({ data: { content } })` commits the row, and once that
 transaction settles the plugin embeds the **persisted** source text and writes the vector
-and its metadata under sudo. Writing the source text again regenerates it; a write that
-leaves the source text alone does not, because the `sourceHash` on the stored metadata
-short-circuits.
+and its metadata past that field's own write denial. Writing the source text again
+regenerates it; a write that leaves the source text alone does not, because the
+`sourceHash` on the stored metadata short-circuits.
 
 Everything written for the inert surface is gone with it:
 

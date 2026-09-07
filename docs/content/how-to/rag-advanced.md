@@ -44,9 +44,11 @@ Two things drive that:
 - Calling the provider is a network round trip, and a round trip has no business
   holding a database connection open inside a transaction.
 - The column is write-denied to application code, so the plugin writes its own
-  output through a `sudo()` context that the hook reaches by way of a
-  module-private symbol — not through anything on the package's exported surface
-  (ADR-0045).
+  columns past that denial, through core's `writePluginOwnedField` reached by way
+  of a module-private symbol — not through anything on the package's exported
+  surface (ADR-0045). That write runs **no** hook of the list's: it carries the
+  embedding column alone, so re-running `resolveInput` over it would recompute a
+  derived field from input that is not there (ADR-0066).
 
 **On create and on update:**
 
@@ -54,11 +56,11 @@ Two things drive that:
 2. The hook reads the **persisted** source text, so a value a `resolveInput`
    hook derived is embedded like any other.
 3. It hashes that text and compares it with the `sourceHash` stored on the
-   existing embedding's metadata. Equal means nothing to do — this is what stops
-   the plugin's own write from re-entering, and what stops an unrelated field
-   change from costing an API call.
-4. Otherwise it calls the provider and writes the vector and its metadata under
-   `sudo`.
+   existing embedding's metadata. Equal means nothing to do, which is what stops
+   an unrelated field change from costing an API call. (Re-entry is not what it
+   guards: the plugin's write fires no hook, so there is nothing to re-enter.)
+4. Otherwise it calls the provider and writes the vector and its metadata to the
+   columns.
 
 ```typescript
 // Simplified hook implementation

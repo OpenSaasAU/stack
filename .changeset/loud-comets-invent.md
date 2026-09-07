@@ -112,8 +112,9 @@ helpers, whose parameters are the concrete config types, to get the error from `
 
 **Embedding generation runs end to end.** `context.db.Article.create({ data: { content } })`
 commits the row, and once that transaction settles the plugin embeds the **persisted**
-source text and writes the vector and its metadata to the column under sudo. Writing the
-source text again regenerates it; a write that leaves the source text alone does not,
+source text and writes the vector and its metadata to the column past that field's own
+write denial. Writing the source text again regenerates it; a write that leaves the source
+text alone does not,
 because the `sourceHash` on the stored metadata short-circuits.
 
 When a generation does fail, the log distinguishes a **standing** defect from a transient
@@ -141,8 +142,8 @@ Generation keys on the **persisted** source text, not the caller's input, so a s
 field a `resolveInput` hook derives is embedded like any other.
 
 The embedding and its metadata are write-denied to application code: an ordinary create or
-update naming them throws. The plugin writes them itself under sudo, after the write's
-transaction settles. Applications that maintain their own vectors opt out explicitly:
+update naming them throws. The plugin writes them itself, past that denial and running no
+hook of the list's (ADR-0066), after the write's transaction settles. Applications that maintain their own vectors opt out explicitly:
 
 ```typescript
 manualVector: embedding({ dimensions: 1536, allowManualWrites: true })
