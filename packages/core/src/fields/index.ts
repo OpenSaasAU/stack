@@ -14,7 +14,6 @@ import type {
   VirtualField,
   OpenSaasConfig,
   FieldConfig,
-  PrismaRelationResult,
   ColumnDefaultDescriptor,
   ColumnTypeDescriptor,
   ContractColumnDescriptor,
@@ -24,7 +23,6 @@ import type {
   ContractRelationDescriptor,
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
-import { formatPrismaDefault } from './format-prisma-default.js'
 import { getLabelFieldName } from '../config/label.js'
 import type { FilterOperator, FilterSpec } from '../filter/types.js'
 
@@ -53,8 +51,6 @@ export type {
   RelationshipField,
   JsonField,
   VirtualField,
-  PrismaRelationResult,
-  MultiColumnPrismaResult,
   ColumnDefaultDescriptor,
   ColumnTypeDescriptor,
   ContractColumnDescriptor,
@@ -140,113 +136,74 @@ function scalarColumn(fieldName: string, column: ScalarColumn): ContractFieldDes
 export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
 >(options?: Omit<TextField<TTypeInfo>, 'type'>): TextField<TTypeInfo> {
+  const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
+    const validation = options?.validation
+    const isRequired = validation?.isRequired
+    const length = validation?.length
+    const declaredMin = length?.min !== undefined && length.min > 0 ? length.min : undefined
+    const minLength = declaredMin ?? 1
+
+    const baseSchema = z.string({
+      message: `${formatFieldName(fieldName)} must be text`,
+    })
+
+    const withMin =
+      isRequired || declaredMin !== undefined
+        ? baseSchema.min(minLength, {
+            message:
+              minLength > 1
+                ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
+                : `${formatFieldName(fieldName)} is required`,
+          })
+        : baseSchema
+
+    const withMax =
+      length?.max !== undefined
+        ? withMin.max(length.max, {
+            message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
+          })
+        : withMin
+
+    if (isRequired && operation === 'update') {
+      return withMax.optional()
+    }
+
+    return !isRequired ? withMax.optional().nullable() : withMax
+  }
+
   return {
     type: 'text',
     ...options,
-    getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const validation = options?.validation
-      const isRequired = validation?.isRequired
-      const length = validation?.length
-      const minLength = length?.min && length.min > 0 ? length.min : 1
-
-      const baseSchema = z.string({
-        message: `${formatFieldName(fieldName)} must be text`,
-      })
-
-      const withMin =
-        isRequired || length?.min !== undefined
-          ? baseSchema.min(minLength, {
-              message:
-                minLength > 1
-                  ? `${formatFieldName(fieldName)} must be at least ${minLength} characters`
-                  : `${formatFieldName(fieldName)} is required`,
-            })
-          : baseSchema
-
-      const withMax =
-        length?.max !== undefined
-          ? withMin.max(length.max, {
-              message: `${formatFieldName(fieldName)} must be at most ${length.max} characters`,
-            })
-          : withMin
-
-      if (isRequired && operation === 'update') {
-        return withMax.optional()
-      }
-
-      return !isRequired ? withMax.optional().nullable() : withMax
-    },
-    getPrismaType: (
-      _fieldName: string,
-      _provider?: string,
-      _listName?: string,
-      keystoneCompat?: boolean,
-    ) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      // Default value. An explicit `defaultValue` always wins. When none is set
-      // and Keystone-compat mode is on, a non-null text column gets Keystone's
-      // implicit empty-string default. Both go through formatPrismaDefault, so
-      // the empty-string literal (`""`) is produced the same way as any other
-      // text default. Independent of the nullable `?` modifier above — the
-      // default never overwrites nullability.
-      const defaultSource =
-        options?.defaultValue !== undefined
-          ? options.defaultValue
-          : keystoneCompat && !isNullable
-            ? ''
-            : undefined
-      const defaultLiteral = formatPrismaDefault(defaultSource, 'text')
-      if (defaultLiteral !== undefined) {
-        modifiers += ` @default(${defaultLiteral})`
-      }
-
-      // Unique modifier. A non-unique index has no field-level form in Prisma,
-      // so it is requested out-of-line via `index` below and emitted by the
-      // generator as `@@index([...])` on the model.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      return {
-        type: 'String',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
-    getContractField: (fieldName: string, listKey: string) =>
-      scalarColumn(fieldName, {
+    getZodSchema: zodSchema,
+    getContractField: (fieldName: string, listKey: string, config: OpenSaasConfig) => {
+      const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
+      // Keystone 6 gives every non-null text column an implicit empty-string
+      // default; `db.keystoneCompat` mirrors that so a migrating project
+      // reaches parity without hand-setting `defaultValue: ''`.
+      //
+      // A column default makes the field optional on `CreateInput`
+      // (`RequiredCreateColumn`, `types/inputs.ts`), so the column may only
+      // carry one where the create validator both accepts the omission it
+      // fills and accepts `''` itself. Both are asked of the schema rather
+      // than restated, so the column and the validator cannot drift apart —
+      // and an implicit compat default reaches the same verdict as the
+      // explicit `defaultValue: ''` that `applyCreateDefaults` fills.
+      const createSchema = zodSchema(fieldName, 'create')
+      const compatDefault =
+        options?.defaultValue === undefined &&
+        config.db.keystoneCompat === true &&
+        !nullable &&
+        createSchema.safeParse(undefined).success &&
+        createSchema.safeParse('').success
+      const defaultSource = compatDefault ? '' : options?.defaultValue
+      return scalarColumn(fieldName, {
         type: pgType('text'),
-        nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
+        nullable,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue, listKey, fieldName),
-      }),
-    getTypeScriptType: () => {
-      const validation = options?.validation
-      const isRequired = validation?.isRequired
-
-      return {
-        type: 'string',
-        optional: !isRequired,
-      }
+        default: literalDefault(defaultSource, listKey, fieldName),
+      })
     },
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: ['eq'],
@@ -290,42 +247,6 @@ export function integer<
         ? withMax.optional().nullable()
         : withMax
     },
-    getPrismaType: (_fieldName: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'integer')
-      if (defaultLiteral !== undefined) {
-        modifiers += ` @default(${defaultLiteral})`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      // Unique modifier — non-unique index routes through `index` below,
-      // same as `text()`'s getPrismaType.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'Int',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('int'),
@@ -335,14 +256,6 @@ export function integer<
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired
-
-      return {
-        type: 'number',
-        optional: !isRequired,
-      }
-    },
     // A non-integer token can't be interpreted, so it degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
@@ -457,40 +370,6 @@ export function decimal<
         ? schema.optional().nullable()
         : schema
     },
-    getPrismaType: (_fieldName: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      modifiers += ` @db.Decimal(${precision}, ${scale})`
-
-      if (options?.defaultValue !== undefined) {
-        modifiers += ` @default(${options.defaultValue})`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      // Unique modifier — non-unique index routes through `index` below,
-      // same as `text()`'s getPrismaType.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'Decimal',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('decimal', [precision, scale]),
@@ -500,26 +379,6 @@ export function decimal<
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    getTypeScriptType: () => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-
-      return {
-        type: "import('decimal.js').Decimal",
-        optional: isNullable,
-      }
-    },
-    getTypeScriptImports: () => {
-      return [
-        {
-          names: ['Decimal'],
-          from: 'decimal.js',
-          typeOnly: true,
-        },
-      ]
-    },
     // Decimals compare like integers, but the value stays a string so Prisma's
     // Decimal keeps full precision. A non-numeric value degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
@@ -605,41 +464,6 @@ export function bigInt<
 
       return !isRequired || operation === 'update' ? schema.optional().nullable() : schema
     },
-    getPrismaType: (_fieldName: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      if (options?.defaultValue !== undefined) {
-        modifiers += ` @default(${options.defaultValue})`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      // Unique modifier — non-unique index routes through `index` below,
-      // same as `text()`'s getPrismaType.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'BigInt',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
       return scalarColumn(fieldName, {
@@ -656,14 +480,6 @@ export function bigInt<
           fieldName,
         ),
       })
-    },
-    getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired
-
-      return {
-        type: 'bigint',
-        optional: !isRequired,
-      }
     },
     // A non-integer token degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
@@ -690,31 +506,6 @@ export function checkbox<
     getZodSchema: () => {
       return z.boolean().optional().nullable()
     },
-    getPrismaType: (_fieldName: string) => {
-      const db = options?.db
-      const hasDefault = options?.defaultValue !== undefined
-      let modifiers = ''
-
-      // Checkboxes are non-nullable by default (must be true or false), unlike
-      // the other scalar fields' nullable-unless-required default — set
-      // db.isNullable: true to allow NULL.
-      if (db?.isNullable === true) {
-        modifiers += '?'
-      }
-
-      if (hasDefault) {
-        modifiers += ` @default(${options.defaultValue})`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      return {
-        type: 'Boolean',
-        modifiers: modifiers.trimStart() || undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('boolean'),
@@ -722,12 +513,6 @@ export function checkbox<
         map: options?.db?.map,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    getTypeScriptType: () => {
-      return {
-        type: 'boolean',
-        optional: options?.defaultValue === undefined,
-      }
-    },
     // Anything other than true/false degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: ['eq'],
@@ -763,46 +548,6 @@ export function timestamp<
     getZodSchema: () => {
       return z.union([z.date(), z.iso.datetime()]).optional().nullable()
     },
-    getPrismaType: (_fieldName: string) => {
-      const db = options?.db
-      const hasDefaultNow =
-        options?.defaultValue &&
-        typeof options.defaultValue === 'object' &&
-        'kind' in options.defaultValue &&
-        options.defaultValue.kind === 'now'
-
-      const isNullable = db?.isNullable ?? !hasDefaultNow
-
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (hasDefaultNow) {
-        modifiers += ' @default(now())'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      // Unique modifier — non-unique index routes through `index` below,
-      // same as `text()`'s getPrismaType.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'DateTime',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string) => {
       const defaultValue = options?.defaultValue
       const hasDefaultNow =
@@ -816,22 +561,8 @@ export function timestamp<
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        // Only `now` reaches the schema — getPrismaType emits no @default for
-        // a Date, and the descriptor must not disagree with it.
         default: hasDefaultNow ? { kind: 'now' } : undefined,
       })
-    },
-    getTypeScriptType: () => {
-      const hasDefault =
-        options?.defaultValue &&
-        typeof options.defaultValue === 'object' &&
-        'kind' in options.defaultValue &&
-        options.defaultValue.kind === 'now'
-
-      return {
-        type: 'Date',
-        optional: !hasDefault,
-      }
     },
     // An unparseable date degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
@@ -959,44 +690,6 @@ export function calendarDay<
         return dateSchema.optional().nullable()
       }
     },
-    getPrismaType: (_fieldName: string, provider?: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      // SQLite has no native DATE type and falls back to TEXT for DateTime
-      // columns, so @db.Date only applies on PostgreSQL/MySQL.
-      if (provider && provider.toLowerCase() !== 'sqlite') {
-        modifiers += ' @db.Date'
-      }
-
-      if (options?.defaultValue !== undefined) {
-        modifiers += ` @default("${options.defaultValue}")`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      // Unique modifier — non-unique index routes through `index` below,
-      // same as `text()`'s getPrismaType.
-      if (options?.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'DateTime',
-        modifiers: modifiers.trimStart() || undefined,
-        index: options?.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('dateTime'),
@@ -1006,17 +699,6 @@ export function calendarDay<
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    getTypeScriptType: () => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-
-      return {
-        type: 'string',
-        optional: isNullable,
-      }
-    },
     // Calendar days compare on the `YYYY-MM-DD` value (coerced to a UTC-midnight
     // Date so it matches the `@db.Date` column). A malformed value degrades to
     // free text.
@@ -1124,9 +806,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
     type: 'password',
     outputType: "import('@opensaas/stack-core/internal').HashedPassword",
     ...options,
-    resultExtension: {
-      outputType: "import('@opensaas/stack-core/internal').HashedPassword",
-    },
     ui: {
       ...options?.ui,
       // Excluded from default admin table columns (issue #1018) — declared
@@ -1195,30 +874,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
           .nullable()
       }
     },
-    getPrismaType: (_fieldName: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      return {
-        type: 'String',
-        modifiers: modifiers.trimStart() || undefined,
-      }
-    },
     getContractField: (fieldName: string) =>
       scalarColumn(fieldName, {
         type: pgType('text'),
@@ -1226,14 +881,6 @@ export function password<TTypeInfo extends import('../config/types.js').TypeInfo
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
       }),
-    getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired
-
-      return {
-        type: 'string',
-        optional: !isRequired,
-      }
-    },
   }
 }
 
@@ -1285,76 +932,6 @@ export function select<
 
       return schema
     },
-    getPrismaType: (fieldName: string, _provider?: string, listName?: string) => {
-      const isRequired = options.validation?.isRequired
-      const hasDefault = options.defaultValue !== undefined
-      // Nullability rules (Keystone parity):
-      //  - `db.isNullable` is an explicit override and always wins. Setting it
-      //    `true` forces the `?` even when a `defaultValue` is present.
-      //  - Otherwise a select is nullable only when it is neither required nor
-      //    carrying a default: a `defaultValue` makes the column NOT NULL (the
-      //    long-standing default behaviour). This mirrors the previous logic
-      //    where a present default overwrote the `?`.
-      // Nullability and the default are assembled independently with `+=`
-      // (mirroring text/integer) so the default never overwrites the `?`.
-      const isNullable = options.db?.isNullable ?? (!isRequired && !hasDefault)
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (isNativeEnum) {
-        // Enum type name: explicit `db.enumName` wins, otherwise derive from
-        // list name + field name in PascalCase. The same name is used for the
-        // generated enum block (via `result.type`) and the column reference.
-        const capitalizedField = fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
-        const derivedEnumName = listName ? `${listName}${capitalizedField}` : capitalizedField
-        const enumName = options.db?.enumName ?? derivedEnumName
-
-        // No quotes for enum default values (unlike the string branch below).
-        if (hasDefault) {
-          modifiers += ` @default(${options.defaultValue})`
-        }
-
-        if (options.db?.map) {
-          modifiers += ` @map("${options.db.map}")`
-        }
-
-        // Unique modifier — non-unique index routes through `index` below,
-        // same as `text()`'s getPrismaType.
-        if (options.isIndexed === 'unique') {
-          modifiers += ' @unique'
-        }
-
-        return {
-          type: enumName,
-          modifiers: modifiers || undefined,
-          enumValues: options.options.map((opt) => opt.value),
-          index: options.isIndexed === true ? true : undefined,
-        }
-      }
-
-      // String type (default)
-
-      if (hasDefault) {
-        modifiers += ` @default("${options.defaultValue}")`
-      }
-
-      if (options.db?.map) {
-        modifiers += ` @map("${options.db.map}")`
-      }
-
-      if (options.isIndexed === 'unique') {
-        modifiers += ' @unique'
-      }
-
-      return {
-        type: 'String',
-        modifiers: modifiers || undefined,
-        index: options.isIndexed === true ? true : undefined,
-      }
-    },
     getContractField: (fieldName: string, listName: string) => {
       const hasDefault = options.defaultValue !== undefined
       const nullable = options.db?.isNullable ?? (!options.validation?.isRequired && !hasDefault)
@@ -1379,12 +956,6 @@ export function select<
           values: options.options.map((opt) => opt.value),
         },
       })
-    },
-    getTypeScriptType: () => {
-      return {
-        type: unionType,
-        optional: !options.validation?.isRequired || options.defaultValue !== undefined,
-      }
     },
     // Selects filter by equality against their enumerated options. The token
     // value is matched (case-insensitively) against option value or label and
@@ -1572,76 +1143,6 @@ function nullableOnNonOwningSideMessage(
   )
 }
 
-function getPrismaRelation(
-  field: RelationshipField,
-  fieldName: string,
-  listKey: string,
-  config: OpenSaasConfig,
-): PrismaRelationResult {
-  const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
-  const paddedName = fieldName.padEnd(12)
-
-  // Synthetic back-relation for list-only refs (Prisma requires an opposite field)
-  let backRelation: PrismaRelationResult['backRelation']
-  if (!targetField) {
-    const syntheticFieldName = getSyntheticFieldName(listKey, fieldName)
-    backRelation = {
-      targetList,
-      line: `  ${syntheticFieldName.padEnd(12)} ${listKey}[]  @relation("${listKey}_${fieldName}")`,
-    }
-  }
-
-  if (field.many) {
-    const relationLine = targetField
-      ? `  ${paddedName} ${targetList}[]`
-      : `  ${paddedName} ${targetList}[]  @relation("${listKey}_${fieldName}")`
-
-    return { modelLines: [relationLine], backRelation }
-  }
-
-  // Single relationship
-  if (shouldHaveForeignKey(listKey, fieldName, field, config)) {
-    const foreignKeyField = `${fieldName}Id`
-    const fkPaddedName = foreignKeyField.padEnd(12)
-
-    const uniqueModifier = isOneToOneRelationship(fieldName, field, config) ? ' @unique' : ''
-
-    const mapModifier =
-      typeof field.db?.foreignKey === 'object' && field.db.foreignKey.map
-        ? ` @map("${field.db.foreignKey.map}")`
-        : ` @map("${fieldName}")`
-
-    // Nullability: explicit db.isNullable overrides the default (nullable),
-    // matching the scalar fields' `db.isNullable` convention. It moves the FK
-    // column and its relation field together — they can never disagree.
-    const isNullable = field.db?.isNullable ?? true
-    const nullModifier = isNullable ? '?' : ''
-
-    const fkLine = `  ${fkPaddedName} String${nullModifier}${uniqueModifier}${mapModifier}`
-    const relationLine = targetField
-      ? `  ${paddedName} ${targetList}${nullModifier}  @relation(fields: [${foreignKeyField}], references: [id])`
-      : `  ${paddedName} ${targetList}${nullModifier}  @relation("${listKey}_${fieldName}", fields: [${foreignKeyField}], references: [id])`
-
-    // Default to indexing foreign keys (matching Keystone behaviour) unless disabled
-    const indexType = field.isIndexed ?? true
-    const foreignKeyIndex = indexType !== false ? { foreignKeyField, indexType } : undefined
-
-    return { modelLines: [fkLine, relationLine], foreignKeyField, foreignKeyIndex, backRelation }
-  }
-
-  // Non-FK side of a one-to-one relationship: just the relation field. This
-  // side has no foreign key column, so `db.isNullable` (which only makes
-  // sense paired with a column) cannot be honoured here — reject rather than
-  // silently ignore a developer's stated intent (the FK-owning side is
-  // determined by `db.foreignKey`/alphabetical ordering, not by which field
-  // declares `isNullable`).
-  if (field.db?.isNullable === false) {
-    throw new Error(nullableOnNonOwningSideMessage(listKey, fieldName, targetList, targetField))
-  }
-
-  return { modelLines: [`  ${paddedName} ${targetList}?`], backRelation }
-}
-
 function getContractRelation<TTypeInfo extends import('../config/types.js').TypeInfo>(
   field: RelationshipField<TTypeInfo>,
   fieldName: string,
@@ -1723,13 +1224,6 @@ export function relationship<
     type: 'relationship',
     ...options,
   }
-
-  field.getPrismaRelation = (
-    fieldName: string,
-    _allFields: Record<string, FieldConfig>,
-    listKey: string,
-    config: OpenSaasConfig,
-  ) => getPrismaRelation(field as RelationshipField, fieldName, listKey, config)
 
   field.getContractField = (fieldName: string, listKey: string, config: OpenSaasConfig) =>
     getContractRelation(field, fieldName, listKey, config)
@@ -1869,35 +1363,6 @@ export function json<
         return baseSchema.optional().nullable()
       }
     },
-    getPrismaType: (_fieldName: string) => {
-      const validation = options?.validation
-      const db = options?.db
-      const isRequired = validation?.isRequired
-      const isNullable = db?.isNullable ?? !isRequired
-      let modifiers = ''
-
-      if (isNullable) {
-        modifiers += '?'
-      }
-
-      if (db?.nativeType) {
-        modifiers += ` @db.${db.nativeType}`
-      }
-
-      const defaultLiteral = formatPrismaDefault(options?.defaultValue, 'json')
-      if (defaultLiteral !== undefined) {
-        modifiers += ` @default(${defaultLiteral})`
-      }
-
-      if (db?.map) {
-        modifiers += ` @map("${db.map}")`
-      }
-
-      return {
-        type: 'Json',
-        modifiers: modifiers.trimStart() || undefined,
-      }
-    },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('jsonb'),
@@ -1906,14 +1371,6 @@ export function json<
         map: options?.db?.map,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    getTypeScriptType: () => {
-      const isRequired = options?.validation?.isRequired
-
-      return {
-        type: 'unknown',
-        optional: !isRequired,
-      }
-    },
   }
 }
 
@@ -1934,34 +1391,6 @@ export function typeDescriptorToTypeString(
   const typeName = descriptor.name || descriptor.value.name
 
   return `import('${descriptor.from}').${typeName}`
-}
-
-function typeDescriptorToImports(
-  descriptor: import('../config/types.js').TypeDescriptor,
-): Array<{ names: string[]; from: string; typeOnly?: boolean }> {
-  if (typeof descriptor === 'string') {
-    const importMatch = descriptor.match(/import\('([^']+)'\)\.(\w+)/)
-    if (importMatch) {
-      return [
-        {
-          names: [importMatch[2]],
-          from: importMatch[1],
-          typeOnly: true,
-        },
-      ]
-    }
-    return []
-  }
-
-  // Type object descriptor
-  const typeName = descriptor.name || descriptor.value.name
-  return [
-    {
-      names: [typeName],
-      from: descriptor.from,
-      typeOnly: true,
-    },
-  ]
 }
 
 /**
@@ -2047,7 +1476,6 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
   }
 
   const outputType = typeDescriptorToTypeString(options.type)
-  const imports = typeDescriptorToImports(options.type)
 
   const { type: _, ...rest } = options
 
@@ -2056,16 +1484,7 @@ export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>
     virtual: true,
     outputType,
     ...rest,
-    // undefined signals the generator to skip creating a database column.
-    getPrismaType: undefined,
     getContractField: () => ({ kind: 'computed' }),
-    getTypeScriptType: () => {
-      return {
-        type: outputType,
-        optional: false, // A virtual field always computes a value.
-      }
-    },
-    getTypeScriptImports: imports.length > 0 ? () => imports : undefined,
     // Virtual fields don't accept database input, so validation always fails.
     getZodSchema: () => {
       return z.never()

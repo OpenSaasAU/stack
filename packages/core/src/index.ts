@@ -244,8 +244,8 @@ export { UndefinedAccessFilterError } from './access/index.js'
 export { RelationFilterAccessDeniedError } from './access/index.js'
 
 // Field self-containment validation — checks each field implements the
-// generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
-// getPrismaRelation for relationships) so a misimplemented field fails early
+// generation contract (getContractField / getZodSchema, plus outputType where
+// the field has no single column to be typed from) so a misimplemented field fails early
 // with a clear per-field message instead of deep inside generation.
 export { validateFieldConfig, validateConfigFields } from './validation/field-config.js'
 export type { FieldConfigValidationError } from './validation/field-config.js'

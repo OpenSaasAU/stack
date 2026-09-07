@@ -259,7 +259,7 @@ export type FieldResolveOutputHookArgs<
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 > = {
   operation: 'query'
-  value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+  value: GetFieldValueType<TTypeInfo, TFieldKey>
   /**
    * Exactly the field's declared dependency set plus the list's system
    * fields — what the runtime fetches for it (ADR-0051). Reading a column
@@ -314,8 +314,8 @@ export type FieldHooks<
   resolveInput?: (
     args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
 
   /**
@@ -458,35 +458,9 @@ export type FieldHooks<
   resolveOutput?: (
     args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
-}
-
-/**
- * Configuration for Prisma result extensions
- * Allows fields to transform their runtime values and types in query results
- *
- * Runtime transformation is delegated to the field's resolveOutput hook.
- * This config only specifies the TypeScript output type for generated types.
- */
-export type ResultExtensionConfig = {
-  /**
-   * The TypeScript type to use in query result types
-   * This is a type expression like: "import('@opensaas/stack-core').HashedPassword"
-   *
-   * The actual runtime transformation is performed by the field's resolveOutput hook.
-   * The Prisma extension will automatically call the hook if it exists.
-   *
-   * @example "import('@opensaas/stack-core').HashedPassword"
-   * @example "import('./types').MyCustomType"
-   */
-  outputType: string
-  /**
-   * @deprecated No longer used. Runtime transformations are handled by resolveOutput hooks.
-   * This field is kept for backwards compatibility but should not be used in new code.
-   */
-  compute?: string
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
 }
 
 export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
@@ -505,11 +479,6 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * it (ADR-0027) — not gated behind an explicit `include`/selection.
    */
   virtual?: boolean
-  /**
-   * Prisma result extension configuration
-   * Transforms field values and types in query results using Prisma's native extension system
-   */
-  resultExtension?: ResultExtensionConfig
   /**
    * Database configuration
    */
@@ -651,67 +620,14 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    */
   getZodSchema?: (fieldName: string, operation: 'create' | 'update') => z.ZodTypeAny
   /**
-   * Get Prisma type and modifiers for schema generation
-   * @param fieldName - The name of the field (for generating modifiers)
-   * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
-   * @param listName - Optional list name (used for generating enum type names)
-   * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
-   *   When true, non-null text columns without an explicit defaultValue emit
-   *   `@default("")` to match Keystone 6's implicit empty-string text default.
-   * @returns Prisma type string, optional modifiers, optional enum values, and
-   *   an optional block-level index request
-   */
-  getPrismaType?: (
-    fieldName: string,
-    provider?: string,
-    listName?: string,
-    keystoneCompat?: boolean,
-  ) => {
-    type: string
-    modifiers?: string
-    /**
-     * If set, this field requires a Prisma enum definition with these values.
-     * The enum name is the value of `type`.
-     */
-    enumValues?: string[]
-    /**
-     * If set, this field requires a block-level index on the owning model:
-     * `@@index([fieldName])` for `true`, `@@unique([fieldName])` for
-     * `'unique'`. `false` and `undefined` both mean "no index".
-     *
-     * Prisma has no field-level `@index` attribute — a non-unique index can
-     * ONLY be expressed as the model-level `@@index([...])` — so a field that
-     * wants one has to ask for it out-of-line rather than appending to
-     * {@link modifiers}. (A unique index has both forms available; the
-     * built-in scalars keep emitting the inline `@unique` modifier for that
-     * case, so this channel carries only what cannot be written inline.)
-     *
-     * Same shape as {@link PrismaRelationResult.foreignKeyIndex}, which is how
-     * relationship fields have always emitted their foreign-key indexes. The
-     * generator handles both through one emit pass, so the field stays the
-     * authority on whether it can be indexed by name at all — a multi-column
-     * field (see {@link getPrismaColumns}) has no single column matching its
-     * field name and can decline, or name a real column of its own.
-     */
-    index?: boolean | 'unique'
-  }
-  /**
-   * Get TypeScript type information for type generation
-   * @returns TypeScript type string and optionality
-   */
-  getTypeScriptType?: () => {
-    type: string
-    optional: boolean
-  }
-  /**
    * Declare this field's filtering capability — its {@link FilterSpec} — for the
    * admin UI's Filter builder (ADR-0017). Optional and additive: a field that
    * omits it (like `password`, `json`, `virtual`, or a third-party field that
    * hasn't adopted filtering) is simply not filterable and never suggested, so
    * absence degrades gracefully everywhere.
    *
-   * Self-contained, like {@link getPrismaType} and friends — the filter engine
-   * delegates to each field's spec rather than switching on field type. The
+   * Self-contained, like {@link getContractField} and friends — the filter
+   * engine delegates to each field's spec rather than switching on field type. The
    * returned `toCondition` mapper must stay pure (no DB/Prisma imports); its
    * output is ANDed with the access filter through the secured context.
    *
@@ -727,49 +643,11 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     config: OpenSaasConfig,
   ) => FilterSpec | undefined
   /**
-   * Get TypeScript imports needed for this field's type
-   * @returns Array of import statements needed for the generated types file
-   */
-  getTypeScriptImports?: () => Array<{
-    /**
-     * The type/value names to import
-     * e.g., ['StoredEmbedding', 'EmbeddingMetadata']
-     */
-    names: string[]
-    /**
-     * The module to import from
-     * e.g., '@opensaas/stack-rag'
-     */
-    from: string
-    /**
-     * Whether this is a type-only import
-     * @default true
-     */
-    typeOnly?: boolean
-  }>
-  /**
-   * Multi-column Prisma emission.
-   *
-   * Most scalar fields back a single Prisma column via {@link getPrismaType}.
-   * A field that maps onto SEVERAL physical columns (e.g. the storage
-   * `image()`/`file()` fields in multi-column / Keystone-parity mode — see
-   * ADR-0006) implements this instead: it returns one descriptor per column,
-   * each becoming its own line in the generated model. When present, the
-   * generator emits these lines and skips the single-column `getPrismaType`
-   * path. The field itself owns the column layout — the generator stays a
-   * neutral coordinator (no field-type switches), mirroring how relationship
-   * fields emit FK + relation lines through `getPrismaRelation`.
-   *
-   * @param fieldName - The field's config key (used to derive default column names)
-   * @returns One descriptor per physical column, or `undefined` to fall back to
-   *   the single-column `getPrismaType` path.
-   */
-  getPrismaColumns?: (fieldName: string) => MultiColumnPrismaResult[] | undefined
-  /**
-   * The physical Prisma column names this field owns when it spans multiple
-   * columns (see {@link getPrismaColumns}). The read path uses this to strip the
-   * raw per-part columns from query results so only the assembled logical value
-   * (produced by {@link assembleColumns}) is exposed.
+   * The physical column names this field owns when its
+   * {@link getContractField} descriptor is a multi-column one (`kind:
+   * 'columns'`). The read path uses this to strip the raw per-part columns
+   * from query results so only the assembled logical value (produced by
+   * {@link assembleColumns}) is exposed.
    *
    * @param fieldName - The field's config key
    */
@@ -799,9 +677,7 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * ADR-0049): its stored column(s) as a pack-qualified type constructor with
    * native type, nullability and column mapping; for a relationship, the
    * relation and the foreign-key column this side owns; for a virtual field,
-   * nothing. The PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation`
-   * stay beside it until core's contract derivation lands on this descriptor
-   * (#1133).
+   * nothing.
    *
    * @param fieldName - The field's config key
    * @param listKey - The owning list's key
@@ -904,25 +780,6 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * ```
    */
   needs?: string[]
-}
-
-/**
- * A single physical column contributed by a multi-column field
- * (see {@link BaseFieldConfig.getPrismaColumns}).
- */
-export type MultiColumnPrismaResult = {
-  /** The Prisma model field name (the property the column is declared as). */
-  name: string
-  /** The Prisma scalar type, e.g. `'String'` or `'Int'`. */
-  type: string
-  /**
-   * Field modifiers, e.g. `'?'` for nullable. A leading `'?'` attaches to the
-   * type; anything after it is treated as trailing attributes (matching the
-   * single-column `getPrismaType` modifier convention).
-   */
-  modifiers?: string
-  /** Physical column name for the `@map` attribute, when it differs from `name`. */
-  map?: string
 }
 
 /**
@@ -1464,66 +1321,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       itemView?: RelationshipItemViewConfig
     }
-    /**
-     * Get the complete Prisma schema contribution for this relationship field.
-     *
-     * Relationships are special: unlike scalar fields (which return a single
-     * type via `getPrismaType`), a relationship can contribute a foreign key
-     * line, a relation line on the owning model, and a synthetic back-relation
-     * line on the target model. This method encapsulates all of that logic so
-     * the generator can remain a neutral coordinator.
-     *
-     * @param fieldName - The name of this relationship field
-     * @param allFields - All fields on the list this relationship belongs to
-     * @param listKey - The name of the list this relationship belongs to
-     * @param config - The full OpenSaas config (used to resolve the target list/field)
-     */
-    getPrismaRelation?: (
-      fieldName: string,
-      allFields: Record<string, FieldConfig>,
-      listKey: string,
-      config: OpenSaasConfig,
-    ) => PrismaRelationResult
   }
-
-/**
- * The complete Prisma schema contribution of a relationship field.
- */
-export type PrismaRelationResult = {
-  /**
-   * Lines to add to the owning model.
-   * For an FK-owning single relationship this is `[fkLine, relationLine]`;
-   * for the many side or the non-FK side it is `[relationLine]`.
-   */
-  modelLines: string[]
-  /**
-   * The Prisma-level foreign key field name this side owns (e.g. `authorId`),
-   * regardless of whether it is indexed. `undefined` when this side doesn't
-   * own a foreign key column at all (the many side, or the non-FK side of a
-   * one-to-one). Lets other generator passes resolve a relationship field
-   * name to its physical column — e.g. a model-level composite index
-   * ({@link ListIndex}) naming a relationship field — without duplicating
-   * {@link foreignKeyIndex}'s narrower, indexing-conditional presence.
-   */
-  foreignKeyField?: string
-  /**
-   * Foreign key index to add to the owning model, if this side owns an
-   * indexed foreign key.
-   */
-  foreignKeyIndex?: {
-    foreignKeyField: string
-    indexType: boolean | 'unique'
-  }
-  /**
-   * Synthetic back-relation field to add to the target model. Only present
-   * for list-only refs (e.g., `ref: 'Category'`), where the target model
-   * needs an opposite relation field for Prisma to validate the relation.
-   */
-  backRelation?: {
-    targetList: string
-    line: string
-  }
-}
 
 export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'json'
@@ -1571,11 +1369,6 @@ export type TypeDescriptor =
 export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'virtual'
   virtual: true
-  /**
-   * TypeScript type string for the virtual field output
-   * e.g., 'string', 'number', 'boolean', 'string[]', etc.
-   */
-  outputType: string
 }
 
 /**
@@ -1621,34 +1414,6 @@ type ParseTypeString<T extends string> = T extends 'string'
                 : unknown // Fallback
 
 /**
- * Extract field value type from a field config, in order of authority: the
- * field's `outputType` descriptor, then `resultExtension.outputType`, then
- * `getTypeScriptType()`.
- *
- * @example
- * ExtractFieldValueType<TextField> => string | null | undefined (if optional)
- * ExtractFieldValueType<IntegerField> => number
- * ExtractFieldValueType<PasswordField> => HashedPassword (from outputType)
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any BaseFieldConfig
-type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends {
-  outputType: infer O extends string
-}
-  ? ParseTypeString<O>
-  : TField extends {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
-        outputType: { value: new (...args: any[]) => infer I }
-      }
-    ? I
-    : TField extends { resultExtension: { outputType: infer O } }
-      ? ParseTypeString<O & string>
-      : TField extends { getTypeScriptType(): { type: infer T; optional: infer Opt } }
-        ? Opt extends true
-          ? ParseTypeString<T & string> | null | undefined
-          : ParseTypeString<T & string>
-        : unknown
-
-/**
  * Extract field names as union of string literals
  *
  * @example
@@ -1669,16 +1434,74 @@ export type GetFieldConfig<
   TFieldKey extends FieldKeys<TFields>,
 > = TFields[TFieldKey]
 
+/** Whether `T` is `any`, which `keyof` would otherwise widen a lookup through. */
+type IsAny<T> = 0 extends 1 & T ? true : false
+
 /**
- * Get value type for a specific field
+ * A stored field's value type: the property the generated `Lists.<List>.Item`
+ * carries for it (ADR-0052 — the contract column types the field, and `item`
+ * is where that lands). `unknown` only for a hand-authored `TypeInfo`, whose
+ * `item` carries no per-field facts to read.
+ */
+type StoredFieldValueType<TTypeInfo extends TypeInfo, TFieldKey extends PropertyKey> =
+  IsAny<TTypeInfo['item']> extends true
+    ? unknown
+    : TFieldKey extends keyof TTypeInfo['item']
+      ? TTypeInfo['item'][TFieldKey]
+      : unknown
+
+/**
+ * Whether `TKey` names more than one field. Every branch below is written
+ * non-distributively over a single key, so a union has to be turned away
+ * before it reaches them.
+ */
+type IsSeveralKeys<TKey, TAll = TKey> = TKey extends unknown
+  ? [TAll] extends [TKey]
+    ? false
+    : true
+  : never
+
+/**
+ * One field's value type: its declared `outputType` when its static type
+ * declares one, and otherwise the stored row's property — so a stored field is
+ * typed by its contract column rather than left open.
+ *
+ * `unknown` when `TFieldKey` names several fields. {@link BaseFieldConfig}'s
+ * `hooks` cannot pin a field key — a builder is written before it knows where
+ * it is mounted — so `FieldHooks<TTypeInfo>` instantiates this with every key
+ * on the list. Resolving that union would type each field's hook by the whole
+ * row: a `text()` hook would accept a `Date` and reject its own `string`.
+ * Narrowing it needs the field key threaded into `BaseFieldConfig`, tracked in
+ * issue #1306.
  *
  * @example
- * GetFieldValueType<{ title: TextField }, 'title'> => string
+ * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string
  */
 export type GetFieldValueType<
-  TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
-  TFieldKey extends FieldKeys<TFields>,
-> = ExtractFieldValueType<GetFieldConfig<TFields, TFieldKey>>
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> =
+  IsSeveralKeys<TFieldKey> extends false ? DeclaredOrStoredValueType<TTypeInfo, TFieldKey> : unknown
+
+/**
+ * The resolution for a single field key: `outputType` in either spelling,
+ * falling through to the stored row. Written as tuple comparisons so nothing
+ * distributes and no marker type is needed to spell "declared none" — a
+ * sentinel here would surface verbatim in a consumer's error message.
+ */
+type DeclaredOrStoredValueType<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> = [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+  { outputType: infer O extends string },
+]
+  ? ParseTypeString<O>
+  : [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
+        { outputType: { value: new (...args: any[]) => infer I } },
+      ]
+    ? I
+    : StoredFieldValueType<TTypeInfo, TFieldKey>
 
 /**
  * TypeInfo interface for list type information
@@ -2805,23 +2628,43 @@ export type DatabaseConfig = {
    * Opt into Keystone-compat mode for generated schema defaults.
    *
    * Keystone 6 gives every non-null text column an implicit empty-string
-   * default. With `keystoneCompat: true`, the generator mirrors that: any
-   * non-null `text()` column that has no explicit `defaultValue` emits
-   * `@default("")`, so a migrating project reaches Schema parity without
-   * hand-setting `defaultValue: ''` on dozens of columns.
+   * default. With `keystoneCompat: true`, the contract mirrors that: a
+   * non-null `text()` column that has no explicit `defaultValue` carries `''`,
+   * so a migrating project reaches schema parity without hand-setting
+   * `defaultValue: ''` on dozens of columns.
    *
    * Stays opt-in (default `false`) because a greenfield project would not want
    * implicit empty-string text defaults cluttering its schema. The flag never
    * affects nullable text, fields with an explicit `defaultValue`, or any
    * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
    *
+   * A column default also makes the column optional on the generated create
+   * input, so the compat default is carried only where the field's own create
+   * validator accepts both the omission it fills and `''` itself — the same
+   * verdict an explicit `defaultValue: ''` reaches through
+   * `applyCreateDefaults`.
+   *
+   * **Known limit — the flag is inert for `validation: { isRequired: true }`
+   * and for `validation: { length: { min: N } }` with `N > 0`, and
+   * `isRequired` is Keystone's commonest text column.** Keystone 6 renders
+   * both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own
+   * validator refuses (and `isRequired` refuses the omission besides), so
+   * carrying the default would write a row the config forbids. Full parity
+   * would need the flag to relax the create validator too, which
+   * `getZodSchema` has no config to read. Until then a migrating project sees
+   * `DROP DEFAULT` in `migrate diff` for those columns and must set
+   * `defaultValue: ''` on them by hand — which is refused at runtime for the
+   * same reason, so the validation has to be relaxed alongside it. A column
+   * made non-null through `db: { isNullable: false }` alone still gets the
+   * default, as does one declaring `length: { min: 0 }` or a `length.max`.
+   *
    * @default false
    *
-   * @example Reach Schema parity when migrating from Keystone
+   * @example Reach schema parity when migrating from Keystone
    * ```typescript
    * db: {
    *   provider: 'postgresql',
-   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   keystoneCompat: true, // non-null text without a default → default ''
    *   // ... rest of config
    * }
    * ```

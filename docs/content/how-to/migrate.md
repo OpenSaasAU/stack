@@ -1038,9 +1038,13 @@ If you have custom Prisma types, create custom fields:
 
 ```typescript
 // lib/fields/slug.ts
-import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 
-export type SlugField = BaseFieldConfig & {
+export type SlugField = BaseFieldConfig<TypeInfo> & {
   type: 'slug'
   from?: string
 }
@@ -1049,8 +1053,12 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
   return {
     type: 'slug',
     ...options,
-    getPrismaType: () => ({ type: 'String', modifiers: '' }),
-    getTypeScriptType: () => ({ type: 'string', optional: false }),
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: false,
+    }),
     getZodSchema: () => z.string(),
   }
 }

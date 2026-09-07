@@ -77,13 +77,19 @@ export function file(options): FileFieldConfig {
     type: 'file',
     ...options,
     getZodSchema: () => z.object({ filename: z.string(), url: z.string().url(), ... }).nullable(),
-    getPrismaType: () => ({ type: 'Json', modifiers: '?' }),
-    getTypeScriptType: () => ({ type: 'import("@opensaas/stack-storage").FileMetadata | null', optional: true }),
+    outputType: 'import("@opensaas/stack-storage").FileMetadata | null',
+    inputType: 'File | import("@opensaas/stack-storage").FileMetadata | null',
+    getContractField: (fieldName) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: true,
+    }),
   }
 }
 ```
 
-No changes to core generators - fields define their own Prisma/TS types.
+No changes to core generators - fields describe their own columns and TypeScript face.
 
 ### Storage Provider Interface
 

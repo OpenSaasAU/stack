@@ -6,7 +6,7 @@
  * implicit-AND tokens, quoted multi-word values, comparison operators on
  * numeric/date fields, and bare words as free text. Fields participate by
  * declaring a {@link FilterSpec} (a self-contained field-builder method, peer
- * of `getPrismaType` et al.); a field without one is not filterable.
+ * of `getContractField` et al.); a field without one is not filterable.
  *
  * These types are the pure boundary — no Prisma / DB imports — so the
  * `parse → tokens` and `tokens + specs → conditions` seam is unit-testable.

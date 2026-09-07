@@ -433,12 +433,13 @@ init: async (context) => {
         lng: z.number(),
       })
     },
-    getPrismaType: (fieldName) => {
-      return { type: 'Json', modifiers: '' }
-    },
-    getTypeScriptType: () => {
-      return { type: '{ lat: number, lng: number }', optional: false }
-    },
+    getContractField: (fieldName) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: false,
+    }),
+    outputType: '{ lat: number; lng: number }',
   }))
 }
 ```

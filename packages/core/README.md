@@ -184,10 +184,14 @@ text({
 Field types are fully self-contained:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type MyCustomField = BaseFieldConfig & {
+export type MyCustomField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'myCustom'
   customOption?: string
 }
@@ -196,15 +200,13 @@ export function myCustom(options?: Omit<MyCustomField, 'type'>): MyCustomField {
   return {
     type: 'myCustom',
     ...options,
-    getZodSchema: (fieldName, operation) => {
-      return z.string().optional()
-    },
-    getPrismaType: (fieldName) => {
-      return { type: 'String', modifiers: '?' }
-    },
-    getTypeScriptType: () => {
-      return { type: 'string', optional: true }
-    },
+    getZodSchema: (fieldName, operation) => z.string().optional(),
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+    }),
   }
 }
 ```

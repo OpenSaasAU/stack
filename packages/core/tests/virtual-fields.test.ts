@@ -113,24 +113,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       expect(field.outputType).toBe("import('decimal.js').Decimal")
     })
 
-    test('generates TypeScript imports from import string', () => {
-      const field = virtual({
-        type: "import('decimal.js').Decimal",
-        hooks: {
-          resolveOutput: ({ item }) => new Decimal(item.price),
-        },
-      })
-
-      expect(field.getTypeScriptImports).toBeDefined()
-      const imports = field.getTypeScriptImports!()
-      expect(imports).toHaveLength(1)
-      expect(imports[0]).toEqual({
-        names: ['Decimal'],
-        from: 'decimal.js',
-        typeOnly: true,
-      })
-    })
-
     test('handles complex import paths', () => {
       const field = virtual({
         type: "import('@myorg/custom-types').MyCustomType",
@@ -140,12 +122,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       })
 
       expect(field.outputType).toBe("import('@myorg/custom-types').MyCustomType")
-      const imports = field.getTypeScriptImports!()
-      expect(imports[0]).toEqual({
-        names: ['MyCustomType'],
-        from: '@myorg/custom-types',
-        typeOnly: true,
-      })
     })
   })
 
@@ -161,24 +137,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       expect(field.outputType).toBe("import('decimal.js').Decimal")
     })
 
-    test('generates TypeScript imports from type descriptor', () => {
-      const field = virtual({
-        type: { value: Decimal, from: 'decimal.js' },
-        hooks: {
-          resolveOutput: ({ item }) => new Decimal(item.price),
-        },
-      })
-
-      expect(field.getTypeScriptImports).toBeDefined()
-      const imports = field.getTypeScriptImports!()
-      expect(imports).toHaveLength(1)
-      expect(imports[0]).toEqual({
-        names: ['Decimal'],
-        from: 'decimal.js',
-        typeOnly: true,
-      })
-    })
-
     test('uses custom name when provided', () => {
       const field = virtual({
         type: { value: Decimal, from: 'decimal.js', name: 'CustomDecimal' },
@@ -188,12 +146,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       })
 
       expect(field.outputType).toBe("import('decimal.js').CustomDecimal")
-      const imports = field.getTypeScriptImports!()
-      expect(imports[0]).toEqual({
-        names: ['CustomDecimal'],
-        from: 'decimal.js',
-        typeOnly: true,
-      })
     })
 
     test('works with custom classes', () => {
@@ -205,65 +157,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       })
 
       expect(field.outputType).toBe("import('./types').CustomType")
-      const imports = field.getTypeScriptImports!()
-      expect(imports[0]).toEqual({
-        names: ['CustomType'],
-        from: './types',
-        typeOnly: true,
-      })
-    })
-  })
-
-  describe('getTypeScriptType', () => {
-    test('returns correct type for primitive string', () => {
-      const field = virtual({
-        type: 'string',
-        hooks: {
-          resolveOutput: ({ item }) => item.name,
-        },
-      })
-
-      const tsType = field.getTypeScriptType!()
-      expect(tsType.type).toBe('string')
-      expect(tsType.optional).toBe(false)
-    })
-
-    test('returns correct type for import string', () => {
-      const field = virtual({
-        type: "import('decimal.js').Decimal",
-        hooks: {
-          resolveOutput: ({ item }) => new Decimal(item.value),
-        },
-      })
-
-      const tsType = field.getTypeScriptType!()
-      expect(tsType.type).toBe("import('decimal.js').Decimal")
-      expect(tsType.optional).toBe(false)
-    })
-
-    test('returns correct type for type descriptor', () => {
-      const field = virtual({
-        type: { value: Decimal, from: 'decimal.js' },
-        hooks: {
-          resolveOutput: ({ item }) => new Decimal(item.value),
-        },
-      })
-
-      const tsType = field.getTypeScriptType!()
-      expect(tsType.type).toBe("import('decimal.js').Decimal")
-      expect(tsType.optional).toBe(false)
-    })
-
-    test('virtual fields are never optional', () => {
-      const field = virtual({
-        type: 'string',
-        hooks: {
-          resolveOutput: ({ item }) => item.value || 'default',
-        },
-      })
-
-      const tsType = field.getTypeScriptType!()
-      expect(tsType.optional).toBe(false)
     })
   })
 
@@ -288,8 +181,8 @@ describe('Virtual Fields with TypeDescriptor', () => {
     })
   })
 
-  describe('getPrismaType', () => {
-    test('returns undefined to skip database column creation', () => {
+  describe('getContractField', () => {
+    test('contributes nothing storable — no column is emitted for it', () => {
       const field = virtual({
         type: 'string',
         hooks: {
@@ -297,7 +190,11 @@ describe('Virtual Fields with TypeDescriptor', () => {
         },
       })
 
-      expect(field.getPrismaType).toBeUndefined()
+      expect(
+        field.getContractField!('computed', 'Post', { db: { provider: 'postgresql' }, lists: {} }),
+      ).toEqual({
+        kind: 'computed',
+      })
     })
   })
 
@@ -329,15 +226,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
 
       expect(field.type).toBe('virtual')
       expect(field.outputType).toBe("import('decimal.js').Decimal")
-
-      const imports = field.getTypeScriptImports!()
-      expect(imports).toEqual([
-        {
-          names: ['Decimal'],
-          from: 'decimal.js',
-          typeOnly: true,
-        },
-      ])
     })
 
     test('Complex computed field with multiple operations', () => {
@@ -365,7 +253,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
       })
 
       expect(field.outputType).toBe('string')
-      expect(field.getTypeScriptImports).toBeUndefined()
     })
 
     test('Array transformation', () => {
@@ -394,7 +281,6 @@ describe('Virtual Fields with TypeDescriptor', () => {
 
       expect(field.type).toBe('virtual')
       expect(field.outputType).toBe('string')
-      expect(field.getTypeScriptImports).toBeUndefined()
     })
 
     test('existing field configuration is preserved', () => {

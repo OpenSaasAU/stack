@@ -340,7 +340,7 @@ Run with `pnpm generate` to convert `opensaas.config.ts` into Prisma schema and 
 3. **`.opensaas/types.ts`** - TypeScript type definitions
 4. **`.opensaas/context.ts`** - Context factory with Prisma Client
 
-**Architecture:** Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic through `getPrismaType()` and `getTypeScriptType()` methods.
+**Architecture:** Generators delegate to the field builder rather than using switch statements. Each field type describes what it contributes to the contract through `getContractField()`, and the column's codec types it from there.
 
 **Prisma 7 Configuration:**
 
@@ -501,13 +501,15 @@ An entry naming a field the list doesn't have, a virtual field, a to-many relati
 
 - `richText()` from `@opensaas/stack-tiptap/fields` - Rich text editor with JSON storage
 
-**Field Builder Methods:**
+**Field Builder Contract:**
 
-Each field builder function returns an object with these methods:
+Each field builder function returns an object declaring:
 
 1. **`getZodSchema(fieldName, operation)`** - Validation schema generation
-2. **`getPrismaType(fieldName)`** - Prisma type and modifiers (e.g., `{ type: "String", modifiers: "?" }`)
-3. **`getTypeScriptType()`** - TypeScript type and optionality (e.g., `{ type: "string", optional: true }`)
+2. **`getContractField(fieldName, listKey, config)`** - what the field contributes to the contract: `{ kind: 'column' }` (inline column descriptor), `{ kind: 'columns' }`, `{ kind: 'relation' }`, or `{ kind: 'computed' }` for a virtual field
+3. **`outputType`** / **`inputType`** - the TypeScript read and write faces, when they differ from the column's codec type. `outputType` is **required** on a virtual field and on a `kind: 'columns'` field, neither of which has a single column to be typed from. `inputType` is never required by the generator — on a single-column field its absence means the column's own input type, and a `kind: 'columns'` field, which has no single column for that to name, should declare it alongside `outputType`
+
+`opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member.
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
 
@@ -1100,7 +1102,7 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
 1. **Define the field type** in `packages/core/src/config/types.ts`:
 
    ```typescript
-   export type MyCustomField = BaseFieldConfig & {
+   export type MyCustomField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
      type: 'myCustom'
      customOption?: string
    }
@@ -1117,14 +1119,13 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
          // Return Zod schema for validation
          return z.string().optional()
        },
-       getPrismaType: (fieldName) => {
-         // Return Prisma type and modifiers
-         return { type: 'String', modifiers: '?' }
-       },
-       getTypeScriptType: () => {
-         // Return TypeScript type and optionality
-         return { type: 'string', optional: true }
-       },
+       getContractField: (fieldName) => ({
+         // Describe the stored column
+         kind: 'column',
+         name: fieldName,
+         type: { pack: 'pg', type: 'text' },
+         nullable: true,
+       }),
      }
    }
    ```
@@ -1257,7 +1258,7 @@ The stack supports third-party field packages as separate npm packages. This all
 packages/my-field/
 ├── src/
 │   ├── fields/
-│   │   └── myField.ts          # Field builder with Zod/Prisma/TS generators
+│   │   └── myField.ts          # Field builder: Zod schema + contract descriptor
 │   ├── components/
 │   │   └── MyFieldComponent.tsx # React component (client-side)
 │   ├── styles/
@@ -1272,26 +1273,29 @@ packages/my-field/
 1. **Field Builder** - Must implement `BaseFieldConfig`:
 
    ```typescript
-   import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+   import type {
+     BaseFieldConfig,
+     ContractFieldDescriptor,
+     TypeInfo,
+   } from '@opensaas/stack-core/extend'
+   import { z } from 'zod'
 
-   export type MyField = BaseFieldConfig & {
+   export type MyField = BaseFieldConfig<TypeInfo> & {
      type: 'myField'
      // Your custom options
    }
 
-   export function myField(options?): MyField {
+   export function myField(options?: Omit<MyField, 'type'>): MyField {
      return {
        type: 'myField',
        ...options,
-       getZodSchema: (fieldName, operation) => {
-         /* ... */
-       },
-       getPrismaType: (fieldName) => {
-         /* ... */
-       },
-       getTypeScriptType: () => {
-         /* ... */
-       },
+       getZodSchema: (fieldName, operation) => z.string().optional(),
+       getContractField: (fieldName): ContractFieldDescriptor => ({
+         kind: 'column',
+         name: fieldName,
+         type: { pack: 'pg', type: 'text' },
+         nullable: true,
+       }),
      }
    }
    ```
@@ -1333,12 +1337,9 @@ packages/my-field/
 
 4. **FieldConfig Extensibility** - Core types support third-party fields:
    ```typescript
-   // FieldConfig union includes BaseFieldConfig to allow custom types
-   export type FieldConfig =
-     | TextField
-     | IntegerField
-     | ...
-     | BaseFieldConfig; // Allows third-party fields
+   // FieldConfig is BaseFieldConfig itself, so any field a third-party
+   // package builds is already a FieldConfig — no union to extend.
+   export type FieldConfig = BaseFieldConfig<TypeInfo>
    ```
 
 **See:**

@@ -174,8 +174,6 @@ describe('image()/file() nullability is one decision', () => {
       expect(avatar.inputType).toBe("File | import('@opensaas/stack-storage').ImageMetadata")
       expect(resume.outputType).toBe("import('@opensaas/stack-storage').FileMetadata")
       expect(resume.inputType).toBe("File | import('@opensaas/stack-storage').FileMetadata")
-      expect(avatar.resultExtension?.outputType).toBe(avatar.outputType)
-      expect(resume.resultExtension?.outputType).toBe(resume.outputType)
     })
 
     for (const operation of ['create', 'update'] as const) {

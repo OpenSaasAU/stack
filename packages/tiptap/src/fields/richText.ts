@@ -55,25 +55,11 @@ export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
         return baseSchema.optional()
       }
     },
-    getPrismaType: () => {
-      const isRequired = options?.validation?.isRequired
-
-      return {
-        type: 'Json',
-        modifiers: isRequired ? undefined : '?',
-      }
-    },
     getContractField: (fieldName: string): ContractFieldDescriptor => ({
       kind: 'column',
       name: fieldName,
       type: { pack: 'pg', type: 'jsonb' },
       nullable: !isRequired,
     }),
-    getTypeScriptType: () => {
-      return {
-        type: 'any',
-        optional: !isRequired,
-      }
-    },
   }
 }

@@ -1995,9 +1995,9 @@ createdAt: timestamp({ defaultValue: { kind: 'now' } })
 
 ---
 
-## Field Builder Methods
+## Field Builder Contract
 
-Every field configuration object implements these methods used by generators and validators:
+Every field configuration object declares what the generators and validators delegate to it for. `opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member.
 
 ### `getZodSchema(fieldName, operation)`
 
@@ -2037,101 +2037,85 @@ getZodSchema: (fieldName, operation) => {
 
 ---
 
-### `getPrismaType(fieldName)`
+### `getContractField(fieldName, listKey, config)`
 
-Returns Prisma type and modifiers for schema generation.
+Describes what the field contributes to the generated contract (ADR-0040, ADR-0049): its stored column or columns, its relation and foreign key, or nothing at all.
 
 **Signature:**
 
 ```typescript
-getPrismaType(fieldName: string): {
-  type: string
-  modifiers?: string
-}
+getContractField(
+  fieldName: string,
+  listKey: string,
+  config: OpenSaasConfig,
+): ContractFieldDescriptor
 ```
 
 **Parameters:**
 
-- `fieldName` - Field name (used for generating field-specific modifiers)
+- `fieldName` - The field's config key
+- `listKey` - The owning list's key
+- `config` - The full config (a relationship resolves its target and foreign-key ownership from it)
 
-**Returns:** Object with:
+**Returns:** one of four descriptor shapes:
 
-- `type` - Prisma scalar type (`String`, `Int`, `Boolean`, `DateTime`, `Json`)
-- `modifiers` - Optional Prisma modifiers (`?`, `@default(...)`, `@unique`, `@index`)
+| `kind`       | For                                   | Carries                                  |
+| ------------ | ------------------------------------- | ---------------------------------------- |
+| `'column'`   | a stored field backed by one column   | the column descriptor, inline            |
+| `'columns'`  | one field spanning several columns    | `columns: ContractColumnDescriptor[]`    |
+| `'relation'` | a relationship                        | the relation and the foreign key it owns |
+| `'computed'` | a virtual field, which stores nothing | nothing                                  |
+
+A column descriptor carries `name`, a pack-qualified `type` (`{ pack, type, args? }`), `nullable`, and optionally `nativeType`, `map`, `unique`, `index`, `default` and `enum`.
 
 **Example implementation:**
 
 ```typescript
-getPrismaType: (fieldName) => {
-  return {
-    type: 'String',
-    modifiers: options?.validation?.isRequired ? undefined : '?',
-  }
-}
+getContractField: (fieldName) => ({
+  kind: 'column',
+  name: fieldName,
+  type: { pack: 'pg', type: 'text' },
+  nullable: !options?.validation?.isRequired,
+})
 ```
 
 ---
 
-### `getTypeScriptType()`
+### `outputType`
 
-Returns TypeScript type information for type generation.
+The field's TypeScript read face, when it differs from the type its contract column's codec already gives it (ADR-0052). Not a method — a value on the field config, a `TypeDescriptor`.
 
 **Signature:**
 
 ```typescript
-getTypeScriptType(): {
-  type: string
-  optional: boolean
-}
+outputType?: TypeDescriptor
 ```
 
-**Returns:** Object with:
+`TypeDescriptor` is itself `string | { value: SomeClass; from: 'pkg'; name?: 'Exported' }`. A type string is used as written; `import('pkg').Name` is inlined, so no separate import declaration is needed. The object form is normalised to the same thing.
 
-- `type` - TypeScript type string (e.g., `'string'`, `'number'`, `'boolean'`, `'Date'`)
-- `optional` - Whether the field is optional in TypeScript
+**Required** on a virtual field and on a field whose descriptor is `kind: 'columns'`: neither has a single column to be typed from, so without it the field would type its consumers as `unknown`. `opensaas generate` refuses a config where one is missing, naming the list and field.
 
-**Example implementation:**
+**Optional** on a single-column stored field, where it is an override of the codec's own type.
+
+**Example:**
 
 ```typescript
-getTypeScriptType: () => {
-  return {
-    type: 'string',
-    optional: !options?.validation?.isRequired,
-  }
-}
+outputType: "import('@opensaas/stack-storage').ImageMetadata | null"
 ```
 
 ---
 
-### `getTypeScriptImports()`
+### `inputType`
 
-Returns TypeScript imports needed for this field's type (optional).
+The field's TypeScript write face, when it differs from the read face — an `image()` accepts a `File` but reads back metadata.
 
 **Signature:**
 
 ```typescript
-getTypeScriptImports(): Array<{
-  names: string[]
-  from: string
-  typeOnly?: boolean
-}>
+inputType?: TypeDescriptor
 ```
 
-**Returns:** Array of import specifications
-
-**Example implementation:**
-
-```typescript
-getTypeScriptImports: () => {
-  return [
-    {
-      names: ['HashedPassword'],
-      from: '@opensaas/stack-core',
-      typeOnly: false,
-    },
-  ]
-}
-```
+`opensaas generate` never requires it. On a single-column field, absence means the column's own input type, which is correct for every field that reads and writes the same shape. A `kind: 'columns'` field has no single column for that to name, so declare `inputType` alongside `outputType` there.
 
 ---
 
@@ -2140,11 +2124,16 @@ getTypeScriptImports: () => {
 Custom field types must implement the `BaseFieldConfig` interface:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type EmailField = BaseFieldConfig & {
+export type EmailField = BaseFieldConfig<TypeInfo> & {
   type: 'email'
+  validation?: { isRequired?: boolean }
   requireVerification?: boolean
 }
 
@@ -2160,19 +2149,12 @@ export function email(options?: Omit<EmailField, 'type'>): EmailField {
       return options?.validation?.isRequired ? schema : schema.optional()
     },
 
-    getPrismaType: (fieldName) => {
-      return {
-        type: 'String',
-        modifiers: options?.validation?.isRequired ? undefined : '?',
-      }
-    },
-
-    getTypeScriptType: () => {
-      return {
-        type: 'string',
-        optional: !options?.validation?.isRequired,
-      }
-    },
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: !options?.validation?.isRequired,
+    }),
   }
 }
 ```
@@ -2180,7 +2162,7 @@ export function email(options?: Omit<EmailField, 'type'>): EmailField {
 **Key principles:**
 
 1. Extend `BaseFieldConfig` with your field's options
-2. Implement all three generator methods
+2. Implement `getZodSchema` and `getContractField`; add `outputType` when the field has no single column to be typed from
 3. Use field-level hooks for data transformation
 4. Field types are self-contained (no switch statements in core)
 

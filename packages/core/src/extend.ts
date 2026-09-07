@@ -15,7 +15,6 @@ export type {
   BaseFieldConfig,
   TypeInfo,
   TypeDescriptor,
-  MultiColumnPrismaResult,
   ContractLiteral,
   ColumnTypeDescriptor,
   ColumnDefaultDescriptor,

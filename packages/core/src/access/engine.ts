@@ -62,7 +62,7 @@ export interface SyntheticReverseRelation {
  * `ref` (`ref: 'ListName'`, no target field) generates on its target model —
  * Prisma requires an opposite field there, but the config never declares one,
  * so it never appears in `parentListName`'s own `fields`. Reuses
- * `getSyntheticFieldName` (the same construction `getPrismaRelation` emits the
+ * `getSyntheticFieldName` (the same construction `getContractField` reports the
  * schema with) rather than re-deriving the `from_<List>_<field>` format by
  * string parsing, so the two cannot drift (#978).
  *

@@ -5,7 +5,7 @@
 
 `file()`, `image()` and `richText()` describe their columns and their TypeScript face through the contract-shaped field-builder surface
 
-Each builder now carries `getContractField`, which is what `opensaas generate` reads to derive the Contract, and declares its TypeScript face through `outputType`/`inputType` rather than `getTypeScriptType`/`getTypeScriptImports`/`resultExtension`. The old methods are still declared — nothing calls them at generation time any more.
+Each builder now carries `getContractField`, which is what `opensaas generate` reads to derive the Contract, and declares its TypeScript face through `outputType`/`inputType`. The `getTypeScriptType`/`getTypeScriptImports`/`resultExtension` members these replace are removed from the field-builder contract in this same release.
 
 `image()`/`file()` in Keystone-parity multi-column mode return the `kind: 'columns'` variant, so one logical field still emits its per-part physical columns:
 

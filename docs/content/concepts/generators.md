@@ -86,18 +86,20 @@ const context = await getContext({ userId: '123' })
 
 ## Generator Architecture
 
-Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic:
+Generators delegate to the field builder rather than using switch statements. Each field type describes what it contributes to the contract, and the generator reads that:
 
 ```typescript
 text({
-  getPrismaType: (fieldName) => {
-    return { type: 'String', modifiers: '?' }
-  },
-  getTypeScriptType: () => {
-    return { type: 'string', optional: true }
-  },
+  getContractField: (fieldName) => ({
+    kind: 'column',
+    name: fieldName,
+    type: { pack: 'pg', type: 'text' },
+    nullable: true,
+  }),
 })
 ```
+
+The column's codec then types the field on both faces, so a field only declares `outputType` when it needs a different one — which a virtual or multi-column field always does, since it has no single column to be typed from.
 
 This allows field types to be fully self-contained and extensible.
 

@@ -522,7 +522,14 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
  *   out of scope (ADR-0048) and refused before derivation.
  * - `db.nativeType` is folded only for the Postgres pack's own constructors;
  *   an extension type's native-type override is not supported.
- * - `keystoneCompat`'s implicit `""` text default is not carried.
+ * - `keystoneCompat`'s implicit `""` text default is carried only where the
+ *   field's own create validator accepts both an omission and `""`. A
+ *   `validation.isRequired` text column therefore keeps no default — carrying
+ *   one would drop the column from the required half of the generated create
+ *   input while the validator still refused the omission — and neither does a
+ *   `validation.length.min` above zero, whose validator refuses the `""` the
+ *   default would insert. That leaves the flag inert for Keystone's commonest
+ *   text column.
  */
 export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])

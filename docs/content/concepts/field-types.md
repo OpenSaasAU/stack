@@ -848,10 +848,14 @@ text({
 You can create custom field types by implementing the `BaseFieldConfig` interface:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type SlugField = BaseFieldConfig & {
+export type SlugField = BaseFieldConfig<TypeInfo> & {
   type: 'slug'
   from?: string // Field to generate slug from
 }
@@ -866,12 +870,12 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
         .regex(/^[a-z0-9-]+$/)
         .optional()
     },
-    getPrismaType: (fieldName) => {
-      return { type: 'String', modifiers: '?' }
-    },
-    getTypeScriptType: () => {
-      return { type: 'string', optional: true }
-    },
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+    }),
   }
 }
 ```
@@ -905,9 +909,9 @@ Validation errors are thrown during create/update operations and include:
 - Error type
 - Validation rule that failed
 
-## Field Methods
+## The Field Builder Contract
 
-Every field config object provides these methods used by the generator:
+Every field config object declares what the generator delegates to it for.
 
 ### `getZodSchema(fieldName, operation)`
 
@@ -926,25 +930,32 @@ getZodSchema: (fieldName, operation) => {
 }
 ```
 
-### `getPrismaType(fieldName)`
+### `getContractField(fieldName, listKey, config)`
 
-Returns the Prisma type and modifiers:
-
-```typescript
-getPrismaType: (fieldName) => {
-  return { type: 'String', modifiers: '?' }
-}
-```
-
-### `getTypeScriptType()`
-
-Returns the TypeScript type and optionality:
+Returns what the field contributes to the generated contract — its column, its columns, its relation, or nothing:
 
 ```typescript
-getTypeScriptType: () => {
-  return { type: 'string', optional: true }
-}
+getContractField: (fieldName) => ({
+  kind: 'column',
+  name: fieldName,
+  type: { pack: 'pg', type: 'text' },
+  nullable: true,
+})
 ```
+
+The four descriptor kinds are `'column'` (one stored column, inline), `'columns'` (several), `'relation'` (a relationship and the foreign key it owns), and `'computed'` (a virtual field, which stores nothing).
+
+### `outputType`
+
+The field's TypeScript read face, when its contract column's codec does not already give it the right one. A value, not a method — either a type string or a `TypeDescriptor`:
+
+```typescript
+outputType: "import('@opensaas/stack-storage').ImageMetadata | null"
+```
+
+Required on a virtual field and on a `kind: 'columns'` field: neither has a single column to be typed from, so `opensaas generate` refuses one that omits it. Optional everywhere else, where it is an override.
+
+`inputType` follows the same shape for the write face. `opensaas generate` never requires it: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it alongside `outputType` — every multi-column field in this repo does.
 
 ## Best Practices
 

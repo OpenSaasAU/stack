@@ -3,7 +3,6 @@ import type {
   ContractColumnDescriptor,
   ContractFieldDescriptor,
   TypeInfo,
-  MultiColumnPrismaResult,
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
@@ -308,13 +307,6 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
     inputType: faces.inputType,
     ...restOptions,
 
-    // Override Prisma's Json type with FileMetadata | null in context.db types.
-    // Multi-column mode adds the same logical field back via TransformedFields
-    // while the raw per-part columns are stripped from the payload.
-    resultExtension: {
-      outputType: faces.outputType,
-    },
-
     hooks: {
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
@@ -392,42 +384,12 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
       return applyNullability(fileMetadataSchema, nullable, operation)
     },
 
-    getPrismaType: (_fieldName: string) => {
-      return { type: 'Json', modifiers: '?' }
-    },
-
     getContractField: (fieldName: string): ContractFieldDescriptor =>
       metadataColumn(fieldName, options.db),
-
-    getTypeScriptType: () => {
-      return {
-        type: 'FileMetadata | null',
-        optional: true,
-      }
-    },
-
-    getTypeScriptImports: () => {
-      return [
-        {
-          names: ['FileMetadata'],
-          from: '@opensaas/stack-storage',
-          typeOnly: true,
-        },
-      ]
-    },
   }
 
-  // Only attached in multi-column mode; the single-Json? default is unaffected.
+  // Only attached in multi-column mode; the single-column jsonb default is unaffected.
   if (multiColumn) {
-    fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
-      const map = columnMapFor(fieldName)
-      return fileColumnDescriptors(map, fileParts).map((col) => ({
-        name: col.name,
-        type: col.type,
-        modifiers: '?',
-        map: col.map,
-      }))
-    }
     fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor => {
       refuseNullabilityOverride(options.db)
       return partColumns(fileColumnDescriptors(columnMapFor(fieldName), fileParts))
@@ -482,13 +444,6 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
     outputType: faces.outputType,
     inputType: faces.inputType,
     ...restOptions,
-
-    // Override Prisma's Json type with ImageMetadata | null in context.db types.
-    // Multi-column mode adds the same logical field back via TransformedFields
-    // while the raw per-part columns are stripped from the payload.
-    resultExtension: {
-      outputType: faces.outputType,
-    },
 
     hooks: {
       // Keystone-compliant field resolveInput args: the field value lives at
@@ -592,42 +547,12 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
       return applyNullability(imageMetadataSchema, nullable, operation)
     },
 
-    getPrismaType: (_fieldName: string) => {
-      return { type: 'Json', modifiers: '?' }
-    },
-
     getContractField: (fieldName: string): ContractFieldDescriptor =>
       metadataColumn(fieldName, options.db),
-
-    getTypeScriptType: () => {
-      return {
-        type: 'ImageMetadata | null',
-        optional: true,
-      }
-    },
-
-    getTypeScriptImports: () => {
-      return [
-        {
-          names: ['ImageMetadata'],
-          from: '@opensaas/stack-storage',
-          typeOnly: true,
-        },
-      ]
-    },
   }
 
-  // Only attached in multi-column mode; the single-Json? default is unaffected.
+  // Only attached in multi-column mode; the single-column jsonb default is unaffected.
   if (multiColumn) {
-    fieldConfig.getPrismaColumns = (fieldName: string): MultiColumnPrismaResult[] => {
-      const map = columnMapFor(fieldName)
-      return imageColumnDescriptors(map).map((col) => ({
-        name: col.name,
-        type: col.type,
-        modifiers: '?',
-        map: col.map,
-      }))
-    }
     fieldConfig.getContractField = (fieldName: string): ContractFieldDescriptor => {
       refuseNullabilityOverride(options.db)
       return partColumns(imageColumnDescriptors(columnMapFor(fieldName)))

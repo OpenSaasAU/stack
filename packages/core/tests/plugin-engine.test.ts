@@ -960,8 +960,12 @@ describe('Plugin Engine', () => {
       const customFieldBuilder = () => ({
         type: 'customField',
         getZodSchema: () => undefined,
-        getPrismaType: () => ({ type: 'String', modifiers: '' }),
-        getTypeScriptType: () => ({ type: 'string', optional: false }),
+        getContractField: (fieldName: string) => ({
+          kind: 'column',
+          name: fieldName,
+          type: { pack: 'pg', type: 'text' },
+          nullable: false,
+        }),
       })
 
       let registeredBuilder
@@ -991,8 +995,12 @@ describe('Plugin Engine', () => {
       const customFieldBuilder = () => ({
         type: 'customField',
         getZodSchema: () => undefined,
-        getPrismaType: () => ({ type: 'String', modifiers: '' }),
-        getTypeScriptType: () => ({ type: 'string', optional: false }),
+        getContractField: (fieldName: string) => ({
+          kind: 'column',
+          name: fieldName,
+          type: { pack: 'pg', type: 'text' },
+          nullable: false,
+        }),
       })
 
       const plugin: Plugin = {
