@@ -1033,6 +1033,41 @@ export type ${listName}UpdateManyArgs = {
  * (`TS2321: Excessive stack depth comparing types`) against a schema whose
  * `GetPayload`s cross-reference each other, even though the resulting type
  * is structurally identical either way.
+ *
+ * A third, trailing, NON-generic member closes each of those three methods
+ * (plus singleton `get`) — see #1287: a two-member overload set (fragment,
+ * then the generic `SelectSubset`-based member) is not assignable to a plain
+ * structural seam (`{ findUnique(args: { where: {...} }): Promise<...> }`,
+ * the pattern #1214 itself recommends for keeping app code off the generated
+ * types) once `SelectSubset` carries Prisma's real conditional-intersection
+ * shape — TypeScript rejects the whole overloaded member against the
+ * seam's single signature. The same two-member shape also breaks
+ * `Parameters<typeof db.<list>.findMany>`, which resolves against an
+ * overloaded type's LAST member only: with the generic member last, the
+ * unresolved `T` collapses to `never`. Verified empirically (not from the
+ * TS spec, which does not document either behaviour): adding this third,
+ * concrete member fixes both, and its position among the three doesn't
+ * matter for assignability. It sits last because overload resolution tries
+ * members in declaration order and this one must never win a real call:
+ * kept last, a normal call (bare, or with `select`/`include`) still matches
+ * the generic member first and keeps its `T`-narrowed `{List}GetPayload<T>`
+ * return.
+ *
+ * The third member's parameter type deliberately OMITS `select`/`include`/
+ * `query` (`Pick<..., 'where'>` for `findUnique`, `Omit<..., 'select' |
+ * 'include' | 'query'>` elsewhere) rather than reusing the full
+ * `{List}FindXArgs` as-is. `{List}FindXArgs` declares `select`/`include` as
+ * independently optional, with none of `Prisma.SelectSubset`'s
+ * `SelectAndInclude`/`SelectAndOmit` exclusivity check the generic member
+ * enforces — an unrestricted third member would give overload resolution a
+ * fallback that silently accepts `{ select, include }` together (a
+ * combination Prisma itself forbids) the moment the generic member's guard
+ * rejects it. Stripping those keys here closes that hole: a literal call
+ * providing `select`/`include`/`query` no longer structurally matches this
+ * member at all (an excess property on a call to a member that doesn't
+ * declare it), so it can only ever be reached by the two things it exists
+ * for — the seam-assignability and `Parameters<>` checks above — never by a
+ * real call.
  */
 function generateListCrudInterface(listName: string, isSingleton: boolean): string {
   const lines: string[] = []
@@ -1053,6 +1088,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindUniqueArgs>(`)
   lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
   lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(
+    `    (args: Pick<${listName}FindUniqueArgs, 'where'>): Promise<${listName}GetPayload<${listName}FindUniqueArgs> | null>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  findFirst: {`)
@@ -1067,6 +1105,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindFirstArgs>(`)
   lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
   lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(
+    `    (args?: Omit<${listName}FindFirstArgs, 'select' | 'include' | 'query'>): Promise<${listName}GetPayload<${listName}FindFirstArgs> | null>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  findMany: {`)
@@ -1082,6 +1123,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindManyArgs>(`)
   lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
   lines.push(`    ): Promise<Array<${listName}GetPayload<T>>>`)
+  lines.push(
+    `    (args?: Omit<${listName}FindManyArgs, 'select' | 'include' | 'query'>): Promise<Array<${listName}GetPayload<${listName}FindManyArgs>>>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  create: <T extends ${listName}CreateArgs>(`)
@@ -1119,6 +1163,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
     lines.push(`    <T extends ${listName}GetArgs>(`)
     lines.push(`      args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
     lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+    lines.push(
+      `    (args?: Omit<${listName}GetArgs, 'select' | 'include' | 'query'>): Promise<${listName}GetPayload<${listName}GetArgs> | null>`,
+    )
     lines.push(`  }`)
   }
 
