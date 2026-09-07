@@ -211,6 +211,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -222,6 +223,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -234,6 +236,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -508,6 +511,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -519,6 +523,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -531,6 +536,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -1133,6 +1139,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1144,6 +1151,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1156,6 +1164,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -1187,6 +1196,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1198,6 +1208,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1210,6 +1221,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -1518,6 +1530,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1529,6 +1542,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1541,6 +1555,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -1815,6 +1830,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1826,6 +1842,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -1838,6 +1855,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -2105,6 +2123,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -2116,6 +2135,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -2128,6 +2148,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -2402,6 +2423,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -2413,6 +2435,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -2425,6 +2448,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -3052,6 +3076,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3063,6 +3088,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3075,6 +3101,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -3106,6 +3133,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3117,6 +3145,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3129,6 +3158,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -3160,6 +3190,7 @@ export interface CommentCrud {
     <T extends CommentFindUniqueArgs>(
       args: Prisma.SelectSubset<T, CommentFindUniqueArgs>
     ): Promise<CommentGetPayload<T> | null>
+    (args: CommentFindUniqueArgs): Promise<CommentGetPayload<CommentFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3171,6 +3202,7 @@ export interface CommentCrud {
     <T extends CommentFindFirstArgs>(
       args?: Prisma.SelectSubset<T, CommentFindFirstArgs>
     ): Promise<CommentGetPayload<T> | null>
+    (args?: CommentFindFirstArgs): Promise<CommentGetPayload<CommentFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3183,6 +3215,7 @@ export interface CommentCrud {
     <T extends CommentFindManyArgs>(
       args?: Prisma.SelectSubset<T, CommentFindManyArgs>
     ): Promise<Array<CommentGetPayload<T>>>
+    (args?: CommentFindManyArgs): Promise<Array<CommentGetPayload<CommentFindManyArgs>>>
   }
   create: <T extends CommentCreateArgs>(
     args: Prisma.SelectSubset<T, CommentCreateArgs>
@@ -3698,6 +3731,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3709,6 +3743,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3721,6 +3756,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -3752,6 +3788,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3763,6 +3800,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -3775,6 +3813,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -4289,6 +4328,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4300,6 +4340,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4312,6 +4353,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -4343,6 +4385,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4354,6 +4397,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4366,6 +4410,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -4945,6 +4990,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4956,6 +5002,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -4968,6 +5015,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
@@ -4999,6 +5047,7 @@ export interface PostCrud {
     <T extends PostFindUniqueArgs>(
       args: Prisma.SelectSubset<T, PostFindUniqueArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args: PostFindUniqueArgs): Promise<PostGetPayload<PostFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5010,6 +5059,7 @@ export interface PostCrud {
     <T extends PostFindFirstArgs>(
       args?: Prisma.SelectSubset<T, PostFindFirstArgs>
     ): Promise<PostGetPayload<T> | null>
+    (args?: PostFindFirstArgs): Promise<PostGetPayload<PostFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5022,6 +5072,7 @@ export interface PostCrud {
     <T extends PostFindManyArgs>(
       args?: Prisma.SelectSubset<T, PostFindManyArgs>
     ): Promise<Array<PostGetPayload<T>>>
+    (args?: PostFindManyArgs): Promise<Array<PostGetPayload<PostFindManyArgs>>>
   }
   create: <T extends PostCreateArgs>(
     args: Prisma.SelectSubset<T, PostCreateArgs>
@@ -5625,6 +5676,7 @@ export interface AccountCrud {
     <T extends AccountFindUniqueArgs>(
       args: Prisma.SelectSubset<T, AccountFindUniqueArgs>
     ): Promise<AccountGetPayload<T> | null>
+    (args: AccountFindUniqueArgs): Promise<AccountGetPayload<AccountFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5636,6 +5688,7 @@ export interface AccountCrud {
     <T extends AccountFindFirstArgs>(
       args?: Prisma.SelectSubset<T, AccountFindFirstArgs>
     ): Promise<AccountGetPayload<T> | null>
+    (args?: AccountFindFirstArgs): Promise<AccountGetPayload<AccountFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5648,6 +5701,7 @@ export interface AccountCrud {
     <T extends AccountFindManyArgs>(
       args?: Prisma.SelectSubset<T, AccountFindManyArgs>
     ): Promise<Array<AccountGetPayload<T>>>
+    (args?: AccountFindManyArgs): Promise<Array<AccountGetPayload<AccountFindManyArgs>>>
   }
   create: <T extends AccountCreateArgs>(
     args: Prisma.SelectSubset<T, AccountCreateArgs>
@@ -5679,6 +5733,7 @@ export interface BillCrud {
     <T extends BillFindUniqueArgs>(
       args: Prisma.SelectSubset<T, BillFindUniqueArgs>
     ): Promise<BillGetPayload<T> | null>
+    (args: BillFindUniqueArgs): Promise<BillGetPayload<BillFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5690,6 +5745,7 @@ export interface BillCrud {
     <T extends BillFindFirstArgs>(
       args?: Prisma.SelectSubset<T, BillFindFirstArgs>
     ): Promise<BillGetPayload<T> | null>
+    (args?: BillFindFirstArgs): Promise<BillGetPayload<BillFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -5702,6 +5758,7 @@ export interface BillCrud {
     <T extends BillFindManyArgs>(
       args?: Prisma.SelectSubset<T, BillFindManyArgs>
     ): Promise<Array<BillGetPayload<T>>>
+    (args?: BillFindManyArgs): Promise<Array<BillGetPayload<BillFindManyArgs>>>
   }
   create: <T extends BillCreateArgs>(
     args: Prisma.SelectSubset<T, BillCreateArgs>

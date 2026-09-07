@@ -1033,6 +1033,25 @@ export type ${listName}UpdateManyArgs = {
  * (`TS2321: Excessive stack depth comparing types`) against a schema whose
  * `GetPayload`s cross-reference each other, even though the resulting type
  * is structurally identical either way.
+ *
+ * A third, trailing, NON-generic member closes each of those three methods
+ * (plus singleton `get`) — see #1287: a two-member overload set (fragment,
+ * then the generic `SelectSubset`-based member) is not assignable to a plain
+ * structural seam (`{ findUnique(args: { where: {...} }): Promise<...> }`,
+ * the pattern #1214 itself recommends for keeping app code off the generated
+ * types) once `SelectSubset` carries Prisma's real conditional-intersection
+ * shape — TypeScript rejects the whole overloaded member against the
+ * seam's single signature. The same two-member shape also breaks
+ * `Parameters<typeof db.<list>.findMany>`, which resolves against an
+ * overloaded type's LAST member only: with the generic member last, the
+ * unresolved `T` collapses to `never`. Verified empirically (not from the
+ * TS spec, which does not document either behaviour): adding this third,
+ * concrete member — over the plain `{List}FindXArgs`, no generic parameter —
+ * fixes both, and its position among the three doesn't matter for
+ * assignability. It sits last because overload resolution tries members in
+ * declaration order and this one must never win a real call: kept last, a
+ * normal call (bare, or with `select`/`include`) still matches the generic
+ * member first and keeps its `T`-narrowed `{List}GetPayload<T>` return.
  */
 function generateListCrudInterface(listName: string, isSingleton: boolean): string {
   const lines: string[] = []
@@ -1053,6 +1072,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindUniqueArgs>(`)
   lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
   lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(
+    `    (args: ${listName}FindUniqueArgs): Promise<${listName}GetPayload<${listName}FindUniqueArgs> | null>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  findFirst: {`)
@@ -1067,6 +1089,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindFirstArgs>(`)
   lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
   lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(
+    `    (args?: ${listName}FindFirstArgs): Promise<${listName}GetPayload<${listName}FindFirstArgs> | null>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  findMany: {`)
@@ -1082,6 +1107,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`    <T extends ${listName}FindManyArgs>(`)
   lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
   lines.push(`    ): Promise<Array<${listName}GetPayload<T>>>`)
+  lines.push(
+    `    (args?: ${listName}FindManyArgs): Promise<Array<${listName}GetPayload<${listName}FindManyArgs>>>`,
+  )
   lines.push(`  }`)
 
   lines.push(`  create: <T extends ${listName}CreateArgs>(`)
@@ -1119,6 +1147,9 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
     lines.push(`    <T extends ${listName}GetArgs>(`)
     lines.push(`      args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
     lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+    lines.push(
+      `    (args?: ${listName}GetArgs): Promise<${listName}GetPayload<${listName}GetArgs> | null>`,
+    )
     lines.push(`  }`)
   }
 

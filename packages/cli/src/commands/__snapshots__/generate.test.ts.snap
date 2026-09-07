@@ -346,6 +346,7 @@ export interface UserCrud {
     <T extends UserFindUniqueArgs>(
       args: Prisma.SelectSubset<T, UserFindUniqueArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args: UserFindUniqueArgs): Promise<UserGetPayload<UserFindUniqueArgs> | null>
   }
   findFirst: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -357,6 +358,7 @@ export interface UserCrud {
     <T extends UserFindFirstArgs>(
       args?: Prisma.SelectSubset<T, UserFindFirstArgs>
     ): Promise<UserGetPayload<T> | null>
+    (args?: UserFindFirstArgs): Promise<UserGetPayload<UserFindFirstArgs> | null>
   }
   findMany: {
     <TItem, TFields extends FieldSelection<TItem>>(args: {
@@ -369,6 +371,7 @@ export interface UserCrud {
     <T extends UserFindManyArgs>(
       args?: Prisma.SelectSubset<T, UserFindManyArgs>
     ): Promise<Array<UserGetPayload<T>>>
+    (args?: UserFindManyArgs): Promise<Array<UserGetPayload<UserFindManyArgs>>>
   }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
