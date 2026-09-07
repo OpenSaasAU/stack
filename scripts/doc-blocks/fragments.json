@@ -1,0 +1,34 @@
+{
+  ".changeset/swift-pandas-listen.md:14": "`provider` is a bare name; the snippet shows only the chunkText -> embedBatch call pair.",
+
+  "docs/content/how-to/rag-advanced.md:64": "pseudo-code for the hook the plugin injects: `sourceField`, `fieldName`, `listName`, `provider` and `writeUnderSudo` are closure bindings the plugin holds, and the hook's parameters are typed by the list it is injected into.",
+  "docs/content/how-to/rag-advanced.md:206": "imports `cohere-ai`, a third-party SDK this repo does not install.",
+  "docs/content/how-to/rag-advanced.md:268": "imports `@/lib/providers/cohere`, the file the reader wrote in the block above, and passes a `config()` whose `lists` the prose elides.",
+  "docs/content/how-to/rag-advanced.md:289": "imports `@huggingface/inference`, a third-party SDK this repo does not install.",
+  "docs/content/how-to/rag-advanced.md:495": "a bare `lists:` object-literal property, not a statement.",
+  "docs/content/how-to/rag-advanced.md:659": "two alternative snippets share one fence and both bind `matches`.",
+  "docs/content/how-to/rag-advanced.md:797": "imports `@huggingface/inference`, a third-party SDK this repo does not install.",
+  "docs/content/how-to/rag-advanced.md:852": "a bare `fields:` object-literal property, not a statement.",
+  "docs/content/how-to/rag-advanced.md:882": "`context.db.Article` rows are keyed to the app's generated TypeInfo; against the un-parameterised `StackContext` the row is `OrmRow`, which carries no `id`.",
+
+  "docs/content/reference/rag.md:169": "a bare `fields:` object-literal property, not a statement.",
+  "docs/content/reference/rag.md:266": "a bare `fields:` object-literal property, not a statement.",
+  "docs/content/reference/rag.md:396": "`openaiEmbeddings({/* ... */})` and `ollamaEmbeddings({/* ... */})` are written as elisions, so the required `apiKey` and `dimensions` are absent by design.",
+  "docs/content/reference/rag.md:669": "three alternative snippets share one fence and each binds `chunks`.",
+
+  "examples/rag-ollama-demo/README.md:151": "a `config()` whose `lists` the prose elides.",
+  "examples/rag-ollama-demo/README.md:176": "a bare `fields:` object-literal property, not a statement.",
+  "examples/rag-ollama-demo/README.md:198": "a bare `fields:` object-literal property, not a statement.",
+  "examples/rag-ollama-demo/README.md:441": "`provider`, `text1`, `text2` and `text3` are bare names the prose supplies.",
+
+  "packages/rag/CLAUDE.md:143": "a bare `fields:` object-literal property, not a statement.",
+  "packages/rag/CLAUDE.md:177": "a bare `fields:` object-literal property, not a statement.",
+  "packages/rag/CLAUDE.md:510": "`provider` is a bare name the prose supplies.",
+  "packages/rag/CLAUDE.md:525": "`query` — the caller's search string — is a bare name the prose supplies.",
+  "packages/rag/CLAUDE.md:540": "`id` is a bare name the prose supplies, and the row is keyed to the app's generated TypeInfo, so `article.contentEmbedding` is `unknown` here.",
+  "packages/rag/CLAUDE.md:554": "imports `./openai.js` by relative path from inside the package's own test tree.",
+
+  "packages/rag/README.md:136": "a `config()` whose `lists` the prose elides.",
+  "packages/rag/README.md:255": "a bare `fields:` object-literal property, not a statement.",
+  "packages/rag/README.md:368": "three alternative snippets share one fence and each binds `chunks`."
+}

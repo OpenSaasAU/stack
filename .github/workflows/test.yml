@@ -95,6 +95,26 @@ jobs:
           git add --intent-to-add -- packages/cli/tests/fixtures/contract-project
           git diff --exit-code -- packages/cli/tests/fixtures/contract-project
 
+      # Unlike its two sibling checks above, this one reads compiled output: it
+      # resolves @opensaas/* to packages/*/dist so it measures this branch's own
+      # declarations. The contract-fixture step above builds only the CLI, so
+      # the packages the doc blocks import are built here. turbo caches it, and
+      # the test steps below depend on the same task, so this is a reordering
+      # rather than an extra build.
+      #
+      # PRs into `main` are excluded because the fixtures are keyed to this
+      # branch's documents — `files.txt` names them and `fragments.json` keys
+      # entries by `file:line`. `main`'s RAG guidance is a different text at
+      # different lines, so every entry there would report as orphaned. The
+      # check reaches `main` when prisma-8 does.
+      - name: Build packages for the doc-block check
+        if: github.base_ref != 'main'
+        run: turbo run build --filter='./packages/*'
+
+      - name: Check documented TypeScript blocks compile
+        if: github.base_ref != 'main'
+        run: pnpm check:doc-ts-blocks
+
       - name: Run tests
         if: github.base_ref == 'main'
         run: turbo run test
