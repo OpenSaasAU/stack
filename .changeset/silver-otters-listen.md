@@ -3,38 +3,40 @@
 '@opensaas/stack-cli': minor
 ---
 
-The generated context constructs the Prisma 8 client from `contract.json`
+Every write through `context.db` opens a real Prisma 8 transaction again
 
-Core gains `@opensaas/stack-core/client`, whose `resolveRuntimeConnection()` chooses how the
-runtime binds its connection, and the generated `.opensaas/context.ts` builds its client from it
-once per process — with the stack-owned origin tripwire in `middleware` and each declared pack's
-runtime façade in `extensions`.
+The Write Pipeline decided whether to open a transaction by probing the client
+for `$transaction` — the Prisma 7 name, which no Prisma 8 object carries. The
+guard was constant-false, so every write ran with no transaction and no
+rollback guarantee: a multi-statement write that failed partway, or a hook that
+threw after the database call, left its rows committed.
+
+The transaction capability is now an explicit signal rather than a probed
+method name. `getContext` resolves a `TransactionOpener` from the Prisma 8
+client it is handed, and puts it on the context; a context that is already
+bound to an open transaction — `context.transaction()`'s callback, a hook's
+rebound context — carries none, so a joined write still joins the enclosing
+transaction rather than opening a second one (ADR-0028). `context.transaction()`
+opens through the same opener, so both paths share one mechanism.
+
+The generated context now hands `getContext` the ORM handle rather than the
+client, which is what the engine reaches models through:
 
 ```typescript
-import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
-
-postgres<Contract>({
-  contractJson,
-  middleware: [originTripwire],
-  ...resolveRuntimeConnection(config.db.client),
-})
+// .opensaas/context.ts (generated)
+getOpensaasContext(
+  config,
+  ormHandleFor(config, db),
+  session,
+  storage,
+  false,
+  undefined,
+  undefined,
+  db,
+)
 ```
 
-Three branches, in order:
-
-- `db.client.pg` — your own pool. The factory is called here and nowhere else, once, after the
-  config promise resolves, so loading the config (the CLI's `generate`, tooling, a type check)
-  never opens a connection.
-- A dev database (`opensaas dev`) — a single-connection pool with `verifyMarker: false`, both
-  required by the socket-multiplexed dev database and applied on its provenance only.
-- `DATABASE_URL` — the connection string and Prisma's defaults, plus `db.client.poolOptions`.
-
-With neither a connection variable nor a running dev database, the first use throws
-`DatabaseUrlUnresolvedError`, naming both remedies. That failure is not cached: a process that
-starts before its database does drops the memo and builds a client on the next call, so the dev
-server booting ahead of `opensaas dev` recovers on its own rather than serving a stale error for
-the rest of its life.
-
-An explicit `db.client.pg` still wins over a running dev database, but now says so — binding your
-own pool there loses the single connection and `verifyMarker: false` that database requires, and
-`resolveRuntimeConnection` warns rather than rebinding silently.
+`requireOrmHandle(config, orm)` is exported from `@opensaas/stack-core` for a
+caller that builds a context over a Prisma 8 client of its own, and throws
+`OrmHandleUnresolvableError` naming the config's lists when the client exposes
+no collection for one of them.

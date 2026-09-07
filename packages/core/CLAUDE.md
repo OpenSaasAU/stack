@@ -164,9 +164,9 @@ Key points:
 - **Serialization failures propagate** (they are NOT converted to a silent
   `null`), so the caller can implement a retry loop. Built-in retry is not
   provided — the caller owns it (matching Keystone 6's `context.transaction`).
-- **Nested `context.db` writes join** the outer transaction (a Prisma tx client
-  exposes no `$transaction`, so the Write Pipeline's existing fallback runs them
-  against the active client).
+- **Nested `context.db` writes join** the outer transaction: a context bound to
+  an open transaction carries no transaction opener, so the Write Pipeline runs
+  them against the active handle rather than opening a second one.
 - If the client cannot open an interactive transaction (e.g. a test mock, or you
   are already inside one), `fn` runs directly with identical hook/access
   semantics. See ADR-0012.

@@ -1,6 +1,6 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import { ormModel } from '../access/orm-client.js'
-import type { AccessContext, OrmClient } from '../access/types.js'
+import type { AccessContext, OrmClient, TransactionOpener } from '../access/types.js'
 import {
   checkAccess,
   checkCreateAccess,
@@ -99,45 +99,21 @@ export interface WriteStrategy {
 }
 
 /**
- * Minimal shape of a Prisma interactive-transaction-capable client. `tx` is
- * dynamically typed like the model surface above (names generated at runtime).
- */
-interface TransactionCapable {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- $transaction callback receives a dynamically-typed tx client
-  $transaction?: (fn: (tx: any) => Promise<unknown>) => Promise<unknown>
-}
-
-/**
- * Run `fn` inside ONE interactive transaction, used as the persistence target
- * for the parent and all nested writes (ADR-0010).
+ * Run `fn` inside ONE transaction, used as the persistence target for the
+ * parent and all nested writes (ADR-0010).
  *
- * When the probe below fails, `fn` runs directly against the client. Hook
- * ordering and arguments are identical either way, but only a real transaction
- * provides the rollback guarantee: on the direct path a hook that throws after
- * the database call leaves the row committed.
- *
- * Known limits — the probe does not discriminate on `prisma-8`:
- * it tests `$transaction`, the Prisma 7 name, which no Prisma 8 object carries.
- * Not `PostgresTransactionContext` (`@prisma/orm-postgres@8` declares `sql`,
- * `orm`, `enums`, `nativeEnums` on it and nothing else), and not `PostgresClient`
- * either, whose transaction opener is named `transaction`. So under Prisma 8 the
- * guard is constant-false and every write takes the direct path, including one
- * through a client that could have opened a transaction. It therefore cannot
- * currently tell a Joined write — a hook writing through a context handed to it
- * inside an enclosing transaction, the Unowned join of ADR-0028 — from a write
- * that simply lost its rollback guarantee. #1124 rewires this so every write
- * opens a transaction, and ADR-0057 retires the heuristic in favour of the
- * explicit `ctx.scope` signal (#1036).
+ * With no `opener` this write is a Joined write — the Unowned join of
+ * ADR-0028 — and `fn` runs directly against the handle it was given, inside
+ * whatever transaction is already open around it. Hook ordering and arguments
+ * are identical either way.
  */
 async function runInTransaction(
+  opener: TransactionOpener | undefined,
   ormHandle: OrmClient,
   fn: (tx: OrmClient) => Promise<Record<string, unknown> | null>,
 ): Promise<Record<string, unknown> | null> {
-  const client = ormHandle as unknown as TransactionCapable
-  if (typeof client.$transaction === 'function') {
-    return (await client.$transaction(async (tx) => fn(tx))) as Record<string, unknown> | null
-  }
-  return fn(ormHandle)
+  if (opener === undefined) return fn(ormHandle)
+  return opener((opened) => fn(opened.ormHandle))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -206,13 +182,12 @@ export async function runWritePipeline(
 
   // ── Transaction ownership for the transaction-boundary hooks (ADR-0028) ────
   // A context carrying `_transactionOwner` is JOINING an enclosing transaction
-  // it did not open — defer to that owner even if `ormHandle` here still exposes
-  // `$transaction`. Otherwise this write becomes the owner: the registry every
-  // joined write below it enqueues into.
+  // it did not open — defer to that owner even if this context could open one.
+  // Otherwise this write becomes the owner: the registry every joined write
+  // below it enqueues into.
   const existingOwner = context._transactionOwner
-  const opensOwnTransaction =
-    !existingOwner && typeof (ormHandle as TransactionCapable).$transaction === 'function'
-  const ownedRegistry = opensOwnTransaction ? new TransactionRegistry() : undefined
+  const opener = existingOwner ? undefined : context._transactionOpener
+  const ownedRegistry = opener ? new TransactionRegistry() : undefined
   const transactionOwnerForBody = existingOwner ?? ownedRegistry
 
   // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
@@ -225,7 +200,7 @@ export async function runWritePipeline(
     ownedRegistry,
     runTransaction: () =>
       // ADR-0010: parent + nested writes share `tx` as their persistence target.
-      runInTransaction(ormHandle, (tx) =>
+      runInTransaction(opener, ormHandle, (tx) =>
         runWriteInTransaction({
           ...args,
           ormHandle: tx,

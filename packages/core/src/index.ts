@@ -81,6 +81,7 @@ export { checkAccess, checkCreateAccess, mergeFilters } from './access/index.js'
 export { getContext } from './context/index.js'
 export type { TransactionOptions, TransactionIsolationLevel } from './context/index.js'
 export { TransactionOptionsUnsupportedError, TransactionOrmHandleError } from './context/index.js'
+export { requireOrmHandle, OrmHandleUnresolvableError } from './context/index.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).
 // The bundle names one interface per list extending each of these, keyed by
