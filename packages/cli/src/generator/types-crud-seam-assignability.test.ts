@@ -31,11 +31,18 @@ import { text, virtual, relationship } from '@opensaas/stack-core/fields'
  * regression again.
  *
  * The fix (see `./types.ts`) adds a third, trailing, NON-generic overload
- * member over the plain `{List}FindXArgs` — closing the assignability gap
- * and giving `Parameters<>` something concrete to resolve to — while
- * overload resolution still prefers the generic member for ordinary calls
- * (a `select`/`include`-narrowed call, or a bare call), so #1264's and
- * #1268's guarantees are unaffected.
+ * member — closing the assignability gap and giving `Parameters<>`
+ * something concrete to resolve to — while overload resolution still
+ * prefers the generic member for ordinary calls (a `select`/`include`-
+ * narrowed call, or a bare call), so #1264's and #1268's guarantees are
+ * unaffected. That member's parameter type deliberately omits
+ * `select`/`include`/`query` rather than reusing the full `{List}FindXArgs`
+ * as-is: an unrestricted trailing member would give overload resolution a
+ * fallback that silently accepts `select`+`include` together — a
+ * combination Prisma itself forbids, and the generic member's own
+ * `SelectSubset` guard already rejects — the moment that guard's error
+ * kicks in. The `run()` probe below asserts that combination is still a
+ * compile error.
  */
 
 const COMPILE_TIMEOUT_MS = 60000
@@ -203,6 +210,17 @@ async function run() {
   // new trailing plain member. ---
   const included = await db.post.findUnique({ where: { id: 'p1' }, include: { author: true } })
   void included
+
+  // --- The new trailing member must not reopen a hole in Prisma's
+  // select/include mutual-exclusivity check: passing both together is
+  // still a compile error, caught previously by the generic member's
+  // Prisma.SelectSubset guard. An unrestricted trailing member (one that
+  // still allowed 'select'/'include') would give overload resolution a
+  // fallback that silently accepts this once the generic member rejects
+  // it — the trailing member here omits those keys entirely so it can't
+  // become that fallback. ---
+  // @ts-expect-error passing both 'select' and 'include' is not allowed
+  await db.post.findUnique({ where: { id: 'p1' }, select: { title: true }, include: { author: true } })
 }
 
 void run
