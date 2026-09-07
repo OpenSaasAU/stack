@@ -1019,6 +1019,20 @@ export type ${listName}UpdateManyArgs = {
  * Every method below is generic over its own `*Args` type, to preserve
  * Prisma's conditional return type together with the virtual-field-aware
  * `GetPayload` — `count` is the only exception, since it returns a plain number.
+ *
+ * `findUnique`/`findFirst`/`findMany` each carry a second, fragment-`query`
+ * overload matching core's `AugmentedFindUnique`/`AugmentedFindFirst`/
+ * `AugmentedFindMany` (`AccessControlledDB`'s own read methods) — see #1233:
+ * before this, a fragment `query` read through the generated `CustomDB`
+ * silently degraded to the unnarrowed list payload instead of
+ * `ResultOf<fragment>`, because only the generic `*Args`-based overload was
+ * generated here. The two overload shapes are hand-written to match core's
+ * rather than wrapped through core's generics via
+ * `Parameters<TOriginal>`/`ReturnType<TOriginal>` indirection — that
+ * indirection reintroduces #952's eager-expansion failure one level deeper
+ * (`TS2321: Excessive stack depth comparing types`) against a schema whose
+ * `GetPayload`s cross-reference each other, even though the resulting type
+ * is structurally identical either way.
  */
 function generateListCrudInterface(listName: string, isSingleton: boolean): string {
   const lines: string[] = []
@@ -1028,17 +1042,47 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(` */`)
   lines.push(`export interface ${listName}Crud {`)
 
-  lines.push(`  findUnique: <T extends ${listName}FindUniqueArgs>(`)
-  lines.push(`    args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+  // Fragment-`query` overload matching core's `AugmentedFindUnique` — see
+  // the file-level comment above for why this is hand-written rather than
+  // wrapped through core's generic.
+  lines.push(`  findUnique: {`)
+  lines.push(`    <TItem, TFields extends FieldSelection<TItem>>(args: {`)
+  lines.push(`      where: Record<string, unknown>`)
+  lines.push(`      query: Fragment<TItem, TFields>`)
+  lines.push(`    }): Promise<ResultOf<Fragment<TItem, TFields>> | null>`)
+  lines.push(`    <T extends ${listName}FindUniqueArgs>(`)
+  lines.push(`      args: Prisma.SelectSubset<T, ${listName}FindUniqueArgs>`)
+  lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(`  }`)
 
-  lines.push(`  findFirst: <T extends ${listName}FindFirstArgs>(`)
-  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
-  lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+  lines.push(`  findFirst: {`)
+  lines.push(`    <TItem, TFields extends FieldSelection<TItem>>(args: {`)
+  lines.push(`      where?: Record<string, unknown>`)
+  lines.push(
+    `      orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>`,
+  )
+  lines.push(`      skip?: number`)
+  lines.push(`      query: Fragment<TItem, TFields>`)
+  lines.push(`    }): Promise<ResultOf<Fragment<TItem, TFields>> | null>`)
+  lines.push(`    <T extends ${listName}FindFirstArgs>(`)
+  lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindFirstArgs>`)
+  lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+  lines.push(`  }`)
 
-  lines.push(`  findMany: <T extends ${listName}FindManyArgs>(`)
-  lines.push(`    args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
-  lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
+  lines.push(`  findMany: {`)
+  lines.push(`    <TItem, TFields extends FieldSelection<TItem>>(args: {`)
+  lines.push(`      where?: Record<string, unknown>`)
+  lines.push(
+    `      orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>`,
+  )
+  lines.push(`      take?: number`)
+  lines.push(`      skip?: number`)
+  lines.push(`      query: Fragment<TItem, TFields>`)
+  lines.push(`    }): Promise<ResultOf<Fragment<TItem, TFields>>[]>`)
+  lines.push(`    <T extends ${listName}FindManyArgs>(`)
+  lines.push(`      args?: Prisma.SelectSubset<T, ${listName}FindManyArgs>`)
+  lines.push(`    ): Promise<Array<${listName}GetPayload<T>>>`)
+  lines.push(`  }`)
 
   lines.push(`  create: <T extends ${listName}CreateArgs>(`)
   lines.push(`    args: Prisma.SelectSubset<T, ${listName}CreateArgs>`)
@@ -1063,11 +1107,19 @@ function generateListCrudInterface(listName: string, isSingleton: boolean): stri
   lines.push(`  ) => Promise<Array<${listName}GetPayload<T>>>`)
 
   // get - only for singleton lists; accepts the same include/query narrowing
-  // as findUnique (minus `where` — a singleton has exactly one row).
+  // as findUnique (minus `where` — a singleton has exactly one row). No core
+  // `AccessControlledDB` counterpart exists for `get` (singletons are an
+  // OpenSaaS-level concept core's Prisma-shaped delegate map can't see), so
+  // the fragment overload is hand-written here rather than reused from core.
   if (isSingleton) {
-    lines.push(`  get: <T extends ${listName}GetArgs>(`)
-    lines.push(`    args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
-    lines.push(`  ) => Promise<${listName}GetPayload<T> | null>`)
+    lines.push(`  get: {`)
+    lines.push(`    <TFields extends FieldSelection<${listName}Output>>(args: {`)
+    lines.push(`      query: Fragment<${listName}Output, TFields>`)
+    lines.push(`    }): Promise<ResultOf<Fragment<${listName}Output, TFields>> | null>`)
+    lines.push(`    <T extends ${listName}GetArgs>(`)
+    lines.push(`      args?: Prisma.SelectSubset<T, ${listName}GetArgs>`)
+    lines.push(`    ): Promise<${listName}GetPayload<T> | null>`)
+    lines.push(`  }`)
   }
 
   lines.push(`}`)
@@ -1221,7 +1273,7 @@ export function generateTypes(config: OpenSaasConfig): string {
     "import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'",
   )
   lines.push(
-    "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'",
+    "import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection, ResultOf } from '@opensaas/stack-core/internal'",
   )
   // Relative imports carry an explicit `.ts` extension (see ./extension.ts) so
   // the bundle resolves under a host bundler / plain Node without an

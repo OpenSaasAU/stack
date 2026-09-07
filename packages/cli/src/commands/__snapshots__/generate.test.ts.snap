@@ -135,7 +135,7 @@ exports[`Generate Command Integration > Generator Integration > should generate 
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection, ResultOf } from '@opensaas/stack-core/internal'
 import type { PrismaClient, Prisma } from './prisma-client/client.ts'
 import type { PluginServices } from './plugin-types.ts'
 
@@ -338,15 +338,38 @@ export type UserUpdateManyArgs = {
  * Access-controlled CRUD methods for User, with virtual field support.
  */
 export interface UserCrud {
-  findUnique: <T extends UserFindUniqueArgs>(
-    args: Prisma.SelectSubset<T, UserFindUniqueArgs>
-  ) => Promise<UserGetPayload<T> | null>
-  findFirst: <T extends UserFindFirstArgs>(
-    args?: Prisma.SelectSubset<T, UserFindFirstArgs>
-  ) => Promise<UserGetPayload<T> | null>
-  findMany: <T extends UserFindManyArgs>(
-    args?: Prisma.SelectSubset<T, UserFindManyArgs>
-  ) => Promise<Array<UserGetPayload<T>>>
+  findUnique: {
+    <TItem, TFields extends FieldSelection<TItem>>(args: {
+      where: Record<string, unknown>
+      query: Fragment<TItem, TFields>
+    }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
+    <T extends UserFindUniqueArgs>(
+      args: Prisma.SelectSubset<T, UserFindUniqueArgs>
+    ): Promise<UserGetPayload<T> | null>
+  }
+  findFirst: {
+    <TItem, TFields extends FieldSelection<TItem>>(args: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
+      skip?: number
+      query: Fragment<TItem, TFields>
+    }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
+    <T extends UserFindFirstArgs>(
+      args?: Prisma.SelectSubset<T, UserFindFirstArgs>
+    ): Promise<UserGetPayload<T> | null>
+  }
+  findMany: {
+    <TItem, TFields extends FieldSelection<TItem>>(args: {
+      where?: Record<string, unknown>
+      orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
+      take?: number
+      skip?: number
+      query: Fragment<TItem, TFields>
+    }): Promise<ResultOf<Fragment<TItem, TFields>>[]>
+    <T extends UserFindManyArgs>(
+      args?: Prisma.SelectSubset<T, UserFindManyArgs>
+    ): Promise<Array<UserGetPayload<T>>>
+  }
   create: <T extends UserCreateArgs>(
     args: Prisma.SelectSubset<T, UserCreateArgs>
   ) => Promise<UserGetPayload<T>>
@@ -480,7 +503,7 @@ exports[`Generate Command Integration > Generator Integration > should handle em
  */
 
 import type { Session as OpensaasSession, AccessContext } from '@opensaas/stack-core'
-import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection } from '@opensaas/stack-core/internal'
+import type { StorageUtils, ServerActionProps, AccessControlledDB, Fragment, FieldSelection, ResultOf } from '@opensaas/stack-core/internal'
 import type { PrismaClient, Prisma } from './prisma-client/client.ts'
 import type { PluginServices } from './plugin-types.ts'
 
