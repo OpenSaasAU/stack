@@ -62,13 +62,18 @@ let pending: Promise<WhereCombinators> | undefined
  * keeps its static module graph free of `@prisma/orm-postgres`; a secured read
  * cannot run without the ORM anyway, and the terminals that lower a predicate
  * are already async.
+ *
+ * A rejection is not cached: a transient import failure would otherwise be
+ * permanent for the life of the process, since every later call would just
+ * re-await the same rejected promise.
  */
 export function whereCombinators(): Promise<WhereCombinators> {
-  pending ??= import('@prisma/orm-postgres/orm-client').then(({ and, or, all }) => ({
-    and,
-    or,
-    all,
-  }))
+  pending ??= import('@prisma/orm-postgres/orm-client')
+    .then(({ and, or, all }) => ({ and, or, all }))
+    .catch((error: unknown) => {
+      pending = undefined
+      throw error
+    })
   return pending
 }
 
@@ -202,34 +207,40 @@ let pendingVector: Promise<VectorLowering> | undefined
  * one path rather than two. Re-check at GA: if the pack registers the other
  * distances, these become accessor calls (ADR-0045).
  */
-export function vectorLowering(): Promise<VectorLowering> {
-  pendingVector ??= Promise.all([
+async function loadVectorLowering(): Promise<VectorLowering> {
+  const [expression, ast] = await Promise.all([
     import('@prisma/orm-postgres/relational-core/expression'),
     import('@prisma/orm-postgres/relational-core/ast'),
-  ]).then(([expression, ast]) => {
-    const { buildOperation, codecOf, toExpr, param } = expression
-    const { BinaryExpr, OrderByItem: OrderBy } = ast
+  ])
+  const { buildOperation, codecOf, toExpr, param } = expression
+  const { BinaryExpr, OrderByItem: OrderBy } = ast
 
-    const distance = (plan: NearestPlan, accessor: PredicateAccessor): AnyExpression => {
-      const member = memberOf(accessor, plan.listName, plan.column)
-      const codec = codecOf(member)
-      return buildOperation({
-        method: 'nearest',
-        args: [toExpr(member, codec), toExpr(plan.vector, codec)],
-        returns: { codecId: FLOAT8_CODEC, nullable: false },
-        lowering: {
-          targetFamily: 'sql',
-          strategy: 'function',
-          template: DISTANCE_TEMPLATES[plan.distanceFunction],
-        },
-      }).buildAst()
-    }
+  const distance = (plan: NearestPlan, accessor: PredicateAccessor): AnyExpression => {
+    const member = memberOf(accessor, plan.listName, plan.column)
+    const codec = codecOf(member)
+    return buildOperation({
+      method: 'nearest',
+      args: [toExpr(member, codec), toExpr(plan.vector, codec)],
+      returns: { codecId: FLOAT8_CODEC, nullable: false },
+      lowering: {
+        targetFamily: 'sql',
+        strategy: 'function',
+        template: DISTANCE_TEMPLATES[plan.distanceFunction],
+      },
+    }).buildAst()
+  }
 
-    return {
-      order: (plan, accessor) => OrderBy.asc(distance(plan, accessor)),
-      bound: (plan, accessor, bound) =>
-        new BinaryExpr('lte', distance(plan, accessor), param(bound, { codecId: FLOAT8_CODEC })),
-    }
+  return {
+    order: (plan, accessor) => OrderBy.asc(distance(plan, accessor)),
+    bound: (plan, accessor, bound) =>
+      new BinaryExpr('lte', distance(plan, accessor), param(bound, { codecId: FLOAT8_CODEC })),
+  }
+}
+
+export function vectorLowering(): Promise<VectorLowering> {
+  pendingVector ??= loadVectorLowering().catch((error: unknown) => {
+    pendingVector = undefined
+    throw error
   })
   return pendingVector
 }
