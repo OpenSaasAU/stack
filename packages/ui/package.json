@@ -84,7 +84,7 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.25.0",
     "react-hook-form": "^7.82.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
