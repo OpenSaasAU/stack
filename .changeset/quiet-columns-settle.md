@@ -53,12 +53,13 @@ does, issues one scoped `UPDATE`, and runs no hook.
 It reaches no field but the one named, and that is enforced rather than asked of the
 caller: the field is resolved against the config the context was built from, so the
 columns written are that field's own and the caller passes no layout. A list or a field
-the config does not declare is refused by name, as is a context carrying no config, as is
-an `undefined` value — which would otherwise wipe a multi-column field and no-op a
-single-column one, two outcomes for one input. This narrows the escalated `db` update it
-replaces, which could write any column on the row, but it is not a privilege boundary: a
-plugin holding `context.ormHandle` can already write anything, and this refuses the
-mistake rather than the intent.
+the config does not declare — including one named for a key it inherits from
+`Object.prototype`, which a bare lookup answers for — is refused by name, as is a context
+carrying no config, as is an `undefined` value, which would otherwise wipe a multi-column
+field and no-op a single-column one, two outcomes for one input. This narrows the escalated
+`db` update it replaces, which could write any column on the row, but it is not a privilege
+boundary: a plugin holding `context.ormHandle` can already write anything, and this refuses
+the mistake rather than the intent.
 
 It takes the `AccessContext` `Plugin.runtime` receives as its first argument; the
 `StackContext` `getContext` returns carries no ORM handle and is refused by name. That

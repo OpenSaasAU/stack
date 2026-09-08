@@ -63,7 +63,13 @@ Two things drive that:
    columns.
 
 ```typescript
-// Simplified hook implementation
+// Simplified. The writer closes over the context `runtime` is handed, and is
+// published on `context.plugins` for the hook to look up.
+runtime: (context) => ({
+  [WRITE_EMBEDDING]: async (listName, id, fieldName, value) =>
+    await writePluginOwnedField({ context, listName, id, fieldName, value }),
+}),
+
 afterTransaction: async ({ status, operation, item, context }) => {
   if (status !== 'committed') return
   if (operation !== 'create' && operation !== 'update') return
@@ -76,31 +82,38 @@ afterTransaction: async ({ status, operation, item, context }) => {
 
   const vector = await provider.embed(sourceText)
 
-  await writePluginOwnedField({
-    context,
-    listName,
-    id: item.id,
-    fieldName,
-    value: {
-      vector,
-      metadata: {
-        model: provider.model,
-        provider: provider.type,
-        dimensions: provider.dimensions,
-        generatedAt: new Date().toISOString(),
-        sourceHash,
-      },
+  // The hook's own context is used to *find* the writer, never to write with.
+  const write = embeddingWriter(context)
+
+  await write(listName, item.id, fieldName, {
+    vector,
+    metadata: {
+      model: provider.model,
+      provider: provider.type,
+      dimensions: provider.dimensions,
+      generatedAt: new Date().toISOString(),
+      sourceHash,
     },
   })
 }
 ```
 
-`context` here is the `AccessContext` `Plugin.runtime` receives as its **first**
-argument — not the `StackContext` `getContext` returns, and not `sudo()`, both of
-which carry no ORM handle and are refused by name. The field's column layout is
-read off the config that context was built from, so the write reaches
-`listName.fieldName`'s own columns and nothing else; a field the config does not
-declare, and an `undefined` value, are refused rather than resolved.
+The indirection is load-bearing, and a plugin that collapses it breaks under
+`context.transaction()`. The `context` the write itself uses is the `AccessContext`
+`Plugin.runtime` receives as its **first** argument — not the `StackContext`
+`getContext` returns, and not `sudo()`, both of which carry no ORM handle and are
+refused by name. The `context` the hook is handed is a different object: inside
+`context.transaction(...)` its ORM handle is bound to the transaction client, and
+`afterTransaction` drains **after** that transaction settles — so passing it
+straight to `writePluginOwnedField` issues the escalated `UPDATE` on a handle
+that is already closed. Plugin runtimes are not re-run for a transaction-bound
+context, so the writer found on it is still the one holding the runtime-time
+context, which is why the lookup is safe where the direct pass is not.
+
+The field's column layout is read off the config the runtime-time context was
+built from, so the write reaches `listName.fieldName`'s own columns and nothing
+else; a field the config does not declare, and an `undefined` value, are refused
+rather than resolved.
 
 Known limits, because the row is already committed by the time this runs:
 

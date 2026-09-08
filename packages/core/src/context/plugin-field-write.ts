@@ -89,10 +89,16 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
     return refuse('the context carries no config to resolve the field against')
   }
 
-  const list = config.lists[listName]
+  // `Object.hasOwn` gates both lookups: `lists` and `fields` are ordinary
+  // objects, so a bare index answers for `constructor` and every other
+  // Object.prototype key with a value that is not undefined — walking straight
+  // past a guard that only tests for undefined.
+  const list = Object.hasOwn(config.lists, listName) ? config.lists[listName] : undefined
   if (list === undefined) return refuse(`the config declares no list "${listName}"`)
 
-  const field: FieldConfig | undefined = list.fields[fieldName]
+  const field: FieldConfig | undefined = Object.hasOwn(list.fields, fieldName)
+    ? list.fields[fieldName]
+    : undefined
   if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
 
   return field

@@ -747,6 +747,32 @@ describe('ragPlugin', () => {
       },
     )
 
+    it('reports a bare TypeError as transient, which is why core refuses by name', async () => {
+      // The shape an unguarded config lookup in core produced for a
+      // prototype-chain list name. Nothing here can classify it — a TypeError
+      // is what a dropped connection throws too — so a wiring defect reaching
+      // this reporter at all is already the bug. Core refusing it by name
+      // (UnknownPluginFieldWriteError) is the only thing that keeps it out.
+      const { hook, context } = await generationHook('counting', () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'label')")
+      })
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
+
+      const said = logged.mock.calls[0][0]
+      expect(said).toContain('retry by writing the source field again')
+      expect(said).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      logged.mockRestore()
+    })
+
     it('reports an unregistered provider type as a standing defect, not as transient', async () => {
       // Building the provider is where a permanent configuration defect
       // surfaces, so a reporter that keys on the code path calls this one

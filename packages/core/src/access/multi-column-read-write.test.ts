@@ -605,6 +605,56 @@ describe('writePluginOwnedField (ADR-0066)', () => {
     BOOT,
   )
 
+  it.each(['constructor', 'toString', '__proto__'])(
+    'refuses %s, a field name the list inherits rather than declares',
+    async (fieldName) => {
+      // A bare `list.fields[fieldName]` answers for every Object.prototype key,
+      // so the lookup returns a value that is not undefined, carries no
+      // splitColumns, and falls back to writing a column of that name.
+      const id = await seed()
+
+      const write = writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName,
+        value: 'PWNED',
+      })
+
+      await expect(write).rejects.toBeInstanceOf(UnknownPluginFieldWriteError)
+      await expect(write).rejects.toThrow(`list "Owned" declares no field "${fieldName}"`)
+      // The name is what routes it to a consumer's standing-defect arm.
+      await expect(write).rejects.toHaveProperty('name', 'UnknownPluginFieldWriteError')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+      expect(stored?.title).toBe('ada')
+      expect(stored?.avatar).toBeNull()
+    },
+    BOOT,
+  )
+
+  it.each(['constructor', 'toString', '__proto__'])(
+    'refuses %s, a list name the config inherits rather than declares',
+    async (listName) => {
+      // Unguarded this throws a bare TypeError reaching into the inherited
+      // value's `fields`, whose name is not one a consumer classifies as a
+      // refusal — so the wiring defect is reported as retryable.
+      const write = writePluginOwnedField({
+        context: internalContext(),
+        listName,
+        id: await seed(),
+        fieldName: 'avatar',
+        value: media,
+      })
+
+      await expect(write).rejects.toBeInstanceOf(UnknownPluginFieldWriteError)
+      await expect(write).rejects.toThrow(`the config declares no list "${listName}"`)
+      await expect(write).rejects.toHaveProperty('name', 'UnknownPluginFieldWriteError')
+    },
+    BOOT,
+  )
+
   it(
     'refuses a list the config does not declare',
     async () => {
