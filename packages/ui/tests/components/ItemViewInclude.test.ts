@@ -118,14 +118,15 @@ describe('the item view read', () => {
   )
 
   it(
-    'reports no total at all for a relation the session may not read',
+    'counts 0, not the true size, for a relation the session may not read',
     async () => {
       const row = await readUser()
 
+      // A real zero off the count branch, not the fallback standing in for a
+      // missing key: were the true size to reach here, the fallback would be
+      // unable to hide it. That is the leak the footer exists to avoid.
+      expect(readAccessScopedTotal(row.secrets, -1)).toBe(0)
       expect(sectionRows(row.secrets)).toEqual([])
-      // The fallback is the bounded row count. A denied relation must not put a
-      // true total in its place — that is the leak the footer exists to avoid.
-      expect(readAccessScopedTotal(row.secrets, 0)).toBe(0)
     },
     BOOT,
   )

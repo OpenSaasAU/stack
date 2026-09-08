@@ -92,10 +92,10 @@ export function sectionRows(value: unknown): Array<Record<string, unknown>> {
  * The access-scoped total (M) for a Relationship-table section's "showing N of
  * M" footer, off the count branch {@link composeItemViewRead} composed.
  *
- * A relation this session may not read at all loses the whole key rather than
- * carrying a zero, and a field-level read denial does the same, so the absent
- * case falls back to the bounded row count — itself 0 for a denied relation —
- * and never a total the session was not allowed to learn.
+ * A relation this session may not read counts 0 rather than its true size, so
+ * the total the footer shows is always one the session was allowed to learn.
+ * The fallback covers only a value that carries no numeric total at all — a
+ * shape the count branch did not produce.
  */
 export function readAccessScopedTotal(value: unknown, fallback: number): number {
   const total = combinedSection(value)?.[SECTION_TOTAL]

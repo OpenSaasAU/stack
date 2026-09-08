@@ -1366,6 +1366,12 @@ function createDelete(
  *
  * `null` from the read is denied-or-absent, so the auto-create below runs only
  * once the read has answered nothing — a denied session gets `null`, not a row.
+ *
+ * Known limits: auto-create fires only for a `query` rule that answered a
+ * strict `true`, or under `sudo`. A rule that answered a filter scopes the read
+ * rather than opening it, and there is no row yet to test that filter against,
+ * so the create is refused and `get()` answers `null` — the same `null` a
+ * denied or an absent row answers with.
  */
 function createGet(
   listName: string,
@@ -1395,16 +1401,19 @@ function createGet(
     // `first()` conflates denied with absent, and auto-create must fire only on
     // absent — a denied session that provoked a create would both write a row it
     // may not read and turn the read's silence into an observable side effect.
-    // This is the one place the query rule is consulted directly; the read above
-    // owns every other use of it.
+    // Only a strict `true` clears the create: a filter scopes rather than opens,
+    // and `false`, a missing rule and anything else are denials. This is the one
+    // place the query rule is consulted directly; the read above owns every
+    // other use of it.
     if (!context._isSudo) {
       const readable = await checkAccess(listConfig.access?.operation?.query, {
         session: context.session,
         context,
       })
-      if (readable === false) return null
+      if (readable !== true) return null
     }
 
-    return await createFn({ data: getDefaultData(listConfig) })
+    await createFn({ data: getDefaultData(listConfig) })
+    return await scoped.first()
   }
 }

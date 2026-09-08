@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import type { AccessControl } from '../access/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { text } from '../fields/index.js'
+import { relationship, text } from '../fields/index.js'
+import { withOrigin } from '../origin.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import { getContext } from './index.js'
 
@@ -22,7 +24,7 @@ function schemaConfig(): OpenSaasConfig {
     lists: {
       Settings: {
         isSingleton: true,
-        fields: { siteName: text() },
+        fields: { siteName: text(), owner: relationship({ ref: 'Post' }) },
         access: {
           operation: {
             query: () => true,
@@ -42,6 +44,30 @@ function schemaConfig(): OpenSaasConfig {
 
 describe('a singleton list', () => {
   let harness: TestContext
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+  }
+
+  /** How many Settings rows the table holds, read past every access seam. */
+  async function settingsRowCount(): Promise<number> {
+    const namespace: unknown = Reflect.get(harness.client.orm, 'public')
+    if (!isRecord(namespace)) throw new Error('no public namespace')
+    const collection: unknown = Reflect.get(namespace, 'Settings')
+    if (!isRecord(collection)) throw new Error('no Settings collection')
+    const aggregate: unknown = collection.aggregate
+    if (typeof aggregate !== 'function') throw new Error('Settings has no aggregate')
+
+    const result: unknown = await withOrigin('unsafe', () =>
+      aggregate.call(collection, (builder: { count: () => unknown }) => ({
+        rows: builder.count(),
+      })),
+    )
+    if (!isRecord(result) || typeof result.rows !== 'number') {
+      throw new Error('aggregate answered no row count')
+    }
+    return result.rows
+  }
 
   beforeAll(async () => {
     harness = await createTestContext(schemaConfig(), null)
@@ -108,7 +134,7 @@ describe('a singleton list', () => {
   )
 
   test(
-    'get() resolves the row through the secured read, scoped by the query rule',
+    'get() resolves the row through the secured read',
     async () => {
       await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
 
@@ -116,16 +142,28 @@ describe('a singleton list', () => {
         id: 1,
         siteName: 'visible',
       })
+    },
+    BOOT,
+  )
 
-      const denied = getContext(
+  describe("get()'s auto-create against every form the query rule can take", () => {
+    // The property under test is the write, not only the answer: a session that
+    // may not read the singleton must never cause a row to exist, and a denied
+    // read must be indistinguishable from an absent one. Each case therefore
+    // counts the rows either side of the call rather than inferring from what
+    // `get()` returned — the earlier test read a throw and never observed the
+    // table (#1370 review, B2).
+
+    const contextFor = (query: AccessControl | undefined) =>
+      getContext(
         {
           ...schemaConfig(),
           lists: {
             ...schemaConfig().lists,
             Settings: {
               isSingleton: true,
-              fields: { siteName: text() },
-              access: { operation: { query: () => false, create: () => true } },
+              fields: { siteName: text(), owner: relationship({ ref: 'Post' }) },
+              access: { operation: { query, create: () => true } },
             },
           },
         },
@@ -138,10 +176,107 @@ describe('a singleton list', () => {
         harness.client,
       )
 
-      expect(await denied.db.Settings.get?.()).toBeNull()
-    },
-    BOOT,
-  )
+    const matching: AccessControl = () => ({ siteName: { equals: 'visible' } })
+    const excluding: AccessControl = () => ({ siteName: { equals: 'other' } })
+    const throwing: AccessControl = () => {
+      throw new Error('the rule itself failed')
+    }
+
+    const seeded = async () => {
+      await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
+    }
+
+    test.each([
+      ['true', (): boolean => true, { siteName: 'visible' }],
+      ['false', (): boolean => false, null],
+      ['a filter that matches the row', matching, { siteName: 'visible' }],
+      ['a filter that excludes the row', excluding, null],
+      ['absent', undefined, null],
+    ] as const)(
+      'with a row present and a query rule of %s, get() answers without writing',
+      async (_name, query, expected) => {
+        await seeded()
+
+        const answer = await contextFor(query).db.Settings.get?.()
+
+        if (expected === null) expect(answer).toBeNull()
+        else expect(answer).toMatchObject(expected)
+        expect(await settingsRowCount()).toBe(1)
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['false', (): boolean => false],
+      ['a filter', excluding],
+      ['absent', undefined],
+    ] as const)(
+      'with no row and a query rule of %s, get() answers null and creates nothing',
+      async (_name, query) => {
+        expect(await settingsRowCount()).toBe(0)
+
+        expect(await contextFor(query).db.Settings.get?.()).toBeNull()
+
+        expect(await settingsRowCount()).toBe(0)
+      },
+      BOOT,
+    )
+
+    test(
+      'with no row and a query rule of true, get() auto-creates the row and returns it',
+      async () => {
+        expect(await settingsRowCount()).toBe(0)
+
+        expect(await contextFor(() => true).db.Settings.get?.()).toMatchObject({ id: 1 })
+
+        expect(await settingsRowCount()).toBe(1)
+      },
+      BOOT,
+    )
+
+    test(
+      'a throwing query rule propagates and creates nothing, row present or absent',
+      async () => {
+        await expect(contextFor(throwing).db.Settings.get?.()).rejects.toThrow(
+          'the rule itself failed',
+        )
+        expect(await settingsRowCount()).toBe(0)
+
+        await seeded()
+        await expect(contextFor(throwing).db.Settings.get?.()).rejects.toThrow(
+          'the rule itself failed',
+        )
+        expect(await settingsRowCount()).toBe(1)
+      },
+      BOOT,
+    )
+
+    test(
+      'the auto-created row is handed back through the secured read, so an include lands',
+      async () => {
+        const created = await contextFor(() => true).db.Settings.get?.({
+          include: { owner: true },
+        })
+
+        expect(created).toMatchObject({ id: 1 })
+        // The row `createFn` returns carries no relation at all; only a read
+        // through the composed query puts the key there.
+        expect(created).toHaveProperty('owner', null)
+      },
+      BOOT,
+    )
+
+    test(
+      'a denied read is not told apart from an absent one by the error it raises',
+      async () => {
+        await seeded()
+
+        expect(await contextFor(excluding).db.Settings.get?.()).toBeNull()
+        expect(await contextFor((): boolean => false).db.Settings.get?.()).toBeNull()
+      },
+      BOOT,
+    )
+  })
 
   test(
     'the secured read surface is absent on it, and present on an ordinary list',
