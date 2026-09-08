@@ -6,6 +6,7 @@ import { text } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
+import { withOrigin } from '../origin.js'
 
 /**
  * #1205 / ADR-0010: every write through `context.db` opens a transaction, so a
@@ -157,6 +158,57 @@ describe('every write through context.db opens a transaction', () => {
 
       expect(await rows(database.url, 'Job')).toEqual([])
       expect(await rows(database.url, 'Audit')).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a hook\u2019s own write through ormHandle rolls back with the write',
+    async () => {
+      const writeThroughHandle = async (
+        context: { ormHandle: Record<string, unknown> },
+        note: string,
+      ): Promise<void> => {
+        const collection = context.ormHandle.Audit
+        if (typeof collection !== 'object' || collection === null) {
+          throw new Error('the context carries no Audit collection')
+        }
+        const create = Reflect.get(collection, 'create')
+        if (typeof create !== 'function') throw new Error('the collection has no create')
+        await withOrigin('engine', () => create.call(collection, { note }))
+      }
+
+      const config = (thrower: boolean): OpenSaasConfig => ({
+        ...schemaConfig(),
+        lists: {
+          Job: {
+            fields: { name: text() },
+            access: { operation: OPEN },
+            hooks: {
+              afterOperation: async ({ context }) => {
+                await writeThroughHandle(context, 'job created')
+                if (thrower) throw new Error('the hook rejected the write')
+              },
+            },
+          },
+          Audit: { fields: { note: text() }, access: { operation: OPEN } },
+        },
+      })
+
+      await expect(
+        contextOver(database, config(true)).db.Job.create({ data: { name: 'ship' } }),
+      ).rejects.toThrow('the hook rejected the write')
+
+      expect(await rows(database.url, 'Job')).toEqual([])
+      expect(await rows(database.url, 'Audit')).toEqual([])
+
+      // The control: the same hook without the throw leaves both rows, so the
+      // assertion above is about the rollback and not about the write failing
+      // to reach the database at all.
+      await contextOver(database, config(false)).db.Job.create({ data: { name: 'ship' } })
+
+      expect(await rows(database.url, 'Job')).toHaveLength(1)
+      expect(await rows(database.url, 'Audit')).toHaveLength(1)
     },
     BOOT,
   )

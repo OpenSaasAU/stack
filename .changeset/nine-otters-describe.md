@@ -30,5 +30,6 @@ A `db.nativeType` value outside the Postgres types the contract carries is now a
 
 ```ts
 const article = await context.db.article.findFirst()
-article.body // import('@opensaas/stack-tiptap').JSONContent | null
+// `null` here is "no row, or the Access Filter denied it" — guard before reading.
+article?.body // import('@opensaas/stack-tiptap').JSONContent | null | undefined
 ```

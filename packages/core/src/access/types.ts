@@ -271,6 +271,16 @@ export interface AccessContext {
    * @internal
    */
   _transactionOpener?: TransactionOpener
+  /**
+   * The resolved config this context was built from, so a core surface reached
+   * with nothing but a context can resolve a list and a field against the
+   * authority rather than against what its caller asserted — see
+   * `writePluginOwnedField`. Optional because `AccessContext` is a public type
+   * a test double may build; a context core built always carries it, and a
+   * surface that needs it refuses a context that does not.
+   * @internal
+   */
+  _config?: import('../config/types.js').OpenSaasConfig
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

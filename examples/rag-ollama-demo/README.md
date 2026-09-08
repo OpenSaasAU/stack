@@ -217,8 +217,9 @@ When you create or update a document:
 1. RAG plugin sees the committed row in an `afterTransaction` hook
 2. Checks if source text changed (using hash comparison)
 3. If changed, generates new embedding via Ollama
-4. Writes the vector and its metadata under sudo — the columns are write-denied
-   to application code
+4. Writes the vector and its metadata through core's `writePluginOwnedField` —
+   the columns are write-denied to application code, and that write runs no
+   hook of the list's (ADR-0066)
 
 ### 4. Semantic Search
 
