@@ -11,6 +11,7 @@ import { buildAccessScopedInclude } from '../access/access-filter.js'
 import {
   DuplicateIncludeError,
   InvalidRefinementError,
+  MultipleCombineRowBranchesError,
   NestedToOneIncludeError,
 } from './include.js'
 
@@ -799,6 +800,76 @@ describe('a composed read is an immutable value', () => {
 
       expect((await withAuthor.all())[0].author).toMatchObject({ handle: 'ada' })
       expect((await base.all())[0].author).toBeUndefined()
+    },
+    BOOT,
+  )
+})
+
+describe('Reductions', () => {
+  test(
+    'a to-many reduced to a count reads as the number of rows the session may see',
+    async () => {
+      const rows = await database
+        .context(ada)
+        .db.User.include('posts', (posts) => posts.count())
+        .all()
+
+      expect(rows).toMatchObject([{ handle: 'ada', posts: 1 }])
+    },
+    BOOT,
+  )
+
+  test(
+    'combine returns the rows beside a count, and the count is not chained after the page',
+    async () => {
+      await seed('Post', { title: "ada's second", published: true, author: ada.userId })
+      await seed('Post', { title: "ada's third", published: true, author: ada.userId })
+
+      const rows = await database
+        .context(ada)
+        .db.User.include('posts', (posts) =>
+          posts.combine({
+            items: posts.select('title').orderBy({ title: 'asc' }).limit(2),
+            total: posts.count(),
+          }),
+        )
+        .all()
+
+      const combined = rows[0].posts as { items: Record<string, unknown>[]; total: number }
+      expect(combined.total).toBe(3)
+      expect(combined.items).toHaveLength(2)
+      expect(combined.items[0].title).toBe("ada's published")
+      expect(combined.items[0]).not.toHaveProperty('published')
+    },
+    BOOT,
+  )
+
+  test(
+    "a combined branch's rows go through Field Visibility like any other relation's",
+    async () => {
+      const rows = await database
+        .context(ada)
+        .db.User.include('posts', (posts) => posts.combine({ items: posts, total: posts.count() }))
+        .all()
+
+      const combined = rows[0].posts as { items: Record<string, unknown>[]; total: number }
+      expect(combined.items[0].title).toBe("ada's published")
+      expect(combined.items[0]).not.toHaveProperty('editorNotes')
+      expect(combined.items[0]).not.toHaveProperty('hiddenEditor')
+    },
+    BOOT,
+  )
+
+  test(
+    'the relation may be named as rows once, not twice',
+    async () => {
+      expect(() =>
+        database
+          .context(ada)
+          .db.User.include('posts', (posts) =>
+            posts.combine({ first: posts.limit(1), second: posts.limit(2) }),
+          ),
+      ).toThrow(MultipleCombineRowBranchesError)
     },
     BOOT,
   )

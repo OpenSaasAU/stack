@@ -65,6 +65,7 @@ export {
   DuplicateIncludeError,
   InvalidCombineBranchError,
   InvalidRefinementError,
+  MultipleCombineRowBranchesError,
   NestedToOneIncludeError,
   ReducedToOneIncludeError,
   UnreducibleRefinementError,
@@ -270,7 +271,7 @@ interface RefinableCollection {
   /** The relation reads as how many rows matched, rather than as the rows. */
   count(): IncludeReduction
   /** Several named reductions over the same relation, each its own subquery. */
-  combine(spec: Record<string, IncludeReduction>): IncludeReduction
+  combine(spec: Record<string, IncludeBranch>): IncludeReduction
 }
 
 /**
@@ -640,30 +641,55 @@ function refine(
   // refuses a refinement that composed anything a count cannot honour.
   if (plan.reduce !== undefined) {
     if (plan.reduce.kind === 'count') return refined.count()
-    const spec: Record<string, IncludeReduction> = {}
+    const spec: Record<string, IncludeBranch> = {}
     for (const branch of plan.reduce.branches) {
       let branched = refined
       for (const predicate of branch.predicates) {
         branched = branched.where((model) => lowerWhere(predicate, model, ops))
       }
-      spec[branch.key] = branched.count()
+      spec[branch.key] =
+        branch.kind === 'count' ? branched.count() : shape(branched, plan, branch, ops)
     }
     return refined.combine(spec)
   }
+  return shape(refined, plan, plan, ops)
+}
+
+/** What a relation's rows look like: its projection, its sort and its page. */
+interface RowShape {
+  readonly orders: readonly OrderPlan[]
+  readonly limit?: number
+  readonly offset?: number
+}
+
+/**
+ * Apply the projection, the sort, the page and the next level to a relation's
+ * rows. The projection and the nested includes come from the plan, which for a
+ * `combine` already carries its rows branch's own (`rowsBranchOf`); the sort
+ * and the page come from whichever branch is being built, so the count branch
+ * beside it is never chained after this one's bound.
+ */
+function shape(
+  collection: RefinableCollection,
+  plan: IncludePlan,
+  rows: RowShape,
+  ops: WhereCombinators,
+): RefinableCollection {
+  let shaped = collection
   if (plan.projection.columns !== undefined) {
-    refined = refined.select(...plan.projection.columns)
+    shaped = shaped.select(...plan.projection.columns)
   }
-  if (plan.orders.length > 0) {
-    refined = refined.orderBy(
-      plan.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+  if (rows.orders.length > 0) {
+    shaped = shaped.orderBy(
+      rows.orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
     )
   }
-  if (plan.offset !== undefined) refined = refined.offset(plan.offset)
-  if (plan.limit !== undefined) refined = refined.limit(plan.limit)
+  if (rows.offset !== undefined) shaped = shaped.offset(rows.offset)
+  if (rows.limit !== undefined) shaped = shaped.limit(rows.limit)
   for (const nested of plan.includes) {
-    refined = refined.include(nested.relation, (child) => refine(child, nested, ops))
+    shaped = shaped.include(nested.relation, (child) => refine(child, nested, ops))
   }
-  return refined
+  return shaped
 }
 
 /**
@@ -773,9 +799,14 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * to-many only ({@link ReducedToOneIncludeError}), so `[]` is the shape the
  * relation would otherwise have had.
  *
- * Known limits: the `[]` is a stand-in, not the reduced relation's rows, so a
- * relationship `read` rule that inspects `item.<reducedRelation>` decides on
- * an empty array rather than on what the count counted. The common
+ * A `combine` that named the relation's rows under one key stands in that
+ * array instead of `[]`, so those rows reach Field Visibility exactly as an
+ * unreduced relation's do and {@link restoreReductions} writes them back
+ * beside the counts.
+ *
+ * Known limits: where the stand-in is `[]` it is not the reduced relation's
+ * rows, so a relationship `read` rule that inspects `item.<reducedRelation>`
+ * decides on an empty array rather than on what the count counted. The common
  * `item.posts.length > 0` shape therefore fails closed (the key is dropped
  * even where the count is non-zero); an inverted `item.posts.length === 0`
  * fails open (the key is kept, carrying the count). Reduce a relation whose
@@ -786,7 +817,10 @@ function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   const masked: OrmRow = { ...row }
   for (const plan of plans) {
     if (plan.reduce !== undefined) {
-      masked[plan.relation] = []
+      const rows = combinedRows(row[plan.relation], rowsKeyOf(plan))
+      masked[plan.relation] = reduces(plan.includes)
+        ? rows.map((related) => maskReductions(related, plan.includes))
+        : rows
       continue
     }
     if (!reduces(plan.includes)) continue
@@ -802,11 +836,42 @@ function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   return masked
 }
 
+/** The key a `combine` returned the relation's own rows under, if it named one. */
+function rowsKeyOf(plan: IncludePlan): string | undefined {
+  if (plan.reduce?.kind !== 'combine') return undefined
+  for (const branch of plan.reduce.branches) {
+    if (branch.kind === 'rows') return branch.key
+  }
+  return undefined
+}
+
+/** The rows a `combine` returned under {@link rowsKeyOf}, or `[]` for a bare count. */
+function combinedRows(value: unknown, key: string | undefined): OrmRow[] {
+  if (key === undefined || !isRow(value)) return []
+  const rows = value[key]
+  return Array.isArray(rows) ? rows.filter(isRow) : []
+}
+
 /** Write each reduced relation back, under the keys Field Visibility kept. */
 function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly IncludePlan[]): void {
   for (const plan of plans) {
     if (plan.reduce !== undefined) {
-      if (plan.relation in shown) shown[plan.relation] = source[plan.relation]
+      if (!(plan.relation in shown)) continue
+      const raw = source[plan.relation]
+      const key = rowsKeyOf(plan)
+      if (key === undefined || !isRow(raw)) {
+        shown[plan.relation] = raw
+        continue
+      }
+      const kept = shown[plan.relation]
+      if (reduces(plan.includes) && Array.isArray(kept)) {
+        const rows = combinedRows(raw, key)
+        kept.forEach((related, index) => {
+          const original = rows[index]
+          if (isRow(related) && isRow(original)) restoreReductions(related, original, plan.includes)
+        })
+      }
+      shown[plan.relation] = { ...raw, [key]: kept }
       continue
     }
     if (!reduces(plan.includes)) continue

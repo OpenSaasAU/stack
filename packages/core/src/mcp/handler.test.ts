@@ -5,14 +5,9 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { checkbox, relationship, text } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
-import { ValidationError } from '../hooks/index.js'
 import type { McpSessionProvider } from './types.js'
 import { createMcpHandlers } from './handler.js'
-import {
-  generateFieldsProjectionSchema,
-  McpProjectionRefusedError,
-  resolveFieldsProjection,
-} from './projection.js'
+import { generateFieldsProjectionSchema, resolveFieldsProjection } from './projection.js'
 import { generateFieldSchemas } from './field-schema.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
@@ -22,10 +17,6 @@ import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
  * The handler already takes `getContext` as an option, so the harness's own
  * context goes straight in — the vocabulary it advertises and the writes it
  * dispatches are decided by the real access engine rather than by a stand-in.
- *
- * The `query` operation dispatches through `context.db[list].findMany`, the
- * Prisma 7 method surface no rc.8 client serves; what it does today is pinned
- * once, below, and the tool comes back with that surface (#1255).
  */
 
 const BOOT = 120_000
@@ -182,6 +173,20 @@ function schemaConfig(): OpenSaasConfig {
           parent: relationship({ ref: 'Brittle.notes' }),
         },
         access: { operation: { query: () => true } },
+      },
+      // An `int autoincrement` key: the wire still carries a string, and the
+      // boundary coercion is what decides what the column gets (ADR-0048).
+      Counter: {
+        fields: { label: text() },
+        db: { idField: 'int autoincrement' },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => true,
+            delete: () => true,
+          },
+        },
       },
       // Self-referential: the advertised schema has to terminate.
       Category: {
@@ -918,132 +923,278 @@ describe('the MCP surface', () => {
     )
 
     /**
-     * The read half of the tool set dispatches through the Prisma 7 method
-     * surface, so it currently reports a failure rather than rows. Pinned here
-     * so the tool's return coming back is a visible change, not a silent one
-     * (#1255).
+     * ADR-0048: the wire carries a string, the column carries what the list's
+     * id strategy says it does, and the boundary coercion is what turns one
+     * into the other. A malformed id answers as a missing row does.
      */
     test(
-      'query reports a failure while it still dispatches through the Prisma 7 surface',
+      "an integer-keyed list's update tool takes an integer id, and 404s a malformed one",
       async () => {
-        await seedPost()
+        const config = schemaConfig()
+        const context = await contextFor(config)()
+        const created = await context.db.Counter.create({ data: { label: 'seed' } })
 
-        const { body } = await callTool('list_post_query', {})
-        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        const ok = await callTool(
+          'list_counter_update',
+          { where: { id: String(created?.id) }, data: { label: 'renamed' } },
+          config,
+        )
+        expect((ok.body?.result as { isError?: boolean }).isError).toBeUndefined()
+        expect(await context.db.Counter.all()).toMatchObject([{ label: 'renamed' }])
 
+        const malformed = await callTool(
+          'list_counter_update',
+          { where: { id: 'not-a-number' }, data: { label: 'nope' } },
+          config,
+        )
+        const result = malformed.body?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
         expect(result.isError).toBe(true)
-        expect(result.content[0].text).toContain('findMany is not a function')
+        expect(result.content[0].text).toContain('record not found')
+        expect(await context.db.Counter.all()).toMatchObject([{ label: 'renamed' }])
+      },
+      BOOT,
+    )
+
+    test(
+      "the update and delete tools advertise the id at its own list's type",
+      async () => {
+        const tools = await listTools()
+        const idOf = (name: string) => {
+          const where = (
+            tools.find((tool) => tool.name === name)?.inputSchema.properties as {
+              where: { properties: { id: { type: string } } }
+            }
+          ).where
+          return where.properties.id.type
+        }
+
+        expect(idOf('list_post_update')).toBe('string')
+        expect(idOf('list_counter_update')).toBe('integer')
+        expect(idOf('list_counter_delete')).toBe('integer')
       },
       BOOT,
     )
   })
 
   /**
-   * The projection the `query` tool would apply, taken at its own layer: it is
-   * decided entirely by the config, the session and the access engine, so it
-   * is observable without the terminal that dispatches it.
+   * The `fields` argument, end to end: the wire shape is unchanged (ADR-0037),
+   * what it lowers to is the secured surface (ADR-0053), and the engine's own
+   * exact selection is the only thing deciding what comes back.
    */
-  describe('the fields projection', () => {
-    const config = schemaConfig()
+  describe('the fields the query tool returns', () => {
+    async function seedBlog(): Promise<void> {
+      const context = await contextFor(schemaConfig())()
+      const post = await context.db.Post.create({ data: { title: 'seed', content: 'body' } })
+      for (const body of ['alpha', 'beta', 'gamma']) {
+        await context.db.Comment.create({
+          data: { body, approved: body !== 'gamma', post: { connect: { id: post?.id } } },
+        })
+      }
+    }
 
-    async function resolve(fields: unknown) {
-      const context = await contextFor(config)({ userId: 'user-123' })
-      return resolveFieldsProjection(
-        fields,
-        'Post',
-        config.lists.Post,
-        config,
-        context.session,
-        context,
-      )
+    async function query(args: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+      const { body } = await callTool('list_post_query', args)
+      const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+      if (result.isError) throw new Error(result.content[0].text)
+      return (JSON.parse(result.content[0].text) as { items: Record<string, unknown>[] }).items
+    }
+
+    async function refusal(args: Record<string, unknown>): Promise<string> {
+      const { body } = await callTool('list_post_query', args)
+      const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+      expect(result.isError).toBe(true)
+      return result.content[0].text
     }
 
     test(
-      'scalars alone ask for no include',
+      'no fields argument returns the row at its stored width',
       async () => {
-        const projection = await resolve({ title: true })
+        await seedBlog()
 
-        expect(projection.include).toBeUndefined()
-        expect(projection.fieldSelection).toEqual({ id: true, title: true })
+        expect(await query({})).toMatchObject([{ title: 'seed', content: 'body' }])
       },
       BOOT,
     )
 
     test(
-      'id comes back whether or not the caller named it',
+      'scalars come back with id, whether or not the caller named it',
       async () => {
-        expect((await resolve({ title: true })).fieldSelection.id).toBe(true)
+        await seedBlog()
+        const [item] = await query({ fields: { title: true } })
+
+        expect(item).toMatchObject({ title: 'seed' })
+        expect(item.id).toEqual(expect.any(String))
+        expect(item).not.toHaveProperty('content')
       },
       BOOT,
     )
 
     test(
-      'a to-one relation becomes an include with its own selection',
+      'a to-one relation comes back with its own selection, id forced there too',
       async () => {
-        const projection = await resolve({ author: { fields: { name: true } } })
-
-        expect(projection.include).toMatchObject({ author: true })
-        expect(projection.fieldSelection.author).toEqual({ _fields: { id: true, name: true } })
-      },
-      BOOT,
-    )
-
-    test(
-      'a to-many relation carries the default take, and a larger one is clamped',
-      async () => {
-        expect(
-          (await resolve({ comments: { fields: { body: true } } })).include?.comments,
-        ).toMatchObject({ take: MCP_NESTED_TAKE_DEFAULT })
-
-        expect(
-          (await resolve({ comments: { fields: { body: true }, take: 5_000 } })).include?.comments,
-        ).toMatchObject({ take: MCP_NESTED_TAKE_MAX })
-      },
-      BOOT,
-    )
-
-    test(
-      'a negative take is refused rather than read as reverse pagination',
-      async () => {
-        await expect(
-          resolve({ comments: { fields: { body: true }, take: -1 } }),
-        ).rejects.toBeInstanceOf(McpProjectionRefusedError)
-      },
-      BOOT,
-    )
-
-    test(
-      'a count can be asked for on its own or alongside the rows',
-      async () => {
-        expect((await resolve({ comments: { count: true } })).countRequests.get('comments')).toBe(
-          'only',
-        )
-        expect(
-          (await resolve({ comments: { count: true, fields: { body: true } } })).countRequests.get(
-            'comments',
-          ),
-        ).toBe('alongside')
-      },
-      BOOT,
-    )
-
-    test(
-      'a count-only relation fetches the same rows as a count-alongside one, never a zero-row placeholder',
-      async () => {
-        const selector = { where: { approved: true }, orderBy: { body: 'asc' } }
-        const only = await resolve({ comments: { ...selector, count: true } })
-        const alongside = await resolve({
-          comments: { ...selector, count: true, fields: { body: true } },
+        const context = await contextFor(schemaConfig())()
+        const author = await context.db.User.create({ data: { name: 'ada', email: 'a@b.c' } })
+        await context.db.Post.create({
+          data: { title: 'seed', author: { connect: { id: author?.id } } },
         })
 
-        // Field-visibility evaluates the relationship field's own `access.read`
-        // against whatever the include fetched. Under `take: 0` a rule reading
-        // the relation's value (`item.comments.length === 0`) would see an
-        // empty array whatever the rows really are, and wrongly GRANT — so the
-        // count-only entry must fetch identically, not cheaply.
-        expect(only.include?.comments).toEqual(alongside.include?.comments)
-        expect(only.include?.comments).toMatchObject({ take: MCP_NESTED_TAKE_DEFAULT })
-        expect(only.fieldSelection.comments).toBeUndefined()
+        const [item] = await query({ fields: { author: { fields: { name: true } } } })
+
+        expect(item.author).toMatchObject({ id: author?.id, name: 'ada' })
+        expect(item.author).not.toHaveProperty('email')
+      },
+      BOOT,
+    )
+
+    test(
+      'a to-many relation pages per parent, sorted and narrowed by its own where',
+      async () => {
+        await seedBlog()
+
+        const [item] = await query({
+          fields: {
+            comments: {
+              fields: { body: true },
+              where: { approved: true },
+              orderBy: { body: 'desc' },
+              take: 1,
+            },
+          },
+        })
+
+        expect(item.comments).toMatchObject([{ body: 'beta' }])
+      },
+      BOOT,
+    )
+
+    test(
+      'the nested page defaults to the standing cap, and a larger take is clamped to the ceiling',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const post = await context.db.Post.create({ data: { title: 'seed' } })
+        for (let index = 0; index < MCP_NESTED_TAKE_DEFAULT + 2; index += 1) {
+          await context.db.Comment.create({
+            data: { body: `c${index}`, approved: true, post: { connect: { id: post?.id } } },
+          })
+        }
+
+        const [defaulted] = await query({ fields: { comments: { fields: { body: true } } } })
+        expect(defaulted.comments).toHaveLength(MCP_NESTED_TAKE_DEFAULT)
+
+        const [clamped] = await query({
+          fields: { comments: { fields: { body: true }, take: MCP_NESTED_TAKE_MAX + 500 } },
+        })
+        expect(clamped.comments).toHaveLength(MCP_NESTED_TAKE_DEFAULT + 2)
+      },
+      BOOT,
+    )
+
+    test(
+      'count on its own is the number, and beside fields it is { items, count }',
+      async () => {
+        await seedBlog()
+
+        const [only] = await query({ fields: { comments: { count: true } } })
+        expect(only.comments).toBe(3)
+
+        const [both] = await query({
+          fields: { comments: { fields: { body: true }, count: true, take: 2 } },
+        })
+        expect(both.comments).toMatchObject({
+          items: [{ body: 'alpha' }, { body: 'beta' }],
+          count: 3,
+        })
+      },
+      BOOT,
+    )
+
+    /**
+     * The `{ items, count }` pair is one `combine` on one include. Two includes
+     * of the same relation is what the engine refuses outright
+     * (`DuplicateIncludeError`), so a translator that emitted the rows and the
+     * count as separate includes would fail here rather than quietly serve one
+     * of them.
+     */
+    test(
+      'the rows and the count of one relation are one include, not two',
+      async () => {
+        await seedBlog()
+
+        const [item] = await query({
+          fields: {
+            comments: { fields: { body: true }, where: { approved: true }, count: true },
+          },
+        })
+
+        expect(item.comments).toMatchObject({ items: [{ body: 'alpha' }, { body: 'beta' }] })
+        expect((item.comments as { count: number }).count).toBe(2)
+      },
+      BOOT,
+    )
+
+    test(
+      'the count counts the relation, not the page it was asked beside',
+      async () => {
+        await seedBlog()
+
+        const [item] = await query({
+          fields: { comments: { fields: { body: true }, take: 1, count: true } },
+        })
+
+        expect(item.comments).toMatchObject({ items: [{ body: 'alpha' }], count: 3 })
+      },
+      BOOT,
+    )
+
+    test(
+      "a nested row's field the session cannot read never reaches the wire",
+      async () => {
+        await seedBlog()
+
+        const [item] = await query({ fields: { comments: { fields: { body: true } } } })
+
+        for (const comment of item.comments as Record<string, unknown>[]) {
+          expect(comment).not.toHaveProperty('internalNote')
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'the root where and orderBy lower through the Where vocabulary',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        await context.db.Post.create({ data: { title: 'alpha' } })
+        await context.db.Post.create({ data: { title: 'beta' } })
+
+        expect(await query({ where: { title: { contains: 'lph' } } })).toMatchObject([
+          { title: 'alpha' },
+        ])
+        expect(await query({ orderBy: { title: 'desc' }, fields: { title: true } })).toMatchObject([
+          { title: 'beta' },
+          { title: 'alpha' },
+        ])
+        expect(
+          await query({ where: { comments: { none: {} } }, fields: { title: true } }),
+        ).toHaveLength(2)
+      },
+      BOOT,
+    )
+
+    test(
+      'take and skip page the root read',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        for (const title of ['alpha', 'beta', 'gamma']) {
+          await context.db.Post.create({ data: { title } })
+        }
+
+        expect(
+          await query({ orderBy: { title: 'asc' }, take: 1, skip: 1, fields: { title: true } }),
+        ).toMatchObject([{ title: 'beta' }])
       },
       BOOT,
     )
@@ -1051,25 +1202,47 @@ describe('the MCP surface', () => {
     test(
       'what is refused: an unadvertised name, a wrong selector shape, and an unreachable relation',
       async () => {
-        await expect(resolve({ nope: true })).rejects.toBeInstanceOf(McpProjectionRefusedError)
-        await expect(resolve({ author: true })).rejects.toBeInstanceOf(McpProjectionRefusedError)
-        await expect(resolve({ title: 'yes' })).rejects.toBeInstanceOf(McpProjectionRefusedError)
-        await expect(resolve({ secretInfo: { fields: { value: true } } })).rejects.toBeInstanceOf(
-          McpProjectionRefusedError,
+        expect(await refusal({ fields: { nope: true } })).toContain('has no field "nope"')
+        expect(await refusal({ fields: { author: true } })).toContain('is a relation')
+        expect(await refusal({ fields: { title: 'yes' } })).toContain('is a scalar')
+        expect(await refusal({ fields: { secretInfo: { fields: { value: true } } } })).toContain(
+          'has no field "secretInfo"',
         )
+        expect(
+          await refusal({ fields: { comments: { fields: { body: true }, take: -1 } } }),
+        ).toContain('must not be negative')
+      },
+      BOOT,
+    )
+
+    /**
+     * The nested predicate names fields on the RELATED list, and the engine
+     * gates it exactly as it gates the root's own — a field-level-denied
+     * column is refused with the message an undeclared one gets (#912,
+     * ADR-0031), so this module keeps no copy of that rule.
+     */
+    test(
+      'a nested where or orderBy naming a field the session cannot read is refused',
+      async () => {
+        expect(
+          await refusal({
+            fields: { comments: { fields: { body: true }, where: { internalNote: 'x' } } },
+          }),
+        ).toContain('not a queryable field')
+        expect(
+          await refusal({
+            fields: { comments: { fields: { body: true }, orderBy: { internalNote: 'asc' } } },
+          }),
+        ).toContain('not a queryable field')
       },
       BOOT,
     )
 
     test(
-      'a nested where or orderBy naming a field the session cannot read is refused',
+      'a where outside the vocabulary is refused rather than passed on',
       async () => {
-        await expect(
-          resolve({ comments: { fields: { body: true }, where: { internalNote: 'x' } } }),
-        ).rejects.toBeInstanceOf(ValidationError)
-        await expect(
-          resolve({ comments: { fields: { body: true }, orderBy: { internalNote: 'asc' } } }),
-        ).rejects.toBeInstanceOf(ValidationError)
+        expect(await refusal({ where: { title: { startsWith: 'a' } } })).toContain('Post.title')
+        expect(await refusal({ orderBy: { title: 'sideways' } })).toContain('"asc" or "desc"')
       },
       BOOT,
     )
