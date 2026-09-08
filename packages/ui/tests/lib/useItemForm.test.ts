@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import {
+  diffEdgeSelections,
   transformItemFormData,
   transformInitialData,
   getEditableFields,
@@ -227,6 +228,27 @@ describe('useItemForm handleFieldChange', () => {
     })
 
     expect(result.current.formData).toEqual({ author: 'u1' })
+  })
+})
+
+describe('diffEdgeSelections', () => {
+  const fields = {
+    posts: {
+      type: 'relationship',
+      many: true,
+      edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+    } satisfies SerializableFieldConfig,
+  }
+
+  it('keeps a still-selected row a custom control hands back as a number', () => {
+    // `prepareItemForm` serialises the baseline to strings, but a control
+    // registered for the field may carry an `int autoincrement` id as the
+    // number it is.
+    const changes = diffEdgeSelections(fields, { posts: ['1'] }, { posts: [1, 2] })
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0].removed).toEqual([])
+    expect(changes[0].added).toEqual(['2'])
   })
 })
 

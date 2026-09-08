@@ -235,12 +235,13 @@ describe('an integer-keyed related list round-trips its ids through the form', (
     const config = intKeyedConfig()
     const owner = await harness.context.db.User.create({ data: { name: 'Ada' } })
     const userId = String(owner?.id)
-    await harness.context.db.Post.create({
+    const post = await harness.context.db.Post.create({
       data: { title: 'Owned', author: { connect: { id: owner?.id } } },
     })
+    const postId = String(post?.id)
 
     const prepared = await renderUserForm(harness, config, userId)
-    expect(prepared.initialData.posts).toEqual([userId])
+    expect(prepared.initialData.posts).toEqual([postId])
 
     const actor = userEvent.setup()
     await actor.click(screen.getByRole('button', { name: 'Remove' }))

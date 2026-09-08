@@ -115,9 +115,10 @@ export function transformItemFormData(
 
 /**
  * The ids a to-many control holds, as the strings the server action's id
- * boundary parses back to the list's own key type. An `int autoincrement`
- * related list can put a number here — dropping it would leave a deselect with
- * no baseline to diff against, and the form would report a save it never made.
+ * boundary parses back to the list's own key type. A custom control registered
+ * for the field can hand back an `int autoincrement` row's id as the number it
+ * is; dropping it would diff as a deselect and silently clear a foreign key
+ * the user never touched.
  */
 function selectedIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []

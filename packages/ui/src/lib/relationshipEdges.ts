@@ -3,16 +3,6 @@ import { resolveJunctionEdge } from '@opensaas/stack-core'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 
 /**
- * How one to-many relationship's edges are written from the item form: as
- * writes against the RELATED list, one per edge (ADR-0050).
- *
- * The parent record holds no column for a to-many, so its own update payload
- * can never carry the edge — and connecting through the inverse field no
- * longer compiles. What does hold the link is the related row's own foreign
- * key, so adding an edge is an update of that row and removing one is nulling
- * the same column, both evaluated against {@link relatedListKey}'s access.
- */
-/**
  * Whether a field declares `validation: { isRequired: true }`.
  *
  * `RelationshipField` does not declare `validation`, so this reads it
@@ -27,6 +17,16 @@ function declaresRequired(field: FieldConfig): boolean {
   return 'isRequired' in validation && validation.isRequired === true
 }
 
+/**
+ * How one to-many relationship's edges are written from the item form: as
+ * writes against the RELATED list, one per edge (ADR-0050).
+ *
+ * The parent record holds no column for a to-many, so its own update payload
+ * can never carry the edge — and connecting through the inverse field no
+ * longer compiles. What does hold the link is the related row's own foreign
+ * key, so adding an edge is an update of that row and removing one is nulling
+ * the same column, both evaluated against {@link relatedListKey}'s access.
+ */
 export interface ToManyEdgePlan {
   /** The list whose rows carry the foreign key, and whose access decides each write. */
   relatedListKey: string

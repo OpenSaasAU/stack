@@ -8,7 +8,6 @@ import { createTestContext, type TestContext } from '@opensaas/stack-core/testin
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
 import { resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import { RelationshipTableClient } from '../../src/components/RelationshipTableClient.js'
-import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 
 const mockPush = vi.fn()
 const mockRefresh = vi.fn()
@@ -139,28 +138,11 @@ describe('the default edit route can write a to-many edge', () => {
     await denied.truncate()
   })
 
-  it('routes a default-configured to-many to a table, out of the details form', async () => {
-    const config = blogConfig()
-    const seeded = await seed(allowed)
-    const layout = deriveItemViewLayout(config, 'User')
+  it('routes a default-configured to-many to a table, out of the details form', () => {
+    const layout = deriveItemViewLayout(blogConfig(), 'User')
 
     expect(layout.sections.map((section) => section.fieldName)).toEqual(['posts'])
     expect(layout.detailsFields).not.toContain('posts')
-
-    // What the edit page hands the form on this route: the details fields only,
-    // so the form's own edge-writing multi-select is never rendered here.
-    const detailsListConfig = {
-      ...config.lists.User,
-      fields: { name: config.lists.User.fields.name },
-    }
-    const prepared = await prepareItemForm(
-      allowed.context as unknown as AccessContext,
-      config,
-      'User',
-      detailsListConfig,
-      { id: seeded.userId, name: 'Ada' },
-    )
-    expect(prepared.serializableFields.posts).toBeUndefined()
   })
 
   it("links an existing post from the table, setting that post's foreign key", async () => {

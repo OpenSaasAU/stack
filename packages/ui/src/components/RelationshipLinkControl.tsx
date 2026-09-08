@@ -60,10 +60,12 @@ export function readAddOutcome(result: unknown): { ok: boolean; error?: string }
  * Picking a far endpoint writes the edge under the access of the list that
  * actually holds it (ADR-0050): `addRelated` creates a junction row under the
  * junction list's create access (#1329), and `linkRelated` sets the related
- * row's own back-reference under that list's update access. Either way the
- * control sends ids and nothing else — it names neither the list the write
- * lands on nor any column of the row. A denial comes back as the same generic
- * reason an endpoint the session cannot read gets, so the two stay
+ * row's own back-reference under that list's update access. The payload names
+ * the list the write lands on — and, for `foreignKey`, the column — and the
+ * server takes neither on trust: it evaluates the write under the access of
+ * the list named, so substituting one only redirects the write somewhere the
+ * session must already be allowed to write. A denial comes back as the same
+ * generic reason an endpoint the session cannot read gets, so the two stay
  * indistinguishable.
  *
  * Known limits: the offered options are not filtered by what is already linked.
