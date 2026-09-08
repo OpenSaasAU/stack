@@ -406,11 +406,13 @@ describe('forUpdate()', () => {
       expect(rawStatements()[0].sql).toContain('FOR UPDATE')
     })
 
-    test('the same hook under a write that opened its own transaction refuses', async () => {
-      // The lane belongs to the transaction the CALLER opened. This write
-      // opened its own, on its own handle, so a lock taken through the outer
-      // lane would be held by a different transaction than the write — it is
-      // dropped, and `forUpdate()` refuses.
+    test('the same hook under a write outside a transaction has no lane, and refuses', async () => {
+      // This context is not transaction-bound, so it never carried a lane at
+      // all — the refusal comes from its absence, not from
+      // `bindContextToTransaction` dropping one. That guard is defensive:
+      // `_rowLock` and `_transactionOpener` are set on mutually exclusive
+      // conditions, so no path reaches the drop branch with a lane present,
+      // and this test passes identically with the guard deleted.
       const context = database.context(anonymous)
       await context.db.Slot.create({ data: { name: 'a', capacity: 1 } })
       lockedByHook = null

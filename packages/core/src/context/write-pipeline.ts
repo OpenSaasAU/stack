@@ -247,6 +247,11 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * this write opened its own, the lane belongs to a different transaction than
  * `tx`, and a hook reaching `forUpdate()` through it would take the lock on
  * the wrong connection; it is dropped, and refused as unavailable.
+ *
+ * That drop is defence in depth rather than a live branch: `_rowLock` is set
+ * only with an `_unsafeTransaction` and `_transactionOpener` only without one,
+ * so a context that could open its own transaction here never carries a lane
+ * to drop. Deleting the check changes no test.
  */
 function bindContextToTransaction(
   args: WritePipelineArgs,
