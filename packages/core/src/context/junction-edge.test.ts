@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import type { AccessControlledDB, Session } from '../access/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text, virtual } from '../fields/index.js'
+import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
@@ -202,6 +202,118 @@ describe('adding an edge across a junction', () => {
     const config = junctionConfig()
     config.lists.Post.fields.tags = relationship({ ref: 'PostTag', many: true })
 
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+  })
+
+  test('a ref naming a list the config does not declare is not an edge', () => {
+    const config = junctionConfig()
+    config.lists.Post.fields.tags = relationship({ ref: 'Nowhere.post', many: true })
+
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+  })
+
+  test('a back-reference that is not a relationship names no parent link', () => {
+    const absent = junctionConfig()
+    absent.lists.Post.fields.tags = relationship({ ref: 'PostTag.missing', many: true })
+    expect(resolveJunctionEdge(absent, 'Post', 'tags')).toBeNull()
+
+    const scalar = junctionConfig()
+    scalar.lists.PostTag.fields.label = text()
+    scalar.lists.Post.fields.tags = relationship({ ref: 'PostTag.label', many: true })
+    expect(resolveJunctionEdge(scalar, 'Post', 'tags')).toBeNull()
+  })
+
+  test(
+    'a back-reference that owns no foreign key cannot carry the parent link',
+    async () => {
+      const config = junctionConfig()
+      // `PostTag.post` keyed on the other side owns no column on the junction
+      // row, so presetting the parent through it would set nothing — the create
+      // would store an edge whose parent end is null, or be refused at the
+      // relation input as non-owning. Neither is an edge, so it is not one.
+      config.lists.PostTag.fields.post = relationship({ ref: 'Post.tags', many: true })
+
+      expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+
+      const post = await harness.context.db.Post.create({ data: { title: 'p' } })
+      const tag = await harness.context.db.Tag.create({ data: { name: 't' } })
+      const result = await contextAt(config, { userId: 'u1' }).serverAction({
+        listKey: 'Post',
+        action: 'addRelated',
+        field: 'tags',
+        parentId: String(post?.id),
+        targetId: String(tag?.id),
+      })
+
+      expect(result).toMatchObject({ added: false })
+      expect(String((result as { error?: string }).error)).toContain(
+        'not an edge across an explicit junction list',
+      )
+      expect(await storedEdges(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  test('a junction with only the parent link has no far endpoint', () => {
+    const config = junctionConfig()
+    delete config.lists.PostTag.fields.tag
+    delete config.lists.Tag.fields.posts
+
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+  })
+
+  test('a relationship that owns no foreign key is not a candidate far endpoint', () => {
+    const config = junctionConfig()
+    // An inverse to-many keyed on `Audit` sets no column on the edge row, so it
+    // is neither the far endpoint nor a third foreign key making it ambiguous.
+    config.lists.PostTag.fields.audits = relationship({ ref: 'Audit.postTag', many: true })
+    config.lists.Audit = {
+      fields: { note: text(), postTag: relationship({ ref: 'PostTag.audits' }) },
+      access: { operation: OPEN },
+    }
+
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toMatchObject({
+      junctionListKey: 'PostTag',
+      backReferenceField: 'post',
+      targetField: 'tag',
+      targetListKey: 'Tag',
+    })
+  })
+
+  test('a ref the config cannot resolve is not a candidate far endpoint, and does not throw', () => {
+    // A ref naming an undeclared list: ownership has no answer, so the field is
+    // not this end rather than a second one making the endpoint ambiguous.
+    const undeclaredList = junctionConfig()
+    undeclaredList.lists.PostTag.fields.ghost = relationship({ ref: 'Nowhere.postTags' })
+    expect(resolveJunctionEdge(undeclaredList, 'Post', 'tags')).toMatchObject({
+      targetField: 'tag',
+    })
+
+    // A ref naming a field the declared list does not have: `shouldHaveForeignKey`
+    // throws on it, and this resolver runs inside a render and a server action,
+    // so the throw must not reach either.
+    const undeclaredField = junctionConfig()
+    undeclaredField.lists.PostTag.fields.ghost = relationship({ ref: 'Author.nothingHere' })
+    expect(resolveJunctionEdge(undeclaredField, 'Post', 'tags')).toMatchObject({
+      targetField: 'tag',
+    })
+  })
+
+  test('a redeclared system field is not data the edge row carries', () => {
+    const config = junctionConfig()
+    config.lists.PostTag.fields.createdAt = timestamp()
+
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toMatchObject({ targetField: 'tag' })
+  })
+
+  test('a field flagged virtual stores nothing, whatever its type', () => {
+    const config = junctionConfig()
+    // The `virtual: true` flag rather than `type: 'virtual'` — the spelling a
+    // field type that computes its own value uses.
+    config.lists.PostTag.fields.label = text({ virtual: true })
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toMatchObject({ targetField: 'tag' })
+
+    config.lists.PostTag.fields.label = text({ virtual: false })
     expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
   })
 
