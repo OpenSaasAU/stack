@@ -45,6 +45,7 @@ export function prisma8Double(
   return {
     sql: {},
     raw: {},
+    contract: {},
     orm,
     runtime: () => ({ query: unreachable, execute: unreachable }),
     transaction: async <R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R> => {

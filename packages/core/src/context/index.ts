@@ -25,7 +25,12 @@ import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import type { OpenedTransaction, OrmClient, TransactionOpener } from '../access/types.js'
 import { createSecuredRead } from '../secured/read.js'
-import { createRowLockLane, RowLockUnavailableError, type RowLockLane } from '../secured/lock.js'
+import {
+  createRowLockLane,
+  RowLockUnavailableError,
+  unusableRowLockLane,
+  type RowLockLane,
+} from '../secured/lock.js'
 import {
   createUnsafeSurface,
   createUnsafeTransactionSurface,
@@ -510,6 +515,25 @@ function logDatabaseFailure(error: unknown, listKey: string, action: string): vo
   console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
 }
 
+/**
+ * The lock lane a context carries, present only inside a transaction — which
+ * is what makes `forUpdate()` answerable there and a refusal everywhere else.
+ * The raw tag comes from the client because Prisma's transaction context
+ * carries none, and the executor from the transaction because the lock has to
+ * be the transaction's (ADR-0047, ADR-0062).
+ *
+ * Inside a transaction whose client cannot compose the statement the seat is
+ * filled by a refusing lane rather than left empty, so `undefined` keeps
+ * meaning exactly one thing: there is no transaction.
+ */
+function rowLockSeat(
+  client: UnsafeCapableClient | undefined,
+  transaction: UnsafeTransactionScope | undefined,
+): RowLockLane | undefined {
+  if (client === undefined || transaction === undefined) return undefined
+  return createRowLockLane(client.raw, client.contract, transaction) ?? unusableRowLockLane()
+}
+
 export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
   ormHandle: OrmClient,
@@ -536,15 +560,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
   const openTransaction = transactionOpenerFor(config, client, _unsafeTransaction)
 
-  // Present only inside a transaction, which is what makes `forUpdate()`
-  // answerable there and a refusal everywhere else. The raw tag comes from the
-  // client because Prisma's transaction context carries none, and the executor
-  // from the transaction because the lock has to be the transaction's
-  // (ADR-0047, ADR-0062).
-  const lock: RowLockLane | undefined =
-    client === undefined || _unsafeTransaction === undefined
-      ? undefined
-      : createRowLockLane(client.raw, client.contract, _unsafeTransaction)
+  const lock = rowLockSeat(client, _unsafeTransaction)
 
   const unsafe: UnsafeSurface =
     client === undefined
@@ -586,6 +602,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _resolveOutputChain: [],
     _transactionOwner,
     _transactionOpener: openTransaction,
+    _rowLock: lock,
   }
 
   populateDbDelegate(db, config, ormHandle, context, lock)
@@ -1014,9 +1031,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           client,
           unsafeTransaction,
         ),
-        client === undefined || unsafeTransaction === undefined
-          ? undefined
-          : createRowLockLane(client.raw, client.contract, unsafeTransaction),
+        rowLockSeat(client, unsafeTransaction),
       )
 
     // Known limits: this branch hands `fn` a context whose `unsafe` is built
@@ -1162,6 +1177,11 @@ export function populateDbDelegate(
  * Build a fresh access-controlled `db` delegate bound to `ormHandle` and `context`.
  * Convenience wrapper over {@link populateDbDelegate} returning a new object,
  * used by the Write Pipeline to rebind `db` to a transaction client.
+ *
+ * The lock lane comes off `context._rowLock`, so a delegate rebuilt inside a
+ * transaction keeps the `forUpdate()` its context already had (ADR-0047) — a
+ * hook is a caller like any other. Its absence is the caller's statement that
+ * this context is not the transaction's.
  */
 export function buildDbDelegate(
   config: OpenSaasConfig,
@@ -1169,7 +1189,7 @@ export function buildDbDelegate(
   context: AccessContext,
 ): AccessControlledDB {
   const db: Record<string, unknown> = {}
-  populateDbDelegate(db, config, ormHandle, context)
+  populateDbDelegate(db, config, ormHandle, context, context._rowLock)
   return db as AccessControlledDB
 }
 

@@ -240,6 +240,13 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook's
  * own `context.db` write defers its transaction-boundary bracket to that owner
  * instead of firing eagerly.
+ *
+ * The lock lane (ADR-0047) is carried only when `tx` IS the handle the context
+ * already had — the joined-write shape, where this write runs inside a
+ * transaction someone else opened and the lane is that transaction's. When
+ * this write opened its own, the lane belongs to a different transaction than
+ * `tx`, and a hook reaching `forUpdate()` through it would take the lock on
+ * the wrong connection; it is dropped, and refused as unavailable.
  */
 function bindContextToTransaction(
   args: WritePipelineArgs,
@@ -256,6 +263,7 @@ function bindContextToTransaction(
     _isSudo: context._isSudo,
     _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
+    _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.

@@ -31,6 +31,12 @@ import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
  * than a hope: `arrive()` resolves only once all `RACERS` transactions have
  * reached it, so a run in which any two racers did not overlap does not pass
  * with the wrong answer — it hangs and fails on the timeout.
+ *
+ * The gate reads BOTH of its sides after the lock. The locked row carries its
+ * columns as of before the lock — the terminal reads first and locks second,
+ * and each statement takes its own snapshot — so a threshold taken off it can
+ * be stale. The last test here holds the window open and proves the two values
+ * differ.
  */
 
 const BOOT = 120_000
@@ -146,18 +152,23 @@ describe.skipIf(escape.kind !== 'postgres')(
               // releases.
               await arrive()
 
-              // The lock comes BEFORE the count. Every racer takes the same
-              // token on the same parent row, so the count cannot go stale
-              // under a booking committed by a racer that got there first.
-              const parent = await tx.db.Slot.where({ id: { equals: slotId } })
+              // The lock comes BEFORE both sides of the gate. Every racer takes
+              // the same token on the same parent row, so neither read can go
+              // stale under a booking committed by a racer that got there
+              // first.
+              const held = await tx.db.Slot.where({ id: { equals: slotId } })
                 .forUpdate()
                 .first()
-              if (parent === null) return false
+              if (held === null) return false
 
+              // The threshold is re-read in its own statement after the lock,
+              // for the reason the count is: `held`'s columns are the row as
+              // of before the lock. The suite below proves the difference.
+              const parent = await tx.db.Slot.where({ id: { equals: slotId } }).first()
               const { taken } = await tx.db.Booking.where({
                 slotId: { equals: slotId },
               }).aggregate((aggregate) => ({ taken: aggregate.count() }))
-              if (taken >= Number(parent.capacity)) return false
+              if (parent === null || taken >= Number(parent.capacity)) return false
 
               await tx.db.Booking.create({ data: { slotId, holder: `racer-${index}` } })
               return true
@@ -196,6 +207,66 @@ describe.skipIf(escape.kind !== 'postgres')(
 
         expect(outcomes.filter(Boolean)).toHaveLength(RACERS)
         expect(await booked(slotId)).toBe(RACERS)
+      },
+      BOOT,
+    )
+
+    test(
+      'the gate compares against the threshold read after the lock, not the one on the locked row',
+      async () => {
+        const slotId = await slot()
+
+        // The window is opened deterministically rather than raced for: the
+        // blocker holds the slot's row lock, so the gate's scoped read (which
+        // nothing blocks) succeeds and its lock statement then waits. The
+        // capacity change commits while it waits, so the two statements
+        // straddle it — which is exactly the interval the locked row's own
+        // columns predate.
+        const blocker = new pg.Client({ connectionString: database.url })
+        await blocker.connect()
+        try {
+          await blocker.query('begin')
+          await blocker.query('select id from "Slot" where id = $1 for update', [slotId])
+
+          const running = racers[0].context.transaction(
+            async (tx): Promise<{ admitted: boolean; onLockedRow: number; afterLock: number }> => {
+              const held = await tx.db.Slot.where({ id: { equals: slotId } })
+                .forUpdate()
+                .first()
+              if (held === null) throw new Error('the slot was readable, so the lock has a gate')
+
+              const parent = await tx.db.Slot.where({ id: { equals: slotId } }).first()
+              if (parent === null) throw new Error('the lock is held, so the row cannot be gone')
+
+              const { taken } = await tx.db.Booking.where({
+                slotId: { equals: slotId },
+              }).aggregate((aggregate) => ({ taken: aggregate.count() }))
+
+              const onLockedRow = Number(held.capacity)
+              const afterLock = Number(parent.capacity)
+              if (taken >= afterLock) return { admitted: false, onLockedRow, afterLock }
+
+              await tx.db.Booking.create({ data: { slotId, holder: 'late' } })
+              return { admitted: true, onLockedRow, afterLock }
+            },
+          )
+          await new Promise((resolve) => setTimeout(resolve, 750))
+
+          await blocker.query('update "Slot" set capacity = 0 where id = $1', [slotId])
+          await blocker.query('commit')
+
+          const outcome = await running
+
+          // The two values the gate could have compared against, and they
+          // differ: the locked row still carries the capacity from before the
+          // lock was granted, the database carries the committed one.
+          expect(outcome.onLockedRow).toBe(CAPACITY)
+          expect(outcome.afterLock).toBe(0)
+          expect(outcome.admitted).toBe(false)
+          expect(await booked(slotId)).toBe(0)
+        } finally {
+          await blocker.end()
+        }
       },
       BOOT,
     )

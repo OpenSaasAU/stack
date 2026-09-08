@@ -80,6 +80,7 @@ export {
   ROW_LOCK_MAX_KEYS,
   RowLockIdentityError,
   RowLockKeyLimitExceededError,
+  RowLockLaneUnavailableError,
   RowLockUnavailableError,
 } from './lock.js'
 export type { RowLockIdentity, RowLockKey, RowLockLane } from './lock.js'
@@ -167,6 +168,15 @@ export interface SecuredQuery<TRow = OrmRow> {
    * `first()` yields `null` and `all()` the surviving subset. `null` therefore
    * means denied-or-vanished, which extends a conflation Silent failure
    * already makes deliberately (ADR-0047).
+   *
+   * Because the read is the FIRST of the two statements, the row it hands back
+   * carries its columns as of BEFORE the lock: each statement takes its own
+   * snapshot under Read Committed, so a column another transaction committed
+   * in between arrives stale. Only the identity is post-lock — the lock is a
+   * mutex token on the row, not protection for the row's own data, and this
+   * differs from a single-statement `SELECT … FOR UPDATE`, which Postgres
+   * re-evaluates after acquiring. A gate's threshold is therefore read in its
+   * own statement AFTER this one, exactly as its count is.
    *
    * `aggregate()` and `nearest()` do not carry it: an aggregate returns no
    * primary keys to lock, and a ranking is not a gate.

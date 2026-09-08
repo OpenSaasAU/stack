@@ -155,12 +155,14 @@ export { RelationSelectError } from './secured/read.js'
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
 export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 // The row lock's own refusals and its key bound: a list whose table has no
-// single-column primary key, a lock composed outside a transaction, and the
-// cost limit on how many keys one terminal binds (ADR-0047, ADR-0062).
+// single-column primary key, a lock composed outside a transaction, a lock
+// inside one whose client cannot compose the statement, and the cost limit on
+// how many keys one terminal binds (ADR-0047, ADR-0062).
 export {
   ROW_LOCK_MAX_KEYS,
   RowLockIdentityError,
   RowLockKeyLimitExceededError,
+  RowLockLaneUnavailableError,
   RowLockUnavailableError,
 } from './secured/read.js'
 // The secured write surface: the collection the Write Pipeline drives, and the

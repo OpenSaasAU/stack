@@ -1,3 +1,4 @@
+import type { RowLockLane } from '../secured/lock.js'
 import type { SecuredQuery } from '../secured/read.js'
 import type { UnsafeTransactionScope } from '../unsafe.js'
 import type { TransactionRegistry } from './transaction-registry.js'
@@ -271,6 +272,19 @@ export interface AccessContext {
    * @internal
    */
   _transactionOpener?: TransactionOpener
+  /**
+   * The lane `forUpdate()` and `advisoryLock()` compose their statements
+   * through, present only on a context bound to a transaction (ADR-0047).
+   *
+   * Carried on the context rather than passed at construction alone because
+   * `db`'s terminals capture their lane the way they capture their handle, so
+   * every path that REBUILDS the delegate — the Write Pipeline rebinding a
+   * hook's `db` to the transaction, `deriveResolveOutputContext` extending the
+   * resolve chain — has to hand the lane back or a hook inside
+   * `context.transaction()` loses a lock the enclosing context has.
+   * @internal
+   */
+  _rowLock?: RowLockLane
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

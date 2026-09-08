@@ -11,8 +11,12 @@ import {
   createRowLockLane,
   ROW_LOCK_MAX_KEYS,
   RowLockKeyLimitExceededError,
+  RowLockLaneUnavailableError,
   RowLockUnavailableError,
 } from './lock.js'
+import { getContext } from '../context/index.js'
+import type { UnsafeCapableClient } from '../unsafe.js'
+import { ormClientFor } from '../testing/context.js'
 
 /**
  * The row lock: the statement the engine composes, the keys it binds, and the
@@ -58,6 +62,23 @@ const config: OpenSaasConfig = {
       fields: { label: text() },
       access: { operation: { query: () => true, create: () => true } },
     },
+    // A write whose hook reaches for a row lock. The Write Pipeline rebuilds
+    // the `db` a hook is handed, so this is what proves the rebuilt delegate
+    // keeps the lane its context had (ADR-0047).
+    Ledger: {
+      fields: { note: text() },
+      access: { operation: { query: () => true, create: () => true } },
+      hooks: {
+        beforeOperation: async ({ context }) => {
+          try {
+            const rows = await context.db.Slot.orderBy({ name: 'asc' }).forUpdate().all()
+            lockedByHook = { keys: rows.map((row) => String(row.name)) }
+          } catch (error) {
+            lockedByHook = { error }
+          }
+        },
+      },
+    },
     // The scoped and unscoped answers must never coincide: a session sees its
     // own notes alone, and the fixture seeds notes it does not own.
     Note: {
@@ -71,6 +92,9 @@ const config: OpenSaasConfig = {
     },
   },
 }
+
+/** What `Ledger`'s hook saw when it reached for a row lock, or why it could not. */
+let lockedByHook: { keys: string[] } | { error: unknown } | null = null
 
 /** One statement as the adapter rendered it, and the lane it ran on. */
 interface Statement {
@@ -317,6 +341,83 @@ describe('forUpdate()', () => {
       await expect(context.db.Slot.forUpdate().all()).rejects.toBeInstanceOf(
         RowLockUnavailableError,
       )
+    })
+
+    test('no keys, no statement — the lane composes nothing at arity zero', async () => {
+      // `lockStatement` carries one fragment per key, so at arity 0 the tag
+      // never consumes its trailing fragment: the statement would arrive with
+      // `FOR UPDATE` dropped and `LIMIT` dangling. The terminal cannot reach
+      // this, but `lock()` is a member of the lane and is driven directly.
+      const locked = await database.client.transaction(async (tx) => {
+        const lane = createRowLockLane(database.client.raw, database.client.contract, tx)
+        if (lane === undefined) throw new Error('unreachable')
+        const identity = lane.identity('Slot')
+        recorder.statements.length = 0
+        return await lane.lock('Slot', identity, [])
+      })
+
+      expect(locked).toEqual([])
+      expect(rawStatements()).toEqual([])
+    })
+
+    test('inside a transaction, a client that cannot compose the statement says so', async () => {
+      // Not the same fact as "there is no transaction": there is one, and the
+      // caller told to open another would be looking in the wrong place.
+      const unusable: UnsafeCapableClient = {
+        sql: database.client.sql,
+        raw: {},
+        contract: database.client.contract,
+        orm: database.client.orm,
+        runtime: () => database.client.runtime(),
+        transaction: (run) => database.client.transaction(run),
+      }
+      const context = getContext(
+        config,
+        ormClientFor(database.data, database.client.orm),
+        anonymous,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        unusable,
+      )
+
+      await expect(
+        context.transaction(async (tx) => tx.db.Slot.forUpdate().all()),
+      ).rejects.toBeInstanceOf(RowLockLaneUnavailableError)
+      await expect(
+        context.transaction(async (tx) => tx.advisoryLock('checkout:slot-1')),
+      ).rejects.toBeInstanceOf(RowLockLaneUnavailableError)
+    })
+  })
+
+  describe('the lane a rebuilt delegate carries', () => {
+    test('a hook inside a transaction locks through the lane its context has', async () => {
+      const context = database.context(anonymous)
+      await context.db.Slot.create({ data: { name: 'a', capacity: 1 } })
+      await context.db.Slot.create({ data: { name: 'b', capacity: 1 } })
+      lockedByHook = null
+      recorder.statements.length = 0
+
+      await context.transaction(async (tx) => tx.db.Ledger.create({ data: { note: 'x' } }))
+
+      expect(lockedByHook).toEqual({ keys: ['a', 'b'] })
+      expect(rawStatements()).toHaveLength(1)
+      expect(rawStatements()[0].sql).toContain('FOR UPDATE')
+    })
+
+    test('the same hook under a write that opened its own transaction refuses', async () => {
+      // The lane belongs to the transaction the CALLER opened. This write
+      // opened its own, on its own handle, so a lock taken through the outer
+      // lane would be held by a different transaction than the write — it is
+      // dropped, and `forUpdate()` refuses.
+      const context = database.context(anonymous)
+      await context.db.Slot.create({ data: { name: 'a', capacity: 1 } })
+      lockedByHook = null
+
+      await context.db.Ledger.create({ data: { note: 'x' } })
+
+      expect(lockedByHook).toMatchObject({ error: expect.any(RowLockUnavailableError) })
     })
   })
 

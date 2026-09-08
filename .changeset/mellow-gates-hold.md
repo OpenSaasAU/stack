@@ -9,21 +9,28 @@ A capacity gate is the case a stricter isolation level used to cover, and `conte
 
 ```typescript
 const result = await context.transaction(async (tx) => {
-  // The lock comes BEFORE the count. `null` here is denied-or-gone — either
-  // way there is no gate to run.
-  const slot = await tx.db.Slot.where({ id: { equals: slotId } })
+  // The lock comes BEFORE both reads below. `null` here is denied-or-gone —
+  // either way there is no gate to run.
+  const held = await tx.db.Slot.where({ id: { equals: slotId } })
     .forUpdate()
     .first()
-  if (slot === null) return { booked: false }
+  if (held === null) return { booked: false }
 
+  // BOTH sides of the gate are read after the lock, each in its own statement.
+  // `held`'s own columns are the row as of BEFORE the lock was granted, so
+  // `held.capacity` can be stale; this re-read cannot be, because no one else
+  // can commit an update to a row this transaction holds.
+  const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
   const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
     (aggregate) => ({ taken: aggregate.count() }),
   )
-  if (taken >= slot.capacity) return { booked: false }
+  if (slot === null || taken >= slot.capacity) return { booked: false }
 
   return { booked: true, item: await tx.db.Booking.create({ data: { slotId, holder } }) }
 })
 ```
+
+**The lock is a mutex on the row, not a fresh read of it.** Each of the two statements takes its own snapshot under Read Committed, so a column another transaction committed between the read and the lock reaches the caller as its **pre-lock** value — only the row's identity is post-lock, and this differs from a single-statement `SELECT … FOR UPDATE`, which Postgres re-evaluates after acquiring. Read whatever the gate compares against in its own statement after the lock, the way the count above is.
 
 `.forUpdate()` is on the transaction-bound builder and nowhere else. A lock taken outside a transaction is released at the end of the statement that took it, so it would compile, run, return rows and guard nothing — `context.db.Slot.forUpdate()` is a compile error rather than a throw. The generated bundle names two faces per list for it, `SlotList` and `SlotTxList`, and `TransactionContext` is the context over the locking one.
 

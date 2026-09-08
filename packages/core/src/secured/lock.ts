@@ -65,14 +65,18 @@ export class RowLockIdentityError extends Error {
 }
 
 /**
- * Thrown when `forUpdate()` is reached on a read that is not bound to a
- * transaction.
+ * Thrown when `forUpdate()` or `advisoryLock()` is reached on a context that
+ * is not bound to a transaction.
  *
- * The type makes this unreachable from a generated project — `forUpdate()` is
- * on the transaction-bound surface alone — so this is the backstop for a read
+ * The type makes this unreachable from a generated project — both are on the
+ * transaction-bound surface alone — so this is the backstop for a read
  * composed through the engine's own untyped view. `FOR UPDATE` outside an
  * explicit transaction takes the lock and drops it at statement end: it would
  * run, return rows, and do nothing (ADR-0047).
+ *
+ * A context that *is* inside a transaction but whose client cannot compose the
+ * statement raises {@link RowLockLaneUnavailableError} instead, so neither
+ * message has to cover the other's cause.
  */
 export class RowLockUnavailableError extends Error {
   constructor(readonly member: string) {
@@ -82,6 +86,29 @@ export class RowLockUnavailableError extends Error {
         `\`context.transaction(async (tx) => …)\` and reach it through \`tx.db\`.`,
     )
     this.name = 'RowLockUnavailableError'
+  }
+}
+
+/**
+ * Thrown inside a transaction whose client carries no lane to compose the lock
+ * statement through — its `raw` tag or its emitted `contract` is not the shape
+ * {@link createRowLockLane} needs.
+ *
+ * The reachable case is a context assembled over a hand-built ORM double,
+ * whose `raw`/`contract` are carried as `object` so such a context still
+ * type-checks. It fails closed, and it is a different fact from
+ * {@link RowLockUnavailableError}: the caller *is* in a transaction, and being
+ * told to open one would send them looking in the wrong place.
+ */
+export class RowLockLaneUnavailableError extends Error {
+  constructor(readonly member: string) {
+    super(
+      `${member} cannot compose its lock statement: this context is inside a transaction, but ` +
+        `its client carries no usable raw lane and emitted contract to write the statement ` +
+        `through. A context assembled over a hand-built ORM double cannot take database locks — ` +
+        `reach the database through a generated Prisma 8 client.`,
+    )
+    this.name = 'RowLockLaneUnavailableError'
   }
 }
 
@@ -256,6 +283,30 @@ function keyOf(row: OrmRow, column: string): RowLockKey | undefined {
 }
 
 /**
+ * The lane a transaction whose client cannot compose the statement carries
+ * instead of none at all: every member refuses with
+ * {@link RowLockLaneUnavailableError}.
+ *
+ * A lane rather than `undefined` so the seat's absence keeps meaning exactly
+ * one thing — no transaction — and this case answers with its own cause. The
+ * refusal lands where a working lane's first statement would: `identity()` is
+ * resolved before the scoped read runs, so nothing is issued either way.
+ */
+export function unusableRowLockLane(): RowLockLane {
+  return {
+    identity: (): never => {
+      throw new RowLockLaneUnavailableError('forUpdate()')
+    },
+    lock: (): never => {
+      throw new RowLockLaneUnavailableError('forUpdate()')
+    },
+    advisory: (): never => {
+      throw new RowLockLaneUnavailableError('advisoryLock()')
+    },
+  }
+}
+
+/**
  * Build the lane a transaction-bound context locks through.
  *
  * `raw` comes from the client because Prisma's transaction context carries
@@ -305,6 +356,11 @@ export function createRowLockLane(
       identity: RowLockIdentity,
       keys: readonly RowLockKey[],
     ): Promise<RowLockKey[]> {
+      // No keys, no statement. `lockStatement` has one fragment per key, so at
+      // arity 0 the tag never consumes its trailing fragment and the statement
+      // arrives without `FOR UPDATE` and with a dangling `LIMIT` — a Postgres
+      // syntax error rather than an empty result (ADR-0062).
+      if (keys.length === 0) return []
       if (keys.length > ROW_LOCK_MAX_KEYS) {
         throw new RowLockKeyLimitExceededError(listName, keys.length)
       }

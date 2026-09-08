@@ -688,17 +688,31 @@ const myPosts = await context.db.Post.where({ authorId: 'user-123' }).all()
 
 **Interactive transactions:** Use `context.transaction(async (txContext) => { … })` to run several access-checked, hook-firing `context.db.*` operations atomically in one transaction. Unlike a raw transaction on the unsafe surface (which bypasses access control and hooks), `txContext.db.*` keeps the security/validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant (e.g. a capacity gate) is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.
 
+The lock is a **mutex on the row, not a fresh read of it**: the terminal reads
+first and locks second, so the columns it hands back are the row as of _before_
+the lock. Everything the gate compares — the threshold as much as the count — is
+therefore read in its own statement _after_ the lock.
+
 ```typescript
 const result = await context.transaction(async (tx) => {
-  // Take the lock BEFORE counting. Every racer takes the same lock on the same
-  // parent row, so the count below cannot go stale under a concurrent booking.
+  // Take the lock BEFORE reading either side of the gate. Every racer takes the
+  // same lock on the same parent row, so the reads below cannot go stale under
+  // a concurrent booking.
   // `null` here means denied or gone — either way there is no gate to run.
-  const slot = await tx.db.Slot.where({ id: slotId }).forUpdate().first()
-  if (!slot) return { booked: false }
+  const held = await tx.db.Slot.where({ id: { equals: slotId } })
+    .forUpdate()
+    .first()
+  if (held === null) return { booked: false }
 
-  const count = await tx.db.Booking.where({ slotId }).aggregate({ count: true })
-  if (count >= capacity) return { booked: false }
-  return { booked: true, item: await tx.db.Booking.create({ slotId }) }
+  // `held.capacity` is the value as of before the lock; this re-read is not,
+  // because no one else can commit an update to a row we hold.
+  const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
+  const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
+    (aggregate) => ({ taken: aggregate.count() }),
+  )
+  if (slot === null || taken >= slot.capacity) return { booked: false }
+
+  return { booked: true, item: await tx.db.Booking.create({ data: { slotId, holder } }) }
 })
 ```
 
