@@ -48,24 +48,21 @@ export interface PreparedItemForm {
   relationshipData: Record<string, Array<{ id: string; label: string }>>
 }
 
+/** The relation names an item form's own read reaches, one hop each. */
 export function buildRelationshipInclude(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
-): Record<string, boolean> {
-  const includeRelationships: Record<string, boolean> = {}
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if ((fieldConfig as { type: string }).type === 'relationship') {
-      includeRelationships[fieldName] = true
-    }
-  }
-  return includeRelationships
+): string[] {
+  return Object.entries(listConfig.fields)
+    .filter(([, fieldConfig]) => (fieldConfig as { type: string }).type === 'relationship')
+    .map(([fieldName]) => fieldName)
 }
 
 /**
  * Prepare the serializable props for `ItemFormClient` from an already-fetched
  * record (or an empty object for create).
  *
- * This is shared by `ItemForm` (which fetches via `findUnique`) and
+ * This is shared by `ItemForm` (which fetches through the composed read) and
  * `SingletonView` (which resolves via the singleton `get()`), so the
  * relationship/serialization logic lives in exactly one place.
  */

@@ -391,11 +391,11 @@ Reads run no `afterOperation` (list or field):
 
 A read on the secured surface is narrowed with `.select(...fields)`, which the engine honours **exactly**: it widens the query by the declared dependency sets of the computed fields the read will return and by anything a row-dependent field `read` rule has to see, then strips `widened ∖ caller` as a recursive set difference at every nesting level. `.select()` replaces on call rather than accumulating, names this list's own fields only (a relation is reached with `.include()`, whose refinement carries its own `.select()`), and a computed field is selectable whether or not the columns it reads were named. Its resolution lives in `src/secured/select.ts`, and it is on the generated typed surface (`ListQuery`/`ListRefinement` in `src/types/secured-list.ts`), so a projected read's row type is the keys it named plus the list's system fields and nothing else. A key the list does not have — including the raw per-part column of a multi-column field, which never reaches a caller — is refused rather than silently dropped. `.limit(count)` bounds `.all()` on the same composed value.
 
-The legacy `findUnique`/`findMany` ops do **not** apply Prisma's `select` semantics: passing `select` there is a visible no-op that logs a one-time `console.warn` and still returns the full, access-filtered record.
+A singleton's `get()` takes no projection: passing `select` there is a visible no-op that logs a one-time `console.warn` and still returns the full, access-filtered record.
 
 ### A Bare Read Fetches Scalars, Not Relations (ADR-0024)
 
-A read with no `include` returns the row's own columns plus its virtual fields — **never relations** — matching Prisma's own default. `findUnique`, `findMany`, and a singleton's `get()` all follow this rule uniformly, under sudo and under a session alike. Relations are fetched only when a caller names them via `include` (or `.include()` on the secured surface), at which point the caller-directed access-scoping walk (`buildAccessScopedInclude`, ADR-0026) applies (#566/#830 unaffected). Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`. A `resolveOutput` hook that issues its own bare `context.db` read is subject to the same rule — reading `item.<relation>` inside such a hook silently returns `undefined` unless the hook's own read names that relation. See `docs/adr/0024-a-read-with-no-include-fetches-scalars-not-relations.md`.
+A read with no `include` returns the row's own columns plus its virtual fields — **never relations** — matching Prisma's own default. The composed read's terminals and a singleton's `get()` all follow this rule uniformly, under sudo and under a session alike. Relations are fetched only when a caller names them via `include` (or `.include()` on the secured surface), at which point the caller-directed access-scoping walk (`buildAccessScopedInclude`, ADR-0026) applies (#566/#830 unaffected). Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`. A `resolveOutput` hook that issues its own bare `context.db` read is subject to the same rule — reading `item.<relation>` inside such a hook silently returns `undefined` unless the hook's own read names that relation. See `docs/adr/0024-a-read-with-no-include-fetches-scalars-not-relations.md`.
 
 ### Naming a Relation Fetches Its Columns, Not Its Subtree (ADR-0026)
 
@@ -421,7 +421,7 @@ Context uses generic typing to preserve Prisma types:
 
 ```typescript
 const context = createContext<typeof ormHandle>(config, ormHandle, session)
-// context.db.post.findMany() is fully typed
+// context.db.Post.all() is fully typed
 ```
 
 ## Integration Points
@@ -577,7 +577,7 @@ User: list({
 })
 
 // Usage
-const user = await context.db.user.findUnique({ where: { id } })
+const user = await context.db.User.where({ id }).first()
 console.log(user.fullName) // "John Doe" — computed via resolveOutput whenever the read returns it
 ```
 
@@ -616,7 +616,7 @@ Order: list({
 })
 
 // The caller never asked for lineItems, and never receives it:
-const order = await context.db.order.findMany()
+const order = await context.db.Order.all()
 order[0].total // computed correctly
 order[0].lineItems // undefined — `needs` is private plumbing, not an implicit `include`
 ```

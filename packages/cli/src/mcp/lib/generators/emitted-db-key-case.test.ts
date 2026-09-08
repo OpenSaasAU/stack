@@ -41,8 +41,8 @@ describe('emitted context.db keys', () => {
     const blogPage = implementation.files.find((file) => file.path === 'app/blog/page.tsx')
     const postPage = implementation.files.find((file) => file.path === 'app/blog/[slug]/page.tsx')
 
-    expect(blogPage?.content).toContain('context.db.Post.findMany(')
-    expect(postPage?.content).toContain('context.db.Post.findFirst(')
+    expect(blogPage?.content).toMatch(/context\.db\.Post[\s\S]*\.all\(\)/)
+    expect(postPage?.content).toContain('context.db.Post.where(')
     for (const emitted of emittedStrings(implementation)) {
       expect(emitted.match(CAMEL_DB_KEY)).toBeNull()
     }
@@ -55,7 +55,7 @@ describe('emitted context.db keys', () => {
       {},
     ).generate()
 
-    expect(implementation.devGuideSection).toContain('context.db.User.findUnique(')
+    expect(implementation.devGuideSection).toContain('context.db.User.where(')
     for (const emitted of emittedStrings(implementation)) {
       expect(emitted.match(CAMEL_DB_KEY)).toBeNull()
     }

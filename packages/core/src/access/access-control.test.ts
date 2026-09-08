@@ -246,7 +246,7 @@ describe('Access Control', () => {
       })
     })
 
-    // The legacy findMany/count/updateMany/delete paths fold their access
+    // The legacy read paths fold their access
     // filter in here rather than through the secured builder's Where
     // vocabulary, so the total-lowering guarantee the docs state has to hold
     // here too (#1147).

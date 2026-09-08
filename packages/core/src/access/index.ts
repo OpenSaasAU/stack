@@ -30,7 +30,7 @@ export {
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
-// Read-path key validation — the `findMany`/`count` counterpart to the write
+// Read-path key validation — the read counterpart to the write
 // path's #564 undeclared-key reject.
 export { validateQueryKeys } from './query-validation.js'
 // Read-path field-level access on `where`/`orderBy` keys — a field the

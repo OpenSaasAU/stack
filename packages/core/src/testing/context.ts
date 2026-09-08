@@ -486,7 +486,7 @@ export async function createTestDatabase(
  *
  * const harness = await createTestContext(config, { userId: 'user-1' })
  * try {
- *   const posts = await harness.context.db.Post.findMany()
+ *   const posts = await harness.context.db.Post.all()
  * } finally {
  *   await harness.close()
  * }

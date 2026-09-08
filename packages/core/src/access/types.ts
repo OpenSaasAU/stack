@@ -145,13 +145,9 @@ export interface OrmModelDelegate {
  * (ADR-0052). This is the engine's own view of its output.
  */
 export interface AccessControlledDelegate extends SecuredQuery {
-  findUnique: (args: OrmOperationArgs) => Promise<OrmRow | null>
-  findFirst: (args?: OrmOperationArgs) => Promise<OrmRow | null>
-  findMany: (args?: OrmOperationArgs) => Promise<OrmRow[]>
   create: (args: OrmOperationArgs) => Promise<OrmRow | null>
   update: (args: OrmOperationArgs) => Promise<OrmRow | null>
   delete: (args: OrmOperationArgs) => Promise<OrmRow | null>
-  count: (args?: OrmOperationArgs) => Promise<number>
   /** Present only on a list declared `isSingleton` (ADR-0039). */
   get?: (args?: OrmOperationArgs) => Promise<OrmRow | null>
 }

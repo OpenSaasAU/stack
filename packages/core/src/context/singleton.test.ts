@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
-import { createTestContext, type TestContext } from '../testing/context.js'
+import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
+import { getContext } from './index.js'
 
 /**
  * A singleton list — one row, id 1, matching Keystone 6 (ADR-0004).
@@ -9,9 +10,8 @@ import { createTestContext, type TestContext } from '../testing/context.js'
  * The guards are what this pins: a second create is refused even under sudo, a
  * delete is refused at all, and the many-row surfaces are not offered at all.
  *
- * The `get()`, `findUnique()` and `count()` members a singleton also carries
- * belong to the Prisma 7 method surface `context/index.ts` still exposes and
- * that no rc.8 client can serve; they go with it in #1255.
+ * `get()` is the singleton's only read, and it resolves through the composed
+ * secured read the other branch of `populateDbDelegate` exposes (#1255).
  */
 
 const BOOT = 120_000
@@ -108,11 +108,37 @@ describe('a singleton list', () => {
   )
 
   test(
-    'findMany is refused with advice to use get()',
+    'get() resolves the row through the secured read, scoped by the query rule',
     async () => {
-      await expect(harness.context.db.Settings.findMany()).rejects.toThrow(
-        /is a singleton list. Use get\(\) instead/,
+      await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
+
+      expect(await harness.context.db.Settings.get?.()).toMatchObject({
+        id: 1,
+        siteName: 'visible',
+      })
+
+      const denied = getContext(
+        {
+          ...schemaConfig(),
+          lists: {
+            ...schemaConfig().lists,
+            Settings: {
+              isSingleton: true,
+              fields: { siteName: text() },
+              access: { operation: { query: () => false, create: () => true } },
+            },
+          },
+        },
+        ormClientFor(harness.data, harness.client.orm),
+        null,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        harness.client,
       )
+
+      expect(await denied.db.Settings.get?.()).toBeNull()
     },
     BOOT,
   )

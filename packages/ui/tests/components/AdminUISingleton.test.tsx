@@ -48,9 +48,6 @@ const config: OpenSaasConfig = {
 
 interface DelegateStub {
   get?: () => Promise<Record<string, unknown> | null>
-  findUnique?: (args: unknown) => Promise<Record<string, unknown> | null>
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args: unknown) => Promise<number>
 }
 
 /**
@@ -103,7 +100,6 @@ describe('AdminUI singleton routing', () => {
   it('routes a singleton bare [list] to SingletonView, a non-singleton to ListView', async () => {
     const context = makeContext({
       Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     })
 
     const singletonTree = await AdminUI({
@@ -138,7 +134,7 @@ describe('AdminUI singleton routing', () => {
     })
     render(element)
 
-    // Resolved via the singleton get() (auto-create path), not findMany.
+    // Resolved via the singleton get() (auto-create path).
     expect(singletonGet).toHaveBeenCalledTimes(1)
 
     // Editor header + the record's value rendered in a field input.
@@ -307,5 +303,5 @@ describe('AdminUI singleton routing', () => {
 
     // It is NOT the singleton editor.
     expect(screen.queryByText('Edit Post')).not.toBeInTheDocument()
-  })
+  }, 120_000)
 })
