@@ -2149,7 +2149,8 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * Restricts this list to a single record (singleton pattern)
    * When true:
    * - Prevents creating multiple records
-   * - Auto-creates the single record on first access (if autoCreate: true, which is the default)
+   * - Auto-creates the single record on first access (if autoCreate: true, which is the default,
+   *   and the list's `query` access rule answers a strict `true`, or the context is `sudo`)
    * - Provides a get() method for easy access to the singleton
    * - Blocks delete and the many-row read surface
    * - Changes UI to show edit form instead of list view
@@ -2170,7 +2171,13 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
     | boolean
     | {
         /**
-         * Auto-create the singleton record on first access using field defaults
+         * Auto-create the singleton record on first access using field defaults.
+         *
+         * Fires only for a `query` access rule that answers a strict `true`, or
+         * under `sudo`. A rule that answers a filter, answers `false`, or is
+         * absent makes `get()` answer `null` and write nothing — a filter-scoped
+         * singleton needs `query: () => true` with the scoping moved onto the
+         * fields if the row is to be auto-created.
          * @default true
          */
         autoCreate?: boolean

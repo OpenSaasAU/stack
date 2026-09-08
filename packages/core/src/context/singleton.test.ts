@@ -154,14 +154,17 @@ describe('a singleton list', () => {
     // `get()` returned — the earlier test read a throw and never observed the
     // table (#1370 review, B2).
 
-    const contextFor = (query: AccessControl | undefined) =>
+    const contextFor = (
+      query: AccessControl | undefined,
+      isSingleton: boolean | { autoCreate?: boolean } = true,
+    ) =>
       getContext(
         {
           ...schemaConfig(),
           lists: {
             ...schemaConfig().lists,
             Settings: {
-              isSingleton: true,
+              isSingleton,
               fields: { siteName: text(), owner: relationship({ ref: 'Post' }) },
               access: { operation: { query, create: () => true } },
             },
@@ -230,6 +233,18 @@ describe('a singleton list', () => {
         expect(await contextFor(() => true).db.Settings.get?.()).toMatchObject({ id: 1 })
 
         expect(await settingsRowCount()).toBe(1)
+      },
+      BOOT,
+    )
+
+    test(
+      'with autoCreate false and a query rule of true, get() answers null and creates nothing',
+      async () => {
+        expect(await settingsRowCount()).toBe(0)
+
+        expect(await contextFor(() => true, { autoCreate: false }).db.Settings.get?.()).toBeNull()
+
+        expect(await settingsRowCount()).toBe(0)
       },
       BOOT,
     )
