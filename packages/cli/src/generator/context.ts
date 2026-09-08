@@ -242,11 +242,11 @@ ${storageUtilities(config)}
  * \`\`\`typescript
  * // Anonymous access
  * const context = await getContext()
- * const posts = await context.db.Post.findMany()
+ * const posts = await context.db.Post.all()
  *
  * // Authenticated access
  * const context = await getContext({ userId: 'user-123' })
- * const myPosts = await context.db.Post.findMany()
+ * const myPosts = await context.db.Post.all()
  * \`\`\`
  */
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {

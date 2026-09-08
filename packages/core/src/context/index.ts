@@ -1,30 +1,10 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
-import { ormModel } from '../access/orm-client.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
-import {
-  checkAccess,
-  mergeFilters,
-  filterReadableFields,
-  buildAccessScopedInclude,
-  buildAccessScopedWhere,
-  stripVirtualFieldsFromInclude,
-  widenIncludeForDependencies,
-  validateQueryKeys,
-  validateQueryFieldReadAccess,
-  resolveToOneAccessVisibility,
-  emptyToOneAccessFilterTree,
-  emptyCountAccessDenialTree,
-} from '../access/index.js'
-import type {
-  DependencyAdditions,
-  FieldSelectionScope,
-  ToOneAccessFilterTree,
-  CountAccessDenialTree,
-} from '../access/index.js'
+import { checkAccess } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
-import type { OpenedTransaction, OrmClient, TransactionOpener } from '../access/types.js'
-import { createSecuredRead } from '../secured/read.js'
+import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
+import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import {
   createRowLockLane,
   RowLockUnavailableError,
@@ -175,69 +155,11 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 /**
- * Compute the set of single-field unique selectors a `findUnique` `where` may be
- * keyed by, derived from what the list config exposes at runtime: `id`, plus any
- * field declared `isIndexed: 'unique'` — for a `relationship` field, this is the
- * foreign-key column name (`<field>Id`), since that's the column Prisma marks
- * `@unique`, not the relation field itself.
- *
- * The config exposes no list-level compound (`@@unique`) declaration, so this
- * cannot validate a compound `<Model>_<a>_<b>` selector — `where` must contain
- * exactly one recognised single-field unique key and no others. This rejects
- * non-unique filters (#567) without ever rejecting a valid single-field unique
- * lookup; a compound-unique or otherwise non-unique lookup should use
- * `findFirst` instead (see #565).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getUniqueWhereKeys(listConfig: ListConfig<any>): Set<string> {
-  const keys = new Set<string>(['id'])
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!fieldConfig || typeof fieldConfig !== 'object') continue
-    if (!('isIndexed' in fieldConfig) || fieldConfig.isIndexed !== 'unique') continue
-
-    if (fieldConfig.type === 'relationship') {
-      // A unique relationship's `@unique` lives on the FK column `<field>Id`.
-      keys.add(`${fieldKey}Id`)
-    } else {
-      keys.add(fieldKey)
-    }
-  }
-
-  return keys
-}
-
-/**
- * Enforce Keystone `findOne` semantics for `findUnique`: the caller-supplied
- * `where` must be a valid unique selector. A non-unique `where` is a caller-shape
- * error (not an access denial), so this THROWS rather than silently returning
- * `null` — consistent with the fail-loud-on-misuse stance of PRD #581. A
- * non-unique single-row lookup should use `findFirst` instead (see #565).
- */
-function assertUniqueWhere(
-  where: Record<string, unknown> | undefined,
-  uniqueKeys: Set<string>,
-  listName: string,
-): void {
-  const keys = where ? Object.keys(where) : []
-
-  const message =
-    `findUnique on "${listName}" requires a unique \`where\` (a single unique key such as ` +
-    `${Array.from(uniqueKeys).join(', ')}). ` +
-    `Received: ${keys.length === 0 ? '{}' : `{ ${keys.join(', ')} }`}. ` +
-    `Use \`findFirst\` for a non-unique single-row lookup.`
-
-  if (keys.length !== 1 || !uniqueKeys.has(keys[0])) {
-    throw new ValidationError([message], {})
-  }
-}
-
-/**
  * `update` and `delete` target a row by its identity: the engine lowers `id`
  * alone into the write's predicate, so a `where` naming anything else — a
  * secondary unique column included — selects nothing. That is a caller-shape
  * error, not an access denial, so it THROWS rather than returning the
- * denied-or-gone `null` (the stance `assertUniqueWhere` takes above).
+ * denied-or-gone `null`.
  *
  * `ListIdentityWhere` makes it a compile error for a typed caller; this is the
  * runtime half, for a payload that reached the engine untyped.
@@ -264,7 +186,7 @@ function assertIdentityWhere(
     [
       `${terminal} on "${listName}" requires \`where: { id }\` — a row is written by its ` +
         `identity, and no other column selects one. Received: ${received}. Find the row first ` +
-        `(\`findUnique\`, or \`where(…).first()\`) and write it by its \`id\`.`,
+        `(\`where(…).first()\`) and write it by its \`id\`.`,
     ],
     {},
   )
@@ -1298,31 +1220,27 @@ export function populateDbDelegate(
       createCreate(listName, listConfig, ormHandle, context, config),
       config,
     )
-    const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
     const updateOp = resolvingConstraints(
       createUpdate(listName, listConfig, ormHandle, context, config),
       config,
     )
     const operations: Record<string, unknown> = {
-      findUnique: createFindUnique(listName, listConfig, ormHandle, context, config),
-      findMany: findManyOp,
-      findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
       delete: resolvingConstraints(
         createDelete(listName, listConfig, ormHandle, context, config),
         config,
       ),
-      count: createCount(listName, listConfig, ormHandle, context, config),
     }
+
+    const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
 
     if (isSingletonList(listConfig)) {
       operations.get = resolvingConstraints(
-        createGet(listName, listConfig, ormHandle, context, config, createOp),
+        createGet(listName, listConfig, read, context, createOp),
         config,
       )
     } else {
-      const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
       operations.where = read.where
       operations.orderBy = read.orderBy
       operations.include = read.include
@@ -1361,356 +1279,6 @@ export function buildDbDelegate(
   const db: Record<string, unknown> = {}
   populateDbDelegate(db, config, ormHandle, context, context._rowLock)
   return db as AccessControlledDB
-}
-
-/**
- * Resolve the `include` (and declared-dependency provenance) a read should
- * use, preserving each existing path's exact shape — sudo / caller include /
- * bare (ADR-0024) — while folding declared dependencies (`needs`, ADR-0025)
- * into whichever of those the read is already using.
- *
- * A non-sudo caller's `include` is folded and then scoped by
- * `buildAccessScopedInclude` (ADR-0026) — caller-directed, so a relation named
- * nowhere in the folded tree never has its list's `query` access evaluated at
- * all. A sudo caller's `include` is folded and used as-is, unscoped — sudo is
- * unaffected. A bare read stays on the exact ADR-0024 path — `include:
- * undefined`, no related `query` access evaluated — unless folding actually
- * added something, which only happens when a field on this list declares
- * `needs`.
- *
- * `selection` is always `undefined` here: this surface has no projection, so
- * every read on it computes every field. The secured surface's `.select()`
- * (`secured/select.ts`) is what produces a restricted one (ADR-0041).
- *
- * Also returns `toOneAccessFilters` — the to-one relations `buildAccessScopedInclude`
- * flagged as needing a post-query existence check rather than a Prisma-side
- * `where` (issue #974). Only a non-sudo caller-include read can produce a
- * non-empty tree: it is the only path that evaluates a related list's `query`
- * access at all. A sudo read and a bare read always return an empty tree.
- */
-async function resolveReadInclude(
-  callerInclude: Record<string, unknown> | undefined,
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  context: AccessContext & { _isSudo?: boolean },
-  config: OpenSaasConfig,
-): Promise<{
-  include: Record<string, unknown> | undefined
-  additions: DependencyAdditions
-  selection: FieldSelectionScope | undefined
-  toOneAccessFilters: ToOneAccessFilterTree
-  countDenials: CountAccessDenialTree
-}> {
-  if (context._isSudo) {
-    const widened = widenIncludeForDependencies(callerInclude, listConfig.fields, config, listName)
-    return {
-      ...widened,
-      selection: undefined,
-      toOneAccessFilters: emptyToOneAccessFilterTree(),
-      countDenials: emptyCountAccessDenialTree(),
-    }
-  }
-
-  const widened = widenIncludeForDependencies(callerInclude, listConfig.fields, config, listName)
-  if (!widened.include) {
-    return {
-      ...widened,
-      selection: undefined,
-      toOneAccessFilters: emptyToOneAccessFilterTree(),
-      countDenials: emptyCountAccessDenialTree(),
-    }
-  }
-
-  const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-    widened.include,
-    listConfig.fields,
-    { session: context.session, context },
-    config,
-    listName,
-  )
-  return {
-    include,
-    additions: widened.additions,
-    selection: undefined,
-    toOneAccessFilters,
-    countDenials,
-  }
-}
-
-function createFindUnique(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
-  context: AccessContext,
-  config: OpenSaasConfig,
-) {
-  return async (args: {
-    // No static type restricts this to the list's unique keys: the generated
-    // `ListUniqueWhere` admits any stored column, optionally. The runtime
-    // guard below is the only thing that rejects a non-unique `where`.
-    where: Record<string, unknown>
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    warnIfSelectIgnored(args, listName, 'findUnique')
-
-    // Runs first, before the access check below — a non-unique `where` is a
-    // caller-shape error (see `assertUniqueWhere`), not an access denial.
-    // Typed callers reach here too: `ListUniqueWhere` is derived from the
-    // list's stored columns, not from the contract's unique constraints, so
-    // `findUnique({ where: { title: 'x' } })` type-checks and fails here.
-    assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
-
-    let where: Record<string, unknown> = args.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      const mergedWhere = mergeFilters(args.where, accessResult)
-      if (mergedWhere === null) {
-        return null
-      }
-      where = mergedWhere
-    }
-
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the caller/sudo/bare path already
-    // produces — see `resolveReadInclude`'s doc comment.
-    let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(args.include, listName, listConfig, context, config)
-
-    // Virtual fields have no database column. Whichever path produced
-    // `include` (access-controlled merge, or sudo passthrough), a
-    // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). Below, `filterReadableFields` computes a virtual field's value
-    // exactly when `selection` says the read is going to return it (ADR-0027)
-    // — every one of them on this surface, whose `selection` is always
-    // `undefined`.
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(ormHandle, listName)
-    const item = await model.findFirst({
-      where,
-      include,
-    })
-
-    if (!item) {
-      return null
-    }
-
-    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-    // actually survive their related list's `query` access (issue #974) —
-    // one batched existence check per relation, before field visibility runs.
-    const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
-      session: context.session,
-      context,
-    })
-
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await filterReadableFields(
-      item,
-      listConfig.fields,
-      {
-        session: context.session,
-        context: { ...context, _isSudo: context._isSudo },
-      },
-      config,
-      0,
-      listName,
-      additions,
-      selection,
-      toOneVisibility,
-      countDenials,
-    )
-
-    return filtered
-  }
-}
-
-function createFindMany(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
-  context: AccessContext,
-  config: OpenSaasConfig,
-) {
-  return async (args?: {
-    where?: Record<string, unknown>
-    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-    take?: number
-    skip?: number
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    warnIfSelectIgnored(args, listName, 'findMany')
-
-    // Singleton misuse throws rather than silently returning `[]` — unlike an
-    // access denial, this is a caller-shape error.
-    if (isSingletonList(listConfig)) {
-      throw new ValidationError(
-        [`Cannot use findMany: ${listName} is a singleton list. Use get() instead.`],
-        {},
-      )
-    }
-
-    // Check query access first (skip if sudo mode) — this MUST run before the
-    // #912/#915 where/orderBy validation below. See the comment there for why.
-    let where: Record<string, unknown> | undefined = args?.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return []
-      }
-
-      // #912 — reject a `where`/`orderBy` key the list config doesn't declare
-      // (e.g. a Prisma-generated back-relation), and #915 — reject one naming
-      // a field this session cannot READ (closing a probe via a `count()`
-      // that varies with the withheld value, or an `orderBy` that leaks
-      // relative ordering). Both run only now that the caller is known to
-      // have SOME access to the list (`accessResult !== false`): the thrown
-      // errors name the offending key, and running them before the access
-      // check above would let a caller with ZERO access to the list learn a
-      // field's name and read-gating status from the error message alone —
-      // turning the validation itself into the kind of oracle #915 closes.
-      // `sudo` bypasses this whole branch, matching the write path.
-      validateQueryKeys({
-        where: args?.where,
-        orderBy: args?.orderBy,
-        listConfig,
-        listName,
-        config,
-        isSudo: false,
-      })
-      await validateQueryFieldReadAccess({
-        where: args?.where,
-        orderBy: args?.orderBy,
-        listConfig,
-        listName,
-        session: context.session,
-        context,
-        isSudo: false,
-      })
-
-      // #916 — scope every relation filter nested in `where`
-      // (`some`/`every`/`none`/`is`/`isNot`) by the RELATED list's own `query`
-      // access, recursing through every hop of a chain — the `where`
-      // counterpart to how `include` is already scoped below via
-      // `buildAccessScopedInclude`. Runs after the checks above for the same
-      // ordering reason: only once the caller is known to have SOME access to
-      // THIS list.
-      const scopedWhere = args?.where
-        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
-            session: context.session,
-            context,
-          })) as Record<string, unknown>)
-        : args?.where
-
-      const mergedWhere = mergeFilters(scopedWhere, accessResult)
-      if (mergedWhere === null) {
-        return []
-      }
-      where = mergedWhere
-    }
-
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the caller/sudo/bare path already
-    // produces — see `resolveReadInclude`'s doc comment.
-    let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(args?.include, listName, listConfig, context, config)
-
-    // Strips virtual keys from `include` before the Prisma call — see the
-    // `createFindUnique` comment above for why (#628, ADR-0027).
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(ormHandle, listName)
-    const items = await model.findMany({
-      where,
-      orderBy: args?.orderBy,
-      take: args?.take,
-      skip: args?.skip,
-      include,
-    })
-
-    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-    // actually survive their related list's `query` access (issue #974) —
-    // ONE batched existence check per relation across every row in `items`,
-    // before field visibility runs on any of them.
-    const toOneVisibility = await resolveToOneAccessVisibility(items, toOneAccessFilters, {
-      session: context.session,
-      context,
-    })
-
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await Promise.all(
-      items.map((item: Record<string, unknown>) =>
-        filterReadableFields(
-          item,
-          listConfig.fields,
-          {
-            session: context.session,
-            context: { ...context, _isSudo: context._isSudo },
-          },
-          config,
-          0,
-          listName,
-          additions,
-          selection,
-          toOneVisibility,
-          countDenials,
-        ),
-      ),
-    )
-
-    return filtered
-  }
-}
-
-/**
- * Create findFirst operation with access control.
- *
- * findFirst is sugar over the access-controlled findMany: it runs the exact same
- * query-access checks and access-controlled include building as findMany, then
- * returns the first matching row (or null when nothing matches). This introduces
- * no new access surface — it inherits findMany's silent-failure contract (an
- * access-denied query yields `[]`, which becomes `null` here).
- */
-function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
-  return async (args?: {
-    where?: Record<string, unknown>
-    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-    skip?: number
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    const result = await findManyOp({ ...args, take: 1 })
-    return result[0] ?? null
-  }
 }
 
 function createCreate(
@@ -1788,168 +1356,64 @@ function createDelete(
   }
 }
 
-function createCount(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
-  context: AccessContext,
-  config: OpenSaasConfig,
-) {
-  return async (args?: { where?: Record<string, unknown> }) => {
-    // Check query access first (skip if sudo mode) — this MUST run before the
-    // #912/#915 where validation below. See the comment there for why.
-    let where: Record<string, unknown> | undefined = args?.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return 0
-      }
-
-      // #912 — reject a `where` key the list config doesn't declare (e.g. a
-      // Prisma-generated back-relation), and #915 — reject one naming a field
-      // this session cannot READ. `count` leaks the most cleanly of any read
-      // op — a bare count answers a predicate with no rows returned at all —
-      // so it gets the same reject, not a lesser one. Both run only now that
-      // the caller is known to have SOME access to the list (`accessResult
-      // !== false`) — see the identical comment in `createFindMany` for why
-      // that ordering matters: running them before the access check would
-      // let a fully-denied caller learn a field's name and read-gating
-      // status from the thrown error alone. `sudo` bypasses this whole
-      // branch, matching the write path.
-      validateQueryKeys({
-        where: args?.where,
-        listConfig,
-        listName,
-        config,
-        isSudo: false,
-      })
-      await validateQueryFieldReadAccess({
-        where: args?.where,
-        listConfig,
-        listName,
-        session: context.session,
-        context,
-        isSudo: false,
-      })
-
-      // #916 — scope every relation filter nested in `where` by the RELATED
-      // list's own `query` access. See the identical comment in
-      // `createFindMany` for why this runs here, in this order.
-      const scopedWhere = args?.where
-        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
-            session: context.session,
-            context,
-          })) as Record<string, unknown>)
-        : args?.where
-
-      const mergedWhere = mergeFilters(scopedWhere, accessResult)
-      if (mergedWhere === null) {
-        return 0
-      }
-      where = mergedWhere
-    }
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(ormHandle, listName)
-    const count = await model.count({
-      where,
-    })
-
-    return count
-  }
-}
-
+/**
+ * A singleton's read. The composed read is not offered on a singleton
+ * (`populateDbDelegate` wires it in the other branch), but the engine drives it
+ * here: `get()` resolves the one row through the same secured path an ordinary
+ * list reads through, so operation access, the Access Filter, Field Visibility
+ * and the related lists' own `query` access are the composed read's and not a
+ * second copy of them.
+ *
+ * `null` from the read is denied-or-absent, so the auto-create below runs only
+ * once the read has answered nothing — a denied session gets `null`, not a row.
+ *
+ * Known limits: auto-create fires only for a `query` rule that answered a
+ * strict `true`, or under `sudo`. A rule that answered a filter scopes the read
+ * rather than opening it, and there is no row yet to test that filter against,
+ * so the create is refused and `get()` answers `null` — the same `null` a
+ * denied or an absent row answers with.
+ */
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  ormHandle: OrmClient,
+  read: SecuredQuery,
   context: AccessContext,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createFn: any,
+  createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
 ) {
   return async (args?: {
     include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
     warnIfSelectIgnored(args, listName, 'get')
 
-    let where: Record<string, unknown> = {}
+    const scoped = Object.entries(args?.include ?? {}).reduce(
+      (query, [name, requested]) => (requested ? query.include(name) : query),
+      read,
+    )
+
+    const item = await scoped.first()
+    if (item) return item
+
+    if (!shouldAutoCreate(listConfig)) return null
+
+    // `first()` conflates denied with absent, and auto-create must fire only on
+    // absent — a denied session that provoked a create would both write a row it
+    // may not read and turn the read's silence into an observable side effect.
+    // Only a strict `true` clears the create: a filter scopes rather than opens,
+    // and `false`, a missing rule and anything else are denials. This is the one
+    // place the query rule is consulted directly; the read above owns every
+    // other use of it.
     if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
+      const readable = await checkAccess(listConfig.access?.operation?.query, {
         session: context.session,
         context,
       })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      // A singleton has no per-record `where`, so the access filter (if any) is
-      // the whole `where`.
-      if (accessResult && typeof accessResult === 'object') {
-        where = accessResult
-      }
+      if (readable !== true) return null
     }
 
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the caller/sudo/bare path already
-    // produces — see `resolveReadInclude`'s doc comment.
-    let { include, additions, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(args?.include, listName, listConfig, context, config)
-
-    // Virtual fields have no database column and must never reach Prisma (#628).
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    const model = ormModel(ormHandle, listName)
-    const item = await model.findFirst({
-      where,
-      include,
-    })
-
-    if (item) {
-      // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-      // actually survive their related list's `query` access (issue #974).
-      const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
-        session: context.session,
-        context,
-      })
-
-      const filtered = await filterReadableFields(
-        item,
-        listConfig.fields,
-        {
-          session: context.session,
-          context: { ...context, _isSudo: context._isSudo },
-        },
-        config,
-        0,
-        listName,
-        additions,
-        selection,
-        toOneVisibility,
-        countDenials,
-      )
-      return filtered
-    }
-
-    if (shouldAutoCreate(listConfig)) {
-      const defaultData = getDefaultData(listConfig)
-      return await createFn({ data: defaultData })
-    }
-
-    return null
+    await createFn({ data: getDefaultData(listConfig) })
+    return await scoped.first()
   }
 }

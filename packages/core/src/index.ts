@@ -377,12 +377,8 @@ export type {
   FilterAccessArgs,
 } from './filter/index.js'
 
-// Access-scoped to-many relationship counts for the admin list view (#732):
-// the filtered `_count` select for count cells, with each related list's
-// `query` access folded in, so counts never include rows the session cannot
-// read. The count-filter resolver is gone with the vocabulary (ADR-0055): a
-// count comparison shrinks to presence, which the engine lowers itself.
-export {
-  buildRelationshipCountSelect,
-  isToManyRelationshipField,
-} from './access/relationship-count.js'
+// Which fields carry a to-many relationship count. The counts themselves are
+// the secured read's reducers (`.count()` / `.combine()`), which scope by the
+// related list's own `query` access; no consumer builds a `_count` select of
+// its own (#1255).
+export { isToManyRelationshipField } from './access/relationship-count.js'

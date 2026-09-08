@@ -24,9 +24,10 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
       try {
-        const delegate = context.db[listKey]
-        const count = delegate?.count ? await delegate.count() : 0
-        return { listKey, count }
+        const reduced = await context.db[listKey].aggregate((aggregate) => ({
+          total: aggregate.count(),
+        }))
+        return { listKey, count: reduced.total }
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error)
         return { listKey, count: 0 }

@@ -301,9 +301,9 @@ describe('the write terminals over a real collection', () => {
   )
 
   /**
-   * `findUnique` beside these terminals rejects a non-unique `where` loudly
-   * rather than answering the denied-or-gone `null`; a write selector the
-   * engine cannot lower is the same class of caller mistake.
+   * A write selector the engine cannot lower is a caller-shape error, not a
+   * denial, so it is refused loudly rather than answered with the
+   * denied-or-gone `null`.
    */
   test(
     'update and delete by anything but `id` are a loud caller-shape error',

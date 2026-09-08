@@ -177,7 +177,7 @@ void update
 import type { Context, Event } from './.opensaas/types.ts'
 
 type Created = Awaited<ReturnType<Context['db']['Event']['create']>>
-type Found = Awaited<ReturnType<Context['db']['Event']['findMany']>>
+type Found = Awaited<ReturnType<Context['db']['Event']['all']>>
 
 declare const context: Context
 declare const created: Created
@@ -333,7 +333,7 @@ async function run() {
   // ADR-0058: arity decides, not the column. \`host\`'s foreign key is
   // non-nullable, and the included row is still \`| null\` — the Access Filter
   // can scope it away even when the database cannot.
-  const rows = await context.db.Booking.findMany({ include: { host: true } })
+  const rows = await context.db.Booking.include('host').all()
   assertType<Exact<(typeof rows)[number]['host'], User | null>>()
 
   // …and the write side still requires it.

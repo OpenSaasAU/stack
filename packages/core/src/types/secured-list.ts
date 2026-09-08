@@ -660,23 +660,6 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string, Tx extends 
   ListQuery<C, R, K, unknown, never, Tx>,
   ComposedReadKey<C, R, K, Tx>
 > & {
-  findUnique: <
-    S extends ListSelect<C, R, K> = never,
-    I extends ListInclude<C, R, K> = never,
-  >(args: {
-    where: ListUniqueWhere<C, R, K>
-    select?: S
-    include?: I
-  }) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  findFirst: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(
-    args?: ListFilterArgs<C, R, K> & { select?: S; include?: I },
-  ) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  findMany: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(
-    args?: ListFilterArgs<C, R, K> & { select?: S; include?: I },
-  ) => Promise<QueryResult<C, R, K, S, I>[]>
-
   create: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
     data: CreateInput<C, R, K>
     select?: S
@@ -695,8 +678,6 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string, Tx extends 
     select?: S
     include?: I
   }) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  count: (args?: CountArgs<C, R, K>) => Promise<number>
 }
 
 /**

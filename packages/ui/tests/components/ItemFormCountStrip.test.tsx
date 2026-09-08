@@ -2,20 +2,20 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
-import { buildDetailsItemData } from '../../src/components/ItemForm.js'
+import { buildDetailsItemData, composeItemViewRead } from '../../src/components/ItemForm.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { transformItemFormData } from '../../src/lib/useItemForm.js'
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
 
 /**
  * Regression coverage for issue #797: the derived item view (issue #734/#752)
- * adds a synthetic `_count` select to the record fetch (for the Relationship
- * table's "Showing N of M" footer) alongside the real fields. Before this fix,
- * that `_count` key rode through `detailsItemData` -> `prepareItemForm` ->
- * `transformItemFormData` and ended up in every update payload, which the
- * server rejected ("it is not a field of this list") — Save silently failed
- * on the edit page for ANY list with a `many: true` relationship rendered as
- * a table (the default item-view display mode).
+ * fetches each Relationship table's section as rows beside the total its
+ * "Showing N of M" footer needs, so the section key carries a shape that is not
+ * a field of the list. Before this fix the synthetic payload rode through
+ * `detailsItemData` -> `prepareItemForm` -> `transformItemFormData` and ended
+ * up in every update payload, which the server rejected ("it is not a field of
+ * this list") — Save silently failed on the edit page for ANY list with a
+ * `many: true` relationship rendered as a table (the default display mode).
  *
  * This threads the real fetch -> details-data -> submit-transform pipeline
  * `ItemViewLayoutView` runs (`buildDetailsItemData` -> `prepareItemForm` ->
@@ -39,14 +39,14 @@ function makeConfig(): OpenSaasConfig {
           title: text(),
           comments: relationship({ ref: 'Comment.post', many: true }),
         },
-        access: { operation: { query: () => true, update: () => true } },
+        access: { operation: { query: () => true, create: () => true, update: () => true } },
       },
       Comment: {
         fields: {
           body: text(),
           post: relationship({ ref: 'Post.comments' }),
         },
-        access: { operation: { query: () => true } },
+        access: { operation: { query: () => true, create: () => true } },
       },
     },
   }
@@ -63,27 +63,32 @@ describe('ItemForm derived item-view pipeline (issue #797 regression)', () => {
     await harness?.close()
   })
 
-  it('never lets the synthetic `_count` payload survive fetch -> details data -> submit transform', async () => {
+  it('never lets the section branch payload survive fetch -> details data -> submit transform', async () => {
     const config = makeConfig()
     const layout = deriveItemViewLayout(config, 'Post')
     expect(layout.sections).toHaveLength(1) // sanity: the to-many relationship became a table section
 
     const context = harness.context as unknown as AccessContext
 
-    // The record `ItemViewLayoutView` fetches: the real fields, the bounded
-    // relationship rows, AND the synthetic `_count` the fetch adds for the
-    // table footer (built by `buildRelationshipCountSelect`).
-    const itemData = {
-      id: '1',
-      title: 'Hello',
-      comments: [{ id: 'c1', body: 'Nice post' }],
-      _count: { comments: 5 },
-    }
+    const post = await context.db.Post.create({ data: { title: 'Hello' } })
+    await context.db.Comment.create({
+      data: { body: 'Nice post', post: { connect: { id: post?.id } } },
+    })
+
+    // The record `ItemViewLayoutView` fetches, from the read it actually
+    // issues: the real fields, plus the section key carrying the bounded rows
+    // beside the footer's total.
+    const itemData = await composeItemViewRead(
+      context.db.Post.where({ id: post?.id }),
+      config.lists.Post,
+      layout,
+    ).first()
+    if (!itemData) throw new Error('the item view read returned nothing')
+    expect(itemData.comments).toMatchObject({ total: 1 })
 
     const detailsItemData = buildDetailsItemData(itemData, layout)
-    expect(detailsItemData).not.toHaveProperty('_count')
     expect(detailsItemData).not.toHaveProperty('comments') // section field, not a details field
-    expect(detailsItemData).toEqual({ id: '1', title: 'Hello' })
+    expect(detailsItemData).toMatchObject({ id: post?.id, title: 'Hello' })
 
     const detailsListConfig = {
       ...config.lists.Post,

@@ -131,9 +131,7 @@ export function authPlugin(config: AuthConfig): Plugin {
          * the application's User access policy.
          */
         getUser: async (userId: string) => {
-          return await sudo().db[userDbKey].findUnique({
-            where: { id: userId },
-          })
+          return await sudo().db[userDbKey].where({ id: userId }).first()
         },
 
         /** See {@link getUser} — same `sudo()` rationale (ADR-0013), keyed off `context.session.userId`. */
@@ -141,9 +139,7 @@ export function authPlugin(config: AuthConfig): Plugin {
           if (!context.session?.userId) {
             return null
           }
-          return await sudo().db[userDbKey].findUnique({
-            where: { id: context.session.userId },
-          })
+          return await sudo().db[userDbKey].where({ id: context.session.userId }).first()
         },
       }
     },
