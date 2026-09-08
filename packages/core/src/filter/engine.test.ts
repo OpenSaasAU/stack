@@ -9,6 +9,7 @@ import { buildListFilterWhere } from './collect.js'
 const BOOT = 120_000
 
 let ada: Session = {}
+const auditor: Session = { role: 'auditor' }
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },
@@ -24,17 +25,16 @@ const config: OpenSaasConfig = {
       fields: {
         title: text({ validation: { isRequired: true } }),
         author: relationship({ ref: 'User.posts' }),
-        // Declares no rule, so `query` is denied by default — the related
-        // list a relationship token has to count as empty.
         ledger: relationship({ ref: 'Ledger.posts' }),
       },
       access: { operation: { query: () => true } },
     },
     Ledger: {
       fields: {
-        note: text({ validation: { isRequired: true } }),
+        name: text({ validation: { isRequired: true } }),
         posts: relationship({ ref: 'Post.ledger', many: true }),
       },
+      access: { operation: { query: ({ session }) => String(session?.role ?? '') === 'auditor' } },
     },
   },
 }
@@ -59,8 +59,12 @@ function seed(model: string, row: object): Promise<Record<string, unknown>> {
   })
 }
 
-async function filtered(listKey: string, query: string): Promise<Record<string, unknown>[]> {
-  const context = database.context(ada)
+async function filtered(
+  listKey: string,
+  query: string,
+  session: Session = ada,
+): Promise<Record<string, unknown>[]> {
+  const context = database.context(session)
   // `getContext` returns the narrower `StackContext` view of the same object
   // the access seam takes as an `AccessContext` — the bridge every other core
   // test over the Test context makes (`access/multi-column-read-write.test.ts`).
@@ -88,7 +92,8 @@ beforeEach(async () => {
   await seed('User', { name: 'Grace' })
   await seed('Post', { title: 'On Engines', author: author.id })
   await seed('Post', { title: 'On Looms', author: author.id })
-  await seed('Ledger', { note: 'private' })
+  const ledger = await seed('Ledger', { name: 'private' })
+  await seed('Post', { title: 'On Ledgers', ledger: ledger.id })
 })
 
 describe('the filter engine over the secured surface', () => {
@@ -123,6 +128,12 @@ describe('the filter engine over the secured surface', () => {
   test(
     'a relationship filter over a list the session cannot query returns no rows and no error',
     async () => {
+      // The row the token matches exists and is reachable: an auditor's read of
+      // the same filter finds it. Everything that makes it invisible to `ada` is
+      // the engine folding Ledger's `query` rule into the relation filter.
+      expect((await filtered('Post', 'ledger:private', auditor)).map((row) => row.title)).toEqual([
+        'On Ledgers',
+      ])
       await expect(filtered('Post', 'ledger:private')).resolves.toEqual([])
     },
     BOOT,

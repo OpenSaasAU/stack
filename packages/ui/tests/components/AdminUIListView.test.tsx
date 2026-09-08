@@ -22,14 +22,13 @@ vi.mock('next/link.js', () => ({
   ),
 }))
 
-interface DelegateStub {
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args: unknown) => Promise<number>
-}
-
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
+/**
+ * The routing assertions below inspect the element AdminUI selected without
+ * ever rendering it, so no list is read through this context.
+ */
+function makeContext(): AccessContext {
   const context = {
-    db: delegates,
+    db: {},
     session: null,
     storage: {},
     plugins: {},
@@ -165,9 +164,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({
-      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
+    const context = makeContext()
 
     const tree = await AdminUI({
       context,
@@ -197,9 +194,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({
-      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
+    const context = makeContext()
 
     const tree = await AdminUI({
       context,

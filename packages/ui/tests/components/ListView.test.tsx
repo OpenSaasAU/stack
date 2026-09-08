@@ -19,11 +19,19 @@ vi.mock('next/link.js', () => ({
 
 const BOOT = 120_000
 
+function titlesOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((row: unknown) =>
+    typeof row === 'object' && row !== null && 'title' in row ? [String(row.title)] : [],
+  )
+}
+
 /**
  * One fixture carrying every shape the list view has to answer for: a to-one
  * relation read for its label, a related list with a configured label field, a
- * to-many counted per row, a list whose `query` access narrows by session, a
- * list denied outright, and a field the session may not read.
+ * to-many counted per row, a to-many the view does not display that a computed
+ * field declares a dependency on, a list whose `query` access narrows by
+ * session, a list denied outright, and a field the session may not read.
  */
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },
@@ -37,6 +45,23 @@ const config: OpenSaasConfig = {
           hooks: { resolveOutput: ({ item }) => String(item.name ?? '') },
         }),
         posts: relationship({ ref: 'Post.author', many: true }),
+        drafts: relationship({
+          ref: 'Draft.owner',
+          many: true,
+          ui: { listView: { defaultColumn: false } },
+        }),
+        draftTitles: virtual({
+          type: 'string',
+          needs: ['drafts'],
+          hooks: { resolveOutput: ({ item }) => titlesOf(item.drafts).sort().join(',') },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Draft: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        owner: relationship({ ref: 'User.drafts' }),
       },
       access: { operation: { query: () => true } },
     },
@@ -143,6 +168,8 @@ beforeEach(async () => {
     author: { connect: { id: author.id } },
   })
   await create('Post', { title: 'Unfinished', published: false })
+  await create('Draft', { title: 'Notes', owner: { connect: { id: author.id } } })
+  await create('Draft', { title: 'Sketches', owner: { connect: { id: author.id } } })
 })
 
 describe('ListView relationship label resolution (shared label seam)', () => {
@@ -181,6 +208,19 @@ describe('ListView relationship label resolution (shared label seam)', () => {
       expect(byName.Ada.posts).toBe(2)
       expect(byName.Grace.posts).toBe(0)
       expect(byName.Ada._count).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a to-many the view does not display unreduced, so a computed field over it still sees its rows',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      const byName = Object.fromEntries(props.items.map((item) => [item.name, item]))
+      expect(byName.Ada.draftTitles).toBe('Notes,Sketches')
+      expect(byName.Grace.draftTitles).toBe('')
+      // Undisplayed, so its rows never cross the server/client boundary either.
+      expect(byName.Ada.drafts).toBeUndefined()
     },
     BOOT,
   )
@@ -382,6 +422,31 @@ describe('ListView default-column curation (issue #1018)', () => {
       expect(props.fields?.createdAt?.ui?.listView?.defaultColumn).toBe(false)
       expect(props.fields?.updatedAt?.ui?.listView?.defaultColumn).toBe(false)
       expect(props.fields?.title?.ui?.listView?.defaultColumn).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    "leaves a field literally named createdAt alone when the list's timestamps are not enabled",
+    async () => {
+      const untimestamped: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Post: {
+            fields: { title: text(), createdAt: text() },
+            access: { operation: { query: () => true } },
+          },
+        },
+      }
+      const props = findListViewClientProps(
+        await ListView({
+          context: contextAt(null),
+          config: untimestamped,
+          listKey: 'Post',
+          basePath: '/admin',
+        }),
+      )
+      expect(props.fields?.createdAt?.ui?.listView?.defaultColumn).toBeUndefined()
     },
     BOOT,
   )

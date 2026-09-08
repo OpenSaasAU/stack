@@ -34,7 +34,7 @@ function EmptyDash() {
 
 /**
  * Relationship Cell (issue #732). To-many renders the related COUNT — resolved
- * server-side via the secured query's filtered `_count`, so it only ever counts
+ * server-side by the secured read's own count reducer, so it only ever counts
  * rows the session may see; an array of refs is tolerated as a fallback (its
  * length is the count). To-one renders the related row's Item label, linked to
  * its edit page when the field's `ref` resolves a URL.

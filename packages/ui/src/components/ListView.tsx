@@ -4,7 +4,7 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
-import { withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
+import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
@@ -198,6 +198,28 @@ export async function ListView({
       : undefined
   const activeSort = (await sortable(sort)) ?? (await sortable(initialSort))
 
+  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
+  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
+  // when no explicit `columns` is configured) curates off the same declared
+  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
+  // logic needed on the client.
+  const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
+
+  // The columns `ListViewClient` will actually render, resolved the same way it
+  // resolves them. Naming a relation in the read suppresses the engine's
+  // declared-dependency widening for it (`resolveIncludes`), and a reduced
+  // relation is masked to `[]` for the rules and computed fields that read it —
+  // so a to-many is counted only where a column displays that count.
+  const displayedColumns = new Set(
+    columns ??
+      Object.keys(displayFields).filter((name) => isDefaultColumnField(displayFields[name])),
+  )
+  const countedRelations = new Set(
+    Object.entries(listConfig.fields)
+      .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
+      .map(([name]) => name),
+  )
+
   const skip = (page - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
@@ -223,19 +245,18 @@ export async function ListView({
         : undefined
 
     // A to-one relationship fetches the related row (for its Item label); a
-    // to-many reduces to the count of the related rows this session may see,
-    // through the surface's own reducer — never the related rows themselves,
-    // which would be an unbounded per-row fetch (issue #732).
+    // to-many displayed as a count reduces to the count of the related rows
+    // this session may see, through the surface's own reducer — never the
+    // related rows themselves, which would be an unbounded per-row fetch
+    // (issue #732).
     const scoped: SecuredQuery = parsedWhere ? dbContext[key].where(parsedWhere) : dbContext[key]
-    const withRelations = Object.entries(listConfig.fields).reduce(
-      (read, [fieldName, field]) =>
-        field.type !== 'relationship'
-          ? read
-          : isToManyRelationshipField(field)
-            ? read.include(fieldName, (rows) => rows.count())
-            : read.include(fieldName),
-      scoped,
-    )
+    const withRelations = Object.entries(listConfig.fields).reduce((read, [fieldName, field]) => {
+      if (field.type !== 'relationship') return read
+      if (!isToManyRelationshipField(field)) return read.include(fieldName)
+      return countedRelations.has(fieldName)
+        ? read.include(fieldName, (rows) => rows.count())
+        : read
+    }, scoped)
 
     const sorted = activeSort
       ? withRelations.orderBy({ [activeSort.field]: activeSort.direction })
@@ -272,7 +293,9 @@ export async function ListView({
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {
-        resolved[fieldName] = readRelationshipCount(item, fieldName)
+        if (countedRelations.has(fieldName))
+          resolved[fieldName] = readRelationshipCount(item, fieldName)
+        else delete resolved[fieldName]
         continue
       }
       const [relatedListKey] = ref.split('.')
@@ -310,13 +333,6 @@ export async function ListView({
     context,
     listKey,
   )
-
-  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
-  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
-  // when no explicit `columns` is configured) curates off the same declared
-  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
-  // logic needed on the client.
-  const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
 
   return (
     <div className="p-8">
