@@ -113,9 +113,20 @@ export function transformItemFormData(
   return transformed
 }
 
-/** The ids a to-many control holds, ignoring anything that is not one. */
+/**
+ * The ids a to-many control holds, as the strings the server action's id
+ * boundary parses back to the list's own key type. An `int autoincrement`
+ * related list can put a number here — dropping it would leave a deselect with
+ * no baseline to diff against, and the form would report a save it never made.
+ */
 function selectedIds(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+  if (!Array.isArray(value)) return []
+  const ids: string[] = []
+  for (const id of value) {
+    if (typeof id === 'string') ids.push(id)
+    else if (typeof id === 'number') ids.push(String(id))
+  }
+  return ids
 }
 
 /**
@@ -145,6 +156,15 @@ export interface EdgeWriteOutcome {
   persisted: Record<string, string[]>
   errors: string[]
 }
+
+/**
+ * Prefixes the record update's own failure when the edge writes ahead of it
+ * already landed. The edges are separate writes against another list and are
+ * not rolled back, so a bare "update failed" would describe a save that was in
+ * fact half applied.
+ */
+export const PARTIAL_SAVE_PREFIX =
+  'The related records were relinked, but this record was not saved:'
 
 /**
  * Diff each edge-writing to-many field's current selection against the
@@ -323,6 +343,13 @@ export function useItemForm({
     setGeneralError(null)
 
     startTransition(async () => {
+      // Set once the edges have landed. They are writes against another list
+      // and nothing rolls them back, so every failure reported after this
+      // point has to say the save was partial.
+      let edgesCommitted = false
+      const report = (message: string) =>
+        setGeneralError(edgesCommitted ? `${PARTIAL_SAVE_PREFIX} ${message}` : message)
+
       try {
         // Edges go first, and a denial stops here: `onSubmit` navigates away
         // on success, so a revert the user is meant to see has to happen while
@@ -337,6 +364,7 @@ export function useItemForm({
             setGeneralError(outcome.errors.join(' '))
             return
           }
+          edgesCommitted = true
         }
 
         // Inside the try: the transform refuses a payload it would otherwise
@@ -347,10 +375,10 @@ export function useItemForm({
         // void result → adapter handles its own success/navigation.
         if (result && result.success === false) {
           if (result.fieldErrors) setErrors(result.fieldErrors)
-          setGeneralError(result.error || errorFallback)
+          report(result.error || errorFallback)
         }
       } catch (error: unknown) {
-        setGeneralError((error as Error)?.message || errorFallback)
+        report(error instanceof Error && error.message ? error.message : errorFallback)
       }
     })
   }

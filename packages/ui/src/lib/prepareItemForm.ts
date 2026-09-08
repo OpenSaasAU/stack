@@ -9,19 +9,28 @@ import {
 import { jsonSafeClone } from './jsonSafeClone.js'
 
 /**
+ * One record's id as the string the client form carries. An `int autoincrement`
+ * list's id arrives as a number (ADR-0048); the server action's id boundary
+ * parses each string back to its own list's key type.
+ */
+function readId(record: unknown): string | null {
+  if (!record || typeof record !== 'object' || !('id' in record)) return null
+  const id: unknown = record.id
+  if (typeof id === 'string') return id
+  return typeof id === 'number' ? String(id) : null
+}
+
+/**
  * Extract the currently-selected id(s) from a hydrated relationship value so
  * they can be unioned into the bounded options fetch (the item's current
  * value must always resolve a label, even outside the window).
  */
 function extractSelectedIds(value: unknown, many: boolean | undefined): string[] {
   if (many) {
-    return Array.isArray(value)
-      ? value
-          .map((item) => (item as { id?: string })?.id)
-          .filter((id): id is string => typeof id === 'string')
-      : []
+    return Array.isArray(value) ? value.map(readId).filter((id): id is string => id !== null) : []
   }
-  return value && typeof value === 'object' && 'id' in value ? [(value as { id: string }).id] : []
+  const id = readId(value)
+  return id === null ? [] : [id]
 }
 
 /**
@@ -100,7 +109,7 @@ export async function prepareItemForm(
 
   const serializableFields = serializeFieldConfigs(listConfig.fields)
   markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
-  markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, itemData.id)
+  markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, readId(itemData))
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
@@ -112,9 +121,10 @@ export async function prepareItemForm(
     if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
       const value = formData[fieldName]
       if (fieldConfigAny.many && Array.isArray(value)) {
-        formData[fieldName] = value.map((item: Record<string, unknown>) => item.id as string)
-      } else if (value && typeof value === 'object' && 'id' in value) {
-        formData[fieldName] = (value as Record<string, unknown>).id as string
+        formData[fieldName] = value.map(readId).filter((id): id is string => id !== null)
+      } else {
+        const id = readId(value)
+        if (id !== null) formData[fieldName] = id
       }
     }
 

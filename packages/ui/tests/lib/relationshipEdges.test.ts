@@ -66,6 +66,16 @@ describe('resolveToManyEdgePlan (ADR-0050)', () => {
       db: { isNullable: false },
     })
     expect(resolveToManyEdgePlan(withRequiredFk, 'User', 'posts')).toBeNull()
+
+    // `RelationshipField` declares no `validation`, but a config can still
+    // carry it through the builder's spread — and an author who wrote it means
+    // the link is not the form's to clear.
+    const withRequiredValidation = config()
+    withRequiredValidation.lists.Post.fields.author = {
+      ...relationship({ ref: 'User.posts' }),
+      validation: { isRequired: true },
+    }
+    expect(resolveToManyEdgePlan(withRequiredValidation, 'User', 'posts')).toBeNull()
   })
 
   it('refuses an edge across an explicit junction list', () => {
@@ -80,7 +90,7 @@ describe('resolveToManyEdgePlan (ADR-0050)', () => {
 })
 
 describe('markToManyEdgeWrites', () => {
-  function serialize(listKey: string, itemId: unknown) {
+  function serialize(listKey: string, itemId: string | null | undefined) {
     const c = config()
     const fields = c.lists[listKey].fields
     const serialized = serializeFieldConfigs(fields)

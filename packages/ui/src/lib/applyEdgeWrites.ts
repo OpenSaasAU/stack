@@ -33,13 +33,6 @@ const DENIED = 'Access denied or operation failed'
  * Write one item form's to-many edges as writes against their related lists
  * (ADR-0050).
  *
- * Each edge is one row of the related list, and the parent's id lives in that
- * row's own foreign key — so adding an edge is `linkRelated` on that row and
- * removing one is `removeRelated`'s disconnect, both evaluated against the
- * related list's access and never the parent's. The record being edited is
- * named only as `parentId`, which the server composes the link from; nothing
- * here sends a relation input of its own.
- *
  * Every write is attempted, so one denied row never hides the outcome of the
  * rest. What comes back is the selection that actually persisted per field —
  * which the form reverts its control to — and the reasons the denials gave.

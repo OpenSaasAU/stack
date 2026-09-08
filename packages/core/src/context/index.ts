@@ -123,14 +123,11 @@ export type ServerActionProps =
       parentId: string
       targetId: string
     }
-  // Linking an EXISTING related row to the parent by writing the parent's id
-  // into the row's own foreign key (ADR-0050). `listKey`/`id` target the
-  // RELATED row, as `removeRelated` does — this is that action's counterpart,
-  // and the two are what the item form's to-many multi-select writes its edges
-  // with. `field` names the to-one back-reference that owns the column, and
-  // `parentId` is composed into a `connect` on the SERVER, so the payload
-  // carries no relation input of the client's choosing. Returns a distinct
-  // `{ linked }` shape, never `success`.
+  // `listKey`/`id` target the RELATED row, as `removeRelated` does; `field` is
+  // the to-one back-reference owning the column, and `parentId` is composed
+  // into a `connect` on the SERVER, so the payload carries no relation input of
+  // the client's choosing. Returns a distinct `{ linked }` shape, never
+  // `success`, so a UI wrapper that redirects on `success` does not hijack it.
   | {
       listKey: string
       action: 'linkRelated'
@@ -676,14 +673,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
     | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
-    const listConfig = config.lists[props.listKey]
-
-    if (!listConfig) {
+    if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
         success: false,
         error: `List "${props.listKey}" not found in configuration`,
       }
     }
+    const listConfig = config.lists[props.listKey]
 
     const model = db[props.listKey] as {
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
@@ -959,15 +955,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
     }
 
-    // Links an EXISTING related row to the parent by writing the parent's id
-    // into the row's own foreign key — the counterpart of `removeRelated`'s
-    // disconnect, and the pair the item form's to-many multi-select writes its
-    // edges with (ADR-0050). The write runs on the RELATED list, so that list's
-    // own update access and hooks decide it, never the parent's. Only a to-one
-    // back-reference owns a column to hold the link; a to-many one is refused,
-    // as it is on `createRelated`. Honours Silent failure: an access-denied
-    // update returns `null`, surfaced as `{ linked: false }` with a generic
-    // reason.
+    // The write runs on the RELATED list, so that list's own update access and
+    // hooks decide it, never the parent's. Only a to-one back-reference owns a
+    // column to hold the link. Honours Silent failure: an access-denied update
+    // returns `null`, surfaced as `{ linked: false }` with a generic reason.
     if (props.action === 'linkRelated') {
       const backRefField = listConfig.fields[props.field]
       if (!isRelationshipField(backRefField)) {

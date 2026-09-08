@@ -37,6 +37,19 @@ describe('the contract-driven id boundary (ADR-0048)', () => {
     expect(parseListId(config(), 'Post', '9007199254740993')).toEqual({ ok: false })
   })
 
+  test('an integer id is bounded by the int4 column, not by the JS safe range', () => {
+    expect(parseListId(config(), 'Post', '2147483647')).toEqual({ ok: true, value: 2147483647 })
+    expect(parseListId(config(), 'Post', '-2147483648')).toEqual({ ok: true, value: -2147483648 })
+    // A safe integer the column cannot hold: without the bound this reaches
+    // the driver as an out-of-range error instead of the 404 the parse exists
+    // to produce.
+    expect(parseListId(config(), 'Post', '2147483648')).toEqual({ ok: false })
+    expect(parseListId(config(), 'Post', '3000000000')).toEqual({ ok: false })
+    expect(parseListId(config(), 'Post', '-2147483649')).toEqual({ ok: false })
+    expect(parseListId(config(), 'Post', 3_000_000_000)).toEqual({ ok: false })
+    expect(parseListId(config(), 'Settings', '2147483648')).toEqual({ ok: false })
+  })
+
   test('a singleton is integer-keyed regardless of the config default', () => {
     expect(parseListId(config(), 'Settings', '1')).toEqual({ ok: true, value: 1 })
     expect(parseListId(config(), 'Settings', 'one')).toEqual({ ok: false })

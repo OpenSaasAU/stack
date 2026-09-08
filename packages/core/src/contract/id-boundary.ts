@@ -26,6 +26,18 @@ const CUID2 = /^[a-z][a-z0-9]{23}$/i
 const INTEGER = /^-?\d+$/
 
 /**
+ * `int autoincrement` and `singleton` both sit in a Postgres `int` — int4 —
+ * so a value outside this range is not an id the column can hold, and must
+ * fail here rather than reach the driver as an out-of-range error.
+ */
+const INT4_MIN = -2_147_483_648
+const INT4_MAX = 2_147_483_647
+
+function inInt4(value: number): boolean {
+  return Number.isInteger(value) && value >= INT4_MIN && value <= INT4_MAX
+}
+
+/**
  * The primary-key column of one list, as the contract declares it, or `null`
  * when the config declares no such list.
  */
@@ -58,11 +70,11 @@ export function parseListId(config: OpenSaasConfig, listKey: string, raw: unknow
 
   if (column.strategy === 'int autoincrement' || column.strategy === 'singleton') {
     if (typeof raw === 'number') {
-      return Number.isSafeInteger(raw) ? { ok: true, value: raw } : { ok: false }
+      return inInt4(raw) ? { ok: true, value: raw } : { ok: false }
     }
     if (typeof raw !== 'string' || !INTEGER.test(raw)) return { ok: false }
     const value = Number(raw)
-    return Number.isSafeInteger(value) ? { ok: true, value } : { ok: false }
+    return inInt4(value) ? { ok: true, value } : { ok: false }
   }
 
   if (typeof raw !== 'string') return { ok: false }

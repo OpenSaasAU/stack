@@ -186,3 +186,67 @@ describe("the item form's to-many edges are writes against the related list", ()
     expect(await linkedPostTitles(denied, seeded.userId)).toEqual(['Owned'])
   })
 })
+
+/**
+ * The same shape on an `int autoincrement` list (ADR-0048). A record's id
+ * arrives as a number here and the form carries ids as strings, so a baseline
+ * that dropped the number would leave a deselect with nothing to diff — and
+ * the form would navigate away reporting a save it never made.
+ */
+function intKeyedConfig(): OpenSaasConfig {
+  return {
+    db: { provider: 'postgresql', idField: 'int autoincrement' },
+    lists: {
+      User: {
+        fields: {
+          name: text(),
+          posts: relationship({ ref: 'Post.author', many: true }),
+        },
+        access: { operation: OPEN },
+      },
+      Post: {
+        fields: {
+          title: text(),
+          author: relationship({ ref: 'User.posts' }),
+        },
+        access: { operation: OPEN },
+      },
+    },
+  }
+}
+
+describe('an integer-keyed related list round-trips its ids through the form', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(intKeyedConfig(), { userId: 'admin' })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    await harness.truncate()
+  })
+
+  it('clears the foreign key when a numeric-id row is deselected', async () => {
+    const config = intKeyedConfig()
+    const owner = await harness.context.db.User.create({ data: { name: 'Ada' } })
+    const userId = String(owner?.id)
+    await harness.context.db.Post.create({
+      data: { title: 'Owned', author: { connect: { id: owner?.id } } },
+    })
+
+    const prepared = await renderUserForm(harness, config, userId)
+    expect(prepared.initialData.posts).toEqual([userId])
+
+    const actor = userEvent.setup()
+    await actor.click(screen.getByRole('button', { name: 'Remove' }))
+    await actor.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))
+    expect(await linkedPostTitles(harness, userId)).toEqual([])
+  })
+})

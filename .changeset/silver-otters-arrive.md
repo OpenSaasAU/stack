@@ -29,7 +29,11 @@ await serverAction({
 })
 ```
 
-Nothing needs configuring: a to-many whose back-reference owns a nullable foreign key becomes editable on the edit form automatically. A to-many with no writable edge — a list-only `ref`, a required foreign key, or an edge across an explicit junction list — stays read-only with its reason, and a junction's links are still added and removed from the relationship table.
+Nothing needs configuring: a to-many whose back-reference owns a nullable foreign key becomes editable on the edit form automatically. A to-many with no writable edge — a list-only `ref`, a required foreign key (`db.isNullable: false` or `validation: { isRequired: true }`), or an edge across an explicit junction list — stays read-only with its reason.
+
+On the **default** edit route a to-many renders as a relationship table rather than a multi-select, so that table's "Link existing" control — until now offered only for an edge across a junction list — now also links an existing related row by writing its own foreign key, under the related list's update access. Selecting a post on a user's edit page therefore updates that post's foreign key whether the field is left at its default display or demoted to `ui.itemView.displayMode: 'picker'`.
+
+The edge writes commit before the record's own update and are not rolled back, so a record update that then fails reports the save as partial instead of as a plain failure.
 
 Ids now cross the wire through one contract-driven coercion (ADR-0048), which reads each list's id type from the contract:
 
@@ -38,6 +42,7 @@ import { parseListId } from '@opensaas/stack-core'
 
 parseListId(config, 'Post', '12') // { ok: true, value: 12 } on an int-keyed list
 parseListId(config, 'Post', 'not-an-int') // { ok: false }
+parseListId(config, 'Post', '3000000000') // { ok: false } — outside the int4 column
 ```
 
 Admin routing parses the URL's item id through it and **404s a malformed one**, so `/admin/post/not-an-int` on an integer-keyed list is a not-found rather than a query built on a `NaN`. The server actions parse their ids the same way.

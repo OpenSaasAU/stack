@@ -1,4 +1,4 @@
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveJunctionEdge } from '@opensaas/stack-core'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 
@@ -12,6 +12,21 @@ import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/
  * key, so adding an edge is an update of that row and removing one is nulling
  * the same column, both evaluated against {@link relatedListKey}'s access.
  */
+/**
+ * Whether a field declares `validation: { isRequired: true }`.
+ *
+ * `RelationshipField` does not declare `validation`, so this reads it
+ * structurally: a config can still carry it (the builder spreads its options
+ * through), and a back-reference the author calls required must not get a
+ * control whose deselect the author means to refuse.
+ */
+function declaresRequired(field: FieldConfig): boolean {
+  if (!('validation' in field)) return false
+  const validation: unknown = field.validation
+  if (typeof validation !== 'object' || validation === null) return false
+  return 'isRequired' in validation && validation.isRequired === true
+}
+
 export interface ToManyEdgePlan {
   /** The list whose rows carry the foreign key, and whose access decides each write. */
   relatedListKey: string
@@ -29,7 +44,8 @@ export interface ToManyEdgePlan {
  *   (`ref: 'Post'`) names no back-reference to write through;
  * - a back-reference that is itself to-many, or that does not own the foreign
  *   key — neither has a column on the related row to hold the parent;
- * - a back-reference declared `db.isNullable: false`, where deselecting could
+ * - a back-reference declared `db.isNullable: false` or
+ *   `validation: { isRequired: true }`, where deselecting could
  *   not be written at all and the control would accept an edit it must then
  *   refuse;
  * - an edge across an explicit junction list, whose rows are created and
@@ -56,6 +72,7 @@ export function resolveToManyEdgePlan(
   const backReference = relatedListConfig.fields[backReferenceField]
   if (!isRelationshipField(backReference) || backReference.many === true) return null
   if (backReference.db?.isNullable === false) return null
+  if (declaresRequired(backReference)) return null
 
   // `shouldHaveForeignKey` throws on a config `generate` would have refused.
   // This runs while rendering a page, so an unvalidated config leaves the

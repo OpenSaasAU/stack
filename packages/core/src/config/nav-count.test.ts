@@ -24,6 +24,13 @@ function schemaConfig(): OpenSaasConfig {
         access: { operation: { query: () => true, create: () => true } },
         ui: { navCount: true },
       },
+      Scoped: {
+        fields: { title: text() },
+        access: {
+          operation: { query: () => ({ title: { equals: 'visible' } }), create: () => true },
+        },
+        ui: { navCount: true },
+      },
       NotOptedIn: {
         fields: { title: text() },
         access: { operation: { query: () => true, create: () => true } },
@@ -109,7 +116,29 @@ describe('resolveNavCounts', () => {
         // access-scoped total. A statically denied list is omitted before any
         // query for its own reason: a `0` would read as "empty" when the truth
         // is "you may see none of it".
-        expect(counts).toEqual({ Counted: 2 })
+        expect(counts).toEqual({ Counted: 2, Scoped: 0 })
+      } finally {
+        error.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'a filter-scoped rule counts only the rows that filter admits',
+    async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await harness.context.db.Scoped.create({ data: { title: 'visible' } })
+        await harness.context.db.Scoped.create({ data: { title: 'visible' } })
+        await harness.context.db.Scoped.create({ data: { title: 'hidden' } })
+
+        const counts = await resolveNavCounts(accessContext(), schemaConfig())
+
+        // The badge is the reducer run under the same filter a list read gets,
+        // so the hidden row is absent from the total rather than hidden from
+        // the page but counted in the chrome.
+        expect(counts.Scoped).toBe(2)
       } finally {
         error.mockRestore()
       }

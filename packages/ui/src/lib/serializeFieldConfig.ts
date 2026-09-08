@@ -238,9 +238,9 @@ export function markToManyEdgeWrites(
   listKey: string,
   fields: Record<string, FieldConfig>,
   config: OpenSaasConfig,
-  itemId: unknown,
+  itemId: string | null | undefined,
 ): void {
-  if (itemId === undefined || itemId === null || itemId === '') return
+  if (!itemId) return
 
   for (const fieldName of Object.keys(fields)) {
     const serialized = serializableFields[fieldName]
