@@ -1,6 +1,7 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
+import { classifyRowIndependentRead } from '../access/field-access.js'
 import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
@@ -98,6 +99,38 @@ async function relatedListIfVisible(
 }
 
 /**
+ * The names of `listConfig`'s own fields this session may be told about, in
+ * declaration order: a field whose `read` rule is row-independent and denies
+ * is omitted, and a row-dependent one stays (it may pass for rows the session
+ * owns) — ADR-0053.
+ *
+ * This is the one place the read vocabulary is decided. Both the advertised
+ * schema and the refusal `resolveFieldsProjection` raises for an unnamed field
+ * read it, so a dropped name is indistinguishable from one that never existed;
+ * deriving either from `listConfig.fields` directly would leak back what the
+ * schema withheld.
+ *
+ * `relationsSelectable: false` additionally drops relations, which is the
+ * level-2 vocabulary (a relation named there terminates).
+ */
+async function advertisableFieldNames(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  session: Session | null,
+  context: AccessContext,
+  options: { relationsSelectable: boolean },
+): Promise<string[]> {
+  const names: string[] = []
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    if (!options.relationsSelectable && isRelationshipField(fieldConfig)) continue
+    const answer = await classifyRowIndependentRead(fieldConfig.access, { session, context })
+    if (answer === 'deny') continue
+    names.push(fieldName)
+  }
+  return names
+}
+
+/**
  * Generate the JSON Schema for the `query` tool's `fields` projection
  * argument: two levels of the list's own vocabulary (ADR-0033). Level 1 is
  * this list's own scalar/virtual fields (booleans) and relations (nested
@@ -115,8 +148,13 @@ export async function generateFieldsProjectionSchema(
   context: AccessContext,
 ): Promise<Record<string, unknown>> {
   const properties: Record<string, unknown> = systemFieldProperties()
+  const advertisable = new Set(
+    await advertisableFieldNames(listConfig, session, context, { relationsSelectable: true }),
+  )
 
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    if (!advertisable.has(fieldName)) continue
+
     if (!isRelationshipField(fieldConfig)) {
       properties[fieldName] = scalarSelectorSchema(fieldName)
       continue
@@ -126,8 +164,9 @@ export async function generateFieldsProjectionSchema(
     if (!related) continue
 
     const level2Properties: Record<string, unknown> = systemFieldProperties()
-    for (const [relFieldName, relFieldConfig] of Object.entries(related.listConfig.fields)) {
-      if (isRelationshipField(relFieldConfig)) continue
+    for (const relFieldName of await advertisableFieldNames(related.listConfig, session, context, {
+      relationsSelectable: false,
+    })) {
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
     }
 
@@ -284,6 +323,10 @@ export async function resolveFieldsProjection(
     )
   }
 
+  const advertisable = await advertisableFieldNames(listConfig, session, context, {
+    relationsSelectable: true,
+  })
+
   const include: Record<string, unknown> = {}
   // `id` is always projected back, whether or not the caller asked for it —
   // see `systemFieldProperties`'s doc comment.
@@ -303,9 +346,9 @@ export async function resolveFieldsProjection(
     }
 
     const fieldConfig = listConfig.fields[fieldName]
-    if (!fieldConfig) {
+    if (!fieldConfig || !advertisable.includes(fieldName)) {
       throw new McpProjectionRefusedError(
-        `"${listKey}" has no field "${fieldName}". Available fields: ${Object.keys(listConfig.fields).join(', ')}.`,
+        `"${listKey}" has no field "${fieldName}". Available fields: ${advertisable.join(', ')}.`,
       )
     }
 
@@ -419,12 +462,16 @@ export async function resolveFieldsProjection(
       ) {
         throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.fields" must be an object.`)
       }
+      const relAdvertisable = new Set(
+        await advertisableFieldNames(related.listConfig, session, context, {
+          relationsSelectable: false,
+        }),
+      )
       for (const [relFieldName, relValue] of Object.entries(
         nestedFieldsArg as Record<string, unknown>,
       )) {
         if (!isSystemFieldName(relFieldName)) {
-          const relFieldConfig = related.listConfig.fields[relFieldName]
-          if (!relFieldConfig || isRelationshipField(relFieldConfig)) {
+          if (!relAdvertisable.has(relFieldName)) {
             throw new McpProjectionRefusedError(
               `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
                 `are not selectable two levels deep; issue a second query for that.`,

@@ -80,6 +80,62 @@ function schemaConfig(): OpenSaasConfig {
         access: { operation: { query: () => true } },
         mcp: { enabled: false },
       },
+      // The field-grain fixture (ADR-0053): a constant rule beside an
+      // `isAuthor` one, and a rule keyed off the session alone.
+      Memo: {
+        fields: {
+          title: text(),
+          internal: text({
+            access: { read: () => false, create: () => false, update: () => false },
+          }),
+          adminOnly: text({
+            access: {
+              read: ({ session }) => session?.role === 'admin',
+              create: ({ session }) => session?.role === 'admin',
+              update: ({ session }) => session?.role === 'admin',
+            },
+          }),
+          ownerNotes: text({
+            access: {
+              read: ({ session, item }) => item?.ownerId === session?.userId,
+              update: ({ session, item }) => item?.ownerId === session?.userId,
+            },
+          }),
+          draftedBy: text({
+            access: { create: ({ inputData }) => inputData?.title !== 'forbidden' },
+          }),
+          ownerId: text(),
+          notes: relationship({ ref: 'Memoed.memo', many: true }),
+        },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => true,
+            delete: () => true,
+          },
+        },
+      },
+      // A required field only an admin may write: everyone else loses the
+      // whole `create` tool.
+      Ledger: {
+        fields: {
+          entry: text({
+            validation: { isRequired: true },
+            access: { create: ({ session }) => session?.role === 'admin' },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true } },
+      },
+      // Reached only as a relation target, to pin the level-2 vocabulary.
+      Memoed: {
+        fields: {
+          label: text(),
+          hidden: text({ access: { read: () => false } }),
+          memo: relationship({ ref: 'Memo.notes' }),
+        },
+        access: { operation: { query: () => true } },
+      },
       // Self-referential: the advertised schema has to terminate.
       Category: {
         fields: {
@@ -368,6 +424,180 @@ describe('the MCP surface', () => {
           properties: Record<string, unknown>
         }
         expect(postData.properties.comments).toBeUndefined()
+      },
+      BOOT,
+    )
+  })
+
+  /**
+   * ADR-0053: the advertised vocabulary is filtered at field grain, per
+   * session and uncached, by the same row-independence classifier the include
+   * and the predicate check already use.
+   */
+  describe('the field grain of the published vocabulary', () => {
+    const anonymous: McpSessionProvider = async () => ({ userId: 'anon-1' })
+    const author: McpSessionProvider = async () => ({ userId: 'user-123', role: 'author' })
+    const admin: McpSessionProvider = async () => ({ userId: 'admin-1', role: 'admin' })
+
+    async function toolsFor(getSession: McpSessionProvider): Promise<ToolList> {
+      const { body } = await rpc('tools/list', undefined, schemaConfig(), getSession)
+      return (body?.result as { tools: ToolList }).tools
+    }
+
+    async function fieldsSchemaFor(
+      getSession: McpSessionProvider,
+      toolName: string,
+    ): Promise<Record<string, unknown>> {
+      const tool = (await toolsFor(getSession)).find((entry) => entry.name === toolName)
+      const properties = tool?.inputSchema.properties as Record<string, unknown>
+      return (properties.fields as { properties: Record<string, unknown> }).properties
+    }
+
+    async function dataSchemaFor(
+      getSession: McpSessionProvider,
+      toolName: string,
+    ): Promise<Record<string, unknown> | undefined> {
+      const tool = (await toolsFor(getSession)).find((entry) => entry.name === toolName)
+      if (!tool) return undefined
+      const properties = tool.inputSchema.properties as Record<string, unknown>
+      return (properties.data as { properties: Record<string, unknown> }).properties
+    }
+
+    async function refusalText(
+      getSession: McpSessionProvider,
+      fields: Record<string, unknown>,
+    ): Promise<string> {
+      const { body } = await rpc(
+        'tools/call',
+        { name: 'list_memo_query', arguments: { fields } },
+        schemaConfig(),
+        getSession,
+      )
+      const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+      expect(result.isError).toBe(true)
+      return result.content[0].text
+    }
+
+    test(
+      'a constantly denied field leaves the read vocabulary for every session',
+      async () => {
+        for (const getSession of [anonymous, author, admin]) {
+          const fields = await fieldsSchemaFor(getSession, 'list_memo_query')
+          expect(fields.title).toBeDefined()
+          expect(fields.internal).toBeUndefined()
+
+          // A relationship is a field here too (ADR-0053): its own `read` rule
+          // drops it before the related list's `query` access is consulted.
+          const posts = await fieldsSchemaFor(getSession, 'list_post_query')
+          expect(posts.comments).toBeDefined()
+          expect(posts.restrictedComments).toBeUndefined()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a session-keyed field is advertised to the admin and withheld from the others',
+      async () => {
+        expect((await fieldsSchemaFor(admin, 'list_memo_query')).adminOnly).toBeDefined()
+        expect((await fieldsSchemaFor(author, 'list_memo_query')).adminOnly).toBeUndefined()
+        expect((await fieldsSchemaFor(anonymous, 'list_memo_query')).adminOnly).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'a rule that reaches into the row stays advertised to every session',
+      async () => {
+        for (const getSession of [anonymous, author, admin]) {
+          expect((await fieldsSchemaFor(getSession, 'list_memo_query')).ownerNotes).toBeDefined()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'the second projection level is filtered by the same rule',
+      async () => {
+        const fields = await fieldsSchemaFor(author, 'list_memo_query')
+        const nested = (fields.notes as { properties: Record<string, unknown> }).properties
+        const level2 = (nested.fields as { properties: Record<string, unknown> }).properties
+
+        expect(level2.label).toBeDefined()
+        expect(level2.hidden).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'the create and update data schemas drop what the session can never write',
+      async () => {
+        const authorCreate = await dataSchemaFor(author, 'list_memo_create')
+        expect(authorCreate?.title).toBeDefined()
+        expect(authorCreate?.internal).toBeUndefined()
+        expect(authorCreate?.adminOnly).toBeUndefined()
+
+        const adminCreate = await dataSchemaFor(admin, 'list_memo_create')
+        expect(adminCreate?.adminOnly).toBeDefined()
+
+        const authorUpdate = await dataSchemaFor(author, 'list_memo_update')
+        expect(authorUpdate?.internal).toBeUndefined()
+        expect(authorUpdate?.adminOnly).toBeUndefined()
+        // Row-dependent on update: it may pass on rows this session owns.
+        expect(authorUpdate?.ownerNotes).toBeDefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'a write rule that reads the payload is row-dependent, not a denial',
+      async () => {
+        expect((await dataSchemaFor(author, 'list_memo_create'))?.draftedBy).toBeDefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'a required field the session cannot write removes the create tool entirely',
+      async () => {
+        const authorNames = (await toolsFor(author)).map((tool) => tool.name)
+        expect(authorNames).toContain('list_ledger_query')
+        expect(authorNames).not.toContain('list_ledger_create')
+
+        const adminNames = (await toolsFor(admin)).map((tool) => tool.name)
+        expect(adminNames).toContain('list_ledger_create')
+      },
+      BOOT,
+    )
+
+    test(
+      'a dropped field is refused in the same bytes as a name that never existed',
+      async () => {
+        const dropped = await refusalText(author, { internal: true })
+        const unknown = await refusalText(author, { neverExisted: true })
+
+        expect(dropped).toBe(unknown.replace('neverExisted', 'internal'))
+        expect(unknown).not.toContain('internal')
+        expect(unknown).not.toContain('adminOnly')
+
+        const adminDropped = await refusalText(admin, { internal: true })
+        expect(adminDropped).toBe(
+          (await refusalText(admin, { neverExisted: true })).replace('neverExisted', 'internal'),
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'the vocabulary is recomputed per session rather than cached across them',
+      async () => {
+        const first = await fieldsSchemaFor(author, 'list_memo_query')
+        const second = await fieldsSchemaFor(admin, 'list_memo_query')
+        const third = await fieldsSchemaFor(author, 'list_memo_query')
+
+        expect(first.adminOnly).toBeUndefined()
+        expect(second.adminOnly).toBeDefined()
+        expect(third.adminOnly).toBeUndefined()
       },
       BOOT,
     )
