@@ -18,6 +18,12 @@ export interface UnsafeCapableClient {
   readonly sql: object
   readonly raw: object
   readonly orm: object
+  /**
+   * The built contract. Not a lane and not on {@link UnsafeSurface} — the row
+   * lock reads the identity column and its codec off its storage, which is
+   * the same place the ORM's own `update()` reads them (ADR-0062).
+   */
+  readonly contract: object
   runtime(): RuntimeScope
   transaction<R>(fn: (tx: UnsafeTransactionScope) => PromiseLike<R>): Promise<R>
 }

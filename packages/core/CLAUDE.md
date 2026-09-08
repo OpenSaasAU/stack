@@ -201,6 +201,78 @@ Key points:
   optimistically at write time, unchanged. See ADR-0028 and the hooks concept
   doc.
 
+#### The row lock (`.forUpdate()`, ADR-0047, ADR-0062)
+
+A capacity gate is the case a stricter isolation level used to cover. Express it
+as a row lock on the contended parent, taken **before** the count — every racer
+takes the same token on the same row, so the count cannot go stale under a
+booking a racer that got there first has already committed.
+
+```typescript
+const result = await context.transaction(async (tx) => {
+  // The lock comes BEFORE both reads below. `null` here is denied-or-gone —
+  // either way there is no gate to run.
+  const held = await tx.db.Slot.where({ id: { equals: slotId } })
+    .forUpdate()
+    .first()
+  if (held === null) return { booked: false }
+
+  // BOTH sides of the gate are read after the lock, each in its own statement.
+  // `held`'s own columns are the row as of BEFORE the lock was granted, so
+  // `held.capacity` can be stale; this re-read cannot be, because no one else
+  // can commit an update to a row this transaction holds.
+  const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
+  const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
+    (aggregate) => ({ taken: aggregate.count() }),
+  )
+  if (slot === null || taken >= slot.capacity) return { booked: false }
+
+  return { booked: true, item: await tx.db.Booking.create({ data: { slotId, holder } }) }
+})
+```
+
+- **`forUpdate()` is on the transaction-bound builder and nowhere else.** A lock
+  taken outside a transaction is released at the end of the statement that took
+  it, so it would compile, run, return rows and guard nothing. The generated
+  bundle names two faces per list (`SlotList`, `SlotTxList`) and
+  `context.db.Slot.forUpdate()` is a compile error.
+- **Two statements.** The scoped read runs first — operation access, the Access
+  Filter and Field Visibility exactly as any read — and the engine then locks
+  the identity rows it returned. The locked set is provably a subset of the
+  readable set.
+- **The lock is a mutex on the row; the columns come back as of before it.**
+  Each statement takes its own snapshot under Read Committed, so a column
+  another transaction committed between the read and the lock reaches the
+  caller **stale** — only the row's identity is post-lock. This diverges from a
+  single-statement `SELECT … FOR UPDATE`, which Postgres re-evaluates after
+  acquiring. So a threshold the gate compares against is read in its **own
+  statement after the lock**, exactly as the count is; reading it off the
+  locked row is the stale read the gate exists to close. ADR-0047 states the
+  same thing from the other side: the parent row lock is a **mutex token**, not
+  protection for the parent's own data.
+- **A terminal never returns a row it did not lock.** A row deleted between the
+  two statements locks nothing: `first()` yields `null` and `all()` the
+  surviving subset. `null` therefore means denied-or-vanished.
+- **`first()` and `all()` carry it; `aggregate()` and `nearest()` refuse it** —
+  an aggregate returns no primary keys to lock, and a ranking is not a gate.
+- **`forUpdate()` only.** No `forShare`, no `NOWAIT`, no `SKIP LOCKED`: a
+  skipped locked row is indistinguishable from an access-denied one, which
+  would make Silent failure mean two things at once. The engine always emits
+  `ORDER BY <pk>`, so acquisition order is the same in every session.
+- **A list whose table has no single-column primary key cannot be locked**
+  (`RowLockIdentityError`), and one terminal binds at most `ROW_LOCK_MAX_KEYS`
+  keys — a cost limit, `RowLockKeyLimitExceededError`, not an inability to
+  scope.
+- **`tx.advisoryLock(key)`** takes PostgreSQL's transaction-scoped advisory lock
+  (`pg_advisory_xact_lock(hashtext($1))`) for an invariant that is not a row.
+  It sits on the transaction context rather than on `db`, because it locks a
+  number and belongs to no list. `hashtext` is 32-bit, so distinct keys can
+  collide — a collision costs spurious serialisation, never a missed lock.
+
+Contention is not observable on the default test harness: PGlite serialises
+every transaction, so a suite that proves a gate admits exactly N runs behind
+the `DATABASE_URL` escape (`packages/core/src/secured/capacity-gate.test.ts`).
+
 #### Substituting a session (`context.withSession`, #980)
 
 `context.withSession(session)` sits beside `sudo()` on the other axis:

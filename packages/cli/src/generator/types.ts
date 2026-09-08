@@ -141,14 +141,21 @@ function imported(name: string): string {
 }
 
 /** Every name the module declares that is not derived from a list name. */
-const MODULE_NAMES = ['Remainder', 'DB', 'BaseContext', 'Context', 'TransactionContext'] as const
+const MODULE_NAMES = [
+  'Remainder',
+  'DB',
+  'TxDB',
+  'BaseContext',
+  'Context',
+  'TransactionContext',
+] as const
 
 /**
  * The suffixes a list name is decorated with. Two distinct list names can still
  * land on one binding — `Post` and `PostList` both want `PostList` — which is
  * what {@link claimNames} refuses.
  */
-const LIST_SUFFIXES = ['', 'StoredRow', 'CreateInput', 'UpdateInput', 'List'] as const
+const LIST_SUFFIXES = ['', 'StoredRow', 'CreateInput', 'UpdateInput', 'List', 'TxList'] as const
 
 /**
  * Refuse a config whose lists and computed fields would have the module declare
@@ -195,17 +202,31 @@ function generateListInterfaces(listName: string): string {
     `export interface ${listName}CreateInput extends ${imported('CreateInput')}${key} {}`,
     `export interface ${listName}UpdateInput extends ${imported('UpdateInput')}${key} {}`,
     `export interface ${listName}List extends ${imported('SecuredList')}${key} {}`,
+    // The transaction-bound face of the same list: `forUpdate()` and nothing
+    // else (ADR-0047).
+    `export interface ${listName}TxList extends ${imported('SecuredList')}<${imported('Contract')}, Remainder, '${listName}', true> {}`,
   ].join('\n')
 }
 
 function generateDbType(config: OpenSaasConfig): string {
+  const listNames = Object.keys(config.lists)
   const lines: string[] = []
   lines.push('/**')
   lines.push(' * The access-controlled `db` surface, one member per list.')
   lines.push(' */')
   lines.push('export interface DB {')
-  for (const listName of Object.keys(config.lists)) {
+  for (const listName of listNames) {
     lines.push(`  ${listName}: ${listName}List`)
+  }
+  lines.push('}')
+  lines.push('')
+  lines.push('/**')
+  lines.push(' * The same surface inside `context.transaction()`, where a read can take a')
+  lines.push(' * row lock. `forUpdate()` is the only difference between the two.')
+  lines.push(' */')
+  lines.push('export interface TxDB {')
+  for (const listName of listNames) {
+    lines.push(`  ${listName}: ${listName}TxList`)
   }
   lines.push('}')
   return lines.join('\n')
@@ -227,13 +248,14 @@ export interface BaseContext<TSession extends ${session} = ${session}>
  * \`BaseContext\` carries plus \`sudo()\`, \`withSession()\` and \`transaction()\`.
  */
 export interface Context<TSession extends ${session} = ${session}>
-  extends ${imported('StackContext')}<DB, TSession, ${services}> {}
+  extends ${imported('StackContext')}<DB, TSession, ${services}, TxDB> {}
 
 /**
- * The context inside \`context.transaction()\`.
+ * The context inside \`context.transaction()\`: the same surface over \`TxDB\`,
+ * whose reads carry \`forUpdate()\`, plus \`advisoryLock()\`.
  */
 export interface TransactionContext<TSession extends ${session} = ${session}>
-  extends ${imported('StackTransactionContext')}<DB, TSession, ${services}> {}`
+  extends ${imported('StackTransactionContext')}<TxDB, TSession, ${services}, TxDB> {}`
 }
 
 /**
