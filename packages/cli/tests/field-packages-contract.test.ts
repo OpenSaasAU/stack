@@ -19,8 +19,8 @@ import { fieldPackageConfig } from './fixtures/field-package-configs.js'
  * module and the `tsc` pass; these assertions name what each package's
  * descriptor is supposed to say.
  *
- * Both packages depend on core, so this file — not `packages/core/tests` — is
- * where a fixture may import them without closing a workspace cycle.
+ * Both packages depend on core, so this file — not core's own suite — is where
+ * a fixture may import them without closing a workspace cycle.
  */
 
 function modelOf(config: OpenSaasConfig, name: string): ContractModel {

@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, it, expect } from 'vitest'
+import { z } from 'zod'
 import { filterReadableFields } from './field-visibility.js'
-import { executeFieldResolveInputHooks, splitMultiColumnFields } from '../hooks/index.js'
+import {
+  executeFieldResolveInputHooks,
+  splitMultiColumnFields,
+  ValidationError,
+} from '../hooks/index.js'
 import { json, text } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
@@ -229,10 +234,21 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
  * write is asserted by reading the value back rather than by inspecting what
  * the split returned.
  */
-function storedMultiColumn(access?: FieldAccess): FieldConfig {
+function storedMultiColumn(access?: FieldAccess, validated = false): FieldConfig {
   const field = json()
   const columns = ['avatar_filename', 'avatar_filesize']
   field.access = access
+  if (validated) {
+    // Mirrors the storage `image()`/`file()` contract: null/undefined and an
+    // already-shaped value pass through, anything else is returned as-is for
+    // validation to catch (#789). The schema is what has to see the LOGICAL
+    // value, before the split turns it into two nulls.
+    field.getZodSchema = () =>
+      z.object({ filename: z.string(), filesize: z.number() }).nullable().optional()
+    field.hooks = {
+      resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey],
+    }
+  }
   field.getContractField = () => ({
     kind: 'columns',
     columns: [
@@ -276,6 +292,10 @@ const storedConfig: OpenSaasConfig = {
     },
     Ungated: {
       fields: { avatar: storedMultiColumn() },
+      access: { operation: OPEN },
+    },
+    Validated: {
+      fields: { avatar: storedMultiColumn(undefined, true) },
       access: { operation: OPEN },
     },
     // A list shaped like one a plugin writes into: a column denied to
@@ -411,6 +431,60 @@ describe('multi-column write access through context.db', () => {
     },
     BOOT,
   )
+
+  /**
+   * #789: the field's `resolveInput` hands an unrecognised value straight
+   * through for validation to catch. Validation therefore has to see the
+   * LOGICAL value — if the split ran first, the value would already be two
+   * nulls and the write would succeed, storing nothing.
+   */
+  describe('validation runs before the split', () => {
+    it(
+      'create: an unrecognised value throws and no row lands',
+      async () => {
+        const context = database.context(null)
+
+        await expect(
+          context.db.Validated.create({ data: { avatar: 'not-a-valid-shape' } }),
+        ).rejects.toBeInstanceOf(ValidationError)
+
+        expect(await context.db.Validated.where({}).first()).toBeNull()
+      },
+      BOOT,
+    )
+
+    it(
+      'update: an unrecognised value throws and the columns keep what they had',
+      async () => {
+        const context = database.context(null)
+        const created = await context.db.Validated.create({ data: { avatar: media } })
+        const id = created?.id
+        if (typeof id !== 'string') throw new Error('the create returned no row')
+
+        await expect(
+          context.db.Validated.update({ where: { id }, data: { avatar: 'not-a-valid-shape' } }),
+        ).rejects.toBeInstanceOf(ValidationError)
+
+        expect((await context.db.Validated.where({}).first())?.avatar).toEqual(media)
+      },
+      BOOT,
+    )
+
+    it(
+      'a recognised value and null both still pass and reach the columns',
+      async () => {
+        const context = database.context(null)
+        const created = await context.db.Validated.create({ data: { avatar: media } })
+        const id = created?.id
+        if (typeof id !== 'string') throw new Error('the create returned no row')
+        expect((await context.db.Validated.where({}).first())?.avatar).toEqual(media)
+
+        await context.db.Validated.update({ where: { id }, data: { avatar: null } })
+        expect((await context.db.Validated.where({}).first())?.avatar).toBeNull()
+      },
+      BOOT,
+    )
+  })
 })
 
 describe('writePluginOwnedField (ADR-0066)', () => {

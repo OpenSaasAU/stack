@@ -451,9 +451,9 @@ describe('ListView to-one relationship label filter (issue #749 / #916)', () => 
   // Until #916, ListView folded the related list's `query` access into a
   // to-one relationship label filter's nested `is` clause itself, since the
   // engine did not scope relation filters in `where` at all. #916 moved that
-  // scoping into the engine (`buildAccessScopedWhere`, exercised end-to-end
-  // in `packages/core/tests/context.test.ts`'s "relation filter access
-  // scoping (#916)" suite against the real secured context), so ListView now
+  // scoping into the engine (exercised end-to-end in
+  // `packages/core/src/secured/read.test.ts`'s "the Where vocabulary" suite
+  // against a real database), so ListView now
   // hands the label filter's `where` to `context.db` UNSCOPED — this mock,
   // standing in for the real access-controlled `context.db`, is not where
   // that scoping happens anymore. These tests pin ListView's own contract:
