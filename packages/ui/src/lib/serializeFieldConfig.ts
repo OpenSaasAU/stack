@@ -75,17 +75,17 @@ export const UNWRITABLE_RELATIONSHIP_REASON =
  * edges under that list's access — so the message points at the control that
  * has it rather than at another list's edit page.
  *
- * The table is on the item view, never on the form showing this message: a
- * field rendered as a table is a section of the item view rather than a field
- * of the details form, so the only forms that serialize it are the create page
- * and the standalone forms, where the record does not yet have an item view of
- * its own. Hence "on the item view" rather than "here". A field demoted to the
- * compact picker has no table anywhere and keeps
- * {@link UNWRITABLE_RELATIONSHIP_REASON} — see
+ * The table is never on the form showing this message: a field rendered as a
+ * table is a section of the item view rather than a field of the details form,
+ * so the only forms that serialize it are the create page and the standalone
+ * forms. Hence "this relationship's table" rather than "here" — and no claim
+ * about *where* that table is, since a standalone form can be embedded in an
+ * app that has no admin item view. A field demoted to the compact picker has no
+ * table anywhere and keeps {@link UNWRITABLE_RELATIONSHIP_REASON} — see
  * {@link markUnwritableRelationships}.
  */
 export const JUNCTION_EDGE_RELATIONSHIP_REASON =
-  'Not editable here — add or remove these links from this relationship’s table on the item view.'
+  'Not editable here — add or remove these links from this relationship’s table.'
 
 /**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and

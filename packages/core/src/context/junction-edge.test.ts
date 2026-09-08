@@ -135,8 +135,17 @@ describe('adding an edge across a junction', () => {
     })
   })
 
-  test('a to-many whose far end owns one foreign key has no far endpoint', () => {
-    expect(resolveJunctionEdge(junctionConfig(), 'Author', 'books')).toBeNull()
+  test('a to-many whose far end is an ordinary child row is not an edge', () => {
+    const config = junctionConfig()
+    // `title` comes first in field order, so `Book` is refused as a row
+    // carrying a column two ids cannot fill, before the far-endpoint check is
+    // reached.
+    expect(resolveJunctionEdge(config, 'Author', 'books')).toBeNull()
+
+    // Drop that column and it is refused by the other rule: `author` is its
+    // only foreign key, so there is no far endpoint to link.
+    delete config.lists.Book.fields.title
+    expect(resolveJunctionEdge(config, 'Author', 'books')).toBeNull()
   })
 
   test('an ordinary child row with two parents is not an edge', () => {

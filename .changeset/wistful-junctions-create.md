@@ -20,7 +20,7 @@ await context.serverAction({
 // → { added: true, id } — a PostTag row, gated on PostTag's own create access
 ```
 
-The create is evaluated against the junction list, so a caller denied `create` there cannot add the edge and the denial is the usual silent one: `{ added: false }` with a generic reason, nothing written, nothing raised. Both endpoints go through `connect`, so an endpoint the caller cannot read is indistinguishable from one that does not exist.
+The create is evaluated against the junction list, so a caller denied `create` there cannot add the edge and the denial is the usual silent one: `{ added: false }` with a generic reason, nothing written, nothing raised. Both endpoints go through `connect`, so an endpoint the caller cannot read is indistinguishable from one that does not exist, and both are indistinguishable from that operation-level denial — one generic reason covers all three. A **field-level** denial on an endpoint stays loud and names the field, as it does for every create in the framework (#568); this does not change that.
 
 `resolveJunctionEdge(config, parentListKey, fieldName)` is exported for callers that need the same answer. It returns `null` — leaving the ordinary to-many treatment in place — for a list-only `ref`, a junction with a third foreign key or none, and a junction carrying any stored field of its own. That last rule is what keeps an ordinary two-parent child row (`Comment { body, article, author }`) from being read as an edge: it owns two foreign keys like a junction does, and no requiredness flag separates the two, so the column it carries is the only evidence. The cost is that a junction with a genuinely optional annotation column keeps its ordinary treatment too.
 
