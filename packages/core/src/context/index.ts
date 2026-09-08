@@ -47,6 +47,7 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
+import { resolveJunctionEdge } from './junction.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
@@ -101,6 +102,24 @@ export type ServerActionProps =
       data: Record<string, unknown>
       field?: string
       parentId?: string
+    }
+  // Adding an edge across an explicit junction list (ADR-0050, ADR-0018 as
+  // amended). Unlike every other relationship-table action, `listKey` names the
+  // PARENT list and `field` its to-many field: the junction list, its
+  // back-reference and its far-endpoint field are all resolved from the config
+  // on the SERVER, so a client can neither name a junction list of its own
+  // choosing nor set a column of the edge row beyond the two endpoints. The
+  // create runs under the JUNCTION list's own create access, and the far
+  // endpoint goes through `connect`, so an endpoint the caller cannot read is
+  // the same answer as one that is not there. Returns a distinct `{ added }`
+  // shape, never `success`, so a UI wrapper that redirects on `success` does
+  // not hijack an in-place link.
+  | {
+      listKey: string
+      action: 'addRelated'
+      field: string
+      parentId: string
+      targetId: string
     }
   | {
       listKey: string
@@ -637,6 +656,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
   > {
     const listConfig = config.lists[props.listKey]
 
@@ -837,6 +857,58 @@ export function getContext<TConfig extends OpenSaasConfig>(
         logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           created: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
+    // Adds one edge across an explicit junction list by creating the junction
+    // row (ADR-0050). Both foreign keys are `connect`s the SERVER composes from
+    // the resolved edge, so the payload carries no column of the client's
+    // choosing, and the reachability query behind each `connect` keeps an
+    // endpoint the caller cannot read indistinguishable from one that is not
+    // there. Honours Silent failure: a denied create on the junction list — the
+    // list this write is evaluated against, never the parent's — returns
+    // `null`, surfaced as `{ added: false }` with the same generic reason an
+    // unreachable endpoint gets.
+    if (props.action === 'addRelated') {
+      const edge = resolveJunctionEdge(config, props.listKey, props.field)
+      if (!edge) {
+        return {
+          added: false,
+          error:
+            `Cannot link through "${props.listKey}.${props.field}": it is not an edge across an ` +
+            `explicit junction list. Write the related row against its own list instead.`,
+        }
+      }
+      const junction = db[edge.junctionListKey] as {
+        create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+      }
+      try {
+        const result = await junction.create({
+          data: {
+            [edge.backReferenceField]: { connect: { id: props.parentId } },
+            [edge.targetField]: { connect: { id: props.targetId } },
+          },
+        })
+        if (result === null || result === undefined) {
+          return { added: false, error: 'Access denied or operation failed' }
+        }
+        const id =
+          typeof result === 'object' && result !== null && 'id' in result
+            ? String((result as { id: unknown }).id)
+            : undefined
+        return { added: true, id }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, edge.junctionListKey, props.action)
+          return { added: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, edge.junctionListKey, props.action)
+        return {
+          added: false,
           error: dbError.message,
           fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
         }

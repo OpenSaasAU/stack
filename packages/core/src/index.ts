@@ -82,6 +82,8 @@ export { getContext } from './context/index.js'
 export { TransactionOrmHandleError, TransactionUnavailableError } from './context/index.js'
 export { requireOrmHandle, OrmHandleUnresolvableError } from './context/index.js'
 export type { OrmRoot } from './context/index.js'
+export { resolveJunctionEdge } from './context/junction.js'
+export type { JunctionEdge } from './context/junction.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).
 // The bundle names one interface per list extending each of these, keyed by
