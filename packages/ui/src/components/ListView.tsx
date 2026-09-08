@@ -14,7 +14,6 @@ import {
   type AccessControl,
   type BulkAction,
   buildListFilterWhere,
-  buildRelationshipCountSelect,
   collectFilterSuggestions,
   getItemLabel,
   getLabelFieldName,
@@ -22,7 +21,7 @@ import {
   isToManyRelationshipField,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
-import type { FieldConfig } from '@opensaas/stack-core'
+import type { FieldConfig, SecuredQuery } from '@opensaas/stack-core'
 import { isFieldReadableForPredicate } from '@opensaas/stack-core/internal'
 
 /**
@@ -94,15 +93,14 @@ function toRelationshipLabel(
 }
 
 /**
- * Whether a field can seed an `orderBy` for the list table (issue #732).
+ * Whether a field can seed an `orderBy` for the list table.
  *
- * A field the session cannot READ is excluded too (#915) — evaluated the same
- * predicate-time way `context.db.*`'s `findMany`/`count` now enforce, so a
- * sort request naming a read-denied field is never honoured (it would only
- * reach the engine's own #915 check and throw). `context.db` is still the
- * real security boundary here; this is what keeps the admin UI's sort
- * affordance from offering, and the URL param from silently no-op'ing on, a
- * sort the engine is going to reject.
+ * `orderBy` takes the list's own scalar columns, so a relationship of either
+ * cardinality is excluded — the engine refuses one rather than ignoring it,
+ * and a to-many count is not a column it can sort by at all (ADR-0055). A
+ * field the session cannot READ is excluded too (#915), evaluated the same
+ * predicate-time way the secured read enforces it, so a bookmarked `?sort=`
+ * naming either is ignored here rather than throwing downstream.
  */
 async function isSortableField(
   field: FieldConfig | undefined,
@@ -110,18 +108,18 @@ async function isSortableField(
 ): Promise<boolean> {
   if (!field) return false
   if (field.virtual === true) return false
-  if (field.type === 'relationship' && !isToManyRelationshipField(field)) return false
+  if (field.type === 'relationship') return false
   return isFieldReadableForPredicate(field.access, args)
 }
 
-/** Read a to-many relationship's access-scoped count off a fetched row's `_count`. */
+/**
+ * Read a to-many relationship's access-scoped count off a fetched row. The
+ * native count reducer puts the number at the relation's own key, in place of
+ * its rows; a relation the session may not read is absent, which counts 0.
+ */
 function readRelationshipCount(item: Record<string, unknown>, fieldName: string): number {
-  const counts = item._count
-  if (counts && typeof counts === 'object') {
-    const value = (counts as Record<string, unknown>)[fieldName]
-    if (typeof value === 'number') return value
-  }
-  return 0
+  const value = item[fieldName]
+  return typeof value === 'number' ? value : 0
 }
 
 /**
@@ -190,11 +188,15 @@ export async function ListView({
 
   // URL sort takes precedence over config initialSort, but only for a
   // sortable field — see `isSortableField`.
-  const sortFieldReadable =
-    sort &&
-    (await isSortableField(listConfig.fields[sort.field], { session: context.session, context }))
-  const validatedSort = sortFieldReadable ? sort : undefined
-  const activeSort = validatedSort ?? initialSort
+  const sortable = async (candidate: ListViewSort | undefined) =>
+    candidate &&
+    (await isSortableField(listConfig.fields[candidate.field], {
+      session: context.session,
+      context,
+    }))
+      ? candidate
+      : undefined
+  const activeSort = (await sortable(sort)) ?? (await sortable(initialSort))
 
   const skip = (page - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
@@ -220,47 +222,33 @@ export async function ListView({
           })
         : undefined
 
-    const where = parsedWhere
-
-    // Build the include: to-one relationships fetch the related row (for its
-    // Item label), while to-many relationships fetch only an access-scoped
-    // COUNT via a filtered `_count` — never the related rows themselves. This
-    // both powers the count cell and avoids an unbounded per-row fetch of every
-    // related row (issue #732).
-    const include: Record<string, unknown> = {}
-    Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
-      if (field.type === 'relationship' && !isToManyRelationshipField(field)) {
-        include[fieldName] = true
-      }
-    })
-    const countSelect = await buildRelationshipCountSelect(
-      listConfig,
-      { session: context.session, context },
-      config,
+    // A to-one relationship fetches the related row (for its Item label); a
+    // to-many reduces to the count of the related rows this session may see,
+    // through the surface's own reducer — never the related rows themselves,
+    // which would be an unbounded per-row fetch (issue #732).
+    const scoped: SecuredQuery = parsedWhere ? dbContext[key].where(parsedWhere) : dbContext[key]
+    const withRelations = Object.entries(listConfig.fields).reduce(
+      (read, [fieldName, field]) =>
+        field.type !== 'relationship'
+          ? read
+          : isToManyRelationshipField(field)
+            ? read.include(fieldName, (rows) => rows.count())
+            : read.include(fieldName),
+      scoped,
     )
-    if (countSelect) {
-      include._count = { select: countSelect }
-    }
 
-    const orderBy = activeSort
-      ? isToManyRelationshipField(listConfig.fields[activeSort.field])
-        ? { [activeSort.field]: { _count: activeSort.direction } }
-        : { [activeSort.field]: activeSort.direction }
-      : undefined
+    const sorted = activeSort
+      ? withRelations.orderBy({ [activeSort.field]: activeSort.direction })
+      : withRelations
 
-    const delegate = dbContext[key]
-    if (delegate?.findMany && delegate?.count) {
-      ;[items, total] = await Promise.all([
-        delegate.findMany({
-          where,
-          orderBy,
-          skip,
-          take: pageSize,
-          ...(Object.keys(include).length > 0 ? { include } : {}),
-        }),
-        delegate.count({ where }),
-      ])
-    }
+    // The total is the same scoped read, counted in the database — so it can
+    // only ever equal the number of rows this session may page through.
+    const [rows, totals] = await Promise.all([
+      sorted.offset(skip).limit(pageSize).all(),
+      scoped.aggregate((aggregate) => ({ total: aggregate.count() })),
+    ])
+    items = rows
+    total = totals.total
   } catch (error) {
     console.error(`Failed to fetch ${listKey}:`, error)
   }
@@ -278,11 +266,9 @@ export async function ListView({
   })
 
   // Resolve each relationship value before crossing the server/client boundary
-  // — ListConfig objects carry functions and can't be passed as props. The raw
-  // `_count` payload is dropped from the serialized item (issue #732).
+  // — ListConfig objects carry functions and can't be passed as props.
   const itemsWithResolvedLabels = items.map((item) => {
     const resolved: Record<string, unknown> = { ...item }
-    delete resolved._count
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {
