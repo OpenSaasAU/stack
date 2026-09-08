@@ -226,7 +226,9 @@ describe('consumeOne is atomic', () => {
 describe('the shipped id configuration', () => {
   // The normal suite's own "not found" probes are disabled in
   // `adapter-conformance.test.ts`: upstream hardcodes the id `"100000"` unless
-  // the options say `generateId: 'uuid'`, which is the key production refuses.
+  // the options say `generateId: 'uuid'`, which the shipped config doesn't
+  // set — `disableIdGeneration: true` already bypasses id generation
+  // regardless of `generateId`.
   // These are those probes, with the well-formed id a uuid column takes.
   test('findOne answers null for an id no row carries', async () => {
     expect(

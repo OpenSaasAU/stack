@@ -62,8 +62,10 @@ const NOT_IMPLEMENTED: Record<string, boolean> = {
  * id column outside the `uuid` suite.
  *
  * Each hardcodes the id `"100000"` unless the running options say
- * `advanced.database.generateId: 'uuid'` — the key production refuses — and
- * Postgres rejects a malformed uuid outright rather than answering not-found.
+ * `advanced.database.generateId: 'uuid'` — which the shipped config doesn't
+ * set (`disableIdGeneration: true` already bypasses id generation regardless
+ * of `generateId`) — and Postgres rejects a malformed uuid outright rather
+ * than answering not-found.
  * The `uuid` suite declares that key itself and runs them; the shipped
  * configuration's own versions, with a well-formed id, are in
  * `adapter-behaviour.test.ts`.
