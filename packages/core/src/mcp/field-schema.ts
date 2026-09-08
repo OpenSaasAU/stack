@@ -1,6 +1,7 @@
 import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
+import { decideAdvertisement } from './advertise.js'
 import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
@@ -133,10 +134,10 @@ export async function generateFieldSchemas(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
       !!(fieldConfig.validation as any)?.isRequired
 
-    const classification = await classifyRowIndependentWrite(fieldConfig.access, operation, {
-      session,
-      context,
-    })
+    const classification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
+      () => classifyRowIndependentWrite(fieldConfig.access, operation, { session, context }),
+      'deny',
+    )
     if (classification === 'deny') {
       if (isRequired) deniedRequiredField ??= fieldName
       continue

@@ -8,7 +8,12 @@ import { getContext } from '../context/index.js'
 import { ValidationError } from '../hooks/index.js'
 import type { McpSessionProvider } from './types.js'
 import { createMcpHandlers } from './handler.js'
-import { McpProjectionRefusedError, resolveFieldsProjection } from './projection.js'
+import {
+  generateFieldsProjectionSchema,
+  McpProjectionRefusedError,
+  resolveFieldsProjection,
+} from './projection.js'
+import { generateFieldSchemas } from './field-schema.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
 /**
@@ -24,6 +29,15 @@ import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
  */
 
 const BOOT = 120_000
+
+/**
+ * The bug `tools/list` has to survive — `({ session }) => session.role === 'admin'`
+ * reached by a session-less request — reduced to the TypeError it raises, since
+ * that dereference does not type-check against `Session | null`.
+ */
+function unguardedSessionRule(): boolean {
+  throw new TypeError("Cannot read properties of null (reading 'role')")
+}
 
 /** The schema every test in this file shares. */
 function schemaConfig(): OpenSaasConfig {
@@ -105,6 +119,13 @@ function schemaConfig(): OpenSaasConfig {
             access: { create: ({ inputData }) => inputData?.title !== 'forbidden' },
           }),
           ownerId: text(),
+          brittle: text({
+            access: {
+              read: unguardedSessionRule,
+              create: unguardedSessionRule,
+              update: unguardedSessionRule,
+            },
+          }),
           notes: relationship({ ref: 'Memoed.memo', many: true }),
         },
         access: {
@@ -132,6 +153,7 @@ function schemaConfig(): OpenSaasConfig {
         fields: {
           label: text(),
           hidden: text({ access: { read: () => false } }),
+          brittle: text({ access: { read: unguardedSessionRule } }),
           memo: relationship({ ref: 'Memo.notes' }),
         },
         access: { operation: { query: () => true } },
@@ -466,10 +488,11 @@ describe('the MCP surface', () => {
     async function refusalText(
       getSession: McpSessionProvider,
       fields: Record<string, unknown>,
+      toolName = 'list_memo_query',
     ): Promise<string> {
       const { body } = await rpc(
         'tools/call',
-        { name: 'list_memo_query', arguments: { fields } },
+        { name: toolName, arguments: { fields } },
         schemaConfig(),
         getSession,
       )
@@ -584,6 +607,110 @@ describe('the MCP surface', () => {
         expect(adminDropped).toBe(
           (await refusalText(admin, { neverExisted: true })).replace('neverExisted', 'internal'),
         )
+      },
+      BOOT,
+    )
+
+    test(
+      'a relation the schema withheld is refused in the same bytes as a name that never existed',
+      async () => {
+        const unknown = await refusalText(author, { neverExisted: true }, 'list_post_query')
+
+        // The target list denies `query` outright; this one has MCP disabled.
+        expect(
+          await refusalText(author, { secretInfo: { fields: { value: true } } }, 'list_post_query'),
+        ).toBe(unknown.replace('neverExisted', 'secretInfo'))
+        expect(
+          await refusalText(author, { draftRef: { fields: { title: true } } }, 'list_post_query'),
+        ).toBe(unknown.replace('neverExisted', 'draftRef'))
+        expect(unknown).not.toContain('secretInfo')
+        expect(unknown).not.toContain('draftRef')
+        expect(unknown).not.toContain('restrictedComments')
+      },
+      BOOT,
+    )
+
+    test(
+      'the available-fields tail names exactly what the schema advertises',
+      async () => {
+        const advertised = Object.keys(await fieldsSchemaFor(author, 'list_post_query')).filter(
+          (name) => !['id', 'createdAt', 'updatedAt'].includes(name),
+        )
+        const refusal = await refusalText(author, { neverExisted: true }, 'list_post_query')
+        const tail = refusal.slice(refusal.indexOf('Available fields: ') + 18, -1)
+
+        expect(tail.split(', ')).toEqual(advertised)
+      },
+      BOOT,
+    )
+
+    test(
+      'the second level refuses a relation in the same bytes as a name that never existed',
+      async () => {
+        const relationNamed = await refusalText(author, { notes: { fields: { memo: true } } })
+        const unknown = await refusalText(author, { notes: { fields: { neverExisted: true } } })
+
+        expect(relationNamed).toBe(unknown.replace('neverExisted', 'memo'))
+        expect(unknown).not.toContain('memo"')
+
+        const fields = await fieldsSchemaFor(author, 'list_memo_query')
+        const nested = (fields.notes as { properties: Record<string, unknown> }).properties
+        const level2 = (nested.fields as { properties: Record<string, unknown> }).properties
+        expect(level2.memo).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'a field rule that throws costs that field its advertisement, not the whole listing',
+      async () => {
+        const names = (await toolsFor(anonymous)).map((tool) => tool.name)
+        expect(names).toContain('list_memo_query')
+        expect(names).toContain('list_post_query')
+
+        const fields = await fieldsSchemaFor(anonymous, 'list_memo_query')
+        expect(fields.title).toBeDefined()
+        expect(fields.brittle).toBeUndefined()
+
+        const nested = (fields.notes as { properties: Record<string, unknown> }).properties
+        const level2 = (nested.fields as { properties: Record<string, unknown> }).properties
+        expect(level2.label).toBeDefined()
+        expect(level2.brittle).toBeUndefined()
+
+        const data = await dataSchemaFor(anonymous, 'list_memo_update')
+        expect(data?.title).toBeDefined()
+        expect(data?.brittle).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'the same holds with no session at all, which the transport never lets past its 401',
+      async () => {
+        const config = schemaConfig()
+        const context = await contextFor(config)()
+
+        const projection = await generateFieldsProjectionSchema(
+          config.lists.Memo,
+          config,
+          null,
+          context,
+        )
+        const properties = (projection as { properties: Record<string, unknown> }).properties
+        expect(properties.title).toBeDefined()
+        expect(properties.brittle).toBeUndefined()
+        expect(properties.adminOnly).toBeUndefined()
+
+        const data = await generateFieldSchemas(
+          'Memo',
+          config.lists.Memo.fields,
+          config,
+          'update',
+          null,
+          context,
+        )
+        expect(data.properties.title).toBeDefined()
+        expect(data.properties.brittle).toBeUndefined()
       },
       BOOT,
     )

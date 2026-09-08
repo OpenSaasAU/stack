@@ -26,8 +26,13 @@ Memo: list({
 
 A list whose `create` needs a field the session can never write no longer
 advertises a `create` tool at all, rather than offering one that refuses every
-call. Naming a field the schema withheld is refused with the same message an
-unknown field name gets, so the refusal discloses nothing the schema held back.
+call. Naming a field the schema withheld — including a relation whose target
+list this session cannot reach — is refused with the same message an unknown
+field name gets, so the refusal discloses nothing the schema held back.
+
+A field rule that throws while `tools/list` decides whether to advertise the
+field costs that one field its advertisement rather than the whole listing. The
+rule still throws when the field is actually read or written.
 
 Classification runs per session and is not cached. No configuration is
 required — the behaviour follows from the field-level access rules already in

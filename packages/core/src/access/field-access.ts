@@ -250,9 +250,7 @@ export async function classifyRowIndependentRead(
  *
  * Both `item` and `inputData` are poisoned, because either one makes the rule
  * unanswerable ahead of a request — a rule reading the payload is as
- * row-dependent, for this purpose, as one reading the row. Its only consumer
- * today is MCP's advertised `data` schema (ADR-0053), which omits a `'deny'`
- * field and keeps a `'row-dependent'` one.
+ * row-dependent, for this purpose, as one reading the row.
  *
  * A rule that returns a non-boolean raises `InvalidFieldAccessResultError`
  * (ADR-0030), which propagates rather than being folded into `'deny'`.

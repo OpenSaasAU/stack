@@ -272,7 +272,7 @@ async function handleToolsList(
         context.session,
         context,
       )
-      // A tool refused on every call is not advertised at all (ADR-0053).
+      // ADR-0053.
       if (fieldSchemas.deniedRequiredField === null) {
         tools.push({
           name: `list_${toolKey}_create`,
