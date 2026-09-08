@@ -601,6 +601,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _transactionOwner,
     _transactionOpener: openTransaction,
     _rowLock: lock,
+    _config: config,
   }
 
   populateDbDelegate(db, config, ormHandle, context, lock)
@@ -614,10 +615,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         try {
           // Passed as a plain second argument rather than a method on
           // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
-          context.plugins[plugin.name] = plugin.runtime(
-            context,
-            () => sudo() as unknown as AccessContext,
-          )
+          context.plugins[plugin.name] = plugin.runtime(context, sudo)
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
         }

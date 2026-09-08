@@ -2,16 +2,14 @@
 // helpers add over `nearest()` is embedding the query and locating the source
 // item, so both are driven end to end rather than against a double.
 //
-// Known limits: the secured write surface has not been ported onto the Prisma 8
-// collection yet (#1124), so rows are seeded through the Unsafe origin, the
-// same seam `embedding-write.test.ts` uses. Reads and `nearest()` are live.
+// Rows are seeded by writing their source text through `context.db`, so every
+// vector ranked here is one the plugin's own generation hook produced.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import { config as defineConfig } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
-import { withOrigin } from '@opensaas/stack-core/origin'
 import {
   createTestDatabase,
   ESCAPE_VARIABLE,
@@ -69,7 +67,7 @@ const source: OpenSaasConfig = {
         published: checkbox(),
         contentEmbedding: embedding({ sourceField: 'content', dimensions: 3 }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true } },
     },
     Signal: {
       fields: {
@@ -80,7 +78,7 @@ const source: OpenSaasConfig = {
           distanceFunction: 'inner_product',
         }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true } },
     },
     Reading: {
       fields: {
@@ -91,59 +89,23 @@ const source: OpenSaasConfig = {
           distanceFunction: 'l2',
         }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true } },
     },
   },
 }
 
-const metadata = {
-  model: 'search-fake-3',
-  provider: 'search-fake',
-  dimensions: 3,
-  generatedAt: '2026-01-01T00:00:00.000Z',
-}
-
 let database: TestDatabase
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function collection(model: string): Record<string, unknown> {
-  const namespace: unknown = Reflect.get(database.client.orm, 'public')
-  if (!isRecord(namespace)) throw new Error('no public namespace')
-  const found: unknown = Reflect.get(namespace, model)
-  if (!isRecord(found)) throw new Error(`no collection "${model}"`)
-  return found
-}
-
-function seed(model: string, row: object): Promise<void> {
-  const target = collection(model)
-  const create: unknown = target.create
-  if (typeof create !== 'function') throw new Error(`collection "${model}" has no create`)
-  return withOrigin('unsafe', async () => {
-    await create.call(target, row)
-  })
-}
-
+/** Writes the source text and lets the plugin's hook produce the vector. */
 async function seedPalette(published = true): Promise<void> {
-  for (const [content, vector] of Object.entries(VECTORS)) {
-    await seed('Article', {
-      content,
-      published,
-      contentEmbedding: vector,
-      contentEmbeddingMetadata: metadata,
-    })
+  for (const content of Object.keys(VECTORS)) {
+    await database.context(null).db.Article.create({ data: { content, published } })
   }
 }
 
-async function seedAxis(model: string): Promise<void> {
-  for (const [content, vector] of Object.entries(AXIS)) {
-    await seed(model, {
-      content,
-      contentEmbedding: vector,
-      contentEmbeddingMetadata: metadata,
-    })
+async function seedAxis(model: 'Signal' | 'Reading'): Promise<void> {
+  for (const content of Object.keys(AXIS)) {
+    await database.context(null).db[model].create({ data: { content } })
   }
 }
 
@@ -215,12 +177,9 @@ describe.skipIf(!available)(
 
       test('scopes the ranking by the where it was given', async () => {
         await seedPalette()
-        await seed('Article', {
-          content: 'red',
-          published: false,
-          contentEmbedding: VECTORS.red,
-          contentEmbeddingMetadata: metadata,
-        })
+        await database
+          .context(null)
+          .db.Article.create({ data: { content: 'red', published: false } })
 
         const results = await semanticSearch({
           list: list(),
@@ -389,12 +348,9 @@ describe.skipIf(!available)(
 
       test('narrows by the where it was given', async () => {
         await seedPalette()
-        await seed('Article', {
-          content: 'red',
-          published: false,
-          contentEmbedding: VECTORS.red,
-          contentEmbeddingMetadata: metadata,
-        })
+        await database
+          .context(null)
+          .db.Article.create({ data: { content: 'red', published: false } })
 
         const results = await findSimilar({
           list: list(),
@@ -408,13 +364,15 @@ describe.skipIf(!available)(
       })
 
       test('refuses an item with no embedding', async () => {
-        await seed('Article', { content: 'red', published: true })
+        // An empty source returns the generation hook early, so this is the row
+        // an application gets when there was nothing to embed.
+        await database.context(null).db.Article.create({ data: { content: '', published: true } })
 
         await expect(
           findSimilar({
             list: list(),
             fieldName: 'contentEmbedding',
-            itemId: await idOf('red'),
+            itemId: await idOf(''),
           }),
         ).rejects.toThrow('does not have an embedding in field "contentEmbedding"')
       })

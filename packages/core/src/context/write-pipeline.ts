@@ -269,6 +269,7 @@ function bindContextToTransaction(
     _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
     _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
+    _config: config,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.

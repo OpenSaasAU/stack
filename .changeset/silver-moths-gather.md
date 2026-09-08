@@ -30,9 +30,10 @@ pgvector column. Two sections were wrong in ways that produced code that throws:
   `prisma db migrate`.
 - Automatic generation is gated on `autoGenerate` alone; a field carrying it
   with no `sourceField` is a config error that `pnpm generate` throws on, not a
-  silent skip. And the dimension-change recipe no longer tells the reader to
-  re-save rows to regenerate without noting that the plugin's write is inert on
-  this branch (#1124, #1127), so nothing regenerates yet.
+  silent skip. Re-saving a row's source field is what regenerates its embedding
+  after a dimension change, and the recipe now says so: a null vector reads back
+  as no stored embedding at all, so the `sourceHash` gate has nothing to match
+  and does not short-circuit.
 
 `examples/rag-ollama-demo`'s README described `pnpm generate` as writing "the
 contract's own migrations". It writes the Contract module and `prisma.config.ts`,

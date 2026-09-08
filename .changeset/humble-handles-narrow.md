@@ -27,6 +27,6 @@ const plugin = {
 }
 ```
 
-The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, exactly as it did before — this rename changes nothing about when a hook's database work is transactional. (On `prisma-8` no write currently opens a transaction at all: #1205.)
+The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, exactly as it did before — this rename changes nothing about when a hook's database work is transactional. Every write opens a transaction (ADR-0010), so a hook's own write through either handle rolls back with the write that failed.
 
 `getContext()`'s second positional parameter is renamed to match; it is positional, so no call site changes. `@opensaas/stack-auth`'s better-auth wiring and `@opensaas/stack-rag`'s vector search now read `context.ormHandle`.

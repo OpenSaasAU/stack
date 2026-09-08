@@ -44,9 +44,11 @@ Two things drive that:
 - Calling the provider is a network round trip, and a round trip has no business
   holding a database connection open inside a transaction.
 - The column is write-denied to application code, so the plugin writes its own
-  output through a `sudo()` context that the hook reaches by way of a
-  module-private symbol — not through anything on the package's exported surface
-  (ADR-0045).
+  columns past that denial, through core's `writePluginOwnedField` reached by way
+  of a module-private symbol — not through anything on the package's exported
+  surface (ADR-0045). That write runs **no** hook of the list's: it carries the
+  embedding column alone, so re-running `resolveInput` over it would recompute a
+  derived field from input that is not there (ADR-0066).
 
 **On create and on update:**
 
@@ -54,14 +56,20 @@ Two things drive that:
 2. The hook reads the **persisted** source text, so a value a `resolveInput`
    hook derived is embedded like any other.
 3. It hashes that text and compares it with the `sourceHash` stored on the
-   existing embedding's metadata. Equal means nothing to do — this is what stops
-   the plugin's own write from re-entering, and what stops an unrelated field
-   change from costing an API call.
-4. Otherwise it calls the provider and writes the vector and its metadata under
-   `sudo`.
+   existing embedding's metadata. Equal means nothing to do, which is what stops
+   an unrelated field change from costing an API call. (Re-entry is not what it
+   guards: the plugin's write fires no hook, so there is nothing to re-enter.)
+4. Otherwise it calls the provider and writes the vector and its metadata to the
+   columns.
 
 ```typescript
-// Simplified hook implementation
+// Simplified. The writer closes over the context `runtime` is handed, and is
+// published on `context.plugins` for the hook to look up.
+runtime: (context) => ({
+  [WRITE_EMBEDDING]: async (listName, id, fieldName, value) =>
+    await writePluginOwnedField({ context, listName, id, fieldName, value }),
+}),
+
 afterTransaction: async ({ status, operation, item, context }) => {
   if (status !== 'committed') return
   if (operation !== 'create' && operation !== 'update') return
@@ -74,7 +82,10 @@ afterTransaction: async ({ status, operation, item, context }) => {
 
   const vector = await provider.embed(sourceText)
 
-  await writeUnderSudo(listName, item.id, fieldName, {
+  // The hook's own context is used to *find* the writer, never to write with.
+  const write = embeddingWriter(context)
+
+  await write(listName, item.id, fieldName, {
     vector,
     metadata: {
       model: provider.model,
@@ -86,6 +97,23 @@ afterTransaction: async ({ status, operation, item, context }) => {
   })
 }
 ```
+
+The indirection is load-bearing, and a plugin that collapses it breaks under
+`context.transaction()`. The `context` the write itself uses is the `AccessContext`
+`Plugin.runtime` receives as its **first** argument — not the `StackContext`
+`getContext` returns, and not `sudo()`, both of which carry no ORM handle and are
+refused by name. The `context` the hook is handed is a different object: inside
+`context.transaction(...)` its ORM handle is bound to the transaction client, and
+`afterTransaction` drains **after** that transaction settles — so passing it
+straight to `writePluginOwnedField` issues the escalated `UPDATE` on a handle
+that is already closed. Plugin runtimes are not re-run for a transaction-bound
+context, so the writer found on it is still the one holding the runtime-time
+context, which is why the lookup is safe where the direct pass is not.
+
+The field's column layout is read off the config the runtime-time context was
+built from, so the write reaches `listName.fieldName`'s own columns and nothing
+else; a field the config does not declare, and an `undefined` value, are refused
+rather than resolved.
 
 Known limits, because the row is already committed by the time this runs:
 
