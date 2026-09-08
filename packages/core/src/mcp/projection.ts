@@ -1,6 +1,8 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
+import { classifyRowIndependentRead } from '../access/field-access.js'
+import { decideAdvertisement } from './advertise.js'
 import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
@@ -98,6 +100,82 @@ async function relatedListIfVisible(
 }
 
 /**
+ * One field of a list this session may be told about, carrying its relation
+ * target already resolved so that no second caller re-decides visibility.
+ */
+type AdvertisableField = {
+  name: string
+  relation: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
+    fieldConfig: RelationshipField<any>
+    listName: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    listConfig: ListConfig<any>
+  } | null
+}
+
+async function decideField(
+  fieldName: string,
+  fieldConfig: FieldConfig,
+  config: OpenSaasConfig,
+  session: Session | null,
+  context: AccessContext,
+  options: { relationsSelectable: boolean },
+): Promise<AdvertisableField | null> {
+  const relationConfig = isRelationshipField(fieldConfig) ? fieldConfig : null
+  if (relationConfig && !options.relationsSelectable) return null
+
+  const answer = await classifyRowIndependentRead(fieldConfig.access, { session, context })
+  if (answer === 'deny') return null
+
+  if (!relationConfig) return { name: fieldName, relation: null }
+
+  const related = await relatedListIfVisible(relationConfig, config, session, context)
+  if (!related) return null
+
+  return { name: fieldName, relation: { fieldConfig: relationConfig, ...related } }
+}
+
+/**
+ * The fields of `listConfig` this session may be told about, in declaration
+ * order: a field whose `read` rule is row-independent and denies is omitted, a
+ * row-dependent one stays (it may pass for rows the session owns), and a
+ * relation whose target list this session cannot reach at all is omitted as
+ * well — ADR-0053.
+ *
+ * This is the one place the read vocabulary is decided. Both the advertised
+ * schema and the refusal `resolveFieldsProjection` raises for an unnamed field
+ * read it, so a dropped name is indistinguishable from one that never existed;
+ * deriving either from `listConfig.fields` directly would leak back what the
+ * schema withheld.
+ *
+ * `relationsSelectable: false` additionally drops relations, which is the
+ * level-2 vocabulary (a relation named there terminates).
+ * `containRuleErrors` is set only where this decides an advertisement — see
+ * {@link decideAdvertisement}.
+ */
+async function advertisableFields(
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+  session: Session | null,
+  context: AccessContext,
+  options: { relationsSelectable: boolean; containRuleErrors: boolean },
+): Promise<AdvertisableField[]> {
+  const advertisable: AdvertisableField[] = []
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    const decide = (): Promise<AdvertisableField | null> =>
+      decideField(fieldName, fieldConfig, config, session, context, options)
+    const decided = options.containRuleErrors
+      ? await decideAdvertisement<AdvertisableField | null>(`${listKey}.${fieldName}`, decide, null)
+      : await decide()
+    if (decided) advertisable.push(decided)
+  }
+  return advertisable
+}
+
+/**
  * Generate the JSON Schema for the `query` tool's `fields` projection
  * argument: two levels of the list's own vocabulary (ADR-0033). Level 1 is
  * this list's own scalar/virtual fields (booleans) and relations (nested
@@ -108,6 +186,7 @@ async function relatedListIfVisible(
  * targets are omitted from the vocabulary entirely, per-session.
  */
 export async function generateFieldsProjectionSchema(
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
@@ -116,37 +195,50 @@ export async function generateFieldsProjectionSchema(
 ): Promise<Record<string, unknown>> {
   const properties: Record<string, unknown> = systemFieldProperties()
 
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(fieldConfig)) {
+  for (const { name: fieldName, relation } of await advertisableFields(
+    listKey,
+    listConfig,
+    config,
+    session,
+    context,
+    { relationsSelectable: true, containRuleErrors: true },
+  )) {
+    if (!relation) {
       properties[fieldName] = scalarSelectorSchema(fieldName)
       continue
     }
 
-    const related = await relatedListIfVisible(fieldConfig, config, session, context)
-    if (!related) continue
-
     const level2Properties: Record<string, unknown> = systemFieldProperties()
-    for (const [relFieldName, relFieldConfig] of Object.entries(related.listConfig.fields)) {
-      if (isRelationshipField(relFieldConfig)) continue
+    for (const { name: relFieldName } of await advertisableFields(
+      relation.listName,
+      relation.listConfig,
+      config,
+      session,
+      context,
+      { relationsSelectable: false, containRuleErrors: true },
+    )) {
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
     }
 
-    const many = isMany(fieldConfig)
+    const many = isMany(relation.fieldConfig)
     properties[fieldName] = {
       type: 'object',
       description: many
-        ? `Select fields from the related ${related.listName} records`
-        : `Select fields from the related ${related.listName} record`,
+        ? `Select fields from the related ${relation.listName} records`
+        : `Select fields from the related ${relation.listName} record`,
       properties: {
         fields: {
           type: 'object',
-          description: `Fields to return from ${related.listName}`,
+          description: `Fields to return from ${relation.listName}`,
           properties: level2Properties,
           additionalProperties: false,
         },
         ...(many
           ? {
-              where: { type: 'object', description: `Prisma where clause for ${related.listName}` },
+              where: {
+                type: 'object',
+                description: `Prisma where clause for ${relation.listName}`,
+              },
               orderBy: { type: 'object', description: 'Sort order' },
               take: {
                 type: 'number',
@@ -284,6 +376,12 @@ export async function resolveFieldsProjection(
     )
   }
 
+  const advertisable = await advertisableFields(listKey, listConfig, config, session, context, {
+    relationsSelectable: true,
+    containRuleErrors: false,
+  })
+  const advertisableByName = new Map(advertisable.map((field) => [field.name, field]))
+
   const include: Record<string, unknown> = {}
   // `id` is always projected back, whether or not the caller asked for it —
   // see `systemFieldProperties`'s doc comment.
@@ -302,14 +400,17 @@ export async function resolveFieldsProjection(
       continue
     }
 
-    const fieldConfig = listConfig.fields[fieldName]
-    if (!fieldConfig) {
+    const advertised = advertisableByName.get(fieldName)
+    if (!advertised) {
       throw new McpProjectionRefusedError(
-        `"${listKey}" has no field "${fieldName}". Available fields: ${Object.keys(listConfig.fields).join(', ')}.`,
+        `"${listKey}" has no field "${fieldName}". Available fields: ${advertisable
+          .map((field) => field.name)
+          .join(', ')}.`,
       )
     }
 
-    if (!isRelationshipField(fieldConfig)) {
+    const related = advertised.relation
+    if (!related) {
       if (rawValue !== true) {
         throw new McpProjectionRefusedError(
           `"${listKey}.${fieldName}" is a scalar — select it with \`true\`, not ${JSON.stringify(rawValue)}.`,
@@ -319,14 +420,6 @@ export async function resolveFieldsProjection(
       continue
     }
 
-    const related = await relatedListIfVisible(fieldConfig, config, session, context)
-    if (!related) {
-      throw new McpProjectionRefusedError(
-        `"${listKey}.${fieldName}" is not available for selection — its related list is not ` +
-          `queryable by this session, or has MCP disabled.`,
-      )
-    }
-
     if (rawValue === null || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
       throw new McpProjectionRefusedError(
         `"${listKey}.${fieldName}" is a relation — select it with an object, e.g. { "fields": { ... } }.`,
@@ -334,7 +427,7 @@ export async function resolveFieldsProjection(
     }
 
     const entry = rawValue as Record<string, unknown>
-    const many = isMany(fieldConfig)
+    const many = isMany(related.fieldConfig)
     const allowedKeys = many
       ? new Set(['fields', 'where', 'orderBy', 'take', 'skip', 'count'])
       : new Set(['fields'])
@@ -419,12 +512,19 @@ export async function resolveFieldsProjection(
       ) {
         throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.fields" must be an object.`)
       }
+      const relAdvertisable = new Set(
+        (
+          await advertisableFields(related.listName, related.listConfig, config, session, context, {
+            relationsSelectable: false,
+            containRuleErrors: false,
+          })
+        ).map((field) => field.name),
+      )
       for (const [relFieldName, relValue] of Object.entries(
         nestedFieldsArg as Record<string, unknown>,
       )) {
         if (!isSystemFieldName(relFieldName)) {
-          const relFieldConfig = related.listConfig.fields[relFieldName]
-          if (!relFieldConfig || isRelationshipField(relFieldConfig)) {
+          if (!relAdvertisable.has(relFieldName)) {
             throw new McpProjectionRefusedError(
               `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
                 `are not selectable two levels deep; issue a second query for that.`,
@@ -468,10 +568,11 @@ export async function resolveFieldsProjection(
   if (countRequests.size > 0) {
     const countSelect: Record<string, unknown> = {}
     for (const fieldName of countRequests.keys()) {
-      const fieldConfig = listConfig.fields[fieldName] as RelationshipField
+      const relation = advertisableByName.get(fieldName)?.relation
+      if (!relation) continue
       const rawEntry = (fieldsArg as Record<string, unknown>)[fieldName] as Record<string, unknown>
       const scoped = await accessScopedCountEntry(
-        fieldConfig,
+        relation.fieldConfig,
         config,
         session,
         context,

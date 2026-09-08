@@ -242,6 +242,7 @@ async function handleToolsList(
 
     if (enabledTools.read) {
       const fieldsSchema = await generateFieldsProjectionSchema(
+        listKey,
         listConfig,
         config,
         context.session,
@@ -264,27 +265,43 @@ async function handleToolsList(
     }
 
     if (enabledTools.create) {
-      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'create')
-      tools.push({
-        name: `list_${toolKey}_create`,
-        description: `Create a new ${listKey} record`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            data: {
-              type: 'object',
-              description: 'Record data with the following fields',
-              properties: fieldSchemas.properties,
-              required: fieldSchemas.required,
+      const fieldSchemas = await generateFieldSchemas(
+        listKey,
+        listConfig.fields,
+        config,
+        'create',
+        context.session,
+        context,
+      )
+      if (fieldSchemas.deniedRequiredField === null) {
+        tools.push({
+          name: `list_${toolKey}_create`,
+          description: `Create a new ${listKey} record`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'object',
+                description: 'Record data with the following fields',
+                properties: fieldSchemas.properties,
+                required: fieldSchemas.required,
+              },
             },
+            required: ['data'],
           },
-          required: ['data'],
-        },
-      })
+        })
+      }
     }
 
     if (enabledTools.update) {
-      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'update')
+      const fieldSchemas = await generateFieldSchemas(
+        listKey,
+        listConfig.fields,
+        config,
+        'update',
+        context.session,
+        context,
+      )
       tools.push({
         name: `list_${toolKey}_update`,
         description: `Update an existing ${listKey} record`,

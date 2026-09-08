@@ -243,6 +243,40 @@ export async function classifyRowIndependentRead(
   }
 }
 
+/**
+ * The write-side counterpart of {@link classifyRowIndependentRead}: what a
+ * field's `create`/`update` rule answers when it is asked with neither a row
+ * nor a payload.
+ *
+ * Both `item` and `inputData` are poisoned, because either one makes the rule
+ * unanswerable ahead of a request — a rule reading the payload is as
+ * row-dependent, for this purpose, as one reading the row.
+ *
+ * A rule that returns a non-boolean raises `InvalidFieldAccessResultError`
+ * (ADR-0030), which propagates rather than being folded into `'deny'`.
+ */
+export async function classifyRowIndependentWrite(
+  fieldAccess: FieldAccess | undefined,
+  operation: 'create' | 'update',
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  try {
+    const writable = await checkFieldAccess(fieldAccess, operation, {
+      session: args.session,
+      context: args.context,
+      item: createPoisonedItem(),
+      inputData: createPoisonedItem(),
+    })
+    return writable ? 'allow' : 'deny'
+  } catch (err) {
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
+    throw err
+  }
+}
+
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<
