@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { AccessContext } from '../access/types.js'
 import { text } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
@@ -9,10 +9,8 @@ import { isListQueryStaticallyDenied, resolveNavCounts } from './nav-count.js'
  * Nav counts (#735): which lists get a badge at all, and what happens when one
  * list's count fails.
  *
- * A count itself is read through `context.db[list].count()` — the Prisma 7
- * method surface `context/index.ts` still exposes and no rc.8 client serves.
- * Every count therefore currently takes the degradation path, which is exactly
- * what the last test here pins; the badge comes back with that surface (#1255).
+ * A count is the secured `aggregate` reducer, so a badge reports exactly the
+ * rows the session may see.
  */
 
 const BOOT = 120_000
@@ -33,6 +31,18 @@ function schemaConfig(): OpenSaasConfig {
       Denied: {
         fields: { title: text() },
         access: { operation: { create: () => true } },
+        ui: { navCount: true },
+      },
+      Throws: {
+        fields: { title: text() },
+        access: {
+          operation: {
+            create: () => true,
+            query: () => {
+              throw new Error('boom')
+            },
+          },
+        },
         ui: { navCount: true },
       },
       OnlySettings: {
@@ -72,6 +82,10 @@ describe('resolveNavCounts', () => {
     await harness?.close()
   })
 
+  beforeEach(async () => {
+    await harness.truncate()
+  })
+
   /** The harness's context as the access engine's own shape. */
   function accessContext(): AccessContext {
     return {
@@ -86,24 +100,16 @@ describe('resolveNavCounts', () => {
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
       try {
+        await harness.context.db.Counted.create({ data: { title: 'one' } })
+        await harness.context.db.Counted.create({ data: { title: 'two' } })
+
         const counts = await resolveNavCounts(accessContext(), schemaConfig())
 
-        expect(Object.keys(counts)).not.toContain('NotOptedIn')
-        expect(Object.keys(counts)).not.toContain('OnlySettings')
-        expect(Object.keys(counts)).not.toContain('Denied')
-        // Absence from `counts` alone proves nothing while every count throws:
-        // the map is empty either way. The log is what separates "never
-        // selected" from "selected and failed" — a list that reached the count
-        // names itself there, so these are the assertions that go red if a
-        // selection rule is dropped. A statically denied list is omitted before
-        // any query for its own reason: a `0` would read as "empty" when the
-        // truth is "you may see none of it".
-        const attempted = (listKey: string) =>
-          error.mock.calls.some((call) => String(call[0]).includes(`nav count for ${listKey}`))
-
-        expect(attempted('NotOptedIn')).toBe(false)
-        expect(attempted('OnlySettings')).toBe(false)
-        expect(attempted('Denied')).toBe(false)
+        // Only the opted-in, queryable list has a badge, and it carries the
+        // access-scoped total. A statically denied list is omitted before any
+        // query for its own reason: a `0` would read as "empty" when the truth
+        // is "you may see none of it".
+        expect(counts).toEqual({ Counted: 2 })
       } finally {
         error.mockRestore()
       }
@@ -116,11 +122,14 @@ describe('resolveNavCounts', () => {
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
       try {
+        await harness.context.db.Counted.create({ data: { title: 'one' } })
+
         const counts = await resolveNavCounts(accessContext(), schemaConfig())
 
-        expect(counts).toEqual({})
+        expect(Object.keys(counts)).not.toContain('Throws')
+        expect(counts.Counted).toBeGreaterThan(0)
         expect(
-          error.mock.calls.some((call) => String(call[0]).includes('nav count for Counted')),
+          error.mock.calls.some((call) => String(call[0]).includes('nav count for Throws')),
         ).toBe(true)
       } finally {
         error.mockRestore()

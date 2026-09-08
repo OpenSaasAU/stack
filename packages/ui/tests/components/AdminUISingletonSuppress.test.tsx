@@ -17,6 +17,9 @@ const mockRedirect = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
   redirect: (url: string) => mockRedirect(url),
+  notFound: () => {
+    throw new Error('notFound')
+  },
 }))
 
 // next/link renders an anchor; happy-dom can render it directly.
@@ -152,7 +155,10 @@ describe('AdminUI singleton sub-route redirects', () => {
       Post: {
         findMany: vi.fn(async () => []),
         count: vi.fn(async () => 0),
-        findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })),
+        findUnique: vi.fn(async () => ({
+          id: '019606b0-1f36-7000-8000-0000000000ab',
+          title: 'First Post',
+        })),
       },
     })
 
@@ -170,7 +176,7 @@ describe('AdminUI singleton sub-route redirects', () => {
     await AdminUI({
       context,
       config,
-      params: ['post', '1'],
+      params: ['post', '019606b0-1f36-7000-8000-0000000000ab'],
       basePath: '/admin',
       serverAction: noopServerAction,
     })

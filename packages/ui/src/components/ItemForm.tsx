@@ -22,7 +22,8 @@ export interface ItemFormProps {
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
-  itemId?: string
+  /** The record's id at its list's own key type (ADR-0048) — a number on an integer-keyed list. */
+  itemId?: string | number
   basePath?: string
   // See AdminUIProps.serverAction for why this is Promise<unknown>.
   serverAction: (input: ServerActionInput) => Promise<unknown>
@@ -144,7 +145,7 @@ async function ItemViewLayoutView({
   config: OpenSaasConfig
   listConfig: AnyListConfig
   listKey: string
-  itemId: string
+  itemId: string | number
   basePath: string
   serverAction: (input: ServerActionInput) => Promise<unknown>
   layout: ItemViewLayout
@@ -226,7 +227,7 @@ async function ItemViewLayoutView({
         mode="edit"
         fields={serializableFields}
         initialData={initialData}
-        itemId={itemId}
+        itemId={String(itemId)}
         basePath={basePath}
         serverAction={serverAction}
         relationshipData={relationshipData}
@@ -248,7 +249,7 @@ async function ItemViewLayoutView({
         basePath={basePath}
         context={context}
         parentListKey={listKey}
-        parentId={itemId}
+        parentId={String(itemId)}
         serverAction={serverAction}
       />
     )
@@ -387,7 +388,7 @@ export async function ItemForm({
           mode={mode}
           fields={serializableFields}
           initialData={initialData}
-          itemId={itemId}
+          itemId={itemId === undefined ? undefined : String(itemId)}
           basePath={basePath}
           serverAction={serverAction}
           relationshipData={relationshipData}

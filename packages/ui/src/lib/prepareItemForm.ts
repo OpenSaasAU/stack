@@ -1,6 +1,7 @@
 import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
 import {
+  markToManyEdgeWrites,
   markUnwritableRelationships,
   serializeFieldConfigs,
   type SerializableFieldConfig,
@@ -99,6 +100,7 @@ export async function prepareItemForm(
 
   const serializableFields = serializeFieldConfigs(listConfig.fields)
   markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
+  markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, itemData.id)
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {

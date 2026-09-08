@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type ItemFormAction = 'create' | 'update'
@@ -89,6 +89,10 @@ export function transformItemFormData(
     }
 
     if (fieldConfig.type === 'relationship') {
+      // A to-many carrying an edge plan is written against the RELATED list,
+      // one row at a time, before this payload is built (ADR-0050) — so it
+      // belongs in neither.
+      if (fieldConfig.edgeWrite) continue
       // Unreachable from a form whose fields came through `prepareItemForm`,
       // which marks a to-many read-only above. A caller that serialises field
       // configs itself (the standalone forms) can still get here — and its
@@ -107,6 +111,73 @@ export function transformItemFormData(
   }
 
   return transformed
+}
+
+/** The ids a to-many control holds, ignoring anything that is not one. */
+function selectedIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+}
+
+/**
+ * One to-many field's edges to write, as writes against the related list
+ * (ADR-0050): `added` rows take the parent's id in their back-reference
+ * column, `removed` rows have it cleared.
+ */
+export interface EdgeSelectionChange {
+  fieldName: string
+  /** The list each write runs against, and whose access decides it. */
+  relatedListKey: string
+  /** That list's column holding the link back to the record being edited. */
+  backReferenceField: string
+  /** The selection these changes are relative to — what a denied write leaves standing. */
+  baseline: string[]
+  added: string[]
+  removed: string[]
+}
+
+/**
+ * What the edge writes actually achieved. `persisted` is the selection the
+ * database now holds for each field, which the form reverts its control to
+ * when it differs from what the user picked; `errors` are the reasons the
+ * denied writes gave, shown alongside.
+ */
+export interface EdgeWriteOutcome {
+  persisted: Record<string, string[]>
+  errors: string[]
+}
+
+/**
+ * Diff each edge-writing to-many field's current selection against the
+ * baseline, dropping the fields with nothing to write.
+ */
+export function diffEdgeSelections(
+  fields: Record<string, SerializableFieldConfig>,
+  baseline: Record<string, unknown>,
+  formData: Record<string, unknown>,
+): EdgeSelectionChange[] {
+  const changes: EdgeSelectionChange[] = []
+
+  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+    const plan = fieldConfig.edgeWrite
+    if (!plan) continue
+
+    const before = selectedIds(baseline[fieldName])
+    const after = selectedIds(formData[fieldName])
+    const added = after.filter((id) => !before.includes(id))
+    const removed = before.filter((id) => !after.includes(id))
+    if (added.length === 0 && removed.length === 0) continue
+
+    changes.push({
+      fieldName,
+      relatedListKey: plan.relatedListKey,
+      backReferenceField: plan.backReferenceField,
+      baseline: before,
+      added,
+      removed,
+    })
+  }
+
+  return changes
 }
 
 /**
@@ -178,6 +249,13 @@ export interface UseItemFormOptions {
     data: Record<string, unknown>,
     action: ItemFormAction,
   ) => Promise<ItemFormSubmitResult | void>
+  /**
+   * Writes a submission's to-many edges against their related lists, before
+   * `onSubmit` sends the record's own fields (ADR-0050). Required by any form
+   * whose serialised fields carry an edge plan; without it those fields have
+   * no writer and the submit refuses rather than reporting a selection saved.
+   */
+  onEdgeWrites?: (changes: EdgeSelectionChange[]) => Promise<EdgeWriteOutcome>
   /** Optional fallback message when a submit throws without a message. */
   errorFallback?: string
 }
@@ -207,12 +285,17 @@ export function useItemForm({
   initialData = {},
   mode,
   onSubmit,
+  onEdgeWrites,
   errorFallback = 'Operation failed',
 }: UseItemFormOptions): UseItemFormResult {
   const [isPending, startTransition] = useTransition()
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [generalError, setGeneralError] = useState<string | null>(null)
+  // What the edges are diffed against. It advances to whatever the writes
+  // actually persisted, so a second submit after a partial denial retries only
+  // the edges that are still outstanding rather than the ones already stored.
+  const edgeBaseline = useRef<Record<string, unknown>>(initialData)
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     // A field the form rendered read-only has no input to accept: its control
@@ -241,6 +324,21 @@ export function useItemForm({
 
     startTransition(async () => {
       try {
+        // Edges go first, and a denial stops here: `onSubmit` navigates away
+        // on success, so a revert the user is meant to see has to happen while
+        // the form is still on screen.
+        const changes = diffEdgeSelections(fields, edgeBaseline.current, formData)
+        if (changes.length > 0) {
+          if (!onEdgeWrites) throw new UnwritableRelationshipError(changes[0].fieldName)
+          const outcome = await onEdgeWrites(changes)
+          edgeBaseline.current = { ...edgeBaseline.current, ...outcome.persisted }
+          if (outcome.errors.length > 0) {
+            setFormData((prev) => ({ ...prev, ...outcome.persisted }))
+            setGeneralError(outcome.errors.join(' '))
+            return
+          }
+        }
+
         // Inside the try: the transform refuses a payload it would otherwise
         // have to discard, and that refusal has to reach the user as the
         // form's error rather than as an unhandled rejection.

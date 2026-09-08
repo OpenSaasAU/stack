@@ -116,6 +116,38 @@ describe('RelationshipCell', () => {
     expect(screen.getByText('-')).toBeInTheDocument()
   })
 
+  // A to-one relation reads as nullable by arity, not by column (ADR-0058), so
+  // `null` is the ordinary answer for a related row the session may not see —
+  // not a shape the table may crash on.
+  it('renders an unreadable related row without error (ADR-0058)', () => {
+    const manyField: SerializableFieldConfig = {
+      type: 'relationship',
+      ref: 'Post.author',
+      many: true,
+    }
+
+    const { container, rerender } = render(
+      <RelationshipCell value={undefined} field={field} fieldName="author" basePath="/admin" />,
+    )
+    expect(screen.getByText('-')).toBeInTheDocument()
+
+    // A row that came back with no readable label field is rendered unlinked
+    // rather than as a link to nowhere.
+    rerender(
+      <RelationshipCell
+        value={{ id: 'user-3' }}
+        field={field}
+        fieldName="author"
+        basePath="/admin"
+      />,
+    )
+    expect(screen.getByRole('link', { name: 'user-3' })).toBeInTheDocument()
+
+    // A to-many that resolved to nothing counts as zero.
+    rerender(<RelationshipCell value={null} field={manyField} fieldName="posts" />)
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toHaveTextContent('0')
+  })
+
   it('renders a to-many relationship as its access-visible count (issue #732)', () => {
     const manyField: SerializableFieldConfig = {
       type: 'relationship',

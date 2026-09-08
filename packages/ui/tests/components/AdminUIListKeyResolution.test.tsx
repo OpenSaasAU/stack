@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ItemForm } from '../../src/components/ItemForm.js'
@@ -13,6 +14,9 @@ const mockPush = vi.fn()
 const mockRefresh = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
+  notFound: () => {
+    throw new Error('notFound')
+  },
 }))
 
 vi.mock('next/link.js', () => ({
@@ -20,24 +24,6 @@ vi.mock('next/link.js', () => ({
     <a href={href}>{children}</a>
   ),
 }))
-
-interface DelegateStub {
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args: unknown) => Promise<number>
-  findUnique?: (args: unknown) => Promise<Record<string, unknown> | null>
-}
-
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
-  const context = {
-    db: delegates,
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  return context as unknown as AccessContext
-}
 
 const noopServerAction = vi.fn(async () => ({ success: true }))
 
@@ -71,19 +57,29 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
 // admin UI's routing must round-trip it regardless.
 function camelCaseListConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
       oauthApplication: list({ fields: { clientId: text() } }),
+      BlogPost: list({ fields: { title: text() } }),
     },
   }
 }
 
 describe('AdminUI list URL resolution (issue #991)', () => {
+  let harness: TestContext
+  let context: AccessContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(camelCaseListConfig(), null)
+    context = harness.context as unknown as AccessContext
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
   it('resolves a camelCase list key from its URL segment and opens the list view', async () => {
     const config = camelCaseListConfig()
-    const context = makeContext({
-      oauthApplication: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
 
     const tree = await AdminUI({
       context,
@@ -100,7 +96,6 @@ describe('AdminUI list URL resolution (issue #991)', () => {
 
   it('resolves the create route for a camelCase list key', async () => {
     const config = camelCaseListConfig()
-    const context = makeContext({ oauthApplication: {} })
 
     const tree = await AdminUI({
       context,
@@ -118,14 +113,11 @@ describe('AdminUI list URL resolution (issue #991)', () => {
 
   it('resolves an item edit route for a camelCase list key', async () => {
     const config = camelCaseListConfig()
-    const context = makeContext({
-      oauthApplication: { findUnique: vi.fn(async () => ({ id: 'abc123' })) },
-    })
 
     const tree = await AdminUI({
       context,
       config,
-      params: ['oauth-application', 'abc123'],
+      params: ['oauth-application', '019606b0-1f36-7000-8000-0000000000ab'],
       basePath: '/admin',
       serverAction: noopServerAction,
     })
@@ -134,17 +126,11 @@ describe('AdminUI list URL resolution (issue #991)', () => {
     expect(content.type).toBe(ItemForm)
     expect(content.props.listKey).toBe('oauthApplication')
     expect(content.props.mode).toBe('edit')
-    expect(content.props.itemId).toBe('abc123')
+    expect(content.props.itemId).toBe('019606b0-1f36-7000-8000-0000000000ab')
   })
 
   it('still resolves a PascalCase list key exactly as before', async () => {
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: { BlogPost: list({ fields: { title: text() } }) },
-    }
-    const context = makeContext({
-      blogPost: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
+    const config = camelCaseListConfig()
 
     const tree = await AdminUI({
       context,
@@ -161,7 +147,6 @@ describe('AdminUI list URL resolution (issue #991)', () => {
 
   it('renders the dashboard at the root, not a list view', async () => {
     const config = camelCaseListConfig()
-    const context = makeContext({ oauthApplication: {} })
 
     const tree = await AdminUI({
       context,
@@ -177,7 +162,6 @@ describe('AdminUI list URL resolution (issue #991)', () => {
 
   it('falls through to the list-not-found state for a URL matching no list, instead of throwing', async () => {
     const config = camelCaseListConfig()
-    const context = makeContext({ oauthApplication: {} })
 
     const tree = await AdminUI({
       context,

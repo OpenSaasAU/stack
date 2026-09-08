@@ -31,7 +31,7 @@ function pgType(type: string, args?: number[]): ColumnTypeDescriptor {
   return args && args.length > 0 ? { pack: 'pg', type, args } : { pack: 'pg', type }
 }
 
-function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
+export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
   switch (strategy) {
     case 'uuid7':
       return { strategy, type: pgType('uuid') }
@@ -43,7 +43,7 @@ function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
   }
 }
 
-function resolveIdStrategy(
+export function resolveIdStrategy(
   listConfig: ListConfig<TypeInfo>,
   config: OpenSaasConfig,
 ): ContractIdStrategy {

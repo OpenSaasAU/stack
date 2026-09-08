@@ -2,6 +2,7 @@ import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { SelectOption } from '@opensaas/stack-core/fields'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import { resolveJunctionEdge } from '@opensaas/stack-core'
+import { resolveToManyEdgePlan } from './relationshipEdges.js'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 import { rendersAsRelationshipTable } from './deriveItemView.js'
@@ -38,6 +39,15 @@ export type SerializableFieldConfig = {
   readOnly?: boolean
   /** Why {@link readOnly} is set — shown to the user beneath the field. */
   readOnlyReason?: string
+  /**
+   * Set on a to-many relationship whose edges the form MAY write, naming the
+   * related list each write runs against and the back-reference column that
+   * holds the link (ADR-0050). The submit transform sends nothing for the
+   * field — the edges are written one row at a time against that list, under
+   * its own access — so a field carrying this is neither in the payload nor
+   * read-only.
+   */
+  edgeWrite?: { relatedListKey: string; backReferenceField: string }
   ui?: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     component?: ComponentType<any>
@@ -205,5 +215,46 @@ export function markUnwritableRelationships(
     if (shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)) continue
     serialized.readOnly = true
     serialized.readOnlyReason = UNWRITABLE_RELATIONSHIP_REASON
+  }
+}
+
+/**
+ * Make every to-many relationship whose edges CAN be written from this form
+ * writable, replacing the read-only mark {@link serializeFieldConfig} gave it
+ * with the plan those writes follow (ADR-0050).
+ *
+ * Only a form editing an existing record may do this: an edge is a write
+ * against the related row naming the parent, and a create has no parent id to
+ * name yet. Callers therefore pass the record's own id, and pass nothing on
+ * create.
+ *
+ * Runs after {@link markUnwritableRelationships}, and replaces only the marks
+ * that pass owns: a field read-only for some other cause keeps that cause.
+ *
+ * Mutates `serializableFields` in place.
+ */
+export function markToManyEdgeWrites(
+  serializableFields: Record<string, SerializableFieldConfig>,
+  listKey: string,
+  fields: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
+  itemId: unknown,
+): void {
+  if (itemId === undefined || itemId === null || itemId === '') return
+
+  for (const fieldName of Object.keys(fields)) {
+    const serialized = serializableFields[fieldName]
+    if (!serialized || serialized.many !== true) continue
+    if (
+      serialized.readOnlyReason !== UNWRITABLE_RELATIONSHIP_REASON &&
+      serialized.readOnlyReason !== JUNCTION_EDGE_RELATIONSHIP_REASON
+    ) {
+      continue
+    }
+    const plan = resolveToManyEdgePlan(config, listKey, fieldName)
+    if (!plan) continue
+    serialized.edgeWrite = plan
+    delete serialized.readOnly
+    delete serialized.readOnlyReason
   }
 }

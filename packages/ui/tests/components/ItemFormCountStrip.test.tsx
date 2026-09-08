@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { buildDetailsItemData } from '../../src/components/ItemForm.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { transformItemFormData } from '../../src/lib/useItemForm.js'
@@ -22,24 +24,6 @@ import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
  * supported by this test environment's React DOM renderer).
  */
 
-interface DelegateStub {
-  findMany?: (args?: unknown) => Promise<Array<Record<string, unknown>>>
-  findFirst?: (args?: unknown) => Promise<Record<string, unknown> | null>
-}
-
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
-  const context = {
-    db: delegates,
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  // Cast: this is a stub for pipeline tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext
-}
-
 /**
  * A list with a `many: true` relationship in the default (table) item-view
  * display mode — the shape that makes `deriveItemViewLayout` produce a
@@ -48,33 +32,43 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
  */
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
       Post: {
         fields: {
-          title: { type: 'text' },
-          comments: { type: 'relationship', ref: 'Comment.post', many: true },
+          title: text(),
+          comments: relationship({ ref: 'Comment.post', many: true }),
         },
         access: { operation: { query: () => true, update: () => true } },
       },
       Comment: {
         fields: {
-          body: { type: 'text' },
-          post: { type: 'relationship', ref: 'Post.comments' },
+          body: text(),
+          post: relationship({ ref: 'Post.comments' }),
         },
         access: { operation: { query: () => true } },
       },
     },
-  } as unknown as OpenSaasConfig
+  }
 }
 
 describe('ItemForm derived item-view pipeline (issue #797 regression)', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(makeConfig(), null)
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
   it('never lets the synthetic `_count` payload survive fetch -> details data -> submit transform', async () => {
     const config = makeConfig()
     const layout = deriveItemViewLayout(config, 'Post')
     expect(layout.sections).toHaveLength(1) // sanity: the to-many relationship became a table section
 
-    const context = makeContext({})
+    const context = harness.context as unknown as AccessContext
 
     // The record `ItemViewLayoutView` fetches: the real fields, the bounded
     // relationship rows, AND the synthetic `_count` the fetch adds for the
