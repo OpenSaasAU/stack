@@ -21,13 +21,15 @@ export interface SingletonViewProps {
  * with `isSingleton: true`.
  *
  * Resolves the record via the singleton `get()` operation (which auto-creates
- * the row with field defaults when absent, unless `autoCreate: false`), then
+ * the row with field defaults when absent, unless `autoCreate: false` or the
+ * list's `query` rule answers anything but a strict `true`), then
  * reuses the same `ItemFormClient` + serialization path as `ItemForm` so the
  * existing field rendering, validation, and `serverAction` save flow apply.
  *
  * A `null` from `get()` is ambiguous at the boundary — it means EITHER an
- * `autoCreate: false` singleton with no row yet, OR that `query` access is
- * denied (access-controlled reads return null/[] silently). We disambiguate
+ * `autoCreate: false` or filter-scoped singleton with no row yet, OR that
+ * `query` access is denied (access-controlled reads return null/[] silently).
+ * We disambiguate
  * using the list's operation-level access:
  *
  * - `query` denied  → friendly "no access" message (never an editable form).

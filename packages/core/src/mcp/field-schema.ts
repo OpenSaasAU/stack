@@ -1,4 +1,7 @@
 import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import type { AccessContext, Session } from '../access/types.js'
+import { classifyRowIndependentWrite } from '../access/field-access.js'
+import { decideAdvertisement } from './advertise.js'
 import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
@@ -95,17 +98,21 @@ function ownsForeignKey(
   }
 }
 
-export function generateFieldSchemas(
+export async function generateFieldSchemas(
   listKey: string,
   fields: Record<string, FieldConfig>,
   config: OpenSaasConfig,
   operation: 'create' | 'update',
-): {
+  session: Session | null,
+  context: AccessContext,
+): Promise<{
   properties: Record<string, unknown>
   required: string[]
-} {
+  deniedRequiredField: string | null
+}> {
   const properties: Record<string, unknown> = {}
   const required: string[] = []
+  let deniedRequiredField: string | null = null
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
@@ -121,17 +128,26 @@ export function generateFieldSchemas(
       continue
     }
 
-    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
-
-    if (
+    const isRequired =
       operation === 'create' &&
       'validation' in fieldConfig &&
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
-      (fieldConfig.validation as any)?.isRequired
-    ) {
-      required.push(fieldName)
+      !!(fieldConfig.validation as any)?.isRequired
+
+    const classification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
+      `${listKey}.${fieldName}`,
+      () => classifyRowIndependentWrite(fieldConfig.access, operation, { session, context }),
+      'deny',
+    )
+    if (classification === 'deny') {
+      if (isRequired) deniedRequiredField ??= fieldName
+      continue
     }
+
+    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
+
+    if (isRequired) required.push(fieldName)
   }
 
-  return { properties, required }
+  return { properties, required, deniedRequiredField }
 }

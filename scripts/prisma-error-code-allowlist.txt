@@ -1,9 +1,18 @@
 # path:count of Prisma error-code literals still carried, read by scripts/check-prisma-error-codes.mjs; lower or remove entries, never raise or add.
-# Only decision records remain as of #1154: Prisma 8 raises no such codes (ADR-0042), so a literal
-# anywhere else is a dead discriminant. An ADR is a dated record that is superseded, not edited, so
-# its literals stay — under a baseline, which a new one added to any of these files still fails.
+# Prisma 8 raises no such codes (ADR-0042), so a literal anywhere else is a dead discriminant.
+# Only dated records remain. An ADR is superseded, not edited, so its literals stay — under a
+# baseline, which a new one added to any of these files still fails.
+#
+# Changelogs are the same kind of artifact and are held to the same rule (#1331): an entry states
+# what a released version actually did, and rewriting it would falsify the record, so the literals
+# stay and the entries that hand a reader a dead discriminant carry a superseding note saying the
+# code below matches nothing and naming the current spelling. The baseline is what makes that
+# enforcement rather than an exemption — a new literal in a changelog fails this check, and a
+# release that only prepends entries leaves these counts untouched.
 docs/adr/0004-generator-emits-keystone-compatible-defaults.md:1
 docs/adr/0012-interactive-transactions-rebind-the-secured-context.md:4
 docs/adr/0028-a-transaction-boundary-hook-reports-the-outermost-transaction.md:1
 docs/adr/0042-transactions-lose-isolation-levels-and-errors-become-stack-owned.md:8
 docs/adr/0060-better-auth-is-driven-by-a-stack-authored-auth-adapter-over-the-unsafe-surface.md:3
+packages/cli/CHANGELOG.md:3
+packages/core/CHANGELOG.md:6

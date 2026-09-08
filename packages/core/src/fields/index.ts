@@ -630,7 +630,7 @@ export function timestamp<
  * })
  *
  * // Reading — values come back as YYYY-MM-DD strings
- * const e = await context.db.Event.findUnique({ where: { id } })
+ * const e = await context.db.Event.where({ id }).first()
  * e?.startDate // => '2025-01-15' (a string, not a Date)
  * ```
  *
@@ -772,9 +772,7 @@ function formatCalendarDay(value: unknown): string | null | undefined {
  * })
  *
  * // Authenticating - use the compare() method
- * const user = await context.db.User.findUnique({
- *   where: { email: 'user@example.com' }
- * })
+ * const user = await context.db.User.where({ email: 'user@example.com' }).first()
  *
  * if (user && await user.password.compare('plaintextPassword')) {
  *   // Password is correct - login successful
@@ -1316,9 +1314,7 @@ export function relationship<
  * })
  *
  * // Querying returns parsed JSON
- * const item = await context.db.Item.findUnique({
- *   where: { id: '...' }
- * })
+ * const item = await context.db.Item.where({ id: '...' }).first()
  * console.log(item.metadata.key) // 'value'
  * ```
  *

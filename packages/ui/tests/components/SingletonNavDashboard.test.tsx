@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { Navigation } from '../../src/components/Navigation.js'
 import { Dashboard } from '../../src/components/Dashboard.js'
 
@@ -38,15 +39,8 @@ const config: OpenSaasConfig = {
   },
 }
 
-interface DelegateStub {
-  count?: (args?: unknown) => Promise<number>
-}
-
-/**
- * Build a minimal AccessContext whose db delegates return canned data. Only the
- * methods the views call are implemented.
- */
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
+/** A minimal AccessContext for the pure-render Navigation cases, which read no data. */
+function makeContext(delegates: Record<string, unknown>): AccessContext {
   const context = {
     db: delegates,
     session: null,
@@ -110,16 +104,43 @@ describe('Navigation singleton grouping', () => {
   })
 })
 
+/**
+ * The dashboard's counts come off the secured reducer, so they run over a real
+ * database rather than a stubbed delegate: a singleton carries no composed read
+ * at all, and asking one for a count would throw rather than answer.
+ */
 describe('Dashboard singleton affordance', () => {
-  it('shows "Configure" for a singleton (no count) and a count for a non-singleton', async () => {
-    const siteConfigCount = vi.fn(async () => 1)
-    const postCount = vi.fn(async () => 2)
-    const context = makeContext({
-      SiteConfig: { count: siteConfigCount },
-      Post: { count: postCount },
-    })
+  const countedConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql', timestamps: true },
+    lists: {
+      SiteConfig: list({
+        isSingleton: true,
+        fields: { siteName: text() },
+        access: { operation: { query: () => true, create: () => true } },
+      }),
+      Post: list({
+        fields: { title: text() },
+        access: { operation: { query: () => true, create: () => true } },
+      }),
+    },
+  }
 
-    const element = await Dashboard({ context, config, basePath: '/admin' })
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(countedConfig, null)
+    await harness.context.db.Post.create({ data: { title: 'first' } })
+    await harness.context.db.Post.create({ data: { title: 'second' } })
+  }, 120_000)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  it('shows "Configure" for a singleton (no count) and a count for a non-singleton', async () => {
+    const context = harness.context as unknown as AccessContext
+
+    const element = await Dashboard({ context, config: countedConfig, basePath: '/admin' })
     render(element)
 
     // Non-singleton Post card shows the normal "N items" count.
@@ -130,12 +151,7 @@ describe('Dashboard singleton affordance', () => {
     expect(configureLink).toHaveAttribute('href', '/admin/site-config')
     expect(within(configureLink).getByText('Site Config')).toBeInTheDocument()
 
-    // The singleton's count() is never called — its count is misleading, so the
-    // dashboard does not query or render it.
-    expect(siteConfigCount).not.toHaveBeenCalled()
-    expect(postCount).toHaveBeenCalledTimes(1)
-
     // No "N items" label appears for the singleton.
     expect(screen.queryByText('1 item')).not.toBeInTheDocument()
-  })
+  }, 120_000)
 })

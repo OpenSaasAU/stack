@@ -55,7 +55,24 @@ export interface WhereCombinators {
   all(): AnyExpression
 }
 
-let pending: Promise<WhereCombinators> | undefined
+/**
+ * Cache an async loader's result, including across retries after a
+ * rejection. Caching the promise itself (rather than its resolved value)
+ * is what collapses concurrent callers onto a single in-flight import; the
+ * `.catch` clears that cache before rethrowing so a rejected load is never
+ * pinned in place — the next call re-runs `load` instead of re-awaiting a
+ * promise that can only ever reject again.
+ */
+function lazyImport<T>(load: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined
+  return () => {
+    pending ??= load().catch((error: unknown) => {
+      pending = undefined
+      throw error
+    })
+    return pending
+  }
+}
 
 /**
  * Load Prisma's expression combinators. Imported lazily so the package root
@@ -63,14 +80,10 @@ let pending: Promise<WhereCombinators> | undefined
  * cannot run without the ORM anyway, and the terminals that lower a predicate
  * are already async.
  */
-export function whereCombinators(): Promise<WhereCombinators> {
-  pending ??= import('@prisma/orm-postgres/orm-client').then(({ and, or, all }) => ({
-    and,
-    or,
-    all,
-  }))
-  return pending
-}
+export const whereCombinators = lazyImport(async (): Promise<WhereCombinators> => {
+  const { and, or, all } = await import('@prisma/orm-postgres/orm-client')
+  return { and, or, all }
+})
 
 function memberOf(accessor: PredicateAccessor, listName: string, name: string): AccessorMember {
   const member = accessor[name]
@@ -189,8 +202,6 @@ export interface VectorLowering {
   bound(plan: NearestPlan, accessor: PredicateAccessor, distance: number): AnyExpression
 }
 
-let pendingVector: Promise<VectorLowering> | undefined
-
 /**
  * Load the expression builders a vector search needs, lazily, for the reason
  * {@link whereCombinators} is lazy.
@@ -202,37 +213,35 @@ let pendingVector: Promise<VectorLowering> | undefined
  * one path rather than two. Re-check at GA: if the pack registers the other
  * distances, these become accessor calls (ADR-0045).
  */
-export function vectorLowering(): Promise<VectorLowering> {
-  pendingVector ??= Promise.all([
+export const vectorLowering = lazyImport(async (): Promise<VectorLowering> => {
+  const [expression, ast] = await Promise.all([
     import('@prisma/orm-postgres/relational-core/expression'),
     import('@prisma/orm-postgres/relational-core/ast'),
-  ]).then(([expression, ast]) => {
-    const { buildOperation, codecOf, toExpr, param } = expression
-    const { BinaryExpr, OrderByItem: OrderBy } = ast
+  ])
+  const { buildOperation, codecOf, toExpr, param } = expression
+  const { BinaryExpr, OrderByItem: OrderBy } = ast
 
-    const distance = (plan: NearestPlan, accessor: PredicateAccessor): AnyExpression => {
-      const member = memberOf(accessor, plan.listName, plan.column)
-      const codec = codecOf(member)
-      return buildOperation({
-        method: 'nearest',
-        args: [toExpr(member, codec), toExpr(plan.vector, codec)],
-        returns: { codecId: FLOAT8_CODEC, nullable: false },
-        lowering: {
-          targetFamily: 'sql',
-          strategy: 'function',
-          template: DISTANCE_TEMPLATES[plan.distanceFunction],
-        },
-      }).buildAst()
-    }
+  const distance = (plan: NearestPlan, accessor: PredicateAccessor): AnyExpression => {
+    const member = memberOf(accessor, plan.listName, plan.column)
+    const codec = codecOf(member)
+    return buildOperation({
+      method: 'nearest',
+      args: [toExpr(member, codec), toExpr(plan.vector, codec)],
+      returns: { codecId: FLOAT8_CODEC, nullable: false },
+      lowering: {
+        targetFamily: 'sql',
+        strategy: 'function',
+        template: DISTANCE_TEMPLATES[plan.distanceFunction],
+      },
+    }).buildAst()
+  }
 
-    return {
-      order: (plan, accessor) => OrderBy.asc(distance(plan, accessor)),
-      bound: (plan, accessor, bound) =>
-        new BinaryExpr('lte', distance(plan, accessor), param(bound, { codecId: FLOAT8_CODEC })),
-    }
-  })
-  return pendingVector
-}
+  return {
+    order: (plan, accessor) => OrderBy.asc(distance(plan, accessor)),
+    bound: (plan, accessor, bound) =>
+      new BinaryExpr('lte', distance(plan, accessor), param(bound, { codecId: FLOAT8_CODEC })),
+  }
+})
 
 /** Build one `ORDER BY` item for a resolved sort. */
 export function lowerOrder(plan: OrderPlan, accessor: PredicateAccessor): OrderByItem {

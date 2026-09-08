@@ -194,14 +194,14 @@ describe.skipIf(!prerequisitesPresent)(
 
         // --- context.db reads, with operation-level access opened ---
 
-        const sessions = await context.db.session.findMany({})
+        const sessions = await context.db.session.all()
         expect(sessions.length).toBeGreaterThan(0)
         for (const s of sessions) {
           expect(s.token).toBeUndefined()
           expect(s.ipAddress === null || typeof s.ipAddress === 'string').toBe(true)
         }
 
-        const accounts = await context.db.account.findMany({})
+        const accounts = await context.db.account.all()
         expect(accounts.length).toBeGreaterThan(0)
         for (const a of accounts) {
           expect(a.password).toBeUndefined()
@@ -214,25 +214,25 @@ describe.skipIf(!prerequisitesPresent)(
 
         // --- sudo() still reads every one of these fields ---
 
-        const sudoAccounts = await context.sudo().db.account.findMany({})
+        const sudoAccounts = await context.sudo().db.account.all()
         expect(sudoAccounts.length).toBeGreaterThan(0)
         expect(typeof sudoAccounts[0].password).toBe('string')
         expect(sudoAccounts[0].password!.length).toBeGreaterThan(0)
 
-        const sudoSessions = await context.sudo().db.session.findMany({})
+        const sudoSessions = await context.sudo().db.session.all()
         expect(typeof sudoSessions[0].token).toBe('string')
         expect(sudoSessions[0].token!.length).toBeGreaterThan(0)
 
-        // Naming a denied field in findMany's where/orderBy is rejected up
-        // front by the predicate-time read-access check, not silently
-        // stripped (findUnique's `where` isn't walked by that check at all —
-        // it only unique-selects the row, so it still returns the row with
-        // `token` stripped from the output, same as any other read).
+        // Naming a denied field in a read's predicate is rejected up front by
+        // the predicate-time read-access check, not silently stripped.
         await expect(
-          context.db.session.findMany({ where: { token: sudoSessions[0].token } }),
+          context.db.session.where({ token: { equals: sudoSessions[0].token } }).all(),
         ).rejects.toThrow()
         await expect(
-          context.sudo().db.session.findMany({ where: { token: sudoSessions[0].token } }),
+          context
+            .sudo()
+            .db.session.where({ token: { equals: sudoSessions[0].token } })
+            .all(),
         ).resolves.not.toHaveLength(0)
 
         // --- password reset: exercises Verification.value end-to-end ---
@@ -244,13 +244,13 @@ describe.skipIf(!prerequisitesPresent)(
         expect(resetReq.status).toBe(200)
 
         // context.db strips Verification.value even though a live reset token exists.
-        const verifications = await context.db.verification.findMany({})
+        const verifications = await context.db.verification.all()
         expect(verifications.length).toBeGreaterThan(0)
         for (const v of verifications) {
           expect(v.value).toBeUndefined()
           expect(typeof v.identifier).toBe('string')
         }
-        const sudoVerifications = await context.sudo().db.verification.findMany({})
+        const sudoVerifications = await context.sudo().db.verification.all()
         expect(typeof sudoVerifications[0].value).toBe('string')
 
         const resetToken = (await fsp.readFile(resetTokenFile, 'utf-8')).trim()

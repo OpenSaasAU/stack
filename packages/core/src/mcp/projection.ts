@@ -1,7 +1,12 @@
-import type { AccessContext, Session } from '../access/types.js'
+import type { AccessContext, OrmRow, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
-import { validateQueryFieldReadAccess, validateQueryKeys } from '../access/query-validation.js'
+import { classifyRowIndependentRead } from '../access/field-access.js'
+import { decideAdvertisement } from './advertise.js'
+import type { Refinement, SecuredRefinement } from '../secured/include.js'
+import type { SecuredQuery } from '../secured/read.js'
+import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
+import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
@@ -15,9 +20,9 @@ function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
  * need their own selector entries at every level a `fields` projection can
  * name fields — a scalar-only loop over `listConfig.fields` would otherwise
  * never advertise or accept them. `id` is additionally forced into every
- * projection this module builds (`withId`, below), never left to the
- * caller: a record projected down to none of its own identifying columns
- * cannot be the target of a follow-up `update`/`delete` call.
+ * selection this module composes, never left to the caller: a record
+ * projected down to none of its own identifying columns cannot be the target
+ * of a follow-up `update`/`delete` call.
  */
 function systemFieldProperties(): Record<string, unknown> {
   return {
@@ -32,11 +37,6 @@ function systemFieldProperties(): Record<string, unknown> {
 
 function isSystemFieldName(name: string): name is 'id' | 'createdAt' | 'updatedAt' {
   return name === 'id' || name === 'createdAt' || name === 'updatedAt'
-}
-
-/** Force `id` into a field selection being built for one level of a `fields` projection — see `systemFieldProperties`'s doc comment. */
-function withId(selection: Record<string, unknown>): Record<string, unknown> {
-  return { ...selection, id: true }
 }
 
 /**
@@ -98,6 +98,82 @@ async function relatedListIfVisible(
 }
 
 /**
+ * One field of a list this session may be told about, carrying its relation
+ * target already resolved so that no second caller re-decides visibility.
+ */
+type AdvertisableField = {
+  name: string
+  relation: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
+    fieldConfig: RelationshipField<any>
+    listName: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    listConfig: ListConfig<any>
+  } | null
+}
+
+async function decideField(
+  fieldName: string,
+  fieldConfig: FieldConfig,
+  config: OpenSaasConfig,
+  session: Session | null,
+  context: AccessContext,
+  options: { relationsSelectable: boolean },
+): Promise<AdvertisableField | null> {
+  const relationConfig = isRelationshipField(fieldConfig) ? fieldConfig : null
+  if (relationConfig && !options.relationsSelectable) return null
+
+  const answer = await classifyRowIndependentRead(fieldConfig.access, { session, context })
+  if (answer === 'deny') return null
+
+  if (!relationConfig) return { name: fieldName, relation: null }
+
+  const related = await relatedListIfVisible(relationConfig, config, session, context)
+  if (!related) return null
+
+  return { name: fieldName, relation: { fieldConfig: relationConfig, ...related } }
+}
+
+/**
+ * The fields of `listConfig` this session may be told about, in declaration
+ * order: a field whose `read` rule is row-independent and denies is omitted, a
+ * row-dependent one stays (it may pass for rows the session owns), and a
+ * relation whose target list this session cannot reach at all is omitted as
+ * well — ADR-0053.
+ *
+ * This is the one place the read vocabulary is decided. Both the advertised
+ * schema and the refusal `resolveFieldsProjection` raises for an unnamed field
+ * read it, so a dropped name is indistinguishable from one that never existed;
+ * deriving either from `listConfig.fields` directly would leak back what the
+ * schema withheld.
+ *
+ * `relationsSelectable: false` additionally drops relations, which is the
+ * level-2 vocabulary (a relation named there terminates).
+ * `containRuleErrors` is set only where this decides an advertisement — see
+ * {@link decideAdvertisement}.
+ */
+async function advertisableFields(
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+  session: Session | null,
+  context: AccessContext,
+  options: { relationsSelectable: boolean; containRuleErrors: boolean },
+): Promise<AdvertisableField[]> {
+  const advertisable: AdvertisableField[] = []
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    const decide = (): Promise<AdvertisableField | null> =>
+      decideField(fieldName, fieldConfig, config, session, context, options)
+    const decided = options.containRuleErrors
+      ? await decideAdvertisement<AdvertisableField | null>(`${listKey}.${fieldName}`, decide, null)
+      : await decide()
+    if (decided) advertisable.push(decided)
+  }
+  return advertisable
+}
+
+/**
  * Generate the JSON Schema for the `query` tool's `fields` projection
  * argument: two levels of the list's own vocabulary (ADR-0033). Level 1 is
  * this list's own scalar/virtual fields (booleans) and relations (nested
@@ -108,6 +184,7 @@ async function relatedListIfVisible(
  * targets are omitted from the vocabulary entirely, per-session.
  */
 export async function generateFieldsProjectionSchema(
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
@@ -116,38 +193,57 @@ export async function generateFieldsProjectionSchema(
 ): Promise<Record<string, unknown>> {
   const properties: Record<string, unknown> = systemFieldProperties()
 
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(fieldConfig)) {
+  for (const { name: fieldName, relation } of await advertisableFields(
+    listKey,
+    listConfig,
+    config,
+    session,
+    context,
+    { relationsSelectable: true, containRuleErrors: true },
+  )) {
+    if (!relation) {
       properties[fieldName] = scalarSelectorSchema(fieldName)
       continue
     }
 
-    const related = await relatedListIfVisible(fieldConfig, config, session, context)
-    if (!related) continue
-
     const level2Properties: Record<string, unknown> = systemFieldProperties()
-    for (const [relFieldName, relFieldConfig] of Object.entries(related.listConfig.fields)) {
-      if (isRelationshipField(relFieldConfig)) continue
+    for (const { name: relFieldName } of await advertisableFields(
+      relation.listName,
+      relation.listConfig,
+      config,
+      session,
+      context,
+      { relationsSelectable: false, containRuleErrors: true },
+    )) {
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
     }
 
-    const many = isMany(fieldConfig)
+    const many = isMany(relation.fieldConfig)
     properties[fieldName] = {
       type: 'object',
       description: many
-        ? `Select fields from the related ${related.listName} records`
-        : `Select fields from the related ${related.listName} record`,
+        ? `Select fields from the related ${relation.listName} records`
+        : `Select fields from the related ${relation.listName} record`,
       properties: {
         fields: {
           type: 'object',
-          description: `Fields to return from ${related.listName}`,
+          description: `Fields to return from ${relation.listName}`,
           properties: level2Properties,
           additionalProperties: false,
         },
         ...(many
           ? {
-              where: { type: 'object', description: `Prisma where clause for ${related.listName}` },
-              orderBy: { type: 'object', description: 'Sort order' },
+              where: {
+                type: 'object',
+                description:
+                  `Which ${relation.listName} rows to return, in the Where vocabulary: a field ` +
+                  `name against a value or an operator object (${SCALAR_OPERATORS.join(', ')}), ` +
+                  `a relation against ${RELATION_QUANTIFIERS.join('/')}, and AND, OR, NOT`,
+              },
+              orderBy: {
+                type: 'object',
+                description: `Sort order: ${relation.listName} column names against "asc" or "desc"`,
+              },
               take: {
                 type: 'number',
                 description: `Max rows to return (default ${MCP_NESTED_TAKE_DEFAULT}, hard cap ${MCP_NESTED_TAKE_MAX})`,
@@ -176,98 +272,85 @@ export async function generateFieldsProjectionSchema(
 }
 
 /**
- * The nested projection this module builds and {@link projectMcpResult} reads
- * back. Local to MCP rather than shared: it is the tool vocabulary's own
- * shape, and the translator that replaces it takes the secured surface's
- * `.select()` instead (ADR-0053).
+ * A resolved `fields` argument, as something to compose onto a read rather
+ * than something to trim a result with (ADR-0053). The engine's own exact
+ * selection is the only authority on what the caller receives, so this module
+ * keeps nothing to project a row down with afterwards.
  */
-export type McpFieldSelection = {
-  readonly [key: string]: true | { readonly _fields: McpFieldSelection }
+export interface ResolvedFieldsProjection {
+  /** Compose the caller's projection onto the read they asked it of. */
+  apply(query: SecuredQuery): SecuredQuery
+  /**
+   * The rows the engine returned, at the shape the tool advertises. A
+   * count-only relation is read as its rows beside the count — Field
+   * Visibility decides a relation's fate against the value it was given, and a
+   * `[]` stand-in fails open for a rule of the `item.comments.length === 0`
+   * shape (`maskReductions` in `secured/read.ts`). Those rows are the engine's
+   * business, not the caller's, so this drops them once it has decided.
+   */
+  toWire(rows: readonly OrmRow[]): OrmRow[]
 }
 
-/** Project a raw row down to `fields`, one level at a time. */
-function pickFields(
-  item: Record<string, unknown>,
-  fields: McpFieldSelection,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(fields)) {
-    const fieldValue = item[key]
-    if (value === true) {
-      result[key] = fieldValue
-      continue
-    }
-    if (Array.isArray(fieldValue)) {
-      result[key] = fieldValue.map((element) =>
-        pickFields(element as Record<string, unknown>, value._fields),
-      )
-    } else if (fieldValue === null || fieldValue === undefined) {
-      result[key] = fieldValue
-    } else if (typeof fieldValue === 'object') {
-      result[key] = pickFields(fieldValue as Record<string, unknown>, value._fields)
-    }
+/** The per-parent page a nested relation entry asked for, under the standing caps. */
+function nestedPage(entry: Record<string, unknown>): { limit: number; offset?: number } {
+  const requested = typeof entry.take === 'number' ? entry.take : MCP_NESTED_TAKE_DEFAULT
+  return {
+    limit: Math.min(requested, MCP_NESTED_TAKE_MAX),
+    ...(typeof entry.skip === 'number' ? { offset: entry.skip } : {}),
   }
-  return result
-}
-
-/** What `resolveFieldsProjection` produces: a `context.db` `include` to fetch, the field selection to project the result down to, and which relations asked for a count. */
-export type ResolvedFieldsProjection = {
-  include: Record<string, unknown> | undefined
-  fieldSelection: McpFieldSelection
-  countRequests: Map<string, 'only' | 'alongside'>
 }
 
 /**
- * Build the `context.db` include entry for a to-many relation's own rows —
- * shared by a `fields`-selected relation and a count-only one (the latter
- * fetches identically, just never adds the key to `fieldSelection`, so the
- * rows reach field-visibility's access check but never the caller).
+ * The refinement one relation entry lowers to.
+ *
+ * A to-one is its own selection. A to-many is that selection under the entry's
+ * `where`, sort and per-parent page. `count: true` becomes one `combine` with
+ * the rows under `items` and the count under `count` — one include, one
+ * correlated subquery, and the `{ items, count }` shape the tool already
+ * returns. The count branch is composed off the unpaged refinement, so it
+ * counts the relation rather than the page.
+ *
+ * A count asked for without `fields` takes that same shape rather than a bare
+ * `count()`: the rows are what Field Visibility has to decide the relation's
+ * fate against, and `ResolvedFieldsProjection.toWire` drops them afterwards.
  */
-function buildManyIncludeEntry(
-  many: boolean,
+function relationRefinement(
   entry: Record<string, unknown>,
-): Record<string, unknown> | true {
-  if (!many) return true
-  const includeEntry: Record<string, unknown> = {}
-  if (entry.where !== undefined) includeEntry.where = entry.where
-  if (entry.orderBy !== undefined) includeEntry.orderBy = entry.orderBy
-  const requestedTake = entry.take !== undefined ? Number(entry.take) : MCP_NESTED_TAKE_DEFAULT
-  includeEntry.take = Math.min(requestedTake, MCP_NESTED_TAKE_MAX)
-  if (entry.skip !== undefined) includeEntry.skip = entry.skip
-  return includeEntry
-}
+  selection: readonly string[],
+  many: boolean,
+  path: string,
+): Refinement {
+  const scope = (rows: SecuredRefinement): SecuredRefinement =>
+    entry.where === undefined ? rows : rows.where(whereArgument(entry.where, `${path}.where`))
 
-/** Access-scoped `_count.select` entry for one to-many relation: the related list's `query` access ANDed with any caller `where` on that same relation — mirrors how `buildAccessScopedInclude` scopes the relation's own rows (`andWhere`), since Prisma's `_count` is a sibling key that walk does not itself touch. */
-async function accessScopedCountEntry(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-  fieldConfig: RelationshipField<any>,
-  config: OpenSaasConfig,
-  session: Session | null,
-  context: AccessContext,
-  callerWhere: Record<string, unknown> | undefined,
-): Promise<true | { where: Record<string, unknown> } | null> {
-  const related = getRelatedListConfig(fieldConfig.ref, config)
-  if (!related) return null
+  if (!many) return (rows) => scope(rows).select(...selection)
 
-  const queryAccess = related.listConfig.access?.operation?.query
-  const result = await checkAccess(queryAccess, { session, context })
-  if (result === false) return null
+  const page = nestedPage(entry)
+  const items = (rows: SecuredRefinement): SecuredRefinement => {
+    let composed = scope(rows).select(...selection)
+    if (entry.orderBy !== undefined) {
+      composed = composed.orderBy(orderByArgument(entry.orderBy, `${path}.orderBy`))
+    }
+    if (page.offset !== undefined) composed = composed.offset(page.offset)
+    return composed.limit(page.limit)
+  }
 
-  const accessWhere = typeof result === 'object' ? result : undefined
-  const merged =
-    accessWhere && callerWhere ? { AND: [accessWhere, callerWhere] } : (accessWhere ?? callerWhere)
-  return merged ? { where: merged } : true
+  if (entry.count !== true) return items
+  return (rows) => rows.combine({ items: items(rows), count: scope(rows).count() })
 }
 
 /**
  * Validate a caller-supplied `fields` argument against the same vocabulary
- * `generateFieldsProjectionSchema` advertises, and translate it into a
- * `context.db` `include` (so the normal read pipeline — access scoping,
- * `needs` folding, the depth cap — applies exactly as it does for any other
- * caller `include`; no parallel read path) plus a projection for
- * projecting the result down to what was asked for. Throws
- * `McpProjectionRefusedError` naming what was asked for and what's
- * available on any mismatch, never serves on a best-effort basis.
+ * {@link generateFieldsProjectionSchema} advertises, and translate it onto the
+ * secured surface: this list's scalars and virtuals become one `.select()`
+ * with `id` forced, and each relation becomes one `.include()` refinement
+ * (ADR-0053). Every key, predicate and sort inside a refinement is resolved by
+ * the engine when the read runs, exactly as it is for any other caller, so
+ * nothing is validated twice.
+ *
+ * Throws {@link McpProjectionRefusedError} naming what was asked for and
+ * what's available on any mismatch, rather than serving on a best-effort
+ * basis.
  */
 export async function resolveFieldsProjection(
   fieldsArg: unknown,
@@ -284,47 +367,47 @@ export async function resolveFieldsProjection(
     )
   }
 
-  const include: Record<string, unknown> = {}
-  // `id` is always projected back, whether or not the caller asked for it —
-  // see `systemFieldProperties`'s doc comment.
-  const fieldSelection: Record<string, unknown> = { id: true }
-  const countRequests = new Map<string, 'only' | 'alongside'>()
-  let hasIncludeEntries = false
+  const advertisable = await advertisableFields(listKey, listConfig, config, session, context, {
+    relationsSelectable: true,
+    containRuleErrors: false,
+  })
+  const advertisableByName = new Map(advertisable.map((field) => [field.name, field]))
 
-  for (const [fieldName, rawValue] of Object.entries(fieldsArg as Record<string, unknown>)) {
+  // `id` is always selected, whether or not the caller asked for it — see
+  // `systemFieldProperties`'s doc comment.
+  const selection = new Set<string>(['id'])
+  const relations: { name: string; refine: Refinement }[] = []
+  const countOnly: string[] = []
+
+  for (const [fieldName, rawValue] of Object.entries(fieldsArg)) {
     if (isSystemFieldName(fieldName)) {
       if (rawValue !== true) {
         throw new McpProjectionRefusedError(
           `"${listKey}.${fieldName}" is a scalar — select it with \`true\`, not ${JSON.stringify(rawValue)}.`,
         )
       }
-      fieldSelection[fieldName] = true
+      selection.add(fieldName)
       continue
     }
 
-    const fieldConfig = listConfig.fields[fieldName]
-    if (!fieldConfig) {
+    const advertised = advertisableByName.get(fieldName)
+    if (!advertised) {
       throw new McpProjectionRefusedError(
-        `"${listKey}" has no field "${fieldName}". Available fields: ${Object.keys(listConfig.fields).join(', ')}.`,
+        `"${listKey}" has no field "${fieldName}". Available fields: ${advertisable
+          .map((field) => field.name)
+          .join(', ')}.`,
       )
     }
 
-    if (!isRelationshipField(fieldConfig)) {
+    const related = advertised.relation
+    if (!related) {
       if (rawValue !== true) {
         throw new McpProjectionRefusedError(
           `"${listKey}.${fieldName}" is a scalar — select it with \`true\`, not ${JSON.stringify(rawValue)}.`,
         )
       }
-      fieldSelection[fieldName] = true
+      selection.add(fieldName)
       continue
-    }
-
-    const related = await relatedListIfVisible(fieldConfig, config, session, context)
-    if (!related) {
-      throw new McpProjectionRefusedError(
-        `"${listKey}.${fieldName}" is not available for selection — its related list is not ` +
-          `queryable by this session, or has MCP disabled.`,
-      )
     }
 
     if (rawValue === null || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
@@ -333,8 +416,8 @@ export async function resolveFieldsProjection(
       )
     }
 
-    const entry = rawValue as Record<string, unknown>
-    const many = isMany(fieldConfig)
+    const entry: Record<string, unknown> = rawValue
+    const many = isMany(related.fieldConfig)
     const allowedKeys = many
       ? new Set(['fields', 'where', 'orderBy', 'take', 'skip', 'count'])
       : new Set(['fields'])
@@ -346,10 +429,9 @@ export async function resolveFieldsProjection(
       }
     }
 
-    // Type-check each key before it reaches Prisma — a malformed value here
-    // would otherwise only surface as an opaque Prisma error out of the
-    // `context.db` call below, instead of a clear refusal naming the shape
-    // that was expected (mirrors `access-filter.ts`'s `asEntryObject`).
+    // Type-check each key before it reaches the engine — a malformed value
+    // here would otherwise surface as a refusal about the related list rather
+    // than about the selector shape that was expected.
     if (entry.where !== undefined && (entry.where === null || typeof entry.where !== 'object')) {
       throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.where" must be an object.`)
     }
@@ -370,47 +452,24 @@ export async function resolveFieldsProjection(
     if (entry.count !== undefined && typeof entry.count !== 'boolean') {
       throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.count" must be a boolean.`)
     }
-    if (entry.take !== undefined && (entry.take as number) < 0) {
+    if (entry.take !== undefined && entry.take < 0) {
       throw new McpProjectionRefusedError(
         `"${listKey}.${fieldName}.take" must not be negative (nested reverse pagination isn't supported).`,
       )
     }
-
-    // A nested `where`/`orderBy` names fields on the RELATED list — validate
-    // them the same way the root read path validates the root list's own
-    // `where`/`orderBy` (#912/#915), or a session could infer a field-level-
-    // denied related field's value from which rows come back, their order,
-    // or (via `count`, below) how many there are.
-    if (entry.where !== undefined || entry.orderBy !== undefined) {
-      validateQueryKeys({
-        where: entry.where,
-        orderBy: entry.orderBy,
-        listConfig: related.listConfig,
-        listName: related.listName,
-        config,
-        isSudo: false,
-      })
-      await validateQueryFieldReadAccess({
-        where: entry.where,
-        orderBy: entry.orderBy,
-        listConfig: related.listConfig,
-        listName: related.listName,
-        session,
-        context,
-        isSudo: false,
-      })
+    if (entry.skip !== undefined && entry.skip < 0) {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.skip" must not be negative.`)
     }
 
     const nestedFieldsArg = entry.fields
     const wantsCount = many && entry.count === true
-
     if (nestedFieldsArg === undefined && !wantsCount) {
       throw new McpProjectionRefusedError(
         `"${listKey}.${fieldName}" needs "fields"${many ? ' or "count"' : ''}.`,
       )
     }
 
-    const nestedSelection: Record<string, true> = {}
+    const nestedSelection = new Set<string>(['id'])
     if (nestedFieldsArg !== undefined) {
       if (
         nestedFieldsArg === null ||
@@ -419,112 +478,63 @@ export async function resolveFieldsProjection(
       ) {
         throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.fields" must be an object.`)
       }
-      for (const [relFieldName, relValue] of Object.entries(
-        nestedFieldsArg as Record<string, unknown>,
-      )) {
-        if (!isSystemFieldName(relFieldName)) {
-          const relFieldConfig = related.listConfig.fields[relFieldName]
-          if (!relFieldConfig || isRelationshipField(relFieldConfig)) {
-            throw new McpProjectionRefusedError(
-              `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
-                `are not selectable two levels deep; issue a second query for that.`,
-            )
-          }
+      const relAdvertisable = new Set(
+        (
+          await advertisableFields(related.listName, related.listConfig, config, session, context, {
+            relationsSelectable: false,
+            containRuleErrors: false,
+          })
+        ).map((field) => field.name),
+      )
+      for (const [relFieldName, relValue] of Object.entries(nestedFieldsArg)) {
+        if (!isSystemFieldName(relFieldName) && !relAdvertisable.has(relFieldName)) {
+          throw new McpProjectionRefusedError(
+            `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
+              `are not selectable two levels deep; issue a second query for that.`,
+          )
         }
         if (relValue !== true) {
           throw new McpProjectionRefusedError(
             `"${related.listName}.${relFieldName}" is a scalar — select it with \`true\`.`,
           )
         }
-        nestedSelection[relFieldName] = true
+        nestedSelection.add(relFieldName)
       }
-
-      include[fieldName] = buildManyIncludeEntry(many, entry)
-      hasIncludeEntries = true
-      fieldSelection[fieldName] = { _fields: withId(nestedSelection) as McpFieldSelection }
-    } else if (wantsCount) {
-      // Count-only (no `fields`): still name the relation in the include,
-      // with the SAME rows a `fields`-and-`count` request would fetch —
-      // never a synthetic zero-row placeholder. Field-visibility's read-
-      // access check for the relationship field runs against whatever the
-      // include actually fetched (`accessItem: workingItem`); a rule that
-      // inspects the relation's own value (e.g. `item.comments.length`)
-      // would see a permanently-empty array under `take: 0` regardless of
-      // the true content, which is wrong in the opposite direction from
-      // what this whole mechanism exists to prevent. The rows themselves
-      // never reach the caller — `fieldSelection` has no entry for this key
-      // — only the access decision `filterReadableFields` made against them
-      // does, read off in `projectMcpResult` below via whether the key
-      // survived into the filtered result.
-      include[fieldName] = buildManyIncludeEntry(many, entry)
-      hasIncludeEntries = true
     }
 
-    if (wantsCount) {
-      countRequests.set(fieldName, nestedFieldsArg !== undefined ? 'alongside' : 'only')
-    }
-  }
-
-  if (countRequests.size > 0) {
-    const countSelect: Record<string, unknown> = {}
-    for (const fieldName of countRequests.keys()) {
-      const fieldConfig = listConfig.fields[fieldName] as RelationshipField
-      const rawEntry = (fieldsArg as Record<string, unknown>)[fieldName] as Record<string, unknown>
-      const scoped = await accessScopedCountEntry(
-        fieldConfig,
-        config,
-        session,
-        context,
-        rawEntry.where as Record<string, unknown> | undefined,
-      )
-      if (scoped) countSelect[fieldName] = scoped
-    }
-    if (Object.keys(countSelect).length > 0) {
-      include._count = { select: countSelect }
-      hasIncludeEntries = true
-    }
+    relations.push({
+      name: fieldName,
+      refine: relationRefinement(entry, [...nestedSelection], many, `${listKey}.${fieldName}`),
+    })
+    if (nestedFieldsArg === undefined && wantsCount) countOnly.push(fieldName)
   }
 
   return {
-    include: hasIncludeEntries ? include : undefined,
-    fieldSelection: fieldSelection as McpFieldSelection,
-    countRequests,
+    apply(query) {
+      let composed = query.select(...selection)
+      for (const relation of relations) {
+        composed = composed.include(relation.name, relation.refine)
+      }
+      return composed
+    },
+    toWire(rows) {
+      if (countOnly.length === 0) return [...rows]
+      return rows.map((row) => {
+        const wire: OrmRow = { ...row }
+        for (const name of countOnly) {
+          const count = combinedCount(wire[name])
+          if (count !== undefined) wire[name] = count
+        }
+        return wire
+      })
+    },
   }
 }
 
-/**
- * Project one raw (already access-checked and field-visibility-filtered)
- * result row down to a resolved `fields` projection, folding in any
- * requested relation counts from Prisma's `_count`.
- *
- * `_count` is not a declared field, so field-visibility (`filterReadableFields`)
- * never applies the relationship field's own field-level `read` access to it
- * the way it already does for the relation's rows. Rather than re-deriving
- * that decision here — which would mean evaluating the field's access rule
- * a second time against `rawItem`, a row `filterReadableFields` may have
- * already stripped OTHER fields from, risking a different answer than the
- * canonical one it computed against the true raw row — `resolveFieldsProjection`
- * names every counted relation in the include (even a count-only one, with
- * `take: 0`) purely so the ordinary pipeline makes that decision once, at the
- * right place. A count is emitted only for a relation whose key survived
- * into `rawItem`; one field-visibility dropped is a relation whose count
- * must stay hidden too.
- */
-export function projectMcpResult(
-  rawItem: Record<string, unknown>,
-  resolved: ResolvedFieldsProjection,
-): Record<string, unknown> {
-  const picked = pickFields(rawItem, resolved.fieldSelection)
-  const rawCounts = rawItem._count
-  const counts =
-    rawCounts && typeof rawCounts === 'object' ? (rawCounts as Record<string, unknown>) : {}
-
-  for (const [key, mode] of resolved.countRequests) {
-    if (!(key in rawItem)) continue
-
-    const count = typeof counts[key] === 'number' ? (counts[key] as number) : 0
-    picked[key] = mode === 'only' ? count : { items: picked[key], count }
-  }
-
-  return picked
+/** The `count` of a `{ items, count }` value, where Field Visibility left one. */
+function combinedCount(value: unknown): number | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  if (!('count' in value)) return undefined
+  const count: unknown = value.count
+  return typeof count === 'number' ? count : undefined
 }

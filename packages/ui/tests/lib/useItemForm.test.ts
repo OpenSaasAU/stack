@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import {
+  diffEdgeSelections,
   transformItemFormData,
   transformInitialData,
   getEditableFields,
+  PARTIAL_SAVE_PREFIX,
   UnwritableRelationshipError,
   useItemForm,
 } from '../../src/lib/useItemForm.js'
@@ -226,5 +228,102 @@ describe('useItemForm handleFieldChange', () => {
     })
 
     expect(result.current.formData).toEqual({ author: 'u1' })
+  })
+})
+
+describe('diffEdgeSelections', () => {
+  const fields = {
+    posts: {
+      type: 'relationship',
+      many: true,
+      edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+    } satisfies SerializableFieldConfig,
+  }
+
+  it('keeps a still-selected row a custom control hands back as a number', () => {
+    // `prepareItemForm` serialises the baseline to strings, but a control
+    // registered for the field may carry an `int autoincrement` id as the
+    // number it is.
+    const changes = diffEdgeSelections(fields, { posts: ['1'] }, { posts: [1, 2] })
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0].removed).toEqual([])
+    expect(changes[0].added).toEqual(['2'])
+  })
+})
+
+describe('a record update that fails after its edges landed', () => {
+  const edgeWriting = (): SerializableFieldConfig => ({
+    type: 'relationship',
+    many: true,
+    edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+  })
+
+  const fields = { title: text(), posts: edgeWriting() }
+
+  it('says the save was partial rather than reporting a plain failure', async () => {
+    const onEdgeWrites = async () => ({ persisted: { posts: ['p1'] }, errors: [] })
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites,
+        onSubmit: async () => ({ success: false, error: 'Access denied' }) as const,
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('posts', ['p1'])
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Access denied`)
+  })
+
+  it('reports a plain failure when there were no edges to commit', async () => {
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites: async () => ({ persisted: {}, errors: [] }),
+        onSubmit: async () => ({ success: false, error: 'Access denied' }) as const,
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe('Access denied')
+  })
+
+  it('says the same when the update throws', async () => {
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites: async () => ({ persisted: { posts: ['p1'] }, errors: [] }),
+        onSubmit: async () => {
+          throw new Error('Network down')
+        },
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('posts', ['p1'])
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Network down`)
   })
 })

@@ -107,9 +107,8 @@ export class RelationFilterAccessDeniedError extends Error {
  * `buildAccessScopedInclude`'s scoping walk passed an unrecognised key
  * straight through unscoped — the one surface among `data`/`where`/`orderBy`/
  * `include` that failed open rather than closed (issue #1082). `sudo` never
- * reaches this: it skips `buildAccessScopedInclude` entirely (see
- * `resolveReadInclude` in `context/index.ts`), matching every other
- * access-control escape hatch.
+ * reaches this: it skips `buildAccessScopedInclude` entirely, matching every
+ * other access-control escape hatch.
  */
 export class UndeclaredIncludeKeyError extends Error {
   public listKey: string
@@ -135,8 +134,8 @@ export class UndeclaredIncludeKeyError extends Error {
  * #1087). A key naming a synthetic back-relation (#1082) is NOT rejected — it
  * is a genuine countable to-many, resolved the same way the ordinary
  * `include` walk resolves it. `sudo` never reaches this: it skips
- * `buildAccessScopedInclude` entirely (see `resolveReadInclude` in
- * `context/index.ts`), matching every other access-control escape hatch.
+ * `buildAccessScopedInclude` entirely, matching every other access-control
+ * escape hatch.
  */
 export class UndeclaredCountKeyError extends Error {
   public listKey: string

@@ -243,6 +243,40 @@ export async function classifyRowIndependentRead(
   }
 }
 
+/**
+ * The write-side counterpart of {@link classifyRowIndependentRead}: what a
+ * field's `create`/`update` rule answers when it is asked with neither a row
+ * nor a payload.
+ *
+ * Both `item` and `inputData` are poisoned, because either one makes the rule
+ * unanswerable ahead of a request — a rule reading the payload is as
+ * row-dependent, for this purpose, as one reading the row.
+ *
+ * A rule that returns a non-boolean raises `InvalidFieldAccessResultError`
+ * (ADR-0030), which propagates rather than being folded into `'deny'`.
+ */
+export async function classifyRowIndependentWrite(
+  fieldAccess: FieldAccess | undefined,
+  operation: 'create' | 'update',
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  try {
+    const writable = await checkFieldAccess(fieldAccess, operation, {
+      session: args.session,
+      context: args.context,
+      item: createPoisonedItem(),
+      inputData: createPoisonedItem(),
+    })
+    return writable ? 'allow' : 'deny'
+  } catch (err) {
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
+    throw err
+  }
+}
+
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<
@@ -279,12 +313,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // same edge `connect` lowers to (ADR-0050) — gated below by the OWNING
   // relationship field's write access, exactly like `connect` is (#1326).
   //
-  // KNOWN LIMIT (#1331): ADR-0050 pairs this write with a reachability query
-  // (read/query access on the TARGET row) so the foreign key cannot become a
-  // probing oracle. That half does not exist yet anywhere in the engine —
-  // `connect` itself still throws `RelationInputNotLoweredError` pending
-  // #1153, which owns building it — so this column write is field-access-gated
-  // only, same as `connect` is today (unguarded, because unimplemented).
+  // That is one of the two access components ADR-0050 pairs. The other —
+  // reachability, `query` access on the TARGET row — is applied to both
+  // spellings by `lowerRelationInput`, which runs after this filter (#1331).
   const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING

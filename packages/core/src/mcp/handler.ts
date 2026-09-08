@@ -7,11 +7,15 @@ import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '
 import { ValidationError } from '../hooks/index.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { generateFieldSchemas } from './field-schema.js'
+import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
+import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
+import type { SecuredQuery } from '../secured/read.js'
+import { orderByArgument, whereArgument } from './arguments.js'
 import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
-  projectMcpResult,
   resolveFieldsProjection,
+  type ResolvedFieldsProjection,
 } from './projection.js'
 
 /**
@@ -205,6 +209,30 @@ function handleInitialize(_params?: any, id?: number | string): Response {
   )
 }
 
+/**
+ * The `where` argument's own description. The predicate is the Where
+ * vocabulary — the same grammar every other producer compiles to (ADR-0055) —
+ * so the schema says which operators that is rather than naming an ORM.
+ */
+function whereDescription(listKey: string): string {
+  return (
+    `Which ${listKey} rows to return, in the Where vocabulary: a field name against a value or ` +
+    `an operator object (${SCALAR_OPERATORS.join(', ')}), a relation against ` +
+    `${RELATION_QUANTIFIERS.join('/')}, and AND, OR, NOT`
+  )
+}
+
+/**
+ * The `where.id` schema for the `update`/`delete` tools, at the type this
+ * list's primary key actually carries (ADR-0048) — an `int autoincrement` list
+ * validates an integer rather than being told every id is a string.
+ */
+function idSchema(config: OpenSaasConfig, listKey: string): Record<string, unknown> {
+  const strategy = listIdColumn(config, listKey)?.strategy
+  const integer = strategy === 'int autoincrement' || strategy === 'singleton'
+  return { type: integer ? 'integer' : 'string' }
+}
+
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
@@ -242,6 +270,7 @@ async function handleToolsList(
 
     if (enabledTools.read) {
       const fieldsSchema = await generateFieldsProjectionSchema(
+        listKey,
         listConfig,
         config,
         context.session,
@@ -253,10 +282,13 @@ async function handleToolsList(
         inputSchema: {
           type: 'object',
           properties: {
-            where: { type: 'object', description: 'Prisma where clause' },
+            where: { type: 'object', description: whereDescription(listKey) },
             take: { type: 'number', description: 'Number of records to return (max 100)' },
             skip: { type: 'number', description: 'Number of records to skip' },
-            orderBy: { type: 'object', description: 'Sort order' },
+            orderBy: {
+              type: 'object',
+              description: `Sort order: ${listKey} column names against "asc" or "desc"`,
+            },
             fields: fieldsSchema,
           },
         },
@@ -264,27 +296,43 @@ async function handleToolsList(
     }
 
     if (enabledTools.create) {
-      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'create')
-      tools.push({
-        name: `list_${toolKey}_create`,
-        description: `Create a new ${listKey} record`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            data: {
-              type: 'object',
-              description: 'Record data with the following fields',
-              properties: fieldSchemas.properties,
-              required: fieldSchemas.required,
+      const fieldSchemas = await generateFieldSchemas(
+        listKey,
+        listConfig.fields,
+        config,
+        'create',
+        context.session,
+        context,
+      )
+      if (fieldSchemas.deniedRequiredField === null) {
+        tools.push({
+          name: `list_${toolKey}_create`,
+          description: `Create a new ${listKey} record`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'object',
+                description: 'Record data with the following fields',
+                properties: fieldSchemas.properties,
+                required: fieldSchemas.required,
+              },
             },
+            required: ['data'],
           },
-          required: ['data'],
-        },
-      })
+        })
+      }
     }
 
     if (enabledTools.update) {
-      const fieldSchemas = generateFieldSchemas(listKey, listConfig.fields, config, 'update')
+      const fieldSchemas = await generateFieldSchemas(
+        listKey,
+        listConfig.fields,
+        config,
+        'update',
+        context.session,
+        context,
+      )
       tools.push({
         name: `list_${toolKey}_update`,
         description: `Update an existing ${listKey} record`,
@@ -295,7 +343,7 @@ async function handleToolsList(
               type: 'object',
               description: 'Record identifier',
               properties: {
-                id: { type: 'string' },
+                id: idSchema(config, listKey),
               },
               required: ['id'],
             },
@@ -321,7 +369,7 @@ async function handleToolsList(
               type: 'object',
               description: 'Record identifier',
               properties: {
-                id: { type: 'string' },
+                id: idSchema(config, listKey),
               },
               required: ['id'],
             },
@@ -398,6 +446,65 @@ async function handleToolsCall(
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
+function isWhereObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * A `where.id` at the type its list's primary key actually carries, the way
+ * `update`/`delete` already take one (ADR-0048). The Where vocabulary carries
+ * a caller's JSON through unchanged, so a list keyed on an `int` column would
+ * otherwise reach the driver with `"3"` against it. Only such a list needs
+ * this: a string-keyed list's wire value is already the column's type, and
+ * coercing there would refuse the partial values `contains` is for.
+ *
+ * `null` means the caller named an id this column cannot hold, so the read
+ * matches nothing — the answer a missing row gets everywhere else.
+ */
+function parseWhereIds(
+  where: Record<string, unknown>,
+  config: OpenSaasConfig,
+  listKey: string,
+): Record<string, unknown> | null {
+  const strategy = listIdColumn(config, listKey)?.strategy
+  if (strategy !== 'int autoincrement' && strategy !== 'singleton') return where
+  if (!Object.hasOwn(where, 'id')) return where
+
+  const parse = (raw: unknown): ListIdValue | null => {
+    const parsed = parseListId(config, listKey, raw)
+    return parsed.ok ? parsed.value : null
+  }
+
+  const raw = where.id
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    const value = parse(raw)
+    return value === null ? null : { ...where, id: value }
+  }
+
+  const operators: Record<string, unknown> = {}
+  for (const [operator, value] of Object.entries(raw)) {
+    if (operator === 'in' || operator === 'notIn') {
+      if (!Array.isArray(value)) return null
+      const ids: ListIdValue[] = []
+      for (const entry of value) {
+        const id = parse(entry)
+        if (id === null) return null
+        ids.push(id)
+      }
+      operators[operator] = ids
+      continue
+    }
+    if (operator === 'contains') {
+      operators[operator] = value
+      continue
+    }
+    const id = parse(value)
+    if (id === null) return null
+    operators[operator] = id
+  }
+  return { ...where, id: operators }
+}
+
 async function handleCrudTool(
   toolKey: string,
   operation: string,
@@ -424,9 +531,30 @@ async function handleCrudTool(
 
     switch (operation) {
       case 'query': {
-        let projection: Awaited<ReturnType<typeof resolveFieldsProjection>> | undefined
-        if (args.fields !== undefined) {
-          try {
+        if (typeof args.take === 'number' && args.take < 0) {
+          return createErrorResultResponse(
+            `"${listKey}.take" must not be negative (reverse pagination isn't supported).`,
+            id,
+          )
+        }
+        if (typeof args.skip === 'number' && args.skip < 0) {
+          return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
+        }
+
+        let query: SecuredQuery = context.db[listKey]
+        let projection: ResolvedFieldsProjection | undefined
+        try {
+          if (isWhereObject(args.where)) {
+            const parsedWhere = parseWhereIds(args.where, config, listKey)
+            if (parsedWhere === null) return createSuccessResponse({ items: [], count: 0 }, id)
+            query = query.where(whereArgument(parsedWhere, listKey))
+          } else if (args.where !== undefined) {
+            query = query.where(whereArgument(args.where, listKey))
+          }
+          if (args.orderBy !== undefined) {
+            query = query.orderBy(orderByArgument(args.orderBy, listKey))
+          }
+          if (args.fields !== undefined) {
             projection = await resolveFieldsProjection(
               args.fields,
               listKey,
@@ -435,33 +563,20 @@ async function handleCrudTool(
               context.session,
               context,
             )
-          } catch (error) {
-            if (error instanceof McpProjectionRefusedError || error instanceof ValidationError) {
-              return createErrorResultResponse(error.message, id)
-            }
-            throw error
+            query = projection.apply(query)
           }
+        } catch (error) {
+          if (error instanceof McpProjectionRefusedError || error instanceof ValidationError) {
+            return createErrorResultResponse(error.message, id)
+          }
+          throw error
         }
 
-        result = await context.db[listKey].findMany({
-          where: args.where,
-          take: Math.min(args.take || 10, 100),
-          skip: args.skip,
-          orderBy: args.orderBy,
-          ...(projection?.include ? { include: projection.include } : {}),
-        })
+        if (args.skip !== undefined) query = query.offset(args.skip)
+        const rows = await query.limit(Math.min(args.take || 10, 100)).all()
+        const items = projection ? projection.toWire(rows) : rows
 
-        const items = projection
-          ? result.map((item: Record<string, unknown>) => projectMcpResult(item, projection))
-          : result
-
-        return createSuccessResponse(
-          {
-            items,
-            count: items.length,
-          },
-          id,
-        )
+        return createSuccessResponse({ items, count: items.length }, id)
       }
 
       case 'create':
@@ -476,9 +591,19 @@ async function handleCrudTool(
         }
         return createSuccessResponse({ success: true, item: result }, id)
 
-      case 'update':
+      case 'update': {
+        // A malformed id answers exactly as a missing row does: shape is all
+        // the boundary can check, and "no such id" and "not yours" are the
+        // same answer everywhere else (ADR-0048, Silent failure).
+        const parsed = parseListId(config, listKey, args.where?.id)
+        if (!parsed.ok) {
+          return createErrorResultResponse(
+            'Failed to update record. Access denied or record not found.',
+            id,
+          )
+        }
         result = await context.db[listKey].update({
-          where: args.where,
+          where: { id: parsed.value },
           data: args.data,
         })
         if (!result) {
@@ -488,18 +613,25 @@ async function handleCrudTool(
           )
         }
         return createSuccessResponse({ success: true, item: result }, id)
+      }
 
-      case 'delete':
-        result = await context.db[listKey].delete({
-          where: args.where,
-        })
+      case 'delete': {
+        const parsed = parseListId(config, listKey, args.where?.id)
+        if (!parsed.ok) {
+          return createErrorResultResponse(
+            'Failed to delete record. Access denied or record not found.',
+            id,
+          )
+        }
+        result = await context.db[listKey].delete({ where: { id: parsed.value } })
         if (!result) {
           return createErrorResultResponse(
             'Failed to delete record. Access denied or record not found.',
             id,
           )
         }
-        return createSuccessResponse({ success: true, deletedId: args.where.id }, id)
+        return createSuccessResponse({ success: true, deletedId: parsed.value }, id)
+      }
 
       default:
         return createErrorResponse(`Unknown operation: ${operation}`, id)

@@ -22,7 +22,7 @@ import {
   oneToOneConfig,
   hostileNamesConfig,
   ragConfig,
-} from '../../core/tests/fixtures/contract-configs.js'
+} from '../../core/src/contract/fixtures/contract-configs.js'
 import { fieldPackageConfig } from './fixtures/field-package-configs.js'
 import { renderContractModule } from '../src/generator/contract-module.js'
 
@@ -60,7 +60,15 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
 
 describe('renderContractModule — the rendered module and the in-process derivation agree', () => {
   for (const { name, config, packs } of fixtures) {
-    test(`${name}: identical contract JSON`, async () => {
+    // Each case transpiles and evaluates the rendered module through jiti, and
+    // the first to run pays jiti's cold start on top. That is a toolchain cost
+    // this file does not control, and it runs alongside the `tsc`-spawning
+    // compile tests in this package under a coverage-instrumented CI runner,
+    // where it has been observed to stall past vitest's 5 s default (#1291).
+    // Locally it costs ~80 ms uninstrumented and ~260 ms under coverage, so
+    // this budget is orders of magnitude of headroom for scheduling while
+    // still failing well short of the 300 s the tsc tests take.
+    test(`${name}: identical contract JSON`, { timeout: 30_000 }, async () => {
       const data = deriveContract(config)
       const source = renderContractModule(data)
 

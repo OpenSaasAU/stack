@@ -54,6 +54,7 @@ export interface StackContext<
   DB extends StackDb<DB> = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
+  TxDB extends StackDb<TxDB> = DB,
 > extends StackBaseContext<DB, S, P> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   /**
@@ -61,12 +62,12 @@ export interface StackContext<
    * context. Hooks still run. This is not an authorisation — the caller owns
    * the decision to elevate.
    */
-  sudo: () => StackContext<DB, S, P>
+  sudo: () => StackContext<DB, S, P, TxDB>
   /**
    * Substitute the session without changing what access control decides.
    * Preserves the receiver's sudo state.
    */
-  withSession: (session: S | null) => StackContext<DB, S, P>
+  withSession: (session: S | null) => StackContext<DB, S, P, TxDB>
   /**
    * Run `fn` inside ONE interactive transaction. The context handed to `fn`
    * is access-checked and hook-firing exactly as this one is, but persists
@@ -82,20 +83,41 @@ export interface StackContext<
    * The transaction takes the callback and nothing else, and runs at the
    * connection's default isolation level — Read Committed on PostgreSQL. An
    * invariant that a stricter level would have closed is expressed as a lock
-   * on the contended row inside the callback (ADR-0042).
+   * on the contended row inside the callback — `.forUpdate()`, which is on
+   * the transaction-bound `db` and nowhere else (ADR-0042, ADR-0047).
    */
-  transaction: <T>(fn: (txContext: StackTransactionContext<DB, S, P>) => Promise<T>) => Promise<T>
+  transaction: <T>(
+    fn: (txContext: StackTransactionContext<TxDB, S, P, TxDB>) => Promise<T>,
+  ) => Promise<T>
 }
 
 /**
- * The context inside `context.transaction()`. Identical to
- * {@link StackContext} except that `transaction()` on it joins the enclosing
- * transaction rather than opening a second one (ADR-0028), which is a runtime
- * fact rather than a type difference — the separate name is what lets a
- * signature say which side of the boundary it expects.
+ * The context inside `context.transaction()`: everything {@link StackContext}
+ * carries, over the transaction-bound `db` whose reads can take a row lock,
+ * plus {@link StackTransactionContext.advisoryLock}. `transaction()` on it
+ * joins the enclosing transaction rather than opening a second one (ADR-0028).
+ *
+ * The two shapes are genuinely different types rather than one name twice, so
+ * a signature can say which side of the boundary it expects and `forUpdate()`
+ * outside a transaction is a compile error (ADR-0047).
  */
-export type StackTransactionContext<
+export interface StackTransactionContext<
   DB extends StackDb<DB> = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
-> = StackContext<DB, S, P>
+  TxDB extends StackDb<TxDB> = DB,
+> extends StackContext<DB, S, P, TxDB> {
+  /**
+   * Take PostgreSQL's transaction-scoped advisory lock on `key`, waiting until
+   * it is free. Released when the transaction ends, whichever way it ends.
+   *
+   * It locks a number rather than rows, so it belongs to no list and there is
+   * nothing for the engine to scope — which is why it sits here and not on
+   * `db`. The key is hashed with `hashtext()`, matching what Prisma does
+   * internally; `hashtext` is 32-bit, so two distinct keys can collide. A
+   * collision costs spurious serialisation, never a missed lock (ADR-0047).
+   */
+  advisoryLock: (key: string) => Promise<void>
+  sudo: () => StackTransactionContext<DB, S, P, TxDB>
+  withSession: (session: S | null) => StackTransactionContext<DB, S, P, TxDB>
+}

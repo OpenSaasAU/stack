@@ -119,6 +119,10 @@ describe('the generated types file', () => {
       expect(types).toContain(
         `export interface ${name}List extends Stack$SecuredList<Stack$Contract, Remainder, '${name}'>`,
       )
+      // The transaction-bound face, whose reads carry `forUpdate()` (ADR-0047).
+      expect(types).toContain(
+        `export interface ${name}TxList extends Stack$SecuredList<Stack$Contract, Remainder, '${name}', true>`,
+      )
     }
     expect(types).toContain('export interface Context<TSession extends Stack$Session')
     expect(types).toContain('export interface BaseContext<TSession extends Stack$Session')
@@ -127,6 +131,16 @@ describe('the generated types file', () => {
 
   it('keys the db surface by each list’s PascalCase list name', () => {
     expect(types).toContain('export interface DB {\n  User: UserList\n  Post: PostList')
+    expect(types).toContain('export interface TxDB {\n  User: UserTxList\n  Post: PostTxList')
+  })
+
+  it('binds the transaction context to the locking surface', () => {
+    expect(types).toContain(
+      'extends Stack$StackContext<DB, TSession, Stack$PluginServices, TxDB> {}',
+    )
+    expect(types).toContain(
+      'extends Stack$StackTransactionContext<TxDB, TSession, Stack$PluginServices, TxDB> {}',
+    )
   })
 
   it('writes no per-list args, payload, select, include or where type', () => {

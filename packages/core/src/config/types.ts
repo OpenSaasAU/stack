@@ -450,7 +450,7 @@ export type FieldHooks<
    *
    * // Async example (e.g., for virtual fields that query the database)
    * resolveOutput: async ({ item, context }) => {
-   *   const related = await context.db.OtherList.findUnique({ where: { id: item.relatedId } })
+   *   const related = await context.db.OtherList.where({ id: item.relatedId }).first()
    *   return related?.name
    * }
    * ```
@@ -1582,7 +1582,7 @@ export type OperationAccess<T = any> = {
    * but at runtime `create` accepts a `boolean` result only. There is no
    * existing row to scope with a filter, and — unlike `update`/`delete`,
    * which re-check a returned filter against the target row via
-   * `findFirst` — no equivalent re-check exists for a row that doesn't exist
+   * a read of the target — no equivalent re-check exists for a row that doesn't exist
    * in the database yet. A rule that returns a filter (or any other
    * non-boolean) throws `InvalidCreateAccessResultError` rather than being
    * treated as an allow (see #1009, ADR-0022, ADR-0030). To scope create by
@@ -2149,9 +2149,10 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * Restricts this list to a single record (singleton pattern)
    * When true:
    * - Prevents creating multiple records
-   * - Auto-creates the single record on first access (if autoCreate: true, which is the default)
+   * - Auto-creates the single record on first access (if autoCreate: true, which is the default,
+   *   and the list's `query` access rule answers a strict `true`, or the context is `sudo`)
    * - Provides a get() method for easy access to the singleton
-   * - Blocks delete and findMany operations
+   * - Blocks delete and the many-row read surface
    * - Changes UI to show edit form instead of list view
    *
    * @example Simple boolean (auto-create enabled)
@@ -2170,7 +2171,13 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
     | boolean
     | {
         /**
-         * Auto-create the singleton record on first access using field defaults
+         * Auto-create the singleton record on first access using field defaults.
+         *
+         * Fires only for a `query` access rule that answers a strict `true`, or
+         * under `sudo`. A rule that answers a filter, answers `false`, or is
+         * absent makes `get()` answer `null` and write nothing — a filter-scoped
+         * singleton needs `query: () => true` with the scoping moved onto the
+         * fields if the row is to be auto-created.
          * @default true
          */
         autoCreate?: boolean

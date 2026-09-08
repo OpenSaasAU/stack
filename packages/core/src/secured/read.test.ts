@@ -385,6 +385,7 @@ describe('a composed read is an immutable value', () => {
         'distinct',
         'distinctOn',
         'first',
+        'forUpdate',
         'include',
         'limit',
         'nearest',

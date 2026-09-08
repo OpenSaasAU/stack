@@ -83,11 +83,13 @@ export interface SecuredRefinement {
    */
   count(): SecuredReduction
   /**
-   * Several independently scoped reductions over the same relation, one per
-   * key. Each branch carries its own predicates and the related list's
-   * `query` access, so one branch's scope never decides another's.
+   * Several independently scoped views of the same relation, one per key: a
+   * count, or — for at most one key — the rows themselves. Each branch carries
+   * its own predicates and the related list's `query` access, so one branch's
+   * scope never decides another's, and the rows branch is not chained after
+   * any other branch's bound.
    */
-  combine(spec: Record<string, SecuredReduction>): SecuredReduction
+  combine(spec: Record<string, RefinementResult>): SecuredReduction
 }
 
 /**
@@ -216,11 +218,31 @@ export class InvalidCombineBranchError extends Error {
     readonly key: string,
   ) {
     super(
-      `The combine branch "${key}" on include("${relation}") is not a count. Every branch must ` +
-        `be a reduction the refinement produced — \`(rows) => rows.combine({ ${key}: ` +
-        `rows.where(…).count() })\`.`,
+      `The combine branch "${key}" on include("${relation}") is not a branch the refinement ` +
+        `produced. Every branch must be the rows or a count it composed — \`(rows) => ` +
+        `rows.combine({ ${key}: rows.where(…).count() })\`.`,
     )
     this.name = 'InvalidCombineBranchError'
+  }
+}
+
+/**
+ * Thrown when a `combine` names the relation's rows under more than one key.
+ * Field Visibility decides a relation's fate once, against one value — see
+ * `maskReductions` in `read.ts` — so a second rows branch would return rows no
+ * access decision was made about.
+ */
+export class MultipleCombineRowBranchesError extends Error {
+  constructor(
+    readonly relation: string,
+    readonly keys: readonly string[],
+  ) {
+    super(
+      `The combine on include("${relation}") names the relation's rows under ` +
+        `${keys.map((key) => `"${key}"`).join(' and ')}. At most one branch may be the rows ` +
+        `themselves; every other branch is a count.`,
+    )
+    this.name = 'MultipleCombineRowBranchesError'
   }
 }
 
@@ -243,9 +265,10 @@ export type ReduceRequest =
   | { readonly kind: 'count' }
   | { readonly kind: 'combine'; readonly branches: readonly CombineBranchRequest[] }
 
-/** One `combine` branch: a result key and the refinement it was reduced from. */
+/** One `combine` branch: a result key, whether it reads as rows or as a count, and what it composed. */
 export interface CombineBranchRequest {
   readonly key: string
+  readonly kind: 'rows' | 'count'
   readonly request: IncludeRequest
 }
 
@@ -254,11 +277,21 @@ export type ReducePlan =
   | { readonly kind: 'count' }
   | { readonly kind: 'combine'; readonly branches: readonly CombineBranchPlan[] }
 
-/** One resolved `combine` branch. */
-export interface CombineBranchPlan {
-  readonly key: string
-  readonly predicates: readonly WherePlan[]
-}
+/**
+ * One resolved `combine` branch. A count carries its predicates alone; the
+ * rows branch also carries its own sort and page, and takes its projection and
+ * its own includes from the plan the branch belongs to.
+ */
+export type CombineBranchPlan =
+  | { readonly key: string; readonly kind: 'count'; readonly predicates: readonly WherePlan[] }
+  | {
+      readonly key: string
+      readonly kind: 'rows'
+      readonly predicates: readonly WherePlan[]
+      readonly orders: readonly OrderPlan[]
+      readonly limit?: number
+      readonly offset?: number
+    }
 
 /** A resolved include: every key checked, the Access Filter already folded in. */
 export interface IncludePlan {
@@ -325,14 +358,22 @@ function isReduction(value: RefinementResult): value is SecuredReduction {
   return typeof value === 'object' && value !== null && 'reduction' in value
 }
 
-function branchesOf(name: string, spec: Record<string, SecuredReduction>): CombineBranchRequest[] {
-  return Object.entries(spec).map(([key, value]) => {
-    const composed = reductions.get(value)
-    if (composed === undefined || composed.reduce?.kind !== 'count') {
-      throw new InvalidCombineBranchError(name, key)
+function branchesOf(name: string, spec: Record<string, RefinementResult>): CombineBranchRequest[] {
+  const branches = Object.entries(spec).map(([key, value]): CombineBranchRequest => {
+    if (isReduction(value)) {
+      const composed = reductions.get(value)
+      if (composed === undefined || composed.reduce?.kind !== 'count') {
+        throw new InvalidCombineBranchError(name, key)
+      }
+      return { key, kind: 'count', request: composed }
     }
-    return { key, request: composed }
+    const composed = requests.get(value)
+    if (composed === undefined) throw new InvalidCombineBranchError(name, key)
+    return { key, kind: 'rows', request: composed }
   })
+  const rows = branches.filter((branch) => branch.kind === 'rows').map((branch) => branch.key)
+  if (rows.length > 1) throw new MultipleCombineRowBranchesError(name, rows)
+  return branches
 }
 
 function refinement(request: IncludeRequest): SecuredRefinement {
@@ -503,16 +544,17 @@ async function resolveInclude(
   // nothing on it declares (ADR-0051) — the widening stops here rather than
   // recursing, and the branch is read at its full stored width because that
   // is what the declaring hook was promised.
+  const shape = rowsBranchOf(request) ?? request
   const projection = declared
     ? UNPROJECTED
     : await resolveProjection(
-        request.fields,
-        request.includes.map((nested) => nested.name),
+        shape.fields,
+        shape.includes.map((nested) => nested.name),
         related,
       )
   const includes = declared
     ? []
-    : await resolveIncludes(request.includes, related, depth + 1, projection.caller)
+    : await resolveIncludes(shape.includes, related, depth + 1, projection.caller)
 
   if (await isOmittedBeforeQuery(request.name, target, ctx)) return null
 
@@ -538,6 +580,17 @@ async function resolveInclude(
       ? { reduce: await resolveReduce(request, target, ctx, related, access) }
       : {}),
   }
+}
+
+/**
+ * The request whose `select` and nested includes decide what one relation's
+ * value looks like. For a `combine` that is its rows branch: the rest of the
+ * engine — the projection, the widening, Field Visibility, the foreign-key
+ * pass — then sees the combined relation exactly as it sees an ordinary one.
+ */
+function rowsBranchOf(request: IncludeRequest): IncludeRequest | undefined {
+  if (request.reduce?.kind !== 'combine') return undefined
+  return request.reduce.branches.find((branch) => branch.kind === 'rows')?.request
 }
 
 /** Refuse what a count cannot honour, naming the member the caller wrote. */
@@ -582,13 +635,24 @@ async function resolveReduce(
 
   const branches: CombineBranchPlan[] = []
   for (const branch of reduce.branches) {
-    checkReducible(branch.request, ctx.listName)
+    if (branch.kind === 'count') checkReducible(branch.request, ctx.listName)
     const predicates: WherePlan[] = []
     for (const predicate of branch.request.predicates) {
       predicates.push(await resolveWhere(predicate, related))
     }
     if (access.kind !== 'true') predicates.push(access)
-    branches.push({ key: branch.key, predicates })
+    if (branch.kind === 'count') {
+      branches.push({ key: branch.key, kind: 'count', predicates })
+      continue
+    }
+    branches.push({
+      key: branch.key,
+      kind: 'rows',
+      predicates,
+      orders: await resolveOrderBy(branch.request.orders, related),
+      limit: branch.request.limit,
+      offset: branch.request.offset,
+    })
   }
   return { kind: 'combine', branches }
 }

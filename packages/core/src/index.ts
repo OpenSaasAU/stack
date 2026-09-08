@@ -156,10 +156,23 @@ export { RelationSelectError } from './secured/read.js'
 // The vector-search terminal: how many rows it returns by default, and the
 // `{ item, score }` wrapper that is ADR-0041's one exception to exactness.
 export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
+// The row lock's own refusals and its key bound: a list whose table has no
+// single-column primary key, a lock composed outside a transaction, a lock
+// inside one whose client cannot compose the statement, and the cost limit on
+// how many keys one terminal binds (ADR-0047, ADR-0062).
+export {
+  ROW_LOCK_MAX_KEYS,
+  RowLockIdentityError,
+  RowLockKeyLimitExceededError,
+  RowLockLaneUnavailableError,
+  RowLockUnavailableError,
+} from './secured/read.js'
 // The secured write surface: the collection the Write Pipeline drives, and the
 // payload shape it refuses (ADR-0050).
 export { WriteCollectionMissingError } from './secured/write.js'
 export {
+  ConflictingRelationInputError,
+  MalformedForeignKeyInputError,
   MalformedRelationInputError,
   NestedRelationInputError,
   NonOwningRelationInputError,
@@ -292,6 +305,12 @@ export type {
 // `@opensaas/stack-core/contract` so the root stays free of `@prisma/orm-postgres`.
 export { deriveContract, resolveListTimestamps } from './contract/derive.js'
 export {
+  listIdColumn,
+  parseListId,
+  type ListIdParse,
+  type ListIdValue,
+} from './contract/id-boundary.js'
+export {
   assertRelationGraphAgrees,
   RelationGraphDivergenceError,
   type EmittedContract,
@@ -358,12 +377,8 @@ export type {
   FilterAccessArgs,
 } from './filter/index.js'
 
-// Access-scoped to-many relationship counts for the admin list view (#732):
-// the filtered `_count` select for count cells, with each related list's
-// `query` access folded in, so counts never include rows the session cannot
-// read. The count-filter resolver is gone with the vocabulary (ADR-0055): a
-// count comparison shrinks to presence, which the engine lowers itself.
-export {
-  buildRelationshipCountSelect,
-  isToManyRelationshipField,
-} from './access/relationship-count.js'
+// Which fields carry a to-many relationship count. The counts themselves are
+// the secured read's reducers (`.count()` / `.combine()`), which scope by the
+// related list's own `query` access; no consumer builds a `_count` select of
+// its own (#1255).
+export { isToManyRelationshipField } from './access/relationship-count.js'

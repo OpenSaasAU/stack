@@ -19,6 +19,7 @@ import { CellRenderer } from './cells/CellRenderer.js'
 import { RelationshipTableCell } from './RelationshipTableCell.js'
 import { RelationshipCreateDrawer } from './RelationshipCreateDrawer.js'
 import { RelationshipLinkControl } from './RelationshipLinkControl.js'
+import type { LinkEdgeData } from './RelationshipTable.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
 
@@ -75,16 +76,11 @@ export interface RelationshipTableClientProps {
   /** The to-many field on the parent list this section renders (#1329). */
   fieldName?: string
   /**
-   * The add-an-edge control's data (#1329), present only when this section is
-   * an edge across an explicit junction list and the session may create on it.
-   * Absent hides the control entirely.
+   * The add-an-edge control's data, present only when the session may write
+   * this section's edges on the list that holds them. Absent hides the control
+   * entirely.
    */
-  linkEdge?: {
-    junctionListKey: string
-    targetField: string
-    targetListKey: string
-    options: Array<{ id: string; label: string }>
-  }
+  linkEdge?: LinkEdgeData
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /**
@@ -278,8 +274,19 @@ export function RelationshipTableClient({
               parentListKey={parentListKey}
               fieldName={fieldName}
               parentId={parentId}
-              junctionListKey={linkEdge.junctionListKey}
-              targetField={linkEdge.targetField}
+              edge={
+                linkEdge.mode === 'junction'
+                  ? {
+                      mode: 'junction',
+                      junctionListKey: linkEdge.junctionListKey,
+                      targetField: linkEdge.targetField,
+                    }
+                  : {
+                      mode: 'foreignKey',
+                      relatedListKey: linkEdge.relatedListKey,
+                      backReferenceField: linkEdge.backReferenceField,
+                    }
+              }
               targetListTitle={formatListName(linkEdge.targetListKey)}
               options={linkEdge.options}
               serverAction={serverAction}

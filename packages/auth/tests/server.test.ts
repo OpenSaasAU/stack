@@ -802,8 +802,7 @@ describe('getSessionFromAuth', () => {
   })
 
   // The warn-once cache is module-level state, so these tests re-import the
-  // module fresh via vi.resetModules() — same pattern as the `select` no-op
-  // warning tests in packages/core/tests/context.test.ts.
+  // module fresh via vi.resetModules().
   describe('unresolved field warning', () => {
     let warnSpy: ReturnType<typeof vi.spyOn>
     let freshGetSessionFromAuth: typeof getSessionFromAuth

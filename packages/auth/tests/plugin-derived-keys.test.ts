@@ -270,7 +270,7 @@ describe('authPlugin - runtime user-key resolution', () => {
       {
         get(_target, key: string) {
           accessedKeys.push(key)
-          return { findUnique: async () => null }
+          return { where: () => ({ first: async () => null }) }
         },
       },
     )
@@ -280,9 +280,8 @@ describe('authPlugin - runtime user-key resolution', () => {
         get(_target, key: string) {
           sudoAccessedKeys.push(key)
           return {
-            findUnique: async ({ where }: { where: { id: string } }) => ({
-              id: where.id,
-              __model: key,
+            where: ({ id }: { id: string }) => ({
+              first: async () => ({ id, __model: key }),
             }),
           }
         },

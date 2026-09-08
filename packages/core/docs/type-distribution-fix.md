@@ -125,8 +125,8 @@ await password.compare('test') // ✅ Has compare method
 - `packages/core/src/access/types.ts`:
   - Modified `TransformObject` type (lines 125-160) to inline password transformation logic
   - Removed `TransformField` helper type (was lines 175-189)
-- `packages/core/tests/password-type-distribution.test.ts`:
-  - New test file with 3 tests verifying the fix
+- `packages/core/src/fields/password-field.test.ts`:
+  - What a `password()` field puts on a row that comes back through the secured surface
 
 ## Lessons Learned
 

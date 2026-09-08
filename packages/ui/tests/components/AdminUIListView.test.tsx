@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+// @vitest-environment node
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text, timestamp } from '@opensaas/stack-core/fields'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { ListView } from '../../src/components/ListView.js'
+import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
 // Mock Next.js navigation — client components call useRouter().
 const mockPush = vi.fn()
@@ -19,14 +22,13 @@ vi.mock('next/link.js', () => ({
   ),
 }))
 
-interface DelegateStub {
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args: unknown) => Promise<number>
-}
-
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
+/**
+ * The routing assertions below inspect the element AdminUI selected without
+ * ever rendering it, so no list is read through this context.
+ */
+function makeContext(): AccessContext {
   const context = {
-    db: delegates,
+    db: {},
     session: null,
     storage: {},
     plugins: {},
@@ -66,103 +68,82 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
   return boundary
 }
 
+describe('ListView sort resolution over the Test context', () => {
+  const sortConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql', timestamps: true },
+    lists: {
+      Post: list({
+        fields: { title: text({ validation: { isRequired: true } }), sentAt: timestamp() },
+        ui: { listView: { initialSort: { field: 'sentAt', direction: 'desc' } } },
+        access: { operation: { query: () => true } },
+      }),
+    },
+  }
+
+  let database: TestDatabase
+
+  function listViewClientProps(tree: React.ReactElement): ListViewClientProps {
+    const outer = tree as React.ReactElement<{ children: React.ReactNode }>
+    const client = React.Children.toArray(outer.props.children).find(
+      (child): child is React.ReactElement<ListViewClientProps> =>
+        React.isValidElement(child) && child.type === ListViewClient,
+    )
+    if (!client) throw new Error('ListViewClient not found in ListView output')
+    return client.props
+  }
+
+  async function titles(
+    props: Omit<Parameters<typeof ListView>[0], 'context' | 'config' | 'basePath'>,
+  ): Promise<string[]> {
+    const tree = await ListView({
+      context: database.context(null) as unknown as AccessContext,
+      config: sortConfig,
+      basePath: '/admin',
+      ...props,
+    })
+    return listViewClientProps(tree).items.map((item) => String(item.title))
+  }
+
+  beforeAll(async () => {
+    database = await createTestDatabase(sortConfig)
+    const db = database.context(null).sudo().db.Post
+    await db.create({ data: { title: 'alpha', sentAt: new Date('2024-01-01T00:00:00Z') } })
+    await db.create({ data: { title: 'bravo', sentAt: new Date('2024-03-01T00:00:00Z') } })
+    await db.create({ data: { title: 'charlie', sentAt: new Date('2024-02-01T00:00:00Z') } })
+  }, 120_000)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  it('orders by initialSort when no URL sort is given', async () => {
+    expect(
+      await titles({ listKey: 'Post', initialSort: { field: 'sentAt', direction: 'desc' } }),
+    ).toEqual(['bravo', 'charlie', 'alpha'])
+  }, 120_000)
+
+  it('lets the URL sort param take precedence over initialSort', async () => {
+    expect(
+      await titles({
+        listKey: 'Post',
+        initialSort: { field: 'sentAt', direction: 'desc' },
+        sort: { field: 'title', direction: 'asc' },
+      }),
+    ).toEqual(['alpha', 'bravo', 'charlie'])
+  }, 120_000)
+
+  it('discards a URL sort naming a field the list does not have, falling back to initialSort', async () => {
+    expect(
+      await titles({
+        listKey: 'Post',
+        initialSort: { field: 'sentAt', direction: 'desc' },
+        sort: { field: 'nonExistentField', direction: 'asc' },
+      }),
+    ).toEqual(['bravo', 'charlie', 'alpha'])
+  }, 120_000)
+})
+
 describe('AdminUI ui.listView wiring', () => {
-  it('passes orderBy to findMany based on initialSort', async () => {
-    const findMany = vi.fn(async () => [])
-    const count = vi.fn(async () => 0)
-
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Post: list({
-          fields: { title: text(), sentAt: timestamp() },
-          ui: {
-            listView: {
-              initialSort: { field: 'sentAt', direction: 'desc' },
-            },
-          },
-        }),
-      },
-    }
-
-    const context = makeContext({ Post: { findMany, count } })
-
-    await ListView({
-      context,
-      config,
-      listKey: 'Post',
-      basePath: '/admin',
-      initialSort: { field: 'sentAt', direction: 'desc' },
-    })
-
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { sentAt: 'desc' } }))
-  })
-
-  it('URL sort param takes precedence over initialSort in orderBy', async () => {
-    const findMany = vi.fn(async () => [])
-    const count = vi.fn(async () => 0)
-
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Post: list({
-          fields: { title: text(), sentAt: timestamp() },
-          ui: {
-            listView: {
-              initialSort: { field: 'sentAt', direction: 'desc' },
-            },
-          },
-        }),
-      },
-    }
-
-    const context = makeContext({ Post: { findMany, count } })
-
-    await ListView({
-      context,
-      config,
-      listKey: 'Post',
-      basePath: '/admin',
-      initialSort: { field: 'sentAt', direction: 'desc' },
-      sort: { field: 'title', direction: 'asc' },
-    })
-
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { title: 'asc' } }))
-  })
-
-  it('discards URL sort param when field does not exist on the list, falling back to initialSort', async () => {
-    const findMany = vi.fn(async () => [])
-    const count = vi.fn(async () => 0)
-
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Post: list({
-          fields: { title: text(), sentAt: timestamp() },
-          ui: {
-            listView: {
-              initialSort: { field: 'sentAt', direction: 'desc' },
-            },
-          },
-        }),
-      },
-    }
-
-    const context = makeContext({ Post: { findMany, count } })
-
-    await ListView({
-      context,
-      config,
-      listKey: 'Post',
-      basePath: '/admin',
-      initialSort: { field: 'sentAt', direction: 'desc' },
-      sort: { field: 'nonExistentField', direction: 'asc' },
-    })
-
-    // Unknown field is rejected; falls back to initialSort.
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { sentAt: 'desc' } }))
-  })
-
   it('passes initialColumns + initialSort from ui.listView to ListView', async () => {
     const config: OpenSaasConfig = {
       db: { provider: 'sqlite', url: 'file:./test.db' },
@@ -183,9 +164,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({
-      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
+    const context = makeContext()
 
     const tree = await AdminUI({
       context,
@@ -215,9 +194,7 @@ describe('AdminUI ui.listView wiring', () => {
       },
     }
 
-    const context = makeContext({
-      Post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
-    })
+    const context = makeContext()
 
     const tree = await AdminUI({
       context,

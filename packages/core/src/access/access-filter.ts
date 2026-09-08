@@ -320,8 +320,8 @@ function normalizeCountSelect(
  * - Otherwise → the caller-supplied nested `where` at that key (if any) is
  *   key- and read-access-validated against the RELATED list via the same
  *   `validateQueryKeys`/`validateQueryFieldReadAccess` primitives
- *   `createFindMany` already runs on a top-level `where` (#912/#915), then
- *   run through `buildAccessScopedWhere` — the same fold `createFindMany`
+ *   the top-level read already runs on a `where` (#912/#915), then
+ *   run through `buildAccessScopedWhere` — the same fold the top-level read
  *   applies to a top-level `where` (#916) — so a relation filter nested
  *   inside IT (e.g. `_count.select.posts.where.comments.some`) is scoped by
  *   THAT further list's own `query` access too, not just the counted
@@ -429,7 +429,7 @@ async function buildAccessScopedCountSelect(
       // that nested relation would reach Prisma unscoped by ITS list's
       // `query` access, letting the resulting count reveal whether
       // inaccessible rows over there exist. `buildAccessScopedWhere` is the
-      // same fold `createFindMany` runs on an ordinary top-level `where`
+      // same fold the top-level read runs on an ordinary `where`
       // (#916) — reused here rather than re-derived.
       scopedRequestedWhere = (await buildAccessScopedWhere(
         requestedWhere,

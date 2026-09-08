@@ -512,7 +512,7 @@ import { getContext } from '@/.opensaas/context'
 const session = await getSession()
 const context = await getContext(session)
 const currentUser = session
-  ? await context.db.User.findUnique({ where: { id: session.userId } })
+  ? await context.db.User.where({ id: session.userId }).first()
   : null
 \`\`\``
 
@@ -689,11 +689,10 @@ import Link from 'next/link'
 export default async function BlogPage() {
   const context = await getContext()
 
-  const posts = await context.db.Post.findMany({
-    ${hasStatus ? "where: { status: { equals: 'published' } }," : ''}
-    orderBy: { ${hasStatus ? 'publishedAt' : 'createdAt'}: 'desc' },
-    include: { author: true },
-  })
+  const posts = await context.db.Post${hasStatus ? ".where({ status: { equals: 'published' } })" : ''}
+    .orderBy({ ${hasStatus ? 'publishedAt' : 'createdAt'}: 'desc' })
+    .include('author')
+    .all()
 
   return (
     <div className="container mx-auto py-8">
@@ -731,13 +730,12 @@ export default async function BlogPostPage({
   const { slug } = await params
   const context = await getContext()
 
-  const post = await context.db.Post.findFirst({
-    where: {
-      slug: { equals: slug },
-      ${hasStatus ? "status: { equals: 'published' }," : ''}
-    },
-    include: { author: true },
+  const post = await context.db.Post.where({
+    slug: { equals: slug },
+    ${hasStatus ? "status: { equals: 'published' }," : ''}
   })
+    .include('author')
+    .first()
 
   if (!post) {
     notFound()

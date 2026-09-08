@@ -250,8 +250,6 @@ async function run() {
   // What a singleton does carry.
   const settings = await context.db.Settings.get()
   assertType<Exact<NonNullable<typeof settings>['siteName'], string>>()
-  await context.db.Settings.findMany()
-  await context.db.Settings.count()
 
   // @ts-expect-error a singleton has no composed read to start
   context.db.Settings.where
@@ -410,6 +408,52 @@ async function run() {
   context.db.Post.where({ published: true }).groupBy
   // @ts-expect-error a refinement has no terminal of its own
   context.db.User.include('posts', (posts) => posts.all())
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  /**
+   * The Prisma 7 read names are a **compile** error, not a runtime one (#1255).
+   * They outlived the client that could serve them: every one of these
+   * type-checked and then threw `TypeError: … is not a function`, `sudo`
+   * included, so a generated project could reach a surface that cannot work.
+   *
+   * Asserted on a singleton as well as an ordinary list, because a singleton
+   * carried them through the same `ListOps` and got them however narrow its own
+   * surface was meant to be.
+   */
+  it('leaves the Prisma 7 read names absent from the surface', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // @ts-expect-error findMany left the surface; the composed read's terminal is all()
+  context.db.Post.findMany
+  // @ts-expect-error findFirst left the surface; the composed read's terminal is first()
+  context.db.Post.findFirst
+  // @ts-expect-error findUnique left the surface; where({ id }).first() replaces it
+  context.db.Post.findUnique
+  // @ts-expect-error count left the surface; aggregate((a) => ({ n: a.count() })) replaces it
+  context.db.Post.count
+
+  // sudo() widens access, never the method surface.
+  // @ts-expect-error findMany is absent under sudo too
+  context.sudo().db.Post.findMany
+  // @ts-expect-error and so is count
+  context.sudo().db.Post.count
+
+  // @ts-expect-error a singleton carries none of them either — get() is its read
+  context.db.Settings.findMany
+  // @ts-expect-error nor findUnique
+  context.db.Settings.findUnique
+  // @ts-expect-error nor count
+  context.db.Settings.count
 }
 
 void run

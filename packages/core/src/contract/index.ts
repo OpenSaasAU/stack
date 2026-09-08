@@ -5,6 +5,7 @@
 // subpath adds `buildPrismaContract`, which imports `@prisma/orm-postgres`.
 
 export { deriveContract } from './derive.js'
+export { listIdColumn, parseListId, type ListIdParse, type ListIdValue } from './id-boundary.js'
 export {
   deriveConstraintMap,
   deriveDependencyTable,
