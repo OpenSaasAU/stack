@@ -1,0 +1,117 @@
+import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
+
+/**
+ * The two ends of one edge across an explicit junction list, resolved from the
+ * parent list's to-many field.
+ *
+ * An edge is a row of {@link junctionListKey}: {@link backReferenceField} holds
+ * the foreign key to the parent, {@link targetField} the foreign key to the far
+ * endpoint. Adding one is therefore a create of that row under the junction
+ * list's own create access, never a nested write on the parent (ADR-0050,
+ * ADR-0018 as amended).
+ */
+export interface JunctionEdge {
+  /** The list an edge row belongs to. */
+  junctionListKey: string
+  /** The junction field whose foreign key names the parent record. */
+  backReferenceField: string
+  /** The junction field whose foreign key names the far endpoint. */
+  targetField: string
+  /** The list the far endpoint belongs to. */
+  targetListKey: string
+}
+
+/** Whether a field must be given a value for a create of its list to succeed. */
+function isRequiredOnCreate(field: FieldConfig): boolean {
+  if ('defaultValue' in field && field.defaultValue !== undefined) return false
+  if ('virtual' in field && field.virtual === true) return false
+  const validation: unknown = 'validation' in field ? field.validation : undefined
+  if (typeof validation !== 'object' || validation === null) return false
+  return 'isRequired' in validation && validation.isRequired === true
+}
+
+/**
+ * Resolve `parentListKey.fieldName` as an edge across an explicit junction
+ * list, or `null` when it is not one.
+ *
+ * It is one when the field is `many: true` with a bidirectional `ref`, the
+ * named back-reference on the related list owns the foreign key to the parent,
+ * and exactly one other relationship field of that list owns a foreign key —
+ * the far endpoint. `null` covers everything else, including the ordinary
+ * to-many back-reference (`User.posts`), where adding an edge is an update of
+ * an existing row of the other list rather than a create.
+ *
+ * Known limits — each yields `null`, so a caller falls back to the ordinary
+ * to-many treatment rather than getting a wrong answer:
+ * - a list-only `ref` (`ref: 'PostTag'`), which names no back-reference to
+ *   preset the parent link through;
+ * - a junction carrying a third foreign key, or none — the far endpoint is
+ *   then not uniquely determined;
+ * - a junction with a required scalar of its own (an edge that carries data),
+ *   which cannot be created from two ids alone.
+ */
+export function resolveJunctionEdge(
+  config: OpenSaasConfig,
+  parentListKey: string,
+  fieldName: string,
+): JunctionEdge | null {
+  const parentList = config.lists[parentListKey]
+  const field = parentList?.fields[fieldName]
+  if (!isRelationshipField(field) || field.many !== true) return null
+
+  const [junctionListKey, backReferenceField] = field.ref.split('.')
+  if (!backReferenceField) return null
+
+  const junctionList = config.lists[junctionListKey]
+  if (!junctionList) return null
+
+  const backReference = junctionList.fields[backReferenceField]
+  if (!isRelationshipField(backReference)) return null
+  if (!ownsForeignKey(config, junctionListKey, backReferenceField, backReference)) return null
+
+  let target: { field: string; list: string } | null = null
+  for (const [key, candidate] of Object.entries(junctionList.fields)) {
+    if (key === backReferenceField) continue
+    if (isRelationshipField(candidate)) {
+      if (!ownsForeignKey(config, junctionListKey, key, candidate)) continue
+      // A third foreign key leaves the far endpoint ambiguous, and picking one
+      // would silently drop the other from the created row.
+      if (target !== null) return null
+      target = { field: key, list: candidate.ref.split('.')[0] }
+      continue
+    }
+    if (isRequiredOnCreate(candidate)) return null
+  }
+
+  if (target === null || !config.lists[target.list]) return null
+
+  return {
+    junctionListKey,
+    backReferenceField,
+    targetField: target.field,
+    targetListKey: target.list,
+  }
+}
+
+/**
+ * `shouldHaveForeignKey` throws on a config `generate` would have refused — a
+ * ref naming a list or field that is not declared, or a one-to-one claiming
+ * `db.foreignKey` on both ends. This resolver runs while rendering an item view
+ * and while handling a server action, so an unvalidated config must not fail
+ * either: an ownership question with no answer is treated as "not this end",
+ * which at worst leaves the field with its ordinary to-many treatment.
+ */
+function ownsForeignKey(
+  config: OpenSaasConfig,
+  listKey: string,
+  fieldName: string,
+  field: RelationshipField,
+): boolean {
+  if (!config.lists[field.ref.split('.')[0]]) return false
+  try {
+    return shouldHaveForeignKey(listKey, fieldName, field, config)
+  } catch {
+    return false
+  }
+}

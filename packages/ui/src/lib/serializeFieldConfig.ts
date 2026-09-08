@@ -1,6 +1,7 @@
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { SelectOption } from '@opensaas/stack-core/fields'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
+import { resolveJunctionEdge } from '@opensaas/stack-core'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 
@@ -61,6 +62,20 @@ export type SerializableFieldConfig = {
  */
 export const UNWRITABLE_RELATIONSHIP_REASON =
   'Not editable here — the related record holds this link. Edit it from the other list.'
+
+/**
+ * Shown in place of {@link UNWRITABLE_RELATIONSHIP_REASON} for a to-many that
+ * is an edge across an explicit junction list (#1329).
+ *
+ * The field is still unwritable *here*: an edge is a row of the junction list
+ * with its own access rules, so it can never ride in this record's write
+ * payload (ADR-0050). What changed is that the capability now exists — the
+ * section's own table adds and removes edges under that list's access — so the
+ * message points at the control that has it rather than at another list's edit
+ * page.
+ */
+export const JUNCTION_EDGE_RELATIONSHIP_REASON =
+  'Not editable here — add or remove these links from this relationship’s table.'
 
 /**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
@@ -137,6 +152,11 @@ export function serializeFieldConfigs(
  * are `many: false` and only one holds the column — is not visible in the
  * field config and needs the whole config to answer (ADR-0064).
  *
+ * It also restates the reason for a to-many that is an edge across an explicit
+ * junction list, whose links the section's own table can now add and remove
+ * (#1329). The mark itself is unchanged: the field is unwritable through this
+ * form either way.
+ *
  * Mutates `serializableFields` in place.
  */
 export function markUnwritableRelationships(
@@ -148,7 +168,16 @@ export function markUnwritableRelationships(
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (!isRelationshipField(fieldConfig)) continue
     const serialized = serializableFields[fieldName]
-    if (!serialized || serialized.readOnly) continue
+    if (!serialized) continue
+    // The mark stands — a to-many can never ride in this record's payload — but
+    // an edge across a junction now has a control of its own, so the reason
+    // names it rather than sending the user to another list.
+    if (serialized.readOnly) {
+      if (resolveJunctionEdge(config, listKey, fieldName)) {
+        serialized.readOnlyReason = JUNCTION_EDGE_RELATIONSHIP_REASON
+      }
+      continue
+    }
     // `shouldHaveForeignKey` throws on a ref naming a list the config does not
     // declare. `validateRelations` refuses that at `generate`, so reaching it
     // here means an unvalidated config — leave the field alone rather than

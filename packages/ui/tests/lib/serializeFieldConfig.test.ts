@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import {
+  JUNCTION_EDGE_RELATIONSHIP_REASON,
   markUnwritableRelationships,
   serializeFieldConfig,
   serializeFieldConfigs,
@@ -87,5 +88,73 @@ describe('markUnwritableRelationships', () => {
       markUnwritableRelationships(serialized, 'User', fields, makeConfig()),
     ).not.toThrow()
     expect(serialized.ghost.readOnly).toBeUndefined()
+  })
+})
+
+/**
+ * `Post.tags` is an edge across the explicit junction `PostTag`; `Author.books`
+ * is an ordinary to-many whose far end is a child row. Both are `many: true`,
+ * so nothing but the whole config separates them.
+ */
+function junctionConfig(): OpenSaasConfig {
+  return {
+    db: { provider: 'sqlite', url: 'file:./test.db' },
+    lists: {
+      Post: {
+        fields: {
+          title: { type: 'text' },
+          tags: { type: 'relationship', ref: 'PostTag.post', many: true },
+        },
+      },
+      Tag: {
+        fields: {
+          name: { type: 'text' },
+          posts: { type: 'relationship', ref: 'PostTag.tag', many: true },
+        },
+      },
+      PostTag: {
+        fields: {
+          post: { type: 'relationship', ref: 'Post.tags' },
+          tag: { type: 'relationship', ref: 'Tag.posts' },
+        },
+      },
+      Author: {
+        fields: {
+          name: { type: 'text' },
+          books: { type: 'relationship', ref: 'Book.author', many: true },
+        },
+      },
+      Book: {
+        fields: {
+          title: { type: 'text' },
+          author: { type: 'relationship', ref: 'Author.books' },
+        },
+      },
+    },
+  } as unknown as OpenSaasConfig
+}
+
+/**
+ * An edge across a junction gained a control (#1329) but did NOT gain a place
+ * in this record's write payload, so the mark stays and only the reason moves.
+ * Dropping the mark here is the silent data loss the marking exists to stop.
+ */
+describe('the reason a to-many is read-only names the control that can write it', () => {
+  it('points an edge across a junction at its own table, still read-only', () => {
+    const config = junctionConfig()
+    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
+
+    expect(fields.tags.readOnly).toBe(true)
+    expect(fields.tags.readOnlyReason).toBe(JUNCTION_EDGE_RELATIONSHIP_REASON)
+  })
+
+  it('leaves an ordinary to-many pointing at the other list', () => {
+    const config = junctionConfig()
+    const fields = serializeFieldConfigs(config.lists.Author.fields)
+    markUnwritableRelationships(fields, 'Author', config.lists.Author.fields, config)
+
+    expect(fields.books.readOnly).toBe(true)
+    expect(fields.books.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
   })
 })
