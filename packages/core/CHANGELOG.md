@@ -1,5 +1,13 @@
 # @opensaas/stack-core
 
+## 0.42.3
+
+### Patch Changes
+
+- [#1337](https://github.com/OpenSaasAU/stack/pull/1337) [`1a616c1`](https://github.com/OpenSaasAU/stack/commit/1a616c1e2ff31de1afe970a5fcfcc25ea7cbedb0) Thanks [@borisno2](https://github.com/borisno2)! - Core's `AugmentedFindUnique`/`AugmentedFindFirst`/`AugmentedFindMany` now carry the same trailing non-generic overload the generator's `CustomDB` already emits ([#1287](https://github.com/OpenSaasAU/stack/issues/1287)), and `getContext` takes a third, unconstrained, defaulted `TDb` type parameter so a caller can ask for `StackContext<TPrisma, CustomDB>` directly. The generated `.opensaas/context.ts` factory uses this to drop its `as unknown as Context<TSession>` casts down to a single, honest `as Context<TSession>`.
+
+  Observable side effect: since `Parameters<>`/`ReturnType<>` resolve against an overloaded type's LAST member, `Parameters<AccessControlledDB<P>[K]['findMany' | 'findFirst' | 'findUnique']>[0]` now resolves to the new trailing member's argument type (Prisma's args shape minus `select`/`include`/`query`) instead of the full original Prisma args — anyone introspecting these types directly via `Parameters<>` will see this narrower shape.
+
 ## 0.42.2
 
 ## 0.42.1
