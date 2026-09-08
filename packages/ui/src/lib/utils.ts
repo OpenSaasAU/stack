@@ -32,8 +32,8 @@ export function isNumericField(fieldType: string | undefined): boolean {
 
 /**
  * Whether a to-many relationship column renders a count (issue #732). Such a
- * column shows the access-visible related count as a number, so it aligns and
- * sorts like a numeric column rather than rendering related labels.
+ * column shows the access-visible related count as a number, so it aligns like
+ * a numeric column rather than rendering related labels.
  */
 export function isToManyRelationshipColumn(field: SerializableFieldConfig | undefined): boolean {
   return field?.type === 'relationship' && field.many === true
@@ -48,16 +48,15 @@ export function isCountAlignedColumn(field: SerializableFieldConfig | undefined)
 }
 
 /**
- * Whether a column exposes a sort affordance (issue #732).
+ * Whether a column exposes a sort affordance.
  *
- * - Virtual fields have no database column to order by → not sortable.
- * - A to-one relationship has no scalar to order by → not sortable.
- * - A to-many relationship sorts by its related count → sortable.
- * - Every other (scalar) column sorts by its own value → sortable.
+ * `orderBy` takes the list's own scalar columns, so a relationship of either
+ * cardinality is excluded, a to-many count included (ADR-0055). This mirrors
+ * `ListView`'s server-side `isSortableField`: a header the server would refuse
+ * to order by must not be presented as clickable.
  */
 export function isSortableColumn(field: SerializableFieldConfig | undefined): boolean {
   if (!field) return true
   if (field.virtual === true) return false
-  if (field.type === 'relationship') return field.many === true
-  return true
+  return field.type !== 'relationship'
 }
