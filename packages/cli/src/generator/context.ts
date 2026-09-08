@@ -3,19 +3,19 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
 
-// The emitted `getContext`/`rawOpensaasContext` still `as unknown as Context<TSession>`
-// core's returned `StackContext`. #1233 fixed the fragment-`query` overload
-// mismatch between `AccessControlledDB` and the generated `CustomDB`. #1232
-// fixed a HOOK's `context.db` (typed via `TypeInfo['db']`) to describe the
-// same virtual-augmented rows `CustomDB` does — but this cast is a different
-// seam: `getOpensaasContext()` (core's runtime `getContext`) always returns
-// `StackContext<PrismaClient>` with its `db` defaulted to plain
-// `AccessControlledDB<PrismaClient>`, which is still not assignable to
-// `CustomDB` for any list with a virtual field, since `AccessControlledDB`'s
-// per-list payload doesn't require virtual keys `CustomDB`'s does. Singleton
-// `get()` has no `AccessControlledDB` counterpart either (core's delegate map
-// only knows Prisma's own model shape, which has no concept of a singleton
-// list). Neither gap is in scope for a types-only fix here.
+// The emitted `getContext`/`rawOpensaasContext` call core's `getOpensaasContext`
+// with its `TDb` type parameter (#1328) pinned to the generated `CustomDB`, so
+// the returned value is already `StackContext<PrismaClient, CustomDB>` — no
+// `as unknown as` needed to erase `db`'s type. A single, honest `as
+// Context<TSession>` remains: `Context<TSession>.session` is the caller's own
+// `TSession`, while `StackContext`'s `session` is always the wider `Session |
+// null` (core has no session-generic parameter to narrow it with), so the two
+// are never mutually assignable regardless of `db`. `as` (not `as unknown as`)
+// is enough because `Context<TSession>` is itself assignable to
+// `StackContext<PrismaClient, CustomDB>` (every field it declares — including
+// `TSession` narrowing `Session | null`, and `CustomDB` matching `CustomDB`
+// exactly — is a valid `StackContext` value), which is what TypeScript's `as`
+// requires when the reverse direction doesn't hold.
 export function generateContext(config: OpenSaasConfig, configImport?: string): string {
   // Defaults to the legacy `../opensaas.config` (bundle one level below the
   // project root); the output-path resolver supplies a recomputed value when
@@ -130,7 +130,7 @@ const storage = {
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client/client.ts'
-import type { Context } from './types.ts'
+import type { Context, CustomDB } from './types.ts'
 import configOrPromise from '${configImportPath}'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -184,7 +184,7 @@ ${storageUtilities}
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, session ?? null, storage) as Context<TSession>
 }
 
 /**
@@ -196,7 +196,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, null, storage) as Context
 })()
 
 /**

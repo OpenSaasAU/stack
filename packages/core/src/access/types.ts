@@ -100,6 +100,14 @@ export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
     args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  // Trailing, non-generic member mirroring the generated `{List}Crud['findMany']`'s
+  // own third member (#1287) — see that member's doc comment in
+  // `packages/cli/src/generator/types.ts` (`generateListCrudInterface`) for why it
+  // exists (closing assignability to a plain structural seam, and giving
+  // `Parameters<>` something concrete to resolve to) and why it must stay last
+  // and omit `select`/`include`/`query`. Without this, `AccessControlledDB` and
+  // the generated `CustomDB` carry different overload arities (#1328).
+  (args?: Omit<Parameters<TOriginal>[0], 'select' | 'include' | 'query'>): ReturnType<TOriginal>
 }
 
 /**
@@ -140,6 +148,9 @@ export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
     args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
   ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  // Trailing, non-generic member — see the identical comment on
+  // `AugmentedFindMany` above (#1287, #1328).
+  (args?: Omit<Parameters<TOriginal>[0], 'select' | 'include' | 'query'>): ReturnType<TOriginal>
 }
 
 /**
@@ -166,6 +177,11 @@ export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> 
     query: Fragment<TItem, TFields>
   }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
   (...args: Parameters<TOriginal>): ReturnType<TOriginal>
+  // Trailing, non-generic member — see the identical comment on
+  // `AugmentedFindMany` above (#1287, #1328). `findUnique`'s `where` is
+  // required (not optional), so this member keeps it required via `Pick`
+  // rather than `Omit` + optional `args`.
+  (args: Pick<Parameters<TOriginal>[0], 'where'>): ReturnType<TOriginal>
 }
 
 export type AccessControlledDB<TPrisma extends PrismaClientLike> = {

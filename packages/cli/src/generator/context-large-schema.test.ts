@@ -157,16 +157,16 @@ export interface TransactionOptions {
   timeout?: number
   isolationLevel?: string
 }
-export interface StackContext<P> {
-  db: unknown
+export interface StackContext<P, TDb = unknown> {
+  db: TDb
   session: Session | null
   prisma: P
   storage: unknown
   plugins: Record<string, unknown>
   serverAction: (props: unknown) => Promise<unknown>
-  transaction: <T>(fn: (tx: StackContext<P>) => Promise<T>, options?: TransactionOptions) => Promise<T>
-  sudo: () => StackContext<P>
-  withSession: (session: Session | null) => StackContext<P>
+  transaction: <T>(fn: (tx: StackContext<P, TDb>) => Promise<T>, options?: TransactionOptions) => Promise<T>
+  sudo: () => StackContext<P, TDb>
+  withSession: (session: Session | null) => StackContext<P, TDb>
   _isSudo: boolean
 }
 export type OpenSaasConfig = {
@@ -177,8 +177,9 @@ export type OpenSaasConfig = {
   }
   [key: string]: unknown
 }
-export function getContext(...args: unknown[]): unknown {
-  return undefined
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getContext<TConfig, TPrisma, TDb = unknown>(...args: unknown[]): StackContext<TPrisma, TDb> {
+  return undefined as any
 }
 `
 
