@@ -135,6 +135,7 @@ export async function generateFieldSchemas(
       !!(fieldConfig.validation as any)?.isRequired
 
     const classification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
+      `${listKey}.${fieldName}`,
       () => classifyRowIndependentWrite(fieldConfig.access, operation, { session, context }),
       'deny',
     )

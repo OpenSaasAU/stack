@@ -119,13 +119,6 @@ function schemaConfig(): OpenSaasConfig {
             access: { create: ({ inputData }) => inputData?.title !== 'forbidden' },
           }),
           ownerId: text(),
-          brittle: text({
-            access: {
-              read: unguardedSessionRule,
-              create: unguardedSessionRule,
-              update: unguardedSessionRule,
-            },
-          }),
           notes: relationship({ ref: 'Memoed.memo', many: true }),
         },
         access: {
@@ -153,8 +146,40 @@ function schemaConfig(): OpenSaasConfig {
         fields: {
           label: text(),
           hidden: text({ access: { read: () => false } }),
-          brittle: text({ access: { read: unguardedSessionRule } }),
           memo: relationship({ ref: 'Memo.notes' }),
+        },
+        access: { operation: { query: () => true } },
+      },
+      // The throwing rule lives on its own lists: `resolveFieldsProjection`
+      // evaluates every field of the list it is asked about, so a throwing
+      // rule anywhere on `Memo` would turn every refusal there into the rule's
+      // own error and make the byte-identity fixtures compare two copies of it.
+      Brittle: {
+        fields: {
+          title: text(),
+          brittle: text({
+            access: {
+              read: unguardedSessionRule,
+              create: unguardedSessionRule,
+              update: unguardedSessionRule,
+            },
+          }),
+          notes: relationship({ ref: 'BrittleNote.parent', many: true }),
+        },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => true,
+            delete: () => true,
+          },
+        },
+      },
+      BrittleNote: {
+        fields: {
+          label: text(),
+          brittle: text({ access: { read: unguardedSessionRule } }),
+          parent: relationship({ ref: 'Brittle.notes' }),
         },
         access: { operation: { query: () => true } },
       },
@@ -489,6 +514,7 @@ describe('the MCP surface', () => {
       getSession: McpSessionProvider,
       fields: Record<string, unknown>,
       toolName = 'list_memo_query',
+      depth: 'level-1' | 'level-2' = 'level-1',
     ): Promise<string> {
       const { body } = await rpc(
         'tools/call',
@@ -498,7 +524,12 @@ describe('the MCP surface', () => {
       )
       const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
       expect(result.isError).toBe(true)
-      return result.content[0].text
+      const text = result.content[0].text
+      // Without this, any other refusal — a rule that threw, say — would
+      // satisfy the byte-identity assertions below by being equally wrong on
+      // both sides of the comparison.
+      expect(text).toContain(depth === 'level-1' ? 'Available fields: ' : 'at this depth')
+      return text
     }
 
     test(
@@ -647,8 +678,18 @@ describe('the MCP surface', () => {
     test(
       'the second level refuses a relation in the same bytes as a name that never existed',
       async () => {
-        const relationNamed = await refusalText(author, { notes: { fields: { memo: true } } })
-        const unknown = await refusalText(author, { notes: { fields: { neverExisted: true } } })
+        const relationNamed = await refusalText(
+          author,
+          { notes: { fields: { memo: true } } },
+          'list_memo_query',
+          'level-2',
+        )
+        const unknown = await refusalText(
+          author,
+          { notes: { fields: { neverExisted: true } } },
+          'list_memo_query',
+          'level-2',
+        )
 
         expect(relationNamed).toBe(unknown.replace('neverExisted', 'memo'))
         expect(unknown).not.toContain('memo"')
@@ -665,10 +706,10 @@ describe('the MCP surface', () => {
       'a field rule that throws costs that field its advertisement, not the whole listing',
       async () => {
         const names = (await toolsFor(anonymous)).map((tool) => tool.name)
-        expect(names).toContain('list_memo_query')
+        expect(names).toContain('list_brittle_query')
         expect(names).toContain('list_post_query')
 
-        const fields = await fieldsSchemaFor(anonymous, 'list_memo_query')
+        const fields = await fieldsSchemaFor(anonymous, 'list_brittle_query')
         expect(fields.title).toBeDefined()
         expect(fields.brittle).toBeUndefined()
 
@@ -677,9 +718,40 @@ describe('the MCP surface', () => {
         expect(level2.label).toBeDefined()
         expect(level2.brittle).toBeUndefined()
 
-        const data = await dataSchemaFor(anonymous, 'list_memo_update')
+        const data = await dataSchemaFor(anonymous, 'list_brittle_update')
         expect(data?.title).toBeDefined()
         expect(data?.brittle).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'containment belongs to the advertisement alone — the read path still throws',
+      async () => {
+        const config = schemaConfig()
+        const context = await contextFor(config)()
+
+        const projection = await generateFieldsProjectionSchema(
+          'Brittle',
+          config.lists.Brittle,
+          config,
+          null,
+          context,
+        )
+        expect(
+          (projection as { properties: Record<string, unknown> }).properties.brittle,
+        ).toBeUndefined()
+
+        await expect(
+          resolveFieldsProjection(
+            { title: true },
+            'Brittle',
+            config.lists.Brittle,
+            config,
+            null,
+            context,
+          ),
+        ).rejects.toThrow(TypeError)
       },
       BOOT,
     )
@@ -691,6 +763,7 @@ describe('the MCP surface', () => {
         const context = await contextFor(config)()
 
         const projection = await generateFieldsProjectionSchema(
+          'Memo',
           config.lists.Memo,
           config,
           null,
@@ -698,12 +771,22 @@ describe('the MCP surface', () => {
         )
         const properties = (projection as { properties: Record<string, unknown> }).properties
         expect(properties.title).toBeDefined()
-        expect(properties.brittle).toBeUndefined()
         expect(properties.adminOnly).toBeUndefined()
 
+        const brittle = await generateFieldsProjectionSchema(
+          'Brittle',
+          config.lists.Brittle,
+          config,
+          null,
+          context,
+        )
+        expect(
+          (brittle as { properties: Record<string, unknown> }).properties.brittle,
+        ).toBeUndefined()
+
         const data = await generateFieldSchemas(
-          'Memo',
-          config.lists.Memo.fields,
+          'Brittle',
+          config.lists.Brittle.fields,
           config,
           'update',
           null,

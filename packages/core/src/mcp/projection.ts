@@ -155,6 +155,7 @@ async function decideField(
  * {@link decideAdvertisement}.
  */
 async function advertisableFields(
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
@@ -167,7 +168,7 @@ async function advertisableFields(
     const decide = (): Promise<AdvertisableField | null> =>
       decideField(fieldName, fieldConfig, config, session, context, options)
     const decided = options.containRuleErrors
-      ? await decideAdvertisement<AdvertisableField | null>(decide, null)
+      ? await decideAdvertisement<AdvertisableField | null>(`${listKey}.${fieldName}`, decide, null)
       : await decide()
     if (decided) advertisable.push(decided)
   }
@@ -185,6 +186,7 @@ async function advertisableFields(
  * targets are omitted from the vocabulary entirely, per-session.
  */
 export async function generateFieldsProjectionSchema(
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
@@ -194,6 +196,7 @@ export async function generateFieldsProjectionSchema(
   const properties: Record<string, unknown> = systemFieldProperties()
 
   for (const { name: fieldName, relation } of await advertisableFields(
+    listKey,
     listConfig,
     config,
     session,
@@ -207,6 +210,7 @@ export async function generateFieldsProjectionSchema(
 
     const level2Properties: Record<string, unknown> = systemFieldProperties()
     for (const { name: relFieldName } of await advertisableFields(
+      relation.listName,
       relation.listConfig,
       config,
       session,
@@ -372,7 +376,7 @@ export async function resolveFieldsProjection(
     )
   }
 
-  const advertisable = await advertisableFields(listConfig, config, session, context, {
+  const advertisable = await advertisableFields(listKey, listConfig, config, session, context, {
     relationsSelectable: true,
     containRuleErrors: false,
   })
@@ -510,7 +514,7 @@ export async function resolveFieldsProjection(
       }
       const relAdvertisable = new Set(
         (
-          await advertisableFields(related.listConfig, config, session, context, {
+          await advertisableFields(related.listName, related.listConfig, config, session, context, {
             relationsSelectable: false,
             containRuleErrors: false,
           })

@@ -242,6 +242,7 @@ async function handleToolsList(
 
     if (enabledTools.read) {
       const fieldsSchema = await generateFieldsProjectionSchema(
+        listKey,
         listConfig,
         config,
         context.session,
@@ -272,7 +273,6 @@ async function handleToolsList(
         context.session,
         context,
       )
-      // ADR-0053.
       if (fieldSchemas.deniedRequiredField === null) {
         tools.push({
           name: `list_${toolKey}_create`,
