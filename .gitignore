@@ -64,4 +64,4 @@ packages/auth/tests/tmp-*/
 
 # Doc-block compile check scratch (evaluated inside packages/rag so node
 # resolution reaches its node_modules; removed on exit, ignored if a run aborts)
-packages/rag/.doc-blocks-check/
+packages/rag/.doc-blocks-check-*/

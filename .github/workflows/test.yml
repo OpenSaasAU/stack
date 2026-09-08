@@ -96,28 +96,33 @@ jobs:
           git diff --exit-code -- packages/cli/tests/fixtures/contract-project
 
       # Unlike its two sibling checks above, this one reads compiled output: it
-      # resolves @opensaas/* to packages/*/dist so it measures this branch's own
-      # declarations. The contract-fixture step above builds only the CLI, so
-      # the packages the doc blocks import are built here. turbo caches it, and
-      # the test steps below depend on the same task, so this is a reordering
-      # rather than an extra build.
+      # resolves @opensaas/* through each package's own `exports` to its dist,
+      # so it measures this branch's own declarations. The contract-fixture
+      # step above builds only the CLI, so the packages the doc blocks import
+      # are built here. turbo caches it, and the test steps below depend on the
+      # same task, so this is a reordering rather than an extra build.
       #
-      # PRs into `main` are excluded because the fixtures cannot describe that
-      # tree: `files.txt` names this branch's documents and `fragments.json`
-      # keys entries by `file:line`, and main's five RAG documents differ from
-      # these by around 900 lines, so every entry there reports as orphaned.
-      # Main also lacks the secured-surface exports the shadowing check
-      # compares against.
-      #
-      # Unlike the test steps below, this exclusion has no `== 'main'` run
-      # counterpart, so it cannot expire on its own: once prisma-8 lands,
-      # base_ref is always 'main' and the check would stop running for good.
-      # Flipping it is part of that merge — drop the two `if:` lines below,
-      # delete the notice step, and re-key fragments.json against main's
-      # documents. Tracked on #1301, which this check does not close.
+      # THE GATE. PRs into `main` are excluded because the fixtures cannot
+      # describe that tree: `files.txt` names this branch's documents and
+      # `fragments.json` keys entries by `file:line`, and main's RAG documents
+      # differ from these by around 900 lines, so every entry there would
+      # report as orphaned. Unlike the test steps below, the exclusion has no
+      # `== 'main'` run counterpart, so it cannot expire on its own: once
+      # prisma-8 lands, base_ref is always 'main' and the check would stop
+      # running for good. Flipping it is part of that merge — drop the three
+      # `if:` lines below, delete the notice step, and re-key
+      # scripts/doc-blocks/fragments.json against main's documents. Tracked on
+      # #1301. Every other mention of the flip points here.
       - name: Build packages for the doc-block check
         if: github.base_ref != 'main'
         run: turbo run build --filter='./packages/*'
+
+      # The checker's own fixture of known-bad and known-good blocks: every bad
+      # block must be reported FAIL and every good one must pass, before the
+      # real documents are trusted to a run of it.
+      - name: Self-test the doc-block checker
+        if: github.base_ref != 'main'
+        run: node scripts/check-doc-typescript-blocks.mjs --self-test
 
       - name: Check documented TypeScript blocks compile
         if: github.base_ref != 'main'
@@ -129,7 +134,7 @@ jobs:
       - name: Note the skipped doc-block check
         if: github.base_ref == 'main'
         run: |
-          echo "::warning title=Doc-block typecheck did not run::scripts/doc-blocks fixtures are keyed to the prisma-8 documents, so pnpm check:doc-ts-blocks runs on PRs into prisma-8 only. When prisma-8 lands on main, re-key scripts/doc-blocks/fragments.json and remove both 'if:' gates in .github/workflows/test.yml (#1301)."
+          echo "::warning title=Doc-block typecheck did not run::pnpm check:doc-ts-blocks runs on PRs into prisma-8 only. The instruction for flipping that gate is the comment above it in .github/workflows/test.yml (#1301)."
 
       - name: Run tests
         if: github.base_ref == 'main'

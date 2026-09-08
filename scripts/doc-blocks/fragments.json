@@ -9,7 +9,6 @@
   "docs/content/how-to/rag-advanced.md:687": "two alternative snippets share one fence and both bind `matches`.",
   "docs/content/how-to/rag-advanced.md:825": "imports `@huggingface/inference`, a third-party SDK this repo does not install.",
   "docs/content/how-to/rag-advanced.md:880": "a bare `lists:` object-literal property, not a statement.",
-  "docs/content/how-to/rag-advanced.md:910": "`context.db.Article.nearest()` on the un-parameterised `StackContext` yields `NearestMatch<OrmRow>`, and `OrmRow` carries no `id`, so it does not fit the block's own `NearestMatch<{ id: string }>[]`. In a reader's project the row comes from the generated TypeInfo and does.",
 
   "docs/content/reference/rag.md:169": "a bare `fields:` object-literal property, not a statement.",
   "docs/content/reference/rag.md:266": "a bare `fields:` object-literal property, not a statement.",
@@ -25,8 +24,8 @@
   "packages/rag/CLAUDE.md:177": "a bare `fields:` object-literal property, not a statement.",
   "packages/rag/CLAUDE.md:516": "`provider` is a bare name the prose supplies.",
   "packages/rag/CLAUDE.md:531": "`query` — the caller's search string — is a bare name the prose supplies.",
-  "packages/rag/CLAUDE.md:546": "`id` is a bare name the prose supplies, and `article.contentEmbedding` is `unknown` against the un-parameterised `StackContext`, which the `stored ?` guard narrows to `{}` — so `stored.vector` does not resolve.",
-  "packages/rag/CLAUDE.md:562": "imports `./openai.js` by relative path from inside the package's own test tree.",
+  "packages/rag/CLAUDE.md:544": "`id` is a bare name the prose supplies.",
+  "packages/rag/CLAUDE.md:560": "imports `./openai.js` by relative path from inside the package's own test tree.",
 
   "packages/rag/README.md:136": "a `config()` whose `lists` the prose elides.",
   "packages/rag/README.md:255": "a bare `fields:` object-literal property, not a statement.",

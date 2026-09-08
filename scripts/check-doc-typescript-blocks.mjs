@@ -1,167 +1,175 @@
 #!/usr/bin/env node
 // Compiles every fenced TypeScript block in the markdown files listed in
-// scripts/doc-blocks/files.txt, and reports the ones that fail.
+// scripts/doc-blocks/files.txt against the built packages, reports a block that
+// leans on the prelude for an import it should make itself, and compares any
+// type a block redeclares under a shipped name against the package's own.
 //
-// Three checks run per block.
-//
-//   1. Compile. The block is written into a scratch project under packages/rag
-//      (so vitest and @types/node resolve as they do anywhere in this repo),
-//      alongside both preludes, and type-checked with the repo's own tsc under
-//      `strict` with @opensaas/* mapped to the built declarations.
-//
-//   2. Imports. Every prelude binding is `typeof import(...)` of the real
-//      export, so a nested excerpt with no room for an import statement still
-//      gets the shipped signature. That convenience must not cover a
-//      self-contained example that simply forgot an import, so each block is
-//      compiled twice — with and without prelude-exports.d.ts — and a block
-//      that carries imports of its own yet still needs a name from the exports
-//      prelude is reported as using that name without importing it.
-//
-//   3. Shadowing. A block that exports a type, interface, class or enum whose
-//      name is also exported by @opensaas/stack-core or @opensaas/stack-rag is
-//      additionally checked against the real export. Without this a block can
-//      document the opposite of what the package declares — `embedBatch?`
-//      against a required `embedBatch` — and compile cleanly forever, because
-//      its own copy is what the compiler resolved against. Assignability in
-//      both directions is asserted, and so is identity, which is what sees an
-//      optional member appear or disappear. The comparison needs a
-//      type-argument arity both sides accept and a declaration that resolved;
-//      short of either, the name is reported as NOT COMPARED rather than
-//      counted as checked, since a comparison against an error type passes for
-//      no reason.
-//
-// Blocks that cannot compile on their own carry an entry in
-// scripts/doc-blocks/fragments.json giving the reason. A reason is a claim
-// about the block, so the check treats it as one: an entry whose block now
-// compiles is reported as STALE, so is one on a block this check never compiles
-// at all, an entry matching no block is reported as ORPHAN, and a shadowing
-// failure is never excused by a fragment entry.
-//
-// Usage: pnpm build && pnpm check:doc-ts-blocks   (add --json for raw results)
-//
-// The build is a precondition, not a convenience: the check resolves
-// @opensaas/* to packages/*/dist, so it measures the branch's own shipped
-// declarations rather than whatever is published. A missing dist entry aborts
-// the run rather than being reported as a doc block importing a missing module.
+// Usage: pnpm build && pnpm check:doc-ts-blocks   (--json for the raw verdict,
+//        --self-test to run the fixture in scripts/doc-blocks/self-test instead)
 //
 // Known limits
 //
 //   - Coverage is the file list, not the tree. A markdown file not named in
 //     files.txt is never compiled, and nothing detects that a new one was
-//     added. `pnpm check:doc-ts-blocks` says nothing about docs outside it.
+//     added.
 //   - Fragment entries are keyed `file:line`. The orphan check catches a key
 //     that has drifted off every block, but a key that drifts onto a different
 //     block's first line still excuses that block instead.
-//   - Shadowing is checked only for names exported from the nine entry points
-//     in `packageEntries`, and only at the block's own module scope — the
-//     parser supplies both the declarations and the export clause, so no
-//     spelling of a module-scope export escapes, but a declaration nested in a
-//     function, a namespace or a `declare module` is not compared. A subpath
-//     this file does not list is not compared against.
-//   - What the comparison sees is what TypeScript's identity relation sees:
-//     the member sets, each member's own type, whether it is optional and
-//     whether it is `readonly`, at every depth, plus `any` where the package
-//     has something narrower. What it does not see is everything the type
-//     system does not carry — a `@default` that no longer matches the code, a
-//     member whose name is right and whose meaning has changed, an option
-//     documented as accepting a range the package narrows only at runtime.
-//     Two declarations can be identical types and still document the package
-//     wrongly; this check says they are the same type, and no more than that.
-//   - Shadowing compares the two declarations at one type-argument arity, with
-//     fresh unconstrained parameters, so a generic is often out of reach. Of
-//     the 242 exported names, 70 are generic: 41 have at least one required
-//     type parameter and 59 at least one constrained parameter (62 have one or
-//     the other). A comparison bails whenever the arity it picks would have to
-//     supply a constrained parameter, or when no arity satisfies both sides. A
-//     constraint of `unknown` or `any` constrains nothing and is filled; a
-//     parameter the block declares past the package's arity and never uses is
-//     dropped rather than allowed to retire the comparison.
-//   - A comparison also bails when a type the block's declaration names does
-//     not resolve, because an error type agrees with everything in both
-//     directions and is identical to nothing. That question is asked of the
-//     declaration, not of the excerpt: a block whose only fault is a bare name
-//     the prose supplies is compared normally.
+//   - `context.db` is the prelude's hand-written surface, not a generated one:
+//     three lists (Article, Document, DocumentChunk) whose rows carry the
+//     fields the listed prose uses, over a query whose `where` takes the
+//     package's untyped vocabulary rather than the list's own columns, and
+//     which models neither `include`, `distinct` nor `cursor`. A wrong-cased or
+//     unknown list, a misspelt vector column, a missing null check and a
+//     misspelt row field are compile errors; a misspelt `where` key is not.
+//     The generated `SecuredList` cannot be used here because it is
+//     instantiated from the emitted Prisma contract, which nothing but the
+//     generator can write.
+//   - `@opensaas/*` resolves through each package's own `exports` map, so a
+//     subpath the package does not export fails for the checker as it fails
+//     for a reader. Shadowing compares against every `types` entry of every
+//     `packages/*/package.json`, and only at the block's own module scope: a
+//     declaration nested in a function or a namespace is reported, not
+//     compared. A `declare module '@opensaas/…'` in a block fails outright.
+//   - A redeclared name exported by more than one specifier as different types
+//     is compared against the specifiers the block imports from, or against
+//     every one of them when it imports from none, and fails only when it
+//     matches none.
+//   - The comparison is a member-by-member diff computed from the checker:
+//     member presence, optionality, `readonly`, `any` against something
+//     narrower, index signatures, call-signature arity, and each member's type
+//     — recursing into object-typed members and non-generic signatures, and
+//     falling back to assignability in both directions at the leaves, for
+//     unions, and for generic signatures. An intersection therefore compares
+//     equal to its flattened spelling. What it does not see is everything the
+//     type system does not carry — a `@default` that no longer matches the
+//     code, a member whose name is right and whose meaning has changed, an
+//     option documented as accepting a range the package narrows only at
+//     runtime. Two declarations can compare equal and still document the
+//     package wrongly.
+//   - Shadowing compares the two declarations at one type-argument arity with
+//     fresh unconstrained parameters. A comparison bails when the arity it
+//     picks would have to supply a constrained parameter, or when no arity
+//     satisfies both sides. A constraint of `unknown` or `any` constrains
+//     nothing and is filled; a parameter the block declares past the package's
+//     arity and never uses is filled with `never`, whatever its constraint.
+//   - A member whose declared type does not resolve is skipped and reported,
+//     and its siblings are still compared. The comparison bails only when the
+//     type itself — a heritage clause, an intersection operand, a mapped-type
+//     body — does not resolve, because an error type agrees with everything.
 //   - Every bail is reported as `NOT COMPARED` with its reason and excluded
-//     from the compared tally, and none of them fails the block: a documented
-//     `type Row = { … }` alongside an unrelated exported `Row<C, R, K>` is a
-//     name collision, not a contradiction.
+//     from the compared tally, and none of them fails the block.
 //   - The package's side of a comparison is trusted to resolve. Every program
 //     here sets `skipLibCheck`, so a `packages/*/dist` that is present but
 //     internally broken degrades an export to an error type with no diagnostic,
-//     and a wrong block then compares clean. The guard above checks only that
-//     the nine entry declaration files exist.
+//     and a wrong block then compares clean. The guard checks only that every
+//     `exports[*].types` file exists (#1350).
 //   - A `tsx` fence is extracted but never compiled — no `jsx` option is set
 //     and React is not resolvable from the scratch project — so neither the
 //     compile nor the import check runs on it. It is reported as `UNCHECKED`
-//     and does not fail; a fragment entry on one is stale, since an entry
-//     classifies a block that was compiled and this one was not.
+//     and does not fail; a fragment entry on one is stale.
 //   - A listed path that cannot be read fails by name. The one exception is
 //     `.changeset/*`, which release consumes; that path is skipped and its
 //     fixture keys are exempted from the orphan report along with it.
 //   - A doc block whose code puts a diagnostic in a prelude — `declare global`
-//     colliding with a prelude binding, say — aborts the run with exit 2. The
-//     message names the block, but the blocks after it do not run.
+//     colliding with a prelude binding, say — aborts the run with exit 2.
 //   - Block extraction is textual. The closing fence must match the opening
 //     indent exactly; a block fenced with four backticks, or one whose fence
 //     carries trailing whitespace, is extracted wrongly or not at all.
-//   - A block compiles in isolation with the preludes in scope. It is not run,
-//     so nothing here says the documented call does what the prose claims —
-//     only that it type-checks against the shipped declarations.
-//   - CI runs this on PRs into prisma-8 only. The fixtures are keyed to that
-//     branch's documents, so PRs into main skip it and say so in the job log.
-//     Flipping that is part of landing prisma-8 — see .github/workflows/
-//     test.yml and #1301.
+//   - A block compiles in isolation with the preludes in scope. It is not run.
+//   - CI runs this on PRs into prisma-8 only; the gate and the instruction for
+//     flipping it live together in .github/workflows/test.yml.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import ts from 'typescript'
 
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
 const blocksDir = path.join(repoRoot, 'scripts', 'doc-blocks')
-const scratchDir = path.join(repoRoot, 'packages', 'rag', '.doc-blocks-check')
+const selfTestFixture = 'scripts/doc-blocks/self-test/fixture.md'
 
-const listedPaths = readFileSync(path.join(blocksDir, 'files.txt'), 'utf8')
-  .split('\n')
-  .map((line) => line.replace(/#.*$/, '').trim())
-  .filter(Boolean)
+const flags = new Set(process.argv.slice(2))
+const jsonMode = flags.has('--json')
+const selfTestMode = flags.has('--self-test')
 
-const sources = new Map()
-const unreadable = []
-for (const relativePath of listedPaths) {
-  try {
-    sources.set(relativePath, readFileSync(path.join(repoRoot, relativePath), 'utf8'))
-  } catch {
-    unreadable.push(relativePath)
+class ToolingFailure extends Error {}
+
+const toPosix = (p) => p.replace(/\\/g, '/')
+const format = (d) => `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`
+
+// ---------------------------------------------------------------------------
+// Inputs: the listed files and their fragment classifications.
+
+function readListedFiles(listedPaths) {
+  const sources = new Map()
+  const unreadable = []
+  for (const relativePath of listedPaths) {
+    try {
+      sources.set(relativePath, readFileSync(path.join(repoRoot, relativePath), 'utf8'))
+    } catch {
+      unreadable.push(relativePath)
+    }
+  }
+  // Release consumes a changeset, so its disappearance is expected and its
+  // fixture keys go with it. The path is normalised first: a raw prefix test
+  // lets `.changeset/../docs/absent.md` inherit the exemption.
+  const isChangeset = (relativePath) =>
+    /^\.changeset\/[^/]+\.md$/.test(toPosix(path.normalize(relativePath)))
+  return {
+    sources,
+    consumed: new Set(unreadable.filter(isChangeset)),
+    missingFiles: unreadable.filter((relativePath) => !isChangeset(relativePath)),
+    files: listedPaths.filter((relativePath) => sources.has(relativePath)),
   }
 }
 
-// Release consumes a changeset, so its disappearance is expected and its
-// fixture keys go with it. Any other listed path that cannot be read is a
-// rename or a deletion, and skipping it would retire its blocks and its
-// classifications together, in silence, on a green run. The path is normalised
-// first: a raw prefix test lets `.changeset/../docs/absent.md` inherit the
-// exemption and hide a genuinely missing document behind it.
-const toPosix = (p) => p.replace(/\\/g, '/')
-const isChangeset = (relativePath) =>
-  /^\.changeset\/[^/]+\.md$/.test(toPosix(path.normalize(relativePath)))
-const consumed = new Set(unreadable.filter(isChangeset))
-const missingFiles = unreadable.filter((relativePath) => !isChangeset(relativePath))
-const files = listedPaths.filter((relativePath) => sources.has(relativePath))
+// ---------------------------------------------------------------------------
+// The packages: every `exports[*].types` of every @opensaas package is both a
+// module the scratch project can resolve and a shadow-comparison target.
 
-const fragments = JSON.parse(readFileSync(path.join(blocksDir, 'fragments.json'), 'utf8'))
-
-const packageEntries = {
-  '@opensaas/stack-core': 'packages/core/dist/index.d.ts',
-  '@opensaas/stack-core/fields': 'packages/core/dist/fields/index.d.ts',
-  '@opensaas/stack-core/extend': 'packages/core/dist/extend.d.ts',
-  '@opensaas/stack-rag': 'packages/rag/dist/index.d.ts',
-  '@opensaas/stack-rag/fields': 'packages/rag/dist/fields/index.d.ts',
-  '@opensaas/stack-rag/providers': 'packages/rag/dist/providers/index.d.ts',
-  '@opensaas/stack-rag/runtime': 'packages/rag/dist/runtime/index.d.ts',
-  '@opensaas/stack-rag/mcp': 'packages/rag/dist/mcp/index.d.ts',
-  '@opensaas/stack-auth': 'packages/auth/dist/index.d.ts',
+function typesEntry(value) {
+  if (typeof value === 'string') return value.endsWith('.d.ts') ? value : null
+  if (!value || typeof value !== 'object') return null
+  if ('types' in value) return typesEntry(value.types)
+  for (const key of ['import', 'default', 'require']) {
+    if (key in value) {
+      const found = typesEntry(value[key])
+      if (found) return found
+    }
+  }
+  return null
 }
+
+function discoverPackages() {
+  const packages = []
+  for (const dir of readdirSync(path.join(repoRoot, 'packages'))) {
+    const manifestPath = path.join(repoRoot, 'packages', dir, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    if (!manifest.name?.startsWith('@opensaas/') || !manifest.exports) continue
+    const entries = {}
+    for (const [subpath, value] of Object.entries(manifest.exports)) {
+      const types = typesEntry(value)
+      if (!types || subpath.includes('*')) continue
+      entries[`${manifest.name}${subpath.slice(1)}`] = path.join('packages', dir, types)
+    }
+    packages.push({ name: manifest.name, dir, entries })
+  }
+  return packages
+}
+
+const packages = discoverPackages()
+const packageEntries = Object.assign({}, ...packages.map((p) => p.entries))
 
 const missingEntries = Object.entries(packageEntries).filter(
   ([, relativePath]) => !existsSync(path.join(repoRoot, relativePath)),
@@ -174,32 +182,47 @@ if (missingEntries.length > 0) {
   process.exit(2)
 }
 
-const format = (d) => `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`
+// ---------------------------------------------------------------------------
+// Block extraction.
 
-function extractBlocks(relativePath) {
-  const lines = sources.get(relativePath).split('\n')
+const FENCE = /^(\s*)```(typescript|ts|tsx)(?:\s+\S.*)?\s*$/
+const MARKER = /^<!--\s*expect:\s*(FAIL|PASS)(?:\s+fragment="([^"]*)")?\s*-->$/
+
+function extractBlocks(relativePath, text) {
+  const lines = text.split('\n')
   const blocks = []
+  let heading = ''
   for (let i = 0; i < lines.length; i++) {
-    const fence = lines[i].match(/^(\s*)```(typescript|ts|tsx)\s*$/)
+    const headingLine = lines[i].match(/^#+\s+(.*)$/)
+    if (headingLine) heading = headingLine[1].trim()
+    const fence = lines[i].match(FENCE)
     if (!fence) continue
     const indent = fence[1]
     let j = i + 1
     while (j < lines.length && lines[j] !== `${indent}\`\`\``) j++
     const body = lines.slice(i + 1, j).map((line) => line.slice(indent.length))
+    let above = i - 1
+    while (above > 0 && lines[above].trim() === '') above--
+    const marker = above >= 0 ? lines[above].trim().match(MARKER) : null
     blocks.push({
       file: relativePath,
       line: i + 2,
       language: fence[2],
       code: body.join('\n'),
+      heading,
+      expectation: marker ? { verdict: marker[1], fragment: marker[2] ?? null } : null,
     })
     i = j
   }
   return blocks
 }
 
-// `extends unknown` and `extends any` are constraints that constrain nothing,
-// so the probe can fill them; treating them as unfillable hands an author a
-// no-op edit that turns a shadowing failure into an advisory note.
+// ---------------------------------------------------------------------------
+// Type parameters, and what a block declares.
+
+// `extends unknown` and `extends any` constrain nothing, so the probe can fill
+// them; treating them as unfillable hands an author a no-op edit that turns a
+// shadowing failure into an advisory note.
 const constrains = (constraint) =>
   Boolean(constraint) &&
   constraint.kind !== ts.SyntaxKind.UnknownKeyword &&
@@ -225,10 +248,20 @@ function describeTypeParameters(declarations) {
   }))
 }
 
+const TYPE_SYMBOL =
+  ts.SymbolFlags.Interface | ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Class | ts.SymbolFlags.Enum
+
+const resolveAlias = (checker, symbol) =>
+  symbol.getFlags() & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
+
+const declarationKey = (declaration) =>
+  `${toPosix(declaration.getSourceFile().fileName)}:${declaration.pos}`
+
 // Every barrel in this repo re-exports with `export type { X } from './y.js'`,
-// and those symbols carry only SymbolFlags.Alias — so filtering the module's
-// exports by Interface|TypeAlias|Class sees just the handful a barrel happens
-// to declare itself, and the shadowing check above silently covers nothing.
+// and those symbols carry only SymbolFlags.Alias, so the flag test is made on
+// the alias target. The map is keyed by name and holds one candidate per
+// distinct declaration, each with every specifier that exports it: a name two
+// specifiers export as different types is two candidates.
 function collectExportedTypes() {
   const entries = Object.entries(packageEntries)
   const program = ts.createProgram(
@@ -242,44 +275,43 @@ function collectExportedTypes() {
     const moduleSymbol = source && checker.getSymbolAtLocation(source)
     if (!moduleSymbol) continue
     for (const symbol of checker.getExportsOfModule(moduleSymbol)) {
-      const target =
-        symbol.getFlags() & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
-      const isType =
-        target.getFlags() &
-        (ts.SymbolFlags.Interface | ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Class)
-      if (!isType || names.has(symbol.getName())) continue
-      names.set(symbol.getName(), {
-        specifier,
-        typeParameters: describeTypeParameters(target.declarations ?? []),
-      })
+      const target = resolveAlias(checker, symbol)
+      const declarations = target.declarations ?? []
+      if (!(target.getFlags() & TYPE_SYMBOL) || declarations.length === 0) continue
+      const name = symbol.getName()
+      const key = declarationKey(declarations[0])
+      const candidates = names.get(name) ?? []
+      const existing = candidates.find((c) => c.key === key)
+      if (existing) existing.specifiers.push(specifier)
+      else {
+        candidates.push({
+          key,
+          specifiers: [specifier],
+          typeParameters: describeTypeParameters(declarations),
+        })
+      }
+      names.set(name, candidates)
     }
   }
   return names
 }
 
-// Which names a block declares is a question about TypeScript's grammar, so the
-// parser answers it. Three rounds of review each defeated a regex here with a
-// spelling nobody had anticipated — a `=` default, then `=>` inside a
-// constraint, then a second level of nesting — and each defeat looked like a
-// pass, because an unmatched declaration is silently one the check never made.
-//
-// Only the block's module scope can collide with the package's export, so the
-// probe compares those. The rest of the tree is walked anyway: a declaration
-// the parser placed inside a function, a namespace, or a construct the block
-// leaves unclosed is reported as not compared, rather than passing unremarked
-// as a name this check never looked at.
-//
-// The colliding name is the one the module *exports*, which is not always the
-// one it declared — `export { Wrong as ChunkingConfig }` and `import X = N.Bad;
-// export { X }` each put a shape under a shipped name with no declaration
-// spelled that way anywhere — so the export clause is read alongside the
-// declarations.
+// Which names a block declares is a question about TypeScript's grammar, so
+// the parser answers it. Only the block's module scope can collide with the
+// package's export, so those are what the probe compares; the rest of the tree
+// is walked anyway, and a declaration below module scope is reported rather
+// than passing unremarked. The colliding name is the one the module exports,
+// which is not always the one it declared, so the export clause is read too —
+// and the checker's own view of the module's exports is merged in afterwards,
+// for the spellings that route through an import.
 function findBlockDeclarations(code, scriptKind) {
   const source = ts.createSourceFile('block.ts', code, ts.ScriptTarget.ES2022, true, scriptKind)
   const declared = new Map()
   const nested = new Set()
   const exportedByOwnName = new Set()
   const exportedAs = new Map()
+  const augmentations = []
+  const specifiers = new Set()
   const record = (name, node, exported) => {
     const entry = declared.get(name) ?? { declarations: [], exported: false }
     entry.declarations.push(node)
@@ -287,6 +319,16 @@ function findBlockDeclarations(code, scriptKind) {
     declared.set(name, entry)
   }
   const visit = (node, atModuleScope) => {
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      if (ts.isStringLiteral(node.argument.literal)) specifiers.add(node.argument.literal.text)
+    }
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      specifiers.add(node.moduleSpecifier.text)
+    }
     if (
       atModuleScope &&
       ts.isExportDeclaration(node) &&
@@ -301,11 +343,40 @@ function findBlockDeclarations(code, scriptKind) {
       }
       return
     }
+    if (
+      atModuleScope &&
+      ts.isModuleDeclaration(node) &&
+      ts.isStringLiteral(node.name) &&
+      node.name.text.startsWith('@opensaas/')
+    ) {
+      const declares = []
+      const collect = (inner) => {
+        if (
+          (ts.isTypeAliasDeclaration(inner) ||
+            ts.isInterfaceDeclaration(inner) ||
+            ts.isClassDeclaration(inner) ||
+            ts.isEnumDeclaration(inner) ||
+            ts.isFunctionDeclaration(inner) ||
+            ts.isVariableStatement(inner)) &&
+          'name' in inner &&
+          inner.name
+        ) {
+          declares.push(inner.name.text)
+        } else ts.forEachChild(inner, collect)
+      }
+      ts.forEachChild(node, collect)
+      augmentations.push({ specifier: node.name.text, declares })
+      return
+    }
     const modifiers = ts.canHaveModifiers(node) ? (ts.getModifiers(node) ?? []) : []
     const exported =
       modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) &&
       !modifiers.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
     if (atModuleScope && ts.isImportEqualsDeclaration(node)) {
+      if (ts.isExternalModuleReference(node.moduleReference)) {
+        const expression = node.moduleReference.expression
+        if (ts.isStringLiteral(expression)) specifiers.add(expression.text)
+      }
       record(node.name.text, node, exported)
       return
     }
@@ -339,41 +410,76 @@ function findBlockDeclarations(code, scriptKind) {
   return {
     moduleScope,
     nestedOnly: [...nested].filter((name) => !moduleScope.has(name)),
+    augmentations,
+    specifiers,
   }
 }
 
-function findShadowedNames(code, exportedTypes, scriptKind = ts.ScriptKind.TS) {
-  const { moduleScope, nestedOnly } = findBlockDeclarations(code, scriptKind)
+// The checker's view of what the block exports, resolved through every alias,
+// so `import type { A as X } from '…'; export type { X as Shipped }` is seen
+// as an export of `Shipped` whose declaration is `A`'s.
+function exportedTypesOf(program, entry) {
+  const checker = program.getTypeChecker()
+  const source = program.getSourceFile(entry)
+  const moduleSymbol = source && checker.getSymbolAtLocation(source)
+  if (!moduleSymbol) return new Map()
+  const entryName = toPosix(entry)
+  const found = new Map()
+  for (const symbol of checker.getExportsOfModule(moduleSymbol)) {
+    const target = resolveAlias(checker, symbol)
+    const declarations = target.declarations ?? []
+    if (!(target.getFlags() & TYPE_SYMBOL) || declarations.length === 0) continue
+    found.set(symbol.getName(), {
+      typeParameters: describeTypeParameters(declarations),
+      spans: declarations
+        .filter((d) => toPosix(d.getSourceFile().fileName) === entryName)
+        .map((d) => ({ start: d.getStart(), end: d.getEnd() })),
+      exported: true,
+    })
+  }
+  return found
+}
+
+function findShadowedNames(code, exportedTypes, { scriptKind = ts.ScriptKind.TS, program, entry }) {
+  const { moduleScope, nestedOnly, augmentations, specifiers } = findBlockDeclarations(
+    code,
+    scriptKind,
+  )
+  if (program) {
+    for (const [name, documented] of exportedTypesOf(program, entry)) {
+      if (!moduleScope.has(name)) moduleScope.set(name, documented)
+    }
+  }
   const found = new Map()
   for (const [name, documented] of moduleScope) {
-    const shipped = exportedTypes.get(name)
-    if (!shipped) continue
+    const candidates = exportedTypes.get(name)
+    if (!candidates) continue
+    const imported = candidates.filter((c) => c.specifiers.some((s) => specifiers.has(s)))
     found.set(name, {
-      specifier: shipped.specifier,
-      shipped: shipped.typeParameters,
+      candidates: imported.length > 0 ? imported : candidates,
       documented: documented.typeParameters,
       exported: documented.exported,
       spans: documented.spans,
     })
   }
-  return { found, outOfScope: nestedOnly.filter((name) => exportedTypes.has(name)) }
+  return {
+    found,
+    outOfScope: nestedOnly.filter((name) => exportedTypes.has(name)),
+    augmentations,
+  }
 }
 
 const requiredCount = (params) => params.filter((p) => !p.optional).length
 
 // The probe supplies the same type arguments to both declarations, so it needs
 // an arity each side accepts and parameters it can fill with fresh opaque
-// types. Where no such arity exists the two names are unrelated as far as this
-// tool can tell, and saying so is the only honest result.
+// types. A parameter the block declares past the package's arity and never
+// uses says nothing about the shape, so it is filled with `never` — which
+// satisfies any constraint — rather than allowed to retire the comparison.
 function planComparison(documented, shipped) {
-  // A type parameter the block declares past the package's arity and never
-  // uses says nothing about the shape, so it does not stand between the two
-  // declarations. Left in, it is a one-word edit that retires a failure.
   const phantom =
     documented.length > shipped.length && documented.slice(shipped.length).every((p) => !p.used)
   const effective = phantom ? documented.slice(0, shipped.length) : documented
-  // The most type arguments both sides accept, so the comparison is between
-  // the two type constructors rather than between one instantiation of each.
   const arity = Math.min(effective.length, shipped.length)
   if (arity < Math.max(requiredCount(effective), requiredCount(shipped))) {
     return {
@@ -383,16 +489,38 @@ function planComparison(documented, shipped) {
         `required, and the block declares ${documented.length}`,
     }
   }
-  const documentedArity = phantom ? documented.length : arity
-  const filled = [...documented.slice(0, documentedArity), ...shipped.slice(0, arity)]
+  const filled = [...effective.slice(0, arity), ...shipped.slice(0, arity)]
   if (filled.some((p) => p.constrained)) {
     return {
       compared: false,
       reason: 'its type parameters carry constraints the probe cannot fill',
     }
   }
-  return { compared: true, arity, documentedArity }
+  return { compared: true, arity, phantom: phantom ? documented.length - shipped.length : 0 }
 }
+
+// ---------------------------------------------------------------------------
+// The scratch project. It lives under packages/rag so `vitest` and
+// `@types/node` resolve as they do anywhere in the repo, and carries a
+// node_modules/@opensaas of symlinks to packages/* so `@opensaas/*` resolves
+// through each package's own `exports` map.
+
+const scratchDir = mkdtempSync(path.join(repoRoot, 'packages', 'rag', '.doc-blocks-check-'))
+const scopeDir = path.join(scratchDir, 'node_modules', '@opensaas')
+mkdirSync(scopeDir, { recursive: true })
+for (const { name, dir } of packages) {
+  symlinkSync(path.join(repoRoot, 'packages', dir), path.join(scopeDir, name.split('/')[1]), 'dir')
+}
+// Copied in as `.ts`, not `.d.ts`: `skipLibCheck` is on — it has to be, for
+// Prisma's generated client — and it would skip a declaration file entirely,
+// including a prelude whose imports no longer resolve.
+for (const prelude of ['prelude', 'prelude-exports']) {
+  writeFileSync(
+    path.join(scratchDir, `${prelude}.ts`),
+    readFileSync(path.join(blocksDir, `${prelude}.d.ts`), 'utf8'),
+  )
+}
+const preludePaths = ['prelude.ts', 'prelude-exports.ts'].map((f) => path.join(scratchDir, f))
 
 const compilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -405,14 +533,7 @@ const compilerOptions = {
   esModuleInterop: true,
   resolveJsonModule: true,
   types: ['node'],
-  baseUrl: repoRoot,
-  paths: Object.fromEntries(Object.entries(packageEntries).map(([k, v]) => [k, [v]])),
 }
-
-// Copied in as `.ts`, not `.d.ts`: `skipLibCheck` is on — it has to be, for
-// Prisma's generated client — and it would skip a declaration file entirely,
-// including a prelude whose imports no longer resolve.
-const preludePaths = ['prelude.ts', 'prelude-exports.ts'].map((f) => path.join(scratchDir, f))
 
 let checking = null
 
@@ -420,75 +541,86 @@ function runProgram(entryFiles, { withExports = true } = {}) {
   const preludes = withExports ? preludePaths : preludePaths.slice(0, 1)
   const program = ts.createProgram([...entryFiles, ...preludes], compilerOptions)
   const all = [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()]
+  // A diagnostic with no file is about the checker's own configuration — a
+  // missing `@types/node`, a bad option — and would otherwise be filtered out
+  // with the diagnostics that belong to other files.
+  const global = [
+    ...program.getOptionsDiagnostics(),
+    ...program.getGlobalDiagnostics(),
+    ...all.filter((d) => !d.file),
+  ]
+  if (global.length > 0) {
+    throw new ToolingFailure(
+      `the checker's own program is misconfigured:\n${global.map((d) => `  ${format(d)}`).join('\n')}`,
+    )
+  }
   // A prelude that fails to resolve a package degrades every binding it
   // declares to `any`, and then every block "passes". That must be loud.
   const preludeNames = new Set(preludes.map(toPosix))
-  const inPrelude = all.filter((d) => d.file && preludeNames.has(toPosix(d.file.fileName)))
+  const inPrelude = all.filter((d) => preludeNames.has(toPosix(d.file.fileName)))
   if (inPrelude.length > 0) {
-    for (const d of inPrelude) {
-      console.error(`prelude ${path.basename(d.file.fileName)}: ${format(d)}`)
-    }
-    console.error(
-      `\nRaised while checking ${checking ?? 'the preludes'} — either the build is broken or ` +
+    throw new ToolingFailure(
+      inPrelude.map((d) => `prelude ${path.basename(d.file.fileName)}: ${format(d)}`).join('\n') +
+        `\n\nRaised while checking ${checking ?? 'the preludes'} — either the build is broken or ` +
         `that block's own code reaches into a prelude. Blocks after it did not run.`,
     )
-    rmSync(scratchDir, { recursive: true, force: true })
-    process.exit(2)
   }
   return { program, diagnostics: all }
 }
 
 function diagnose(entryFiles, options) {
   const owned = new Set(entryFiles.map(toPosix))
-  return runProgram(entryFiles, options)
-    .diagnostics.filter((d) => d.file && owned.has(toPosix(d.file.fileName)))
-    .map(format)
+  const { program, diagnostics } = runProgram(entryFiles, options)
+  return {
+    program,
+    errors: diagnostics.filter((d) => owned.has(toPosix(d.file.fileName))).map(format),
+  }
 }
 
 // `export {}` makes the block a module, so top-level `await` is legal and a
 // local `const context` shadows the prelude's rather than colliding with it.
-// Both are artifacts of compiling an excerpt in isolation, not defects in it.
 function compileBlock(code, options) {
   const entry = path.join(scratchDir, 'block.ts')
   writeFileSync(entry, `${code}\nexport {}\n`)
-  return diagnose([entry], options)
+  return { entry, ...diagnose([entry], options) }
 }
 
 const UNRESOLVED_NAME = /^TS(?:2304|2552|2593): Cannot find name '([^']+)'/
 
 // Names the exports prelude supplied that the block did not import itself.
-function findUnimportedExports(code) {
+function findUnimportedExports(code, withPreludeErrors) {
   if (!/^\s*import\s/m.test(code)) return []
   const withPrelude = new Set(
-    compileBlock(code)
-      .map((d) => d.match(UNRESOLVED_NAME)?.[1])
-      .filter(Boolean),
+    withPreludeErrors.map((d) => d.match(UNRESOLVED_NAME)?.[1]).filter(Boolean),
   )
   return [
     ...new Set(
       compileBlock(code, { withExports: false })
-        .map((d) => d.match(UNRESOLVED_NAME)?.[1])
+        .errors.map((d) => d.match(UNRESOLVED_NAME)?.[1])
         .filter((name) => name && !withPrelude.has(name)),
     ),
   ]
 }
 
-// A name TypeScript cannot resolve becomes the error type, which is assignable
-// to and from everything and identical to nothing — so a comparison against it
-// is not a comparison. That is a question about the type being compared, not
-// about whether the excerpt compiles: a block whose only fault is a bare
-// `runtime` the prose supplies still declares a perfectly resolvable type, and
-// bailing on it would exempt the whole fragment population, which is every
-// block that carries a fragment entry.
-//
-// So the block's own declaration is what gets read. Every type it names is
-// handed to the checker, which resolves through aliases — `type Broken =
-// NotReal` then `item: Broken` yields the error type at the reference, so one
-// level of indirection does not hide it — and the scan is bounded by the
-// declaration's own text rather than by the package graph behind it.
+// ---------------------------------------------------------------------------
+// The shadow probe.
+
 const isErrorType = (type) =>
   Boolean(type.flags & ts.TypeFlags.Any) && type.intrinsicName === 'error'
 
+const isMemberNode = (node) =>
+  ts.isPropertySignature(node) ||
+  ts.isMethodSignature(node) ||
+  ts.isPropertyDeclaration(node) ||
+  ts.isMethodDeclaration(node) ||
+  ts.isGetAccessorDeclaration(node) ||
+  ts.isSetAccessorDeclaration(node)
+
+// Every type the block's declaration names is handed to the checker, which
+// resolves through aliases, so `type Broken = NotReal` then `item: Broken`
+// yields the error type at the reference. Each unresolved reference is
+// attributed to the top-level member it sits inside, or to the type itself
+// when it sits outside every member.
 function findUnresolved(checker, sourceFile, spans) {
   const roots = []
   const collect = (node) => {
@@ -500,17 +632,16 @@ function findUnresolved(checker, sourceFile, spans) {
   }
   ts.forEachChild(sourceFile, collect)
 
-  let unresolved = null
-  const scan = (node) => {
-    if (unresolved) return
-    // An `import X = A.B` names a type without being one, so it is asked for
-    // its alias target rather than for a type it does not have.
+  const unresolved = []
+  const scan = (node, member) => {
+    if (member === null && isMemberNode(node) && node.name && ts.isIdentifier(node.name)) {
+      member = node.name.text
+    }
     if (ts.isImportEqualsDeclaration(node)) {
       const local = checker.getSymbolAtLocation(node.name)
-      const target =
-        local && local.getFlags() & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(local) : local
+      const target = local && resolveAlias(checker, local)
       if (!target || (target.declarations ?? []).length === 0) {
-        unresolved = node.moduleReference.getText(sourceFile)
+        unresolved.push({ text: node.moduleReference.getText(sourceFile), member })
       }
       return
     }
@@ -520,109 +651,195 @@ function findUnresolved(checker, sourceFile, spans) {
       ts.isTypeQueryNode(node) ||
       ts.isImportTypeNode(node)
     if (names && isErrorType(checker.getTypeAtLocation(node))) {
-      unresolved = node.getText(sourceFile).split('\n')[0]
+      unresolved.push({ text: node.getText(sourceFile).split('\n')[0], member })
       return
     }
-    ts.forEachChild(node, scan)
+    ts.forEachChild(node, (child) => scan(child, member))
   }
-  for (const root of roots) scan(root)
+  for (const root of roots) scan(root, null)
   return unresolved
 }
 
-const isOptional = (symbol) => Boolean(symbol.getFlags() & ts.SymbolFlags.Optional)
-const isReadonly = (symbol) =>
-  (symbol.declarations ?? []).some(
-    (d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Readonly,
-  )
+const MAX_DEPTH = 8
 
-// `Type 'false' is not assignable to type 'true'` is what the identity probe
-// says on its own, which tells a doc author nothing. The member sets are
-// compared here only to name the difference.
-function describeDifference(checker, documentedType, shippedType, location) {
-  const documented = new Map(
-    checker.getPropertiesOfType(documentedType).map((s) => [s.getName(), s]),
-  )
-  const shipped = new Map(checker.getPropertiesOfType(shippedType).map((s) => [s.getName(), s]))
+// The member-by-member diff that decides the comparison. Neither built-in
+// relation answers the question on its own: assignability in both directions
+// cannot see an optional member appear, and identity holds an intersection
+// apart from its flattened spelling.
+function diffTypes(checker, documentedType, shippedType, location, skip) {
   const differences = []
-  const indexes = (type) =>
-    checker
-      .getIndexInfosOfType(type)
-      .map((i) => `[${checker.typeToString(i.keyType)}]: ${checker.typeToString(i.type)}`)
-      .sort()
-      .join(', ')
-  if (indexes(documentedType) !== indexes(shippedType)) {
-    differences.push(
-      `the block's index signatures are \`${indexes(documentedType) || 'none'}\` and the ` +
-        `package's are \`${indexes(shippedType) || 'none'}\``,
+  const seen = new Map()
+  const str = (t) => checker.typeToString(t)
+  const isAny = (t) => Boolean(t.flags & ts.TypeFlags.Any)
+  const objectLike = (t) => Boolean(t.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection))
+  const label = (p) => (p ? `\`${p}\`` : 'the type')
+  const typeOf = (symbol) => checker.getTypeOfSymbolAtLocation(symbol, location)
+  const isOptional = (symbol) => Boolean(symbol.getFlags() & ts.SymbolFlags.Optional)
+  const isReadonly = (symbol) =>
+    (symbol.declarations ?? []).some(
+      (d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Readonly,
+    )
+  const hasRest = (signature) => {
+    const last = signature.parameters.at(-1)
+    const declaration = last?.valueDeclaration
+    return Boolean(declaration && ts.isParameter(declaration) && declaration.dotDotDotToken)
+  }
+  const visited = (own, theirs) => {
+    const set = seen.get(own) ?? new Set()
+    seen.set(own, set)
+    if (set.has(theirs)) return true
+    set.add(theirs)
+    return false
+  }
+  // Two aliases print as the same name; when they do, print what they name.
+  const expanded = (t) =>
+    checker.typeToString(
+      t,
+      undefined,
+      ts.TypeFormatFlags.InTypeAlias | ts.TypeFormatFlags.NoTruncation,
+    )
+  const differ = (p, own, theirs) => {
+    const [a, b] =
+      str(own) === str(theirs) ? [expanded(own), expanded(theirs)] : [str(own), str(theirs)]
+    differences.push(`${label(p)} is \`${a}\` in the block and \`${b}\` in the package`)
+  }
+
+  const compare = (own, theirs, p, depth) => {
+    if (own === theirs) return
+    if (isAny(own) || isAny(theirs)) {
+      if (isAny(own) !== isAny(theirs)) differ(p, own, theirs)
+      return
+    }
+    if (visited(own, theirs)) return
+    if (objectLike(own) && objectLike(theirs) && depth < MAX_DEPTH) {
+      compareMembers(own, theirs, p, depth)
+      return
+    }
+    if (!(checker.isTypeAssignableTo(own, theirs) && checker.isTypeAssignableTo(theirs, own))) {
+      differ(p, own, theirs)
+    }
+  }
+
+  const compareMembers = (own, theirs, p, depth) => {
+    const at = (member) => (p ? `${p}.${member}` : member)
+    const indexes = (t) =>
+      checker
+        .getIndexInfosOfType(t)
+        .map((i) => `[${str(i.keyType)}]: ${str(i.type)}`)
+        .sort()
+        .join(', ')
+    if (indexes(own) !== indexes(theirs)) {
+      differences.push(
+        `${label(p)}'s index signatures are \`${indexes(own) || 'none'}\` in the block and ` +
+          `\`${indexes(theirs) || 'none'}\` in the package`,
+      )
+    }
+    const members = (t) =>
+      new Map(
+        checker
+          .getPropertiesOfType(t)
+          .filter((s) => !(depth === 0 && skip.has(s.getName())))
+          .map((s) => [s.getName(), s]),
+      )
+    const ownMembers = members(own)
+    const theirMembers = members(theirs)
+    for (const member of ownMembers.keys()) {
+      if (!theirMembers.has(member))
+        differences.push(`the block declares \`${at(member)}\`, the package does not`)
+    }
+    for (const member of theirMembers.keys()) {
+      if (!ownMembers.has(member))
+        differences.push(`the package declares \`${at(member)}\`, the block does not`)
+    }
+    for (const [member, ownSymbol] of ownMembers) {
+      const theirSymbol = theirMembers.get(member)
+      if (!theirSymbol) continue
+      if (isOptional(ownSymbol) !== isOptional(theirSymbol)) {
+        differences.push(
+          `\`${at(member)}\` is ${isOptional(ownSymbol) ? 'optional' : 'required'} in the ` +
+            `block and ${isOptional(theirSymbol) ? 'optional' : 'required'} in the package`,
+        )
+      }
+      if (isReadonly(ownSymbol) !== isReadonly(theirSymbol)) {
+        differences.push(
+          `\`${at(member)}\` is ${isReadonly(ownSymbol) ? '' : 'not '}readonly in the block ` +
+            `and ${isReadonly(theirSymbol) ? '' : 'not '}readonly in the package`,
+        )
+      }
+      compare(typeOf(ownSymbol), typeOf(theirSymbol), at(member), depth + 1)
+    }
+    for (const [kind, word] of [
+      [ts.SignatureKind.Call, 'call'],
+      [ts.SignatureKind.Construct, 'construct'],
+    ]) {
+      const ownSignatures = checker.getSignaturesOfType(own, kind)
+      const theirSignatures = checker.getSignaturesOfType(theirs, kind)
+      if (ownSignatures.length !== theirSignatures.length) {
+        differences.push(
+          `${label(p)} has ${ownSignatures.length} ${word} signature(s) in the block and ` +
+            `${theirSignatures.length} in the package`,
+        )
+        continue
+      }
+      ownSignatures.forEach((ownSignature, index) =>
+        compareSignature(ownSignature, theirSignatures[index], p, depth, word),
+      )
+    }
+  }
+
+  const compareSignature = (own, theirs, p, depth, word) => {
+    const shape = (s) =>
+      `${s.parameters.length} parameter(s), ${s.minArgumentCount} required` +
+      `${hasRest(s) ? ', rest' : ''}, ${s.typeParameters?.length ?? 0} type parameter(s)`
+    if (shape(own) !== shape(theirs)) {
+      differences.push(
+        `${label(p)}'s ${word} signature has ${shape(own)} in the block and ` +
+          `${shape(theirs)} in the package`,
+      )
+      return
+    }
+    // A generic signature's parameters are typed by its own type parameters,
+    // which differ by identity on the two sides; it is covered by the outer
+    // assignability assertions instead.
+    if (own.typeParameters?.length) return
+    own.parameters.forEach((parameter, index) =>
+      compare(
+        typeOf(parameter),
+        typeOf(theirs.parameters[index]),
+        `${p}(${parameter.getName()})`,
+        depth + 1,
+      ),
+    )
+    compare(
+      checker.getReturnTypeOfSignature(own),
+      checker.getReturnTypeOfSignature(theirs),
+      `${p}()`,
+      depth + 1,
     )
   }
-  for (const member of documented.keys()) {
-    if (!shipped.has(member))
-      differences.push(`the block declares \`${member}\`, the package does not`)
-  }
-  for (const member of shipped.keys()) {
-    if (!documented.has(member))
-      differences.push(`the package declares \`${member}\`, the block does not`)
-  }
-  for (const [member, own] of documented) {
-    const theirs = shipped.get(member)
-    if (!theirs) continue
-    if (isOptional(own) !== isOptional(theirs)) {
-      differences.push(
-        `\`${member}\` is ${isOptional(own) ? 'optional' : 'required'} in the block and ` +
-          `${isOptional(theirs) ? 'optional' : 'required'} in the package`,
-      )
-    }
-    if (isReadonly(own) !== isReadonly(theirs)) {
-      differences.push(
-        `\`${member}\` is ${isReadonly(own) ? '' : 'not '}readonly in the block and ` +
-          `${isReadonly(theirs) ? '' : 'not '}readonly in the package`,
-      )
-    }
-    // Printed form alone would report an alias against the union it names as a
-    // difference. `any` is the reverse case: mutually assignable to everything,
-    // and the whole point of naming it.
-    const ownType = checker.getTypeOfSymbolAtLocation(own, location)
-    const theirType = checker.getTypeOfSymbolAtLocation(theirs, location)
-    const isAny = (type) => Boolean(type.flags & ts.TypeFlags.Any)
-    const interchangeable =
-      checker.isTypeAssignableTo(ownType, theirType) &&
-      checker.isTypeAssignableTo(theirType, ownType)
-    if (!interchangeable || isAny(ownType) !== isAny(theirType)) {
-      differences.push(
-        `\`${member}\` is \`${checker.typeToString(ownType)}\` in the block and ` +
-          `\`${checker.typeToString(theirType)}\` in the package`,
-      )
-    }
-  }
+
+  compare(documentedType, shippedType, '', 0)
   return differences
 }
 
-// Structural equivalence between the block's own declaration and the package's.
-//
-// Assignability, both directions, catches a required member changed or dropped
-// but not an optional one appearing or disappearing, because an extra optional
-// property survives assignment either way — and a type whose members are all
-// optional, which is most option bags, then agrees with any rearrangement of
-// its surface at all. Documenting an option the package does not have is the
-// defect this check exists to catch, so the identity relation is asserted as
-// well: `Identical` is true only when the checker holds the two types to be the
-// same type, which sees optionality, `readonly` and `any`.
+const scratchPaths = (text) =>
+  text.replaceAll(toPosix(scratchDir) + '/', '').replaceAll(scratchDir + path.sep, '')
+
 function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
   const subject = path.join(scratchDir, 'shadowed.ts')
   const probe = path.join(scratchDir, 'probe.ts')
   writeFileSync(subject, alreadyExported ? `${code}\n` : `${code}\nexport type { ${name} }\n`)
-  const parameters = [...Array(plan.documentedArity).keys()].map((index) => `P${index}`)
-  const list = (count) => (count > 0 ? `<${parameters.slice(0, count).join(', ')}>` : '')
-  const documented = `Documented${list(plan.documentedArity)}`
-  const shipped = `Shipped${list(plan.arity)}`
+  const fresh = [...Array(plan.arity).keys()].map((index) => `P${index}`)
+  const list = (args) => (args.length > 0 ? `<${args.join(', ')}>` : '')
+  const documented = `Documented${list([...fresh, ...Array(plan.phantom).fill('never')])}`
+  const shipped = `Shipped${list(fresh)}`
   const identityLine = `  const same: true = identical`
   const lines = [
     `import type { ${name} as Documented } from './shadowed.js'`,
     `import type { ${name} as Shipped } from '${specifier}'`,
     `type Identical<X, Y> =`,
     `  (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false`,
-    `export function probe${list(parameters.length)}(`,
+    `export function probe${list(fresh)}(`,
     `  documented: ${documented},`,
     `  shipped: ${shipped},`,
     `  identical: Identical<${documented}, ${shipped}>,`,
@@ -640,268 +857,368 @@ function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
   writeFileSync(probe, text)
 
   const probeName = toPosix(probe)
-  const subjectName = toPosix(subject)
   const { program, diagnostics } = runProgram([probe, subject])
-  const errors = []
-  const inDeclaration = []
+  const assignability = []
   let notIdentical = false
   for (const d of diagnostics) {
-    if (!d.file) continue
     const file = toPosix(d.file.fileName)
-    if (file === probeName) {
-      if (d.start >= identityStart && d.start < identityEnd) notIdentical = true
-      else errors.push(format(d))
-    } else if (
-      file === subjectName &&
-      plan.spans.some((span) => d.start < span.end && d.start + (d.length ?? 0) > span.start)
-    ) {
-      inDeclaration.push(format(d))
-    }
+    if (file !== probeName) continue
+    if (d.start >= identityStart && d.start < identityEnd) notIdentical = true
+    else assignability.push(format(d))
   }
+  const subjectFile = program.getSourceFile(subject)
+  const inDeclaration = program
+    .getSyntacticDiagnostics(subjectFile)
+    .filter((d) =>
+      plan.spans.some((span) => d.start < span.end && d.start + (d.length ?? 0) > span.start),
+    )
   if (inDeclaration.length > 0) {
     return {
       ran: false,
-      reason: `the block's own declaration of ${name} does not compile (${inDeclaration[0]})`,
+      reason: `the block's own declaration of ${name} does not parse (${format(inDeclaration[0])})`,
     }
   }
 
   const checker = program.getTypeChecker()
-  const unresolved = findUnresolved(checker, program.getSourceFile(subject), plan.spans)
-  if (unresolved) {
+  const unresolved = findUnresolved(checker, subjectFile, plan.spans)
+  const whole = unresolved.find((u) => u.member === null)
+  if (whole) {
     return {
       ran: false,
       reason:
-        `the block's ${name} is declared in terms of \`${unresolved}\`, which does not resolve ` +
+        `the block's ${name} is declared in terms of \`${whole.text}\`, which does not resolve ` +
         `here — an error type agrees with anything in both directions`,
     }
   }
+  const skipped = unresolved.map(
+    (u) =>
+      `\`${name}.${u.member}\` is declared in terms of \`${u.text}\`, which does not resolve here`,
+  )
+  const skip = new Set(unresolved.map((u) => u.member))
 
   const declaration = program
     .getSourceFile(probe)
     .statements.find((s) => ts.isFunctionDeclaration(s) && s.name?.text === 'probe')
   const [documentedNode, shippedNode, identicalNode] = declaration.parameters
-  // `Identical` is `true` or `false` once the checker has decided. Anything
-  // else — a deferred `boolean` — is an answer it did not reach, and reading
-  // that as a difference would fail a block for the probe's own indecision.
+  const documentedType = checker.getTypeAtLocation(documentedNode)
+  const shippedType = checker.getTypeAtLocation(shippedNode)
+  if (isErrorType(documentedType) || isErrorType(shippedType)) {
+    return { ran: false, reason: `one side of the ${name} comparison is an error type` }
+  }
   const identity = checker.getTypeAtLocation(identicalNode)
-  if (notIdentical && !(identity.flags & ts.TypeFlags.BooleanLiteral)) {
-    return {
-      ran: false,
-      reason: `the identity relation did not decide between the two ${name} declarations`,
+  const identical =
+    !notIdentical && skip.size === 0 && Boolean(identity.flags & ts.TypeFlags.BooleanLiteral)
+  const errors = []
+  if (!identical) {
+    const differences = diffTypes(checker, documentedType, shippedType, documentedNode, skip)
+    if (differences.length > 0) {
+      errors.push(`not the type the package declares — ${differences.join('; ')}`)
+    } else if (assignability.length > 0) {
+      errors.push(...assignability.map(scratchPaths))
     }
   }
-  if (notIdentical && errors.length === 0) {
-    const documentedType = checker.getTypeAtLocation(documentedNode)
-    const shippedType = checker.getTypeAtLocation(shippedNode)
-    const differences = describeDifference(checker, documentedType, shippedType, documentedNode)
-    errors.push(
-      differences.length > 0
-        ? `not the type the package declares — ${differences.join('; ')}`
-        : `not the type the package declares, and the difference is below its top-level members`,
-    )
+  return { errors, ran: true, skipped }
+}
+
+// ---------------------------------------------------------------------------
+// One block.
+
+function checkBlock(block, exportedTypes, fragments) {
+  const key = `${block.file}:${block.line}`
+  checking = key
+  const base = {
+    key,
+    file: block.file,
+    line: block.line,
+    language: block.language,
+    heading: block.heading,
+    fragment: fragments[key] ?? null,
   }
-  return { errors, ran: true }
-}
+  const describeCandidate = (c) => `${c.specifiers.join(' and ')}`
 
-const exportedTypes = collectExportedTypes()
-rmSync(scratchDir, { recursive: true, force: true })
-mkdirSync(scratchDir, { recursive: true })
-for (const prelude of ['prelude', 'prelude-exports']) {
-  writeFileSync(
-    path.join(scratchDir, `${prelude}.ts`),
-    readFileSync(path.join(blocksDir, `${prelude}.d.ts`), 'utf8'),
+  // A tsx fence is recognised before anything compiles it: handing JSX to a
+  // program with no `jsx` option produces a cascade of parse errors that say
+  // nothing about the block. The parser still reads it, so a name it
+  // redeclares is named as one this check did not compare.
+  if (block.language === 'tsx') {
+    const { found, outOfScope, augmentations } = findShadowedNames(block.code, exportedTypes, {
+      scriptKind: ts.ScriptKind.TSX,
+    })
+    return {
+      ...base,
+      errors: [],
+      unimported: [],
+      unchecked: [
+        'a tsx fence carries JSX, which this check sets no `jsx` option for — so it is ' +
+          'neither compiled nor checked for imports it does not make',
+      ],
+      shadowed: [...found.keys()],
+      compared: [],
+      uncompared: [...found.keys(), ...outOfScope].map(
+        (name) =>
+          `${name} from ${exportedTypes.get(name).map(describeCandidate).join(', ')} — the ` +
+          `block is a tsx fence, which this check does not compile`,
+      ),
+      shadowErrors: augmentations.map(augmentationError),
+    }
+  }
+
+  const compiled = compileBlock(block.code)
+  const { found, outOfScope, augmentations } = findShadowedNames(block.code, exportedTypes, {
+    program: compiled.program,
+    entry: compiled.entry,
+  })
+  const shadowErrors = augmentations.map(augmentationError)
+  const compared = []
+  const uncompared = outOfScope.map(
+    (name) =>
+      `${name} from ${exportedTypes.get(name).map(describeCandidate).join(', ')} — the parser ` +
+      `placed its declaration below the block's module scope, where it cannot be compared`,
   )
-}
-
-const results = []
-try {
-  for (const file of files) {
-    for (const block of extractBlocks(file)) {
-      const key = `${block.file}:${block.line}`
-      checking = key
-      // Recognised before anything compiles it. Handing JSX to a program with
-      // no `jsx` option produces a cascade of parse errors that say nothing
-      // about the block, and printing them under a note explaining that the
-      // block was not checked contradicts the note. The parser still reads the
-      // fence, so a name it redeclares is named as one this check did not
-      // compare rather than going unmentioned.
-      if (block.language === 'tsx') {
-        const { found, outOfScope } = findShadowedNames(
-          block.code,
-          exportedTypes,
-          ts.ScriptKind.TSX,
-        )
-        const names = [...found.keys(), ...outOfScope]
-        results.push({
-          key,
-          file: block.file,
-          line: block.line,
-          language: block.language,
-          errors: [],
-          unimported: [],
-          unchecked: [
-            'a tsx fence carries JSX, which this check sets no `jsx` option for — so it is ' +
-              'neither compiled nor checked for imports it does not make',
-          ],
-          shadowed: [...found.keys()],
-          compared: [],
-          uncompared: names.map(
-            (name) =>
-              `${name} from ${exportedTypes.get(name).specifier} — the block is a tsx fence, ` +
-              `which this check does not compile`,
-          ),
-          shadowErrors: [],
-          fragment: fragments[key] ?? null,
-        })
+  for (const [name, { candidates, documented, exported, spans }] of found) {
+    const outcomes = []
+    for (const candidate of candidates) {
+      const where = describeCandidate(candidate)
+      const plan = planComparison(documented, candidate.typeParameters)
+      if (!plan.compared) {
+        outcomes.push({ where, ran: false, reason: plan.reason })
         continue
       }
-      const { found: shadowed, outOfScope } = findShadowedNames(block.code, exportedTypes)
-      const shadowErrors = []
-      const compared = []
-      const uncompared = outOfScope.map(
-        (name) =>
-          `${name} from ${exportedTypes.get(name).specifier} — the parser placed its ` +
-          `declaration below the block's module scope, where it cannot be compared`,
-      )
-      for (const [name, { specifier, shipped, documented, exported, spans }] of shadowed) {
-        const plan = planComparison(documented, shipped)
-        if (!plan.compared) {
-          uncompared.push(`${name} from ${specifier} — ${plan.reason}`)
-          continue
-        }
-        const probe = compileShadowProbe(block.code, name, specifier, exported, { ...plan, spans })
-        if (!probe.ran) {
-          uncompared.push(`${name} from ${specifier} — ${probe.reason}`)
-          continue
-        }
-        compared.push(name)
-        for (const error of probe.errors) {
-          shadowErrors.push(`shadows ${name} from ${specifier} — ${error}`)
-        }
-      }
-      results.push({
-        key,
-        file: block.file,
-        line: block.line,
-        language: block.language,
-        errors: compileBlock(block.code),
-        unimported: findUnimportedExports(block.code),
-        unchecked: [],
-        shadowed: [...shadowed.keys()],
-        compared,
-        uncompared,
-        shadowErrors,
-        fragment: fragments[key] ?? null,
+      const probe = compileShadowProbe(block.code, name, candidate.specifiers[0], exported, {
+        ...plan,
+        spans,
       })
+      outcomes.push({ where, ...probe })
+    }
+    const ran = outcomes.filter((o) => o.ran)
+    for (const o of outcomes.filter((o) => !o.ran)) {
+      uncompared.push(`${name} from ${o.where} — ${o.reason}`)
+    }
+    if (ran.length === 0) continue
+    compared.push(name)
+    const matched = ran.find((o) => o.errors.length === 0)
+    for (const note of (matched ?? ran[0]).skipped)
+      uncompared.push(`${name} from ${(matched ?? ran[0]).where} — ${note}`)
+    if (matched) continue
+    for (const o of ran) {
+      for (const error of o.errors) shadowErrors.push(`shadows ${name} from ${o.where} — ${error}`)
     }
   }
-} finally {
-  checking = null
-  rmSync(scratchDir, { recursive: true, force: true })
+  return {
+    ...base,
+    errors: compiled.errors,
+    unimported: findUnimportedExports(block.code, compiled.errors),
+    unchecked: [],
+    shadowed: [...found.keys()],
+    compared,
+    uncompared,
+    shadowErrors,
+  }
 }
 
-if (process.argv.includes('--json')) {
-  console.log(JSON.stringify(results, null, 2))
-  process.exit(0)
-}
+const augmentationError = ({ specifier, declares }) =>
+  `declares the module '${specifier}' — the packages are resolved from their own built ` +
+  `declarations, and a block cannot add to them` +
+  (declares.length > 0 ? ` (it declares ${declares.join(', ')})` : '')
+
+// ---------------------------------------------------------------------------
+// Verdicts and reporting.
 
 const isCompiled = (r) => r.unchecked.length === 0
 const isClean = (r) =>
   isCompiled(r) && r.errors.length === 0 && r.shadowErrors.length === 0 && r.unimported.length === 0
+const unexcused = (r) => [
+  ...r.shadowErrors,
+  ...r.unimported.map((name) => `uses ${name} without importing it`),
+]
 
-// A listed path that vanished takes its blocks and its classifications with
-// it. Reported by name so the run cannot go green on a rename.
-for (const relativePath of missingFiles) {
-  console.error(`MISSING ${relativePath} — listed in files.txt but could not be read`)
+// A fragment entry excuses a block from compiling standalone. It never excuses
+// a block from agreeing with the type it redeclares, or from importing what it
+// uses. A block this check never compiles is not one an entry can classify.
+function verdictOf(result) {
+  if (!isCompiled(result)) return result.fragment ? 'stale' : 'unchecked'
+  if (isClean(result)) return result.fragment ? 'stale' : 'clean'
+  if (result.fragment && unexcused(result).length === 0) return 'excused'
+  return 'fail'
 }
 
-let failures = 0
-let stale = 0
-for (const result of results) {
-  // A block this check never compiles is not a block a fragment entry can say
-  // anything about, and requiring one would freeze that entry: nothing the
-  // block does afterwards could retire it. So the entry is stale, and the
-  // absence of one is not a failure — the block is reported as unchecked.
-  if (!isCompiled(result)) {
-    if (result.fragment) {
-      stale++
-      console.error(`STALE  ${result.key} — never compiled, so fragments.json cannot classify it:`)
+function report(results, { fragments, consumed, missingFiles }) {
+  const verdicts = results.map((result) => ({ ...result, verdict: verdictOf(result) }))
+  const extracted = new Set(results.map((r) => r.key))
+  const orphans = Object.keys(fragments).filter((key) => {
+    if (extracted.has(key)) return false
+    const separator = key.lastIndexOf(':')
+    return !(separator > 0 && consumed.has(key.slice(0, separator)))
+  })
+  const count = (pick) => results.reduce((total, r) => total + pick(r).length, 0)
+  const summary = {
+    blocks: results.length,
+    compiling: results.filter(isClean).length,
+    notCompiled: results.filter((r) => !isCompiled(r)).length,
+    classified: results.filter((r) => r.fragment).length,
+    stale: verdicts.filter((r) => r.verdict === 'stale').length,
+    failing: verdicts.filter((r) => r.verdict === 'fail').length,
+    compared: count((r) => r.compared),
+    notCompared: count((r) => r.uncompared),
+    orphans: orphans.length,
+    missingFiles: missingFiles.length,
+  }
+  const ok =
+    summary.failing === 0 &&
+    summary.stale === 0 &&
+    orphans.length === 0 &&
+    missingFiles.length === 0
+  return { verdicts, orphans, summary, ok }
+}
+
+function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFiles }) {
+  for (const relativePath of missingFiles) {
+    console.error(`MISSING ${relativePath} — listed in files.txt but could not be read`)
+  }
+  for (const result of verdicts) {
+    if (result.verdict === 'stale') {
+      console.error(
+        isCompiled(result)
+          ? `STALE  ${result.key} — compiles, but fragments.json classifies it:`
+          : `STALE  ${result.key} — never compiled, so fragments.json cannot classify it:`,
+      )
       console.error(`         "${result.fragment}"`)
     }
-    continue
-  }
-  if (isClean(result)) {
-    if (result.fragment) {
-      stale++
-      console.error(`STALE  ${result.key} — compiles, but fragments.json classifies it:`)
-      console.error(`         "${result.fragment}"`)
+    if (result.verdict !== 'fail') continue
+    const tag = result.shadowed.length > 0 ? ` (redeclares ${result.shadowed.join(', ')})` : ''
+    console.error(`FAIL   ${result.key}${tag}`)
+    for (const error of [...(result.fragment ? [] : result.errors), ...unexcused(result)]) {
+      console.error(`         ${error}`)
     }
-    continue
   }
-  // A fragment entry excuses a block from compiling standalone. It never
-  // excuses a block from agreeing with the type it redeclares, or from
-  // importing what it uses.
-  const unexcused = [
-    ...result.shadowErrors,
-    ...result.unimported.map((name) => `uses ${name} without importing it`),
-  ]
-  if (result.fragment && unexcused.length === 0) continue
-  failures++
-  const tag = result.shadowed.length > 0 ? ` (redeclares ${result.shadowed.join(', ')})` : ''
-  console.error(`FAIL   ${result.key}${tag}`)
-  for (const error of [...(result.fragment ? [] : result.errors), ...unexcused]) {
-    console.error(`         ${error}`)
+  // Neither of these is a failure, but an escape hatch an author can reach — a
+  // phantom type parameter, a `tsx` fence — must not be quieter than the
+  // failure it retires, so both go to stderr with the other advisories.
+  for (const result of verdicts) {
+    for (const note of result.unchecked) console.error(`UNCHECKED ${result.key} — ${note}`)
+    for (const note of result.uncompared) console.error(`NOT COMPARED ${result.key} — ${note}`)
   }
-}
-
-// Neither of these is a failure. A block this check cannot compile is not one
-// it can make a claim about, and a redeclared name the probe could not compare
-// may simply be a name the block and the package share. Both go to stderr with
-// the other advisories: an escape hatch an author can reach — a phantom type
-// parameter, a `tsx` fence — must not be quieter than the failure it retires.
-for (const result of results) {
-  for (const note of result.unchecked) {
-    console.error(`UNCHECKED ${result.key} — ${note}`)
+  for (const key of orphans) {
+    console.error(`ORPHAN ${key} — fragments.json classifies no block at that line:`)
+    console.error(`         "${fragments[key]}"`)
   }
-  for (const note of result.uncompared) {
-    console.error(`NOT COMPARED ${result.key} — ${note}`)
-  }
-}
-
-// A key that matches no extracted block excuses nothing, and says so about a
-// block that has moved or gone. Without this the file only ever grows, and an
-// edit above a block silently retires its classification. A key naming a file
-// that is not listed at all is orphaned too — a typo or a leftover rename —
-// and so is one with no `file:line` shape. The single exemption is a changeset
-// that release has consumed, which takes its keys with it legitimately.
-const extracted = new Set(results.map((r) => r.key))
-const orphans = Object.keys(fragments).filter((key) => {
-  if (extracted.has(key)) return false
-  const separator = key.lastIndexOf(':')
-  return !(separator > 0 && consumed.has(key.slice(0, separator)))
-})
-for (const key of orphans) {
-  console.error(`ORPHAN ${key} — fragments.json classifies no block at that line:`)
-  console.error(`         "${fragments[key]}"`)
-}
-
-// Three axes, not one partition: a block that compiles can also carry a
-// fragment entry, and that overlap is exactly the stale count beside it.
-const compiling = results.filter(isClean).length
-const uncompiled = results.filter((r) => !isCompiled(r)).length
-const classified = results.filter((r) => r.fragment).length
-const count = (pick) => results.reduce((total, r) => total + pick(r).length, 0)
-console.log(
-  `${results.length} blocks: ${compiling} compile, ${uncompiled} not compiled; ` +
-    `${classified} carry a fragment entry (${stale} stale). ` +
-    `Redeclared exported names: ${count((r) => r.compared)} compared against the package, ` +
-    `${count((r) => r.uncompared)} not compared.`,
-)
-
-if (failures > 0 || stale > 0 || orphans.length > 0 || missingFiles.length > 0) {
-  console.error(
-    `\n${failures} failing, ${stale} stale and ${orphans.length} orphaned classification(s), ` +
-      `${missingFiles.length} listed file(s) missing.`,
+  // Three axes, not one partition: a block that compiles can also carry a
+  // fragment entry, and that overlap is exactly the stale count beside it.
+  console.log(
+    `${summary.blocks} blocks: ${summary.compiling} compile, ${summary.notCompiled} not compiled; ` +
+      `${summary.classified} carry a fragment entry (${summary.stale} stale). ` +
+      `Redeclared exported names: ${summary.compared} compared against the package, ` +
+      `${summary.notCompared} not compared.`,
   )
-  process.exit(1)
+  if (!ok) {
+    console.error(
+      `\n${summary.failing} failing, ${summary.stale} stale and ${orphans.length} orphaned ` +
+        `classification(s), ${missingFiles.length} listed file(s) missing.`,
+    )
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Modes.
+
+function runBlocks(files, sources, exportedTypes, fragments) {
+  const results = []
+  for (const file of files) {
+    for (const block of extractBlocks(file, sources.get(file))) {
+      results.push(checkBlock(block, exportedTypes, fragments))
+    }
+  }
+  return results
+}
+
+function realRun(exportedTypes) {
+  const listedPaths = readFileSync(path.join(blocksDir, 'files.txt'), 'utf8')
+    .split('\n')
+    .map((line) => line.replace(/#.*$/, '').trim())
+    .filter(Boolean)
+  const fragments = JSON.parse(readFileSync(path.join(blocksDir, 'fragments.json'), 'utf8'))
+  const { sources, consumed, missingFiles, files } = readListedFiles(listedPaths)
+  const results = runBlocks(files, sources, exportedTypes, fragments)
+  const reported = report(results, { fragments, consumed, missingFiles })
+  if (jsonMode) {
+    console.log(
+      JSON.stringify(
+        {
+          ok: reported.ok,
+          summary: reported.summary,
+          results: reported.verdicts,
+          orphans: reported.orphans,
+          missingFiles,
+        },
+        null,
+        2,
+      ),
+    )
+  } else {
+    printReport(reported, { fragments, missingFiles })
+  }
+  return reported.ok ? 0 : 1
+}
+
+// The fixture holds one block per known-bad shape and one correct block per
+// shape, each preceded by `<!-- expect: FAIL -->` or `<!-- expect: PASS -->`
+// (with `fragment="…"` where the shape needs an entry). A bad block must be
+// reported FAIL; a good one must be clean or excused. Anything else — a bail,
+// a stale entry, a marker-less block — fails the self-test.
+function selfTest(exportedTypes) {
+  const { sources, consumed, missingFiles, files } = readListedFiles([selfTestFixture])
+  if (missingFiles.length > 0)
+    throw new ToolingFailure(`self-test fixture missing: ${selfTestFixture}`)
+  const blocks = extractBlocks(selfTestFixture, sources.get(selfTestFixture))
+  const fragments = {}
+  for (const block of blocks) {
+    if (block.expectation?.fragment) {
+      fragments[`${block.file}:${block.line}`] = block.expectation.fragment
+    }
+  }
+  const results = runBlocks(files, sources, exportedTypes, fragments)
+  const reported = report(results, { fragments, consumed, missingFiles })
+  const expectations = new Map(blocks.map((b) => [`${b.file}:${b.line}`, b.expectation]))
+  let mismatches = 0
+  const rows = []
+  for (const result of reported.verdicts) {
+    const expected = expectations.get(result.key)
+    const met = expected
+      ? expected.verdict === 'FAIL'
+        ? result.verdict === 'fail'
+        : result.verdict === 'clean' || result.verdict === 'excused'
+      : false
+    if (!met) mismatches++
+    rows.push(
+      `${met ? 'ok      ' : 'MISMATCH'} expected ${expected?.verdict ?? '(no marker)'}, got ` +
+        `${result.verdict.toUpperCase()}  ${result.key}  ${result.heading}`,
+    )
+    if (!met) {
+      for (const line of [...result.errors, ...unexcused(result), ...result.uncompared]) {
+        rows.push(`           ${line}`)
+      }
+    }
+  }
+  const expectedFail = blocks.filter((b) => b.expectation?.verdict === 'FAIL').length
+  const expectedPass = blocks.filter((b) => b.expectation?.verdict === 'PASS').length
+  console.log(rows.join('\n'))
+  console.log(
+    `\nself-test: ${blocks.length} blocks — ${expectedFail} known-bad, ${expectedPass} known-good, ` +
+      `${mismatches} mismatch(es).`,
+  )
+  return mismatches === 0 ? 0 : 1
+}
+
+let exitCode = 2
+try {
+  const exportedTypes = collectExportedTypes()
+  exitCode = selfTestMode ? selfTest(exportedTypes) : realRun(exportedTypes)
+} catch (error) {
+  if (!(error instanceof ToolingFailure)) throw error
+  console.error(error.message)
+  exitCode = 2
+} finally {
+  checking = null
+  rmSync(scratchDir, { recursive: true, force: true })
+}
+process.exit(exitCode)
