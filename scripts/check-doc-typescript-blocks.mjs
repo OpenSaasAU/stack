@@ -17,22 +17,25 @@
 //      that carries imports of its own yet still needs a name from the exports
 //      prelude is reported as using that name without importing it.
 //
-//   3. Shadowing. A block that declares a type, interface, class or enum whose
+//   3. Shadowing. A block that exports a type, interface, class or enum whose
 //      name is also exported by @opensaas/stack-core or @opensaas/stack-rag is
-//      additionally checked for structural equivalence with the real export,
-//      both directions. Without this a block can document the opposite of what
-//      the package declares — `embedBatch?` against a required `embedBatch` —
-//      and compile cleanly forever, because its own copy is what the compiler
-//      resolved against. The comparison needs a type-argument arity both sides
-//      accept and two declarations that actually resolved; short of either, the
-//      name is reported as NOT compared rather than counted as checked, since a
-//      comparison against an error type passes for no reason (see Known limits).
+//      additionally checked against the real export. Without this a block can
+//      document the opposite of what the package declares — `embedBatch?`
+//      against a required `embedBatch` — and compile cleanly forever, because
+//      its own copy is what the compiler resolved against. Assignability in
+//      both directions is asserted, and so is identity, which is what sees an
+//      optional member appear or disappear. The comparison needs a
+//      type-argument arity both sides accept and a declaration that resolved;
+//      short of either, the name is reported as NOT COMPARED rather than
+//      counted as checked, since a comparison against an error type passes for
+//      no reason.
 //
 // Blocks that cannot compile on their own carry an entry in
 // scripts/doc-blocks/fragments.json giving the reason. A reason is a claim
 // about the block, so the check treats it as one: an entry whose block now
-// compiles is reported as STALE, an entry matching no block at all is reported
-// as ORPHAN, and a shadowing failure is never excused by a fragment entry.
+// compiles is reported as STALE, so is one on a block this check never compiles
+// at all, an entry matching no block is reported as ORPHAN, and a shadowing
+// failure is never excused by a fragment entry.
 //
 // Usage: pnpm build && pnpm check:doc-ts-blocks   (add --json for raw results)
 //
@@ -50,21 +53,34 @@
 //     that has drifted off every block, but a key that drifts onto a different
 //     block's first line still excuses that block instead.
 //   - Shadowing is checked only for names exported from the nine entry points
-//     in `packageEntries`, and only for the block's own module-scope statements
-//     — the parser supplies those, so no spelling of a declaration escapes, but
-//     one nested in a function, a namespace or a `declare module` is not
-//     compared. A subpath this file does not list is not compared against.
+//     in `packageEntries`, and only at the block's own module scope — the
+//     parser supplies both the declarations and the export clause, so no
+//     spelling of a module-scope export escapes, but a declaration nested in a
+//     function, a namespace or a `declare module` is not compared. A subpath
+//     this file does not list is not compared against.
+//   - What the comparison sees is what TypeScript's identity relation sees:
+//     the member sets, each member's own type, whether it is optional and
+//     whether it is `readonly`, at every depth, plus `any` where the package
+//     has something narrower. What it does not see is everything the type
+//     system does not carry — a `@default` that no longer matches the code, a
+//     member whose name is right and whose meaning has changed, an option
+//     documented as accepting a range the package narrows only at runtime.
+//     Two declarations can be identical types and still document the package
+//     wrongly; this check says they are the same type, and no more than that.
 //   - Shadowing compares the two declarations at one type-argument arity, with
 //     fresh unconstrained parameters, so a generic is often out of reach. Of
 //     the 242 exported names, 70 are generic: 41 have at least one required
 //     type parameter and 59 at least one constrained parameter (62 have one or
 //     the other). A comparison bails whenever the arity it picks would have to
-//     supply a constrained parameter, or when no arity satisfies both sides.
-//   - A comparison also bails when the block does not type-check on its own,
-//     because an unresolved name in it degrades the declaration to an error
-//     type that agrees with everything in both directions. A member the block
-//     deliberately types `any` is the same vacuum with no diagnostic to catch
-//     it: the comparison is real, and says nothing about that member.
+//     supply a constrained parameter, or when no arity satisfies both sides. A
+//     constraint of `unknown` or `any` constrains nothing and is filled; a
+//     parameter the block declares past the package's arity and never uses is
+//     dropped rather than allowed to retire the comparison.
+//   - A comparison also bails when a type the block's declaration names does
+//     not resolve, because an error type agrees with everything in both
+//     directions and is identical to nothing. That question is asked of the
+//     declaration, not of the excerpt: a block whose only fault is a bare name
+//     the prose supplies is compared normally.
 //   - Every bail is reported as `NOT COMPARED` with its reason and excluded
 //     from the compared tally, and none of them fails the block: a documented
 //     `type Row = { … }` alongside an unrelated exported `Row<C, R, K>` is a
@@ -75,9 +91,10 @@
 //     and a wrong block then compares clean. The guard above checks only that
 //     the nine entry declaration files exist.
 //   - A `tsx` fence is extracted but never compiled — no `jsx` option is set
-//     and React is not resolvable from the scratch project. It is reported as
-//     unchecked with that one reason, and, being a block this check cannot
-//     make a claim about, may carry a fragment entry like any other.
+//     and React is not resolvable from the scratch project — so neither the
+//     compile nor the import check runs on it. It is reported as `UNCHECKED`
+//     and does not fail; a fragment entry on one is stale, since an entry
+//     classifies a block that was compiled and this one was not.
 //   - A listed path that cannot be read fails by name. The one exception is
 //     `.changeset/*`, which release consumes; that path is skipped and its
 //     fixture keys are exempted from the orphan report along with it.
@@ -180,11 +197,31 @@ function extractBlocks(relativePath) {
   return blocks
 }
 
+// `extends unknown` and `extends any` are constraints that constrain nothing,
+// so the probe can fill them; treating them as unfillable hands an author a
+// no-op edit that turns a shadowing failure into an advisory note.
+const constrains = (constraint) =>
+  Boolean(constraint) &&
+  constraint.kind !== ts.SyntaxKind.UnknownKeyword &&
+  constraint.kind !== ts.SyntaxKind.AnyKeyword
+
+function isTypeParameterUsed(declaration, parameter) {
+  let used = false
+  const visit = (node) => {
+    if (used || node === parameter) return
+    if (ts.isIdentifier(node) && node.text === parameter.name.text) used = true
+    else ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(declaration, visit)
+  return used
+}
+
 function describeTypeParameters(declarations) {
-  const declared = declarations.find((d) => d.typeParameters?.length)?.typeParameters ?? []
-  return declared.map((p) => ({
+  const declaration = declarations.find((d) => d.typeParameters?.length)
+  return (declaration?.typeParameters ?? []).map((p) => ({
     optional: Boolean(p.default),
-    constrained: Boolean(p.constraint),
+    constrained: constrains(p.constraint),
+    used: isTypeParameterUsed(declaration, p),
   }))
 }
 
@@ -232,13 +269,23 @@ function collectExportedTypes() {
 // leaves unclosed is reported as not compared, rather than passing unremarked
 // as a name this check never looked at.
 //
-// `export { X }` is read here too, so a block that declares at module scope and
-// exports separately is not handed a duplicate re-export it never asked for.
+// The colliding name is the one the module *exports*, which is not always the
+// one it declared — `export { Wrong as ChunkingConfig }` and `import X = N.Bad;
+// export { X }` each put a shape under a shipped name with no declaration
+// spelled that way anywhere — so the export clause is read alongside the
+// declarations.
 function findBlockDeclarations(code, scriptKind) {
   const source = ts.createSourceFile('block.ts', code, ts.ScriptTarget.ES2022, true, scriptKind)
   const declared = new Map()
   const nested = new Set()
   const exportedByOwnName = new Set()
+  const exportedAs = new Map()
+  const record = (name, node, exported) => {
+    const entry = declared.get(name) ?? { declarations: [], exported: false }
+    entry.declarations.push(node)
+    entry.exported ||= exported
+    declared.set(name, entry)
+  }
   const visit = (node, atModuleScope) => {
     if (
       atModuleScope &&
@@ -250,7 +297,16 @@ function findBlockDeclarations(code, scriptKind) {
       for (const element of node.exportClause.elements) {
         const local = element.propertyName?.text ?? element.name.text
         if (local === element.name.text) exportedByOwnName.add(local)
+        else exportedAs.set(element.name.text, local)
       }
+      return
+    }
+    const modifiers = ts.canHaveModifiers(node) ? (ts.getModifiers(node) ?? []) : []
+    const exported =
+      modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) &&
+      !modifiers.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+    if (atModuleScope && ts.isImportEqualsDeclaration(node)) {
+      record(node.name.text, node, exported)
       return
     }
     const declares =
@@ -260,25 +316,25 @@ function findBlockDeclarations(code, scriptKind) {
       ts.isEnumDeclaration(node)
     if (declares && node.name) {
       if (!atModuleScope) nested.add(node.name.text)
-      else {
-        const modifiers = node.modifiers ?? []
-        const entry = declared.get(node.name.text) ?? { declarations: [], exported: false }
-        entry.declarations.push(node)
-        entry.exported ||=
-          modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) &&
-          !modifiers.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
-        declared.set(node.name.text, entry)
-      }
+      else record(node.name.text, node, exported)
     }
     ts.forEachChild(node, (child) => visit(child, false))
   }
   for (const statement of source.statements) visit(statement, true)
+
+  const describe = (entry, exported) => ({
+    typeParameters: describeTypeParameters(entry.declarations),
+    spans: entry.declarations.map((d) => ({ start: d.getStart(source), end: d.getEnd() })),
+    exported,
+  })
   const moduleScope = new Map()
   for (const [name, entry] of declared) {
-    moduleScope.set(name, {
-      typeParameters: describeTypeParameters(entry.declarations),
-      exported: entry.exported || exportedByOwnName.has(name),
-    })
+    moduleScope.set(name, describe(entry, entry.exported || exportedByOwnName.has(name)))
+  }
+  for (const [exportedName, local] of exportedAs) {
+    const entry = declared.get(local)
+    if (!entry || moduleScope.has(exportedName)) continue
+    moduleScope.set(exportedName, describe(entry, true))
   }
   return {
     moduleScope,
@@ -297,6 +353,7 @@ function findShadowedNames(code, exportedTypes, scriptKind = ts.ScriptKind.TS) {
       shipped: shipped.typeParameters,
       documented: documented.typeParameters,
       exported: documented.exported,
+      spans: documented.spans,
     })
   }
   return { found, outOfScope: nestedOnly.filter((name) => exportedTypes.has(name)) }
@@ -309,10 +366,16 @@ const requiredCount = (params) => params.filter((p) => !p.optional).length
 // types. Where no such arity exists the two names are unrelated as far as this
 // tool can tell, and saying so is the only honest result.
 function planComparison(documented, shipped) {
+  // A type parameter the block declares past the package's arity and never
+  // uses says nothing about the shape, so it does not stand between the two
+  // declarations. Left in, it is a one-word edit that retires a failure.
+  const phantom =
+    documented.length > shipped.length && documented.slice(shipped.length).every((p) => !p.used)
+  const effective = phantom ? documented.slice(0, shipped.length) : documented
   // The most type arguments both sides accept, so the comparison is between
   // the two type constructors rather than between one instantiation of each.
-  const arity = Math.min(documented.length, shipped.length)
-  if (arity < Math.max(requiredCount(documented), requiredCount(shipped))) {
+  const arity = Math.min(effective.length, shipped.length)
+  if (arity < Math.max(requiredCount(effective), requiredCount(shipped))) {
     return {
       compared: false,
       reason:
@@ -320,14 +383,15 @@ function planComparison(documented, shipped) {
         `required, and the block declares ${documented.length}`,
     }
   }
-  const filled = [...documented.slice(0, arity), ...shipped.slice(0, arity)]
+  const documentedArity = phantom ? documented.length : arity
+  const filled = [...documented.slice(0, documentedArity), ...shipped.slice(0, arity)]
   if (filled.some((p) => p.constrained)) {
     return {
       compared: false,
       reason: 'its type parameters carry constraints the probe cannot fill',
     }
   }
-  return { compared: true, arity }
+  return { compared: true, arity, documentedArity }
 }
 
 const compilerOptions = {
@@ -371,13 +435,13 @@ function runProgram(entryFiles, { withExports = true } = {}) {
     rmSync(scratchDir, { recursive: true, force: true })
     process.exit(2)
   }
-  return all
+  return { program, diagnostics: all }
 }
 
 function diagnose(entryFiles, options) {
   const owned = new Set(entryFiles.map(toPosix))
   return runProgram(entryFiles, options)
-    .filter((d) => d.file && owned.has(toPosix(d.file.fileName)))
+    .diagnostics.filter((d) => d.file && owned.has(toPosix(d.file.fileName)))
     .map(format)
 }
 
@@ -409,53 +473,232 @@ function findUnimportedExports(code) {
   ]
 }
 
-// Structural equivalence, both directions, between the block's own declaration
-// and the package's. Assignability alone in one direction would let the block
-// drop or widen a member unnoticed.
+// A name TypeScript cannot resolve becomes the error type, which is assignable
+// to and from everything and identical to nothing — so a comparison against it
+// is not a comparison. That is a question about the type being compared, not
+// about whether the excerpt compiles: a block whose only fault is a bare
+// `runtime` the prose supplies still declares a perfectly resolvable type, and
+// bailing on it would exempt the whole fragment population, which is every
+// block that carries a fragment entry.
 //
-// Both assignments pass vacuously if either side is an error type, so the
-// subject file has to type-check before the result means anything: a member
-// typed by a name the block never defines degrades to `any`, agrees with
-// everything in both directions, and would otherwise be tallied as checked.
-// Fragment blocks are by definition the ones that do not compile standalone,
-// which makes that the common case rather than a corner of one.
-function compileShadowProbe(code, name, specifier, alreadyExported, arity) {
+// So the block's own declaration is what gets read. Every type it names is
+// handed to the checker, which resolves through aliases — `type Broken =
+// NotReal` then `item: Broken` yields the error type at the reference, so one
+// level of indirection does not hide it — and the scan is bounded by the
+// declaration's own text rather than by the package graph behind it.
+const isErrorType = (type) =>
+  Boolean(type.flags & ts.TypeFlags.Any) && type.intrinsicName === 'error'
+
+function findUnresolved(checker, sourceFile, spans) {
+  const roots = []
+  const collect = (node) => {
+    if (
+      spans.some(({ start, end }) => node.getStart(sourceFile) === start && node.getEnd() === end)
+    )
+      roots.push(node)
+    else ts.forEachChild(node, collect)
+  }
+  ts.forEachChild(sourceFile, collect)
+
+  let unresolved = null
+  const scan = (node) => {
+    if (unresolved) return
+    // An `import X = A.B` names a type without being one, so it is asked for
+    // its alias target rather than for a type it does not have.
+    if (ts.isImportEqualsDeclaration(node)) {
+      const local = checker.getSymbolAtLocation(node.name)
+      const target =
+        local && local.getFlags() & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(local) : local
+      if (!target || (target.declarations ?? []).length === 0) {
+        unresolved = node.moduleReference.getText(sourceFile)
+      }
+      return
+    }
+    const names =
+      ts.isTypeReferenceNode(node) ||
+      ts.isExpressionWithTypeArguments(node) ||
+      ts.isTypeQueryNode(node) ||
+      ts.isImportTypeNode(node)
+    if (names && isErrorType(checker.getTypeAtLocation(node))) {
+      unresolved = node.getText(sourceFile).split('\n')[0]
+      return
+    }
+    ts.forEachChild(node, scan)
+  }
+  for (const root of roots) scan(root)
+  return unresolved
+}
+
+const isOptional = (symbol) => Boolean(symbol.getFlags() & ts.SymbolFlags.Optional)
+const isReadonly = (symbol) =>
+  (symbol.declarations ?? []).some(
+    (d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Readonly,
+  )
+
+// `Type 'false' is not assignable to type 'true'` is what the identity probe
+// says on its own, which tells a doc author nothing. The member sets are
+// compared here only to name the difference.
+function describeDifference(checker, documentedType, shippedType, location) {
+  const documented = new Map(
+    checker.getPropertiesOfType(documentedType).map((s) => [s.getName(), s]),
+  )
+  const shipped = new Map(checker.getPropertiesOfType(shippedType).map((s) => [s.getName(), s]))
+  const differences = []
+  const indexes = (type) =>
+    checker
+      .getIndexInfosOfType(type)
+      .map((i) => `[${checker.typeToString(i.keyType)}]: ${checker.typeToString(i.type)}`)
+      .sort()
+      .join(', ')
+  if (indexes(documentedType) !== indexes(shippedType)) {
+    differences.push(
+      `the block's index signatures are \`${indexes(documentedType) || 'none'}\` and the ` +
+        `package's are \`${indexes(shippedType) || 'none'}\``,
+    )
+  }
+  for (const member of documented.keys()) {
+    if (!shipped.has(member))
+      differences.push(`the block declares \`${member}\`, the package does not`)
+  }
+  for (const member of shipped.keys()) {
+    if (!documented.has(member))
+      differences.push(`the package declares \`${member}\`, the block does not`)
+  }
+  for (const [member, own] of documented) {
+    const theirs = shipped.get(member)
+    if (!theirs) continue
+    if (isOptional(own) !== isOptional(theirs)) {
+      differences.push(
+        `\`${member}\` is ${isOptional(own) ? 'optional' : 'required'} in the block and ` +
+          `${isOptional(theirs) ? 'optional' : 'required'} in the package`,
+      )
+    }
+    if (isReadonly(own) !== isReadonly(theirs)) {
+      differences.push(
+        `\`${member}\` is ${isReadonly(own) ? '' : 'not '}readonly in the block and ` +
+          `${isReadonly(theirs) ? '' : 'not '}readonly in the package`,
+      )
+    }
+    // Printed form alone would report an alias against the union it names as a
+    // difference. `any` is the reverse case: mutually assignable to everything,
+    // and the whole point of naming it.
+    const ownType = checker.getTypeOfSymbolAtLocation(own, location)
+    const theirType = checker.getTypeOfSymbolAtLocation(theirs, location)
+    const isAny = (type) => Boolean(type.flags & ts.TypeFlags.Any)
+    const interchangeable =
+      checker.isTypeAssignableTo(ownType, theirType) &&
+      checker.isTypeAssignableTo(theirType, ownType)
+    if (!interchangeable || isAny(ownType) !== isAny(theirType)) {
+      differences.push(
+        `\`${member}\` is \`${checker.typeToString(ownType)}\` in the block and ` +
+          `\`${checker.typeToString(theirType)}\` in the package`,
+      )
+    }
+  }
+  return differences
+}
+
+// Structural equivalence between the block's own declaration and the package's.
+//
+// Assignability, both directions, catches a required member changed or dropped
+// but not an optional one appearing or disappearing, because an extra optional
+// property survives assignment either way — and a type whose members are all
+// optional, which is most option bags, then agrees with any rearrangement of
+// its surface at all. Documenting an option the package does not have is the
+// defect this check exists to catch, so the identity relation is asserted as
+// well: `Identical` is true only when the checker holds the two types to be the
+// same type, which sees optionality, `readonly` and `any`.
+function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
   const subject = path.join(scratchDir, 'shadowed.ts')
   const probe = path.join(scratchDir, 'probe.ts')
   writeFileSync(subject, alreadyExported ? `${code}\n` : `${code}\nexport type { ${name} }\n`)
-  const args = [...Array(arity).keys()].map((index) => `P${index}`)
-  const list = arity > 0 ? `<${args.join(', ')}>` : ''
-  writeFileSync(
-    probe,
-    [
-      `import type { ${name} as Documented } from './shadowed.js'`,
-      `import type { ${name} as Shipped } from '${specifier}'`,
-      `export function probe${list}(documented: Documented${list}, shipped: Shipped${list}) {`,
-      `  const a: Shipped${list} = documented`,
-      `  const b: Documented${list} = shipped`,
-      `  return [a, b]`,
-      `}`,
-      ``,
-    ].join('\n'),
-  )
+  const parameters = [...Array(plan.documentedArity).keys()].map((index) => `P${index}`)
+  const list = (count) => (count > 0 ? `<${parameters.slice(0, count).join(', ')}>` : '')
+  const documented = `Documented${list(plan.documentedArity)}`
+  const shipped = `Shipped${list(plan.arity)}`
+  const identityLine = `  const same: true = identical`
+  const lines = [
+    `import type { ${name} as Documented } from './shadowed.js'`,
+    `import type { ${name} as Shipped } from '${specifier}'`,
+    `type Identical<X, Y> =`,
+    `  (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false`,
+    `export function probe${list(parameters.length)}(`,
+    `  documented: ${documented},`,
+    `  shipped: ${shipped},`,
+    `  identical: Identical<${documented}, ${shipped}>,`,
+    `) {`,
+    `  const a: ${shipped} = documented`,
+    `  const b: ${documented} = shipped`,
+    identityLine,
+    `  return [a, b, same]`,
+    `}`,
+    ``,
+  ]
+  const text = lines.join('\n')
+  const identityStart = text.indexOf(identityLine)
+  const identityEnd = identityStart + identityLine.length
+  writeFileSync(probe, text)
+
   const probeName = toPosix(probe)
   const subjectName = toPosix(subject)
+  const { program, diagnostics } = runProgram([probe, subject])
   const errors = []
-  const unresolved = []
-  for (const d of runProgram([probe, subject])) {
+  const inDeclaration = []
+  let notIdentical = false
+  for (const d of diagnostics) {
     if (!d.file) continue
     const file = toPosix(d.file.fileName)
-    if (file === probeName) errors.push(format(d))
-    else if (file === subjectName) unresolved.push(format(d))
+    if (file === probeName) {
+      if (d.start >= identityStart && d.start < identityEnd) notIdentical = true
+      else errors.push(format(d))
+    } else if (
+      file === subjectName &&
+      plan.spans.some((span) => d.start < span.end && d.start + (d.length ?? 0) > span.start)
+    ) {
+      inDeclaration.push(format(d))
+    }
   }
-  if (unresolved.length > 0) {
+  if (inDeclaration.length > 0) {
     return {
       ran: false,
-      errors: [],
-      reason:
-        `the block does not type-check on its own (${unresolved[0]}), so its ${name} may be ` +
-        `an error type that agrees with anything`,
+      reason: `the block's own declaration of ${name} does not compile (${inDeclaration[0]})`,
     }
+  }
+
+  const checker = program.getTypeChecker()
+  const unresolved = findUnresolved(checker, program.getSourceFile(subject), plan.spans)
+  if (unresolved) {
+    return {
+      ran: false,
+      reason:
+        `the block's ${name} is declared in terms of \`${unresolved}\`, which does not resolve ` +
+        `here — an error type agrees with anything in both directions`,
+    }
+  }
+
+  const declaration = program
+    .getSourceFile(probe)
+    .statements.find((s) => ts.isFunctionDeclaration(s) && s.name?.text === 'probe')
+  const [documentedNode, shippedNode, identicalNode] = declaration.parameters
+  // `Identical` is `true` or `false` once the checker has decided. Anything
+  // else — a deferred `boolean` — is an answer it did not reach, and reading
+  // that as a difference would fail a block for the probe's own indecision.
+  const identity = checker.getTypeAtLocation(identicalNode)
+  if (notIdentical && !(identity.flags & ts.TypeFlags.BooleanLiteral)) {
+    return {
+      ran: false,
+      reason: `the identity relation did not decide between the two ${name} declarations`,
+    }
+  }
+  if (notIdentical && errors.length === 0) {
+    const documentedType = checker.getTypeAtLocation(documentedNode)
+    const shippedType = checker.getTypeAtLocation(shippedNode)
+    const differences = describeDifference(checker, documentedType, shippedType, documentedNode)
+    errors.push(
+      differences.length > 0
+        ? `not the type the package declares — ${differences.join('; ')}`
+        : `not the type the package declares, and the difference is below its top-level members`,
+    )
   }
   return { errors, ran: true }
 }
@@ -496,7 +739,10 @@ try {
           language: block.language,
           errors: [],
           unimported: [],
-          unchecked: ['a tsx fence carries JSX, which this check sets no `jsx` option for'],
+          unchecked: [
+            'a tsx fence carries JSX, which this check sets no `jsx` option for — so it is ' +
+              'neither compiled nor checked for imports it does not make',
+          ],
           shadowed: [...found.keys()],
           compared: [],
           uncompared: names.map(
@@ -517,13 +763,13 @@ try {
           `${name} from ${exportedTypes.get(name).specifier} — the parser placed its ` +
           `declaration below the block's module scope, where it cannot be compared`,
       )
-      for (const [name, { specifier, shipped, documented, exported }] of shadowed) {
+      for (const [name, { specifier, shipped, documented, exported, spans }] of shadowed) {
         const plan = planComparison(documented, shipped)
         if (!plan.compared) {
           uncompared.push(`${name} from ${specifier} — ${plan.reason}`)
           continue
         }
-        const probe = compileShadowProbe(block.code, name, specifier, exported, plan.arity)
+        const probe = compileShadowProbe(block.code, name, specifier, exported, { ...plan, spans })
         if (!probe.ran) {
           uncompared.push(`${name} from ${specifier} — ${probe.reason}`)
           continue
@@ -559,11 +805,9 @@ if (process.argv.includes('--json')) {
   process.exit(0)
 }
 
+const isCompiled = (r) => r.unchecked.length === 0
 const isClean = (r) =>
-  r.errors.length === 0 &&
-  r.shadowErrors.length === 0 &&
-  r.unimported.length === 0 &&
-  r.unchecked.length === 0
+  isCompiled(r) && r.errors.length === 0 && r.shadowErrors.length === 0 && r.unimported.length === 0
 
 // A listed path that vanished takes its blocks and its classifications with
 // it. Reported by name so the run cannot go green on a rename.
@@ -574,6 +818,18 @@ for (const relativePath of missingFiles) {
 let failures = 0
 let stale = 0
 for (const result of results) {
+  // A block this check never compiles is not a block a fragment entry can say
+  // anything about, and requiring one would freeze that entry: nothing the
+  // block does afterwards could retire it. So the entry is stale, and the
+  // absence of one is not a failure — the block is reported as unchecked.
+  if (!isCompiled(result)) {
+    if (result.fragment) {
+      stale++
+      console.error(`STALE  ${result.key} — never compiled, so fragments.json cannot classify it:`)
+      console.error(`         "${result.fragment}"`)
+    }
+    continue
+  }
   if (isClean(result)) {
     if (result.fragment) {
       stale++
@@ -582,10 +838,9 @@ for (const result of results) {
     }
     continue
   }
-  // A fragment entry excuses a block from being compiled — whether because it
-  // cannot compile standalone or because this check cannot compile it at all.
-  // It never excuses a block from agreeing with the type it redeclares, or
-  // from importing what it uses.
+  // A fragment entry excuses a block from compiling standalone. It never
+  // excuses a block from agreeing with the type it redeclares, or from
+  // importing what it uses.
   const unexcused = [
     ...result.shadowErrors,
     ...result.unimported.map((name) => `uses ${name} without importing it`),
@@ -594,21 +849,22 @@ for (const result of results) {
   failures++
   const tag = result.shadowed.length > 0 ? ` (redeclares ${result.shadowed.join(', ')})` : ''
   console.error(`FAIL   ${result.key}${tag}`)
-  for (const error of [
-    ...(result.fragment ? [] : [...result.errors, ...result.unchecked]),
-    ...unexcused,
-  ]) {
+  for (const error of [...(result.fragment ? [] : result.errors), ...unexcused]) {
     console.error(`         ${error}`)
   }
 }
 
-// A redeclared name the probe could not compare is not a failure — the block
-// and the package may simply share a name. It is printed because the
-// alternative is counting it as checked, which is the over-claim this check
-// exists to stop.
+// Neither of these is a failure. A block this check cannot compile is not one
+// it can make a claim about, and a redeclared name the probe could not compare
+// may simply be a name the block and the package share. Both go to stderr with
+// the other advisories: an escape hatch an author can reach — a phantom type
+// parameter, a `tsx` fence — must not be quieter than the failure it retires.
 for (const result of results) {
+  for (const note of result.unchecked) {
+    console.error(`UNCHECKED ${result.key} — ${note}`)
+  }
   for (const note of result.uncompared) {
-    console.log(`NOT COMPARED ${result.key} — ${note}`)
+    console.error(`NOT COMPARED ${result.key} — ${note}`)
   }
 }
 
@@ -629,11 +885,15 @@ for (const key of orphans) {
   console.error(`         "${fragments[key]}"`)
 }
 
+// Three axes, not one partition: a block that compiles can also carry a
+// fragment entry, and that overlap is exactly the stale count beside it.
 const compiling = results.filter(isClean).length
+const uncompiled = results.filter((r) => !isCompiled(r)).length
 const classified = results.filter((r) => r.fragment).length
 const count = (pick) => results.reduce((total, r) => total + pick(r).length, 0)
 console.log(
-  `${results.length} blocks: ${compiling} compile, ${classified} classified fragments. ` +
+  `${results.length} blocks: ${compiling} compile, ${uncompiled} not compiled; ` +
+    `${classified} carry a fragment entry (${stale} stale). ` +
     `Redeclared exported names: ${count((r) => r.compared)} compared against the package, ` +
     `${count((r) => r.uncompared)} not compared.`,
 )
