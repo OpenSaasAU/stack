@@ -1,6 +1,7 @@
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 
-/** JSON Schema for one field's own value — shared by the create/update `data` schema and the `query` tool's `fields` projection schema. */
+/** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
 export function fieldToJsonSchema(
   fieldName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
@@ -38,15 +39,30 @@ export function fieldToJsonSchema(
       }
       break
     case 'relationship':
-      baseSchema.type = 'object'
+      // `null` is the only spelling that clears the edge — nested `disconnect`
+      // is refused (ADR-0050) — so the schema has to admit it alongside
+      // `connect`, or a client cannot express half of what the write surface
+      // supports.
+      baseSchema.type = ['object', 'null']
+      baseSchema.description =
+        'Link this record to a row of the related list with { "connect": { "id": "..." } }, or clear the link with null.'
       baseSchema.properties = {
         connect: {
           type: 'object',
           properties: {
             id: { type: 'string' },
           },
+          required: ['id'],
+          additionalProperties: false,
         },
       }
+      // `connect` is the object form's only key, and `id` its only criterion:
+      // a second key beside either is refused rather than narrowed to the part
+      // the engine recognises (`MalformedRelationInputError`). `required` and
+      // `additionalProperties` constrain the object form only, so `null`
+      // — the other half of the union above — still validates.
+      baseSchema.required = ['connect']
+      baseSchema.additionalProperties = false
       break
     default:
       baseSchema.type = 'string'
@@ -55,8 +71,34 @@ export function fieldToJsonSchema(
   return baseSchema
 }
 
+/**
+ * Whether this end of the relationship holds the foreign-key column.
+ *
+ * `shouldHaveForeignKey` throws on a config `generate` would have refused — a
+ * ref naming a list or field that is not declared, or a one-to-one claiming
+ * `db.foreignKey` on both ends. `tools/list` lists every list at once, so
+ * letting that escape would fail the whole listing over one bad field; an
+ * ownership question with no answer is treated as "not this end", which at
+ * worst omits a field the engine would have refused anyway.
+ */
+function ownsForeignKey(
+  listKey: string,
+  fieldName: string,
+  fieldConfig: RelationshipField,
+  config: OpenSaasConfig,
+): boolean {
+  if (!config.lists[fieldConfig.ref.split('.')[0]]) return false
+  try {
+    return shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)
+  } catch {
+    return false
+  }
+}
+
 export function generateFieldSchemas(
+  listKey: string,
   fields: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
   operation: 'create' | 'update',
 ): {
   properties: Record<string, unknown>
@@ -67,6 +109,17 @@ export function generateFieldSchemas(
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
+
+    // A relationship whose foreign key lives on the related row — a to-many,
+    // and the non-owning end of a one-to-one — has no column here to lower a
+    // `connect` onto, so the engine refuses it (ADR-0050). Advertising it would
+    // invite a tool call that can only fail.
+    if (
+      isRelationshipField(fieldConfig) &&
+      !ownsForeignKey(listKey, fieldName, fieldConfig, config)
+    ) {
+      continue
+    }
 
     properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
 

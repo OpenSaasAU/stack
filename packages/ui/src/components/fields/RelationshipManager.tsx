@@ -24,7 +24,7 @@ import { Button } from '../../primitives/button.js'
 import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
 import type { ServerActionInput } from '../../server/types.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldError, FieldReadValue } from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldError, FieldHelp, FieldReadValue } from './field-shell.js'
 
 /**
  * Per-part `classNames` slots for `RelationshipManager` (issue #709). Each merges
@@ -62,6 +62,7 @@ export interface RelationshipManagerProps {
   required?: boolean
   mode?: 'read' | 'edit'
   isLoading?: boolean
+  helpText?: string
   relatedListKey?: string
   basePath?: string
   /** Raw list key of the list being edited — required (with `serverAction`) to live-search. */
@@ -85,6 +86,7 @@ export function RelationshipManager({
   required,
   mode = 'edit',
   isLoading = false,
+  helpText,
   relatedListKey,
   basePath = '/admin',
   listKey,
@@ -121,6 +123,7 @@ export function RelationshipManager({
         <FieldReadValue>
           {selectedItems.length > 0 ? selectedItems.map((item) => item.label).join(', ') : '-'}
         </FieldReadValue>
+        {helpText && <FieldHelp>{helpText}</FieldHelp>}
       </FieldRoot>
     )
   }
@@ -237,6 +240,7 @@ export function RelationshipManager({
         </Combobox>
       </div>
 
+      {helpText && <FieldHelp className="mt-2">{helpText}</FieldHelp>}
       {error && <FieldError className={cn('mt-2', classNames?.error)}>{error}</FieldError>}
     </FieldRoot>
   )

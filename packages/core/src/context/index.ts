@@ -66,19 +66,17 @@ export type ServerActionProps =
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control and hooks apply —
   // never the parent's. The other relationship-table actions below share this
-  // boundary. `mode: 'disconnect'` unlinks the row by disconnecting its
-  // back-reference (`field`; `parentId` is needed only when that back-reference
-  // is to-many, e.g. a many-to-many join) without deleting it; `mode: 'delete'`
-  // truly deletes the row. Returns a distinct `{ removed }` shape, never
-  // `success`, so a UI wrapper that redirects on `success` does not hijack an
-  // in-place row removal.
+  // boundary. `mode: 'disconnect'` unlinks the row by assigning `null` to its
+  // back-reference (`field`) without deleting it; `mode: 'delete'` truly
+  // deletes the row. Returns a distinct `{ removed }` shape, never `success`,
+  // so a UI wrapper that redirects on `success` does not hijack an in-place row
+  // removal.
   | {
       listKey: string
       action: 'removeRelated'
       mode: 'disconnect' | 'delete'
       id: string
       field?: string
-      parentId?: string
     }
   // Relationship-table inline cell edit (issue #737); same ADR-0018 boundary
   // as `removeRelated` — `listKey`/`id` target the RELATED row. Returns a
@@ -738,21 +736,27 @@ export function getContext<TConfig extends OpenSaasConfig>(
           result = await model.delete({ where: { id: props.id } })
         } else {
           // Disconnect: an UPDATE on the related list nulling its back-reference,
-          // never a delete — the row itself survives. A to-one back-reference
-          // disconnects with `true`; a to-many back-reference (many-to-many)
-          // disconnects the specific parent by id.
+          // never a delete — the row itself survives. A to-many back-reference
+          // owns no foreign key to null, so removing that edge is deleting the
+          // junction row under its own delete access (`mode: 'delete'`), not an
+          // update here (ADR-0050, ADR-0018 as amended).
           if (!props.field) {
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
           const backRefField = listConfig.fields[props.field]
           const backRefIsMany =
             !!backRefField && 'many' in backRefField && backRefField.many === true
-          const disconnectValue = backRefIsMany
-            ? { disconnect: { id: props.parentId } }
-            : { disconnect: true }
+          if (backRefIsMany) {
+            return {
+              removed: false,
+              error:
+                `Cannot unlink through "${props.field}": a to-many back-reference owns no ` +
+                `foreign key to clear. Remove the row itself instead.`,
+            }
+          }
           result = await model.update({
             where: { id: props.id },
-            data: { [props.field]: disconnectValue },
+            data: { [props.field]: null },
           })
         }
         if (result === null || result === undefined) {
@@ -771,12 +775,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
-    // The back-reference to the parent is set here from `field`/`parentId` (a
-    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
-    // many-to-many, connects the parent by id), so the client can never
-    // re-target the link. Honours Silent failure: an access-denied create
-    // returns `null`, surfaced as `{ created: false }` with a generic reason
-    // (no denied-vs-absent leak).
+    // The back-reference to the parent is set here from `field`/`parentId`, so
+    // the client can never re-target the link. Only a to-one back-reference
+    // owns a column to hold it; a to-many one is refused below. Honours Silent
+    // failure: an access-denied create returns `null`, surfaced as
+    // `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always
@@ -803,14 +806,20 @@ export function getContext<TConfig extends OpenSaasConfig>(
               error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
             }
           }
-          const backRefIsMany = 'many' in backRefField && backRefField.many === true
+          // A to-many back-reference owns no foreign key, so there is no column
+          // on the row being created for the parent to go in (ADR-0050).
+          if ('many' in backRefField && backRefField.many === true) {
+            return {
+              created: false,
+              error:
+                `Cannot preset "${props.field}": a to-many back-reference owns no foreign key. ` +
+                `Link the parent from the side that holds the column.`,
+            }
+          }
           // The back-reference is set on the SERVER from the trusted parentId,
           // OVERWRITING any client-supplied data[field] spread in above, so a
-          // hostile client can never re-target the link (a to-many back-ref
-          // connects the parent by id).
-          data[props.field] = backRefIsMany
-            ? { connect: [{ id: props.parentId }] }
-            : { connect: { id: props.parentId } }
+          // hostile client can never re-target the link.
+          data[props.field] = { connect: { id: props.parentId } }
         }
         const result = await model.create({ data })
         if (result === null || result === undefined) {

@@ -45,7 +45,7 @@ export interface RelationshipTableProps {
   context: AccessContext
   /** The list being edited (the parent record's list). */
   parentListKey: string
-  /** The parent record's id — the disconnect target for many-to-many rows. */
+  /** The parent record's id — the link the pre-linked create drawer presets. */
   parentId: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
@@ -175,6 +175,7 @@ async function resolveCreateForm(
   const { serializableFields, relationshipData } = await prepareItemForm(
     context,
     config,
+    section.relatedListKey,
     formListConfig,
     {},
   )

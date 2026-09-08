@@ -67,7 +67,7 @@ export interface RelationshipTableClientProps {
   relatedListKey: string
   /** The back-reference field on the related list (present when disconnectable). */
   backReferenceField?: string
-  /** The parent record id — the disconnect target for many-to-many rows. */
+  /** The parent record id — the link the pre-linked create drawer presets. */
   parentId: string
   /** The list being edited (used for accessible labelling). */
   parentListKey: string
@@ -212,7 +212,6 @@ export function RelationshipTableClient({
           mode: 'disconnect',
           id: rowId,
           field: backReferenceField,
-          parentId,
         }
       } else {
         return

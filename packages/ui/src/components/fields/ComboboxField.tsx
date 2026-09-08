@@ -73,6 +73,7 @@ export function ComboboxField({
       <FieldRoot mode="read">
         <FieldLabel muted>{label}</FieldLabel>
         <FieldReadValue>{selectedLabel || '-'}</FieldReadValue>
+        {helpText && <FieldHelp>{helpText}</FieldHelp>}
       </FieldRoot>
     )
   }

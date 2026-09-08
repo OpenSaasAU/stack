@@ -8,6 +8,31 @@ export type ItemFormAction = 'create' | 'update'
 const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']
 
 /**
+ * A to-many selection reached the submit transform from a control that never
+ * told the user it was unwritable. The message names the field, and reaches
+ * the form as its general error.
+ */
+export class UnwritableRelationshipError extends Error {
+  readonly fieldName: string
+
+  constructor(fieldName: string) {
+    super(
+      `"${fieldName}" was not saved: to-many relationships are not yet writable through this form. ` +
+        `Edit those rows from their own list instead.`,
+    )
+    this.name = 'UnwritableRelationshipError'
+    this.fieldName = fieldName
+  }
+}
+
+/** Whether a relationship value carries a selection the user could lose. */
+function hasSelection(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value.length > 0
+    : value !== null && value !== undefined && value !== ''
+}
+
+/**
  * Transform raw form state into the data shape expected by the server/Prisma.
  *
  * This is the shared submit transform used by every item form (the AdminUI
@@ -17,12 +42,17 @@ const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']
  * Behaviour (the superset applied by all forms):
  * - Keys with no corresponding entry in `fields` are dropped (defense-in-depth:
  *   guards against a non-field key like `_count` reaching the submit payload).
- * - Relationship fields are converted to Prisma `connect` shape (single or many).
- *   Empty single relationships and empty many-arrays are omitted.
+ * - A to-one relationship is converted to `connect` shape; an empty one is
+ *   omitted. A relationship the form rendered read-only sends nothing.
  * - Password fields whose value is an `{ isSet }` sentinel (an unchanged password
  *   read back from the server) are skipped, so they are not re-submitted.
  * - All other fields pass through unchanged (including `File` objects, which the
  *   Next.js server action serialises).
+ *
+ * @throws {UnwritableRelationshipError} when a to-many carries a value and was
+ * not marked read-only, so no control could have shown the user it was
+ * unwritable. Dropping it here would report success on input that never
+ * reached the database.
  */
 export function transformItemFormData(
   fields: Record<string, SerializableFieldConfig>,
@@ -45,17 +75,30 @@ export function transformItemFormData(
       continue
     }
 
+    // A read-only field's value in `formData` is the one the server sent — its
+    // control never calls `onChange` — so there is no user input to lose by
+    // sending nothing for it. This is what a relationship whose foreign key
+    // lives on the related row is marked as (ADR-0050).
+    if (fieldConfig.readOnly) {
+      continue
+    }
+
     // Skip password fields carrying an { isSet } sentinel (unchanged password).
     if (typeof value === 'object' && value !== null && 'isSet' in value) {
       continue
     }
 
     if (fieldConfig.type === 'relationship') {
+      // Unreachable from a form whose fields came through `prepareItemForm`,
+      // which marks a to-many read-only above. A caller that serialises field
+      // configs itself (the standalone forms) can still get here — and its
+      // control WAS editable, so the selection is the user's and must not
+      // vanish into a payload that reports success.
       if (fieldConfig.many) {
-        if (Array.isArray(value) && value.length > 0) {
-          transformed[fieldName] = { connect: value.map((id: string) => ({ id })) }
-        }
-      } else if (value) {
+        if (hasSelection(value)) throw new UnwritableRelationshipError(fieldName)
+        continue
+      }
+      if (value) {
         transformed[fieldName] = { connect: { id: value } }
       }
     } else {
@@ -172,6 +215,15 @@ export function useItemForm({
   const [generalError, setGeneralError] = useState<string | null>(null)
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
+    // A field the form rendered read-only has no input to accept: its control
+    // was handed `mode="read"`. A third-party component that ignores that and
+    // calls this anyway would otherwise put a value into `formData` that the
+    // submit transform then has to drop — a selection shown as accepted and
+    // discarded at save, which is the failure ADR-0050's marking exists to
+    // stop. Refusing it here keeps the control showing the stored value.
+    const fieldConfig = fields[fieldName]
+    if (fieldConfig?.readOnly || fieldConfig?.virtual) return
+
     setFormData((prev) => ({ ...prev, [fieldName]: value }))
     if (errors[fieldName]) {
       setErrors((prev) => {
@@ -188,8 +240,11 @@ export function useItemForm({
     setGeneralError(null)
 
     startTransition(async () => {
-      const data = transformItemFormData(fields, formData)
       try {
+        // Inside the try: the transform refuses a payload it would otherwise
+        // have to discard, and that refusal has to reach the user as the
+        // form's error rather than as an unhandled rejection.
+        const data = transformItemFormData(fields, formData)
         const result = await onSubmit(data, mode)
         // void result → adapter handles its own success/navigation.
         if (result && result.success === false) {

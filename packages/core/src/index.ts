@@ -169,8 +169,10 @@ export {
 // payload shape it refuses (ADR-0050).
 export { WriteCollectionMissingError } from './secured/write.js'
 export {
+  MalformedRelationInputError,
   NestedRelationInputError,
-  RelationInputNotLoweredError,
+  NonOwningRelationInputError,
+  RelationTargetMissingError,
 } from './context/relationship-input.js'
 // Why an `afterTransaction` bracket reports `rolled-back` for a write whose
 // transaction committed: the predicate matched no row. Reachable so a
