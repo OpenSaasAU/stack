@@ -173,6 +173,15 @@ export default config({
         author: relationship({
           ref: 'User.posts',
         }),
+        // The Post end of the Post↔Tag many-to-many. There is no implicit
+        // many-to-many (ADR-0048): the edge is a row of `PostTag`, so this
+        // field reads those rows and the Tags table on the item view adds and
+        // removes them under `PostTag`'s own access.
+        tags: relationship({
+          ref: 'PostTag.post',
+          many: true,
+          ui: { itemView: { columns: ['tag'], removeAction: 'delete' } },
+        }),
       },
       access: {
         operation: {
@@ -228,6 +237,49 @@ export default config({
           } else if (args.operation === 'delete') {
             console.log(`Successfully deleted post:`, args.originalItem.id)
           }
+        },
+      },
+    }),
+
+    Tag: list<Lists.Tag.TypeInfo>({
+      fields: {
+        name: text({ validation: { isRequired: true }, isIndexed: 'unique' }),
+        posts: relationship({
+          ref: 'PostTag.tag',
+          many: true,
+          ui: { itemView: { columns: ['post'], removeAction: 'delete' } },
+        }),
+      },
+      access: {
+        operation: {
+          query: () => true,
+          create: isSignedIn,
+          update: isSignedIn,
+          delete: isSignedIn,
+        },
+      },
+    }),
+
+    // One edge of the Post↔Tag many-to-many. Adding an edge is a create of
+    // this row under THIS list's create access, and removing one is a delete
+    // of it — neither is a nested write on Post or Tag, so the access engine
+    // sees every edge write (ADR-0050, ADR-0018 as amended).
+    PostTag: list<Lists.PostTag.TypeInfo>({
+      fields: {
+        post: relationship({ ref: 'Post.tags' }),
+        tag: relationship({ ref: 'Tag.posts' }),
+      },
+      db: {
+        // A database-level backstop for "one tag per post": two concurrent
+        // adds both pass an application-level existence check and both insert.
+        indexes: [{ fields: ['post', 'tag'], unique: true }],
+      },
+      access: {
+        operation: {
+          query: () => true,
+          create: isSignedIn,
+          update: isSignedIn,
+          delete: isSignedIn,
         },
       },
     }),

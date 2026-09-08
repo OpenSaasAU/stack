@@ -140,6 +140,20 @@ function isToManyRelationship(field: FieldConfig): boolean {
 }
 
 /**
+ * Whether the item view renders this field as a Relationship table rather than
+ * as a field of the details card.
+ *
+ * This is the rule {@link deriveItemViewLayout} splits `sections` from
+ * `detailsFields` by, exported so a caller that describes that table — the
+ * junction-edge read-only reason (#1329) — cannot drift from where the table
+ * actually is.
+ */
+export function rendersAsRelationshipTable(field: FieldConfig): boolean {
+  if (!isToManyRelationship(field) || !('ref' in field)) return false
+  return readRelationshipItemView(field).displayMode === 'table'
+}
+
+/**
  * The related list's own column curation, minus the back-reference to the
  * parent: `ui.listView.initialColumns` when set, else every field whose own
  * `ui.listView.defaultColumn` declaration holds (issue #1018) — including
@@ -201,29 +215,29 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
   }
 
   for (const [fieldName, field] of Object.entries(listConfig.fields)) {
-    const overrides = isToManyRelationship(field) ? readRelationshipItemView(field) : undefined
-
     // A to-many relationship becomes a Relationship table unless demoted to the
     // compact picker, which keeps it in the details card (pre-#734 behaviour).
-    if (overrides && overrides.displayMode === 'table' && 'ref' in field) {
-      const ref = typeof field.ref === 'string' ? field.ref : ''
-      const [relatedListKey, backReferenceField] = ref.split('.')
-      const relatedListConfig = config.lists[relatedListKey]
-      sections.push({
-        fieldName,
-        ref,
-        relatedListKey,
-        backReferenceField,
-        columns:
-          overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db),
-        take: overrides.take,
-        sumColumns: overrides.sum ?? [],
-        removeAction: overrides.removeAction,
-        disconnectable: isDisconnectable(relatedListConfig, backReferenceField),
-      })
-    } else {
+    if (!rendersAsRelationshipTable(field) || !('ref' in field)) {
       detailsFields.push(fieldName)
+      continue
     }
+
+    const overrides = readRelationshipItemView(field)
+    const ref = typeof field.ref === 'string' ? field.ref : ''
+    const [relatedListKey, backReferenceField] = ref.split('.')
+    const relatedListConfig = config.lists[relatedListKey]
+    sections.push({
+      fieldName,
+      ref,
+      relatedListKey,
+      backReferenceField,
+      columns:
+        overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db),
+      take: overrides.take,
+      sumColumns: overrides.sum ?? [],
+      removeAction: overrides.removeAction,
+      disconnectable: isDisconnectable(relatedListConfig, backReferenceField),
+    })
   }
 
   sections = applyOrder(sections, listConfig.ui?.itemView?.order)

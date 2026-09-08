@@ -1516,6 +1516,69 @@ describe('MCP relationship input schemas', () => {
     })
   })
 
+  /**
+   * Adding an edge across a junction is a create of the junction row (#1329,
+   * ADR-0050), so that create tool is where the spelling has to appear — and
+   * the two parents, whose to-many carries no column, must offer nothing.
+   */
+  it('advertises an edge on the junction list that owns it, and on neither parent', async () => {
+    const junction: OpenSaasConfig = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      mcp: { enabled: true, basePath: '/api/mcp' },
+      lists: {
+        Post: {
+          fields: {
+            title: { type: 'text' },
+            tags: { type: 'relationship', ref: 'PostTag.post', many: true },
+          },
+          access: OPEN,
+        },
+        Tag: {
+          fields: {
+            name: { type: 'text' },
+            posts: { type: 'relationship', ref: 'PostTag.tag', many: true },
+          },
+          access: OPEN,
+        },
+        PostTag: {
+          fields: {
+            post: { type: 'relationship', ref: 'Post.tags' },
+            tag: { type: 'relationship', ref: 'Tag.posts' },
+          },
+          access: OPEN,
+        },
+      },
+    }
+
+    const handlers = createMcpHandlers({
+      config: junction,
+      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getContext: () => ({ db: {}, session: { userId: 'user-123' } }) as unknown as AccessContext,
+    })
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    )
+    const data = await response.json()
+    const propertiesOf = (name: string): Record<string, unknown> =>
+      data.result.tools.find((entry: { name: string }) => entry.name === name).inputSchema
+        .properties.data.properties
+
+    expect(Object.keys(propertiesOf('list_post_create'))).toEqual(['title'])
+    expect(Object.keys(propertiesOf('list_tag_create'))).toEqual(['name'])
+    expect(Object.keys(propertiesOf('list_postTag_create'))).toEqual(['post', 'tag'])
+    for (const key of ['post', 'tag']) {
+      expect(propertiesOf('list_postTag_create')[key]).toMatchObject({
+        type: ['object', 'null'],
+        required: ['connect'],
+        additionalProperties: false,
+      })
+    }
+  })
+
   it('lists tools for a config whose relationship ownership cannot be decided', async () => {
     // Both shapes `shouldHaveForeignKey` throws on. `generate` refuses this
     // config, so it is only reachable unvalidated — and `tools/list` covers
