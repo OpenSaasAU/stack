@@ -91,12 +91,19 @@ describe('resolveNavCounts', () => {
         expect(Object.keys(counts)).not.toContain('NotOptedIn')
         expect(Object.keys(counts)).not.toContain('OnlySettings')
         expect(Object.keys(counts)).not.toContain('Denied')
-        // A statically denied list is omitted before any query — a `0` there
-        // would read as "empty" when the truth is "you may see none of it". It
-        // was never attempted, so it never reached the degradation log either.
-        expect(
-          error.mock.calls.some((call) => String(call[0]).includes('nav count for Denied')),
-        ).toBe(false)
+        // Absence from `counts` alone proves nothing while every count throws:
+        // the map is empty either way. The log is what separates "never
+        // selected" from "selected and failed" — a list that reached the count
+        // names itself there, so these are the assertions that go red if a
+        // selection rule is dropped. A statically denied list is omitted before
+        // any query for its own reason: a `0` would read as "empty" when the
+        // truth is "you may see none of it".
+        const attempted = (listKey: string) =>
+          error.mock.calls.some((call) => String(call[0]).includes(`nav count for ${listKey}`))
+
+        expect(attempted('NotOptedIn')).toBe(false)
+        expect(attempted('OnlySettings')).toBe(false)
+        expect(attempted('Denied')).toBe(false)
       } finally {
         error.mockRestore()
       }

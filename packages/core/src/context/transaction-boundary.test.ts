@@ -474,7 +474,9 @@ describe('transaction-boundary hooks', () => {
      * ORM object in and out of the transaction, so a post-settle write worked.
      *
      * This pins the gap rather than the intent: a fix flips this assertion red,
-     * which is the signal to restore the ADR's own wording here.
+     * which is the signal to restore the ADR's own wording here. Which way it
+     * is resolved is open — issue #1348, and the amendment it is cited from at
+     * the foot of ADR-0028.
      */
     test(
       'a deferred compensator still runs on rollback, but its own write is refused (ADR-0028 gap)',

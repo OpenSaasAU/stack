@@ -54,6 +54,15 @@ export default defineConfig({
         },
         // Lowest current files: field-names.ts (stmts 93.87, lines 95.23),
         // extension-packs.ts (branch 88.23), database-config.ts (funcs 100).
+        //
+        // `functions` here is effectively absolute, not the couple of points of
+        // slack the note above describes: all seven files in the glob are at
+        // 100%, and the files are small enough that function coverage moves in
+        // coarse steps — schema.ts has two functions, so one untested helper
+        // takes it to 66 and fails this gate. Adding a function to this glob
+        // means adding a test that calls it. Leaving it strict is deliberate:
+        // this is the config validator, and the alternative is lowering a
+        // threshold, which ADR-0002's ratchet does not do.
         'src/validation/**': {
           statements: 92,
           branches: 86,

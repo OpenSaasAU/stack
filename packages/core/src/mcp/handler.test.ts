@@ -588,6 +588,27 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a count-only relation fetches the same rows as a count-alongside one, never a zero-row placeholder',
+      async () => {
+        const selector = { where: { approved: true }, orderBy: { body: 'asc' } }
+        const only = await resolve({ comments: { ...selector, count: true } })
+        const alongside = await resolve({
+          comments: { ...selector, count: true, fields: { body: true } },
+        })
+
+        // Field-visibility evaluates the relationship field's own `access.read`
+        // against whatever the include fetched. Under `take: 0` a rule reading
+        // the relation's value (`item.comments.length === 0`) would see an
+        // empty array whatever the rows really are, and wrongly GRANT — so the
+        // count-only entry must fetch identically, not cheaply.
+        expect(only.include?.comments).toEqual(alongside.include?.comments)
+        expect(only.include?.comments).toMatchObject({ take: MCP_NESTED_TAKE_DEFAULT })
+        expect(only.fieldSelection.comments).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
       'what is refused: an unadvertised name, a wrong selector shape, and an unreachable relation',
       async () => {
         await expect(resolve({ nope: true })).rejects.toBeInstanceOf(McpProjectionRefusedError)
