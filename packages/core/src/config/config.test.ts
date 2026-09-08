@@ -1,0 +1,236 @@
+import { describe, it, expect } from 'vitest'
+import { config, list } from './index.js'
+import type { OpenSaasConfig, ListConfig, TypeInfo } from './types.js'
+import { checkbox, integer, relationship, select, text, timestamp } from '../fields/index.js'
+
+describe('config helpers', () => {
+  describe('config', () => {
+    it('should return the same config object', () => {
+      const testConfig: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+              email: text({ isIndexed: 'unique' }),
+            },
+          },
+        },
+      }
+
+      const result = config(testConfig)
+      expect(result).toBe(testConfig)
+    })
+
+    it('should provide type safety for config', async () => {
+      const testConfig = await config({
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          User: {
+            fields: {
+              name: text(),
+            },
+          },
+        },
+      })
+
+      expect(testConfig.db.provider).toBe('postgresql')
+      expect(testConfig.lists.User).toBeDefined()
+    })
+
+    it('should support optional session config', async () => {
+      const testConfig = await config({
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {},
+        session: {
+          getSession: async () => ({ userId: '123' }),
+        },
+      })
+
+      expect(testConfig.session).toBeDefined()
+    })
+
+    it('should support optional ui config', async () => {
+      const testConfig = await config({
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {},
+        ui: {
+          basePath: '/admin',
+        },
+      })
+
+      expect(testConfig.ui?.basePath).toBe('/admin')
+    })
+  })
+
+  describe('list', () => {
+    it('should return normalized list config', () => {
+      const testList: ListConfig<TypeInfo> = {
+        fields: {
+          name: text(),
+          age: integer(),
+        },
+      }
+
+      const result = list(testList)
+      // list() normalizes access control, so it creates a new object
+      expect(result.fields).toEqual(testList.fields)
+      expect(result.access).toBeUndefined()
+    })
+
+    it('should support text fields', () => {
+      const testList = list({
+        fields: {
+          title: text({
+            validation: {
+              isRequired: true,
+              length: { min: 3, max: 100 },
+            },
+            isIndexed: 'unique',
+          }),
+        },
+      })
+
+      expect(testList.fields.title.type).toBe('text')
+    })
+
+    it('should support integer fields', () => {
+      const testList = list({
+        fields: {
+          count: integer({
+            validation: {
+              min: 0,
+              max: 100,
+            },
+          }),
+        },
+      })
+
+      expect(testList.fields.count.type).toBe('integer')
+    })
+
+    it('should support checkbox fields', () => {
+      const testList = list({
+        fields: {
+          isActive: checkbox(),
+        },
+      })
+
+      expect(testList.fields.isActive.type).toBe('checkbox')
+    })
+
+    it('should support select fields', () => {
+      const status = select({
+        options: [
+          { label: 'Draft', value: 'draft' },
+          { label: 'Published', value: 'published' },
+        ],
+      })
+
+      const testList = list({
+        fields: { status },
+      })
+
+      expect(testList.fields.status).toBe(status)
+      expect(testList.fields.status.type).toBe('select')
+      expect(status.options).toHaveLength(2)
+    })
+
+    it('should support relationship fields', () => {
+      const testList = list({
+        fields: {
+          author: relationship({
+            ref: 'User.posts',
+            many: false,
+          }),
+        },
+      })
+
+      expect(testList.fields.author.type).toBe('relationship')
+    })
+
+    it('should support access control object form', () => {
+      const testList = list({
+        fields: { name: text() },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => false,
+            delete: () => false,
+          },
+        },
+      })
+
+      expect(testList.access?.operation).toBeDefined()
+    })
+
+    it('should support access control function shorthand', () => {
+      const isAdmin = () => true
+      const testList = list({
+        fields: { name: text() },
+        access: isAdmin,
+      })
+
+      // Function shorthand should be normalized to object form
+      expect(testList.access?.operation).toBeDefined()
+      expect(testList.access?.operation?.query).toBe(isAdmin)
+      expect(testList.access?.operation?.create).toBe(isAdmin)
+      expect(testList.access?.operation?.update).toBe(isAdmin)
+      expect(testList.access?.operation?.delete).toBe(isAdmin)
+    })
+
+    it('should support hooks', () => {
+      const testList = list({
+        fields: { name: text() },
+        hooks: {
+          resolveInput: async ({ resolvedData }) => resolvedData,
+          validateInput: async () => {},
+          beforeOperation: async () => {},
+          afterOperation: async () => {},
+        },
+      })
+
+      expect(testList.hooks).toBeDefined()
+      expect(testList.hooks?.resolveInput).toBeDefined()
+    })
+
+    it('should accept ui.listView config (initialColumns + initialSort)', () => {
+      const testList = list({
+        fields: {
+          title: text(),
+          status: text(),
+          createdAt: timestamp(),
+        },
+        ui: {
+          listView: {
+            initialColumns: ['title', 'status'],
+            initialSort: { field: 'createdAt', direction: 'desc' },
+          },
+        },
+      })
+
+      expect(testList.ui?.listView?.initialColumns).toEqual(['title', 'status'])
+      expect(testList.ui?.listView?.initialSort).toEqual({
+        field: 'createdAt',
+        direction: 'desc',
+      })
+    })
+
+    it('should leave ui undefined when not configured', () => {
+      const testList = list({
+        fields: { title: text() },
+      })
+
+      expect(testList.ui).toBeUndefined()
+    })
+  })
+})

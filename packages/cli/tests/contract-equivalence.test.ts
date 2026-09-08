@@ -22,7 +22,7 @@ import {
   oneToOneConfig,
   hostileNamesConfig,
   ragConfig,
-} from '../../core/tests/fixtures/contract-configs.js'
+} from '../../core/src/contract/fixtures/contract-configs.js'
 import { fieldPackageConfig } from './fixtures/field-package-configs.js'
 import { renderContractModule } from '../src/generator/contract-module.js'
 
