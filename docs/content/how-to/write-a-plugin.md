@@ -259,12 +259,9 @@ it carries two database surfaces:
   scope away is not an audit trail.
 
 The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, so the
-two are always in the same transaction state as each other. Do not rely on that
-state being a transaction: on `prisma-8` no write currently opens one, so
-database work a `beforeOperation`/`afterOperation` hook does through either
-handle is **not** rolled back when the write fails (#1205). Every write running
-in a transaction is the intended end state, restored by #1124 — it is not
-today's behaviour.
+two are always in the same transaction state as each other. Every write opens a
+transaction (ADR-0010), so database work a `beforeOperation`/`afterOperation`
+hook does through either handle **is** rolled back when the write fails.
 
 `context.ormHandle` is not the same thing as `context.unsafe`, the application's
 documented bypass on the request context (`StackBaseContext`). An `AccessContext`

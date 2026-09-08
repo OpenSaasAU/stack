@@ -25,8 +25,3 @@ await context.db.Article.update({
 Sudo is unchanged: `checkFieldAccess` returns `true` under sudo, so an elevated write never
 reaches the throw. A caller that relied on the silent drop to pass a denied field through
 an ordinary write must stop sending the key, or write under `sudo()`.
-
-`hookPipeline` — the transform+validate span of a write, exactly as `write-pipeline.ts`
-runs it — is exported from `@opensaas/stack-core/internal` so sibling packages whose field
-types are enforced inside it can test against the real pipeline rather than re-deriving
-its phase order.

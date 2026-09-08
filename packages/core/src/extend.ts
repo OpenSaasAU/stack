@@ -10,6 +10,18 @@
 // Plugin authoring (see the Plugin System docs)
 export type { Plugin, PluginContext, GeneratedFiles, ExtensionDescriptor } from './config/index.js'
 
+// The escalated write a plugin's own computed column takes, which runs no hook
+// (ADR-0066). A plugin that injects a write-denied field writes it with this
+// rather than through `sudo().db`, whose update re-runs the list's hooks over a
+// payload naming only that field.
+export {
+  writePluginOwnedField,
+  HandlelessPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
+} from './context/plugin-field-write.js'
+export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
+
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
   BaseFieldConfig,

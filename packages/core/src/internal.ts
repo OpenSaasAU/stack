@@ -39,13 +39,6 @@ export { validateWithZod, generateZodSchema } from './validation/schema.js'
 // This is the single field-access evaluator — the UI must not re-implement it.
 export { checkFieldAccess } from './access/index.js'
 
-// The transform+validate span of a write, exactly as `write-pipeline.ts` runs
-// it — reused by sibling packages whose field types are enforced inside it
-// (@opensaas/stack-rag's write-denied embedding column) so their tests drive
-// the real pipeline rather than re-deriving its phase order.
-export { hookPipeline } from './context/hook-pipeline.js'
-export type { HookPipelineArgs, HookPipelineResult } from './context/hook-pipeline.js'
-
 // Predicate-time field-read evaluator (#915), reused by @opensaas/stack-ui to
 // keep the admin list view's sort validation in lockstep with the engine: a
 // field the session cannot read cannot seed an `orderBy` either.

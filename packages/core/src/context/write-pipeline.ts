@@ -256,6 +256,7 @@ function bindContextToTransaction(
     _isSudo: context._isSudo,
     _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
+    _config: config,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
