@@ -130,6 +130,28 @@ function junctionConfig(): OpenSaasConfig {
           author: { type: 'relationship', ref: 'Author.books' },
         },
       },
+      // A child row with TWO parents and an unmarked column of its own. Every
+      // structural test a junction passes, this passes too — only `body`
+      // separates them, and nothing requires it.
+      Article: {
+        fields: {
+          title: { type: 'text' },
+          comments: { type: 'relationship', ref: 'Comment.article', many: true },
+        },
+      },
+      Commenter: {
+        fields: {
+          name: { type: 'text' },
+          comments: { type: 'relationship', ref: 'Comment.author', many: true },
+        },
+      },
+      Comment: {
+        fields: {
+          body: { type: 'text' },
+          article: { type: 'relationship', ref: 'Article.comments' },
+          author: { type: 'relationship', ref: 'Commenter.comments' },
+        },
+      },
     },
   } as unknown as OpenSaasConfig
 }
@@ -156,5 +178,39 @@ describe('the reason a to-many is read-only names the control that can write it'
 
     expect(fields.books.readOnly).toBe(true)
     expect(fields.books.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
+  })
+
+  it('leaves an ordinary child row with two parents pointing at the other list', () => {
+    const config = junctionConfig()
+    for (const listKey of ['Article', 'Commenter']) {
+      const fields = serializeFieldConfigs(config.lists[listKey].fields)
+      markUnwritableRelationships(fields, listKey, config.lists[listKey].fields, config)
+
+      expect(fields.comments.readOnly).toBe(true)
+      expect(fields.comments.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
+    }
+  })
+
+  it('leaves an edge demoted to the picker pointing at the other list', () => {
+    // Same junction, same two endpoints — only the display mode differs, and
+    // with no table on the item view there is no control for the message to
+    // name.
+    const config = junctionConfig()
+    config.lists.Post.fields.tags.ui = { itemView: { displayMode: 'picker' } }
+    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
+
+    expect(fields.tags.readOnly).toBe(true)
+    expect(fields.tags.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
+  })
+
+  it('keeps the reason a cause other than the missing column gave the field', () => {
+    const config = junctionConfig()
+    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    fields.tags.readOnlyReason = 'Locked by the workflow'
+    markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
+
+    expect(fields.tags.readOnly).toBe(true)
+    expect(fields.tags.readOnlyReason).toBe('Locked by the workflow')
   })
 })

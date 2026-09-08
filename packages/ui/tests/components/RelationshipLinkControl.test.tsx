@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RelationshipTableClient } from '../../src/components/RelationshipTableClient.js'
 import type { RelationshipTableClientProps } from '../../src/components/RelationshipTableClient.js'
@@ -46,7 +46,7 @@ describe('the to-many section can add an edge across a junction', () => {
   beforeEach(() => {
     mockPush.mockClear()
     mockRefresh.mockClear()
-    serverAction.mockClear()
+    serverAction.mockReset()
     serverAction.mockResolvedValue({ added: true, id: 'e1' })
   })
 
@@ -92,6 +92,33 @@ describe('the to-many section can add an edge across a junction', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(mockRefresh).not.toHaveBeenCalled()
+  })
+
+  it('sends one create while one is in flight, however many times it is clicked', async () => {
+    // The popover stays open until the create succeeds, so a second click
+    // lands on a live item. A junction with no unique pair index would store
+    // the edge twice.
+    let settle: (value: { added: boolean; id: string }) => void = () => {}
+    serverAction.mockImplementation(
+      () =>
+        new Promise<{ added: boolean; id: string }>((resolve) => {
+          settle = resolve
+        }),
+    )
+    const user = userEvent.setup()
+    render(<RelationshipTableClient {...junctionProps()} />)
+
+    await user.click(screen.getByRole('button', { name: /Link Tag/i }))
+    const [alpha, beta] = document.querySelectorAll('[data-slot="combobox-item"]')
+    await user.click(beta)
+    await user.click(beta)
+    // A different endpoint too — the guard is on the flight, not on the id.
+    await user.click(alpha)
+
+    expect(serverAction).toHaveBeenCalledTimes(1)
+
+    settle({ added: true, id: 'e1' })
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalled())
   })
 
   it('renders no link control for a section that is not an edge across a junction', () => {

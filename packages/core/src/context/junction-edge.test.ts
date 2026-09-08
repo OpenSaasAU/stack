@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import type { AccessControlledDB, Session } from '../access/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
@@ -53,6 +53,27 @@ function junctionConfig(gates: Gates = {}): OpenSaasConfig {
       },
       Book: {
         fields: { title: text(), author: relationship({ ref: 'Author.books' }) },
+        access: { operation: OPEN },
+      },
+      // The shape a structural rule most easily mistakes for a junction: a
+      // child row with TWO parents. `Comment` owns both foreign keys, so the
+      // only thing separating it from `PostTag` is the column it carries — and
+      // `body` is marked required by nothing, in the application layer or the
+      // database.
+      Commenter: {
+        fields: { name: text(), comments: relationship({ ref: 'Comment.author', many: true }) },
+        access: { operation: OPEN },
+      },
+      Article: {
+        fields: { title: text(), comments: relationship({ ref: 'Comment.article', many: true }) },
+        access: { operation: OPEN },
+      },
+      Comment: {
+        fields: {
+          body: text(),
+          article: relationship({ ref: 'Article.comments' }),
+          author: relationship({ ref: 'Commenter.comments' }),
+        },
         access: { operation: OPEN },
       },
     },
@@ -114,8 +135,34 @@ describe('adding an edge across a junction', () => {
     })
   })
 
-  test('an ordinary to-many back-reference is not an edge', () => {
+  test('a to-many whose far end owns one foreign key has no far endpoint', () => {
     expect(resolveJunctionEdge(junctionConfig(), 'Author', 'books')).toBeNull()
+  })
+
+  test('an ordinary child row with two parents is not an edge', () => {
+    const config = junctionConfig()
+    // `Comment` owns two foreign keys, so the third-foreign-key and
+    // no-foreign-key rules both pass it. Only `body` — required by nothing —
+    // separates it from a junction, and linking one would store a blank
+    // comment.
+    expect(resolveJunctionEdge(config, 'Article', 'comments')).toBeNull()
+    expect(resolveJunctionEdge(config, 'Commenter', 'comments')).toBeNull()
+
+    // Drop the column it carries and the same two-parent shape IS an edge, so
+    // the refusal above is the column and not the two parents.
+    delete config.lists.Comment.fields.body
+    expect(resolveJunctionEdge(config, 'Article', 'comments')).toMatchObject({
+      junctionListKey: 'Comment',
+      targetField: 'author',
+    })
+  })
+
+  test('a list key naming an inherited member of Object resolves to null', () => {
+    // `config.lists.constructor` is `Object` on an object literal — truthy, so
+    // a bare truthiness guard passes it and the field lookup beneath throws.
+    expect(resolveJunctionEdge(junctionConfig(), 'constructor', 'tags')).toBeNull()
+    expect(resolveJunctionEdge(junctionConfig(), 'toString', 'tags')).toBeNull()
+    expect(resolveJunctionEdge(junctionConfig(), 'Post', 'constructor')).toBeNull()
   })
 
   test('a junction carrying a third foreign key has no single far endpoint', () => {
@@ -125,14 +172,29 @@ describe('adding an edge across a junction', () => {
     expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
   })
 
-  test('a junction with a required scalar of its own cannot be made from two ids', () => {
+  test('a junction carrying a stored field of its own cannot be made from two ids', () => {
     const config = junctionConfig()
-    config.lists.PostTag.fields.role = text({ validation: { isRequired: true } })
 
+    // Required in the application layer.
+    config.lists.PostTag.fields.role = text({ validation: { isRequired: true } })
     expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
-    // The same field without the requirement leaves the edge resolvable, so
-    // the refusal above is the requirement and not the extra field.
+
+    // Required only in the database — the spelling that used to render a
+    // control every click of which failed at the column.
+    config.lists.PostTag.fields.role = text({ db: { isNullable: false } })
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+
+    // Required by nothing at all: two ids still cannot fill it, and the same
+    // shape is indistinguishable from an ordinary two-parent child row.
     config.lists.PostTag.fields.role = text()
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+
+    // A virtual field holds nothing, so it does not make the row data-carrying.
+    delete config.lists.PostTag.fields.role
+    config.lists.PostTag.fields.summary = virtual({
+      type: 'string',
+      hooks: { resolveOutput: () => 'edge' },
+    })
     expect(resolveJunctionEdge(config, 'Post', 'tags')).toMatchObject({ targetField: 'tag' })
   })
 
@@ -249,6 +311,48 @@ describe('adding an edge across a junction', () => {
         field: 'books',
         parentId: String(author?.id),
         targetId: String(book?.id),
+      })
+
+      expect(result).toMatchObject({ added: false })
+      expect(String((result as { error?: string }).error)).toContain(
+        'not an edge across an explicit junction list',
+      )
+    },
+    BOOT,
+  )
+
+  test(
+    'an ordinary child row with two parents is refused by name and writes nothing',
+    async () => {
+      const article = await harness.context.db.Article.create({ data: { title: 'a' } })
+      const commenter = await harness.context.db.Commenter.create({ data: { name: 'c' } })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Article',
+        action: 'addRelated',
+        field: 'comments',
+        parentId: String(article?.id),
+        targetId: String(commenter?.id),
+      })
+
+      expect(result).toMatchObject({ added: false })
+      expect(String((result as { error?: string }).error)).toContain(
+        'not an edge across an explicit junction list',
+      )
+      expect(await harness.context.db.Comment.where({}).first()).toBeNull()
+    },
+    BOOT,
+  )
+
+  test(
+    'a list key naming an inherited member is refused, not thrown',
+    async () => {
+      const result = await harness.context.serverAction({
+        listKey: 'constructor',
+        action: 'addRelated',
+        field: 'tags',
+        parentId: 'p',
+        targetId: 't',
       })
 
       expect(result).toMatchObject({ added: false })

@@ -22,13 +22,37 @@ export interface JunctionEdge {
   targetListKey: string
 }
 
-/** Whether a field must be given a value for a create of its list to succeed. */
-function isRequiredOnCreate(field: FieldConfig): boolean {
-  if ('defaultValue' in field && field.defaultValue !== undefined) return false
-  if ('virtual' in field && field.virtual === true) return false
-  const validation: unknown = 'validation' in field ? field.validation : undefined
-  if (typeof validation !== 'object' || validation === null) return false
-  return 'isRequired' in validation && validation.isRequired === true
+/** Added by the generator rather than declared, so never data the row carries. */
+const SYSTEM_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
+
+/**
+ * Whether a non-relationship field of a candidate junction list carries data of
+ * its own.
+ *
+ * This is the whole difference between an edge and an ordinary child row, and
+ * structure is the only evidence available: `PostTag { post, tag }` is fully
+ * determined by its two endpoints, while `Comment { body, post, author }` is a
+ * row with a column two ids cannot fill. Requiredness cannot make the call —
+ * `body` is nullable in both the application layer and the database, and
+ * linking one would still write a blank comment.
+ *
+ * A virtual field is computed rather than stored, so it holds nothing.
+ */
+function carriesOwnData(fieldKey: string, field: FieldConfig): boolean {
+  if (SYSTEM_FIELDS.has(fieldKey)) return false
+  if (field.type === 'virtual') return false
+  return !('virtual' in field && field.virtual === true)
+}
+
+/**
+ * `config.lists` and a list's `fields` are plain object literals, so a key
+ * naming an inherited member (`constructor`, `toString`) reads back as a
+ * function rather than `undefined` and passes a truthiness guard. This resolver
+ * runs inside a server action whose contract is to return a result rather than
+ * throw, so every lookup here goes through an own-property check.
+ */
+function own<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
 }
 
 /**
@@ -37,10 +61,10 @@ function isRequiredOnCreate(field: FieldConfig): boolean {
  *
  * It is one when the field is `many: true` with a bidirectional `ref`, the
  * named back-reference on the related list owns the foreign key to the parent,
- * and exactly one other relationship field of that list owns a foreign key —
- * the far endpoint. `null` covers everything else, including the ordinary
- * to-many back-reference (`User.posts`), where adding an edge is an update of
- * an existing row of the other list rather than a create.
+ * exactly one other relationship field of that list owns a foreign key — the
+ * far endpoint — and the list carries no stored field of its own beyond those
+ * two links. `null` covers everything else, where adding a related row is an
+ * update or a create of that row against its own list rather than an edge.
  *
  * Known limits — each yields `null`, so a caller falls back to the ordinary
  * to-many treatment rather than getting a wrong answer:
@@ -48,25 +72,28 @@ function isRequiredOnCreate(field: FieldConfig): boolean {
  *   preset the parent link through;
  * - a junction carrying a third foreign key, or none — the far endpoint is
  *   then not uniquely determined;
- * - a junction with a required scalar of its own (an edge that carries data),
- *   which cannot be created from two ids alone.
+ * - a junction carrying any stored field of its own, whether or not anything
+ *   requires it. Two ids cannot fill a column the caller was never asked
+ *   about, and no requiredness flag separates an edge with an optional
+ *   annotation from an ordinary two-parent child row (`Comment { body, post,
+ *   author }`), which must keep its ordinary treatment.
  */
 export function resolveJunctionEdge(
   config: OpenSaasConfig,
   parentListKey: string,
   fieldName: string,
 ): JunctionEdge | null {
-  const parentList = config.lists[parentListKey]
-  const field = parentList?.fields[fieldName]
+  const parentList = own(config.lists, parentListKey)
+  const field = parentList ? own(parentList.fields, fieldName) : undefined
   if (!isRelationshipField(field) || field.many !== true) return null
 
   const [junctionListKey, backReferenceField] = field.ref.split('.')
   if (!backReferenceField) return null
 
-  const junctionList = config.lists[junctionListKey]
+  const junctionList = own(config.lists, junctionListKey)
   if (!junctionList) return null
 
-  const backReference = junctionList.fields[backReferenceField]
+  const backReference = own(junctionList.fields, backReferenceField)
   if (!isRelationshipField(backReference)) return null
   if (!ownsForeignKey(config, junctionListKey, backReferenceField, backReference)) return null
 
@@ -81,10 +108,10 @@ export function resolveJunctionEdge(
       target = { field: key, list: candidate.ref.split('.')[0] }
       continue
     }
-    if (isRequiredOnCreate(candidate)) return null
+    if (carriesOwnData(key, candidate)) return null
   }
 
-  if (target === null || !config.lists[target.list]) return null
+  if (target === null || !own(config.lists, target.list)) return null
 
   return {
     junctionListKey,
@@ -108,7 +135,7 @@ function ownsForeignKey(
   fieldName: string,
   field: RelationshipField,
 ): boolean {
-  if (!config.lists[field.ref.split('.')[0]]) return false
+  if (!own(config.lists, field.ref.split('.')[0])) return false
   try {
     return shouldHaveForeignKey(listKey, fieldName, field, config)
   } catch {

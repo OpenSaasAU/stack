@@ -86,7 +86,16 @@ export function RelationshipLinkControl({
     serverAction,
   })
 
+  // The popover stays open until the create succeeds, so its items keep taking
+  // clicks while one is in flight. `pending` is state and does not settle
+  // before the next click's handler runs, so the guard reads a ref: without it
+  // a second click sends a second create, and a junction with no unique pair
+  // index stores the edge twice.
+  const inFlight = React.useRef(false)
+
   const link = async (targetId: string) => {
+    if (inFlight.current) return
+    inFlight.current = true
     setPending(true)
     setError(null)
     try {
@@ -109,6 +118,7 @@ export function RelationshipLinkControl({
     } catch {
       setError('Link failed')
     } finally {
+      inFlight.current = false
       setPending(false)
     }
   }
@@ -140,7 +150,11 @@ export function RelationshipLinkControl({
               <ComboboxEmpty>No results found</ComboboxEmpty>
             ) : (
               searchResults.map((item) => (
-                <ComboboxItem key={item.id} onClick={() => void link(item.id)}>
+                <ComboboxItem
+                  key={item.id}
+                  data-disabled={pending ? '' : undefined}
+                  onClick={() => void link(item.id)}
+                >
                   {item.label}
                 </ComboboxItem>
               ))

@@ -4,6 +4,7 @@ import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/
 import { resolveJunctionEdge } from '@opensaas/stack-core'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
+import { rendersAsRelationshipTable } from './deriveItemView.js'
 
 /** The client-safe projection of a `FieldConfig` — see {@link serializeFieldConfig}. */
 export type SerializableFieldConfig = {
@@ -70,12 +71,21 @@ export const UNWRITABLE_RELATIONSHIP_REASON =
  * The field is still unwritable *here*: an edge is a row of the junction list
  * with its own access rules, so it can never ride in this record's write
  * payload (ADR-0050). What changed is that the capability now exists — the
- * section's own table adds and removes edges under that list's access — so the
- * message points at the control that has it rather than at another list's edit
- * page.
+ * record's own item view renders this field as a table that adds and removes
+ * edges under that list's access — so the message points at the control that
+ * has it rather than at another list's edit page.
+ *
+ * The table is on the item view, never on the form showing this message: a
+ * field rendered as a table is a section of the item view rather than a field
+ * of the details form, so the only forms that serialize it are the create page
+ * and the standalone forms, where the record does not yet have an item view of
+ * its own. Hence "on the item view" rather than "here". A field demoted to the
+ * compact picker has no table anywhere and keeps
+ * {@link UNWRITABLE_RELATIONSHIP_REASON} — see
+ * {@link markUnwritableRelationships}.
  */
 export const JUNCTION_EDGE_RELATIONSHIP_REASON =
-  'Not editable here — add or remove these links from this relationship’s table.'
+  'Not editable here — add or remove these links from this relationship’s table on the item view.'
 
 /**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
@@ -153,9 +163,9 @@ export function serializeFieldConfigs(
  * field config and needs the whole config to answer (ADR-0064).
  *
  * It also restates the reason for a to-many that is an edge across an explicit
- * junction list, whose links the section's own table can now add and remove
- * (#1329). The mark itself is unchanged: the field is unwritable through this
- * form either way.
+ * junction list AND is rendered as a table on the item view, whose links that
+ * table can now add and remove (#1329). The mark itself is unchanged: the field
+ * is unwritable through this form either way.
  *
  * Mutates `serializableFields` in place.
  */
@@ -171,9 +181,18 @@ export function markUnwritableRelationships(
     if (!serialized) continue
     // The mark stands — a to-many can never ride in this record's payload — but
     // an edge across a junction now has a control of its own, so the reason
-    // names it rather than sending the user to another list.
+    // names it rather than sending the user to another list. Only the reason
+    // this branch owns is replaced: a field read-only for some other cause
+    // (`ui.readOnly`) keeps the reason that cause gave it. And only a field the
+    // item view renders as a table has that control at all — a picker-demoted
+    // one has no table anywhere, so the message would name something that does
+    // not exist.
     if (serialized.readOnly) {
-      if (resolveJunctionEdge(config, listKey, fieldName)) {
+      if (
+        serialized.readOnlyReason === UNWRITABLE_RELATIONSHIP_REASON &&
+        rendersAsRelationshipTable(fieldConfig) &&
+        resolveJunctionEdge(config, listKey, fieldName)
+      ) {
         serialized.readOnlyReason = JUNCTION_EDGE_RELATIONSHIP_REASON
       }
       continue
