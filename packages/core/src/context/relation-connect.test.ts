@@ -8,7 +8,7 @@ import { createTestContext, ormClientFor, type TestContext } from '../testing/co
 import { createPlanRecorder } from '../testing/plans.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
-import { NonOwningRelationInputError } from './relationship-input.js'
+import { MalformedForeignKeyInputError, NonOwningRelationInputError } from './relationship-input.js'
 
 /**
  * #1153: `connect` on the foreign-key-owning field, and `null` as its
@@ -281,6 +281,291 @@ describe('connect on the foreign-key-owning field', () => {
 })
 
 /**
+ * #1331: the foreign-key column named directly (`authorId`) is the same edge
+ * as `{ connect: { id } }`, so it owes the same two access components
+ * (ADR-0050) and must give the same answer. Every case here is asserted
+ * against the `connect` spelling of the identical write rather than against a
+ * literal, because "the same answer" is the guarantee — a table where the two
+ * spellings are checked separately would pass while they diverge.
+ */
+describe('the foreign-key column, spelled without the relationship field', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(schemaConfig(), { userId: 'u1' })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+  })
+
+  function contextAt(
+    config: OpenSaasConfig,
+    session: Session | null,
+  ): StackContext<AccessControlledDB> {
+    const orm = ormClientFor(harness.data, harness.client.orm)
+    return getContext(config, orm, session, undefined, false, undefined, undefined, harness.client)
+  }
+
+  async function seedAuthor(name: string): Promise<string> {
+    const author = await harness.context.db.Author.create({ data: { name } })
+    return String(author?.id)
+  }
+
+  test(
+    'a readable target still links through the column',
+    async () => {
+      const authorId = await seedAuthor('ada')
+
+      const created = await harness.context.db.Post.create({
+        data: { title: 'ship it', authorId },
+      })
+
+      expect(created).toMatchObject({ title: 'ship it' })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: authorId }])
+    },
+    BOOT,
+  )
+
+  test(
+    'null on the column clears the edge without a reachability query',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({ data: { title: 'ship it', authorId } })
+
+      const updated = await harness.context.db.Post.update({
+        where: { id: String(post?.id) },
+        data: { authorId: null },
+      })
+
+      expect(updated).toMatchObject({ title: 'ship it' })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: null }])
+    },
+    BOOT,
+  )
+
+  /**
+   * The exact three cases QA reproduced the oracle with, run on one context
+   * whose `query` rule returns a filter, so the scoped and unscoped answers
+   * cannot coincide: the positive control links a row the same filter admits.
+   */
+  test(
+    'an unreadable target, an absent target and the connect spelling are one answer',
+    async () => {
+      const visible = await seedAuthor('visible')
+      const hidden = await seedAuthor('hidden')
+
+      const scoped = contextAt(
+        schemaConfig(() => ({ name: { equals: 'visible' } })),
+        { userId: 'u1' },
+      )
+
+      // The positive control, on the same context: a target the filter admits,
+      // through the column spelling under test.
+      expect(
+        await scoped.db.Post.create({ data: { title: 'seen', authorId: visible } }),
+      ).toMatchObject({ title: 'seen' })
+
+      // Each spelling's error is captured rather than thrown, because "the
+      // same answer" covers the failure shape too: it is success-versus-error
+      // that tells an unreadable row from an absent one.
+      const faults = new Map<string, unknown>()
+      const answer = async (title: string, data: Record<string, unknown>): Promise<unknown> =>
+        scoped.db.Post.create({ data: { title, ...data } }).catch((fault: unknown) => {
+          faults.set(title, fault)
+          return 'threw' as const
+        })
+
+      const throughConnect = await answer('connect', { author: { connect: { id: hidden } } })
+      const throughColumn = await answer('column', { authorId: hidden })
+      const absentColumn = await answer('absent', { authorId: ABSENT_ID })
+
+      expect(throughConnect).toBeNull()
+      expect(throughColumn).toEqual(throughConnect)
+      expect(absentColumn).toEqual(throughColumn)
+      expect([...faults.keys()]).toEqual([])
+
+      // Only the control was written: neither denied spelling left a row, and
+      // the absent id raised no database error to distinguish it by.
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'seen', author: visible }])
+    },
+    BOOT,
+  )
+
+  test(
+    'a hard-denied target list is not linkable through the column either',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const denied = contextAt(
+        schemaConfig(() => false),
+        { userId: 'u1' },
+      )
+
+      const faults: unknown[] = []
+      const answer = async (title: string, data: Record<string, unknown>): Promise<unknown> =>
+        denied.db.Post.create({ data: { title, ...data } }).catch((fault: unknown) => {
+          faults.push(fault)
+          return 'threw' as const
+        })
+
+      const throughColumn = await answer('denied', { authorId })
+      const throughConnect = await answer('denied', { author: { connect: { id: authorId } } })
+      const absent = await answer('absent', { authorId: ABSENT_ID })
+
+      expect(faults).toEqual([])
+      expect(throughColumn).toBeNull()
+      expect(throughConnect).toEqual(throughColumn)
+      expect(absent).toEqual(throughColumn)
+      expect(await storedLinks(harness.url)).toEqual([])
+
+      // The same row, the same id, the same spelling, through a context whose
+      // target list is not denied: the answers must differ, or the fixture
+      // proves nothing.
+      expect(
+        await harness.context.db.Post.create({ data: { title: 'seen', authorId } }),
+      ).toMatchObject({ title: 'seen' })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'seen', author: authorId }])
+    },
+    BOOT,
+  )
+
+  test(
+    'an update that re-points the column is scoped the same way',
+    async () => {
+      const visible = await seedAuthor('visible')
+      const hidden = await seedAuthor('hidden')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', authorId: visible },
+      })
+
+      const scoped = contextAt(
+        schemaConfig(() => ({ name: { equals: 'visible' } })),
+        { userId: 'u1' },
+      )
+
+      expect(
+        await scoped.db.Post.update({
+          where: { id: String(post?.id) },
+          data: { authorId: hidden },
+        }),
+      ).toBeNull()
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: visible }])
+
+      // The control: the same update, a target the same filter admits.
+      expect(
+        await scoped.db.Post.update({
+          where: { id: String(post?.id) },
+          data: { authorId: visible },
+        }),
+      ).toMatchObject({ title: 'ship it' })
+    },
+    BOOT,
+  )
+
+  /**
+   * The owning field's write access is the other half of ADR-0050's pair, and
+   * it still runs first: a caller who may not write `author` is refused before
+   * the reachability query is spent, through either spelling.
+   */
+  test(
+    'the owning field write gate still refuses the column, ahead of reachability',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const base = schemaConfig()
+      const gated = contextAt(
+        {
+          ...base,
+          lists: {
+            ...base.lists,
+            Post: {
+              fields: {
+                title: text(),
+                author: relationship({
+                  ref: 'Author.posts',
+                  access: { create: () => false, update: () => false },
+                }),
+              },
+              access: { operation: OPEN },
+            },
+          },
+        },
+        { userId: 'u1' },
+      )
+
+      await expect(gated.db.Post.create({ data: { title: 't', authorId } })).rejects.toThrow(
+        'Cannot create "author" (via column "authorId"): field-level access denied.',
+      )
+
+      expect(await storedLinks(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a wrapper the surface does not lower is refused rather than written unchecked',
+    async () => {
+      const authorId = await seedAuthor('ada')
+
+      await expect(
+        harness.context.db.Post.create({ data: { title: 't', authorId: { set: authorId } } }),
+      ).rejects.toBeInstanceOf(MalformedForeignKeyInputError)
+
+      expect(await storedLinks(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * Sudo bypasses the target list's `query` rule for both spellings, and for
+   * neither does it bypass the row having to exist — the reachability query
+   * still runs, so an id naming no row is the same silent `null` a scoped
+   * caller gets rather than a foreign-key `DatabaseError`.
+   */
+  test(
+    'sudo answers the same way for both spellings',
+    async () => {
+      const hidden = await seedAuthor('hidden')
+      const sudo = contextAt(
+        schemaConfig(() => false),
+        { userId: 'u1' },
+      ).sudo()
+
+      expect(
+        await sudo.db.Post.create({ data: { title: 'column', authorId: hidden } }),
+      ).toMatchObject({ title: 'column' })
+      expect(
+        await sudo.db.Post.create({
+          data: { title: 'connect', author: { connect: { id: hidden } } },
+        }),
+      ).toMatchObject({ title: 'connect' })
+
+      const faults: unknown[] = []
+      const absent = async (data: Record<string, unknown>): Promise<unknown> =>
+        sudo.db.Post.create({ data: { title: 'absent', ...data } }).catch((fault: unknown) => {
+          faults.push(fault)
+          return 'threw' as const
+        })
+
+      const absentColumn = await absent({ authorId: ABSENT_ID })
+      const absentConnect = await absent({ author: { connect: { id: ABSENT_ID } } })
+      expect(absentColumn).toBeNull()
+      expect(absentConnect).toEqual(absentColumn)
+      expect(faults).toEqual([])
+
+      expect(await storedLinks(harness.url)).toEqual([
+        { title: 'column', author: hidden },
+        { title: 'connect', author: hidden },
+      ])
+    },
+    BOOT,
+  )
+})
+
+/**
  * The plan test: the statements the terminal built are the subject here, so
  * this is one of the two places the spec admits a plan assertion.
  */
@@ -318,6 +603,20 @@ describe('the statements a connect issues', () => {
 
       const kinds = recorder.plans.map((plan) => plan.kind)
       expect(kinds).toEqual(['select', 'insert'])
+      expect(recorder.plans.map((plan) => plan.origin)).toEqual(['engine', 'engine'])
+    },
+    BOOT,
+  )
+
+  test(
+    'the column spelling issues the same two statements, in the same order',
+    async () => {
+      const author = await harness.context.db.Author.create({ data: { name: 'ada' } })
+
+      recorder.clear()
+      await harness.context.db.Post.create({ data: { title: 't', authorId: String(author?.id) } })
+
+      expect(recorder.plans.map((plan) => plan.kind)).toEqual(['select', 'insert'])
       expect(recorder.plans.map((plan) => plan.origin)).toEqual(['engine', 'engine'])
     },
     BOOT,

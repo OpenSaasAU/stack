@@ -96,6 +96,27 @@ export class MalformedRelationInputError extends Error {
 }
 
 /**
+ * Thrown when a foreign-key column (`authorId`) carries something other than a
+ * row id or `null` — an ORM scalar wrapper such as `{ set: … }`, say. Lowering
+ * one would write the edge without the reachability query the column's own
+ * spelling owes, so the shape is refused rather than passed to the driver.
+ */
+export class MalformedForeignKeyInputError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly column: string,
+    readonly fieldName: string,
+  ) {
+    super(
+      `Cannot write "${listName}" — "${column}" carries neither the id of a row nor \`null\`. A ` +
+        `foreign-key column takes the row to link to, or \`null\` to clear the edge; write ` +
+        `"${fieldName}" instead when you want the relationship field's own spelling.`,
+    )
+    this.name = 'MalformedForeignKeyInputError'
+  }
+}
+
+/**
  * Thrown when a `connect` names a list the config does not declare — the ref
  * and the config have drifted, which is a generation or wiring fault rather
  * than an access denial, so it is reported rather than folded into the silent
@@ -140,7 +161,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * What a payload key names on this list. `owning` carries the foreign-key
  * column a `connect` or a `null` lowers onto, and the list that column
- * references; `inverse` is a relationship the other side keys, including a
+ * references; `foreignKey` is that same column named directly, which is the
+ * other spelling of the same edge and owes the same two access components
+ * (ADR-0050); `inverse` is a relationship the other side keys, including a
  * synthetic `from_<List>_<field>` back-relation, which a list-only `ref`
  * elsewhere in the config creates undeclared on its target and which reaches a
  * sudo payload through `filterWritableFields`.
@@ -150,7 +173,40 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * relationship holds that column.
  */
 type PayloadKey =
-  { kind: 'column' } | { kind: 'owning'; column: string; target: string } | { kind: 'inverse' }
+  | { kind: 'column' }
+  | { kind: 'owning'; column: string; target: string; field: string }
+  | { kind: 'foreignKey'; column: string; target: string; field: string }
+  | { kind: 'inverse' }
+
+/**
+ * The relationship field that owns `fieldKey` as its foreign-key column, when
+ * `fieldKey` is one. The contract names that column `<field>Id`
+ * (`contract/derive.ts`), so the owner is read back off the same convention
+ * the column was emitted under. A list that declares a field of its own by
+ * that name is not one of these: its own declaration wins, and the key is a
+ * plain column.
+ */
+function foreignKeyColumn(
+  fieldKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listName: string,
+  config: OpenSaasConfig,
+): PayloadKey | null {
+  if (!fieldKey.endsWith('Id') || fieldKey.length <= 2) return null
+  const owner = fieldKey.slice(0, -2)
+  const field = listConfig.fields[owner]
+  if (field?.type !== 'relationship') return null
+
+  const relation = field as RelationshipField
+  if (!shouldHaveForeignKey(listName, owner, relation, config)) return null
+  return {
+    kind: 'foreignKey',
+    column: fieldKey,
+    target: relation.ref.split('.')[0],
+    field: owner,
+  }
+}
 
 function classifyKey(
   fieldKey: string,
@@ -161,6 +217,10 @@ function classifyKey(
 ): PayloadKey {
   const field = listConfig.fields[fieldKey]
   if (field?.type !== 'relationship') {
+    if (field === undefined) {
+      const column = foreignKeyColumn(fieldKey, listConfig, listName, config)
+      if (column !== null) return column
+    }
     return resolveSyntheticReverseRelation(fieldKey, listName, config) === null
       ? { kind: 'column' }
       : { kind: 'inverse' }
@@ -168,7 +228,12 @@ function classifyKey(
 
   const relation = field as RelationshipField
   if (!shouldHaveForeignKey(listName, fieldKey, relation, config)) return { kind: 'inverse' }
-  return { kind: 'owning', column: `${fieldKey}Id`, target: relation.ref.split('.')[0] }
+  return {
+    kind: 'owning',
+    column: `${fieldKey}Id`,
+    target: relation.ref.split('.')[0],
+    field: fieldKey,
+  }
 }
 
 function kindsIn(value: unknown, candidates: readonly string[]): string[] {
@@ -224,7 +289,9 @@ export function refuseNestedRelationInput(
   if (data === undefined) return
   for (const [fieldKey, value] of Object.entries(data)) {
     const key = classifyKey(fieldKey, listConfig, listName, config)
-    if (key.kind === 'column') continue
+    // A foreign-key column holds an id, not relation input; its shape is
+    // settled where it is lowered, alongside the reachability query it owes.
+    if (key.kind === 'column' || key.kind === 'foreignKey') continue
 
     const nested = kindsIn(value, REFUSED_KINDS)
     if (nested.length > 0) throw new NestedRelationInputError(listName, fieldKey, nested)
@@ -307,9 +374,15 @@ export interface LowerRelationInputArgs {
  * says the caller may see that row, and `null` becomes the same column cleared
  * (ADR-0050). Both statements are issued by the terminal, inside its origin.
  *
- * Runs after the field-level write gate, so `connect` on a field the caller
- * may not write has already thrown — the reachability query never fires for a
- * link the caller could not make anyway.
+ * A foreign-key column named directly (`authorId`) is the same edge spelled
+ * without the relationship field, so it takes the same reachability query here
+ * rather than a second copy of one: an unreadable target and an absent one are
+ * one answer for both spellings, which is what stops the column being a
+ * probing oracle (#1331).
+ *
+ * Runs after the field-level write gate, so an edge on a field the caller may
+ * not write has already thrown — the reachability query never fires for a link
+ * the caller could not make anyway.
  */
 export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<RelationLowering> {
   const { listName, listConfig, config, data } = args
@@ -321,6 +394,17 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
     if (key.kind === 'inverse') {
       if (value === undefined) continue
       throw new NonOwningRelationInputError(listName, fieldKey)
+    }
+
+    if (key.kind === 'foreignKey') {
+      if (value === undefined || value === null) continue
+      if (typeof value !== 'string' && typeof value !== 'number') {
+        throw new MalformedForeignKeyInputError(listName, fieldKey, key.field)
+      }
+      if (!(await reachable(listName, key.field, key.target, value, args))) {
+        return { status: 'unreachable' }
+      }
+      continue
     }
 
     lowered ??= { ...data }

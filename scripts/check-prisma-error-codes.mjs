@@ -12,9 +12,12 @@ const allowlistPath = path.join(repoRoot, 'scripts', 'prisma-error-code-allowlis
 const allowlistRelative = path.relative(repoRoot, allowlistPath)
 
 const literal = /\bP[1-6]\d{3}\b/g
+// Not scanned at all: a lockfile's hashes and an embedding file's float vectors
+// both produce matches that mean nothing, and neither is anything a developer
+// reads. A changelog is NOT here — it is a dated record like an ADR, so it is
+// scanned and carried at a baseline instead (ADR-0042).
 const unscanned = [
   /(^|\/)pnpm-lock\.yaml$/,
-  /(^|\/)CHANGELOG\.md$/,
   /^docs\/\.embeddings\//,
   /\.(png|jpe?g|gif|ico|svg|webp|woff2?|ttf|otf|db|pdf)$/i,
 ]
