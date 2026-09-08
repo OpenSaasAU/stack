@@ -8,7 +8,12 @@ import { createTestContext, ormClientFor, type TestContext } from '../testing/co
 import { createPlanRecorder } from '../testing/plans.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
-import { MalformedForeignKeyInputError, NonOwningRelationInputError } from './relationship-input.js'
+import {
+  ConflictingRelationInputError,
+  MalformedForeignKeyInputError,
+  MalformedRelationInputError,
+  NonOwningRelationInputError,
+} from './relationship-input.js'
 
 /**
  * #1153: `connect` on the foreign-key-owning field, and `null` as its
@@ -514,6 +519,150 @@ describe('the foreign-key column, spelled without the relationship field', () =>
         harness.context.db.Post.create({ data: { title: 't', authorId: { set: authorId } } }),
       ).rejects.toBeInstanceOf(MalformedForeignKeyInputError)
 
+      expect(await storedLinks(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * The shape check needs no database, so it arrives where its `connect`-side
+   * sibling arrives: ahead of the transaction, and therefore ahead of every
+   * hook. `fired` is what makes that observable — a refusal raised inside the
+   * transaction would leave the boundary hooks in it.
+   */
+  test(
+    'a malformed column is refused before any hook runs, exactly as the field spelling is',
+    async () => {
+      const fired: string[] = []
+      const base = schemaConfig()
+      const traced = contextAt(
+        {
+          ...base,
+          lists: {
+            ...base.lists,
+            Post: {
+              fields: { title: text(), author: relationship({ ref: 'Author.posts' }) },
+              access: { operation: OPEN },
+              hooks: {
+                beforeTransaction: async (): Promise<void> => {
+                  fired.push('beforeTransaction')
+                },
+                resolveInput: ({ resolvedData }) => {
+                  fired.push('resolveInput')
+                  return resolvedData
+                },
+                afterTransaction: async (): Promise<void> => {
+                  fired.push('afterTransaction')
+                },
+              },
+            },
+          },
+        },
+        { userId: 'u1' },
+      )
+
+      await expect(
+        traced.db.Post.create({ data: { title: 't', authorId: { set: 'a1' } } }),
+      ).rejects.toBeInstanceOf(MalformedForeignKeyInputError)
+      expect(fired).toEqual([])
+
+      await expect(
+        traced.db.Post.create({ data: { title: 't', author: {} } }),
+      ).rejects.toBeInstanceOf(MalformedRelationInputError)
+      expect(fired).toEqual([])
+
+      expect(await storedLinks(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * The two spellings are one edge, so a payload carrying both asks for one
+   * column twice. Only one value could ever reach the row — and before this
+   * refusal the discarded one was still checked for reachability, so an
+   * unreadable `authorId` denied a write whose applied value was reachable.
+   * The refusal is what replaces that hidden precedence rule and its veto.
+   */
+  test(
+    'a payload spelling one edge both ways is refused rather than silently resolved',
+    async () => {
+      const visible = await seedAuthor('visible')
+      const hidden = await seedAuthor('hidden')
+
+      const scoped = contextAt(
+        schemaConfig(() => ({ name: { equals: 'visible' } })),
+        { userId: 'u1' },
+      )
+
+      // The exact shape that used to return `null`: the value that reaches the
+      // row is reachable, and the one that vetoed the write never applied.
+      await expect(
+        scoped.db.Post.create({
+          data: { title: 'both', author: { connect: { id: visible } }, authorId: hidden },
+        }),
+      ).rejects.toBeInstanceOf(ConflictingRelationInputError)
+
+      // The same pair the other way round: which key the caller wrote first is
+      // not part of the answer.
+      await expect(
+        scoped.db.Post.create({
+          data: { title: 'both', authorId: hidden, author: { connect: { id: visible } } },
+        }),
+      ).rejects.toBeInstanceOf(ConflictingRelationInputError)
+
+      await expect(
+        scoped.db.Post.create({
+          data: { title: 'both', author: { connect: { id: visible } }, authorId: visible },
+        }),
+      ).rejects.toThrow(/"author".+"authorId"/s)
+
+      expect(await storedLinks(harness.url)).toEqual([])
+
+      // The control: one spelling of the very same edge, on the same context.
+      expect(
+        await scoped.db.Post.create({
+          data: { title: 'one', author: { connect: { id: visible } } },
+        }),
+      ).toMatchObject({ title: 'one' })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'one', author: visible }])
+    },
+    BOOT,
+  )
+
+  /**
+   * ADR-0031: a payload refusal names this list's fields, so it must sit
+   * behind the operation gate — a caller denied `create` learns that a field
+   * called `author` exists from the silent `null` and nothing else.
+   */
+  test(
+    'a caller the operation gate denies gets the silent null, not the payload refusal',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const base = schemaConfig()
+      const denied = contextAt(
+        {
+          ...base,
+          lists: {
+            ...base.lists,
+            Post: {
+              fields: { title: text(), author: relationship({ ref: 'Author.posts' }) },
+              access: { operation: { ...OPEN, create: () => false } },
+            },
+          },
+        },
+        { userId: 'u1' },
+      )
+
+      const faults: unknown[] = []
+      const answer = await denied.db.Post.create({
+        data: { title: 'both', author: { connect: { id: authorId } }, authorId },
+      }).catch((fault: unknown) => {
+        faults.push(fault)
+        return 'threw' as const
+      })
+
+      expect(faults).toEqual([])
+      expect(answer).toBeNull()
       expect(await storedLinks(harness.url)).toEqual([])
     },
     BOOT,

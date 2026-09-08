@@ -117,6 +117,29 @@ export class MalformedForeignKeyInputError extends Error {
 }
 
 /**
+ * Thrown when a write payload spells one edge both ways — the relationship
+ * field (`author`) and its foreign-key column (`authorId`) in the same call.
+ * The generated input type is an intersection of independent optional members,
+ * so it admits the pair; only one of the two values can reach the row, and the
+ * discarded one would still be checked for reachability and could deny the
+ * write over a value the caller never sees applied.
+ */
+export class ConflictingRelationInputError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly fieldKey: string,
+    readonly column: string,
+  ) {
+    super(
+      `Cannot write "${listName}" — "${fieldKey}" and "${column}" are two spellings of one edge ` +
+        `and this payload carries both. Write one of them: "${fieldKey}" takes ` +
+        `\`{ connect: { id } }\` or \`null\`, "${column}" takes the id of a row or \`null\`.`,
+    )
+    this.name = 'ConflictingRelationInputError'
+  }
+}
+
+/**
  * Thrown when a `connect` names a list the config does not declare — the ref
  * and the config have drifted, which is a generation or wiring fault rather
  * than an access denial, so it is reported rather than folded into the silent
@@ -158,6 +181,25 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isRowId(value: unknown): value is string | number {
+  return typeof value === 'string' || typeof value === 'number'
+}
+
+/**
+ * The id a foreign-key column names, `null` for a cleared edge, or `undefined`
+ * for a key the payload did not carry. Anything else is refused: the shape
+ * check the refusal pass and the lowering pass both read the column through,
+ * so a payload cannot be shaped one way for one and another way for the other.
+ */
+function foreignKeyIdOf(
+  listName: string,
+  key: { column: string; field: string },
+  value: unknown,
+): string | number | null | undefined {
+  if (value === undefined || value === null || isRowId(value)) return value
+  throw new MalformedForeignKeyInputError(listName, key.column, key.field)
+}
+
 /**
  * What a payload key names on this list. `owning` carries the foreign-key
  * column a `connect` or a `null` lowers onto, and the list that column
@@ -182,9 +224,9 @@ type PayloadKey =
  * The relationship field that owns `fieldKey` as its foreign-key column, when
  * `fieldKey` is one. The contract names that column `<field>Id`
  * (`contract/derive.ts`), so the owner is read back off the same convention
- * the column was emitted under. A list that declares a field of its own by
- * that name is not one of these: its own declaration wins, and the key is a
- * plain column.
+ * the column was emitted under. A list cannot declare a field of its own by
+ * that name — `claimMember` in `contract/derive.ts` refuses the collision — so
+ * the two readings of one key never have to be ranked.
  */
 function foreignKeyColumn(
   fieldKey: string,
@@ -269,9 +311,32 @@ function connectId(value: unknown): string | number | undefined {
 }
 
 /**
- * Refuse a payload that spells a nested write, relation input on a field that
- * owns no foreign key, or anything but `{ connect: { id } }` / `null` on one
- * that does — naming the field, and every refused kind spelled on it at once.
+ * Refuse a payload carrying both spellings of one edge. Checked over the whole
+ * payload before any per-key refusal, so the answer does not turn on which of
+ * the two keys the caller happened to write first.
+ */
+function refuseDoubleSpelledEdge(
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+  data: Record<string, unknown>,
+): void {
+  for (const [fieldKey, value] of Object.entries(data)) {
+    if (value === undefined) continue
+    const key = classifyKey(fieldKey, listConfig, listName, config)
+    if (key.kind !== 'foreignKey') continue
+    if (data[key.field] !== undefined) {
+      throw new ConflictingRelationInputError(listName, key.field, key.column)
+    }
+  }
+}
+
+/**
+ * Refuse a payload that spells one edge twice, a nested write, relation input
+ * on a field that owns no foreign key, anything but `{ connect: { id } }` /
+ * `null` on one that does, or anything but a row id / `null` on a foreign-key
+ * column — naming the field, and every refused kind spelled on it at once.
  *
  * Runs after the operation-access gate, so a caller with no access to the list
  * gets the silent denial and never learns from the error which fields it
@@ -287,11 +352,19 @@ export function refuseNestedRelationInput(
   data: Record<string, unknown> | undefined,
 ): void {
   if (data === undefined) return
+  refuseDoubleSpelledEdge(listName, listConfig, config, data)
+
   for (const [fieldKey, value] of Object.entries(data)) {
     const key = classifyKey(fieldKey, listConfig, listName, config)
-    // A foreign-key column holds an id, not relation input; its shape is
-    // settled where it is lowered, alongside the reachability query it owes.
-    if (key.kind === 'column' || key.kind === 'foreignKey') continue
+    if (key.kind === 'column') continue
+
+    // A foreign-key column holds an id rather than relation input, so only its
+    // own shape is settled here — the reachability query it owes is spent
+    // where the edge is lowered.
+    if (key.kind === 'foreignKey') {
+      foreignKeyIdOf(listName, key, value)
+      continue
+    }
 
     const nested = kindsIn(value, REFUSED_KINDS)
     if (nested.length > 0) throw new NestedRelationInputError(listName, fieldKey, nested)
@@ -397,11 +470,9 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
     }
 
     if (key.kind === 'foreignKey') {
-      if (value === undefined || value === null) continue
-      if (typeof value !== 'string' && typeof value !== 'number') {
-        throw new MalformedForeignKeyInputError(listName, fieldKey, key.field)
-      }
-      if (!(await reachable(listName, key.field, key.target, value, args))) {
+      const id = foreignKeyIdOf(listName, key, value)
+      if (id === undefined || id === null) continue
+      if (!(await reachable(listName, key.field, key.target, id, args))) {
         return { status: 'unreachable' }
       }
       continue

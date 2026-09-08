@@ -14,4 +14,11 @@ await context.db.Post.create({ data: { title: 't', author: { connect: { id } } }
 await context.db.Post.create({ data: { title: 't', authorId: id } })
 ```
 
-A foreign-key column carrying something that is neither a row id nor `null` — an ORM scalar wrapper such as `{ set: … }` — is now refused with `MalformedForeignKeyInputError` rather than reaching the driver, since lowering it would write the edge without the reachability query.
+A foreign-key column carrying something that is neither a row id nor `null` — an ORM scalar wrapper such as `{ set: … }` — is now refused with `MalformedForeignKeyInputError` rather than reaching the driver, since lowering it would write the edge without the reachability query. Like every other payload-shape refusal, it is raised before the transaction opens, so a malformed payload runs no hooks.
+
+A payload spelling one edge both ways is refused with the new `ConflictingRelationInputError`. The generated input type is an intersection of independent optional members, so `{ author: { connect: { id: a } }, authorId: b }` type-checks; only one of the two values could reach the row, and the discarded one was still checked for reachability — so an unreadable `b` denied a write whose applied value, `a`, was perfectly reachable. Write one spelling.
+
+```typescript
+// Refused: two spellings of one edge.
+await context.db.Post.create({ data: { author: { connect: { id: a } }, authorId: b } })
+```
