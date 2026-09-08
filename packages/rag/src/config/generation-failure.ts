@@ -24,6 +24,30 @@ export function isUnregisteredProviderType(error: unknown): boolean {
   return messageOf(error).includes('Unknown embedding provider type')
 }
 
+/**
+ * The writes core refuses before they reach the database, by name. Matched on
+ * `Error.name` rather than `instanceof` so a second copy of `stack-core` on
+ * the resolved tree cannot make the classification silently fall through to
+ * the transient arm.
+ */
+const REFUSED_WRITE_ERRORS = new Set([
+  'HandlelessPluginFieldWriteError',
+  'UnknownPluginFieldWriteError',
+  'UndefinedPluginFieldWriteError',
+  'WriteCollectionMissingError',
+])
+
+/**
+ * Whether a throw is core refusing the escalated write itself — a wiring
+ * defect the plugin holds: a context with no ORM handle, a field the config
+ * does not declare, an `undefined` value, or an ORM client whose emitted
+ * contract has no collection for the list. Each fails identically on every
+ * row until the wiring is fixed, so none of them is something to retry.
+ */
+export function isRefusedWrite(error: unknown): boolean {
+  return error instanceof Error && REFUSED_WRITE_ERRORS.has(error.name)
+}
+
 export type GenerationFailure = {
   listName: string
   fieldName: string
@@ -77,6 +101,20 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
           `column stays null, and there is no regeneration path (#1271), so rows written before ` +
           `it is registered stay null afterwards.`,
         'register the provider type',
+      )
+      return
+    }
+
+    if (isRefusedWrite(failure.error)) {
+      standing(
+        failure,
+        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The provider answered ` +
+          `and core then refused the write that stores what it returned, by name. That is a ` +
+          `wiring defect rather than a provider being down: it fails the same way for every row ` +
+          `until the wiring is fixed, and retrying the source write will not clear it. Rows ` +
+          `commit normally and the embedding column stays null, and there is no regeneration ` +
+          `path (#1271), so rows written before it is fixed stay null afterwards.`,
+        'fix the refused write reported above',
       )
       return
     }

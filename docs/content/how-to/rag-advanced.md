@@ -76,18 +76,31 @@ afterTransaction: async ({ status, operation, item, context }) => {
 
   const vector = await provider.embed(sourceText)
 
-  await writeUnderSudo(listName, item.id, fieldName, {
-    vector,
-    metadata: {
-      model: provider.model,
-      provider: provider.type,
-      dimensions: provider.dimensions,
-      generatedAt: new Date().toISOString(),
-      sourceHash,
+  await writePluginOwnedField({
+    context,
+    listName,
+    id: item.id,
+    fieldName,
+    value: {
+      vector,
+      metadata: {
+        model: provider.model,
+        provider: provider.type,
+        dimensions: provider.dimensions,
+        generatedAt: new Date().toISOString(),
+        sourceHash,
+      },
     },
   })
 }
 ```
+
+`context` here is the `AccessContext` `Plugin.runtime` receives as its **first**
+argument — not the `StackContext` `getContext` returns, and not `sudo()`, both of
+which carry no ORM handle and are refused by name. The field's column layout is
+read off the config that context was built from, so the write reaches
+`listName.fieldName`'s own columns and nothing else; a field the config does not
+declare, and an `undefined` value, are refused rather than resolved.
 
 Known limits, because the row is already committed by the time this runs:
 

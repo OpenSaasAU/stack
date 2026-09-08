@@ -352,9 +352,12 @@ on neither the package's exported surface nor the generated `PluginServices`
 face. That write carries this field's columns and nothing else, and runs **no**
 hook of the list's: driving it through `sudo().db` would re-run `resolveInput`
 over a payload naming only the embedding, which destroys a field the list
-derives from other input. Application code that maintains its own vectors
-declares `embedding({ allowManualWrites: true })` and then writes the field like
-any other, through the ordinary pipeline.
+derives from other input. The columns are the field's own because core resolves
+the field against the config the context carries — the plugin names a list and a
+field, never a layout, and a name the config does not declare is refused.
+Application code that maintains its own vectors declares
+`embedding({ allowManualWrites: true })` and then writes the field like any
+other, through the ordinary pipeline.
 
 Known limits of the generation hook, all of them consequences of running after
 the commit — none can abort the write:

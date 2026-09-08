@@ -1,4 +1,4 @@
-import type { Plugin, OwnedFieldLayout } from '@opensaas/stack-core/extend'
+import type { Plugin } from '@opensaas/stack-core/extend'
 import { writePluginOwnedField } from '@opensaas/stack-core/extend'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import type {
@@ -43,7 +43,6 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  fieldConfig: OwnedFieldLayout,
   stored: StoredEmbedding,
 ) => Promise<void>
 
@@ -292,7 +291,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
-                  await write(listName, id, fieldName, fieldConfig, {
+                  await write(listName, id, fieldName, {
                     vector,
                     metadata: {
                       model: provider.model,
@@ -504,13 +503,12 @@ export function ragPlugin(config: RAGConfig): Plugin {
         generateEmbeddings: async (texts: string[], providerName?: string) =>
           await requireProvider(providerName).embedBatch(texts),
 
-        [WRITE_EMBEDDING]: async (listKey, id, fieldName, fieldConfig, stored) => {
+        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored) => {
           await writePluginOwnedField({
             context,
             listName: listKey,
             id,
             fieldName,
-            fieldConfig,
             value: stored,
           })
         },
@@ -531,8 +529,8 @@ function embeddingWriter(context: AccessContext): EmbeddingWriter {
   const services: unknown = context.plugins.rag
   if (!hasEmbeddingWriter(services)) {
     throw new Error(
-      'RAG plugin: context.plugins.rag is missing, so a generated embedding has no sudo write to ' +
-        'reach its write-denied column through. The context was built without the plugin.',
+      'RAG plugin: context.plugins.rag is missing, so a generated embedding has no escalated ' +
+        'write to reach its write-denied column through. The context was built without the plugin.',
     )
   }
   return services[WRITE_EMBEDDING]

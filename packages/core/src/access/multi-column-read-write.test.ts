@@ -7,6 +7,8 @@ import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/
 import {
   writePluginOwnedField,
   HandlelessPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
 } from '../context/plugin-field-write.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
@@ -439,6 +441,7 @@ describe('writePluginOwnedField (ADR-0066)', () => {
       plugins: stack.plugins,
       _isSudo: false,
       _resolveOutputChain: [],
+      _config: storedConfig,
     }
     return internal
   }
@@ -460,7 +463,6 @@ describe('writePluginOwnedField (ADR-0066)', () => {
         listName: 'Owned',
         id,
         fieldName: 'avatar',
-        fieldConfig: storedConfig.lists.Owned.fields.avatar,
         value: media,
       })
 
@@ -480,7 +482,6 @@ describe('writePluginOwnedField (ADR-0066)', () => {
         listName: 'Owned',
         id,
         fieldName: 'avatar',
-        fieldConfig: storedConfig.lists.Owned.fields.avatar,
         value: media,
       })
 
@@ -504,7 +505,6 @@ describe('writePluginOwnedField (ADR-0066)', () => {
         listName: 'Owned',
         id,
         fieldName: 'avatar',
-        fieldConfig: storedConfig.lists.Owned.fields.avatar,
         value: media,
       })
 
@@ -524,7 +524,6 @@ describe('writePluginOwnedField (ADR-0066)', () => {
           listName: 'Owned',
           id,
           fieldName: 'avatar',
-          fieldConfig: storedConfig.lists.Owned.fields.avatar,
           value,
         })
 
@@ -545,7 +544,6 @@ describe('writePluginOwnedField (ADR-0066)', () => {
           listName: 'Owned',
           id: '00000000-0000-7000-8000-000000000000',
           fieldName: 'avatar',
-          fieldConfig: storedConfig.lists.Owned.fields.avatar,
           value: media,
         }),
       ).resolves.toBeUndefined()
@@ -560,11 +558,115 @@ describe('writePluginOwnedField (ADR-0066)', () => {
         listName: 'Owned',
         id: 'any',
         fieldName: 'avatar',
-        fieldConfig: storedConfig.lists.Owned.fields.avatar,
         value: media,
       }),
     ).rejects.toBeInstanceOf(HandlelessPluginFieldWriteError)
   })
+
+  it(
+    'takes the column layout from the config, so a single-column field writes one column',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:written')
+      expect(stored?.avatar).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a field the list does not declare, and writes nothing',
+    async () => {
+      const id = await seed()
+
+      await expect(
+        writePluginOwnedField({
+          context: internalContext(),
+          listName: 'Owned',
+          id,
+          fieldName: 'nowhere',
+          value: 'PWNED',
+        }),
+      ).rejects.toThrow('list "Owned" declares no field "nowhere"')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+      expect(stored?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a list the config does not declare',
+    async () => {
+      await expect(
+        writePluginOwnedField({
+          context: internalContext(),
+          listName: 'Nowhere',
+          id: await seed(),
+          fieldName: 'avatar',
+          value: media,
+        }),
+      ).rejects.toThrow('the config declares no list "Nowhere"')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a context carrying no config, which cannot vouch for the field',
+    async () => {
+      const context: AccessContext = { ...internalContext(), _config: undefined }
+
+      await expect(
+        writePluginOwnedField({
+          context,
+          listName: 'Owned',
+          id: await seed(),
+          fieldName: 'avatar',
+          value: media,
+        }),
+      ).rejects.toBeInstanceOf(UnknownPluginFieldWriteError)
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses undefined by name rather than wiping the field with it',
+    async () => {
+      const id = await seed()
+      const context = internalContext()
+
+      await writePluginOwnedField({
+        context,
+        listName: 'Owned',
+        id,
+        fieldName: 'avatar',
+        value: media,
+      })
+
+      await expect(
+        writePluginOwnedField({
+          context,
+          listName: 'Owned',
+          id,
+          fieldName: 'avatar',
+          value: undefined,
+        }),
+      ).rejects.toBeInstanceOf(UndefinedPluginFieldWriteError)
+
+      expect((await database.context(null).db.Owned.where({}).first())?.avatar).toEqual(media)
+    },
+    BOOT,
+  )
 })
 
 describe('multi-column write split respects field-level write access', () => {

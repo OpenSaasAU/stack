@@ -17,8 +17,10 @@ export type { Plugin, PluginContext, GeneratedFiles, ExtensionDescriptor } from 
 export {
   writePluginOwnedField,
   HandlelessPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
 } from './context/plugin-field-write.js'
-export type { OwnedFieldLayout, PluginOwnedFieldWrite } from './context/plugin-field-write.js'
+export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {

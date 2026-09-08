@@ -10,9 +10,8 @@ import {
 /**
  * Thrown when {@link writePluginOwnedField} is handed a context carrying no
  * ORM handle. The request context `getContext` returns is one: `StackContext`
- * deliberately omits `ormHandle`, so passing it — or the `sudo()` derived from
- * it — reaches here instead of failing as an undefined property deep in the
- * write.
+ * deliberately omits `ormHandle`, so passing it reaches here instead of
+ * failing as an undefined property deep in the write.
  */
 export class HandlelessPluginFieldWriteError extends Error {
   constructor(
@@ -28,19 +27,75 @@ export class HandlelessPluginFieldWriteError extends Error {
   }
 }
 
-/** Everything this write reads off the field's config: how it lays out its columns. */
-export type OwnedFieldLayout = Pick<FieldConfig, 'splitColumns'>
+/**
+ * Thrown when {@link writePluginOwnedField} cannot resolve the named field
+ * against the config its context was built from — which is the only authority
+ * for what columns the write may reach.
+ */
+export class UnknownPluginFieldWriteError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly fieldName: string,
+    readonly reason: string,
+  ) {
+    super(
+      `Refused to write "${listName}.${fieldName}": ${reason}. The field's column layout is ` +
+        `read off the config the context was built from, never off an argument, so a field the ` +
+        `config does not declare has no columns this write is allowed to reach.`,
+    )
+    this.name = 'UnknownPluginFieldWriteError'
+  }
+}
+
+/**
+ * Thrown when {@link writePluginOwnedField} is handed `undefined`. It is the
+ * one value whose meaning would depend on the field's column layout — a
+ * multi-column field would split it into null columns and clear the field, a
+ * single-column one would reach the ORM as a no-op — so it is refused instead
+ * of resolved. `null` clears a field on either shape.
+ */
+export class UndefinedPluginFieldWriteError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly fieldName: string,
+  ) {
+    super(
+      `Refused to write "${listName}.${fieldName}": the value is undefined. Pass null to clear ` +
+        `the field — undefined would wipe a multi-column field and leave a single-column one ` +
+        `untouched, which is two different writes for one input.`,
+    )
+    this.name = 'UndefinedPluginFieldWriteError'
+  }
+}
 
 export interface PluginOwnedFieldWrite {
   /** The `AccessContext` core hands `Plugin.runtime` as its first argument. */
   context: AccessContext
   listName: string
   id: string | number
+  /** A field the config on `context` declares on `listName`. */
   fieldName: string
-  /** The field the plugin owns, for its column layout. */
-  fieldConfig: OwnedFieldLayout
-  /** The field's logical value, or `null` to clear it. */
+  /** The field's logical value, or `null` to clear it. `undefined` is refused. */
   value: unknown
+}
+
+function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
+  const refuse = (reason: string): never => {
+    throw new UnknownPluginFieldWriteError(listName, fieldName, reason)
+  }
+
+  const config = context._config
+  if (config === undefined) {
+    return refuse('the context carries no config to resolve the field against')
+  }
+
+  const list = config.lists[listName]
+  if (list === undefined) return refuse(`the config declares no list "${listName}"`)
+
+  const field: FieldConfig | undefined = list.fields[fieldName]
+  if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
+
+  return field
 }
 
 /**
@@ -65,19 +120,30 @@ export interface PluginOwnedFieldWrite {
  * split by its `splitColumns` exactly as the Write Pipeline splits it, so a
  * plugin never names a physical column itself.
  *
- * It reaches no other field. The payload is this field's columns and nothing
- * else, which is a narrower capability than the escalated `db` update it
- * replaces — that one could write any column on the row.
+ * It reaches no field but `fieldName`, and that is enforced rather than left
+ * to the caller: the field is resolved against the config on `context`, and
+ * the columns written are whatever that field's own `splitColumns` returns.
+ * A list or a field the config does not declare is refused by name, as is a
+ * context carrying no config. This is a narrower capability than the
+ * escalated `db` update it replaces — that one could write any column on the
+ * row — though not a privilege boundary: a plugin holding `context.ormHandle`
+ * can already write anything, and this refuses the mistake, not the intent.
  *
  * The row is addressed by id alone, with no Access Filter beside it. A row
  * that is gone is a silent no-op, as it is on every write terminal.
  */
 export async function writePluginOwnedField(args: PluginOwnedFieldWrite): Promise<void> {
-  const { context, listName, id, fieldName, fieldConfig, value } = args
+  const { context, listName, id, fieldName, value } = args
 
   if (context.ormHandle === undefined) {
     throw new HandlelessPluginFieldWriteError(listName, fieldName)
   }
+
+  if (value === undefined) {
+    throw new UndefinedPluginFieldWriteError(listName, fieldName)
+  }
+
+  const fieldConfig = ownedField(context, listName, fieldName)
 
   const columns = fieldConfig.splitColumns
     ? fieldConfig.splitColumns(fieldName, value)

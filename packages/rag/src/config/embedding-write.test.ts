@@ -11,7 +11,6 @@ import { config as defineConfig } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import { withOrigin } from '@opensaas/stack-core/origin'
-import type { OwnedFieldLayout } from '@opensaas/stack-core/extend'
 import {
   createTestDatabase,
   ESCAPE_VARIABLE,
@@ -126,13 +125,7 @@ function collection(model: string): Record<string, unknown> {
  */
 function embeddingWriterOf(
   context: unknown,
-): (
-  listKey: string,
-  id: string,
-  fieldName: string,
-  fieldConfig: OwnedFieldLayout,
-  stored: unknown,
-) => Promise<void> {
+): (listKey: string, id: string, fieldName: string, stored: unknown) => Promise<void> {
   const plugins: unknown = isRecord(context) ? context.plugins : undefined
   const services: unknown = isRecord(plugins) ? plugins.rag : undefined
   if (!isRecord(services)) throw new Error('the context carries no rag plugin services')
@@ -144,8 +137,8 @@ function embeddingWriterOf(
 
   const found: unknown = Reflect.get(services, key)
   if (typeof found !== 'function') throw new Error('unreachable')
-  return async (listKey, id, fieldName, fieldConfig, stored) => {
-    await found(listKey, id, fieldName, fieldConfig, stored)
+  return async (listKey, id, fieldName, stored) => {
+    await found(listKey, id, fieldName, stored)
   }
 }
 
@@ -361,13 +354,7 @@ describe.skipIf(!available)(
         expect(seeded?.contentEmbedding).toBeNull()
 
         const stored = { vector: [1, 0, 0], metadata }
-        await embeddingWriterOf(database.context(null))(
-          'Article',
-          id,
-          'contentEmbedding',
-          embedding({ sourceField: 'content', dimensions: 3 }),
-          stored,
-        )
+        await embeddingWriterOf(database.context(null))('Article', id, 'contentEmbedding', stored)
 
         const after = await database.context(null).db.Article.where({}).first()
         expect(after?.contentEmbedding).toEqual(stored)

@@ -1,14 +1,14 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import type { AccessContext } from '@opensaas/stack-core'
-import type {
-  ContractColumnDescriptor,
-  OwnedFieldLayout,
-  Plugin,
-  PluginContext,
+import type { AccessContext, FieldConfig, OpenSaasConfig, StackContext } from '@opensaas/stack-core'
+import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
+import {
+  HandlelessPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
 } from '@opensaas/stack-core/extend'
+import { WriteCollectionMissingError } from '@opensaas/stack-core'
 import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
 import { registerEmbeddingProvider } from '../providers/index.js'
@@ -16,6 +16,18 @@ import type { EmbeddingProvider } from '../providers/types.js'
 import type { StoredEmbedding } from '../index.js'
 
 const openai: RAGConfig = { provider: { type: 'openai', apiKey: 'test-key' } }
+
+const articleWithEmbedding = (dimensions: number, provider?: string): OpenSaasConfig => ({
+  db: { provider: 'postgresql' },
+  lists: {
+    Article: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions, provider }),
+      },
+    },
+  },
+})
 
 const counting: EmbeddingProvider = {
   type: 'counting',
@@ -90,6 +102,19 @@ function stubContext(overrides: Partial<AccessContext>): AccessContext {
 }
 
 /**
+ * The `sudo` argument `Plugin.runtime` is handed. It throws rather than
+ * answering: the RAG runtime reaches nothing through it (ADR-0066), and a
+ * stub that answered would let a regression pass by returning a context that
+ * happens to work.
+ */
+function unreachableSudo(onCall?: () => void): () => StackContext {
+  return (): StackContext => {
+    onCall?.()
+    throw new Error('the RAG plugin runtime must not reach sudo()')
+  }
+}
+
+/**
  * A `db` surface that records which list keys were reached through it, and
  * answers every method on the delegate. It pins no call shape: the point is
  * which context a write ran on, not what it called.
@@ -131,7 +156,6 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  fieldConfig: OwnedFieldLayout,
   stored: StoredEmbedding,
 ) => Promise<void>
 
@@ -154,8 +178,8 @@ function writeEmbeddingOf(services: unknown): { key: symbol; write: EmbeddingWri
   if (typeof found !== 'function') throw new Error('unreachable')
   return {
     key,
-    write: async (listKey, id, fieldName, fieldConfig, stored) => {
-      await found(listKey, id, fieldName, fieldConfig, stored)
+    write: async (listKey, id, fieldName, stored) => {
+      await found(listKey, id, fieldName, stored)
     },
   }
 }
@@ -527,12 +551,13 @@ describe('ragPlugin', () => {
         stored: StoredEmbedding
       }[] = []
       const { key } = writeEmbeddingOf(
-        ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(stubContext({}), () =>
+        ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
           stubContext({}),
+          unreachableSudo(),
         ),
       )
       const services: Record<symbol, EmbeddingWriter> = {
-        [key]: async (listKey, id, fieldName, _fieldConfig, stored) => {
+        [key]: async (listKey, id, fieldName, stored) => {
           onWrite?.()
           writes.push({ listKey, id, fieldName, stored })
         },
@@ -687,6 +712,41 @@ describe('ragPlugin', () => {
       logged.mockRestore()
     })
 
+    it.each([
+      ['a context with no ORM handle', new HandlelessPluginFieldWriteError('Article', 'x')],
+      [
+        'a field the config does not declare',
+        new UnknownPluginFieldWriteError('Article', 'x', 'y'),
+      ],
+      ['an undefined value', new UndefinedPluginFieldWriteError('Article', 'x')],
+      ['an ORM client with no collection', new WriteCollectionMissingError('Article')],
+    ])(
+      'reports a write core refused by name — %s — as a standing defect',
+      async (_name, refusal) => {
+        // A refused write fails identically on every row until the wiring is
+        // fixed, so the transient arm's "retry by writing the source field
+        // again" is advice that can never work.
+        const { hook, context } = await generationHook('counting', () => {
+          throw refusal
+        })
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id: 'a1', content: 'four', contentEmbedding: null },
+          context,
+        })
+
+        const said = logged.mock.calls[0][0]
+        expect(said).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+        expect(said).not.toContain('retry by writing the source field again')
+        logged.mockRestore()
+      },
+    )
+
     it('reports an unregistered provider type as a standing defect, not as transient', async () => {
       // Building the provider is where a permanent configuration defect
       // surfaces, so a reporter that keys on the code path calls this one
@@ -808,7 +868,7 @@ describe('ragPlugin', () => {
 
     it('puts the escalated write on no string key of context.plugins.rag', () => {
       const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
-      const services = plugin.runtime!(stubContext({}), () => stubContext({}))
+      const services = plugin.runtime!(stubContext({}), unreachableSudo())
       if (typeof services !== 'object' || services === null) {
         throw new Error('the plugin runtime returned no services object')
       }
@@ -827,7 +887,7 @@ describe('ragPlugin', () => {
       // give the same answer.
       const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
         stubContext({}),
-        () => stubContext({}),
+        unreachableSudo(),
       )
       const generate: unknown = Reflect.get(Object(services), 'generateEmbedding')
       if (typeof generate !== 'function') throw new Error('no generateEmbedding service')
@@ -852,28 +912,22 @@ describe('ragPlugin', () => {
         stubContext({
           db: recordingDb(dbReached),
           ormHandle: recordingCollections(handleReached),
+          _config: articleWithEmbedding(1),
         }),
-        () => {
+        unreachableSudo(() => {
           escalations += 1
-          return stubContext({})
-        },
+        }),
       )
 
-      await writeEmbeddingOf(services).write(
-        'Article',
-        'a1',
-        'contentEmbedding',
-        embedding({ sourceField: 'content', dimensions: 1 }),
-        {
-          vector: [4],
-          metadata: {
-            model: 'counting-1',
-            provider: 'counting',
-            dimensions: 1,
-            generatedAt: '2026-01-01T00:00:00.000Z',
-          },
+      await writeEmbeddingOf(services).write('Article', 'a1', 'contentEmbedding', {
+        vector: [4],
+        metadata: {
+          model: 'counting-1',
+          provider: 'counting',
+          dimensions: 1,
+          generatedAt: '2026-01-01T00:00:00.000Z',
         },
-      )
+      })
 
       expect(handleReached).toEqual(['Article'])
       expect(dbReached).toEqual([])
@@ -882,17 +936,7 @@ describe('ragPlugin', () => {
   })
 
   describe('beforeGenerate', () => {
-    const listsWith = (dimensions: number, provider?: string): OpenSaasConfig => ({
-      db: { provider: 'postgresql' },
-      lists: {
-        Article: {
-          fields: {
-            content: text(),
-            contentEmbedding: embedding({ sourceField: 'content', dimensions, provider }),
-          },
-        },
-      },
-    })
+    const listsWith = articleWithEmbedding
 
     it('passes when the declared dimension matches the provider model', () => {
       const plugin = ragPlugin({
