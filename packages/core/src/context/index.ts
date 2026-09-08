@@ -419,6 +419,15 @@ async function settleTransactionOwner<T>(
 export function getContext<
   TConfig extends OpenSaasConfig,
   TPrisma extends PrismaClientLike = PrismaClientLike,
+  // See the identical `TDb` doc on `StackContext` (#1232) — left unconstrained
+  // for the same reason. Defaults to the plain access-controlled view so every
+  // existing two-argument call site is unaffected; a caller that wants the
+  // generated `Context`'s `db` description asks for it explicitly:
+  // `getContext<typeof config, PrismaClient, CustomDB>(...)`. This is the type
+  // parameter that lets the generated context factory return a `StackContext`
+  // already shaped as `CustomDB` instead of `as unknown as`-ing its way there
+  // (#1328).
+  TDb = AccessControlledDB<TPrisma>,
 >(
   config: TConfig,
   prisma: TPrisma,
@@ -437,7 +446,7 @@ export function getContext<
   // resolve chain forward so a write issued from inside a `resolveOutput` hook
   // keeps that hook's cycle-guard chain instead of resetting to empty.
   _resolveOutputChain?: readonly { listKey: string; fieldKey: string }[],
-): StackContext<TPrisma> {
+): StackContext<TPrisma, TDb> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 
@@ -811,8 +820,8 @@ export function getContext<
   }
 
   // Bypasses access control; hooks and validation still run.
-  function sudo(): StackContext<TPrisma> {
-    return getContext(
+  function sudo(): StackContext<TPrisma, TDb> {
+    return getContext<TConfig, TPrisma, TDb>(
       config,
       prisma,
       session,
@@ -831,8 +840,8 @@ export function getContext<
 
   // Substitutes the session; access control and hooks still run against it
   // (orthogonal to `sudo`, so the receiver's sudo state is preserved).
-  function withSession(newSession: Session | null): StackContext<TPrisma> {
-    return getContext(
+  function withSession(newSession: Session | null): StackContext<TPrisma, TDb> {
+    return getContext<TConfig, TPrisma, TDb>(
       config,
       prisma,
       newSession,
@@ -859,7 +868,7 @@ export function getContext<
   // `transaction()` nested inside another joins the outer owner's queue
   // rather than creating a second one.
   function transaction<T>(
-    fn: (txContext: StackContext<TPrisma>) => Promise<T>,
+    fn: (txContext: StackContext<TPrisma, TDb>) => Promise<T>,
     options?: TransactionOptions,
   ): Promise<T> {
     if (context._transactionOwner) {
@@ -876,7 +885,7 @@ export function getContext<
           // access semantics are identical, atomicity comes from the enclosing
           // transaction.
           fn(
-            getContext(
+            getContext<TConfig, TPrisma, TDb>(
               config,
               prisma,
               session,
@@ -890,7 +899,7 @@ export function getContext<
         : (client.$transaction(
             (tx) =>
               fn(
-                getContext(
+                getContext<TConfig, TPrisma, TDb>(
                   config,
                   tx,
                   session,
@@ -907,8 +916,15 @@ export function getContext<
     return settleTransactionOwner(settled, registry)
   }
 
-  const returned: StackContext<TPrisma> = {
-    db: db as AccessControlledDB<TPrisma>,
+  const returned: StackContext<TPrisma, TDb> = {
+    // The one place that legitimately knows `db` is shaped as the caller's
+    // `TDb` says: `populateDbDelegate` above always builds the plain
+    // `AccessControlledDB<TPrisma>` runtime shape, and a caller asking for a
+    // richer description (e.g. the generated `CustomDB`) is asserting that
+    // description is compatible with what actually comes back at runtime.
+    // This is the single internal cast `TDb` exists to replace every
+    // consumer-side `as unknown as` with (#1328).
+    db: db as unknown as TDb,
     session,
     prisma,
     storage: context.storage,

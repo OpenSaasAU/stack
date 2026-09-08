@@ -13,7 +13,7 @@ exports[`Context Generator > generateContext > should export rawOpensaasContext 
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client/client.ts'
-import type { Context } from './types.ts'
+import type { Context, CustomDB } from './types.ts'
 import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -85,7 +85,7 @@ const storage = {
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, session ?? null, storage) as Context<TSession>
 }
 
 /**
@@ -97,7 +97,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, null, storage) as Context
 })()
 
 /**
@@ -121,7 +121,7 @@ exports[`Context Generator > generateContext > should generate context factory w
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client/client.ts'
-import type { Context } from './types.ts'
+import type { Context, CustomDB } from './types.ts'
 import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -193,7 +193,7 @@ const storage = {
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, session ?? null, storage) as Context<TSession>
 }
 
 /**
@@ -205,7 +205,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, null, storage) as Context
 })()
 
 /**
@@ -229,7 +229,7 @@ exports[`Context Generator > generateContext > should generate context factory w
 import { getContext as getOpensaasContext } from '@opensaas/stack-core'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import { PrismaClient } from './prisma-client/client.ts'
-import type { Context } from './types.ts'
+import type { Context, CustomDB } from './types.ts'
 import configOrPromise from '../opensaas.config.ts'
 
 // Resolve config if it's a Promise (when plugins are present)
@@ -301,7 +301,7 @@ const storage = {
 export async function getContext<TSession extends OpensaasSession = OpensaasSession>(session?: TSession): Promise<Context<TSession>> {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, session ?? null, storage) as unknown as Context<TSession>
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, session ?? null, storage) as Context<TSession>
 }
 
 /**
@@ -313,7 +313,7 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
 export const rawOpensaasContext = (async () => {
   const config = await getConfig()
   const prismaClient = await getPrisma()
-  return getOpensaasContext(config, prismaClient, null, storage) as unknown as Context
+  return getOpensaasContext<typeof config, PrismaClient, CustomDB>(config, prismaClient, null, storage) as Context
 })()
 
 /**
