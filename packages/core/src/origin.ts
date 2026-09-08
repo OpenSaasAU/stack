@@ -5,6 +5,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { SqlMiddleware } from '@prisma/orm-postgres/family-runtime'
+import { classifyDriverError } from './lib/database-errors.js'
 
 /**
  * Which declared surface is executing. The store carries this and nothing
@@ -76,9 +77,23 @@ export class UnmarkedQueryError extends Error {
  * terminal returns `AsyncIterableResult`, which has `then` but no `catch`,
  * `finally` or `Symbol.toStringTag`. `withOrigin` still returns a real
  * `Promise<T>`.
+ *
+ * A driver error raised under the `engine` origin is replaced by its
+ * stack-owned counterpart here (ADR-0042). Normalising at the stamp rather
+ * than at each terminal is what makes the guarantee structural: an engine
+ * terminal is spelled as a call to this function, so a terminal added later
+ * cannot leak a raw driver error by forgetting to wrap itself. The `unsafe`
+ * origin is left alone, which is the whole of the Unsafe surface's exclusion.
  */
 export function withOrigin<T>(origin: QueryOrigin, execute: () => PromiseLike<T>): Promise<T> {
-  return originStore.run(origin, async () => await execute())
+  return originStore.run(origin, async () => {
+    if (origin !== 'engine') return await execute()
+    try {
+      return await execute()
+    } catch (error) {
+      throw classifyDriverError(error) ?? error
+    }
+  })
 }
 
 /**

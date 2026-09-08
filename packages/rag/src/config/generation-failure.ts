@@ -6,25 +6,12 @@
  * fail identically on every row until something outside the application
  * changes. That is a property of the **error**, not of where in the hook it was
  * thrown: `createEmbeddingProvider` fails permanently on a `type` nothing
- * registered, and the sudo write will fail transiently once the surface #1127
- * ports it onto is real. So the classification is on the error and the reporter
- * is one catch site.
+ * registered, while a provider being down fails transiently. So the
+ * classification is on the error and the reporter is one catch site.
  */
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Whether a throw is the secured write surface still speaking Prisma 6 to a
- * Prisma 8 collection, rather than anything a provider or a row did: `update()`
- * calls a `findUnique` no collection carries, and `create()` passes Prisma 6's
- * `{ data }` to a collection that takes a row (`write-pipeline.ts`, #1124,
- * #1127).
- */
-export function isUnportedWriteSurface(error: unknown): boolean {
-  const text = messageOf(error)
-  return text.includes('findUnique is not a function') || text.includes('Unknown column "data"')
 }
 
 /**
@@ -35,6 +22,30 @@ export function isUnportedWriteSurface(error: unknown): boolean {
  */
 export function isUnregisteredProviderType(error: unknown): boolean {
   return messageOf(error).includes('Unknown embedding provider type')
+}
+
+/**
+ * The writes core refuses before they reach the database, by name. Matched on
+ * `Error.name` rather than `instanceof` so a second copy of `stack-core` on
+ * the resolved tree cannot make the classification silently fall through to
+ * the transient arm.
+ */
+const REFUSED_WRITE_ERRORS = new Set([
+  'HandlelessPluginFieldWriteError',
+  'UnknownPluginFieldWriteError',
+  'UndefinedPluginFieldWriteError',
+  'WriteCollectionMissingError',
+])
+
+/**
+ * Whether a throw is core refusing the escalated write itself — a wiring
+ * defect the plugin holds: a context with no ORM handle, a field the config
+ * does not declare, an `undefined` value, or an ORM client whose emitted
+ * contract has no collection for the list. Each fails identically on every
+ * row until the wiring is fixed, so none of them is something to retry.
+ */
+export function isRefusedWrite(error: unknown): boolean {
+  return error instanceof Error && REFUSED_WRITE_ERRORS.has(error.name)
 }
 
 export type GenerationFailure = {
@@ -79,21 +90,6 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
   return (failure) => {
     const field = `${failure.listName}.${failure.fieldName}`
 
-    if (isUnportedWriteSurface(failure.error)) {
-      standing(
-        failure,
-        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The sudo write that ` +
-          `carries a generated embedding to its column failed, and on this release it fails the ` +
-          `same way for every row: the secured write surface has not been ported onto the ` +
-          `Prisma 8 collection yet (#1124, #1127). Rows commit normally and the embedding ` +
-          `column stays null, so semantic search over this field returns nothing. There is no ` +
-          `regeneration path (#1271), so rows written before that lands stay null afterwards. ` +
-          `No config change works around it; track #1127.`,
-        '#1124, #1127',
-      )
-      return
-    }
-
     if (isUnregisteredProviderType(failure.error)) {
       standing(
         failure,
@@ -105,6 +101,20 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
           `column stays null, and there is no regeneration path (#1271), so rows written before ` +
           `it is registered stay null afterwards.`,
         'register the provider type',
+      )
+      return
+    }
+
+    if (isRefusedWrite(failure.error)) {
+      standing(
+        failure,
+        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The provider answered ` +
+          `and core then refused the write that stores what it returned, by name. That is a ` +
+          `wiring defect rather than a provider being down: it fails the same way for every row ` +
+          `until the wiring is fixed, and retrying the source write will not clear it. Rows ` +
+          `commit normally and the embedding column stays null, and there is no regeneration ` +
+          `path (#1271), so rows written before it is fixed stay null afterwards.`,
+        'fix the refused write reported above',
       )
       return
     }

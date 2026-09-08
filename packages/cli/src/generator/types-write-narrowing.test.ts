@@ -35,6 +35,8 @@ import {
  *    column itself stays writable (ADR-0050);
  *  - a nested `create`/`update`/`delete`/`connectOrCreate`/`set`/`updateMany`/
  *    `deleteMany` under a relation key is a compile error (ADR-0050, #1152);
+ *  - `connect` through an inverse field, or through a junction list's inverse,
+ *    is a compile error — the input carries no member for it (ADR-0050, #1153);
  *  - update is partial, and targeted by `id` alone — the engine lowers no
  *    other column into a write's predicate (#1152);
  *  - every write terminal admits silent denial — `create` is `| null`.
@@ -46,7 +48,12 @@ import {
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },
   lists: {
-    User: { fields: { name: text({ validation: { isRequired: true } }) } },
+    User: {
+      fields: {
+        name: text({ validation: { isRequired: true } }),
+        events: relationship({ ref: 'Event.owner', many: true }),
+      },
+    },
     Event: {
       fields: {
         title: text({ validation: { isRequired: true } }),
@@ -62,7 +69,16 @@ const config: OpenSaasConfig = {
           defaultValue: 'draft',
           db: { type: 'enum' },
         }),
-        owner: relationship({ ref: 'User' }),
+        owner: relationship({ ref: 'User.events' }),
+        tickets: relationship({ ref: 'Ticket.event', many: true }),
+      },
+    },
+    // A junction list under ADR-0048: an edge is a row here, with its own
+    // access rules, rather than an implicit many-to-many.
+    Ticket: {
+      fields: {
+        event: relationship({ ref: 'Event.tickets' }),
+        holder: relationship({ ref: 'User' }),
       },
     },
     // ADR-0058's criterion needs a to-one whose foreign key is NOT nullable,
@@ -255,6 +271,50 @@ async function run() {
       owner: { deleteMany: {} },
     },
   })
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it('offers connect only where the foreign key lives', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  // The foreign-key-owning side takes it.
+  await context.db.Event.update({ where: { id: 'e1' }, data: { owner: { connect: { id: 'u1' } } } })
+
+  // The inverse side does not: \`User.events\` is keyed by \`Event.ownerId\`, so
+  // linking through it is N updates against \`Event\` (ADR-0050).
+  await context.db.User.update({
+    where: { id: 'u1' },
+    data: {
+      // @ts-expect-error \`events\` is the inverse — the foreign key lives on Event
+      events: { connect: { id: 'e1' } },
+    },
+  })
+
+  // Across a junction the rule is the same seen from its commonest angle: an
+  // edge is a row of \`Ticket\`, created under that list's own access.
+  await context.db.Event.update({
+    where: { id: 'e1' },
+    data: {
+      // @ts-expect-error a junction edge is a Ticket row, not a connect on Event
+      tickets: { connect: { id: 't1' } },
+    },
+  })
+
+  await context.db.Ticket.create({
+    data: { event: { connect: { id: 'e1' } }, holder: { connect: { id: 'u1' } } },
+  })
+
+  // Clearing an edge is \`null\` on the same field, never a \`disconnect\`.
+  await context.db.Event.update({ where: { id: 'e1' }, data: { owner: null } })
 }
 
 void run

@@ -1,6 +1,8 @@
 import {
   getItemLabel,
+  getRelationshipOptions,
   getUrlKey,
+  resolveJunctionEdge,
   type AccessContext,
   type OpenSaasConfig,
   type FieldConfig,
@@ -45,7 +47,7 @@ export interface RelationshipTableProps {
   context: AccessContext
   /** The list being edited (the parent record's list). */
   parentListKey: string
-  /** The parent record's id — the disconnect target for many-to-many rows. */
+  /** The parent record's id — the link the pre-linked create drawer presets. */
   parentId: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
@@ -175,10 +177,60 @@ async function resolveCreateForm(
   const { serializableFields, relationshipData } = await prepareItemForm(
     context,
     config,
+    section.relatedListKey,
     formListConfig,
     {},
   )
   return { fields: serializableFields, relationshipData }
+}
+
+/** The serialisable props the "Link existing" edge control needs, or `null` to hide it. */
+export interface LinkEdgeData {
+  junctionListKey: string
+  targetField: string
+  targetListKey: string
+  options: Array<{ id: string; label: string }>
+}
+
+/**
+ * Prepare the add-an-edge control for this table, or `null` when it should not
+ * be offered (#1329).
+ *
+ * Offered only when the section is an edge across an explicit junction list
+ * ({@link resolveJunctionEdge}) and the JUNCTION list's own `create` access is
+ * not statically denied — the same gate shape the create drawer uses, over the
+ * list the write is actually evaluated against. A row-dependent rule that
+ * denies still denies at commit, silently, so the control is a ceiling and
+ * never a promise.
+ *
+ * The far endpoint's options come through the same bounded, access-scoped fetch
+ * the pickers use, so a row the session cannot read is never offered — and
+ * picking one anyway is refused by the create's own reachability query.
+ */
+export async function resolveLinkEdge(
+  section: RelationshipTableSection,
+  config: OpenSaasConfig,
+  parentListKey: string,
+  context: AccessContext,
+): Promise<LinkEdgeData | null> {
+  const edge = resolveJunctionEdge(config, parentListKey, section.fieldName)
+  if (!edge) return null
+
+  const junctionListConfig = config.lists[edge.junctionListKey]
+  const allowed = await isOperationPotentiallyAllowed(
+    junctionListConfig?.access?.operation,
+    'create',
+    { session: context.session, context },
+  )
+  if (!allowed) return null
+
+  const options = await getRelationshipOptions(context, config, edge.targetListKey, {})
+  return {
+    junctionListKey: edge.junctionListKey,
+    targetField: edge.targetField,
+    targetListKey: edge.targetListKey,
+    options: [...options],
+  }
 }
 
 /**
@@ -255,6 +307,7 @@ export async function RelationshipTable({
 
   const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
   const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
+  const linkEdge = await resolveLinkEdge(section, config, parentListKey, context)
   const editableColumns = await resolveEditableColumns(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so
@@ -317,6 +370,8 @@ export async function RelationshipTable({
       parentId={parentId}
       parentListKey={parentListKey}
       serverAction={serverAction}
+      fieldName={section.fieldName}
+      linkEdge={linkEdge ?? undefined}
       canCreate={createForm !== null}
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}

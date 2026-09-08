@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest'
 import {
   getContext,
   OrmHandleUnresolvableError,
-  TransactionOptionsUnsupportedError,
   TransactionUnavailableError,
 } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
@@ -166,18 +165,6 @@ describe('the transaction context is bound to the transaction', () => {
     })
 
     expect(double.committed().map((row) => row.title)).toEqual(['one connection'])
-  })
-
-  test('options it cannot honour are refused rather than downgraded', async () => {
-    const double = createDouble('spare')
-
-    await expect(
-      contextOver(double).transaction(async () => 'unreached', {
-        isolationLevel: 'Serializable',
-      }),
-    ).rejects.toBeInstanceOf(TransactionOptionsUnsupportedError)
-
-    expect(double.committed()).toEqual([])
   })
 
   test('a context with no Prisma 8 client refuses rather than running unatomically', async () => {

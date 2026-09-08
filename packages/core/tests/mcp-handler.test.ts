@@ -1409,3 +1409,220 @@ describe('MCP Handler — fields projection (#851)', () => {
     })
   })
 })
+
+/**
+ * What the create/update tools advertise for a relationship (#1153, ADR-0050).
+ *
+ * A tool schema is a promise about what a call can do. Advertising `connect`
+ * where the row holds no column for it promises a call that can only fail;
+ * omitting `null` hides the only spelling that clears an edge.
+ */
+describe('MCP relationship input schemas', () => {
+  const OPEN = {
+    operation: {
+      query: () => true,
+      create: () => true,
+      update: () => true,
+      delete: () => true,
+    },
+  }
+
+  /**
+   * `Profile.user` holds the one-to-one column (`Profile` sorts before `User`);
+   * `User.profile` is the other end of the same single column, and `User.posts`
+   * is a to-many. Both ends are `many: false`, so arity alone cannot tell the
+   * owning one from the non-owning one.
+   */
+  const relationConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+    mcp: { enabled: true, basePath: '/api/mcp' },
+    lists: {
+      User: {
+        fields: {
+          name: { type: 'text' },
+          profile: { type: 'relationship', ref: 'Profile.user' },
+          posts: { type: 'relationship', ref: 'Post.author', many: true },
+        },
+        access: OPEN,
+      },
+      Profile: {
+        fields: { bio: { type: 'text' }, user: { type: 'relationship', ref: 'User.profile' } },
+        access: OPEN,
+      },
+      Post: {
+        fields: { title: { type: 'text' }, author: { type: 'relationship', ref: 'User.posts' } },
+        access: OPEN,
+      },
+    },
+  }
+
+  async function createToolProperties(toolName: string): Promise<Record<string, unknown>> {
+    const handlers = createMcpHandlers({
+      config: relationConfig,
+      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getContext: () => ({ db: {}, session: { userId: 'user-123' } }) as unknown as AccessContext,
+    })
+
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    )
+    const data = await response.json()
+    const tool = data.result.tools.find((entry: { name: string }) => entry.name === toolName)
+    return tool.inputSchema.properties.data.properties
+  }
+
+  it('advertises connect only on the end that holds the foreign key', async () => {
+    const userProperties = await createToolProperties('list_user_create')
+    const profileProperties = await createToolProperties('list_profile_create')
+
+    // The non-owning end of the one-to-one, and the to-many: no column here.
+    expect(Object.keys(userProperties)).toEqual(['name'])
+    // The very same edge, from the end that does hold the column.
+    expect(Object.keys(profileProperties)).toEqual(['bio', 'user'])
+  })
+
+  it('advertises null alongside connect, the only way to clear an edge', async () => {
+    const properties = await createToolProperties('list_profile_create')
+
+    expect(properties.user).toMatchObject({
+      type: ['object', 'null'],
+      properties: { connect: { type: 'object', properties: { id: { type: 'string' } } } },
+    })
+    expect(properties.user).toHaveProperty('description', expect.stringContaining('null'))
+  })
+
+  it('advertises the same shapes on update', async () => {
+    const properties = await createToolProperties('list_user_update')
+
+    expect(Object.keys(properties)).toEqual(['name'])
+  })
+
+  it('admits no object shape the engine would refuse', async () => {
+    // `{}` and `{ disconnect: … }` are the two shapes a client would otherwise
+    // read as valid and the engine then refuses. The schema says so itself
+    // rather than leaving it to the prose description.
+    const properties = await createToolProperties('list_profile_create')
+
+    expect(properties.user).toMatchObject({
+      required: ['connect'],
+      additionalProperties: false,
+      properties: {
+        connect: { required: ['id'], additionalProperties: false },
+      },
+    })
+  })
+
+  /**
+   * Adding an edge across a junction is a create of the junction row (#1329,
+   * ADR-0050), so that create tool is where the spelling has to appear — and
+   * the two parents, whose to-many carries no column, must offer nothing.
+   */
+  it('advertises an edge on the junction list that owns it, and on neither parent', async () => {
+    const junction: OpenSaasConfig = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      mcp: { enabled: true, basePath: '/api/mcp' },
+      lists: {
+        Post: {
+          fields: {
+            title: { type: 'text' },
+            tags: { type: 'relationship', ref: 'PostTag.post', many: true },
+          },
+          access: OPEN,
+        },
+        Tag: {
+          fields: {
+            name: { type: 'text' },
+            posts: { type: 'relationship', ref: 'PostTag.tag', many: true },
+          },
+          access: OPEN,
+        },
+        PostTag: {
+          fields: {
+            post: { type: 'relationship', ref: 'Post.tags' },
+            tag: { type: 'relationship', ref: 'Tag.posts' },
+          },
+          access: OPEN,
+        },
+      },
+    }
+
+    const handlers = createMcpHandlers({
+      config: junction,
+      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getContext: () => ({ db: {}, session: { userId: 'user-123' } }) as unknown as AccessContext,
+    })
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    )
+    const data = await response.json()
+    const propertiesOf = (name: string): Record<string, unknown> =>
+      data.result.tools.find((entry: { name: string }) => entry.name === name).inputSchema
+        .properties.data.properties
+
+    expect(Object.keys(propertiesOf('list_post_create'))).toEqual(['title'])
+    expect(Object.keys(propertiesOf('list_tag_create'))).toEqual(['name'])
+    expect(Object.keys(propertiesOf('list_postTag_create'))).toEqual(['post', 'tag'])
+    for (const key of ['post', 'tag']) {
+      expect(propertiesOf('list_postTag_create')[key]).toMatchObject({
+        type: ['object', 'null'],
+        required: ['connect'],
+        additionalProperties: false,
+      })
+    }
+  })
+
+  it('lists tools for a config whose relationship ownership cannot be decided', async () => {
+    // Both shapes `shouldHaveForeignKey` throws on. `generate` refuses this
+    // config, so it is only reachable unvalidated — and `tools/list` covers
+    // every list at once, so one bad field must not fail the whole listing.
+    const undecidable: OpenSaasConfig = {
+      db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },
+      mcp: { enabled: true, basePath: '/api/mcp' },
+      lists: {
+        Left: {
+          fields: {
+            name: { type: 'text' },
+            ghost: { type: 'relationship', ref: 'Nowhere.left' },
+            right: { type: 'relationship', ref: 'Right.left', db: { foreignKey: true } },
+          },
+          access: OPEN,
+        },
+        Right: {
+          fields: {
+            left: { type: 'relationship', ref: 'Left.right', db: { foreignKey: true } },
+          },
+          access: OPEN,
+        },
+      },
+    }
+
+    const handlers = createMcpHandlers({
+      config: undecidable,
+      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getContext: () => ({ db: {}, session: { userId: 'user-123' } }) as unknown as AccessContext,
+    })
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    )
+    const data = await response.json()
+
+    expect(data.error).toBeUndefined()
+    const create = data.result.tools.find(
+      (entry: { name: string }) => entry.name === 'list_left_create',
+    )
+    // The undecidable fields are simply not advertised; the rest of the list is.
+    expect(Object.keys(create.inputSchema.properties.data.properties)).toEqual(['name'])
+  })
+})

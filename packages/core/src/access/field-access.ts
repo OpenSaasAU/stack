@@ -1,12 +1,45 @@
 import type { Session, AccessContext } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import type { OpenSaasConfig } from '../config/types.js'
+import type { OpenSaasConfig, RelationshipField } from '../config/types.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { resolveSyntheticReverseRelation } from './engine.js'
+import { shouldHaveForeignKey } from '../fields/index.js'
+
+/**
+ * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
+ * column at all — false on the non-owning side of a one-to-one (ADR-0064),
+ * where the column lives on the OTHER list's model instead. Without config
+ * context (a direct unit test of this function, which passes a bare
+ * `{ type: 'relationship', many: false }`) there is nothing to resolve
+ * ownership against, so this assumes FK-owning — the heuristic
+ * `filterWritableFields` used before it could ask the field itself (#1326).
+ */
+function ownsForeignKeyColumn(
+  fieldName: string,
+  fieldConfig: { many?: boolean; ref?: string },
+  listName: string | undefined,
+  config: OpenSaasConfig | undefined,
+): boolean {
+  if (fieldConfig.many) return false
+  if (!listName || !config || typeof fieldConfig.ref !== 'string') return true
+  try {
+    // `filterWritableFields`'s fieldConfigs type is deliberately looser than
+    // RelationshipField (see its own doc); a field actually built by
+    // relationship() satisfies the real shape.
+    return shouldHaveForeignKey(
+      listName,
+      fieldName,
+      fieldConfig as unknown as RelationshipField,
+      config,
+    )
+  } catch {
+    return true
+  }
+}
 
 /**
  * Marks a throw caused by touching {@link createPoisonedItem}'s `item`, as
@@ -241,8 +274,18 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
-  // Foreign keys must not appear in `data` when using Prisma's relation syntax.
-  const foreignKeyFields = new Set<string>()
+  // A to-one relationship's foreign-key column (`<field>Id`) is not its own
+  // declared field, but writing it directly is a legitimate spelling of the
+  // same edge `connect` lowers to (ADR-0050) — gated below by the OWNING
+  // relationship field's write access, exactly like `connect` is (#1326).
+  //
+  // KNOWN LIMIT (#1331): ADR-0050 pairs this write with a reachability query
+  // (read/query access on the TARGET row) so the foreign key cannot become a
+  // probing oracle. That half does not exist yet anywhere in the engine —
+  // `connect` itself still throws `RelationInputNotLoweredError` pending
+  // #1153, which owns building it — so this column write is field-access-gated
+  // only, same as `connect` is today (unguarded, because unimplemented).
+  const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
   // declared field. These columns are injected into the write payload by the
@@ -262,10 +305,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
-      // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
-      const relConfig = fieldConfig as { many?: boolean }
-      if (!relConfig.many) {
-        foreignKeyFields.add(`${fieldName}Id`)
+      // A to-one relationship owns a `<field>Id` column UNLESS it is the
+      // non-owning side of a one-to-one (ADR-0064) — `ownsForeignKeyColumn`
+      // asks the field itself rather than assuming every to-one does (#1326).
+      const relConfig = fieldConfig as { many?: boolean; ref?: string }
+      if (ownsForeignKeyColumn(fieldName, relConfig, args.listName, args.config)) {
+        foreignKeyOwners.set(`${fieldName}Id`, { fieldName, access: fieldConfig.access })
       }
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
@@ -290,9 +335,24 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Prevents conflicts with Prisma's relation syntax (e.g.,
-    // `author: { connect: { id } }`).
-    if (foreignKeyFields.has(fieldName)) {
+    // A directly-written foreign-key column (`authorId`) — gated by the OWNING
+    // relationship field's write access, same as `connect` (#1326). Denied
+    // (non-sudo) throws rather than being silently dropped; allowed (or sudo)
+    // passes through unchanged, so the column is not a way around the
+    // relationship field's write gate.
+    const foreignKeyOwner = foreignKeyOwners.get(fieldName)
+    if (foreignKeyOwner) {
+      const canWrite = await checkFieldAccess(foreignKeyOwner.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      })
+      if (!canWrite) {
+        throw new ValidationError([
+          `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
+            `field-level access denied.`,
+        ])
+      }
+      filtered[fieldName] = value
       continue
     }
 

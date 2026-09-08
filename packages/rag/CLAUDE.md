@@ -334,9 +334,9 @@ Once the write's own transaction has committed, that hook:
 1. Reads the **persisted** source text off `item`, so a value a `resolveInput`
    hook derived is embedded like any other.
 2. Hashes it and compares the hash with the `sourceHash` on the stored
-   embedding's metadata. Equal means nothing to do — which is what stops the
-   plugin's own write from re-entering, and what stops an unrelated field change
-   from costing an API call.
+   embedding's metadata. Equal means nothing to do, which is what stops an
+   unrelated field change from costing an API call. Re-entry is not what it
+   guards: the plugin's write fires no hook (ADR-0066).
 3. Otherwise calls the provider and writes the vector and its metadata.
 
 Generation runs after the commit, not on input, because calling a provider is a
@@ -346,29 +346,37 @@ inside a transaction (ADR-0045).
 **The column is write-denied to application code.** A plain
 `context.db.Article.update({ where, data: { contentEmbedding } })` throws
 `Cannot update "contentEmbedding": field-level access denied.` — do not write
-that. The plugin's own output reaches the column through a `sudo()` context
-held behind a module-private symbol, which is on neither the package's exported
-surface nor the generated `PluginServices` face. Application code that
-maintains its own vectors declares `embedding({ allowManualWrites: true })` and
-then writes the field like any other.
+that. The plugin's own output reaches the column through core's
+`writePluginOwnedField` (ADR-0066), held behind a module-private symbol which is
+on neither the package's exported surface nor the generated `PluginServices`
+face. That write carries this field's columns and nothing else, and runs **no**
+hook of the list's: driving it through `sudo().db` would re-run `resolveInput`
+over a payload naming only the embedding, which destroys a field the list
+derives from other input. The columns are the field's own because core resolves
+the field against the config the context carries — the plugin names a list and a
+field, never a layout, and a name the config does not declare is refused.
+Application code that maintains its own vectors declares
+`embedding({ allowManualWrites: true })` and then writes the field like any
+other, through the ordinary pipeline.
 
 Known limits of the generation hook, all of them consequences of running after
 the commit — none can abort the write:
 
 - A nested record is never embedded: `afterTransaction` carries a persisted
-  `item` for the top-level record only (#1271).
+  `item` for the top-level record only (#1271). No write reaches that today —
+  a nested spelling under a relationship key is refused by
+  `NestedRelationInputError` (ADR-0050) — so the hook's warning is a backstop.
 - A provider failure is logged, not thrown. The row keeps a null embedding and
   there is no regeneration path yet (#1271); `generation-failure.ts` classifies
   a throw as transient or standing and says a standing one once per field.
-- On the `prisma-8` branch the sudo write cannot execute at all, because the
-  secured write surface is not yet ported (#1124, #1127), so every embedding
-  column stays null and searches return nothing.
 
 ### Access Control Integration
 
 All searches use the access-controlled context:
 
 ```typescript
+import { getContext } from '@/.opensaas/context'
+
 // Search respects access control
 const context = await getContext({ userId: 'user-123' })
 
@@ -405,10 +413,14 @@ Providers are pluggable and extensible:
 import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
+  const model = typeof config.model === 'string' ? config.model : 'custom-embed'
+  const dimensions =
+    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+
   return {
     type: 'custom',
-    model: config.model,
-    dimensions: config.dimensions,
+    model,
+    dimensions,
     async embed(text) {
       // Your implementation
       return [/* vector */]
@@ -420,6 +432,16 @@ registerEmbeddingProvider('custom', (config) => {
   }
 })
 ```
+
+The factory is handed the whole `EmbeddingProviderConfig` union, whose custom
+member is an open `{ type: string; [key: string]: unknown }`. So `config.model`
+arrives as `unknown`. `config.dimensions` is required on `OllamaEmbeddingConfig`
+and supplied by the custom member's index signature, but it is absent from
+`OpenAIEmbeddingConfig`, so it is not on every member and therefore not readable
+off the union — which is exactly why the `in` guard is the right narrowing.
+Narrow both, as above, rather than reading them straight onto the returned
+`EmbeddingProvider`, whose `model` and `dimensions` are a required `string` and
+`number`.
 
 ## Provisioning pgvector
 
@@ -495,12 +517,12 @@ import { chunkText } from '@opensaas/stack-rag/runtime'
 
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
-  maxTokens: 500,
-  overlap: 50,
+  chunkSize: 500,
+  chunkOverlap: 50,
 })
 
 // Generate embeddings for each chunk
-const vectors = await provider.embedBatch(chunks)
+const vectors = await provider.embedBatch(chunks.map((chunk) => chunk.text))
 ```
 
 ### Hybrid Search (Keyword + Semantic)
@@ -523,13 +545,15 @@ const semanticResults = await context.db.Article.nearest('contentEmbedding', que
 ```typescript
 // Find articles similar to a given article
 const article = await context.db.Article.where({ id: { equals: id } }).first()
-const queryVector = article.contentEmbedding.vector
+// `null` is either "no such row" or "the Access Filter denied it" — an
+// access-controlled read never says which, so guard before dereferencing.
+const stored = article?.contentEmbedding
 
-const similar = await context.db.Article.where({ id: { not: id } }).nearest(
-  'contentEmbedding',
-  queryVector,
-  { limit: 5 },
-)
+const similar = stored
+  ? await context.db.Article.where({ id: { not: id } }).nearest('contentEmbedding', stored.vector, {
+      limit: 5,
+    })
+  : []
 ```
 
 ## Testing
@@ -614,10 +638,7 @@ deployment, apply it as a migration instead (see "Applying the change" above).
 Every affected row is then left with a null embedding. There is no re-embedding
 command (#1271); what regenerates one is re-saving the row's source field, which
 works because a null vector reads back as no stored embedding at all, so the
-`sourceHash` gate has nothing to match and does not short-circuit. **On the
-`prisma-8` branch that re-save regenerates nothing** — the plugin's sudo write is
-inert until #1124/#1127 land (see "Known limits" above) — so the column stays
-null regardless.
+`sourceHash` gate has nothing to match and does not short-circuit.
 
 ### Coming from an app whose embeddings were JSON
 

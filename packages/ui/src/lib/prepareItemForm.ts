@@ -1,6 +1,10 @@
 import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
-import { serializeFieldConfigs, type SerializableFieldConfig } from './serializeFieldConfig.js'
+import {
+  markUnwritableRelationships,
+  serializeFieldConfigs,
+  type SerializableFieldConfig,
+} from './serializeFieldConfig.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
 
 /**
@@ -58,6 +62,7 @@ export function buildRelationshipInclude(
 export async function prepareItemForm(
   context: AccessContext,
   config: OpenSaasConfig,
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
@@ -93,6 +98,7 @@ export async function prepareItemForm(
   }
 
   const serializableFields = serializeFieldConfigs(listConfig.fields)
+  markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {

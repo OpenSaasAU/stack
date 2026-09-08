@@ -2026,7 +2026,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *
      * When timestamps resolve to on but the list already declares its own `createdAt`/
      * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
-     * never sees a duplicate (`P1012`).
+     * never sees a duplicate column.
      *
      * @example Opt a single list out of timestamps even when enabled globally
      * ```typescript
@@ -2610,7 +2610,7 @@ export type DatabaseConfig = {
    * A per-list `db.timestamps` override takes precedence over this global setting. When
    * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
    * field, the auto column is skipped for the declared field(s) so Prisma never sees a
-   * duplicate (`P1012`).
+   * duplicate column.
    *
    * @default false
    *
@@ -3173,7 +3173,7 @@ export type Plugin = {
    * Called when creating context to provide plugin-specific services
    * Return value is stored in context.plugins[pluginName]
    *
-   * `sudo` returns an access-bypassing (but still hook-firing) `AccessContext`
+   * `sudo` returns an access-bypassing (but still hook-firing) `StackContext`
    * for the same request — use `sudo().db` for reads/writes that must not
    * depend on the caller's own list access policy (e.g. an identity lookup
    * like "who is this session"). Deliberately NOT a method on `AccessContext`
@@ -3182,10 +3182,16 @@ export type Plugin = {
    * of unrelated generated Prisma types elsewhere (nullable JSON `CreateInput`
    * fields) in a downstream app; passing it as a plain second argument avoids
    * that recursion entirely.
+   *
+   * It is a `StackContext`, not the `AccessContext` of the first argument:
+   * the two differ, and the difference bites. `StackContext` omits
+   * `ormHandle`, `_isSudo`'s internal companions and `_config`, so a core
+   * surface that needs the engine's own plumbing — `writePluginOwnedField`,
+   * say — takes the first argument, never this one (ADR-0066).
    */
   runtime?: (
     context: import('../access/types.js').AccessContext,
-    sudo: () => import('../access/types.js').AccessContext,
+    sudo: () => import('../types/context.js').StackContext,
   ) => unknown
 
   /**

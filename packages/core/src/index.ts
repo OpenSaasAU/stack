@@ -79,14 +79,11 @@ export { checkAccess, checkCreateAccess, mergeFilters } from './access/index.js'
 
 // Context factory
 export { getContext } from './context/index.js'
-export type { TransactionOptions, TransactionIsolationLevel } from './context/index.js'
-export {
-  TransactionOptionsUnsupportedError,
-  TransactionOrmHandleError,
-  TransactionUnavailableError,
-} from './context/index.js'
+export { TransactionOrmHandleError, TransactionUnavailableError } from './context/index.js'
 export { requireOrmHandle, OrmHandleUnresolvableError } from './context/index.js'
 export type { OrmRoot } from './context/index.js'
+export { resolveJunctionEdge } from './context/junction.js'
+export type { JunctionEdge } from './context/junction.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).
 // The bundle names one interface per list extending each of these, keyed by
@@ -163,8 +160,10 @@ export { NEAREST_DEFAULT_LIMIT, VectorDecodeError } from './secured/read.js'
 // payload shape it refuses (ADR-0050).
 export { WriteCollectionMissingError } from './secured/write.js'
 export {
+  MalformedRelationInputError,
   NestedRelationInputError,
-  RelationInputNotLoweredError,
+  NonOwningRelationInputError,
+  RelationTargetMissingError,
 } from './context/relationship-input.js'
 // Why an `afterTransaction` bracket reports `rolled-back` for a write whose
 // transaction committed: the predicate matched no row. Reachable so a
@@ -204,13 +203,16 @@ export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-coun
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
 
-// Resolves which columns (and, where recoverable, which named constraint) a
-// caught P2002 unique-constraint violation hit — normalising Prisma 7 driver
-// adapters' undocumented error shape to the documented `meta.target` one, so
-// a caller of `context.db.*` never needs to reach into adapter internals
-// (see issue #979).
-export { uniqueConstraintOf } from './lib/prisma-errors.js'
-export type { UniqueConstraintInfo } from './lib/prisma-errors.js'
+// The stack-owned database errors every engine terminal raises in place of the
+// driver's own, and their predicates (ADR-0042). The Unsafe surface is excluded
+// and yields the driver's error unchanged.
+export {
+  DatabaseError,
+  SerializationFailure,
+  UniqueConstraintViolation,
+  isSerializationFailure,
+  isUniqueConstraintViolation,
+} from './lib/database-errors.js'
 
 // Thrown by a read when a caller-supplied `include` names a relation nested
 // deeper than the Access Filter can scope (see ADR-0022). Distinct from

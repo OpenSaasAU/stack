@@ -1,11 +1,14 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import { config as defineConfig } from '@opensaas/stack-core'
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import type { AccessContext } from '@opensaas/stack-core'
-import { hookPipeline } from '@opensaas/stack-core/internal'
+import type { AccessContext, FieldConfig, OpenSaasConfig, StackContext } from '@opensaas/stack-core'
 import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
+import {
+  HandlelessPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
+} from '@opensaas/stack-core/extend'
+import { WriteCollectionMissingError } from '@opensaas/stack-core'
 import { embedding } from '../fields/embedding.js'
 import { text } from '@opensaas/stack-core/fields'
 import { registerEmbeddingProvider } from '../providers/index.js'
@@ -13,6 +16,18 @@ import type { EmbeddingProvider } from '../providers/types.js'
 import type { StoredEmbedding } from '../index.js'
 
 const openai: RAGConfig = { provider: { type: 'openai', apiKey: 'test-key' } }
+
+const articleWithEmbedding = (dimensions: number, provider?: string): OpenSaasConfig => ({
+  db: { provider: 'postgresql' },
+  lists: {
+    Article: {
+      fields: {
+        content: text(),
+        contentEmbedding: embedding({ sourceField: 'content', dimensions, provider }),
+      },
+    },
+  },
+})
 
 const counting: EmbeddingProvider = {
   type: 'counting',
@@ -87,6 +102,19 @@ function stubContext(overrides: Partial<AccessContext>): AccessContext {
 }
 
 /**
+ * The `sudo` argument `Plugin.runtime` is handed. It throws rather than
+ * answering: the RAG runtime reaches nothing through it (ADR-0066), and a
+ * stub that answered would let a regression pass by returning a context that
+ * happens to work.
+ */
+function unreachableSudo(onCall?: () => void): () => StackContext {
+  return (): StackContext => {
+    onCall?.()
+    throw new Error('the RAG plugin runtime must not reach sudo()')
+  }
+}
+
+/**
  * A `db` surface that records which list keys were reached through it, and
  * answers every method on the delegate. It pins no call shape: the point is
  * which context a write ran on, not what it called.
@@ -100,6 +128,28 @@ function recordingDb(reached: string[]): AccessContext['db'] {
       return new Proxy({}, { get: () => async () => null })
     },
   })
+}
+
+/**
+ * An `ormHandle` that records which collections were reached through it and
+ * answers `where(...).update(...)` with a row, which is the shape the engine's
+ * scoped update drives.
+ */
+function recordingCollections(reached: string[]): AccessContext['ormHandle'] {
+  return new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        if (typeof key !== 'string') return undefined
+        reached.push(key)
+        const collection = {
+          where: () => collection,
+          update: async () => ({ id: 'a1' }),
+        }
+        return collection
+      },
+    },
+  )
 }
 
 type EmbeddingWriter = (
@@ -490,8 +540,8 @@ describe('ragPlugin', () => {
 
   describe('the generation path', () => {
     /**
-     * A context carrying the plugin's own sudo write, keyed by the symbol a
-     * live runtime uses — the only key the plugin's hook looks under.
+     * A context carrying the plugin's own escalated write, keyed by the symbol
+     * a live runtime uses — the only key the plugin's hook looks under.
      */
     function writeRecorder(onWrite?: () => void) {
       const writes: {
@@ -501,8 +551,9 @@ describe('ragPlugin', () => {
         stored: StoredEmbedding
       }[] = []
       const { key } = writeEmbeddingOf(
-        ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(stubContext({}), () =>
+        ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
           stubContext({}),
+          unreachableSudo(),
         ),
       )
       const services: Record<symbol, EmbeddingWriter> = {
@@ -637,10 +688,9 @@ describe('ragPlugin', () => {
     })
 
     it('reports a transient write failure as transient, not as the standing defect', async () => {
-      // The write is where the standing #1127 defect surfaces, so a reporter
-      // that keys on the code path rather than on the error calls this one
-      // standing too — and tells the reader no config change works around a
-      // connection that dropped.
+      // A reporter that keys on the code path rather than on the error calls
+      // every write failure standing, and tells the reader no config change
+      // works around a connection that dropped.
       const { hook, context } = await generationHook('counting', () => {
         throw new Error('connection reset by peer')
       })
@@ -659,7 +709,67 @@ describe('ragPlugin', () => {
       expect(said).toContain('"Article.contentEmbedding" was not embedded for Article a1')
       expect(said).toContain('retry by writing the source field again')
       expect(said).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
-      expect(said).not.toContain('#1127')
+      logged.mockRestore()
+    })
+
+    it.each([
+      ['a context with no ORM handle', new HandlelessPluginFieldWriteError('Article', 'x')],
+      [
+        'a field the config does not declare',
+        new UnknownPluginFieldWriteError('Article', 'x', 'y'),
+      ],
+      ['an undefined value', new UndefinedPluginFieldWriteError('Article', 'x')],
+      ['an ORM client with no collection', new WriteCollectionMissingError('Article')],
+    ])(
+      'reports a write core refused by name — %s — as a standing defect',
+      async (_name, refusal) => {
+        // A refused write fails identically on every row until the wiring is
+        // fixed, so the transient arm's "retry by writing the source field
+        // again" is advice that can never work.
+        const { hook, context } = await generationHook('counting', () => {
+          throw refusal
+        })
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id: 'a1', content: 'four', contentEmbedding: null },
+          context,
+        })
+
+        const said = logged.mock.calls[0][0]
+        expect(said).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+        expect(said).not.toContain('retry by writing the source field again')
+        logged.mockRestore()
+      },
+    )
+
+    it('reports a bare TypeError as transient, which is why core refuses by name', async () => {
+      // The shape an unguarded config lookup in core produced for a
+      // prototype-chain list name. Nothing here can classify it — a TypeError
+      // is what a dropped connection throws too — so a wiring defect reaching
+      // this reporter at all is already the bug. Core refusing it by name
+      // (UnknownPluginFieldWriteError) is the only thing that keeps it out.
+      const { hook, context } = await generationHook('counting', () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'label')")
+      })
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: 'four' },
+        item: { id: 'a1', content: 'four', contentEmbedding: null },
+        context,
+      })
+
+      const said = logged.mock.calls[0][0]
+      expect(said).toContain('retry by writing the source field again')
+      expect(said).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
       logged.mockRestore()
     })
 
@@ -692,43 +802,6 @@ describe('ragPlugin', () => {
       // Said in full once, then one line per row, like the other standing one.
       expect(logged.mock.calls[1][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
       expect(logged.mock.calls[1][0]).toContain('Article a2')
-      logged.mockRestore()
-    })
-
-    it('reports a write that cannot execute as the standing defect it is', async () => {
-      // What the sudo write does on this release: `context.db.<list>.update()`
-      // calls a `findUnique` no Prisma 8 collection carries, so it fails
-      // identically on every row rather than transiently (#1124, #1127).
-      const { hook, context } = await generationHook('counting', () => {
-        throw new TypeError('model.findUnique is not a function')
-      })
-      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const committed = async (id: string) =>
-        await hook!({
-          listKey: 'Article',
-          operation: 'create',
-          status: 'committed',
-          inputData: { content: 'four' },
-          item: { id, content: 'four', contentEmbedding: null },
-          context,
-        })
-
-      await expect(committed('a1')).resolves.toBeUndefined()
-      await expect(committed('a2')).resolves.toBeUndefined()
-
-      const first = logged.mock.calls[0][0]
-      expect(first).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
-      expect(first).toContain('#1124')
-      expect(first).toContain('#1127')
-      expect(first).toContain('the embedding column')
-      // Not the transient wording: no config change works around this one.
-      expect(first).not.toContain('retry by writing the source field again')
-      // Said in full once; the row after it says which row and points back.
-      const second = logged.mock.calls[1][0]
-      expect(second).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
-      expect(second).toContain('Article a2')
-      expect(second).toContain('#1127')
       logged.mockRestore()
     })
 
@@ -804,56 +877,6 @@ describe('ragPlugin', () => {
       expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
     })
 
-    it('embeds a source value a list-level resolveInput produced', async () => {
-      const resolved = await defineConfig({
-        db: { provider: 'postgresql' },
-        plugins: [ragPlugin({ provider: { type: 'counting', dimensions: 1 } })],
-        lists: {
-          Article: {
-            fields: {
-              title: text(),
-              body: text(),
-              content: text(),
-              contentEmbedding: embedding({ sourceField: 'content', dimensions: 1 }),
-            },
-            hooks: {
-              resolveInput: ({ resolvedData }) => ({
-                ...resolvedData,
-                content: [resolvedData.title, resolvedData.body].join(' '),
-              }),
-            },
-          },
-        },
-      })
-      const recorder = writeRecorder()
-      const inputData = { title: 'Four', body: 'score' }
-
-      // The real transform span: `content` is derived here and named nowhere
-      // in the input, which is what the old guard keyed on.
-      const { resolvedData } = await hookPipeline.run({
-        operation: 'create',
-        listName: 'Article',
-        listConfig: resolved.lists.Article,
-        inputData,
-        item: undefined,
-        context: recorder.context,
-      })
-      expect(resolvedData.content).toBe('Four score')
-
-      await resolved.lists.Article.hooks!.afterTransaction!({
-        listKey: 'Article',
-        operation: 'create',
-        status: 'committed',
-        inputData,
-        item: { id: 'a1', ...resolvedData },
-        context: recorder.context,
-      })
-
-      // 'Four score' is 10 characters, and the counting provider embeds a text
-      // as its length.
-      expect(recorder.writes.map((write) => write.stored.vector)).toEqual([[10]])
-    })
-
     it('refuses to write when the context carries no rag services', async () => {
       const { hook } = await generationHook()
 
@@ -871,7 +894,7 @@ describe('ragPlugin', () => {
 
     it('puts the escalated write on no string key of context.plugins.rag', () => {
       const plugin = ragPlugin({ provider: { type: 'counting', dimensions: 1 } })
-      const services = plugin.runtime!(stubContext({}), () => stubContext({}))
+      const services = plugin.runtime!(stubContext({}), unreachableSudo())
       if (typeof services !== 'object' || services === null) {
         throw new Error('the plugin runtime returned no services object')
       }
@@ -890,7 +913,7 @@ describe('ragPlugin', () => {
       // give the same answer.
       const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
         stubContext({}),
-        () => stubContext({}),
+        unreachableSudo(),
       )
       const generate: unknown = Reflect.get(Object(services), 'generateEmbedding')
       if (typeof generate !== 'function') throw new Error('no generateEmbedding service')
@@ -901,23 +924,25 @@ describe('ragPlugin', () => {
       await expect(generate('four')).resolves.toEqual([4])
     })
 
-    it('runs the escalated write on the context sudo() returns, not on the request one', async () => {
-      // The escalation is the whole reason the writer lives on Plugin.runtime
-      // (ADR-0045): a hook's AccessContext cannot derive a sudo one, and
-      // without sudo the field's own write denial refuses the plugin's output.
-      // What the write then calls on the delegate is deliberately not pinned —
-      // that call shape changes when #1127 lands, and pinning it is what made
-      // the previous test green over a path that could not execute.
-      const requestReached: string[] = []
-      const sudoReached: string[] = []
+    it('runs the escalated write on the ORM handle, never through the db surface', async () => {
+      // ADR-0066: the write carries this field's columns alone, so running it
+      // through `db` would re-run the list's hooks over a payload naming one
+      // field. It goes to the handle instead, and `sudo()` is never reached.
+      // What lands in the columns is `embedding-write.test.ts`'s job, against
+      // a real column.
+      const dbReached: string[] = []
+      const handleReached: string[] = []
       let escalations = 0
 
       const services = ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
-        stubContext({ db: recordingDb(requestReached) }),
-        () => {
+        stubContext({
+          db: recordingDb(dbReached),
+          ormHandle: recordingCollections(handleReached),
+          _config: articleWithEmbedding(1),
+        }),
+        unreachableSudo(() => {
           escalations += 1
-          return stubContext({ db: recordingDb(sudoReached), _isSudo: true })
-        },
+        }),
       )
 
       await writeEmbeddingOf(services).write('Article', 'a1', 'contentEmbedding', {
@@ -930,24 +955,14 @@ describe('ragPlugin', () => {
         },
       })
 
-      expect(escalations).toBe(1)
-      expect(sudoReached).toEqual(['Article'])
-      expect(requestReached).toEqual([])
+      expect(handleReached).toEqual(['Article'])
+      expect(dbReached).toEqual([])
+      expect(escalations).toBe(0)
     })
   })
 
   describe('beforeGenerate', () => {
-    const listsWith = (dimensions: number, provider?: string): OpenSaasConfig => ({
-      db: { provider: 'postgresql' },
-      lists: {
-        Article: {
-          fields: {
-            content: text(),
-            contentEmbedding: embedding({ sourceField: 'content', dimensions, provider }),
-          },
-        },
-      },
-    })
+    const listsWith = articleWithEmbedding
 
     it('passes when the declared dimension matches the provider model', () => {
       const plugin = ragPlugin({

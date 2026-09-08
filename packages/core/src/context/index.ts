@@ -22,7 +22,7 @@ import type {
   CountAccessDenialTree,
 } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
-import { uniqueConstraintOf } from '../lib/prisma-errors.js'
+import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import type { OpenedTransaction, OrmClient, TransactionOpener } from '../access/types.js'
 import { createSecuredRead } from '../secured/read.js'
 import {
@@ -41,6 +41,7 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
+import { resolveJunctionEdge } from './junction.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
@@ -60,19 +61,17 @@ export type ServerActionProps =
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control and hooks apply —
   // never the parent's. The other relationship-table actions below share this
-  // boundary. `mode: 'disconnect'` unlinks the row by disconnecting its
-  // back-reference (`field`; `parentId` is needed only when that back-reference
-  // is to-many, e.g. a many-to-many join) without deleting it; `mode: 'delete'`
-  // truly deletes the row. Returns a distinct `{ removed }` shape, never
-  // `success`, so a UI wrapper that redirects on `success` does not hijack an
-  // in-place row removal.
+  // boundary. `mode: 'disconnect'` unlinks the row by assigning `null` to its
+  // back-reference (`field`) without deleting it; `mode: 'delete'` truly
+  // deletes the row. Returns a distinct `{ removed }` shape, never `success`,
+  // so a UI wrapper that redirects on `success` does not hijack an in-place row
+  // removal.
   | {
       listKey: string
       action: 'removeRelated'
       mode: 'disconnect' | 'delete'
       id: string
       field?: string
-      parentId?: string
     }
   // Relationship-table inline cell edit (issue #737); same ADR-0018 boundary
   // as `removeRelated` — `listKey`/`id` target the RELATED row. Returns a
@@ -97,6 +96,24 @@ export type ServerActionProps =
       data: Record<string, unknown>
       field?: string
       parentId?: string
+    }
+  // Adding an edge across an explicit junction list (ADR-0050, ADR-0018 as
+  // amended). Unlike every other relationship-table action, `listKey` names the
+  // PARENT list and `field` its to-many field: the junction list, its
+  // back-reference and its far-endpoint field are all resolved from the config
+  // on the SERVER, so a client can neither name a junction list of its own
+  // choosing nor set a column of the edge row beyond the two endpoints. The
+  // create runs under the JUNCTION list's own create access, and the far
+  // endpoint goes through `connect`, so an endpoint the caller cannot read is
+  // the same answer as one that is not there. Returns a distinct `{ added }`
+  // shape, never `success`, so a UI wrapper that redirects on `success` does
+  // not hijack an in-place link.
+  | {
+      listKey: string
+      action: 'addRelated'
+      field: string
+      parentId: string
+      targetId: string
     }
   | {
       listKey: string
@@ -257,126 +274,17 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
-// A camelCase field name (e.g. a relationship's `tenantId` foreign key) needs
-// its word boundary split before title-casing, or it reads as one run-together
-// word ("Tenantid") in a user-facing unique-constraint message.
-function humanizeFieldName(fieldName: string): string {
-  const spaced = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'code' in error &&
-    'meta' in error &&
-    typeof error.code === 'string'
-  ) {
-    const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
-
-    // P2002 is Prisma's unique constraint violation code.
-    if (prismaError.code === 'P2002') {
-      const target = uniqueConstraintOf(prismaError)?.fields
-      const fieldErrors: Record<string, string> = {}
-
-      if (target && target.length > 0) {
-        for (const fieldName of target) {
-          const fieldConfig = listConfig.fields[fieldName]
-
-          if (fieldConfig) {
-            fieldErrors[fieldName] =
-              `This ${humanizeFieldName(fieldName).toLowerCase()} is already in use`
-          } else {
-            fieldErrors[fieldName] = `This value is already in use`
-          }
-        }
-
-        const fieldLabels = target.map(humanizeFieldName).join(', ')
-        return new DatabaseError(
-          `${fieldLabels} must be unique. The value you entered is already in use.`,
-          fieldErrors,
-          prismaError.code,
-        )
-      }
-
-      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
-    }
-
-    return new DatabaseError(
-      prismaError.message || 'A database error occurred',
-      {},
-      prismaError.code,
-    )
-  }
-
-  if (error instanceof Error) {
-    return error
-  }
-
-  return new Error('An unknown error occurred')
-}
-
 /**
- * Mirrors Prisma's `TransactionIsolationLevel`. Provider support varies —
- * e.g. `Serializable` requires PostgreSQL.
- */
-export type TransactionIsolationLevel =
-  'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
-
-/**
- * Options for {@link StackContext.transaction}, forwarded verbatim to a Prisma
- * 7 interactive transaction. A Prisma 8 client's transaction takes none of
- * them, and refuses the call rather than downgrading it silently — see
- * {@link TransactionOptionsUnsupportedError}.
- */
-export interface TransactionOptions {
-  /** Max ms to wait to acquire a transaction from the pool. */
-  maxWait?: number
-  /** Max ms the interactive transaction may run before timing out. */
-  timeout?: number
-  /** Isolation level for the transaction (e.g. `'Serializable'`). */
-  isolationLevel?: TransactionIsolationLevel
-}
-
-/**
- * Minimal shape of a Prisma 7 client that can open an interactive transaction.
- * A Prisma 7 transaction client (the `tx` handed to the callback) does NOT
- * expose `$transaction`, which is how a nested `transaction()` detects it is
- * already inside one and joins it rather than opening another.
+ * Minimal shape of a client that can open an interactive transaction by
+ * exposing `$transaction`. A transaction client (the `tx` handed to the
+ * callback) does NOT expose it, which is how a nested `transaction()` detects
+ * it is already inside one and joins it rather than opening another.
  *
- * It is tried before {@link TransactionOpener} because it is the only shape
- * that carries the transaction options; on a Prisma 8 client this member is
- * absent and the opener runs instead.
+ * It is tried before {@link TransactionOpener}; on a Prisma 8 client this
+ * member is absent and the opener runs instead.
  */
 interface TransactionCapable {
-  $transaction?: (
-    fn: (tx: OrmClient) => Promise<unknown>,
-    options?: TransactionOptions,
-  ) => Promise<unknown>
-}
-
-/**
- * Thrown when `transaction()` is given options it cannot honour.
- *
- * Prisma 8's `transaction()` takes the callback and nothing else, so an
- * isolation level asked for here would be accepted and then run at the
- * server's default — a lost update the caller believed was closed. Refusing is
- * the alternative to that silence; ADR-0042 removes the options from the
- * signature, at which point this stops being reachable.
- */
-export class TransactionOptionsUnsupportedError extends Error {
-  constructor(readonly options: readonly string[]) {
-    super(
-      `context.transaction() cannot honour ${options.join(', ')} on a Prisma 8 client: its ` +
-        `transaction takes the callback and nothing else. Running anyway would silently use the ` +
-        `server's default isolation level, so the call is refused instead. Express the ` +
-        `constraint in the statements themselves — a row lock on the contended parent — or ` +
-        `drop the options.`,
-    )
-    this.name = 'TransactionOptionsUnsupportedError'
-  }
+  $transaction?: (fn: (tx: OrmClient) => Promise<unknown>) => Promise<unknown>
 }
 
 /**
@@ -547,16 +455,25 @@ function transactionOpenerFor(
  * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
  * errors reject with {@link AfterTransactionError} even though the callback
  * succeeded and the transaction committed.
+ *
+ * The settle is the second normalisation site (ADR-0042). PostgreSQL raises
+ * some failures at `COMMIT`, after every terminal in the callback has already
+ * returned — a `23505` on a `DEFERRABLE INITIALLY DEFERRED` constraint, by
+ * design — so the error the owner observes is normalised here, BEFORE the
+ * deferred-hook flush, which keeps ADR-0028's precedence rule operating on a
+ * normalised value.
  */
 async function settleTransactionOwner<T>(
   settled: Promise<T>,
   registry: TransactionRegistry,
+  config: OpenSaasConfig,
 ): Promise<T> {
   const errors: unknown[] = []
   let result: T
   try {
     result = await settled
-  } catch (err) {
+  } catch (raised) {
+    const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
     await registry.drain(outcome, errors)
     throw err
@@ -566,6 +483,15 @@ async function settleTransactionOwner<T>(
     throw new AfterTransactionError(errors)
   }
   return result
+}
+
+// A database failure reaches the client as the stack's own message (ADR-0042),
+// so the driver's diagnostic text — carried on `cause` — reaches no channel at
+// all unless it is logged here. Deleting this closes the operator's only view
+// of a production database failure.
+function logDatabaseFailure(error: unknown, listKey: string, action: string): void {
+  if (!(error instanceof DatabaseError)) return
+  console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
 }
 
 export function getContext<TConfig extends OpenSaasConfig>(
@@ -634,6 +560,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _resolveOutputChain: [],
     _transactionOwner,
     _transactionOpener: openTransaction,
+    _config: config,
   }
 
   populateDbDelegate(db, config, ormHandle, context)
@@ -647,10 +574,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         try {
           // Passed as a plain second argument rather than a method on
           // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
-          context.plugins[plugin.name] = plugin.runtime(
-            context,
-            () => sudo() as unknown as AccessContext,
-          )
+          context.plugins[plugin.name] = plugin.runtime(context, sudo)
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
         }
@@ -672,6 +596,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
   > {
     const listConfig = config.lists[props.listKey]
 
@@ -741,11 +666,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { bulkAction: true, message: result?.message }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { bulkAction: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
-        // A recognised Prisma error carries a user-safe, translated message.
+        const dbError = databaseErrorMessage(error, config)
+        // A normalised database error carries a user-safe, translated message.
         if (dbError instanceof DatabaseError) {
+          logDatabaseFailure(dbError, props.listKey, props.action)
           return { bulkAction: false, error: dbError.message }
         }
         // Anything else is an unexpected handler bug whose raw `.message` could
@@ -767,21 +694,27 @@ export function getContext<TConfig extends OpenSaasConfig>(
           result = await model.delete({ where: { id: props.id } })
         } else {
           // Disconnect: an UPDATE on the related list nulling its back-reference,
-          // never a delete — the row itself survives. A to-one back-reference
-          // disconnects with `true`; a to-many back-reference (many-to-many)
-          // disconnects the specific parent by id.
+          // never a delete — the row itself survives. A to-many back-reference
+          // owns no foreign key to null, so removing that edge is deleting the
+          // junction row under its own delete access (`mode: 'delete'`), not an
+          // update here (ADR-0050, ADR-0018 as amended).
           if (!props.field) {
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
           const backRefField = listConfig.fields[props.field]
           const backRefIsMany =
             !!backRefField && 'many' in backRefField && backRefField.many === true
-          const disconnectValue = backRefIsMany
-            ? { disconnect: { id: props.parentId } }
-            : { disconnect: true }
+          if (backRefIsMany) {
+            return {
+              removed: false,
+              error:
+                `Cannot unlink through "${props.field}": a to-many back-reference owns no ` +
+                `foreign key to clear. Remove the row itself instead.`,
+            }
+          }
           result = await model.update({
             where: { id: props.id },
-            data: { [props.field]: disconnectValue },
+            data: { [props.field]: null },
           })
         }
         if (result === null || result === undefined) {
@@ -790,20 +723,21 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { removed: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { removed: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return { removed: false, error: dbError.message }
       }
     }
 
     // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
-    // The back-reference to the parent is set here from `field`/`parentId` (a
-    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
-    // many-to-many, connects the parent by id), so the client can never
-    // re-target the link. Honours Silent failure: an access-denied create
-    // returns `null`, surfaced as `{ created: false }` with a generic reason
-    // (no denied-vs-absent leak).
+    // The back-reference to the parent is set here from `field`/`parentId`, so
+    // the client can never re-target the link. Only a to-one back-reference
+    // owns a column to hold it; a to-many one is refused below. Honours Silent
+    // failure: an access-denied create returns `null`, surfaced as
+    // `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always
@@ -830,14 +764,20 @@ export function getContext<TConfig extends OpenSaasConfig>(
               error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
             }
           }
-          const backRefIsMany = 'many' in backRefField && backRefField.many === true
+          // A to-many back-reference owns no foreign key, so there is no column
+          // on the row being created for the parent to go in (ADR-0050).
+          if ('many' in backRefField && backRefField.many === true) {
+            return {
+              created: false,
+              error:
+                `Cannot preset "${props.field}": a to-many back-reference owns no foreign key. ` +
+                `Link the parent from the side that holds the column.`,
+            }
+          }
           // The back-reference is set on the SERVER from the trusted parentId,
           // OVERWRITING any client-supplied data[field] spread in above, so a
-          // hostile client can never re-target the link (a to-many back-ref
-          // connects the parent by id).
-          data[props.field] = backRefIsMany
-            ? { connect: [{ id: props.parentId }] }
-            : { connect: { id: props.parentId } }
+          // hostile client can never re-target the link.
+          data[props.field] = { connect: { id: props.parentId } }
         }
         const result = await model.create({ data })
         if (result === null || result === undefined) {
@@ -850,11 +790,65 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { created: true, id }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { created: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           created: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
+    // Adds one edge across an explicit junction list by creating the junction
+    // row (ADR-0050). Both foreign keys are `connect`s the SERVER composes from
+    // the resolved edge, so the payload carries no column of the client's
+    // choosing, and the reachability query behind each `connect` keeps an
+    // endpoint the caller cannot read indistinguishable from one that is not
+    // there. Honours Silent failure: a denied create on the junction list — the
+    // list this write is evaluated against, never the parent's — returns
+    // `null`, surfaced as `{ added: false }` with the same generic reason an
+    // unreachable endpoint gets.
+    if (props.action === 'addRelated') {
+      const edge = resolveJunctionEdge(config, props.listKey, props.field)
+      if (!edge) {
+        return {
+          added: false,
+          error:
+            `Cannot link through "${props.listKey}.${props.field}": it is not an edge across an ` +
+            `explicit junction list. Write the related row against its own list instead.`,
+        }
+      }
+      const junction = db[edge.junctionListKey] as {
+        create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+      }
+      try {
+        const result = await junction.create({
+          data: {
+            [edge.backReferenceField]: { connect: { id: props.parentId } },
+            [edge.targetField]: { connect: { id: props.targetId } },
+          },
+        })
+        if (result === null || result === undefined) {
+          return { added: false, error: 'Access denied or operation failed' }
+        }
+        const id =
+          typeof result === 'object' && result !== null && 'id' in result
+            ? String((result as { id: unknown }).id)
+            : undefined
+        return { added: true, id }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, edge.junctionListKey, props.action)
+          return { added: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, edge.junctionListKey, props.action)
+        return {
+          added: false,
           error: dbError.message,
           fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
         }
@@ -878,9 +872,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { updated: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           updated: false,
           error: dbError.message,
@@ -947,6 +943,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
 
       if (error instanceof DatabaseError) {
+        logDatabaseFailure(error, props.listKey, props.action)
         return {
           success: false,
           error: error.message,
@@ -954,8 +951,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
       }
 
-      const dbError = parsePrismaError(error, listConfig)
+      const dbError = databaseErrorMessage(error, config)
       if (dbError instanceof DatabaseError) {
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           success: false,
           error: dbError.message,
@@ -1018,7 +1016,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // rather than creating a second one.
   function transaction<T>(
     fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
-    options?: TransactionOptions,
   ): Promise<T> {
     if (context._transactionOwner) {
       return fn(returned)
@@ -1027,16 +1024,15 @@ export function getContext<TConfig extends OpenSaasConfig>(
     const registry = new TransactionRegistry()
     const ormClient = ormHandle as unknown as TransactionCapable
 
-    const settled = runTransactionBody(fn, registry, ormClient, options)
+    const settled = runTransactionBody(fn, registry, ormClient)
 
-    return settleTransactionOwner(settled, registry)
+    return settleTransactionOwner(settled, registry, config)
   }
 
   function runTransactionBody<T>(
     fn: (txContext: StackContext<AccessControlledDB>) => Promise<T>,
     registry: TransactionRegistry,
     ormClient: TransactionCapable,
-    options?: TransactionOptions,
   ): Promise<T> {
     const child = (
       ormHandle: OrmClient,
@@ -1062,7 +1058,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // this branch, the scope has to be derived here too or `tx.unsafe` starts
     // executing outside the transaction it opened.
     if (typeof ormClient.$transaction === 'function') {
-      return ormClient.$transaction((tx) => fn(child(tx)), options) as Promise<T>
+      return ormClient.$transaction((tx) => fn(child(tx))) as Promise<T>
     }
 
     // Prisma 8's transaction holds a pooled connection for the whole callback,
@@ -1071,8 +1067,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // transaction, or wait forever for a second connection the dev database's
     // single-connection pool never frees (ADR-0056, ADR-0063).
     if (openTransaction !== undefined) {
-      const asked = options === undefined ? [] : Object.keys(options)
-      if (asked.length > 0) return Promise.reject(new TransactionOptionsUnsupportedError(asked))
       return openTransaction(async (opened) => fn(child(opened.ormHandle, opened.unsafe)))
     }
 
@@ -1102,6 +1096,31 @@ export function getContext<TConfig extends OpenSaasConfig>(
 }
 
 /**
+ * Complete the normalisation the engine terminal started, for a write.
+ *
+ * A terminal classifies by SQLSTATE alone — it holds no config, so a `23505`
+ * leaves it as a `UniqueConstraintViolation` carrying the constraint
+ * name and the generic message. Resolving that name to the OpenSaas fields it
+ * covers needs the generated constraint map, which is reached through the
+ * config, so the write operations close the gap here (ADR-0042).
+ *
+ * Reads are not wrapped: no read raises a unique violation, and every other
+ * driver failure is already final at the terminal.
+ */
+function resolvingConstraints<Args extends unknown[], Result>(
+  operation: (...args: Args) => Promise<Result>,
+  config: OpenSaasConfig,
+): (...args: Args) => Promise<Result> {
+  return async (...args: Args): Promise<Result> => {
+    try {
+      return await operation(...args)
+    } catch (error) {
+      throw normalizeDatabaseError(error, config)
+    }
+  }
+}
+
+/**
  * Populate `target` with the access-controlled CRUD operations for every list,
  * each bound to `ormHandle` and `context`. Used both by {@link getContext} (at
  * request setup) and by the Write Pipeline to rebuild a `db` delegate against a
@@ -1119,21 +1138,33 @@ export function populateDbDelegate(
   context: AccessContext,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const createOp = createCreate(listName, listConfig, ormHandle, context, config)
+    const createOp = resolvingConstraints(
+      createCreate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
     const findManyOp = createFindMany(listName, listConfig, ormHandle, context, config)
-    const updateOp = createUpdate(listName, listConfig, ormHandle, context, config)
+    const updateOp = resolvingConstraints(
+      createUpdate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
     const operations: Record<string, unknown> = {
       findUnique: createFindUnique(listName, listConfig, ormHandle, context, config),
       findMany: findManyOp,
       findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
-      delete: createDelete(listName, listConfig, ormHandle, context, config),
+      delete: resolvingConstraints(
+        createDelete(listName, listConfig, ormHandle, context, config),
+        config,
+      ),
       count: createCount(listName, listConfig, ormHandle, context, config),
     }
 
     if (isSingletonList(listConfig)) {
-      operations.get = createGet(listName, listConfig, ormHandle, context, config, createOp)
+      operations.get = resolvingConstraints(
+        createGet(listName, listConfig, ormHandle, context, config, createOp),
+        config,
+      )
     } else {
       const read = createSecuredRead({ listName, listConfig, ormHandle, context, config })
       operations.where = read.where

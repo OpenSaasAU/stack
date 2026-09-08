@@ -36,7 +36,7 @@ import {
 } from '../secured/write.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
-import { refuseNestedRelationInput } from './relationship-input.js'
+import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
@@ -256,6 +256,7 @@ function bindContextToTransaction(
     _isSudo: context._isSudo,
     _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
+    _config: config,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
@@ -334,6 +335,22 @@ async function runWriteInTransaction(
     config,
   })
 
+  // ── Phase 5.5: relationship resolution (ADR-0050) ──────────────────────────
+  // `connect` becomes a foreign key once the reachability query says the caller
+  // may see that row, and `null` clears the same column. An unreachable target
+  // is the silent `null` every other denial is, before `beforeOperation` runs.
+  const linked = await lowerRelationInput({
+    listName,
+    listConfig,
+    config,
+    context,
+    ormHandle: tx,
+    ops,
+    data,
+  })
+  if (linked.status === 'unreachable') return null
+  const writeData = linked.data
+
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
   await executeFieldBeforeOperationHooks(
     input,
@@ -367,7 +384,7 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 8: DB write ───────────────────────────────────────────────────────
-  const item = await strategy.persist(collection, ops, scope, data)
+  const item = await strategy.persist(collection, ops, scope, writeData)
   // The scope matched nothing this time: the target was read under the same
   // predicate moments earlier in this transaction, so the row is gone —
   // dropped by a `beforeOperation` hook's own write, typically. `null` is

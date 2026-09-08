@@ -2,7 +2,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig } from './config/types.js'
 import { checkbox, relationship, text } from './fields/index.js'
-import { TransactionOptionsUnsupportedError } from './context/index.js'
 import { UnmarkedQueryError, withOrigin } from './origin.js'
 import { createTestDatabase, type TestDatabase } from './testing/context.js'
 import { createPlanRecorder, type PlanRecorder, type RecordedPlan } from './testing/plans.js'
@@ -558,17 +557,11 @@ describe('the Unsafe surface', () => {
       BOOT,
     )
 
-    test(
-      'options it cannot honour are refused rather than downgraded',
-      async () => {
-        await expect(
-          database
-            .context()
-            .transaction(async () => 'unreached', { isolationLevel: 'Serializable' }),
-        ).rejects.toBeInstanceOf(TransactionOptionsUnsupportedError)
-      },
-      BOOT,
-    )
+    test('the transaction accepts the callback and nothing else', () => {
+      // @ts-expect-error an isolation level is not an option any more (ADR-0042)
+      const asked = (): unknown => database.context().transaction(async () => 'x', {})
+      expect(typeof asked).toBe('function')
+    })
   })
 
   describe('the bare client is not reachable', () => {
