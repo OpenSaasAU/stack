@@ -476,10 +476,11 @@ describe('adding an edge across a junction', () => {
         targetId: 't',
       })
 
-      expect(result).toMatchObject({ added: false })
-      expect(String((result as { error?: string }).error)).toContain(
-        'not an edge across an explicit junction list',
-      )
+      // Refused at the list lookup itself: `config.lists.constructor` is
+      // `Object` on an object literal, and `Object.hasOwn` is what keeps it
+      // from ever reaching the edge resolution below.
+      expect(result).toMatchObject({ success: false })
+      expect(String((result as { error?: string }).error)).toContain('not found in configuration')
     },
     BOOT,
   )

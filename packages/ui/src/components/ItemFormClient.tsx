@@ -10,6 +10,7 @@ import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
+import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
 
 export interface ItemFormClientProps {
   listKey: string
@@ -84,6 +85,7 @@ export function ItemFormClient({
     initialData,
     mode: mode === 'create' ? 'create' : 'update',
     errorFallback: 'Access denied or operation failed',
+    onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
     onSubmit: async (data, action) => {
       const result =
         action === 'create'

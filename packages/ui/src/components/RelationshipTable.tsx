@@ -17,6 +17,7 @@ import {
 } from '../lib/operationAccess.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
+import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
 import type { ServerActionInput } from '../server/types.js'
 import { RelationshipTableClient, type RemoveMode } from './RelationshipTableClient.js'
 
@@ -184,24 +185,44 @@ async function resolveCreateForm(
   return { fields: serializableFields, relationshipData }
 }
 
-/** The serialisable props the "Link existing" edge control needs, or `null` to hide it. */
-export interface LinkEdgeData {
-  junctionListKey: string
-  targetField: string
-  targetListKey: string
-  options: Array<{ id: string; label: string }>
-}
+/**
+ * The serialisable props the "Link existing" control needs, or `null` to hide
+ * it. The two shapes are the two ways an edge is stored, and each names the
+ * list its write is evaluated against (ADR-0050):
+ * - `junction`: a row of an explicit junction list, created under that list's
+ *   create access (#1329);
+ * - `foreignKey`: the related row's own back-reference column, set under the
+ *   related list's update access.
+ */
+export type LinkEdgeData =
+  | {
+      mode: 'junction'
+      junctionListKey: string
+      targetField: string
+      targetListKey: string
+      options: Array<{ id: string; label: string }>
+    }
+  | {
+      mode: 'foreignKey'
+      relatedListKey: string
+      backReferenceField: string
+      targetListKey: string
+      options: Array<{ id: string; label: string }>
+    }
 
 /**
  * Prepare the add-an-edge control for this table, or `null` when it should not
  * be offered (#1329).
  *
- * Offered only when the section is an edge across an explicit junction list
- * ({@link resolveJunctionEdge}) and the JUNCTION list's own `create` access is
- * not statically denied — the same gate shape the create drawer uses, over the
- * list the write is actually evaluated against. A row-dependent rule that
- * denies still denies at commit, silently, so the control is a ceiling and
- * never a promise.
+ * The gate is over the list the write is actually evaluated against — the
+ * junction list's `create` for an edge across one, the related list's `update`
+ * for an edge held in its own foreign key — never the parent's. A row-dependent
+ * rule that denies still denies at commit, silently, so the control is a
+ * ceiling and never a promise.
+ *
+ * A to-many whose edges cannot be written at all
+ * ({@link resolveToManyEdgePlan} returning `null` — a list-only `ref`, a
+ * required back-reference) gets no control.
  *
  * The far endpoint's options come through the same bounded, access-scoped fetch
  * the pickers use, so a row the session cannot read is never offered — and
@@ -214,21 +235,42 @@ export async function resolveLinkEdge(
   context: AccessContext,
 ): Promise<LinkEdgeData | null> {
   const edge = resolveJunctionEdge(config, parentListKey, section.fieldName)
-  if (!edge) return null
+  if (edge) {
+    const junctionListConfig = config.lists[edge.junctionListKey]
+    const allowed = await isOperationPotentiallyAllowed(
+      junctionListConfig?.access?.operation,
+      'create',
+      { session: context.session, context },
+    )
+    if (!allowed) return null
 
-  const junctionListConfig = config.lists[edge.junctionListKey]
+    const options = await getRelationshipOptions(context, config, edge.targetListKey, {})
+    return {
+      mode: 'junction',
+      junctionListKey: edge.junctionListKey,
+      targetField: edge.targetField,
+      targetListKey: edge.targetListKey,
+      options: [...options],
+    }
+  }
+
+  const plan = resolveToManyEdgePlan(config, parentListKey, section.fieldName)
+  if (!plan) return null
+
+  const relatedListConfig = config.lists[plan.relatedListKey]
   const allowed = await isOperationPotentiallyAllowed(
-    junctionListConfig?.access?.operation,
-    'create',
+    relatedListConfig?.access?.operation,
+    'update',
     { session: context.session, context },
   )
   if (!allowed) return null
 
-  const options = await getRelationshipOptions(context, config, edge.targetListKey, {})
+  const options = await getRelationshipOptions(context, config, plan.relatedListKey, {})
   return {
-    junctionListKey: edge.junctionListKey,
-    targetField: edge.targetField,
-    targetListKey: edge.targetListKey,
+    mode: 'foreignKey',
+    relatedListKey: plan.relatedListKey,
+    backReferenceField: plan.backReferenceField,
+    targetListKey: plan.relatedListKey,
     options: [...options],
   }
 }

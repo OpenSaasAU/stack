@@ -6,13 +6,15 @@ import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 /**
  * The server half of the add-an-edge control (#1329): which sections get one.
  *
- * The gate is the JUNCTION list's own create access, never the parent's — so
- * every fixture below leaves the parent list wide open and moves only the
- * junction's rule.
+ * The gate is always the list the write lands on — the junction's create
+ * access for an edge across one, the related list's update access for an edge
+ * held in its own foreign key — never the parent's. Every fixture below leaves
+ * the parent list wide open and moves only that list's rule.
  */
 
 interface Gates {
   junctionCreate?: () => boolean
+  bookUpdate?: () => boolean
 }
 
 function config(gates: Gates = {}): OpenSaasConfig {
@@ -50,6 +52,7 @@ function config(gates: Gates = {}): OpenSaasConfig {
           title: { type: 'text' },
           author: { type: 'relationship', ref: 'Author.books' },
         },
+        access: { operation: { update: gates.bookUpdate } },
       },
     },
   } as unknown as OpenSaasConfig
@@ -102,6 +105,7 @@ describe('resolveLinkEdge', () => {
     )
 
     expect(edge).toEqual({
+      mode: 'junction',
       junctionListKey: 'PostTag',
       targetField: 'tag',
       targetListKey: 'Tag',
@@ -123,7 +127,24 @@ describe('resolveLinkEdge', () => {
     expect(edge).toBeNull()
   })
 
-  it('hides the control for an ordinary to-many, whose far end is a child row', async () => {
+  it("offers the control for an ordinary to-many, gated on the related list's update access", async () => {
+    const edge = await resolveLinkEdge(
+      section('books', 'Book.author'),
+      config({ bookUpdate: () => true }),
+      'Author',
+      makeContext([{ id: 'b1', title: 'one' }]),
+    )
+
+    expect(edge).toEqual({
+      mode: 'foreignKey',
+      relatedListKey: 'Book',
+      backReferenceField: 'author',
+      targetListKey: 'Book',
+      options: [{ id: 'b1', label: 'one' }],
+    })
+  })
+
+  it("hides the control when the related list's own update access is statically denied", async () => {
     const edge = await resolveLinkEdge(
       section('books', 'Book.author'),
       config(),

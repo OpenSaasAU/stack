@@ -262,4 +262,79 @@ describe('the relationship table server actions over a real database', () => {
     },
     BOOT,
   )
+  test(
+    "linkRelated writes the parent's id into the related row's own foreign key",
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({ data: { title: 'loose' } })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'linkRelated',
+        id: String(post?.id),
+        field: 'author',
+        parentId: authorId,
+      })
+
+      expect(result).toEqual({ linked: true })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'loose', author: authorId }])
+    },
+    BOOT,
+  )
+
+  // The write runs against the RELATED list, so it is that list's update access
+  // that decides it — the reason the item form reverts a selection with.
+  test(
+    'linkRelated is refused when the related list denies the update',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({ data: { title: 'loose' } })
+
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql', timestamps: true },
+        lists: {
+          Author: {
+            fields: { name: text(), posts: relationship({ ref: 'Post.author', many: true }) },
+            access: { operation: OPEN },
+          },
+          Post: {
+            fields: { title: text(), author: relationship({ ref: 'Author.posts' }) },
+            access: { operation: { ...OPEN, update: () => false } },
+          },
+        },
+      }
+
+      const result = await contextAt(config, { userId: 'u1' }).serverAction({
+        listKey: 'Post',
+        action: 'linkRelated',
+        id: String(post?.id),
+        field: 'author',
+        parentId: authorId,
+      })
+
+      expect(result).toMatchObject({ linked: false })
+      expect((result as { error?: string }).error).toBeTruthy()
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'loose', author: null }])
+    },
+    BOOT,
+  )
+
+  test(
+    'linkRelated through a to-many back-reference has no column to write',
+    async () => {
+      const authorId = await seedAuthor('ada')
+
+      const result = await harness.context.serverAction({
+        listKey: 'Author',
+        action: 'linkRelated',
+        id: authorId,
+        field: 'posts',
+        parentId: authorId,
+      })
+
+      expect(result).toMatchObject({ linked: false })
+      expect((result as { error?: string }).error).toContain('to-many back-reference')
+    },
+    BOOT,
+  )
 })

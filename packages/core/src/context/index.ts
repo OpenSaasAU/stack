@@ -48,6 +48,8 @@ import {
   deleteWriteStrategy,
 } from './write-pipeline.js'
 import { resolveJunctionEdge } from './junction.js'
+import { isRelationshipField } from '../fields/index.js'
+import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
@@ -120,6 +122,18 @@ export type ServerActionProps =
       field: string
       parentId: string
       targetId: string
+    }
+  // `listKey`/`id` target the RELATED row, as `removeRelated` does; `field` is
+  // the to-one back-reference owning the column, and `parentId` is composed
+  // into a `connect` on the SERVER, so the payload carries no relation input of
+  // the client's choosing. Returns a distinct `{ linked }` shape, never
+  // `success`, so a UI wrapper that redirects on `success` does not hijack it.
+  | {
+      listKey: string
+      action: 'linkRelated'
+      id: string
+      field: string
+      parentId: string
     }
   | {
       listKey: string
@@ -657,20 +671,33 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { bulkAction: false; error: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
     | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
+    | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
-    const listConfig = config.lists[props.listKey]
-
-    if (!listConfig) {
+    if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
         success: false,
         error: `List "${props.listKey}" not found in configuration`,
       }
     }
+    const listConfig = config.lists[props.listKey]
 
     const model = db[props.listKey] as {
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
-      update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
-      delete: (args: { where: { id: string } }) => Promise<unknown>
+      update: (args: {
+        where: { id: ListIdValue }
+        data: Record<string, unknown>
+      }) => Promise<unknown>
+      delete: (args: { where: { id: ListIdValue } }) => Promise<unknown>
+    }
+
+    // Every id here arrived as a string on the wire, and the id type is per
+    // list (ADR-0048), so each one is parsed through the one boundary coercion
+    // before it reaches the ORM. `null` is an id the list's key type cannot
+    // hold — refused here rather than sent on as a `NaN` or a Postgres type
+    // error.
+    const parseId = (listKey: string, raw: unknown): ListIdValue | null => {
+      const parsed = parseListId(config, listKey, raw)
+      return parsed.ok ? parsed.value : null
     }
 
     // Bulk delete: remove each id row-by-row through the secured context,
@@ -680,7 +707,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // rest.
     if (props.action === 'bulkDelete') {
       let deleted = 0
-      for (const id of props.ids) {
+      for (const raw of props.ids) {
+        const id = parseId(props.listKey, raw)
+        if (id === null) continue
         try {
           const result = await model.delete({ where: { id } })
           if (result !== null && result !== undefined) deleted++
@@ -748,10 +777,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // becomes `{ removed: false }` with a generic reason — never leaking whether
     // the row was denied or absent.
     if (props.action === 'removeRelated') {
+      const relatedId = parseId(props.listKey, props.id)
+      if (relatedId === null) return { removed: false, error: 'Access denied or operation failed' }
       try {
         let result: unknown = null
         if (props.mode === 'delete') {
-          result = await model.delete({ where: { id: props.id } })
+          result = await model.delete({ where: { id: relatedId } })
         } else {
           // Disconnect: an UPDATE on the related list nulling its back-reference,
           // never a delete — the row itself survives. A to-many back-reference
@@ -773,7 +804,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
             }
           }
           result = await model.update({
-            where: { id: props.id },
+            where: { id: relatedId },
             data: { [props.field]: null },
           })
         }
@@ -818,7 +849,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           // non-relationship field would otherwise receive a nonsensical
           // { connect } value. Also hardening — the drawer only ever passes a
           // real relationship back-reference here.
-          if (!backRefField || backRefField.type !== 'relationship') {
+          if (!isRelationshipField(backRefField)) {
             return {
               created: false,
               error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
@@ -834,10 +865,14 @@ export function getContext<TConfig extends OpenSaasConfig>(
                 `Link the parent from the side that holds the column.`,
             }
           }
+          const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+          if (parentId === null) {
+            return { created: false, error: 'Access denied or operation failed' }
+          }
           // The back-reference is set on the SERVER from the trusted parentId,
           // OVERWRITING any client-supplied data[field] spread in above, so a
           // hostile client can never re-target the link.
-          data[props.field] = { connect: { id: props.parentId } }
+          data[props.field] = { connect: { id: parentId } }
         }
         const result = await model.create({ data })
         if (result === null || result === undefined) {
@@ -882,14 +917,19 @@ export function getContext<TConfig extends OpenSaasConfig>(
             `explicit junction list. Write the related row against its own list instead.`,
         }
       }
+      const parentId = parseId(props.listKey, props.parentId)
+      const targetId = parseId(edge.targetListKey, props.targetId)
+      if (parentId === null || targetId === null) {
+        return { added: false, error: 'Access denied or operation failed' }
+      }
       const junction = db[edge.junctionListKey] as {
         create: (args: { data: Record<string, unknown> }) => Promise<unknown>
       }
       try {
         const result = await junction.create({
           data: {
-            [edge.backReferenceField]: { connect: { id: props.parentId } },
-            [edge.targetField]: { connect: { id: props.targetId } },
+            [edge.backReferenceField]: { connect: { id: parentId } },
+            [edge.targetField]: { connect: { id: targetId } },
           },
         })
         if (result === null || result === undefined) {
@@ -915,15 +955,66 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
     }
 
+    // The write runs on the RELATED list, so that list's own update access and
+    // hooks decide it, never the parent's. Only a to-one back-reference owns a
+    // column to hold the link. Honours Silent failure: an access-denied update
+    // returns `null`, surfaced as `{ linked: false }` with a generic reason.
+    if (props.action === 'linkRelated') {
+      const backRefField = listConfig.fields[props.field]
+      if (!isRelationshipField(backRefField)) {
+        return {
+          linked: false,
+          error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+        }
+      }
+      if ('many' in backRefField && backRefField.many === true) {
+        return {
+          linked: false,
+          error:
+            `Cannot link through "${props.field}": a to-many back-reference owns no foreign key. ` +
+            `Link the parent from the side that holds the column.`,
+        }
+      }
+      const relatedId = parseId(props.listKey, props.id)
+      const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+      if (relatedId === null || parentId === null) {
+        return { linked: false, error: 'Access denied or operation failed' }
+      }
+      try {
+        const result = await model.update({
+          where: { id: relatedId },
+          data: { [props.field]: { connect: { id: parentId } } },
+        })
+        if (result === null || result === undefined) {
+          return { linked: false, error: 'Access denied or operation failed' }
+        }
+        return { linked: true }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
+          return { linked: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
+        return {
+          linked: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
     // Updates ONE scalar field on the RELATED row (ADR-0018 boundary — see
     // ServerActionProps above). Honours Silent failure: an access-denied update
     // returns `null`, surfaced as `{ updated: false }` with a generic reason (no
     // denied-vs-absent leak); a validation/db error surfaces its message and
     // fieldErrors so the cell can revert with a reason and show an inline error.
     if (props.action === 'updateRelated') {
+      const relatedId = parseId(props.listKey, props.id)
+      if (relatedId === null) return { updated: false, error: 'Access denied or operation failed' }
       try {
         const result = await model.update({
-          where: { id: props.id },
+          where: { id: relatedId },
           data: { [props.field]: props.value },
         })
         if (result === null || result === undefined) {
@@ -970,15 +1061,15 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
       if (props.action === 'create') {
         result = await model.create({ data: props.data })
-      } else if (props.action === 'update') {
-        result = await model.update({
-          where: { id: props.id },
-          data: props.data,
-        })
-      } else if (props.action === 'delete') {
-        result = await model.delete({
-          where: { id: props.id },
-        })
+      } else if (props.action === 'update' || props.action === 'delete') {
+        const id = parseId(props.listKey, props.id)
+        if (id === null) {
+          return { success: false, error: 'Access denied or operation failed' }
+        }
+        result =
+          props.action === 'update'
+            ? await model.update({ where: { id }, data: props.data })
+            : await model.delete({ where: { id } })
       }
 
       // Check for access denial (null return from access-controlled operations)

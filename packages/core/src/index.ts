@@ -305,6 +305,12 @@ export type {
 // `@opensaas/stack-core/contract` so the root stays free of `@prisma/orm-postgres`.
 export { deriveContract, resolveListTimestamps } from './contract/derive.js'
 export {
+  listIdColumn,
+  parseListId,
+  type ListIdParse,
+  type ListIdValue,
+} from './contract/id-boundary.js'
+export {
   assertRelationGraphAgrees,
   RelationGraphDivergenceError,
   type EmittedContract,

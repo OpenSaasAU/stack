@@ -30,6 +30,7 @@ function junctionProps(): RelationshipTableClientProps {
     parentListKey: 'Post',
     fieldName: 'tags',
     linkEdge: {
+      mode: 'junction',
       junctionListKey: 'PostTag',
       targetField: 'tag',
       targetListKey: 'Tag',
@@ -121,11 +122,76 @@ describe('the to-many section can add an edge across a junction', () => {
     await waitFor(() => expect(mockRefresh).toHaveBeenCalled())
   })
 
-  it('renders no link control for a section that is not an edge across a junction', () => {
+  it('renders no link control for a section whose edges cannot be written', () => {
     const props = junctionProps()
     render(<RelationshipTableClient {...props} linkEdge={undefined} />)
 
     expect(screen.queryByRole('button', { name: /Link Tag/i })).not.toBeInTheDocument()
     expect(document.querySelector('[data-slot="relationship-table-link"]')).toBeNull()
+  })
+})
+
+describe('the to-many section can link an existing row by its own foreign key', () => {
+  beforeEach(() => {
+    mockPush.mockClear()
+    mockRefresh.mockClear()
+    serverAction.mockReset()
+    serverAction.mockResolvedValue({ linked: true })
+  })
+
+  function foreignKeyProps(): RelationshipTableClientProps {
+    return {
+      ...junctionProps(),
+      title: 'Posts',
+      relatedUrlKey: 'post',
+      columns: ['title'],
+      fields: { title: { type: 'text' } },
+      rows: [{ id: 'p1', title: 'Owned' }],
+      relatedListKey: 'Post',
+      backReferenceField: 'author',
+      parentId: 'u1',
+      parentListKey: 'User',
+      fieldName: 'posts',
+      linkEdge: {
+        mode: 'foreignKey',
+        relatedListKey: 'Post',
+        backReferenceField: 'author',
+        targetListKey: 'Post',
+        options: [
+          { id: 'p1', label: 'Owned' },
+          { id: 'p2', label: 'Loose' },
+        ],
+      },
+    }
+  }
+
+  it('targets the RELATED list, naming the back-reference and the parent id', async () => {
+    const user = userEvent.setup()
+    render(<RelationshipTableClient {...foreignKeyProps()} />)
+
+    await user.click(screen.getByRole('button', { name: /Link Post/i }))
+    await user.click(screen.getByText('Loose'))
+
+    expect(serverAction).toHaveBeenCalledTimes(1)
+    expect(serverAction).toHaveBeenCalledWith({
+      listKey: 'Post',
+      action: 'linkRelated',
+      id: 'p2',
+      field: 'author',
+      parentId: 'u1',
+    })
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalled())
+  })
+
+  it('leaves the row unlinked and shows the reason when the write is denied', async () => {
+    serverAction.mockResolvedValue({ linked: false, error: 'Access denied or operation failed' })
+    const user = userEvent.setup()
+    render(<RelationshipTableClient {...foreignKeyProps()} />)
+
+    await user.click(screen.getByRole('button', { name: /Link Post/i }))
+    await user.click(screen.getByText('Loose'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Access denied or operation failed')
+    expect(mockRefresh).not.toHaveBeenCalled()
   })
 })
