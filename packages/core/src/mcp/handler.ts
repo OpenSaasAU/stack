@@ -7,7 +7,7 @@ import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '
 import { ValidationError } from '../hooks/index.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { generateFieldSchemas } from './field-schema.js'
-import { listIdColumn, parseListId } from '../contract/id-boundary.js'
+import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
@@ -15,6 +15,7 @@ import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
   resolveFieldsProjection,
+  type ResolvedFieldsProjection,
 } from './projection.js'
 
 /**
@@ -445,6 +446,65 @@ async function handleToolsCall(
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
+function isWhereObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * A `where.id` at the type its list's primary key actually carries, the way
+ * `update`/`delete` already take one (ADR-0048). The Where vocabulary carries
+ * a caller's JSON through unchanged, so a list keyed on an `int` column would
+ * otherwise reach the driver with `"3"` against it. Only such a list needs
+ * this: a string-keyed list's wire value is already the column's type, and
+ * coercing there would refuse the partial values `contains` is for.
+ *
+ * `null` means the caller named an id this column cannot hold, so the read
+ * matches nothing — the answer a missing row gets everywhere else.
+ */
+function parseWhereIds(
+  where: Record<string, unknown>,
+  config: OpenSaasConfig,
+  listKey: string,
+): Record<string, unknown> | null {
+  const strategy = listIdColumn(config, listKey)?.strategy
+  if (strategy !== 'int autoincrement' && strategy !== 'singleton') return where
+  if (!Object.hasOwn(where, 'id')) return where
+
+  const parse = (raw: unknown): ListIdValue | null => {
+    const parsed = parseListId(config, listKey, raw)
+    return parsed.ok ? parsed.value : null
+  }
+
+  const raw = where.id
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    const value = parse(raw)
+    return value === null ? null : { ...where, id: value }
+  }
+
+  const operators: Record<string, unknown> = {}
+  for (const [operator, value] of Object.entries(raw)) {
+    if (operator === 'in' || operator === 'notIn') {
+      if (!Array.isArray(value)) return null
+      const ids: ListIdValue[] = []
+      for (const entry of value) {
+        const id = parse(entry)
+        if (id === null) return null
+        ids.push(id)
+      }
+      operators[operator] = ids
+      continue
+    }
+    if (operator === 'contains') {
+      operators[operator] = value
+      continue
+    }
+    const id = parse(value)
+    if (id === null) return null
+    operators[operator] = id
+  }
+  return { ...where, id: operators }
+}
+
 async function handleCrudTool(
   toolKey: string,
   operation: string,
@@ -471,16 +531,31 @@ async function handleCrudTool(
 
     switch (operation) {
       case 'query': {
+        if (typeof args.take === 'number' && args.take < 0) {
+          return createErrorResultResponse(
+            `"${listKey}.take" must not be negative (reverse pagination isn't supported).`,
+            id,
+          )
+        }
+        if (typeof args.skip === 'number' && args.skip < 0) {
+          return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
+        }
+
         let query: SecuredQuery = context.db[listKey]
+        let projection: ResolvedFieldsProjection | undefined
         try {
-          if (args.where !== undefined) {
+          if (isWhereObject(args.where)) {
+            const parsedWhere = parseWhereIds(args.where, config, listKey)
+            if (parsedWhere === null) return createSuccessResponse({ items: [], count: 0 }, id)
+            query = query.where(whereArgument(parsedWhere, listKey))
+          } else if (args.where !== undefined) {
             query = query.where(whereArgument(args.where, listKey))
           }
           if (args.orderBy !== undefined) {
             query = query.orderBy(orderByArgument(args.orderBy, listKey))
           }
           if (args.fields !== undefined) {
-            const projection = await resolveFieldsProjection(
+            projection = await resolveFieldsProjection(
               args.fields,
               listKey,
               listConfig,
@@ -498,7 +573,8 @@ async function handleCrudTool(
         }
 
         if (args.skip !== undefined) query = query.offset(args.skip)
-        const items = await query.limit(Math.min(args.take || 10, 100)).all()
+        const rows = await query.limit(Math.min(args.take || 10, 100)).all()
+        const items = projection ? projection.toWire(rows) : rows
 
         return createSuccessResponse({ items, count: items.length }, id)
       }

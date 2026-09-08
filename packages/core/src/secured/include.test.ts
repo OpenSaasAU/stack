@@ -70,6 +70,7 @@ const blogConfig: OpenSaasConfig = {
         handle: text({ validation: { isRequired: true } }),
         posts: relationship({ ref: 'Post.author', many: true }),
         secrets: relationship({ ref: 'Secret.owner', many: true }),
+        notes: relationship({ ref: 'Note.owner', many: true }),
         badge: relationship({ ref: 'Badge.user' }),
       },
       access: {
@@ -120,6 +121,17 @@ const blogConfig: OpenSaasConfig = {
       fields: { name: text({ validation: { isRequired: true } }) },
       access: { operation: { query: () => true } },
     },
+    // The related list's own `query` access as a filter rather than a yes/no:
+    // what a to-many may return is decided by it, whether the caller reads the
+    // relation as rows, as a count, or as both.
+    Note: {
+      fields: {
+        body: text({ validation: { isRequired: true } }),
+        pinned: checkbox({ defaultValue: false }),
+        owner: relationship({ ref: 'User.notes' }),
+      },
+      access: { operation: { query: () => ({ pinned: { equals: true } }) } },
+    },
     // Declares no rule, so `query` is denied by default — the to-many an
     // include has to bring back as `[]` with the key present.
     Secret: {
@@ -137,6 +149,13 @@ let database: TestDatabase
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function combinedValue(value: unknown): { items: Record<string, unknown>[]; total: number } {
+  if (!isRecord(value) || !Array.isArray(value.items) || typeof value.total !== 'number') {
+    throw new Error('not a combined relation')
+  }
+  return { items: value.items.filter(isRecord), total: value.total }
 }
 
 function messageOf(error: unknown): string {
@@ -195,6 +214,8 @@ async function seedBlog(): Promise<void> {
 
   await seed('Badge', { label: "ada's badge", user: adaRow.id })
   await seed('Secret', { code: 'nobody may read this', owner: adaRow.id })
+  await seed('Note', { body: 'pinned note', pinned: true, owner: adaRow.id })
+  await seed('Note', { body: 'loose note', pinned: false, owner: adaRow.id })
 
   const category = await seed('Category', { name: 'essays' })
   await seed('Post', {
@@ -856,6 +877,29 @@ describe('Reductions', () => {
       expect(combined.items[0].title).toBe("ada's published")
       expect(combined.items[0]).not.toHaveProperty('editorNotes')
       expect(combined.items[0]).not.toHaveProperty('hiddenEditor')
+    },
+    BOOT,
+  )
+
+  /**
+   * The rows branch is the one place a `combine` returns rows rather than a
+   * number, so the related list's own Access Filter has to reach it — a branch
+   * that skipped it would hand back rows this session's `query` rule excludes,
+   * beside a count that correctly excludes them.
+   */
+  test(
+    "a combined rows branch is scoped by the related list's own access filter",
+    async () => {
+      const rows = await database
+        .context(ada)
+        .db.User.include('notes', (notes) =>
+          notes.combine({ items: notes.select('body'), total: notes.count() }),
+        )
+        .all()
+
+      const notes = combinedValue(rows[0].notes)
+      expect(notes.items.map((note) => note.body)).toEqual(['pinned note'])
+      expect(notes.total).toBe(1)
     },
     BOOT,
   )

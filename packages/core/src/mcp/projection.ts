@@ -1,4 +1,4 @@
-import type { AccessContext, Session } from '../access/types.js'
+import type { AccessContext, OrmRow, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
@@ -280,6 +280,15 @@ export async function generateFieldsProjectionSchema(
 export interface ResolvedFieldsProjection {
   /** Compose the caller's projection onto the read they asked it of. */
   apply(query: SecuredQuery): SecuredQuery
+  /**
+   * The rows the engine returned, at the shape the tool advertises. A
+   * count-only relation is read as its rows beside the count — Field
+   * Visibility decides a relation's fate against the value it was given, and a
+   * `[]` stand-in fails open for a rule of the `item.comments.length === 0`
+   * shape (`maskReductions` in `secured/read.ts`). Those rows are the engine's
+   * business, not the caller's, so this drops them once it has decided.
+   */
+  toWire(rows: readonly OrmRow[]): OrmRow[]
 }
 
 /** The per-parent page a nested relation entry asked for, under the standing caps. */
@@ -295,12 +304,15 @@ function nestedPage(entry: Record<string, unknown>): { limit: number; offset?: n
  * The refinement one relation entry lowers to.
  *
  * A to-one is its own selection. A to-many is that selection under the entry's
- * `where`, sort and per-parent page; `count: true` on its own reduces the
- * relation to a `count()`, and beside `fields` the two become one `combine`
- * with the rows under `items` and the count under `count` — one include, one
+ * `where`, sort and per-parent page. `count: true` becomes one `combine` with
+ * the rows under `items` and the count under `count` — one include, one
  * correlated subquery, and the `{ items, count }` shape the tool already
  * returns. The count branch is composed off the unpaged refinement, so it
  * counts the relation rather than the page.
+ *
+ * A count asked for without `fields` takes that same shape rather than a bare
+ * `count()`: the rows are what Field Visibility has to decide the relation's
+ * fate against, and `ResolvedFieldsProjection.toWire` drops them afterwards.
  */
 function relationRefinement(
   entry: Record<string, unknown>,
@@ -323,10 +335,7 @@ function relationRefinement(
     return composed.limit(page.limit)
   }
 
-  const wantsCount = entry.count === true
-  const wantsRows = entry.fields !== undefined
-  if (wantsCount && !wantsRows) return (rows) => scope(rows).count()
-  if (!wantsCount) return items
+  if (entry.count !== true) return items
   return (rows) => rows.combine({ items: items(rows), count: scope(rows).count() })
 }
 
@@ -368,6 +377,7 @@ export async function resolveFieldsProjection(
   // `systemFieldProperties`'s doc comment.
   const selection = new Set<string>(['id'])
   const relations: { name: string; refine: Refinement }[] = []
+  const countOnly: string[] = []
 
   for (const [fieldName, rawValue] of Object.entries(fieldsArg)) {
     if (isSystemFieldName(fieldName)) {
@@ -447,6 +457,9 @@ export async function resolveFieldsProjection(
         `"${listKey}.${fieldName}.take" must not be negative (nested reverse pagination isn't supported).`,
       )
     }
+    if (entry.skip !== undefined && entry.skip < 0) {
+      throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.skip" must not be negative.`)
+    }
 
     const nestedFieldsArg = entry.fields
     const wantsCount = many && entry.count === true
@@ -493,6 +506,7 @@ export async function resolveFieldsProjection(
       name: fieldName,
       refine: relationRefinement(entry, [...nestedSelection], many, `${listKey}.${fieldName}`),
     })
+    if (nestedFieldsArg === undefined && wantsCount) countOnly.push(fieldName)
   }
 
   return {
@@ -503,5 +517,24 @@ export async function resolveFieldsProjection(
       }
       return composed
     },
+    toWire(rows) {
+      if (countOnly.length === 0) return [...rows]
+      return rows.map((row) => {
+        const wire: OrmRow = { ...row }
+        for (const name of countOnly) {
+          const count = combinedCount(wire[name])
+          if (count !== undefined) wire[name] = count
+        }
+        return wire
+      })
+    },
   }
+}
+
+/** The `count` of a `{ items, count }` value, where Field Visibility left one. */
+function combinedCount(value: unknown): number | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  if (!('count' in value)) return undefined
+  const count: unknown = value.count
+  return typeof count === 'number' ? count : undefined
 }

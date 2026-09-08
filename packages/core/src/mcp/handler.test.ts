@@ -30,6 +30,11 @@ function unguardedSessionRule(): boolean {
   throw new TypeError("Cannot read properties of null (reading 'role')")
 }
 
+/** The `item.<relation>.length === 0` rule shape, over a value typed `unknown`. */
+function hasNoRows(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 0
+}
+
 /** The schema every test in this file shares. */
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -47,6 +52,7 @@ function schemaConfig(): OpenSaasConfig {
           internalNote: text({ access: { read: () => false } }),
           post: relationship({ ref: 'Post.comments' }),
           restrictedPost: relationship({ ref: 'Post.restrictedComments' }),
+          gatedPost: relationship({ ref: 'Post.gatedComments' }),
         },
         access: { operation: { query: () => true, create: () => true } },
       },
@@ -60,6 +66,15 @@ function schemaConfig(): OpenSaasConfig {
             ref: 'Comment.restrictedPost',
             many: true,
             access: { read: () => false },
+          }),
+          // Row-dependent, and dependent on the relation's own rows: Field
+          // Visibility can only answer it against the value the include
+          // fetched, so a relation read as a bare count decides against the
+          // `[]` stand-in and grants (`maskReductions`, `secured/read.ts`).
+          gatedComments: relationship({
+            ref: 'Comment.gatedPost',
+            many: true,
+            access: { read: ({ item }) => hasNoRows(item.gatedComments) },
           }),
           secretInfo: relationship({ ref: 'Secret' }),
           draftRef: relationship({ ref: 'Draft' }),
@@ -1112,6 +1127,37 @@ describe('the MCP surface', () => {
     )
 
     /**
+     * The replacement for `prisma-8`'s `'a count-only relation fetches the same
+     * rows as a count-alongside one, never a zero-row placeholder'`, at the
+     * grain the translator left: what a count-only relation *fetches* is no
+     * longer observable from MCP, but what Field Visibility decides against it
+     * is. `gatedComments` grants only when the relation is empty, so a bare
+     * `count()` — whose stand-in is `[]` whatever the rows are — would grant
+     * for a post that has comments and hand the count back.
+     */
+    test(
+      'a count-only relation is decided against its rows, not against an empty stand-in',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const withComments = await context.db.Post.create({ data: { title: 'gated' } })
+        await context.db.Post.create({ data: { title: 'empty' } })
+        await context.db.Comment.create({
+          data: { body: 'one', approved: true, gatedPost: { connect: { id: withComments?.id } } },
+        })
+
+        const items = await query({
+          orderBy: { title: 'asc' },
+          fields: { title: true, gatedComments: { count: true } },
+        })
+        const byTitle = new Map(items.map((item) => [item.title, item]))
+
+        expect(byTitle.get('empty')).toHaveProperty('gatedComments', 0)
+        expect(byTitle.get('gated')).not.toHaveProperty('gatedComments')
+      },
+      BOOT,
+    )
+
+    /**
      * The `{ items, count }` pair is one `combine` on one include. Two includes
      * of the same relation is what the engine refuses outright
      * (`DuplicateIncludeError`), so a translator that emitted the rows and the
@@ -1195,6 +1241,57 @@ describe('the MCP surface', () => {
         expect(
           await query({ orderBy: { title: 'asc' }, take: 1, skip: 1, fields: { title: true } }),
         ).toMatchObject([{ title: 'beta' }])
+      },
+      BOOT,
+    )
+
+    test(
+      'a negative page bound is refused at the root as it is inside a relation',
+      async () => {
+        expect(await refusal({ take: -1 })).toContain('"Post.take" must not be negative')
+        expect(await refusal({ skip: -5 })).toContain('"Post.skip" must not be negative')
+        expect(
+          await refusal({ fields: { comments: { fields: { body: true }, skip: -5 } } }),
+        ).toContain('"Post.comments.skip" must not be negative')
+
+        const context = await contextFor(schemaConfig())()
+        await context.db.Post.create({ data: { title: 'alpha' } })
+        await expect(query({ take: 0, skip: 0, fields: { title: true } })).resolves.toBeInstanceOf(
+          Array,
+        )
+      },
+      BOOT,
+    )
+
+    /**
+     * `update`/`delete` take a wire id through `parseListId` (ADR-0048), so an
+     * assistant that used `list_counter_update` with `{ id: "3" }` will reuse
+     * the string form here. Without the same coercion it reaches the driver as
+     * a string against an `int` column.
+     */
+    test(
+      "a query's where.id is typed from the list's own id strategy",
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const counter = await context.db.Counter.create({ data: { label: 'first' } })
+        await context.db.Counter.create({ data: { label: 'second' } })
+        const numericId = counter?.id
+        expect(numericId).toEqual(expect.any(Number))
+
+        async function counters(args: Record<string, unknown>): Promise<unknown[]> {
+          const { body } = await callTool('list_counter_query', args)
+          const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+          if (result.isError) throw new Error(result.content[0].text)
+          return (JSON.parse(result.content[0].text) as { items: unknown[] }).items
+        }
+
+        expect(await counters({ where: { id: String(numericId) } })).toMatchObject([
+          { label: 'first' },
+        ])
+        expect(await counters({ where: { id: { in: [String(numericId)] } } })).toMatchObject([
+          { label: 'first' },
+        ])
+        expect(await counters({ where: { id: 'not-an-int' } })).toEqual([])
       },
       BOOT,
     )
