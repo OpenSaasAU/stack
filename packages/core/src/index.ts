@@ -171,6 +171,8 @@ export {
 // payload shape it refuses (ADR-0050).
 export { WriteCollectionMissingError } from './secured/write.js'
 export {
+  ConflictingRelationInputError,
+  MalformedForeignKeyInputError,
   MalformedRelationInputError,
   NestedRelationInputError,
   NonOwningRelationInputError,

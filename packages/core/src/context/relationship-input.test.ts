@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
 import {
+  ConflictingRelationInputError,
+  MalformedForeignKeyInputError,
   MalformedRelationInputError,
   NestedRelationInputError,
   NonOwningRelationInputError,
@@ -176,5 +178,97 @@ describe('refuseNestedRelationInput', () => {
         category: { connect: { id: 'c1' }, create: { name: 'c' } },
       }),
     ).toThrow(NestedRelationInputError)
+  })
+})
+
+/**
+ * The foreign-key column is the second spelling of the edge the relationship
+ * field spells (#1331), so the refusal pass owes it the shape check its
+ * sibling gets — and owes the pair of them a ruling on being written together.
+ */
+describe('refuseNestedRelationInput on a foreign-key column', () => {
+  it('leaves a row id and a cleared edge alone', () => {
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, { title: 't', authorId: 'a1' }),
+    ).not.toThrow()
+    expect(() => refuseNestedRelationInput('Post', post, config, { authorId: null })).not.toThrow()
+  })
+
+  it('refuses a wrapper on the column, naming the field to write instead', () => {
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Post', post, config, { authorId: { set: 'a1' } })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(MalformedForeignKeyInputError)
+    const message = (thrown as Error).message
+    expect(message).toContain('"authorId"')
+    expect(message).toContain('"author"')
+  })
+
+  it('refuses a payload spelling one edge both ways, naming both spellings', () => {
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Post', post, config, {
+        title: 't',
+        author: { connect: { id: 'a1' } },
+        authorId: 'a2',
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(ConflictingRelationInputError)
+    const message = (thrown as Error).message
+    expect(message).toContain('"author"')
+    expect(message).toContain('"authorId"')
+  })
+
+  it('refuses the pair whichever way round the payload writes it', () => {
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, {
+        authorId: 'a2',
+        author: { connect: { id: 'a1' } },
+      }),
+    ).toThrow(ConflictingRelationInputError)
+  })
+
+  it('refuses the pair even where the two spellings agree', () => {
+    // Agreement is not the point: one value reaches the row and the other is
+    // discarded, so a payload carrying both is answered rather than ranked.
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, { author: null, authorId: null }),
+    ).toThrow(ConflictingRelationInputError)
+  })
+
+  it('refuses the pair ahead of a malformed shape on either half', () => {
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, {
+        author: {},
+        authorId: { set: 'a1' },
+      }),
+    ).toThrow(ConflictingRelationInputError)
+  })
+
+  it('treats an explicitly-undefined counterpart as absent', () => {
+    // `{ author: cond ? … : undefined }` spelled the edge once.
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, { author: undefined, authorId: 'a1' }),
+    ).not.toThrow()
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, {
+        author: { connect: { id: 'a1' } },
+        authorId: undefined,
+      }),
+    ).not.toThrow()
+  })
+
+  it('leaves a column whose name only looks like a foreign key alone', () => {
+    // `Author` declares no `name` relationship, so `nameId` is a plain column.
+    expect(() =>
+      refuseNestedRelationInput('Author', author, config, { nameId: { set: 'x' } }),
+    ).not.toThrow()
   })
 })
