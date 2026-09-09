@@ -42,10 +42,18 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
+  /**
+   * The production build, served under the dev loop. Playwright starts this
+   * before `globalSetup`, so the loop is what brings the database up before
+   * the app: `opensaas dev` starts the Dev database (or takes `DATABASE_URL`),
+   * reconciles it, and only then spawns `next start`. A server that boots
+   * with no database leaves `createAuth`'s module-scope context rejected for
+   * the life of the process. The data directory is cleared first so every run
+   * begins empty — the specs create rows under fixed slugs.
+   */
   webServer: {
     command:
-      'cd examples/starter-auth && DISABLE_RATE_LIMITING=true pnpm build && DISABLE_RATE_LIMITING=true pnpm start',
+      'cd examples/starter-auth && rm -rf .opensaas/dev-db && DISABLE_RATE_LIMITING=true pnpm build && DISABLE_RATE_LIMITING=true pnpm exec opensaas dev -- next start',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 180000, // 3 minutes - Next.js can take time to build and start

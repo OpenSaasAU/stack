@@ -2,16 +2,9 @@
 
 Get up and running with Stack in 5 minutes. Deploy to production in 30 minutes.
 
-{% callout type="warning" %}
-This page still describes the older `pnpm generate` + `pnpm db:push` loop. The
-shipped one is `pnpm dev` — see
-[Installation](/docs/how-to/installation#the-development-loop) for it. This page
-is converted in [#1129](https://github.com/OpenSaasAU/stack/issues/1129).
-{% /callout %}
-
 ## Prerequisites
 
-- Node.js 18+ installed
+- Node.js 22.18 or newer
 - pnpm package manager (install with `npm install -g pnpm`)
 - Basic knowledge of Next.js and TypeScript
 
@@ -26,8 +19,10 @@ The fastest way to scaffold a new project with everything configured:
 ```bash
 npm create opensaas-app@latest my-app
 cd my-app
-pnpm install
 ```
+
+The scaffolder installs dependencies and runs the generator for you; add
+`--no-install` to do those yourself.
 
 **Optional:** Add `--with-auth` flag to include Better-auth:
 
@@ -50,7 +45,7 @@ This creates a complete Next.js project with:
 - Proper TypeScript configuration
 - Ready to generate and run
 
-**Skip to [Step 4: Generate Prisma Schema](#4-generate-prisma-schema)**
+**Skip to [Step 5: Run the app](#5-run-the-app)**
 
 ### Option 2: Manual Setup
 
@@ -66,8 +61,8 @@ cd my-app
 #### 2. Install Stack
 
 ```bash
-pnpm add @opensaas/stack-core @prisma/adapter-better-sqlite3
-pnpm add -D prisma
+pnpm add @opensaas/stack-core @opensaas/stack-ui @prisma/orm-postgres
+pnpm add -D @opensaas/stack-cli prisma
 ```
 
 #### 3. Create Your Config
@@ -77,15 +72,10 @@ Create `opensaas.config.ts` in your project root:
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
   lists: {
     Post: list({
@@ -119,7 +109,22 @@ export default config({
 })
 ```
 
-### 4. Generate Prisma Schema
+### 4. Generate
+
+Add the scripts the starter ships with to `package.json`:
+
+```json
+{
+  "scripts": {
+    "dev": "opensaas dev",
+    "build": "pnpm generate && next build",
+    "generate": "opensaas generate",
+    "db:update": "opensaas db update"
+  }
+}
+```
+
+Then generate:
 
 ```bash
 pnpm generate
@@ -127,17 +132,22 @@ pnpm generate
 
 This creates:
 
-- `prisma/schema.prisma` - Database schema
-- `prisma.config.ts` - Prisma CLI configuration (datasource URL for db push/migrations)
+- `prisma/contract.ts` - The Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
-### 5. Set Up Database
+Commit everything but `.opensaas/`, which is regenerated.
+
+### 5. Run the app
 
 ```bash
-npx prisma db push
-npx prisma generate
+pnpm dev
 ```
+
+`pnpm dev` is `opensaas dev`: it starts the Dev database — a Postgres the stack
+runs for your project, nothing to install — reconciles it with your config, and
+starts Next. Set `DATABASE_URL` in `.env` to use a Postgres of your own instead.
 
 ### 6. Use the Context in Your App
 
@@ -150,14 +160,12 @@ import { getContext } from '@/.opensaas/context'
 
 export async function getPosts() {
   const context = await getContext()
-  return context.db.post.findMany({
-    include: { author: true },
-  })
+  return context.db.Post.include('author').all()
 }
 
 export async function createPost(data: { title: string; content: string }) {
   const context = await getContext({ userId: 'user-1' }) // In real app, get from session
-  return context.db.post.create({ data })
+  return context.db.Post.create({ data })
 }
 ```
 
@@ -237,9 +245,10 @@ Stack includes a Claude Code plugin for feature-driven development. Instead of m
 
 Make sure you've run `pnpm generate` to create the generated files.
 
-### "PrismaClient is not configured"
+### "No database connection URL is set and no dev database is running"
 
-Run `npx prisma generate` to generate the Prisma Client.
+Run the app through `pnpm dev`, which starts the Dev database, or set
+`DATABASE_URL` to a Postgres of your own.
 
 ### Access control returns empty results
 

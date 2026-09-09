@@ -8,7 +8,8 @@ import { SingletonView } from './SingletonView.js'
 import { DashboardSkeleton, ItemFormSkeleton, ListViewSkeleton } from './SkeletonLoader.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
-  type AccessContext,
+  type AnyStackContext,
+  engineContextOf,
   getUrlKey,
   OpenSaasConfig,
   parseListId,
@@ -19,7 +20,8 @@ import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
 
 export interface AdminUIProps {
-  context: AccessContext
+  /** The app's context — what `getContext()` returned for this request. */
+  context: AnyStackContext
   config: OpenSaasConfig
   params?: string[]
   searchParams?: { [key: string]: string | string[] | undefined }
@@ -194,7 +196,9 @@ export async function AdminUI({
   // no list sets `ui.navCount`; each count goes through the secured
   // `context.db`. Skipped when `navigation` is supplied — see that prop's doc
   // (ADR-0021).
-  const navCounts = navigation ? undefined : await resolveNavCounts(context, config)
+  const navCounts = navigation
+    ? undefined
+    : await resolveNavCounts(engineContextOf(context), config)
 
   const sidebar = navigation ?? (
     <Navigation

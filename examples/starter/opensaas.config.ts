@@ -2,7 +2,6 @@ import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 /**
  * Access control helpers
  */
@@ -35,11 +34,7 @@ const isOwner = ({ session: _session, item: _item }: Parameters<AccessControl>[0
  */
 export default config({
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   lists: {
@@ -144,7 +139,7 @@ export default config({
           if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           }
           return { ...resolvedData }

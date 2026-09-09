@@ -12,7 +12,9 @@ import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
   type AccessControl,
+  type AnyStackContext,
   type BulkAction,
+  engineContextOf,
   buildListFilterWhere,
   collectFilterSuggestions,
   getItemLabel,
@@ -132,7 +134,7 @@ export interface ListViewSort {
 }
 
 export interface ListViewProps {
-  context: AccessContext
+  context: AnyStackContext
   config: OpenSaasConfig
   listKey: string
   basePath?: string
@@ -159,7 +161,7 @@ export interface ListViewProps {
 }
 
 export async function ListView({
-  context,
+  context: appContext,
   config,
   listKey,
   basePath = '/admin',
@@ -171,6 +173,7 @@ export async function ListView({
   sort,
   serverAction,
 }: ListViewProps) {
+  const context = engineContextOf(appContext)
   const key = listKey
   const urlKey = getUrlKey(listKey)
   const listConfig = config.lists[listKey]

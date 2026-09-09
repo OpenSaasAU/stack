@@ -1,18 +1,24 @@
 import Link from 'next/link.js'
 import { ArrowRight, LayoutDashboard, Package, Plus, Settings, Table2, Zap } from 'lucide-react'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AnyStackContext,
+  engineContextOf,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
 
 export interface DashboardProps {
-  context: AccessContext
+  context: AnyStackContext
   config: OpenSaasConfig
   basePath?: string
 }
 
 export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
+  const { db } = engineContextOf(context)
   const lists = Object.keys(config.lists || {})
 
   // Split lists into standard lists (shown in the counted grid) and singletons
@@ -24,7 +30,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
       try {
-        const reduced = await context.db[listKey].aggregate((aggregate) => ({
+        const reduced = await db[listKey].aggregate((aggregate) => ({
           total: aggregate.count(),
         }))
         return { listKey, count: reduced.total }

@@ -37,15 +37,17 @@ e2e/
 
 The E2E tests use a **production build** approach for realistic testing:
 
-1. **Global Setup** (`global-setup.ts`):
-   - Creates `.env` file with test credentials
-   - Generates Prisma schema and types (`pnpm generate`)
-   - Pushes schema to database (`pnpm db:push`)
+1. **Web server** (`playwright.config.ts`): `pnpm build`, then
+   `opensaas dev -- next start` — the dev loop starts the Dev database (unless
+   `DATABASE_URL` names a Postgres of its own), reconciles it, and serves the
+   production build. Playwright starts this before global setup.
 
-2. **Playwright Web Server** (`playwright.config.ts`):
-   - Runs `pnpm build && pnpm start` to create production build
-   - Waits for server to be ready at `http://localhost:3000`
-   - Tests run against the **production server**, not dev mode
+2. **Global Setup** (`global-setup.ts`):
+   - Adds the auth variables the app needs to `.env`
+   - Finds the database the loop started through the same lookup the app uses
+     (and starts one itself only when nothing is running)
+   - Generates the contract and the bundle (`opensaas generate`)
+   - Reconciles the database with the contract (`prisma db update`)
 
 3. **Tests Execute**:
    - Validate build artifacts exist (not rebuild)
@@ -53,8 +55,8 @@ The E2E tests use a **production build** approach for realistic testing:
    - All tests run against the same production build
 
 4. **Global Teardown** (`global-teardown.ts`):
-   - Cleans up test database
-   - Playwright stops the server automatically
+   - Stops the Dev database, if global setup started one
+   - Playwright stops the server, which stops the loop's database
 
 This approach ensures:
 
@@ -247,15 +249,14 @@ pnpm test:e2e:codegen
 
 Before tests run, `global-setup.ts`:
 
-1. Creates `.env` file if it doesn't exist
-2. Sets up test database
-3. Generates Prisma schema and types
+1. Adds the auth variables to `.env` if they are missing
+2. Starts the Dev database (or uses `DATABASE_URL`), generates, and reconciles
 
 ### Global Teardown
 
 After tests complete, `global-teardown.ts`:
 
-1. Cleans up test database
+1. Stops the Dev database it started
 
 ### Web Server
 
@@ -377,7 +378,7 @@ E2E tests run automatically in GitHub Actions as part of the main test workflow.
 
 **Main Test Workflow** (`.github/workflows/test.yml`):
 
-- Runs on all pull requests to `main`
+- Runs on all pull requests to `main` and `prisma-8`, once on the Dev database and once on a Postgres service container
 - Executes E2E tests alongside unit tests
 - 30-minute timeout for long-running tests
 - Uploads test reports and artifacts

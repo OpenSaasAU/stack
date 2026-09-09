@@ -890,6 +890,12 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
 
 async function visible(binding: ReadBinding, row: OrmRow, plan: ReadPlan): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
+  // rc.8 hands an included to-one back under its foreign-key key as well as
+  // its own, so the key a row-dependent read rule compares (`item.authorId`)
+  // holds the related row until it is folded to the id. Fold it before the
+  // rules run, and again after them so a relation Field Visibility nulled
+  // leaves no id behind.
+  applyForeignKeys(row, plan.includes)
   const filtered = await filterReadableFields(
     maskReductions(row, plan.includes),
     listConfig.fields,

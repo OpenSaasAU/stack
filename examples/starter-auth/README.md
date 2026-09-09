@@ -9,7 +9,7 @@ A starter template with authentication built in using Better-auth.
 - **Session management** automatic
 - **Admin UI** at `/admin` for managing data
 - **Protected routes** with session-based access control
-- **SQLite database** (easy to switch to PostgreSQL)
+- **Postgres** — the Dev database `pnpm dev` runs for you, or your own via `DATABASE_URL`
 - **TypeScript** with full type safety
 - **Next.js 16** with App Router
 

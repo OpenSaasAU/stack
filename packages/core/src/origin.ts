@@ -22,7 +22,25 @@ export type QueryOrigin = 'engine' | 'unsafe'
  * needs to mark an execution should use {@link withOrigin} or
  * {@link preserveOrigin}, which enter it correctly.
  */
-export const originStore = new AsyncLocalStorage<QueryOrigin>()
+export const originStore = sharedOriginStore()
+
+/**
+ * One store per process, not per module instance. Next.js compiles the page
+ * layer and the route-handler layer as separate bundles, each with its own
+ * copy of this module, while the generated context caches one client — and
+ * its tripwire — on `globalThis` for both. A store held in module scope would
+ * then be entered by one layer's Unsafe surface and read by the other layer's
+ * tripwire, which refuses the query as unmarked. `Symbol.for` is the same
+ * cross-instance registry `globalThis` is.
+ */
+function sharedOriginStore(): AsyncLocalStorage<QueryOrigin> {
+  const key = Symbol.for('@opensaas/stack-core/originStore')
+  const existing: unknown = Reflect.get(globalThis, key)
+  if (existing instanceof AsyncLocalStorage) return existing
+  const created = new AsyncLocalStorage<QueryOrigin>()
+  Reflect.set(globalThis, key, created)
+  return created
+}
 
 /** The origin of the current async context, or `undefined` outside any scope. */
 export function currentOrigin(): QueryOrigin | undefined {
