@@ -8,24 +8,25 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 
 ## Overview of differences
 
-| Concern                 | KeystoneJS 6                       | Stack                                                                |
-| ----------------------- | ---------------------------------- | -------------------------------------------------------------------- |
-| Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                     |
-| Database                | Prisma (managed by Keystone)       | Prisma 7 with driver adapters                                        |
-| Access control          | Functions on the `access` key      | Same shape — operation + filter functions                            |
-| Hooks                   | `resolveInput`, `validateInput`, … | Same names + `resolveOutput`                                         |
-| GraphQL API             | Built-in, always on                | **Not provided** (ADR-0005) — migrate via fragments + `context.db.*` |
-| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.<List>` composed reads, narrowed with `.select()`        |
-| Type generation         | GraphQL codegen                    | Built-in TypeScript inference from the generated list types          |
-| Auth                    | `@keystone-6/auth`                 | `@opensaas/stack-auth` (Better Auth)                                 |
-| Image / file fields     | Multi-column metadata              | Multi-column parity mode or single `Json?` column                    |
-| Admin UI                | Auto-generated from schema         | Auto-generated from config                                           |
+| Concern                 | KeystoneJS 6                       | Stack                                                                    |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| Schema definition       | `list()` in `schema.ts`            | `list()` in `opensaas.config.ts`                                         |
+| Database                | Prisma (managed by Keystone)       | Postgres only; the connection comes from the environment, not the config |
+| Access control          | Functions on the `access` key      | Operation functions that return a boolean **or** a filter                |
+| Hooks                   | `resolveInput`, `validateInput`, … | Same names + `resolveOutput`                                             |
+| GraphQL API             | Built-in, always on                | **Not provided** (ADR-0005) — migrate to composed `context.db.*` reads   |
+| `context.graphql.run()` | Run raw GraphQL queries            | `context.db.<List>` composed reads, narrowed with `.select()`            |
+| Type generation         | GraphQL codegen                    | Built-in TypeScript inference from the generated list types              |
+| Many-to-many            | Implicit join table                | **Refused** — author the junction as its own list                        |
+| Auth                    | `@keystone-6/auth`                 | `@opensaas/stack-auth` (Better Auth)                                     |
+| Image / file fields     | Multi-column metadata              | Multi-column parity mode or single `Json?` column                        |
+| Admin UI                | Auto-generated from schema         | Auto-generated from config                                               |
 
 ## The migration in five moves
 
 1. **Config** — translate `schema.ts` + `keystone.ts` into one `opensaas.config.ts`.
-2. **Generator parity** — set the generator to match your live schema so `prisma db push` / `migrate diff` shows no destructive changes.
-3. **Data access** — replace `context.graphql.run` / `context.query.*` with `context.db.*` and fragments.
+2. **Generator parity** — set the generator to match your live schema so `prisma migrate diff` shows no destructive changes.
+3. **Data access** — replace `context.graphql.run` / `context.query.*` with composed `context.db.*` reads.
 4. **Assets & auth** — adopt existing image/file columns and an existing Better Auth install in place.
 5. **Coexistence** — optionally relocate generated output so the new stack can run side-by-side with Keystone during the cut-over.
 
@@ -73,18 +74,9 @@ export const lists = {
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL ?? 'file:./dev.db',
-    // Prisma 7 requires a driver adapter
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -115,9 +107,9 @@ export default config({
 **Key differences:**
 
 - `config()` wraps every list in a single default export.
-- The `db` block is required and must include a `prismaClientConstructor` (Prisma 7 driver adapter).
+- The `db` block is required, but it carries only the shape of the database — `provider: 'postgresql'` and optional keys like `idField`, `timestamps`, `schemas` and `extensions`. There is no connection string and no client constructor: the connection is resolved from `DIRECT_DATABASE_URL`, then `DATABASE_URL`, then the local Dev database. Postgres is the only provider, so a Keystone project on SQLite or MySQL ports its data to Postgres as part of the migration. See [Config API](/docs/reference/config-api).
 - Field builders import from `@opensaas/stack-core/fields` (not `@keystone-6/core/fields`).
-- List names stay **PascalCase** (`Post`, `User`); `context.db` access is **camelCase** (`context.db.post`).
+- List names stay **PascalCase** (`Post`, `User`), and that same key is what you query: `context.db.Post`. There is no case conversion — a camelCase key is a compile error.
 
 ---
 
@@ -125,24 +117,24 @@ export default config({
 
 Most Keystone field builders have a same-named OpenSaaS equivalent. The validation and UI options carry across with the same names.
 
-| Keystone field   | Stack field                                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across.                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `float()`        | `decimal()`                                       | **No `float()` builder.** `decimal()` is a _type change_, not 1:1 parity: the column goes from `Float` (double) to `Decimal(p, s)` and the runtime value from `number` to a `decimal.js` `Decimal`. Choose `precision` / `scale` (defaults `18, 4`) wide enough for your existing values and review for rounding/precision differences.                                                                                                                                                    |
-| `decimal()`      | `decimal()`                                       | `defaultValue`, `min` / `max` are strings (precision-safe).                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `bigInt()`       | `bigInt()`                                        | Prisma `BigInt`, TypeScript `bigint`. The migration introspector maps Prisma `BigInt` to `bigInt()` directly — no `text()` fallback. Accepts `bigint` / integer `number` / numeric `string` on write; a `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently losing precision. Don't use `integer({ db: { nativeType: 'BigInt' } })`: it emits `Int @db.BigInt`, which Prisma rejects (`@db.BigInt` is not valid on the `Int` scalar) and the TS type stays `number`. |
-| `checkbox()`     | `checkbox()`                                      | `defaultValue: true / false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `timestamp()`    | `timestamp()`                                     | `defaultValue: { kind: 'now' }` or a `Date`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `calendarDay()`  | `calendarDay()`                                   | Date-only string field.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `password()`     | `password()`                                      | Excluded from reads; hash via field `resolveInput`.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `select()`       | `select()`                                        | `options`, `db.type: 'enum'`, `db.enumName`, `db.isNullable` — see §3.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `relationship()` | `relationship()`                                  | `ref` format differs slightly — see §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `json()`         | `json()`                                          | Honours `defaultValue`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/reference/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Keystone field   | Stack field                                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text()`         | `text()`                                          | `validation.isRequired` / `validation.length`, `isIndexed` carry across.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `integer()`      | `integer()`                                       | `validation.isRequired` / `min` / `max`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `float()`        | `decimal()`                                       | **No `float()` builder.** `decimal()` is a _type change_, not 1:1 parity: the column goes from `Float` (double) to `Decimal(p, s)` and the runtime value from `number` to a `decimal.js` `Decimal`. Choose `precision` / `scale` (defaults `18, 4`) wide enough for your existing values and review for rounding/precision differences.                                                                                                                                                                               |
+| `decimal()`      | `decimal()`                                       | `defaultValue`, `min` / `max` are strings (precision-safe).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `bigInt()`       | `bigInt()`                                        | Prisma `BigInt`, TypeScript `bigint`. The migration introspector maps Prisma `BigInt` to `bigInt()` directly — no `text()` fallback. Accepts `bigint` / integer `number` / numeric `string` on write; a `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently losing precision. Don't reach for `integer({ db: { nativeType: … } })` instead: a native-type override changes the column, not the field's TypeScript type, which stays `number` and loses the precision `bigInt()` exists to keep. |
+| `checkbox()`     | `checkbox()`                                      | `defaultValue: true / false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `timestamp()`    | `timestamp()`                                     | `defaultValue: { kind: 'now' }` or a `Date`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `calendarDay()`  | `calendarDay()`                                   | Date-only string field.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `password()`     | `password()`                                      | Excluded from reads; hash via field `resolveInput`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `select()`       | `select()`                                        | `options`, `db.type: 'enum'`, `db.enumName`, `db.isNullable` — see §3.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `relationship()` | `relationship()`                                  | `ref` format differs slightly — see §6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `json()`         | `json()`                                          | Honours `defaultValue`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `virtual()`      | `virtual()`                                       | Provide `type` (TS output type) + a `resolveOutput` hook.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `image()`        | `image()` from `@opensaas/stack-storage/fields`   | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `file()`         | `file()` from `@opensaas/stack-storage/fields`    | Multi-column parity mode — see §8.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `document()`     | `richText()` from `@opensaas/stack-tiptap/fields` | Rich-text editor; see [Tiptap](/docs/reference/tiptap).                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 {% callout type="info" %}
 For the complete option reference on every built-in field, see [Field Types](/docs/concepts/field-types). To build a field type that has no built-in equivalent, see [Custom Fields](/docs/how-to/custom-fields).
@@ -156,39 +148,39 @@ The generator's defaults are deliberately tuned so a Keystone database migrates 
 
 ### `defaultValue` is honoured
 
-`text()`, `integer()`, and `json()` (and `checkbox()` / `decimal()`) emit `@default(...)` from their `defaultValue`. You no longer need `extendPrismaSchema` to re-add a default that Keystone had.
+`text()`, `integer()`, and `json()` (and `checkbox()` / `decimal()`) carry their `defaultValue` through to the column's default, so a default Keystone had survives the migration without any escape hatch:
 
 ```typescript
-views: integer({ defaultValue: 0 }) // → views Int @default(0)
-role: text({ defaultValue: 'member' }) // → role String @default("member")
+views: integer({ defaultValue: 0 }),
+role: text({ defaultValue: 'member' }),
 ```
 
 ### Auto-timestamps are OFF by default
 
-The generator does **not** append `createdAt` / `updatedAt` to every model — matching Keystone 6, which never adds them automatically. Opt in explicitly:
+The generator does **not** append `createdAt` / `updatedAt` to every model — matching Keystone 6, which never adds them automatically. `db.timestamps: true` opts every list in:
 
 ```typescript
 export default config({
   db: {
     provider: 'postgresql',
-    timestamps: true, // add createdAt/updatedAt to every model
-    prismaClientConstructor: (PrismaClient) => {
-      /* ... */
-    },
+    timestamps: true,
   },
+  lists: {/* ... */},
 })
 ```
 
-`db.timestamps` is global; a per-list override wins:
+A per-list `db.timestamps` wins over the global setting, so a single list can opt out again:
 
 ```typescript
 Production: list({
   fields: { name: text() },
-  db: { timestamps: false }, // opt this list out even when global is on
+  db: { timestamps: false },
 })
 ```
 
-When timestamps resolve to on **and** a list already declares its own `createdAt` / `updatedAt`, the auto column is skipped for the declared field(s) so Prisma never sees a duplicate column. If your Keystone lists declared timestamps explicitly, keep declaring them as fields and leave `db.timestamps` off.
+When timestamps resolve to on **and** a list already declares its own `createdAt` / `updatedAt`, the auto column is skipped for the declared field(s) so the schema never carries a duplicate column. If your Keystone lists declared timestamps explicitly, keep declaring them as fields and leave `db.timestamps` off.
+
+One behavioural difference to plan for: `createdAt` takes a database default, but `updatedAt` is maintained application-side with no database backstop. A write that goes around the secured surface — a raw SQL statement, an unsafe-surface write, a data-migration script — will not move it.
 
 ### Keystone-compat mode: empty-string text defaults
 
@@ -198,11 +190,9 @@ Keystone 6 gives every non-null text column an implicit empty-string default. Tu
 export default config({
   db: {
     provider: 'postgresql',
-    keystoneCompat: true, // non-null text without a default → @default("")
-    prismaClientConstructor: (PrismaClient) => {
-      /* ... */
-    },
+    keystoneCompat: true,
   },
+  lists: {/* ... */},
 })
 ```
 
@@ -226,13 +216,14 @@ status: select({
   ],
   defaultValue: 'open',
   db: {
-    type: 'enum', // store as a native Prisma enum (vs a string column)
-    enumName: 'AccountNoteStatusType', // match a live DB enum name (default is <List><Field>)
-    isNullable: true, // keep the column nullable even though a default is set
+    type: 'enum',
+    enumName: 'AccountNoteStatusType',
+    isNullable: true,
   },
 })
-// → status AccountNoteStatusType? @default(open) + enum AccountNoteStatusType { open closed }
 ```
+
+That declares a native enum type named `AccountNoteStatusType` over the two values, and a nullable column defaulting to `open`.
 
 - `db.type: 'enum'` generates a native enum type; the default is a plain string column.
 - `db.enumName` overrides the derived `<List><Field>` enum name — useful for Keystone's `…Type` suffix.
@@ -240,34 +231,34 @@ status: select({
 
 ### Verifying parity
 
-After generating, diff the schema against the live database before pushing:
+Generate, then read the plan before anything touches the live database:
 
 ```bash
 pnpm opensaas generate
-npx prisma generate
-# Postgres/MySQL: confirm there are no destructive changes
 npx prisma migrate diff \
   --from-url "$DATABASE_URL" \
-  --to-schema-datamodel prisma/schema.prisma \
+  --to-schema-datamodel prisma/contract.ts \
   --script
-# SQLite dev loop:
-npx prisma db push
 ```
 
-For any advanced Prisma feature the config API doesn't expose, use `db.extendPrismaSchema` (global) or a relationship field's `db.extendPrismaSchema` (per-field) — see [Generators](/docs/concepts/generators).
+For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --confirm <database-name>`, which requires the loop to be running.
+
+There is no `extendPrismaSchema` escape hatch, at either config or field level. What used to need one is now a first-class option: column-level shape on the field's own `db` block (`map`, `isNullable`, `nativeType`), referential actions on a relationship's `db` (`onDelete`, `onUpdate`, `foreignKey`), model-level shape on the list's `db` (`map`, `schema`, `indexes`, `idField`), and extension packs on `db.extensions`. If a live schema needs something outside that set, the migration is the place to reshape the database rather than the generator.
 
 ---
 
 ## 4. Access control
 
-Access control functions share the same shape between Keystone and Stack — operation-level booleans/filters and filter-based scoping all carry across.
+Access rules keep the same argument shape, but Keystone's three separate blocks collapse into one. There is **no `access: { filter }`** and no list-level `access: { fields }`: a rule scopes an operation by _returning_ a filter from its `operation.*` function rather than being declared in a second place.
 
-| Keystone access                                                | Stack                                                           |
-| -------------------------------------------------------------- | --------------------------------------------------------------- |
-| `access.operation.{query,create,update,delete}`                | Same — `access: { operation: { … } }`                           |
-| `access.filter.{query,update,delete}` returning a `where`      | Operation function returning a Prisma `where` filter            |
-| `access.item.*`                                                | Operation function with `item` arg (`({ session, item }) => …`) |
-| Field access `access.read` / `access.create` / `access.update` | Field-level `access` with the same keys                         |
+| Keystone access                                                | Stack                                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `access.operation.{query,create,update,delete}`                | Same — `access: { operation: { … } }`                              |
+| `access.filter.{query,update,delete}` returning a `where`      | The same operation function, returning a filter instead of `true`  |
+| `access.item.*`                                                | Operation function with `item` arg (`({ session, item }) => …`)    |
+| Field access `access.read` / `access.create` / `access.update` | Field-level `access` with the same keys — **boolean results only** |
+
+Keystone's example below splits an operation check from a filter; Stack folds both into `operation.query`. Note the shape change on the filter itself: Keystone nests a relation filter even for a foreign key, while a Stack filter names the scalar FK column directly.
 
 ```typescript
 // Keystone
@@ -280,18 +271,23 @@ access: {
   },
 }
 
-// Stack — boolean and filter forms are both supported
+// Stack
 access: {
   operation: {
-    query: ({ session }) => !!session,
-    // Return a Prisma where filter to scope which records are visible.
-    // Note the scalar-FK shape (see §5 where-shape translation):
-    update: ({ session }) => ({ authorId: { equals: session?.userId } }),
+    query: ({ session }) =>
+      session?.userId ? { authorId: { equals: session.userId } } : false,
+    update: ({ session }) =>
+      session?.userId ? { authorId: { equals: session.userId } } : false,
   },
 }
 ```
 
-Access-controlled operations **fail silently**: a denied read returns `null` (single) or `[]` (list), and a denied write returns `null` — they never throw. Keep your null-guards. See [Access Control](/docs/concepts/access-control) for the full model.
+Two rules to carry across from Keystone habits:
+
+- **`create` takes a boolean and nothing else.** There is no row to scope, so a rule that returns a filter throws rather than being read as an allow. Scope a create in a `resolveInput` or `validate` hook, where the input data is in scope.
+- **Never let a filter value be `undefined`.** `({ session }) => ({ authorId: { equals: session?.userId } })` is a fail-open bug in Keystone's shape and is refused outright here — a `ValidationError`, not a silently dropped clause. Guard on the value, as above, and return `false` when it is missing.
+
+Access-controlled operations **fail silently**: a denied read returns `null` (single) or `[]` (list), a denied aggregate answers `0` under every key, and a denied write returns `null` — they never throw. Keep your null-guards. See [Access Control](/docs/concepts/access-control) for the full model.
 
 ---
 
@@ -325,17 +321,50 @@ const posts = await context.db.Post.where({ published: { equals: true } })
   .select('title')
   .include('author', (author) => author.select('name'))
   .all()
-// → [{ id, createdAt, updatedAt, title, author: { id, …, name } | null }]
 ```
+
+Each row carries the selected columns plus the list's system fields, and `author` arrives as the included row **or `null`** — arity decides that, not the foreign key's nullability, so `post.author?.name` stays a null-check even against a `NOT NULL` column.
 
 See [Queries & projections](/docs/concepts/queries) for the complete reference on `.select()`, `.include()` refinements, and what a computed field's hook is handed.
 
-### The four hard parts — the `migrate-context-calls` skill
+### The `where` vocabulary is a closed set
 
-Mechanical CRUD is easy; the cases migrators trip on are documented as worked, before/after recipes in the **`migrate-context-calls`** skill (in the `opensaas-migration` plugin). Rather than duplicate them here, this guide summarises and links to them:
+The operators a filter may use are `equals`, `not`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte` and `contains`, plus the relation quantifiers `some`, `every` and `none` — the same three for a to-one relation as for a to-many. A bare value means equality, and `contains` is case-insensitive.
 
-- **Recipe 1 — `where`-shape translation.** Keystone nests relation filters even on a foreign key (`{ author: { id: { equals: $id } } }`); Prisma exposes the scalar FK directly (`{ authorId: { equals: $id } }`). To-many relations use `some` / `every` / `none`, and Keystone's bare enum identifiers (`status: published`) become **string literals** (`status: 'published'`).
-- **Recipe 2 — `connect` / `disconnect` / `set` nested writes.** `data` is passed straight through to Prisma, so use Prisma's relation-operation shapes; `set: []` clears a to-many relation, and you never write the scalar `<field>Id` directly (it is silently stripped).
+Three Keystone/Prisma habits do not survive the translation:
+
+- **`startsWith`, `endsWith` and `mode: 'insensitive'` do not exist.** They are refused, including under `sudo()` — `sudo` skips access, not validation.
+- **`undefined` is refused**, never dropped. This is the fail-closed rule that turns a would-be open read into an error.
+- **`orderBy` sorts by scalar columns only.** Naming a relationship throws.
+
+### Writes: an args object and an identity-only `where`
+
+`create({ data })`, `update({ where, data })` and `delete({ where })` each take one args object. The composed read's `where` never feeds a write — there is no `.where({ id }).update(data)` form — and a write's `where` is **identity-only**: exactly the key `id`, with a `string` or `number`. Targeting a row by a secondary unique column is a compile error, and the check runs before the access gate.
+
+Relation input changes shape too. On the side that owns the foreign key, the field takes `{ connect: { id } }` to point the edge somewhere, or `null` to clear it. **There is no `disconnect`** — and no `set`, no `connectOrCreate`, no nested `create` / `update` / `delete` / `updateMany` / `deleteMany`. All of those are compile errors on the generated input types and refusals at runtime. Spelling one edge both ways (`author` and `authorId` in the same write) is refused as a conflict, and a `connect` target this session cannot read makes the whole write return `null` — one indistinguishable answer.
+
+```typescript
+const post = await context.db.Post.update({
+  where: { id: postId },
+  data: { author: { connect: { id: newAuthorId } } },
+})
+if (!post) return { error: 'Not found or not permitted' }
+
+const orphaned = await context.db.Post.update({
+  where: { id: postId },
+  data: { author: null },
+})
+if (!orphaned) return { error: 'Not found or not permitted' }
+```
+
+Every write result is `T | null` for the same reason every `first()` is: the row may not exist, or it may exist and not be yours, and the two answers are deliberately indistinguishable.
+
+### The remaining hard parts — the `migrate-context-calls` skill
+
+The cases migrators trip on are documented as worked, before/after recipes in the **`migrate-context-calls`** skill (in the `opensaas-migration` plugin). Rather than duplicate them here, this guide summarises and links to them:
+
+- **Recipe 1 — `where`-shape translation.** Keystone nests relation filters even on a foreign key (`{ author: { id: { equals: $id } } }`); a Stack filter names the scalar FK directly (`{ authorId: { equals: $id } }`). To-many relations use `some` / `every` / `none`, and Keystone's bare enum identifiers (`status: published`) become string literals (`status: 'published'`).
+- **Recipe 2 — Keystone's `connect` / `disconnect` / `set` nested writes.** Every one of them becomes either `{ connect: { id } }` on the owning side, `null` to clear, or an explicit write against the junction list where Keystone used a to-many `set`.
 - **Recipe 3 — gql.tada typed documents → a composed read.** Replace the typed document with a read narrowed by `.select()`; `VariablesOf` has no equivalent (use function params).
 - **Recipe 4 — fragment → `.select()` / `.include()` + null-on-access-denied.** A fragment's scalars map onto `.select()` and its relations onto `.include()`; denied nested single relations come back `null`, denied to-many records are dropped from the array. Keep your Keystone null-guards (`post.author?.name`).
 
@@ -343,42 +372,56 @@ Install the plugin and run the skill (see [Tooling](#tooling-cli-agent-plugin));
 
 ---
 
-## 6. Relationships and many-to-many join tables
+## 6. Relationships and the junction list
 
 `relationship()` supports two `ref` formats: `'ListName.fieldName'` (bidirectional, both sides declare the field) and `'ListName'` (list-only, only one side declares it — the stack synthesises the back-relation). This matches Keystone's behaviour.
 
-### Join-table naming (critical for data preservation)
-
-Keystone and Prisma use **different** implicit join-table naming for many-to-many relations. Without adjustment, `prisma db push` on a migrated schema creates **new empty join tables** while your data stays in the old ones.
-
-- **Keystone convention:** `_<FieldLocation>_<fieldName>` (e.g. `_Post_tags`)
-- **Prisma default:** alphabetically sorted `_<AToB>` (e.g. `_PostToTag`)
-
-Preserve the Keystone names globally:
+A relationship's `db` block carries `isNullable`, `foreignKey`, and the referential actions `onDelete` and `onUpdate`, each one of `'cascade'`, `'restrict'`, `'noAction'`, `'setNull'` or `'setDefault'`:
 
 ```typescript
-export default config({
-  db: {
-    provider: 'postgresql',
-    joinTableNaming: 'keystone', // preserve Keystone join-table names
-    prismaClientConstructor: (PrismaClient) => {
-      /* ... */
-    },
+author: relationship({ ref: 'User.posts', db: { onDelete: 'setNull' } })
+```
+
+### Many-to-many: the implicit join table becomes a real model
+
+This is the change most likely to bite a Keystone migration. **Implicit many-to-many is refused.** A config with `many: true` on both ends of a relationship — or `many: true` against a list-only ref — fails `opensaas generate` with an error naming both ends and the fix. Keystone's `_Post_tags` table, which Prisma managed invisibly and neither of your configs mentioned, becomes a model you declare, name and own.
+
+The junction is an ordinary list: a to-one relationship to each side, its own surrogate id, and a unique `db.indexes` entry over the two relationship fields so the same pair cannot be inserted twice. Both outer lists then point at the junction with `many: true`.
+
+```typescript
+Post: list({
+  fields: {
+    title: text({ validation: { isRequired: true } }),
+    tags: relationship({ ref: 'PostTag.post', many: true }),
   },
-})
+}),
+Tag: list({
+  fields: {
+    name: text({ validation: { isRequired: true } }),
+    posts: relationship({ ref: 'PostTag.tag', many: true }),
+  },
+}),
+PostTag: list({
+  fields: {
+    post: relationship({ ref: 'Post.tags' }),
+    tag: relationship({ ref: 'Tag.posts' }),
+  },
+  db: {
+    map: '_Post_tags',
+    indexes: [{ fields: ['post', 'tag'], unique: true }],
+  },
+}),
 ```
 
-Or per-relationship (only one side needs it):
+The list's `db.map` is how the new model lands on the rows you already have: point it at the physical table Keystone created and no data moves. What the columns are called inside it is the one thing to check — Keystone's implicit join table uses Prisma's own column names (`A` and `B`) rather than `postId` / `tagId`, so each relationship field will also need `db: { foreignKey: { map: 'A' } }` to name the live column. Read the table rather than guessing which end is which.
 
-```typescript
-tags: relationship({
-  ref: 'Tag.posts',
-  many: true,
-  db: { relationName: 'Post_tags' }, // Prisma creates join table _Post_tags
-})
-```
+Three things you get in exchange for the extra list, and they are the reason the refusal exists rather than an escape hatch:
 
-Per-field `db.relationName` overrides the global `joinTableNaming`. If both sides set it, they must match. See [Generators](/docs/concepts/generators) for the full naming model.
+- The junction can carry its own columns — an `addedAt`, an ordering, a role on the edge — without a schema migration later.
+- The pairing is enforced by a real unique constraint you can see, name and adopt, rather than one Prisma derives.
+- Access control and hooks apply to the edge itself, which under an implicit join table they could not.
+
+`db.indexes` entries name the list's own field names, and the generator resolves a relationship field to its foreign-key column. `name` on an entry adopts an existing live constraint name — useful when the Keystone table already has one you want Prisma to keep. See [Config API](/docs/reference/config-api) for the full `db.indexes` rules.
 
 ---
 
@@ -449,13 +492,15 @@ import { image, file } from '@opensaas/stack-storage/fields'
 Teacher: list({
   fields: {
     name: text({ validation: { isRequired: true } }),
-    avatar: image({ storage: 'images', db: { columns: 'keystone' } }), // maps onto avatar_url, avatar_width, …
-    resume: file({ storage: 'files', db: { columns: 'keystone' } }), // maps onto resume_filename, resume_filesize, resume_url
+    avatar: image({ storage: 'images', db: { columns: 'keystone' } }),
+    resume: file({ storage: 'files', db: { columns: 'keystone' } }),
   },
 })
 ```
 
-The full recipe — overriding individual column names, the destructive single-`Json?` consolidation alternative (with backup steps and SQL for Postgres/MySQL/SQLite), storage providers (local, S3, Vercel Blob), and the no-re-upload guarantee — is the dedicated [Keystone Image & File Field Migration guide](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-image-migration.md). For configuring storage providers generally, see [Storage Setup](/docs/how-to/storage) and the [Storage package](/docs/reference/storage).
+`columns: 'keystone'` maps each field onto the per-part columns Keystone already created — `avatar_url`, `avatar_width` and the rest for the image; `resume_filename`, `resume_filesize` and `resume_url` for the file — so nothing is dropped and nothing is re-uploaded.
+
+The full recipe — overriding individual column names, the destructive single-`Json?` consolidation alternative (with backup steps and the consolidating SQL), storage providers (local, S3, Vercel Blob), and the no-re-upload guarantee — is the dedicated [Keystone Image & File Field Migration guide](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-image-migration.md). For configuring storage providers generally, see [Storage Setup](/docs/how-to/storage) and the [Storage package](/docs/reference/storage).
 
 ---
 
@@ -500,10 +545,7 @@ If your Keystone database splits tables across Postgres schemas (e.g. a separate
 export default config({
   db: {
     provider: 'postgresql',
-    schemas: ['public', 'auth'], // enables Prisma multiSchema + the schemas array
-    prismaClientConstructor: (PrismaClient) => {
-      /* ... */
-    },
+    schemas: ['public', 'auth'],
   },
   lists: {
     AuthUser: list({
@@ -512,26 +554,48 @@ export default config({
     }),
     Post: list({
       fields: {/* ... */},
-    }), // defaults to public
+    }),
   },
 })
 ```
 
-`db.schema` adds `@@schema(...)` to a model and `db.map` adds `@@map(...)` for a differing physical table name — both are essential when adopting an existing layout. The `adoptBetterAuthTables()` recipe (§9) sets these for the auth tables automatically.
+`db.schemas` declares the namespaces the project uses; a list's own `db.schema` places its model in one of them, and `db.map` names a physical table that differs from the list key. A list that declares neither lands in `public`. Both are essential when adopting an existing layout, and the `adoptBetterAuthTables()` recipe (§9) sets them for the auth tables automatically.
 
 ### Admin-UI parity
 
-The admin UI is auto-generated from the same config — there is no separate admin schema to migrate. Field labels, display modes, and ordering come from each field's `ui` options (which mirror Keystone's `ui` config), and access control automatically hides lists/fields/operations the session can't use. Mount it once:
+The admin UI is auto-generated from the same config — there is no separate admin schema to migrate. Field labels, display modes, and ordering come from each field's `ui` options (which mirror Keystone's `ui` config), and access control automatically hides lists/fields/operations the session can't use.
 
-```typescript
+Mount it once, on the generated `getContext()` and `config` — there is no separate admin-context helper, and the server action is one you own so that writes run under your own session resolution:
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
 
-export default async function AdminPage() {
-  const context = await getAdminContext(config)
-  return <AdminUI context={context} config={config} />
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  return (
+    <AdminUI
+      context={await getContext()}
+      config={await config}
+      params={resolvedParams.admin}
+      searchParams={await searchParams}
+      basePath="/admin"
+      serverAction={serverAction}
+    />
+  )
 }
 ```
 
@@ -546,15 +610,15 @@ During the cut-over you often want Stack to run **alongside** the existing Keyst
 ```typescript
 export default config({
   output: {
-    prismaSchema: 'prisma-opensaas/schema.prisma', // default: prisma/schema.prisma
-    opensaasDir: '.opensaas', // default: .opensaas
+    contractModule: 'prisma-opensaas/contract.ts',
+    opensaasDir: '.opensaas',
   },
-  db: {/* ... */},
-  // ...
+  db: { provider: 'postgresql' },
+  lists: {/* ... */},
 })
 ```
 
-Both paths are resolved relative to the project root. The generated files' cross-references follow these locations automatically — `context.ts` imports the generated types/lists from the resolved `.opensaas` dir, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema path — so `prisma generate` / `db push` keep working against the relocated schema while Keystone's own `prisma/` is untouched. (`prisma.config.ts` itself is always written at the project root and is not relocatable.)
+`contractModule` defaults to `prisma/contract.ts` and `opensaasDir` to `.opensaas`; both are resolved relative to the project root. `contract.json` and `contract.d.ts` are emitted beside the contract module, so relocating it moves all three. The generated files' cross-references follow these locations automatically — `context.ts` imports the generated types and lists from the resolved `.opensaas` dir, and the top-level `prisma.config.ts` points the Prisma CLI at the configured contract path — so the stack's own commands keep working while Keystone's `prisma/` is untouched. (`prisma.config.ts` itself is always written at the project root and is not relocatable.)
 
 ---
 
@@ -562,19 +626,21 @@ Both paths are resolved relative to the project root. The generated files' cross
 
 Work through this in order. Each step links to the relevant section above.
 
-1. **[ ] Install packages** — replace `@keystone-6/core` (and `@keystone-6/auth`) with `@opensaas/stack-core`, `@opensaas/stack-core/fields`, and (if needed) `@opensaas/stack-auth`, `@opensaas/stack-storage`, and the right `@prisma/adapter-*`.
-2. **[ ] Convert config** — fold `schema.ts` + `keystone.ts` into one `opensaas.config.ts` (§1), add `prismaClientConstructor` (Prisma 7).
-3. **[ ] Map fields** — translate field builders (§2); set `select` `db` options and other parity knobs as needed.
-4. **[ ] Set generator parity** — `keystoneCompat`, `timestamps`, `joinTableNaming`, and `select` `db.isNullable` / `db.enumName` to match the live schema (§3, §6).
-5. **[ ] (Optional) Relocate output** — set `output.prismaSchema` / `output.opensaasDir` for coexistence (§11).
-6. **[ ] Generate** — `pnpm opensaas generate && npx prisma generate`.
-7. **[ ] Verify the diff** — `prisma migrate diff` (Postgres/MySQL) or `prisma db push` (SQLite dev) shows **no destructive changes** (§3).
-8. **[ ] Migrate images/files** — set `db.columns: 'keystone'` on `image()` / `file()` (§8).
-9. **[ ] Adopt auth** — `authPlugin` + `adoptBetterAuthTables()` if Better Auth is already live (§9).
-10. **[ ] Replace data access** — run the `migrate-context-calls` skill to convert `context.graphql.run` / `context.query.*` to `context.db.*` + fragments (§5).
-11. **[ ] Migrate hooks** — rename `validateInput` → `validate` where desired (§7).
-12. **[ ] Wire the admin UI** — mount `AdminUI` (§10).
-13. **[ ] Lint, format, test** — `pnpm lint && pnpm format && pnpm test`.
+1. **[ ] Port the database to Postgres** — Postgres is the only provider, so a Keystone project on SQLite or MySQL moves its data first. Everything below assumes a Postgres instance you can point `DATABASE_URL` at.
+2. **[ ] Install packages** — replace `@keystone-6/core` (and `@keystone-6/auth`) with `@opensaas/stack-core`, `@opensaas/stack-cli`, and (if needed) `@opensaas/stack-auth` and `@opensaas/stack-storage`.
+3. **[ ] Convert config** — fold `schema.ts` + `keystone.ts` into one `opensaas.config.ts` (§1). The `db` block carries no connection string.
+4. **[ ] Map fields** — translate field builders (§2); set `select` `db` options and other parity knobs as needed.
+5. **[ ] Author the junctions** — every many-to-many becomes its own list with a unique `db.indexes` entry, mapped onto the live join table (§6). Generation fails until this is done.
+6. **[ ] Set generator parity** — `keystoneCompat`, `timestamps`, and `select` `db.isNullable` / `db.enumName` to match the live schema (§3).
+7. **[ ] (Optional) Relocate output** — set `output.contractModule` / `output.opensaasDir` for coexistence (§11).
+8. **[ ] Generate** — `pnpm opensaas generate`.
+9. **[ ] Verify the diff** — `prisma migrate diff`, or the plan `opensaas dev` prints, shows **no destructive changes** (§3).
+10. **[ ] Migrate images/files** — set `db.columns: 'keystone'` on `image()` / `file()` (§8).
+11. **[ ] Adopt auth** — `authPlugin` + `adoptBetterAuthTables()` if Better Auth is already live (§9).
+12. **[ ] Replace data access** — run the `migrate-context-calls` skill to convert `context.graphql.run` / `context.query.*` to composed `context.db.*` reads (§5).
+13. **[ ] Migrate hooks** — rename `validateInput` → `validate` where desired (§7).
+14. **[ ] Wire the admin UI** — mount `AdminUI` (§10).
+15. **[ ] Lint, format, test** — `pnpm lint && pnpm format && pnpm test`.
 
 ---
 
@@ -605,6 +671,7 @@ The `opensaas-migration` Claude Code plugin ships the migration skills — inclu
 - **[Field Types](/docs/concepts/field-types)** — every built-in field's options.
 - **[Access Control](/docs/concepts/access-control)** and **[Hooks System](/docs/concepts/hooks)** — the patterns shared with Keystone.
 - **[Authentication](/docs/how-to/authentication)** — the auth plugin and Better Auth adoption.
-- **[Generators](/docs/concepts/generators)** — schema generation, parity knobs, and `extendPrismaSchema`.
+- **[Config API](/docs/reference/config-api)** — every `db`, list and relationship option in full.
+- **[Generators](/docs/concepts/generators)** — what `opensaas generate` emits.
 
 For the original design notes behind this guide, see the [Keystone migration design notes](https://github.com/OpenSaasAU/stack/blob/main/specs/keystone-migration.md).

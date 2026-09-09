@@ -418,12 +418,25 @@ export const lists = {
 }
 ```
 
-| Key          | Type                | Meaning                                                     |
-| ------------ | ------------------- | ----------------------------------------------------------- |
-| `foreignKey` | `boolean`           | This side owns the foreign-key column                       |
-| `isNullable` | `boolean`           | Whether the column may be `NULL`                            |
-| `onDelete`   | `ReferentialAction` | What happens to this row when the referenced row is deleted |
-| `onUpdate`   | `ReferentialAction` | What happens when the referenced key changes                |
+| Key          | Type                         | Meaning                                                     |
+| ------------ | ---------------------------- | ----------------------------------------------------------- |
+| `foreignKey` | `boolean \| { map: string }` | Which side owns the foreign-key column, or what to call it  |
+| `isNullable` | `boolean`                    | Whether the column may be `NULL`                            |
+| `onDelete`   | `ReferentialAction`          | What happens to this row when the referenced row is deleted |
+| `onUpdate`   | `ReferentialAction`          | What happens when the referenced key changes                |
+
+`foreignKey` carries two senses in one key. The **boolean** form answers "which side owns it", and is meaningful only on a bidirectional `ref: 'List.field'` — a list-only `ref: 'List'` always owns the foreign key, so a boolean there is rejected. The **`{ map }`** form renames the column without changing ownership, and works on both. That is the form an adopted table needs:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { relationship } from '@opensaas/stack-core/fields'
+
+export const Post = list({
+  fields: {
+    author: relationship({ ref: 'User.posts', db: { foreignKey: { map: 'author_id' } } }),
+  },
+})
+```
 
 The action is a value in the config, not a string spliced into a schema file. There is no `extendPrismaSchema` on a field.
 

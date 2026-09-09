@@ -81,7 +81,6 @@ After running the migration command, open your project in Claude Code:
 
 2. **Answer the wizard questions:**
    - Whether to preserve your existing database
-   - Database provider (PostgreSQL, MySQL, SQLite)
    - Authentication requirements
    - Access control patterns
    - Admin UI preferences
@@ -155,23 +154,15 @@ model User {
 }
 ```
 
-Convert it to OpenSaaS config:
+Convert it to OpenSaaS config. Post's `query` rule returns a **filter** rather than a boolean, which scopes the read: an anonymous visitor sees published posts, a signed-in author additionally sees their own drafts. Note the guard is on `session?.userId`, not on `session` — a filter value of `undefined` is refused as a validation error rather than quietly dropped, so a rule must never build one.
 
 ```typescript
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox, relationship } from '@opensaas/stack-core/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     User: list({
       fields: {
@@ -183,8 +174,8 @@ export default config({
         operation: {
           query: () => true,
           create: ({ session }) => !!session,
-          update: ({ session, item }) => session?.userId === item.id,
-          delete: ({ session, item }) => session?.userId === item.id,
+          update: ({ session, item }) => session?.userId === item?.id,
+          delete: ({ session, item }) => session?.userId === item?.id,
         },
       },
     }),
@@ -197,9 +188,8 @@ export default config({
       },
       access: {
         operation: {
-          // Filter-based: anonymous users see published posts, authors see their own
           query: ({ session }) =>
-            session
+            session?.userId
               ? { OR: [{ published: { equals: true } }, { authorId: { equals: session.userId } }] }
               : { published: { equals: true } },
           create: ({ session }) => !!session,
@@ -212,22 +202,33 @@ export default config({
 })
 ```
 
-### 4. Generate Schema
+The `db` block carries no connection string and no client constructor. The connection is resolved from the environment at runtime — `DIRECT_DATABASE_URL`, then `DATABASE_URL`, then the local Dev database — so pointing the new config at your existing database is a matter of setting `DATABASE_URL`, not of editing the config. Postgres is the only provider. See [Config API](/docs/reference/config-api) for the rest of the `db` keys.
+
+### 4. Generate and reconcile
+
+`opensaas dev` is the whole local loop: it starts a Dev database, runs `generate`, reconciles the schema, and spawns your app. Point `DATABASE_URL` at your existing database first if you are migrating live data — with the variable set, no Dev database is started and the loop reconciles against yours.
 
 ```bash
-# Generate Prisma schema and types
-pnpm opensaas generate
-
-# Generate Prisma Client
-npx prisma generate
-
-# Push to database (preserves existing data)
-npx prisma db push
+pnpm opensaas dev
 ```
+
+Editing `opensaas.config.ts` while the loop is running regenerates and reconciles again. A **non-destructive** change applies on its own. A **destructive** one — a dropped column, a narrowed type — stops: the loop leaves both the generated bundle and the database at the previous schema, prints the plan, and keeps serving. Apply it deliberately from a second terminal:
+
+```bash
+pnpm db:update --confirm postgres
+```
+
+The consent token is the database name; the Dev database's is `postgres`.
+
+#### `pnpm db:update` needs the loop
+
+`pnpm db:update` opens no connection of its own — it hands the request to the running `opensaas dev` loop, which owns the Dev database's data directory and the staged generation. With no loop listening it exits non-zero with a message saying so, rather than reaching the database a second way. And because a client cached inside the running app would go on querying a column that no longer exists, **a destructive mid-session change restarts the app** once the update is applied. Expect the app process to come back, and expect in-flight local state to be lost with it.
+
+Production is a different command: deploys run `prisma db migrate` from the committed `migrations/` directory. There is no `opensaas db migrate` — `opensaas db` carries only `update`, and `opensaas migrate` is the project-analysis assistant this page is about, not a schema command.
 
 ### 5. Update Application Code
 
-Replace direct Prisma calls with context:
+Replace direct Prisma calls with context. A read is composed on `context.db.<List>` — the list's own PascalCase key, not a camelCase one — and ends in a terminal that resolves access:
 
 **Before:**
 
@@ -245,8 +246,10 @@ const posts = await prisma.post.findMany({
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext({ userId: session.userId })
-const posts = await context.db.post.findMany()
+const posts = await context.db.Post.where({ published: { equals: true } }).all()
 ```
+
+There is no `findMany`, `findUnique`, `findFirst` or `count()`. The terminals are `all()`, `first()`, `aggregate()` and `nearest()`; `where` and `orderBy` accumulate across calls, while `select`, `limit`, `offset` and `cursor` replace. A denied read is silent — `all()` gives `[]`, `first()` gives `null`, `aggregate()` zeroes every key — so every `first()` result is a null check.
 
 ## Supported Project Types
 
@@ -311,16 +314,10 @@ When using AI assistance, the wizard asks these questions:
 
 **Question:** "Do you want to preserve your existing database?"
 
-- **Yes** → Uses existing DATABASE_URL, preserves data
-- **No** → Creates new database
+- **Yes** → Uses your existing `DATABASE_URL`, preserves data
+- **No** → Leaves the variable unset, so `opensaas dev` starts a local Dev database
 
-**Question:** "What database provider are you using?"
-
-Options:
-
-- PostgreSQL (production recommended)
-- MySQL
-- SQLite (development/simple apps)
+There is no provider question. Postgres is the only provider, so a migration from a MySQL or SQLite source is also a database port: move the data across first, then point `DATABASE_URL` at the Postgres instance.
 
 ### 2. Authentication
 
@@ -358,13 +355,13 @@ Options:
   }
   ```
 
-- **Private (owner-only)** - For user-specific data
+- **Private (owner-only)** - For user-specific data. `query` returns a filter, so users only ever see their own records; the guard is on `session?.userId` because a filter value of `undefined` is refused, not ignored.
 
   ```typescript
   access: {
     operation: {
-      // Filter-based: users only ever see their own records
-      query: ({ session }) => (session ? { userId: { equals: session.userId } } : false),
+      query: ({ session }) =>
+        session?.userId ? { userId: { equals: session.userId } } : false,
       create: ({ session }) => !!session,
       update: ({ session, item }) => session?.userId === item?.userId,
       delete: ({ session, item }) => session?.userId === item?.userId,
@@ -494,11 +491,12 @@ model Post {
 
 **Generated Config:**
 
+Post's `query` rule returns `true` for a signed-in visitor and a filter for an anonymous one, so anonymous visitors see published posts and nothing else:
+
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, checkbox, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   plugins: [
@@ -507,14 +505,7 @@ export default config({
       sessionFields: ['userId', 'email', 'name'],
     }),
   ],
-  db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -525,7 +516,6 @@ export default config({
       },
       access: {
         operation: {
-          // Anonymous visitors only see published posts (filter-based access)
           query: ({ session }) => (session ? true : { published: { equals: true } }),
           create: ({ session }) => !!session,
           update: ({ session, item }) => session?.userId === item?.authorId,
@@ -555,13 +545,17 @@ export default config({
 3. Configure relationships (Order → Product)
 4. Add hooks for inventory updates
 
-**Access Control Pattern:**
+**Access Control Pattern:** the product catalogue is publicly readable and admin-writable; `Order.query` returns `true` for an admin and an owner filter for everybody else. The filter names the relationship's foreign-key column, `customerId`, not the relationship field.
 
 ```typescript
 Product: list({
+  fields: {
+    name: text({ validation: { isRequired: true } }),
+    price: decimal(),
+  },
   access: {
     operation: {
-      query: () => true, // Public
+      query: () => true,
       create: ({ session }) => session?.role === 'admin',
       update: ({ session }) => session?.role === 'admin',
       delete: ({ session }) => session?.role === 'admin',
@@ -569,14 +563,16 @@ Product: list({
   },
 }),
 Order: list({
+  fields: {
+    customer: relationship({ ref: 'User.orders' }),
+  },
   access: {
     operation: {
-      // Filter-based: admins see everything, users see their own orders
       query: ({ session }) =>
         session?.role === 'admin'
           ? true
-          : session
-            ? { userId: { equals: session.userId } }
+          : session?.userId
+            ? { customerId: { equals: session.userId } }
             : false,
       create: ({ session }) => !!session,
       update: ({ session }) => session?.role === 'admin',
@@ -602,7 +598,7 @@ Order: list({
 3. Implement team-scoped access
 4. Add role checks
 
-**Access Control Pattern:**
+**Access Control Pattern:** an access rule may run its own read on `context.db` to resolve membership. Both rules below return `false` rather than a filter when there is no membership — building `{ teamId: undefined }` would be refused as a validation error, and returning it would be a security bug in any case.
 
 ```typescript
 Project: list({
@@ -613,20 +609,21 @@ Project: list({
   access: {
     operation: {
       query: async ({ session, context }) => {
-        const membership = await context.db.teamMember.findFirst({
-          where: { userId: session.userId }
-        })
-        return { teamId: membership?.teamId }
+        if (!session?.userId) return false
+        const membership = await context.db.TeamMember.where({
+          userId: { equals: session.userId },
+        }).first()
+        if (!membership) return false
+        return { teamId: { equals: membership.teamId } }
       },
       create: ({ session }) => !!session,
       update: async ({ session, item, context }) => {
-        const membership = await context.db.teamMember.findFirst({
-          where: {
-            userId: session.userId,
-            teamId: item.teamId,
-            role: { in: ['owner', 'admin'] }
-          }
-        })
+        if (!session?.userId) return false
+        const membership = await context.db.TeamMember.where({
+          userId: { equals: session.userId },
+          teamId: { equals: item.teamId },
+          role: { in: ['owner', 'admin'] },
+        }).first()
         return !!membership
       },
     },
@@ -646,11 +643,13 @@ To preserve your existing database:
    DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
    ```
 
-2. **Use `db push` instead of migrations:**
+2. **Reconcile through the dev loop, and read the plan before consenting:**
 
    ```bash
-   npx prisma db push
+   pnpm opensaas dev
    ```
+
+   With `DATABASE_URL` set, no Dev database starts and the loop reconciles against yours. A destructive plan stops and prints itself rather than applying — that printout is your review step, and nothing is dropped until you run `pnpm db:update --confirm <database-name>`.
 
 3. **OpenSaaS generates schema compatible with existing data:**
    - Same table names (PascalCase models)
@@ -673,9 +672,6 @@ The migration system is **non-destructive**:
 ```bash
 # Backup before migration
 pg_dump mydb > backup.sql
-
-# Or for SQLite
-cp dev.db dev.db.backup
 
 # Then migrate
 npx @opensaas/stack-cli migrate --with-ai
@@ -785,9 +781,10 @@ Can't reach database server
 ```bash
 # Should exist:
 opensaas.config.ts          # Your config
-.opensaas/context.ts        # Generated context
+.opensaas/context.ts        # Generated context factory
 .opensaas/types.ts          # Generated types
-prisma/schema.prisma        # Generated schema
+.opensaas/lists.ts          # Generated list metadata
+prisma/contract.ts          # Generated contract module (+ contract.json, contract.d.ts)
 prisma.config.ts            # Prisma CLI config
 ```
 
@@ -797,22 +794,17 @@ prisma.config.ts            # Prisma CLI config
 pnpm install
 ```
 
-### 3. Generate and Push
+### 3. Run the dev loop
 
 ```bash
-# Generate Prisma client
-npx prisma generate
-
-# Push to database (preserves data)
-npx prisma db push
-
-# Check with Prisma Studio
-npx prisma studio
+pnpm opensaas dev
 ```
+
+One command generates, reconciles the schema and starts the app. Mid-session config edits regenerate and reconcile again; a destructive one waits for `pnpm db:update --confirm <database-name>`.
 
 ### 4. Update Application Code
 
-Replace Prisma calls with context:
+Replace Prisma calls with context. `context.db` is keyed by the list's PascalCase name, and a read is composed rather than passed a single args object:
 
 ```typescript
 // Before
@@ -821,38 +813,58 @@ const posts = await prisma.post.findMany()
 // After
 import { getContext } from '@/.opensaas/context'
 const context = await getContext({ userId: session.userId })
-const posts = await context.db.post.findMany()
+const posts = await context.db.Post.all()
 ```
 
 ### 5. Add Admin UI
 
-```typescript
+The admin surface takes the generated `getContext()` result and the generated `config`, plus a server action you own — there is no separate admin-context helper.
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
 
-export default async function AdminPage() {
-  const context = await getAdminContext(config)
-  return <AdminUI context={context} config={config} />
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  return (
+    <AdminUI
+      context={await getContext()}
+      config={await config}
+      params={resolvedParams.admin}
+      searchParams={await searchParams}
+      basePath="/admin"
+      serverAction={serverAction}
+    />
+  )
 }
 ```
 
 ### 6. Test Access Control
 
-Verify access control works:
+A denied read is silent, so verify by comparing what two sessions see rather than by expecting a throw:
 
 ```typescript
-// Test as anonymous user
 const anonContext = await getContext()
-const posts = await anonContext.db.post.findMany()
-// Should only return published posts
+const publicPosts = await anonContext.db.Post.all()
 
-// Test as authenticated user
 const authContext = await getContext({ userId: 'user-123' })
-const myPosts = await authContext.db.post.findMany()
-// Should return user's posts (published + drafts)
+const myPosts = await authContext.db.Post.all()
 ```
+
+The anonymous read should come back with published posts only; the authenticated one should additionally carry that user's drafts. A single record is checked the same way — `first()` answers `null` for both "no such row" and "not yours", which is deliberate: the two are indistinguishable to a caller.
 
 ### 7. Update API Routes
 
@@ -869,13 +881,14 @@ export async function GET() {
 // After (Server action)
 // app/actions/posts.ts
 ;('use server')
+import { headers } from 'next/headers'
 import { getContext } from '@/.opensaas/context'
 import { auth } from '@/lib/auth'
 
 export async function getPosts() {
   const session = await auth.api.getSession({ headers: await headers() })
   const context = await getContext(session?.user)
-  return await context.db.post.findMany()
+  return await context.db.Post.where({ published: { equals: true } }).all()
 }
 ```
 
@@ -884,7 +897,7 @@ export async function getPosts() {
 If you're migrating from KeystoneJS, your project likely uses `context.graphql.run()` or `context.graphql.raw()` for type-safe database access. Stack has no GraphQL layer — a read is composed on `context.db.<List>` and narrowed with `.select()`, which the engine honours exactly. There is no fragment to declare and no codegen step: the generated types give each list's surface its own shape.
 
 {% callout type="info" %}
-The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, `connect` / `disconnect` / `set` nested writes, and gql.tada typed documents) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone#5-replacing-context-graphql-run-with-context-db-fragments) guide and the [Queries & projections](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
+The full set of `context.graphql.run` → `context.db.*` recipes — including the harder cases (relation-filter `where`-shape translation, Keystone's `connect` / `disconnect` / `set` nested writes, and gql.tada typed documents) — lives in the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide and the [Queries & projections](/docs/concepts/queries) reference. This section is a short summary that points there rather than duplicating them.
 {% /callout %}
 
 ### Quick reference
@@ -938,6 +951,8 @@ const posts = await context.db.Post.where({ published: { equals: true } })
   .all()
 ```
 
+Arity decides nullability, not the foreign key's: a to-one include lands as `Row | null` and a to-many as `Row[]`. So `post.author?.name` stays a null-check even where the column is `NOT NULL` — the row may simply be one this session cannot read.
+
 Composability comes from the query value itself: it is immutable, so a partially composed read can be shared and narrowed at each call site.
 
 ```typescript
@@ -975,24 +990,36 @@ git commit -m "Add initial OpenSaaS config"
 - Test different roles
 - Test edge cases (null values, empty lists)
 
-### Document Decisions
+### Name your access rules
 
-Add comments to your config:
+A filter-returning rule inlined into `access.operation` is the hardest part of a migrated config to read six months later. Lift it into a named function instead — the name carries the policy, and the same rule can then be reused and unit-tested on its own:
 
 ```typescript
-lists: {
-  Post: list({
-    // Public read for published posts, author-only for drafts (filter-based)
-    access: {
-      operation: {
-        query: ({ session }) =>
-          session
-            ? { OR: [{ published: { equals: true } }, { authorId: { equals: session.userId } }] }
-            : { published: { equals: true } },
+import { config, list } from '@opensaas/stack-core'
+import type { Session } from '@opensaas/stack-core'
+import { checkbox, relationship, text } from '@opensaas/stack-core/fields'
+
+const publishedOrOwnDrafts = ({ session }: { session: Session | null }) =>
+  session?.userId
+    ? { OR: [{ published: { equals: true } }, { authorId: { equals: session.userId } }] }
+    : { published: { equals: true } }
+
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {
+    Post: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        published: checkbox({ defaultValue: false }),
+        author: relationship({ ref: 'User.posts' }),
       },
-    },
-  }),
-}
+      access: { operation: { query: publishedOrOwnDrafts } },
+    }),
+    User: list({
+      fields: { posts: relationship({ ref: 'Post.author', many: true }) },
+    }),
+  },
+})
 ```
 
 ### Plan for Rollback
@@ -1038,6 +1065,7 @@ If you have custom Prisma types, create custom fields:
 
 ```typescript
 // lib/fields/slug.ts
+import { z } from 'zod'
 import type {
   BaseFieldConfig,
   ContractFieldDescriptor,
@@ -1066,18 +1094,20 @@ export function slug(options?: Omit<SlugField, 'type'>): SlugField {
 
 ### Complex Relationships
 
-For many-to-many relationships:
+Implicit many-to-many is **refused**: a config with `many: true` on both sides of a relationship fails `opensaas generate` with an error naming both ends. A Prisma schema like this:
 
-```typescript
-// Prisma implicit many-to-many
+```prisma
 model Post {
   tags Tag[]
 }
 model Tag {
   posts Post[]
 }
+```
 
-// OpenSaaS explicit junction table
+becomes a junction you author yourself — a list with a to-one relationship to each side, its own surrogate id, and a unique `db.indexes` entry over the two fields so the pair cannot be inserted twice. Both outer lists then point at the junction with `many: true`:
+
+```typescript
 Post: list({
   fields: {
     tags: relationship({ ref: 'PostTag.post', many: true }),
@@ -1093,8 +1123,13 @@ PostTag: list({
     post: relationship({ ref: 'Post.tags' }),
     tag: relationship({ ref: 'Tag.posts' }),
   },
+  db: {
+    indexes: [{ fields: ['post', 'tag'], unique: true }],
+  },
 }),
 ```
+
+The join table Prisma used to manage invisibly becomes a model you name, own and can add columns to — an `addedAt`, an ordering, a `role`. For an existing database this is also the point at which you choose the junction's physical table name with `db.map`, so the new model lands on the rows you already have.
 
 ### Migrating Hooks
 
@@ -1122,49 +1157,23 @@ hooks: {
 }
 ```
 
-### Database-Specific Configuration
+### Deployment Configuration
 
-#### PostgreSQL
+The config does not change between environments — the connection does. Set `DATABASE_URL` (and `DIRECT_DATABASE_URL` where a pooler sits in front, so schema commands reach a connection that can run DDL), and deploy by running `prisma db migrate` from the committed `migrations/` directory.
+
+Two `db` keys matter beyond the provider on a real deployment: `extensions`, which declares the extension packs the generator emits contract spaces for, and `client`, which carries pool options and a `pg` factory for serverless Postgres.
 
 ```typescript
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
-
 export default config({
   db: {
     provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({
-        connectionString: process.env.DATABASE_URL,
-      })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
+    extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
   },
+  lists: {/* ... */},
 })
 ```
 
-#### MySQL
-
-```typescript
-import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
-import { Client } from '@planetscale/database'
-
-export default config({
-  db: {
-    provider: 'mysql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const client = new Client({
-        url: process.env.DATABASE_URL,
-      })
-      const adapter = new PrismaPlanetScale(client)
-      return new PrismaClient({ adapter })
-    },
-  },
-})
-```
+See [Config API](/docs/reference/config-api) for `db.client` and the rest.
 
 ## Summary
 
