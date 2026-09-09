@@ -104,15 +104,15 @@ jobs:
       #
       # THE GATE. PRs into `main` are excluded because the fixtures cannot
       # describe that tree: `files.txt` names this branch's documents and
-      # `fragments.json` keys entries by `file:line`, and main's RAG documents
-      # differ from these by around 900 lines, so every entry there would
-      # report as orphaned. Unlike the test steps below, the exclusion has no
-      # `== 'main'` run counterpart, so it cannot expire on its own: once
-      # prisma-8 lands, base_ref is always 'main' and the check would stop
-      # running for good. Flipping it is part of that merge — drop the three
-      # `if:` lines below, delete the notice step, and re-key
-      # scripts/doc-blocks/fragments.json against main's documents. Tracked on
-      # #1301. Every other mention of the flip points here.
+      # `fragments.json` keys entries by `file:line`, so against main's RAG
+      # documents every entry would report as orphaned. Unlike the test steps
+      # below, the exclusion has no `== 'main'` run counterpart, so it cannot
+      # expire on its own: once prisma-8 lands, base_ref is always 'main' and
+      # the check would stop running for good. Flipping it is part of that
+      # merge — drop the `!= 'main'` gates on the steps below, delete the
+      # notice step, and re-key scripts/doc-blocks/fragments.json against
+      # main's documents. Tracked on #1301. Every other mention of the flip
+      # points here.
       - name: Build packages for the doc-block check
         if: github.base_ref != 'main'
         run: turbo run build --filter='./packages/*'

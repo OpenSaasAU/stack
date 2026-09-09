@@ -15,16 +15,28 @@
 //   - Fragment entries are keyed `file:line`. The orphan check catches a key
 //     that has drifted off every block, but a key that drifts onto a different
 //     block's first line still excuses that block instead.
+//   - A fragment entry excuses only the diagnostics it names: an unresolved
+//     bare name, or a `TSnnnn 'token'` code-and-token pair. Every other
+//     diagnostic in the block fails it. A `{ "whole": … }` entry excuses every
+//     compile diagnostic — that form is for a block that is not a statement
+//     list at all (an object-literal body, a `...` elision) — and the summary
+//     counts those blocks separately. No entry excuses a redeclared shipped
+//     name from agreeing with the package, or an unimported name.
 //   - `context.db` is the prelude's hand-written surface, not a generated one:
 //     three lists (Article, Document, DocumentChunk) whose rows carry the
-//     fields the listed prose uses, over a query whose `where` takes the
-//     package's untyped vocabulary rather than the list's own columns, and
-//     which models neither `include`, `distinct` nor `cursor`. A wrong-cased or
-//     unknown list, a misspelt vector column, a missing null check and a
-//     misspelt row field are compile errors; a misspelt `where` key is not.
-//     The generated `SecuredList` cannot be used here because it is
-//     instantiated from the emitted Prisma contract, which nothing but the
-//     generator can write.
+//     fields the listed prose uses. `where` and `orderBy` take the package's
+//     untyped vocabulary rather than the list's own columns, so a misspelt key
+//     in either is not a compile error; `include`, `distinct`, `distinctOn`
+//     and `cursor` are not modelled, nor are `select`/`include` on a write.
+//     `create` takes a fully partial `data`, because `CreateInput` requires a
+//     member exactly where the contract shows a non-nullable column with no
+//     default and no listed page declares one — a documented create omitting a
+//     field a reader's own stricter list requires is therefore not a compile
+//     error here. A wrong-cased or unknown list, a misspelt vector column, a
+//     missing null check and a misspelt row field are compile errors. The
+//     generated `SecuredList` cannot be used here because it is instantiated
+//     from the emitted Prisma contract, which nothing but the generator can
+//     write.
 //   - `@opensaas/*` resolves through each package's own `exports` map, so a
 //     subpath the package does not export fails for the checker as it fails
 //     for a reader. Shadowing compares against every `types` entry of every
@@ -36,27 +48,38 @@
 //     every one of them when it imports from none, and fails only when it
 //     matches none.
 //   - The comparison is a member-by-member diff computed from the checker:
-//     member presence, optionality, `readonly`, `any` against something
-//     narrower, index signatures, call-signature arity, and each member's type
-//     — recursing into object-typed members and non-generic signatures, and
-//     falling back to assignability in both directions at the leaves, for
-//     unions, and for generic signatures. An intersection therefore compares
-//     equal to its flattened spelling. What it does not see is everything the
-//     type system does not carry — a `@default` that no longer matches the
-//     code, a member whose name is right and whose meaning has changed, an
-//     option documented as accepting a range the package narrows only at
-//     runtime. Two declarations can compare equal and still document the
-//     package wrongly.
-//   - Shadowing compares the two declarations at one type-argument arity with
-//     fresh unconstrained parameters. A comparison bails when the arity it
-//     picks would have to supply a constrained parameter, or when no arity
-//     satisfies both sides. A constraint of `unknown` or `any` constrains
-//     nothing and is filled; a parameter the block declares past the package's
-//     arity and never uses is filled with `never`, whatever its constraint.
+//     member presence, optionality, `readonly` (declared, or introduced by a
+//     mapped type such as `Readonly<>`), `any` against something narrower,
+//     index signatures, call-signature arity, and each member's type —
+//     recursing into object-typed members whether required or optional
+//     (`T | undefined` and `T | null` are entered after their nullability is
+//     compared) and into non-generic signatures, and falling back to
+//     assignability in both directions at the leaves, for unions of more than
+//     one object type, and for generic signatures. An intersection therefore
+//     compares equal to its flattened spelling. What it does not see is
+//     everything the type system does not carry — a `@default` that no longer
+//     matches the code, a member whose name is right and whose meaning has
+//     changed, an option documented as accepting a range the package narrows
+//     only at runtime. Two declarations can compare equal and still document
+//     the package wrongly.
+//   - Type parameters: a parameter the block declares past the package's
+//     arity is a difference, as is a parameter that has a default on one side
+//     and none on the other; both fail. A parameter the package declares past
+//     the block's arity is not — the block documents the default
+//     instantiation — unless the package requires it, which bails. An
+//     unused parameter is filled with `never`, whatever its constraint; a used
+//     one with a fresh opaque type; a used one carrying a constraint other
+//     than `unknown`/`any` cannot be filled and bails. Defaults are compared by
+//     a second instantiation at the shared required arity when both sides
+//     have optional parameters there.
 //   - A member whose declared type does not resolve is skipped and reported,
 //     and its siblings are still compared. The comparison bails only when the
 //     type itself — a heritage clause, an intersection operand, a mapped-type
 //     body — does not resolve, because an error type agrees with everything.
+//   - A redeclaration the parser cannot fully read (a `...` elision inside its
+//     body) is compared one way, over the members the parser recovered: an
+//     invented or mistyped member still fails, a member the block elided does
+//     not. The block is reported as compared with that note.
 //   - Every bail is reported as `NOT COMPARED` with its reason and excluded
 //     from the compared tally, and none of them fails the block.
 //   - The package's side of a comparison is trusted to resolve. Every program
@@ -77,6 +100,8 @@
 //     indent exactly; a block fenced with four backticks, or one whose fence
 //     carries trailing whitespace, is extracted wrongly or not at all.
 //   - A block compiles in isolation with the preludes in scope. It is not run.
+//   - The scratch directory is removed on exit and on SIGINT/SIGTERM; a run
+//     killed outright (SIGKILL) leaves one behind, which .gitignore covers.
 //   - CI runs this on PRs into prisma-8 only; the gate and the instruction for
 //     flipping it live together in .github/workflows/test.yml.
 
@@ -106,6 +131,7 @@ class ToolingFailure extends Error {}
 
 const toPosix = (p) => p.replace(/\\/g, '/')
 const format = (d) => `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`
+const yieldToEventLoop = () => new Promise((resolve) => setImmediate(resolve))
 
 // ---------------------------------------------------------------------------
 // Inputs: the listed files and their fragment classifications.
@@ -132,6 +158,59 @@ function readListedFiles(listedPaths) {
     files: listedPaths.filter((relativePath) => sources.has(relativePath)),
   }
 }
+
+const EXCUSE = /^(?:TS\d+(?: '[^']+')?|[A-Za-z_$][\w$]*)$/
+
+// An entry is `{ "whole": reason }` or `{ "excuses": [...], "reason"?: … }`;
+// anything else is a tooling failure rather than a silently ignored key.
+function parseFragments(raw, origin) {
+  const fragments = new Map()
+  for (const [key, value] of Object.entries(raw)) {
+    const fail = (why) => {
+      throw new ToolingFailure(`${origin}: entry for ${key} ${why}`)
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      fail('must be an object: { "whole": "reason" } or { "excuses": [...] }')
+    }
+    const keys = Object.keys(value).sort().join(',')
+    if (keys === 'whole') {
+      if (typeof value.whole !== 'string' || !value.whole.trim()) fail('has an empty "whole"')
+      fragments.set(key, { whole: value.whole })
+      continue
+    }
+    if (keys !== 'excuses' && keys !== 'excuses,reason') {
+      fail(`has keys [${keys}]; expected "whole", or "excuses" with an optional "reason"`)
+    }
+    if (!Array.isArray(value.excuses) || value.excuses.length === 0) {
+      fail('needs a non-empty "excuses" array')
+    }
+    for (const excuse of value.excuses) {
+      if (typeof excuse !== 'string' || !EXCUSE.test(excuse)) {
+        fail(
+          `has an excuse ${JSON.stringify(excuse)} that is neither a bare name nor \`TSnnnn 'token'\``,
+        )
+      }
+    }
+    fragments.set(key, { excuses: value.excuses, reason: value.reason ?? null })
+  }
+  return fragments
+}
+
+const UNRESOLVED_NAME = /^TS(?:2304|2552|2593): Cannot find name '([^']+)'/
+
+function excuseMatches(excuse, error) {
+  const coded = excuse.match(/^(TS\d+)(?: '([^']+)')?$/)
+  if (coded) {
+    return error.startsWith(`${coded[1]}:`) && (!coded[2] || error.includes(`'${coded[2]}'`))
+  }
+  return error.match(UNRESOLVED_NAME)?.[1] === excuse
+}
+
+const describeFragment = (fragment) =>
+  fragment.whole
+    ? `whole: "${fragment.whole}"`
+    : `excuses ${fragment.excuses.map((e) => `\`${e}\``).join(', ')}` +
+      (fragment.reason ? ` — "${fragment.reason}"` : '')
 
 // ---------------------------------------------------------------------------
 // The packages: every `exports[*].types` of every @opensaas package is both a
@@ -186,7 +265,23 @@ if (missingEntries.length > 0) {
 // Block extraction.
 
 const FENCE = /^(\s*)```(typescript|ts|tsx)(?:\s+\S.*)?\s*$/
-const MARKER = /^<!--\s*expect:\s*(FAIL|PASS)(?:\s+fragment="([^"]*)")?\s*-->$/
+const MARKER =
+  /^<!--\s*expect:\s*(fail|pass compared|pass not-compared|pass|excused)((?:\s+(?:excuses|whole)="[^"]*")*)\s*-->$/
+const MARKER_ATTRIBUTE = /(excuses|whole)="([^"]*)"/g
+
+function parseMarker(line) {
+  const marker = line.match(MARKER)
+  if (!marker) return null
+  const attributes = Object.fromEntries(
+    [...marker[2].matchAll(MARKER_ATTRIBUTE)].map(([, key, value]) => [key, value]),
+  )
+  let fragment = null
+  if (attributes.whole) fragment = { whole: attributes.whole }
+  else if (attributes.excuses) {
+    fragment = { excuses: attributes.excuses.split(',').map((e) => e.trim()), reason: null }
+  }
+  return { verdict: marker[1], fragment }
+}
 
 function extractBlocks(relativePath, text) {
   const lines = text.split('\n')
@@ -203,14 +298,13 @@ function extractBlocks(relativePath, text) {
     const body = lines.slice(i + 1, j).map((line) => line.slice(indent.length))
     let above = i - 1
     while (above > 0 && lines[above].trim() === '') above--
-    const marker = above >= 0 ? lines[above].trim().match(MARKER) : null
     blocks.push({
       file: relativePath,
       line: i + 2,
       language: fence[2],
       code: body.join('\n'),
       heading,
-      expectation: marker ? { verdict: marker[1], fragment: marker[2] ?? null } : null,
+      expectation: above >= 0 ? parseMarker(lines[above].trim()) : null,
     })
     i = j
   }
@@ -220,9 +314,6 @@ function extractBlocks(relativePath, text) {
 // ---------------------------------------------------------------------------
 // Type parameters, and what a block declares.
 
-// `extends unknown` and `extends any` constrain nothing, so the probe can fill
-// them; treating them as unfillable hands an author a no-op edit that turns a
-// shadowing failure into an advisory note.
 const constrains = (constraint) =>
   Boolean(constraint) &&
   constraint.kind !== ts.SyntaxKind.UnknownKeyword &&
@@ -471,56 +562,132 @@ function findShadowedNames(code, exportedTypes, { scriptKind = ts.ScriptKind.TS,
 
 const requiredCount = (params) => params.filter((p) => !p.optional).length
 
-// The probe supplies the same type arguments to both declarations, so it needs
-// an arity each side accepts and parameters it can fill with fresh opaque
-// types. A parameter the block declares past the package's arity and never
-// uses says nothing about the shape, so it is filled with `never` — which
-// satisfies any constraint — rather than allowed to retire the comparison.
+// The probe instantiates both declarations with the same arguments, so each
+// needs an argument list its own parameters accept. `never` satisfies any
+// constraint, which is why an unused parameter never retires the comparison.
 function planComparison(documented, shipped) {
-  const phantom =
-    documented.length > shipped.length && documented.slice(shipped.length).every((p) => !p.used)
-  const effective = phantom ? documented.slice(0, shipped.length) : documented
-  const arity = Math.min(effective.length, shipped.length)
-  if (arity < Math.max(requiredCount(effective), requiredCount(shipped))) {
-    return {
-      compared: false,
-      reason:
-        `the package declares ${shipped.length} type parameter(s), ${requiredCount(shipped)} ` +
-        `required, and the block declares ${documented.length}`,
+  const differences = []
+  if (documented.length > shipped.length) {
+    differences.push(
+      `the block declares ${documented.length} type parameter(s), the package ${shipped.length}`,
+    )
+  }
+  const shared = Math.min(documented.length, shipped.length)
+  for (let i = 0; i < shared; i++) {
+    if (documented[i].optional !== shipped[i].optional) {
+      const [has, lacks] = documented[i].optional ? ['block', 'package'] : ['package', 'block']
+      differences.push(
+        `type parameter ${i + 1} has a default in the ${has} and none in the ${lacks}`,
+      )
     }
   }
-  const filled = [...effective.slice(0, arity), ...shipped.slice(0, arity)]
-  if (filled.some((p) => p.constrained)) {
-    return {
-      compared: false,
-      reason: 'its type parameters carry constraints the probe cannot fill',
+
+  // Positions the two sides share take the same fresh type; a side's own
+  // parameters past that either take `never` (unused), their default
+  // (optional, so omitted along with everything after them), or cannot be
+  // supplied at all.
+  const argumentsFor = (params, count, fresh, pastCount) => {
+    const args = []
+    for (let i = 0; i < params.length; i++) {
+      const p = params[i]
+      if (!p.used) {
+        args.push('never')
+        continue
+      }
+      if (i >= count) {
+        if (p.optional) break
+        return { unfillable: pastCount(i + 1) }
+      }
+      if (p.constrained) {
+        return { unfillable: 'its type parameters carry constraints the probe cannot fill' }
+      }
+      fresh.add(`P${i}`)
+      args.push(`P${i}`)
     }
+    return { args }
   }
-  return { compared: true, arity, phantom: phantom ? documented.length - shipped.length : 0 }
+  const instantiate = (label, count) => {
+    const fresh = new Set()
+    const own = argumentsFor(
+      documented,
+      count,
+      fresh,
+      (n) => `the block uses type parameter ${n}, past the package's ${shipped.length}`,
+    )
+    const theirs = argumentsFor(
+      shipped,
+      count,
+      fresh,
+      (n) => `the package requires type argument ${n}, which the block does not declare`,
+    )
+    if (own.unfillable || theirs.unfillable) {
+      return { unfillable: own.unfillable ?? theirs.unfillable }
+    }
+    return { label, documented: own.args, shipped: theirs.args, fresh: [...fresh] }
+  }
+
+  const full = instantiate('', shared)
+  if (full.unfillable) return { differences, instantiations: [], reason: full.unfillable }
+  const instantiations = [full]
+  const required = Math.max(
+    requiredCount(documented.slice(0, shared)),
+    requiredCount(shipped.slice(0, shared)),
+  )
+  if (required < shared) {
+    const defaults = instantiate('at its default type arguments, ', required)
+    if (!defaults.unfillable) instantiations.push(defaults)
+  }
+  return { differences, instantiations }
 }
 
 // ---------------------------------------------------------------------------
-// The scratch project. It lives under packages/rag so `vitest` and
-// `@types/node` resolve as they do anywhere in the repo, and carries a
-// node_modules/@opensaas of symlinks to packages/* so `@opensaas/*` resolves
-// through each package's own `exports` map.
+// The scratch project. It lives under packages/rag so a bare import a block
+// makes — `vitest`, `zod` — resolves by walking up from there as it does for
+// the package's own sources; `@types/node` comes from the explicit
+// `typeRoots`, so the script runs from any cwd. node_modules/@opensaas holds
+// symlinks to packages/* so `@opensaas/*` resolves through each package's own
+// `exports` map.
 
-const scratchDir = mkdtempSync(path.join(repoRoot, 'packages', 'rag', '.doc-blocks-check-'))
-const scopeDir = path.join(scratchDir, 'node_modules', '@opensaas')
-mkdirSync(scopeDir, { recursive: true })
-for (const { name, dir } of packages) {
-  symlinkSync(path.join(repoRoot, 'packages', dir), path.join(scopeDir, name.split('/')[1]), 'dir')
+let scratchDir = null
+let preludePaths = []
+
+function createScratch() {
+  scratchDir = mkdtempSync(path.join(repoRoot, 'packages', 'rag', '.doc-blocks-check-'))
+  const scopeDir = path.join(scratchDir, 'node_modules', '@opensaas')
+  mkdirSync(scopeDir, { recursive: true })
+  for (const { name, dir } of packages) {
+    symlinkSync(
+      path.join(repoRoot, 'packages', dir),
+      path.join(scopeDir, name.split('/')[1]),
+      'dir',
+    )
+  }
+  // Copied in as `.ts`, not `.d.ts`: `skipLibCheck` is on — it has to be, for
+  // Prisma's generated client — and it would skip a declaration file entirely,
+  // including a prelude whose imports no longer resolve.
+  for (const prelude of ['prelude', 'prelude-exports']) {
+    writeFileSync(
+      path.join(scratchDir, `${prelude}.ts`),
+      readFileSync(path.join(blocksDir, `${prelude}.d.ts`), 'utf8'),
+    )
+  }
+  preludePaths = ['prelude.ts', 'prelude-exports.ts'].map((f) => path.join(scratchDir, f))
 }
-// Copied in as `.ts`, not `.d.ts`: `skipLibCheck` is on — it has to be, for
-// Prisma's generated client — and it would skip a declaration file entirely,
-// including a prelude whose imports no longer resolve.
-for (const prelude of ['prelude', 'prelude-exports']) {
-  writeFileSync(
-    path.join(scratchDir, `${prelude}.ts`),
-    readFileSync(path.join(blocksDir, `${prelude}.d.ts`), 'utf8'),
-  )
+
+function removeScratch() {
+  if (scratchDir) rmSync(scratchDir, { recursive: true, force: true })
+  scratchDir = null
 }
-const preludePaths = ['prelude.ts', 'prelude-exports.ts'].map((f) => path.join(scratchDir, f))
+
+// `finally` does not run on a signal. The handler removes the scratch
+// directory and re-raises, so the exit status is still the signal's (130 for
+// SIGINT); the per-block yield in runBlocks is what lets it run mid-check.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    removeScratch()
+    process.kill(process.pid, signal)
+  })
+}
 
 const compilerOptions = {
   target: ts.ScriptTarget.ES2022,
@@ -533,6 +700,7 @@ const compilerOptions = {
   esModuleInterop: true,
   resolveJsonModule: true,
   types: ['node'],
+  typeRoots: [path.join(repoRoot, 'node_modules', '@types')],
 }
 
 let checking = null
@@ -585,8 +753,6 @@ function compileBlock(code, options) {
   return { entry, ...diagnose([entry], options) }
 }
 
-const UNRESOLVED_NAME = /^TS(?:2304|2552|2593): Cannot find name '([^']+)'/
-
 // Names the exports prelude supplied that the block did not import itself.
 function findUnimportedExports(code, withPreludeErrors) {
   if (!/^\s*import\s/m.test(code)) return []
@@ -632,7 +798,8 @@ function findUnresolved(checker, sourceFile, spans) {
   }
   ts.forEachChild(sourceFile, collect)
 
-  const unresolved = []
+  const unresolved = new Map()
+  const note = (text, member) => unresolved.set(`${member}\u0000${text}`, { text, member })
   const scan = (node, member) => {
     if (member === null && isMemberNode(node) && node.name && ts.isIdentifier(node.name)) {
       member = node.name.text
@@ -641,7 +808,7 @@ function findUnresolved(checker, sourceFile, spans) {
       const local = checker.getSymbolAtLocation(node.name)
       const target = local && resolveAlias(checker, local)
       if (!target || (target.declarations ?? []).length === 0) {
-        unresolved.push({ text: node.moduleReference.getText(sourceFile), member })
+        note(node.moduleReference.getText(sourceFile), member)
       }
       return
     }
@@ -651,23 +818,44 @@ function findUnresolved(checker, sourceFile, spans) {
       ts.isTypeQueryNode(node) ||
       ts.isImportTypeNode(node)
     if (names && isErrorType(checker.getTypeAtLocation(node))) {
-      unresolved.push({ text: node.getText(sourceFile).split('\n')[0], member })
+      note(node.getText(sourceFile).split('\n')[0], member)
       return
     }
     ts.forEachChild(node, (child) => scan(child, member))
   }
   for (const root of roots) scan(root, null)
-  return unresolved
+  return [...unresolved.values()]
 }
 
 const MAX_DEPTH = 8
 
+// `readonly` lives on the declaration when written there and on the symbol's
+// check flags when a mapped type such as `Readonly<>` introduced it. The
+// check flags are not part of TypeScript's public API; when the build in use
+// does not expose them, a mapped member's readonly-ness is reported as
+// unread rather than assumed absent.
+const checkFlagsOf =
+  typeof ts.getCheckFlags === 'function' && ts.CheckFlags?.Readonly ? ts.getCheckFlags : null
+
+function readonlyView(symbol) {
+  const declared = (symbol.declarations ?? []).some(
+    (d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Readonly,
+  )
+  if (declared) return true
+  if (!(symbol.getFlags() & ts.SymbolFlags.Transient)) return false
+  if (!checkFlagsOf) return null
+  return Boolean(checkFlagsOf(symbol) & ts.CheckFlags.Readonly)
+}
+
 // The member-by-member diff that decides the comparison. Neither built-in
 // relation answers the question on its own: assignability in both directions
 // cannot see an optional member appear, and identity holds an intersection
-// apart from its flattened spelling.
-function diffTypes(checker, documentedType, shippedType, location, skip) {
+// apart from its flattened spelling. `oneWay` is for a declaration the parser
+// could not fully read: only what the block spells is held against the
+// package, never the reverse.
+function diffTypes(checker, documentedType, shippedType, location, { skip, oneWay = false }) {
   const differences = []
+  const notes = []
   const seen = new Map()
   const str = (t) => checker.typeToString(t)
   const isAny = (t) => Boolean(t.flags & ts.TypeFlags.Any)
@@ -675,10 +863,6 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
   const label = (p) => (p ? `\`${p}\`` : 'the type')
   const typeOf = (symbol) => checker.getTypeOfSymbolAtLocation(symbol, location)
   const isOptional = (symbol) => Boolean(symbol.getFlags() & ts.SymbolFlags.Optional)
-  const isReadonly = (symbol) =>
-    (symbol.declarations ?? []).some(
-      (d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Readonly,
-    )
   const hasRest = (signature) => {
     const last = signature.parameters.at(-1)
     const declaration = last?.valueDeclaration
@@ -691,6 +875,13 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
     set.add(theirs)
     return false
   }
+  const constituents = (t) => (t.flags & ts.TypeFlags.Union ? t.types : [t])
+  const nullishness = (t) =>
+    constituents(t)
+      .filter((u) => u.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null))
+      .map(str)
+      .sort()
+      .join(' | ')
   // Two aliases print as the same name; when they do, print what they name.
   const expanded = (t) =>
     checker.typeToString(
@@ -715,6 +906,18 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
       compareMembers(own, theirs, p, depth)
       return
     }
+    const ownBare = checker.getNonNullableType(own)
+    const theirBare = checker.getNonNullableType(theirs)
+    if (
+      (ownBare !== own || theirBare !== theirs) &&
+      objectLike(ownBare) &&
+      objectLike(theirBare) &&
+      depth < MAX_DEPTH
+    ) {
+      if (nullishness(own) !== nullishness(theirs)) differ(p, own, theirs)
+      compareMembers(ownBare, theirBare, p, depth)
+      return
+    }
     if (!(checker.isTypeAssignableTo(own, theirs) && checker.isTypeAssignableTo(theirs, own))) {
       differ(p, own, theirs)
     }
@@ -723,15 +926,21 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
   const compareMembers = (own, theirs, p, depth) => {
     const at = (member) => (p ? `${p}.${member}` : member)
     const indexes = (t) =>
-      checker
-        .getIndexInfosOfType(t)
-        .map((i) => `[${str(i.keyType)}]: ${str(i.type)}`)
+      new Map(checker.getIndexInfosOfType(t).map((i) => [str(i.keyType), str(i.type)]))
+    const ownIndexes = indexes(own)
+    const theirIndexes = indexes(theirs)
+    const render = (m) =>
+      [...m]
+        .map(([k, v]) => `[${k}]: ${v}`)
         .sort()
-        .join(', ')
-    if (indexes(own) !== indexes(theirs)) {
+        .join(', ') || 'none'
+    const indexesDiffer = oneWay
+      ? [...ownIndexes].some(([k, v]) => theirIndexes.get(k) !== v)
+      : render(ownIndexes) !== render(theirIndexes)
+    if (indexesDiffer) {
       differences.push(
-        `${label(p)}'s index signatures are \`${indexes(own) || 'none'}\` in the block and ` +
-          `\`${indexes(theirs) || 'none'}\` in the package`,
+        `${label(p)}'s index signatures are \`${render(ownIndexes)}\` in the block and ` +
+          `\`${render(theirIndexes)}\` in the package`,
       )
     }
     const members = (t) =>
@@ -747,9 +956,11 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
       if (!theirMembers.has(member))
         differences.push(`the block declares \`${at(member)}\`, the package does not`)
     }
-    for (const member of theirMembers.keys()) {
-      if (!ownMembers.has(member))
-        differences.push(`the package declares \`${at(member)}\`, the block does not`)
+    if (!oneWay) {
+      for (const member of theirMembers.keys()) {
+        if (!ownMembers.has(member))
+          differences.push(`the package declares \`${at(member)}\`, the block does not`)
+      }
     }
     for (const [member, ownSymbol] of ownMembers) {
       const theirSymbol = theirMembers.get(member)
@@ -760,10 +971,17 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
             `block and ${isOptional(theirSymbol) ? 'optional' : 'required'} in the package`,
         )
       }
-      if (isReadonly(ownSymbol) !== isReadonly(theirSymbol)) {
+      const ownReadonly = readonlyView(ownSymbol)
+      const theirReadonly = readonlyView(theirSymbol)
+      if (ownReadonly === null || theirReadonly === null) {
+        notes.push(
+          `whether \`${at(member)}\` is readonly could not be read from a mapped type — ` +
+            `this TypeScript build exposes no check flags`,
+        )
+      } else if (ownReadonly !== theirReadonly) {
         differences.push(
-          `\`${at(member)}\` is ${isReadonly(ownSymbol) ? '' : 'not '}readonly in the block ` +
-            `and ${isReadonly(theirSymbol) ? '' : 'not '}readonly in the package`,
+          `\`${at(member)}\` is ${ownReadonly ? '' : 'not '}readonly in the block ` +
+            `and ${theirReadonly ? '' : 'not '}readonly in the package`,
         )
       }
       compare(typeOf(ownSymbol), typeOf(theirSymbol), at(member), depth + 1)
@@ -775,6 +993,7 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
       const ownSignatures = checker.getSignaturesOfType(own, kind)
       const theirSignatures = checker.getSignaturesOfType(theirs, kind)
       if (ownSignatures.length !== theirSignatures.length) {
+        if (oneWay && ownSignatures.length === 0) continue
         differences.push(
           `${label(p)} has ${ownSignatures.length} ${word} signature(s) in the block and ` +
             `${theirSignatures.length} in the package`,
@@ -819,52 +1038,76 @@ function diffTypes(checker, documentedType, shippedType, location, skip) {
   }
 
   compare(documentedType, shippedType, '', 0)
-  return differences
+  return { differences, notes: [...new Set(notes)] }
 }
 
 const scratchPaths = (text) =>
   text.replaceAll(toPosix(scratchDir) + '/', '').replaceAll(scratchDir + path.sep, '')
 
-function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
-  const subject = path.join(scratchDir, 'shadowed.ts')
-  const probe = path.join(scratchDir, 'probe.ts')
-  writeFileSync(subject, alreadyExported ? `${code}\n` : `${code}\nexport type { ${name} }\n`)
-  const fresh = [...Array(plan.arity).keys()].map((index) => `P${index}`)
+// One probe function per instantiation the plan asks for. Each holds the two
+// sides as parameters — so the checker hands back their types — asserts
+// assignability both ways, and asserts identity on a line the diagnostics are
+// attributed to separately.
+function writeProbe(probe, name, specifier, plan) {
   const list = (args) => (args.length > 0 ? `<${args.join(', ')}>` : '')
-  const documented = `Documented${list([...fresh, ...Array(plan.phantom).fill('never')])}`
-  const shipped = `Shipped${list(fresh)}`
-  const identityLine = `  const same: true = identical`
   const lines = [
     `import type { ${name} as Documented } from './shadowed.js'`,
     `import type { ${name} as Shipped } from '${specifier}'`,
     `type Identical<X, Y> =`,
     `  (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false`,
-    `export function probe${list(fresh)}(`,
-    `  documented: ${documented},`,
-    `  shipped: ${shipped},`,
-    `  identical: Identical<${documented}, ${shipped}>,`,
-    `) {`,
-    `  const a: ${shipped} = documented`,
-    `  const b: ${documented} = shipped`,
-    identityLine,
-    `  return [a, b, same]`,
-    `}`,
-    ``,
   ]
-  const text = lines.join('\n')
-  const identityStart = text.indexOf(identityLine)
-  const identityEnd = identityStart + identityLine.length
-  writeFileSync(probe, text)
+  const functions = []
+  plan.instantiations.forEach((instantiation, index) => {
+    const documented = `Documented${list(instantiation.documented)}`
+    const shipped = `Shipped${list(instantiation.shipped)}`
+    const identityLine = `  const same${index}: true = identical`
+    const start = lines.join('\n').length + 1
+    lines.push(
+      `export function probe${index}${list(instantiation.fresh)}(`,
+      `  documented: ${documented},`,
+      `  shipped: ${shipped},`,
+      `  identical: Identical<${documented}, ${shipped}>,`,
+      `) {`,
+      `  const a: ${shipped} = documented`,
+      `  const b: ${documented} = shipped`,
+      identityLine,
+      `  return [a, b, same${index}]`,
+      `}`,
+    )
+    const text = lines.join('\n')
+    const identityStart = text.lastIndexOf(identityLine)
+    functions.push({
+      name: `probe${index}`,
+      label: instantiation.label,
+      start,
+      end: text.length,
+      identityStart,
+      identityEnd: identityStart + identityLine.length,
+    })
+  })
+  lines.push('')
+  writeFileSync(probe, lines.join('\n'))
+  return functions
+}
+
+function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
+  const subject = path.join(scratchDir, 'shadowed.ts')
+  const probe = path.join(scratchDir, 'probe.ts')
+  writeFileSync(subject, alreadyExported ? `${code}\n` : `${code}\nexport type { ${name} }\n`)
+  const functions = writeProbe(probe, name, specifier, plan)
 
   const probeName = toPosix(probe)
   const { program, diagnostics } = runProgram([probe, subject])
-  const assignability = []
-  let notIdentical = false
+  for (const fn of functions) {
+    fn.notIdentical = false
+    fn.assignability = []
+  }
   for (const d of diagnostics) {
-    const file = toPosix(d.file.fileName)
-    if (file !== probeName) continue
-    if (d.start >= identityStart && d.start < identityEnd) notIdentical = true
-    else assignability.push(format(d))
+    if (toPosix(d.file.fileName) !== probeName) continue
+    const fn = functions.find((f) => d.start >= f.start && d.start < f.end)
+    if (!fn) continue
+    if (d.start >= fn.identityStart && d.start < fn.identityEnd) fn.notIdentical = true
+    else fn.assignability.push(format(d))
   }
   const subjectFile = program.getSourceFile(subject)
   const inDeclaration = program
@@ -872,12 +1115,7 @@ function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
     .filter((d) =>
       plan.spans.some((span) => d.start < span.end && d.start + (d.length ?? 0) > span.start),
     )
-  if (inDeclaration.length > 0) {
-    return {
-      ran: false,
-      reason: `the block's own declaration of ${name} does not parse (${format(inDeclaration[0])})`,
-    }
-  }
+  const oneWay = inDeclaration.length > 0
 
   const checker = program.getTypeChecker()
   const unresolved = findUnresolved(checker, subjectFile, plan.spans)
@@ -894,27 +1132,42 @@ function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
     (u) =>
       `\`${name}.${u.member}\` is declared in terms of \`${u.text}\`, which does not resolve here`,
   )
+  if (oneWay) {
+    skipped.push(
+      `the block's declaration of ${name} does not parse in full (${format(inDeclaration[0])}), ` +
+        `so only the members it spells are held against the package's`,
+    )
+  }
   const skip = new Set(unresolved.map((u) => u.member))
 
-  const declaration = program
-    .getSourceFile(probe)
-    .statements.find((s) => ts.isFunctionDeclaration(s) && s.name?.text === 'probe')
-  const [documentedNode, shippedNode, identicalNode] = declaration.parameters
-  const documentedType = checker.getTypeAtLocation(documentedNode)
-  const shippedType = checker.getTypeAtLocation(shippedNode)
-  if (isErrorType(documentedType) || isErrorType(shippedType)) {
-    return { ran: false, reason: `one side of the ${name} comparison is an error type` }
-  }
-  const identity = checker.getTypeAtLocation(identicalNode)
-  const identical =
-    !notIdentical && skip.size === 0 && Boolean(identity.flags & ts.TypeFlags.BooleanLiteral)
+  const probeFile = program.getSourceFile(probe)
   const errors = []
-  if (!identical) {
-    const differences = diffTypes(checker, documentedType, shippedType, documentedNode, skip)
+  for (const fn of functions) {
+    const declaration = probeFile.statements.find(
+      (s) => ts.isFunctionDeclaration(s) && s.name?.text === fn.name,
+    )
+    const [documentedNode, shippedNode, identicalNode] = declaration.parameters
+    const documentedType = checker.getTypeAtLocation(documentedNode)
+    const shippedType = checker.getTypeAtLocation(shippedNode)
+    if (isErrorType(documentedType) || isErrorType(shippedType)) {
+      return { ran: false, reason: `one side of the ${name} comparison is an error type` }
+    }
+    const identity = checker.getTypeAtLocation(identicalNode)
+    const identical =
+      !fn.notIdentical &&
+      !oneWay &&
+      skip.size === 0 &&
+      Boolean(identity.flags & ts.TypeFlags.BooleanLiteral)
+    if (identical) continue
+    const { differences, notes } = diffTypes(checker, documentedType, shippedType, documentedNode, {
+      skip,
+      oneWay,
+    })
+    skipped.push(...notes)
     if (differences.length > 0) {
-      errors.push(`not the type the package declares — ${differences.join('; ')}`)
-    } else if (assignability.length > 0) {
-      errors.push(...assignability.map(scratchPaths))
+      errors.push(`${fn.label}not the type the package declares — ${differences.join('; ')}`)
+    } else if (fn.assignability.length > 0 && !oneWay) {
+      errors.push(...fn.assignability.map((line) => `${fn.label}${scratchPaths(line)}`))
     }
   }
   return { errors, ran: true, skipped }
@@ -932,7 +1185,7 @@ function checkBlock(block, exportedTypes, fragments) {
     line: block.line,
     language: block.language,
     heading: block.heading,
-    fragment: fragments[key] ?? null,
+    fragment: fragments.get(key) ?? null,
   }
   const describeCandidate = (c) => `${c.specifiers.join(' and ')}`
 
@@ -959,6 +1212,7 @@ function checkBlock(block, exportedTypes, fragments) {
           `${name} from ${exportedTypes.get(name).map(describeCandidate).join(', ')} — the ` +
           `block is a tsx fence, which this check does not compile`,
       ),
+      partial: [],
       shadowErrors: augmentations.map(augmentationError),
     }
   }
@@ -970,6 +1224,7 @@ function checkBlock(block, exportedTypes, fragments) {
   })
   const shadowErrors = augmentations.map(augmentationError)
   const compared = []
+  const partial = []
   const uncompared = outOfScope.map(
     (name) =>
       `${name} from ${exportedTypes.get(name).map(describeCandidate).join(', ')} — the parser ` +
@@ -980,27 +1235,34 @@ function checkBlock(block, exportedTypes, fragments) {
     for (const candidate of candidates) {
       const where = describeCandidate(candidate)
       const plan = planComparison(documented, candidate.typeParameters)
-      if (!plan.compared) {
-        outcomes.push({ where, ran: false, reason: plan.reason })
+      const errors = plan.differences.map((d) => `not the type the package declares — ${d}`)
+      if (plan.instantiations.length === 0) {
+        outcomes.push({ where, ran: false, reason: plan.reason, errors, skipped: [] })
         continue
       }
       const probe = compileShadowProbe(block.code, name, candidate.specifiers[0], exported, {
         ...plan,
         spans,
       })
-      outcomes.push({ where, ...probe })
+      outcomes.push({
+        where,
+        ran: probe.ran,
+        reason: probe.reason,
+        errors: [...errors, ...(probe.errors ?? [])],
+        skipped: probe.skipped ?? [],
+      })
     }
-    const ran = outcomes.filter((o) => o.ran)
     for (const o of outcomes.filter((o) => !o.ran)) {
       uncompared.push(`${name} from ${o.where} — ${o.reason}`)
     }
-    if (ran.length === 0) continue
-    compared.push(name)
-    const matched = ran.find((o) => o.errors.length === 0)
-    for (const note of (matched ?? ran[0]).skipped)
-      uncompared.push(`${name} from ${(matched ?? ran[0]).where} — ${note}`)
-    if (matched) continue
-    for (const o of ran) {
+    if (outcomes.some((o) => o.ran)) compared.push(name)
+    const matched = outcomes.find((o) => o.ran && o.errors.length === 0)
+    if (matched) {
+      for (const note of matched.skipped) partial.push(`${name} from ${matched.where} — ${note}`)
+      continue
+    }
+    for (const o of outcomes) {
+      for (const note of o.skipped) partial.push(`${name} from ${o.where} — ${note}`)
       for (const error of o.errors) shadowErrors.push(`shadows ${name} from ${o.where} — ${error}`)
     }
   }
@@ -1012,6 +1274,7 @@ function checkBlock(block, exportedTypes, fragments) {
     shadowed: [...found.keys()],
     compared,
     uncompared,
+    partial,
     shadowErrors,
   }
 }
@@ -1025,27 +1288,44 @@ const augmentationError = ({ specifier, declares }) =>
 // Verdicts and reporting.
 
 const isCompiled = (r) => r.unchecked.length === 0
-const isClean = (r) =>
-  isCompiled(r) && r.errors.length === 0 && r.shadowErrors.length === 0 && r.unimported.length === 0
-const unexcused = (r) => [
+const compiles = (r) => isCompiled(r) && r.errors.length === 0
+
+const unexcusedErrors = (r) =>
+  r.fragment
+    ? r.errors.filter(
+        (error) => !(r.fragment.whole || r.fragment.excuses.some((e) => excuseMatches(e, error))),
+      )
+    : r.errors
+const staleExcuses = (r) => {
+  if (!r.fragment) return []
+  if (r.fragment.whole) {
+    return r.errors.length === 0 ? ['classified as a whole-block fragment, but compiles'] : []
+  }
+  return r.fragment.excuses
+    .filter((e) => !r.errors.some((error) => excuseMatches(e, error)))
+    .map((e) => `excuse \`${e}\` matches no diagnostic in the block`)
+}
+const problems = (r) => [
+  ...unexcusedErrors(r),
   ...r.shadowErrors,
   ...r.unimported.map((name) => `uses ${name} without importing it`),
 ]
 
-// A fragment entry excuses a block from compiling standalone. It never excuses
+// A fragment entry excuses the compile diagnostics it names. It never excuses
 // a block from agreeing with the type it redeclares, or from importing what it
-// uses. A block this check never compiles is not one an entry can classify.
+// uses, and an excuse that matches nothing is stale. A block this check never
+// compiles is not one an entry can classify.
 function verdictOf(result) {
   if (!isCompiled(result)) return result.fragment ? 'stale' : 'unchecked'
-  if (isClean(result)) return result.fragment ? 'stale' : 'clean'
-  if (result.fragment && unexcused(result).length === 0) return 'excused'
-  return 'fail'
+  if (problems(result).length > 0) return 'fail'
+  if (!result.fragment) return 'clean'
+  return staleExcuses(result).length > 0 ? 'stale' : 'excused'
 }
 
 function report(results, { fragments, consumed, missingFiles }) {
   const verdicts = results.map((result) => ({ ...result, verdict: verdictOf(result) }))
   const extracted = new Set(results.map((r) => r.key))
-  const orphans = Object.keys(fragments).filter((key) => {
+  const orphans = [...fragments.keys()].filter((key) => {
     if (extracted.has(key)) return false
     const separator = key.lastIndexOf(':')
     return !(separator > 0 && consumed.has(key.slice(0, separator)))
@@ -1053,9 +1333,10 @@ function report(results, { fragments, consumed, missingFiles }) {
   const count = (pick) => results.reduce((total, r) => total + pick(r).length, 0)
   const summary = {
     blocks: results.length,
-    compiling: results.filter(isClean).length,
+    compiling: results.filter(compiles).length,
     notCompiled: results.filter((r) => !isCompiled(r)).length,
     classified: results.filter((r) => r.fragment).length,
+    wholeBlock: results.filter((r) => r.fragment?.whole).length,
     stale: verdicts.filter((r) => r.verdict === 'stale').length,
     failing: verdicts.filter((r) => r.verdict === 'fail').length,
     compared: count((r) => r.compared),
@@ -1071,6 +1352,10 @@ function report(results, { fragments, consumed, missingFiles }) {
   return { verdicts, orphans, summary, ok }
 }
 
+const comparedLine = (summary) =>
+  `Redeclared exported names: ${summary.compared} compared against the package, ` +
+  `${summary.notCompared} not compared.`
+
 function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFiles }) {
   for (const relativePath of missingFiles) {
     console.error(`MISSING ${relativePath} — listed in files.txt but could not be read`)
@@ -1079,36 +1364,32 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
     if (result.verdict === 'stale') {
       console.error(
         isCompiled(result)
-          ? `STALE  ${result.key} — compiles, but fragments.json classifies it:`
+          ? `STALE  ${result.key} — fragments.json ${describeFragment(result.fragment)}:`
           : `STALE  ${result.key} — never compiled, so fragments.json cannot classify it:`,
       )
-      console.error(`         "${result.fragment}"`)
+      for (const line of staleExcuses(result)) console.error(`         ${line}`)
     }
     if (result.verdict !== 'fail') continue
     const tag = result.shadowed.length > 0 ? ` (redeclares ${result.shadowed.join(', ')})` : ''
     console.error(`FAIL   ${result.key}${tag}`)
-    for (const error of [...(result.fragment ? [] : result.errors), ...unexcused(result)]) {
-      console.error(`         ${error}`)
-    }
+    for (const error of problems(result)) console.error(`         ${error}`)
+    for (const line of staleExcuses(result)) console.error(`         (stale) ${line}`)
   }
-  // Neither of these is a failure, but an escape hatch an author can reach — a
-  // phantom type parameter, a `tsx` fence — must not be quieter than the
-  // failure it retires, so both go to stderr with the other advisories.
+  // Advisories go to stderr beside the failures: what was not compiled, what
+  // was not compared, and what was compared only in part.
   for (const result of verdicts) {
     for (const note of result.unchecked) console.error(`UNCHECKED ${result.key} — ${note}`)
     for (const note of result.uncompared) console.error(`NOT COMPARED ${result.key} — ${note}`)
+    for (const note of result.partial) console.error(`PARTIAL ${result.key} — ${note}`)
   }
   for (const key of orphans) {
     console.error(`ORPHAN ${key} — fragments.json classifies no block at that line:`)
-    console.error(`         "${fragments[key]}"`)
+    console.error(`         ${describeFragment(fragments.get(key))}`)
   }
-  // Three axes, not one partition: a block that compiles can also carry a
-  // fragment entry, and that overlap is exactly the stale count beside it.
   console.log(
     `${summary.blocks} blocks: ${summary.compiling} compile, ${summary.notCompiled} not compiled; ` +
-      `${summary.classified} carry a fragment entry (${summary.stale} stale). ` +
-      `Redeclared exported names: ${summary.compared} compared against the package, ` +
-      `${summary.notCompared} not compared.`,
+      `${summary.classified} carry a fragment entry (${summary.wholeBlock} whole-block, ` +
+      `${summary.stale} stale). ${comparedLine(summary)}`,
   )
   if (!ok) {
     console.error(
@@ -1121,24 +1402,30 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
 // ---------------------------------------------------------------------------
 // Modes.
 
-function runBlocks(files, sources, exportedTypes, fragments) {
+// The checker's work is synchronous; the yield between blocks is what gives a
+// pending signal handler its turn.
+async function runBlocks(files, sources, exportedTypes, fragments) {
   const results = []
   for (const file of files) {
     for (const block of extractBlocks(file, sources.get(file))) {
       results.push(checkBlock(block, exportedTypes, fragments))
+      await yieldToEventLoop()
     }
   }
   return results
 }
 
-function realRun(exportedTypes) {
+async function realRun(exportedTypes) {
   const listedPaths = readFileSync(path.join(blocksDir, 'files.txt'), 'utf8')
     .split('\n')
     .map((line) => line.replace(/#.*$/, '').trim())
     .filter(Boolean)
-  const fragments = JSON.parse(readFileSync(path.join(blocksDir, 'fragments.json'), 'utf8'))
+  const fragments = parseFragments(
+    JSON.parse(readFileSync(path.join(blocksDir, 'fragments.json'), 'utf8')),
+    'scripts/doc-blocks/fragments.json',
+  )
   const { sources, consumed, missingFiles, files } = readListedFiles(listedPaths)
-  const results = runBlocks(files, sources, exportedTypes, fragments)
+  const results = await runBlocks(files, sources, exportedTypes, fragments)
   const reported = report(results, { fragments, consumed, missingFiles })
   if (jsonMode) {
     console.log(
@@ -1160,65 +1447,87 @@ function realRun(exportedTypes) {
   return reported.ok ? 0 : 1
 }
 
-// The fixture holds one block per known-bad shape and one correct block per
-// shape, each preceded by `<!-- expect: FAIL -->` or `<!-- expect: PASS -->`
-// (with `fragment="…"` where the shape needs an entry). A bad block must be
-// reported FAIL; a good one must be clean or excused. Anything else — a bail,
-// a stale entry, a marker-less block — fails the self-test.
-function selfTest(exportedTypes) {
+// What each fixture marker demands of the block's result. `pass compared`
+// and `excused` insist that every shipped name the block redeclares was
+// actually compared — a bail on a known-good block is a mismatch, not a pass.
+const EXPECTATIONS = {
+  fail: (r) => r.verdict === 'fail',
+  pass: (r) => r.verdict === 'clean' && r.shadowed.length === 0,
+  'pass compared': (r) =>
+    r.verdict === 'clean' &&
+    r.shadowed.length > 0 &&
+    r.compared.length === r.shadowed.length &&
+    r.uncompared.length === 0,
+  'pass not-compared': (r) => r.verdict === 'clean' && r.uncompared.length > 0,
+  excused: (r) =>
+    r.verdict === 'excused' && r.compared.length === r.shadowed.length && r.uncompared.length === 0,
+}
+
+async function selfTest(exportedTypes) {
   const { sources, consumed, missingFiles, files } = readListedFiles([selfTestFixture])
   if (missingFiles.length > 0)
     throw new ToolingFailure(`self-test fixture missing: ${selfTestFixture}`)
   const blocks = extractBlocks(selfTestFixture, sources.get(selfTestFixture))
-  const fragments = {}
+  const fragments = new Map()
   for (const block of blocks) {
     if (block.expectation?.fragment) {
-      fragments[`${block.file}:${block.line}`] = block.expectation.fragment
+      fragments.set(`${block.file}:${block.line}`, block.expectation.fragment)
     }
   }
-  const results = runBlocks(files, sources, exportedTypes, fragments)
+  const results = await runBlocks(files, sources, exportedTypes, fragments)
   const reported = report(results, { fragments, consumed, missingFiles })
   const expectations = new Map(blocks.map((b) => [`${b.file}:${b.line}`, b.expectation]))
   let mismatches = 0
   const rows = []
   for (const result of reported.verdicts) {
     const expected = expectations.get(result.key)
-    const met = expected
-      ? expected.verdict === 'FAIL'
-        ? result.verdict === 'fail'
-        : result.verdict === 'clean' || result.verdict === 'excused'
-      : false
+    const met = expected ? EXPECTATIONS[expected.verdict](result) : false
     if (!met) mismatches++
+    const got =
+      result.verdict +
+      (result.shadowed.length > 0
+        ? ` (compared ${result.compared.length}/${result.shadowed.length}` +
+          `${result.uncompared.length > 0 ? `, ${result.uncompared.length} not compared` : ''})`
+        : '')
     rows.push(
       `${met ? 'ok      ' : 'MISMATCH'} expected ${expected?.verdict ?? '(no marker)'}, got ` +
-        `${result.verdict.toUpperCase()}  ${result.key}  ${result.heading}`,
+        `${got}  ${result.key}  ${result.heading}`,
     )
     if (!met) {
-      for (const line of [...result.errors, ...unexcused(result), ...result.uncompared]) {
+      for (const line of [...problems(result), ...staleExcuses(result), ...result.uncompared]) {
         rows.push(`           ${line}`)
       }
     }
   }
-  const expectedFail = blocks.filter((b) => b.expectation?.verdict === 'FAIL').length
-  const expectedPass = blocks.filter((b) => b.expectation?.verdict === 'PASS').length
+  const tally = Object.keys(EXPECTATIONS)
+    .map((verdict) => {
+      const n = blocks.filter((b) => b.expectation?.verdict === verdict).length
+      return n > 0 ? `${n} ${verdict}` : null
+    })
+    .filter(Boolean)
+    .join(', ')
   console.log(rows.join('\n'))
   console.log(
-    `\nself-test: ${blocks.length} blocks — ${expectedFail} known-bad, ${expectedPass} known-good, ` +
-      `${mismatches} mismatch(es).`,
+    `\nself-test: ${blocks.length} blocks — expected ${tally}; ` +
+      `${comparedLine(reported.summary)} ${mismatches} mismatch(es).`,
   )
   return mismatches === 0 ? 0 : 1
 }
 
-let exitCode = 2
-try {
-  const exportedTypes = collectExportedTypes()
-  exitCode = selfTestMode ? selfTest(exportedTypes) : realRun(exportedTypes)
-} catch (error) {
-  if (!(error instanceof ToolingFailure)) throw error
-  console.error(error.message)
-  exitCode = 2
-} finally {
-  checking = null
-  rmSync(scratchDir, { recursive: true, force: true })
+async function main() {
+  try {
+    createScratch()
+    const exportedTypes = collectExportedTypes()
+    await yieldToEventLoop()
+    return selfTestMode ? await selfTest(exportedTypes) : await realRun(exportedTypes)
+  } catch (error) {
+    if (!(error instanceof ToolingFailure)) throw error
+    console.error(error.message)
+    return 2
+  } finally {
+    checking = null
+    removeScratch()
+  }
 }
-process.exit(exitCode)
+
+process.exit(await main())

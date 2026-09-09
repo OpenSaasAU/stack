@@ -68,35 +68,48 @@ declare namespace DocBlocksPrelude {
 
   // The generated `SecuredList` is instantiated from the emitted contract,
   // which no prelude can spell by hand. This is the same surface with the row
-  // supplied directly: the composable read and its terminals, `select`
-  // narrowing the row to the chosen columns plus the system fields, `nearest`
-  // accepting only the row's vector columns, and the three writes. `include`,
-  // `distinct`, `cursor` and the column-typed `where` are not modelled — see
-  // the script's Known limits.
-  interface Query<TRow> {
+  // supplied directly, mirroring `ListQuery`/`ListOps` in
+  // packages/core/src/types/secured-list.ts: the composable read and its
+  // terminals, `select` narrowing the row to the chosen columns plus the
+  // system fields while keeping the transaction's `forUpdate()`, `nearest`
+  // accepting only the full row's vector columns and returning the narrowed
+  // row, and the three writes. `include`, `distinct`, `distinctOn`, `cursor`,
+  // the column-typed `where`/`orderBy`, and `select`/`include` on a write are
+  // not modelled — see the script's Known limits.
+  type Selected<TRow, F extends keyof TRow & string> = Pick<
+    TRow,
+    Extract<F | SystemFieldKey, keyof TRow>
+  >
+
+  interface Query<TRow, TSelected = TRow> {
     where(predicate: Where): this
     orderBy(order: OrderBy | readonly OrderBy[]): this
     limit(count: number): this
     offset(count: number): this
-    select<F extends keyof TRow & string>(
-      ...fields: F[]
-    ): Query<Pick<TRow, Extract<F | SystemFieldKey, keyof TRow>>>
-    all(): Promise<TRow[]>
-    first(): Promise<TRow | null>
+    select<F extends keyof TRow & string>(...fields: F[]): Query<TRow, Selected<TRow, F>>
+    all(): Promise<TSelected[]>
+    first(): Promise<TSelected | null>
     nearest(
       field: VectorKey<TRow>,
       vector: readonly number[],
       options?: NearestOptions,
-    ): Promise<NearestMatch<TRow>[]>
+    ): Promise<NearestMatch<TSelected>[]>
     aggregate<S extends Record<string, CountReduction>>(
       build: (aggregations: Aggregations) => S,
     ): Promise<{ [P in keyof S]: number }>
   }
 
-  interface TxQuery<TRow> extends Query<TRow> {
+  interface TxQuery<TRow, TSelected = TRow> extends Query<TRow, TSelected> {
+    select<F extends keyof TRow & string>(...fields: F[]): TxQuery<TRow, Selected<TRow, F>>
     forUpdate(): this
   }
 
+  // `CreateInput` requires a member exactly where the contract shows a
+  // non-nullable column with no default — `validation: { isRequired: true }`
+  // is an application-layer check and leaves the column nullable, which needs
+  // `db: { isNullable: false }`. No listed page sets that on any of these
+  // three lists, so nothing is required on create here, and `create` is fully
+  // partial for the same reason it is in a project generated from these pages.
   interface Writes<TRow> {
     create(args: { data: Partial<Omit<TRow, SystemFieldKey>> }): Promise<TRow | null>
     update(args: {
