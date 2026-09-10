@@ -23,7 +23,7 @@
     "ai": "^7.0.32",
     "next": "^16.2.10",
     "openai": "^6.32.0",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"
@@ -32,7 +32,7 @@
     "@opensaas/stack-cli": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
