@@ -232,21 +232,25 @@ For advanced validation (virus scanning, quota checks), add custom logic in fiel
 attachment: file({
   storage: 'documents',
   hooks: {
-    resolveInput: async ({ inputValue, context }) => {
-      if (inputValue instanceof File) {
+    // A field `resolveInput` receives the whole resolved payload and reads its
+    // own value out of it under `fieldKey` — there is no `inputValue` argument.
+    resolveInput: async ({ resolvedData, fieldKey, context }) => {
+      const incoming = resolvedData[fieldKey]
+
+      if (incoming instanceof File) {
         // Custom validation
-        const userQuota = await checkUserQuota(context.session.userId)
+        const userQuota = await checkUserQuota(context.session?.userId)
         if (userQuota.exceeded) {
           throw new Error('Storage quota exceeded')
         }
 
         // Virus scanning
-        const buffer = await inputValue.arrayBuffer()
+        const buffer = await incoming.arrayBuffer()
         await scanFileForViruses(Buffer.from(buffer))
       }
 
       // Continue with default upload behavior
-      return inputValue
+      return incoming
     },
   },
 })

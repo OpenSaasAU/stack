@@ -369,10 +369,12 @@ Article: list({
       }
       return resolvedData
     },
-    afterOperation: async ({ operation, item }) => {
+    // `item` is absent on the union's `delete` member, so narrow before
+    // destructuring rather than guarding inside the body.
+    afterOperation: async (args) => {
       // Side effects after save
-      if (operation === 'create') {
-        console.log('New article created with rich text')
+      if (args.operation === 'create') {
+        console.log('New article created with rich text', args.item.id)
       }
     },
   },

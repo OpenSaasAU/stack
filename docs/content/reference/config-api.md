@@ -836,8 +836,12 @@ Custom validation logic beyond field-level validation rules.
 **Example:**
 
 ```typescript
-validateInput: async ({ operation, resolvedData, addValidationError }) => {
-  if (operation === 'delete') return
+validateInput: async (args) => {
+  // `ValidateHookArgs` is a union whose `delete` member has no `resolvedData`,
+  // so narrow on `operation` before destructuring — a guard inside the body
+  // runs after the destructure the compiler has already rejected.
+  if (args.operation === 'delete') return
+  const { resolvedData, addValidationError } = args
   if (resolvedData.endDate < resolvedData.startDate) {
     addValidationError('End date must be after start date')
   }
@@ -855,11 +859,12 @@ Side effects before database operation. Does NOT modify data.
 **Example:**
 
 ```typescript
-beforeOperation: async ({ operation, item, context }) => {
+beforeOperation: async (args) => {
+  // `item` is on the update and delete members only — `create` has no row yet.
   await auditLog.record({
-    operation,
-    userId: context.session?.userId,
-    itemId: item?.id,
+    operation: args.operation,
+    userId: args.context.session?.userId,
+    itemId: args.operation === 'create' ? undefined : args.item.id,
   })
 }
 ```
@@ -875,19 +880,29 @@ Side effects after database operation. Does NOT modify data.
 **Parameters:**
 
 - `operation` - The operation that was performed
-- `item` - The item after the operation
-- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create`)
+- `item` - The item after the operation (`create` and `update` only — the `delete` member does not carry it)
+- `originalItem` - The item before the operation (`update` and `delete` only — the `create` member does not carry it)
 - `context` - Access context with session and database access
+
+Because those two members sit on different branches of the union, narrow on
+`operation` before destructuring:
 
 **Example:**
 
 ```typescript
-afterOperation: async ({ operation, item, originalItem, context }) => {
+afterOperation: async (args) => {
+  if (args.operation === 'delete') {
+    await invalidateCache(`post:${args.originalItem.id}`)
+    return
+  }
+
+  const { item } = args
   await invalidateCache(`post:${item.id}`)
-  await sendWebhook({ event: `post.${operation}`, data: item })
+  await sendWebhook({ event: `post.${args.operation}`, data: item })
 
   // Compare previous and new values for update operations
-  if (operation === 'update' && originalItem) {
+  if (args.operation === 'update') {
+    const { originalItem } = args
     if (originalItem.status !== item.status) {
       await notifyStatusChange(originalItem.status, item.status)
     }
@@ -1038,11 +1053,14 @@ Transform field value before database write.
 ```typescript
 password: password({
   hooks: {
-    resolveInput: async ({ inputValue }) => {
-      if (typeof inputValue === 'string' && inputValue.length > 0) {
-        return await bcrypt.hash(inputValue, 10)
+    // A field `resolveInput` receives the whole resolved payload and reads its
+    // own value out of it under `fieldKey` — there is no `inputValue` argument.
+    resolveInput: async ({ resolvedData, fieldKey }) => {
+      const incoming = resolvedData[fieldKey]
+      if (typeof incoming === 'string' && incoming.length > 0) {
+        return await bcrypt.hash(incoming, 10)
       }
-      return inputValue
+      return incoming
     },
   },
 })
@@ -1079,8 +1097,11 @@ Side effects before database operation. Does NOT modify data.
 ```typescript
 profileImage: text({
   hooks: {
-    beforeOperation: async ({ operation, resolvedValue }) => {
-      console.log(`About to ${operation} profile image:`, resolvedValue)
+    // No `resolvedValue` argument: read the field out of `resolvedData`, which
+    // the `delete` member of the union does not carry — hence the early return.
+    beforeOperation: async (args) => {
+      if (args.operation === 'delete') return
+      console.log(`About to ${args.operation} profile image:`, args.resolvedData[args.fieldKey])
     },
   },
 })
@@ -1096,27 +1117,36 @@ Side effects after database operation. Does NOT modify data.
 
 - `operation` - The operation that was performed
 - `value` - The field value after the operation
-- `item` - The item after the operation
-- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create` and `query`)
-- `fieldName` - The name of the field
+- `item` - The item after the operation (`create` and `update` only)
+- `originalItem` - The item before the operation (`update` and `delete` only)
+- `resolvedData` - The resolved write payload (`create` and `update` only)
+- `fieldKey` - The name of the field
 - `listKey` - The name of the list
 - `context` - Access context with session and database access
+
+There is **no `value` argument** on a field `afterOperation` — `value` belongs
+to `resolveOutput`. Read the field off `item` or `originalItem` instead, after
+narrowing on `operation`, since those two sit on different branches of the
+union:
 
 **Example:**
 
 ```typescript
 thumbnail: text({
   hooks: {
-    afterOperation: async ({ operation, value, item, originalItem }) => {
-      if (operation === 'delete') {
-        await deleteFromCDN(value) // Cleanup on delete
+    afterOperation: async (args) => {
+      if (args.operation === 'delete') {
+        await deleteFromCDN(args.originalItem.thumbnail) // Cleanup on delete
+        return
       }
 
+      const newValue = args.item.thumbnail
+
       // For updates, check if the value changed
-      if (operation === 'update' && originalItem) {
-        const oldValue = originalItem.thumbnail
-        if (oldValue !== value) {
-          console.log(`Thumbnail changed from ${oldValue} to ${value}`)
+      if (args.operation === 'update') {
+        const oldValue = args.originalItem.thumbnail
+        if (oldValue !== newValue) {
+          console.log(`Thumbnail changed from ${oldValue} to ${newValue}`)
           // Clean up old thumbnail
           if (oldValue) await deleteFromCDN(oldValue)
         }

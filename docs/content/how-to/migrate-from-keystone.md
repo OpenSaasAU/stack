@@ -460,23 +460,26 @@ The stack runs a precise, Keystone-compliant order so you can predict where a tr
 
 ### `validateInput` → `validate`
 
-```typescript
-// Keystone
-hooks: {
-  validateInput: ({ resolvedData, addValidationError }) => {
-    if (!resolvedData.title) addValidationError('Title is required')
-  },
-}
+Rename `validateInput` to `validate`; the body is unchanged, and `validateInput`
+still works as an alias.
 
-// Stack — preferred name (validateInput still works as an alias)
+```typescript
 hooks: {
-  validate: ({ resolvedData, addValidationError }) => {
-    if (!resolvedData.title) addValidationError('Title is required')
+  validate: (args) => {
+    if (args.operation === 'delete') return
+    if (!args.resolvedData.title) args.addValidationError('Title is required')
   },
 }
 ```
 
-Hook arguments are Keystone-compliant: `inputData`, `resolvedData`, `item` (the existing record on update/delete), `originalItem` (in `afterOperation`), `operation`, `listKey`, and `context`. Field-level hooks additionally receive `fieldKey`. See [Hooks System](/docs/concepts/hooks) for the complete argument reference and the `originalItem` comparison pattern.
+One shape does differ from Keystone. Stack's `validate` also runs on **delete**,
+and every hook-args type here is a discriminated union whose `delete` member
+omits `resolvedData` and `inputData`. So narrow on `operation` **before**
+destructuring — a Keystone body that destructures `{ resolvedData }` in the
+parameter list is a compile error under Stack, and moving the guard into the
+body does not fix it.
+
+Hook arguments are otherwise Keystone-compliant: `inputData`, `resolvedData`, `item` (the existing record on update/delete), `originalItem` (in `afterOperation`), `operation`, `listKey`, and `context`. Field-level hooks additionally receive `fieldKey`. See [Hooks System](/docs/concepts/hooks) for the complete argument reference, which member sits on which branch, and the `originalItem` comparison pattern.
 
 ---
 

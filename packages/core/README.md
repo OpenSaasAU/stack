@@ -142,7 +142,7 @@ List keys on `context.db` are **PascalCase**, matching the config —
 - **integer()** - Number field
 - **checkbox()** - Boolean field
 - **timestamp()** - Date/time field
-- **password()** - Password field (excluded from reads)
+- **password()** - Password field, read back as a `HashedPassword` wrapper and hidden from the admin list view's default columns
 - **select()** - Enum field with options
 - **relationship()** - Foreign key relationship
 - **json()** - JSON field for arbitrary data
@@ -166,9 +166,12 @@ text({
     update: ({ session }) => !!session,
   },
   hooks: {
-    resolveInput: async ({ resolvedData }) => resolvedData,
-    validateInput: async ({ operation, resolvedData }) => {
-      if (operation === 'delete') return
+    resolveInput: async ({ resolvedData, fieldKey }) => resolvedData[fieldKey],
+    // The delete branch of every hook-args union omits `resolvedData`, so the
+    // guard has to come before the destructure, not inside the body.
+    validateInput: async (args) => {
+      if (args.operation === 'delete') return
+      const { resolvedData } = args
       /* validate */
     },
   },
@@ -220,7 +223,7 @@ Control who can query, create, update, or delete:
 ```typescript
 access: {
   operation: {
-    query: true,  // Everyone can read
+    query: () => true,  // Everyone can read
     create: isSignedIn,  // Must be signed in
     update: isAuthor,  // Only author
     delete: isAuthor,  // Only author
@@ -245,15 +248,25 @@ const isAuthor: AccessControl = ({ session }) => {
 
 Control access to individual fields:
 
+A field rule decides per fetched item and returns a **boolean**. The
+filter-returning `isAuthor` above is not interchangeable here — the three slots
+are typed `FieldAccessControl`, so a returned filter object is a compile error
+and, untyped, an `InvalidFieldAccessResultError` at runtime:
+
 ```typescript
-internalNotes: text({
-  access: {
-    read: isAuthor, // Only author can see
-    create: isAuthor, // Only author can set on create
-    update: isAuthor, // Only author can modify
-  },
-})
+import type { FieldAccess } from '@opensaas/stack-core'
+
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session && item.authorId === session.userId,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
+}
+
+internalNotes: text({ access: authorOnlyField })
 ```
+
+`read`'s `item` is always present; `create`'s is absent, which is why it cannot
+be consulted there.
 
 ### Silent Failures
 
@@ -279,31 +292,36 @@ Transform and validate data during operations:
 
 ```typescript
 hooks: {
-  // Transform input before validation
-  resolveInput: async ({ resolvedData, operation, session }) => {
+  // Transform input before validation. The session lives on `context`, not on
+  // the hook args.
+  resolveInput: async ({ resolvedData, operation, context }) => {
     if (operation === 'create') {
-      return { ...resolvedData, createdBy: session.userId }
+      return { ...resolvedData, createdBy: context.session?.userId }
     }
     return resolvedData
   },
 
-  // Custom validation
-  validateInput: async ({ operation, resolvedData, fieldPath }) => {
-    if (operation === 'delete') return
-    if (resolvedData.title?.includes('spam')) {
-      throw new Error('Title contains prohibited content')
+  // Custom validation. Every hook-args union has a `delete` member that omits
+  // what the create/update members carry, so narrow on `operation` first and
+  // destructure after — a guard in the body runs too late to help.
+  validateInput: async (args) => {
+    if (args.operation === 'delete') return
+    const { title } = args.resolvedData
+    if (typeof title === 'string' && title.includes('spam')) {
+      args.addValidationError('Title contains prohibited content')
     }
   },
 
   // Before database operation
-  beforeOperation: async ({ operation, resolvedData }) => {
-    console.log(`About to ${operation}`, resolvedData)
+  beforeOperation: async (args) => {
+    if (args.operation === 'delete') return
+    console.log(`About to ${args.operation}`, args.resolvedData)
   },
 
   // After database operation
-  afterOperation: async ({ operation, item }) => {
-    if (operation === 'create') {
-      await sendNotification(item)
+  afterOperation: async (args) => {
+    if (args.operation === 'create') {
+      await sendNotification(args.item)
     }
   },
 }
@@ -443,11 +461,13 @@ Custom validation in hooks:
 
 ```typescript
 hooks: {
-  validateInput: async ({ operation, resolvedData }) => {
-    if (operation === 'delete') return
-    const { title } = resolvedData
-    if (title && !isValidSlug(slugify(title))) {
-      throw new ValidationError('Title contains invalid characters')
+  validateInput: async (args) => {
+    if (args.operation === 'delete') return
+    const { title } = args.resolvedData
+    if (typeof title === 'string' && !isValidSlug(slugify(title))) {
+      // `ValidationError`'s constructor takes an array of messages, not one
+      // string: `(errors: string[], fieldErrors?: Record<string, string>)`.
+      throw new ValidationError(['Title contains invalid characters'])
     }
   }
 }

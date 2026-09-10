@@ -75,9 +75,15 @@ runtime: (context) => ({
     await writePluginOwnedField({ context, listName, id, fieldName, value }),
 }),
 
-afterTransaction: async ({ status, operation, item, context }) => {
-  if (status !== 'committed') return
-  if (operation !== 'create' && operation !== 'update') return
+afterTransaction: async (args) => {
+  // `item` is on the committed create/update members only — the rolled-back
+  // and delete members do not carry it — so narrow before destructuring. Even
+  // there it is `undefined` for a nested list, which is the second check.
+  if (args.status !== 'committed') return
+  if (args.operation !== 'create' && args.operation !== 'update') return
+
+  const { item, context } = args
+  if (item === undefined) return
 
   const sourceText = item[sourceField]
   if (typeof sourceText !== 'string' || sourceText.length === 0) return
