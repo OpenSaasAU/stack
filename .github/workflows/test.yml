@@ -78,9 +78,9 @@ jobs:
       # committed project leaves contract.ts, prisma.config.ts, contract.json,
       # contract.d.ts and the seeded extension contract space under migrations/
       # byte-identical. The contract fixture covers the constructs whose
-      # emission is easiest to make unstable; the two converted examples cover
-      # what the scaffolder ships (ADR-0067). The other ten examples join this
-      # gate as each converts (#1129, wave 2).
+      # emission is easiest to make unstable; the converted examples cover what
+      # the scaffolder ships and the two pgvector projects (ADR-0067). The other
+      # eight examples join this gate as each converts (#1129, wave 2).
       # `opensaas generate` loads each example's config, so every package that
       # config imports has to be built — turbo's `build` is `dependsOn:
       # ["^build"]`, which reaches a package's own dependencies and not the
@@ -94,6 +94,8 @@ jobs:
           --filter=@opensaas/stack-cli
           --filter=opensaas-starter-example^...
           --filter=opensaas-starter-auth-example^...
+          --filter=opensaas-rag-ollama-example^...
+          --filter=opensaas-rag-openai-chatbot-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
@@ -107,13 +109,26 @@ jobs:
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/starter-auth
 
+      - name: Regenerate examples/rag-ollama-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-ollama-demo
+
+      # `opensaas.config.ts` reads OPENAI_API_KEY, so generation needs one
+      # present. Nothing here calls OpenAI: generation reads the config, and the
+      # embedding provider is not constructed until a write or a search runs.
+      - name: Regenerate examples/rag-openai-chatbot
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-openai-chatbot
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+
       # `git add --intent-to-add` first: a plain `git diff` only sees tracked
       # files, so a newly emitted artifact would land untracked and pass green.
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
-          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
+          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/rag-ollama-demo examples/rag-openai-chatbot
+          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/rag-ollama-demo examples/rag-openai-chatbot
 
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
@@ -164,10 +179,12 @@ jobs:
           OPENAI_API_KEY: 'sk-testing-key'
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
-      # every examples/* package. On the prisma-8 integration branch only
-      # `starter` and `starter-auth` are converted (#1170); the other ten cannot
-      # build until wave 2 of #1129 converts them, and #1175 lifts this filter
-      # to the unfiltered run above once they have.
+      # every examples/* package. On the prisma-8 integration branch `starter`
+      # and `starter-auth` (#1170) and the two RAG examples (#1173) are
+      # converted; the remaining eight — auth-demo, blog, composable-dashboard,
+      # custom-field, file-upload-demo, json-demo, mcp-demo and tiptap-demo —
+      # cannot build until wave 2 of #1129 converts them, and #1175 lifts this
+      # filter to the unfiltered run above once they have.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -175,6 +192,8 @@ jobs:
           --filter='./packages/*'
           --filter=./examples/starter
           --filter=./examples/starter-auth
+          --filter=./examples/rag-ollama-demo
+          --filter=./examples/rag-openai-chatbot
         env:
           OPENAI_API_KEY: 'sk-testing-key'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'

@@ -88,9 +88,10 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # `starter` and `starter-auth` build on every PR into the integration
-    # branch (test.yml, #1170); the other ten cannot build until wave 2 of
-    # #1129 converts them, and #1175 lifts this gate once they have.
+    # `starter`, `starter-auth` (#1170) and the two RAG examples (#1173) build
+    # on every PR into the integration branch (test.yml); the other eight cannot
+    # build until wave 2 of #1129 converts them, and #1175 lifts this gate once
+    # they have.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -107,10 +108,11 @@ jobs:
         run: pnpm build
 
       # Create a runnable `.env` for every example by copying its committed
-      # `.env.example`. Each `.env.example` defaults DATABASE_URL to a value that
-      # matches its config's Prisma provider (#462), so no per-example overrides
-      # are needed. Other DB/secret placeholders come from the .env.example values
-      # plus the job-level env below.
+      # `.env.example`. A converted example's `.env.example` no longer defaults
+      # DATABASE_URL — leaving it unset is what makes `opensaas dev` start the
+      # Dev database — so the job-level DATABASE_URL below is what its
+      # generate/build resolves. DB/secret placeholders come from the
+      # .env.example values plus that job-level env.
       - name: Create .env for every example
         run: |
           set -euo pipefail
@@ -125,8 +127,11 @@ jobs:
       - name: Build all examples
         run: pnpm build:examples
         env:
-          # SQLite by default; the postgres-provider example (rag-openai-chatbot)
-          # keeps its own placeholder URL and never connects during generate/build.
+          # SQLite by default, for the examples wave 2 of #1129 has yet to
+          # convert. No example connects during generate or build, so a
+          # converted Postgres example is unaffected by the value: generation
+          # reads the config and `next build` renders no database-backed page.
+          # #1175 replaces this with a Postgres URL when the last one converts.
           DATABASE_URL: 'file:./dev.db'
           # Placeholder secrets so generate/build don't fail on missing vars.
           OPENAI_API_KEY: 'sk-testing-key'

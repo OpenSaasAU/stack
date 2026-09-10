@@ -101,45 +101,46 @@ Visit:
 With `pnpm dev` running in another terminal:
 
 ```bash
-pnpm test
+pnpm test:rag
 ```
 
-This script:
+The script reseeds both lists from empty, so it can be re-run as often as you
+like. It:
 
-1. ✅ Creates sample documents and articles
-2. ✅ Verifies embeddings are auto-generated
-3. ✅ Performs semantic search queries
-4. ✅ Demonstrates similarity scoring
-5. ✅ Tests embedding updates on content changes
+1. ✅ Clears and recreates the sample documents and articles
+2. ✅ Waits for the embeddings the plugin generates after each write commits
+3. ✅ Ranks them through `nearest()`
+4. ✅ Runs the same search through an anonymous and a signed-in context, to show
+   the ranking is scoped by access control
+5. ✅ Changes a document's source text and watches its embedding regenerate
 
-**Expected output:**
+**Expected output** (scores vary with the model):
 
 ```
-🚀 RAG Demo with Ollama + pgvector
+✓ Provider: ollama (nomic-embed-text, 768d)
+✓ Document 01a08b40-a962-745a-840e-48fc4b5d5acf: Introduction to Machine Learning
+...
+✓ documents: 6/6 embedded
+✓ articles: 3/3 embedded
 
-📝 Initializing...
-✓ Provider: ollama
-✓ Model: nomic-embed-text
-✓ Dimensions: 768
+📊 ollama/nomic-embed-text, 768d, vector length 768, sourceHash 8jlb9g
 
-📚 Creating sample documents...
-✓ Created: Introduction to Machine Learning
-✓ Created: Deep Learning Fundamentals
-✓ Created: Natural Language Processing
-✓ Created: Computer Vision Applications
-✓ Created: JavaScript Basics
+📍 "artificial intelligence and neural networks"
+   0.7269  Introduction to Machine Learning
+   0.7264  Deep Learning Fundamentals
+   0.6457  Natural Language Processing
 
-🔍 Verifying auto-generated embeddings...
-✓ Documents with embeddings: 5/5
-✓ Articles with embeddings: 3/3
-
-🔎 Performing semantic searches...
-📍 Query 1: "artificial intelligence and neural networks"
-Top 3 Results:
-  1. Deep Learning Fundamentals (similarity: 0.8234)
-  2. Introduction to Machine Learning (similarity: 0.7891)
-  3. Natural Language Processing (similarity: 0.7456)
+Signed in:
+   0.8614  Reinforcement Learning Draft
+   0.6159  Introduction to Machine Learning
+Anonymous:
+   0.6159  Introduction to Machine Learning
+   0.5663  Deep Learning Fundamentals
 ```
+
+The unpublished draft is the _closest_ match to that last query and still does
+not reach an anonymous reader: `nearest()` ranks inside the scoped set rather
+than filtering a ranked one.
 
 ## How It Works
 
@@ -277,6 +278,9 @@ rag-ollama-demo/
 - `category` (text)
 - `bodyEmbedding` (embedding) - Auto-generated from `body`
 - `published` (checkbox)
+
+Both lists scope `query` to published rows for an anonymous reader and open up
+for any session, so `nearest()` has an Access Filter to rank inside.
 
 Both lists also carry `id`, which is the only column added for you. Neither
 carries `createdAt`/`updatedAt`: auto-timestamps are off by default (ADR-0004)
@@ -433,6 +437,10 @@ ollama pull nomic-embed-text
 
 - **pgvector**: ranked in the database, over the column itself
 - **Cosine similarity**: Most common distance metric, and this example's default
+- **Every search is an exact scan.** `@prisma/orm-extension-pgvector@8.0.0-rc.8`
+  registers no index types, so no vector index can be built yet and the plan for
+  a `nearest()` is a sequential scan followed by a sort ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
+  That is fine at this example's scale and is not fine at a corpus's.
 
 ### Optimization Tips
 
