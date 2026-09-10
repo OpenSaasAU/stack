@@ -9,12 +9,12 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
-      "env": ["DATABASE_URL"]
+      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
     },
     "test": {
       "dependsOn": ["build"],
       "cache": false,
-      "env": ["DATABASE_URL"]
+      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
     },
     "test:coverage": {
       "dependsOn": ["build"],
