@@ -43,7 +43,8 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
 
 - `opensaas.config.ts` - Configuration with `richText()` fields
 - `lib/register-fields.ts` - Client-side field registration
-- `app/admin/[[...admin]]/page.tsx` - Admin UI page with field registration
+- `app/admin/[[...admin]]/FieldRegistration.tsx` - the client component that carries that import into the browser
+- `app/admin/[[...admin]]/page.tsx` - Admin UI page, rendering `<FieldRegistration />`
 - `prisma/contract.ts` - the generated Contract module (commit it; `pnpm generate` rewrites it)
 - `tests/rich-text-round-trip.test.ts` - the round-trip proof (`pnpm test`)
 
@@ -63,11 +64,33 @@ import { TiptapField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', TiptapField)
 ```
 
-Then import in your admin page:
+A bare side-effect import of that module from `page.tsx` does **not** register anything: `page.tsx` is a
+server component, and a `'use client'` module only reaches the browser when something in the tree renders
+it. Carry it in a client component and render that component:
 
-```typescript
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
-import '../../../lib/register-fields' // Triggers registration
+import { FieldRegistration } from './FieldRegistration'
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  return (
+    <>
+      <FieldRegistration />
+      <AdminUI {...adminProps} />
+    </>
+  )
+}
 ```
 
 ### Step 2: Use in Config

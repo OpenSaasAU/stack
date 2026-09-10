@@ -68,6 +68,15 @@ jobs:
       - name: Check for Prisma error-code literals
         run: pnpm check:prisma-error-codes
 
+      # A `'use client'` module imported for its side effects alone from a
+      # server component never runs in the browser, so the registration it
+      # exists for silently does not happen — generate, build, tsc and the
+      # suites all pass through it (#1172).
+      - name: Check for side-effect-only 'use client' imports
+        run: |
+          pnpm check:client-side-effect-imports
+          pnpm check:client-side-effect-imports --self-test
+
       - name: Lint codebase
         run: pnpm lint
 

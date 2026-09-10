@@ -1347,12 +1347,31 @@ packages/my-field/
    registerFieldComponent('myField', MyFieldComponent)
    ```
 
-   Then import in admin page:
+   A bare side-effect import of that module from `page.tsx` does **not** register anything: a
+   `'use client'` module only reaches the browser when the tree renders it, and `page.tsx` is a
+   server component. Carry the import in a client component and render it:
 
-   ```typescript
-   // app/admin/[[...admin]]/page.tsx
-   import '../../../lib/register-fields' // Side-effect import
+   ```tsx
+   // app/admin/[[...admin]]/FieldRegistration.tsx
+   'use client'
+
+   import '../../../lib/register-fields'
+
+   export function FieldRegistration() {
+     return null
+   }
    ```
+
+   ```tsx
+   // app/admin/[[...admin]]/page.tsx
+   import { FieldRegistration } from './FieldRegistration'
+   ;<>
+     <FieldRegistration />
+     <AdminUI {...props} />
+   </>
+   ```
+
+   `pnpm check:client-side-effect-imports` fails on the broken shape.
 
 4. **FieldConfig Extensibility** - Core types support third-party fields:
    ```typescript
