@@ -78,9 +78,9 @@ jobs:
       # committed project leaves contract.ts, prisma.config.ts, contract.json,
       # contract.d.ts and the seeded extension contract space under migrations/
       # byte-identical. The contract fixture covers the constructs whose
-      # emission is easiest to make unstable; the two converted examples cover
-      # what the scaffolder ships (ADR-0067). The other ten examples join this
-      # gate as each converts (#1129, wave 2).
+      # emission is easiest to make unstable; `starter` and `starter-auth`
+      # cover what the scaffolder ships (ADR-0067), and the five of #1171 join
+      # them here. The remaining five join as #1172 and #1173 convert them.
       # `opensaas generate` loads each example's config, so every package that
       # config imports has to be built — turbo's `build` is `dependsOn:
       # ["^build"]`, which reaches a package's own dependencies and not the
@@ -98,6 +98,7 @@ jobs:
           --filter=opensaas-blog-example^...
           --filter=opensaas-composable-dashboard-example^...
           --filter=opensaas-auth-example^...
+          --filter=opensaas-mcp-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
@@ -127,13 +128,17 @@ jobs:
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/auth-demo
 
+      - name: Regenerate examples/mcp-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/mcp-demo
+
       # `git add --intent-to-add` first: a plain `git diff` only sees tracked
       # files, so a newly emitted artifact would land untracked and pass green.
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo
-          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo
+          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo
+          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo
 
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
@@ -184,10 +189,13 @@ jobs:
           OPENAI_API_KEY: 'sk-testing-key'
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
-      # every examples/* package. On the prisma-8 integration branch only
-      # `starter` and `starter-auth` are converted (#1170); the other ten cannot
-      # build until wave 2 of #1129 converts them, and #1175 lifts this filter
-      # to the unfiltered run above once they have.
+      # every examples/* package. On the prisma-8 integration branch `starter`
+      # and `starter-auth` (#1170) plus the five of #1171 are converted; the
+      # remaining five cannot build until #1172 and #1173 convert them, and
+      # #1175 lifts this filter to the unfiltered run above once they have.
+      #
+      # These five carry no `test` script, so this is a build gate for them.
+      # The two examples that DO carry one run in their own steps below.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -196,11 +204,37 @@ jobs:
           --filter=./examples/starter
           --filter=./examples/starter-auth
           --filter=./examples/custom-field
-          --filter=./examples/blog
           --filter=./examples/composable-dashboard
           --filter=./examples/auth-demo
         env:
           OPENAI_API_KEY: 'sk-testing-key'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+      # An example's `test` script is `opensaas dev -- <script>`, which
+      # reconciles the database `DATABASE_URL` names with that example's own
+      # contract. Two examples pointed at one database therefore fight: the
+      # second reconcile sees the first's tables as rows to drop and refuses,
+      # non-interactively, for want of consent. Each suite gets a database of
+      # its own on the same service container instead.
+      - name: Create a database per example suite (integration branch)
+        if: github.base_ref != 'main'
+        run: |
+          psql "$DATABASE_URL" -c 'create database blog_example'
+          psql "$DATABASE_URL" -c 'create database mcp_demo_example'
+
+      - name: Run the blog access-control suite (integration branch)
+        if: github.base_ref != 'main'
+        run: turbo run test --filter=./examples/blog
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
+
+      - name: Run the mcp-demo tool suite (integration branch)
+        if: github.base_ref != 'main'
+        run: turbo run test --filter=./examples/mcp-demo
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'

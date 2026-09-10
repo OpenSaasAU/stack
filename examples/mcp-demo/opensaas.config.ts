@@ -5,7 +5,6 @@ import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
 import type { AccessControl } from '@opensaas/stack-core'
 import { z } from 'zod'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
@@ -80,11 +79,7 @@ export default config({
   ],
 
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   // Enable MCP server with Better Auth OAuth
@@ -173,7 +168,7 @@ export default config({
           if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           }
           return { ...resolvedData }
@@ -196,11 +191,11 @@ export default config({
               postId: z.string(),
             }),
             handler: async ({ input, context }) => {
-              const post = await context.db.post.update({
+              const post = await context.db.Post.update({
                 where: { id: input.postId },
                 data: {
                   status: 'published',
-                  publishedAt: new Date(),
+                  publishedAt: new Date().toISOString(),
                 },
               })
 
@@ -224,7 +219,7 @@ export default config({
               postId: z.string(),
             }),
             handler: async ({ input, context }) => {
-              const post = await context.db.post.update({
+              const post = await context.db.Post.update({
                 where: { id: input.postId },
                 data: {
                   status: 'draft',

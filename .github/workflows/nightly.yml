@@ -88,9 +88,11 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # `starter` and `starter-auth` build on every PR into the integration
-    # branch (test.yml, #1170); the other ten cannot build until wave 2 of
-    # #1129 converts them, and #1175 lifts this gate once they have.
+    # Seven examples now build on every PR into the integration branch
+    # (test.yml): `starter` and `starter-auth` from #1170, plus `blog`,
+    # `custom-field`, `composable-dashboard`, `auth-demo` and `mcp-demo` from
+    # #1171. This job builds ALL of them, so it stays off the integration
+    # branch until the remaining five convert (#1172, #1173); #1175 lifts it.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30

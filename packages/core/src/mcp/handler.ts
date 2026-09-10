@@ -1,6 +1,7 @@
 import * as z from 'zod'
 import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
 import { pascalToCamel } from '../lib/case-utils.js'
 import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
@@ -84,13 +85,21 @@ function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
 export function createMcpHandlers(options: {
   config: OpenSaasConfig
   getSession: McpSessionProvider
-  getContext: (session?: ContextSession) => Promise<AccessContext>
+  /**
+   * The app's context factory — the generated `getContext` — whose return the
+   * handlers narrow to the engine's face with {@link engineContextOf}. Neither
+   * face is assignable to the other, so the boundary takes both and narrows
+   * once, the way `AdminUI` and `createAuth` do.
+   */
+  getContext: (session?: ContextSession) => Promise<AnyStackContext>
 }): {
   GET: (req: Request) => Promise<Response>
   POST: (req: Request) => Promise<Response>
   DELETE: (req: Request) => Promise<Response>
 } {
-  const { config, getSession, getContext } = options
+  const { config, getSession } = options
+  const getContext = async (session?: ContextSession): Promise<AccessContext> =>
+    engineContextOf(await options.getContext(session))
 
   if (!config.mcp?.enabled) {
     const notEnabledHandler = async () =>
