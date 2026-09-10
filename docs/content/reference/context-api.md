@@ -23,7 +23,7 @@ import { getContext, rawOpensaasContext, config } from '@/.opensaas/context'
 | -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `getContext<TSession>(session?)` | `Promise<Context<TSession>>` | The normal door. `await` it per request.                                                                      |
 | `rawOpensaasContext`             | `Promise<Context>`           | For module-init-time consumers that cannot `await`. Pass the promise itself; do not await it at module scope. |
-| `config`                         | `OpenSaasConfig`             | The resolved config, with the emitted tables attached.                                                        |
+| `config`                         | `Promise<OpenSaasConfig>`    | The resolved config, with the emitted tables attached. The generator emits `export const config = getConfig()` and `getConfig` is `async`, so this is a **promise** — `await` it, or pass `config={await config}` from a server component. |
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
@@ -48,22 +48,44 @@ export const auth = createAuth(config, rawOpensaasContext)
 
 ### Building a second client synchronously
 
-A third-party contract that must be handed a resolved client value at import time cannot use the proxy above. Build one the same way the generated context does — `resolveRuntimeConnection` plus the committed contract artifact — rather than hand-rolling a connection:
+A third-party contract that must be handed a resolved client value at import time cannot use the proxy above. Build one the same way the generated context does — `resolveRuntimeConnection` plus the committed contract artifact — rather than hand-rolling a connection.
+
+The generated `config` is a promise, so it cannot supply `db.client` here. Factor the client config into a plain module that both `opensaas.config.ts` and this consumer import, and there is nothing to await:
 
 ```typescript
+// lib/db-client.ts — no config or plugin imports, safe to import synchronously
+import type { DatabaseClientConfig } from '@opensaas/stack-core'
+
+export const dbClient: DatabaseClientConfig = {
+  /* pg: () => new Pool({ connectionString: process.env.DATABASE_URL }) */
+}
+```
+
+```typescript
+// opensaas.config.ts
+import { dbClient } from './lib/db-client'
+
+export default config({
+  db: { client: dbClient },
+  // …
+})
+```
+
+```typescript
+// lib/second-client.ts
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import postgres from '@prisma/orm-postgres/runtime'
 import type { Contract } from '../prisma/contract.d.js'
 import contractJson from '../prisma/contract.json' with { type: 'json' }
-import { config } from '@/.opensaas/context'
+import { dbClient } from './db-client'
 
 export const secondClient = postgres<Contract>({
   contractJson,
-  ...resolveRuntimeConnection(config.db.client),
+  ...resolveRuntimeConnection(dbClient),
 })
 ```
 
-`resolveRuntimeConnection` is where [`db.client.pg`](/docs/reference/config-api) is consumed: it calls the factory when one is configured and otherwise resolves the connection URL itself. Two things about the result are deliberate and must be said wherever this pattern is reused. It is a **second connection**, separate from the framework's singleton. And it is the **raw client** — it carries none of `context.db`'s access control, Field Visibility or hooks.
+`resolveRuntimeConnection` is where [`db.client.pg`](/docs/reference/config-api) is consumed: it calls the factory when one is configured and otherwise resolves the connection URL itself. Its argument is optional, so an app that configures no `db.client` can call it with none. Two things about the result are deliberate and must be said wherever this pattern is reused. It is a **second connection**, separate from the framework's singleton. And it is the **raw client** — it carries none of `context.db`'s access control, Field Visibility or hooks.
 
 ## The context object
 
@@ -106,16 +128,18 @@ These are the methods on `context.db.<List>`, and there are no others:
 | ------------------------ | --------------------------------------------------------------------- | ------------------------------------------ |
 | `where(predicate)`       | Narrow the read                                                       | **Accumulates** — repeated calls are ANDed |
 | `orderBy(order)`         | Sort by this list's own scalar columns                                | **Accumulates**                            |
-| `include(name, refine?)` | Reach one hop into a relation                                         | Accumulates, one entry per relation        |
+| `include(name, refine?)` | Reach one hop into a relation                                         | Accumulates, one entry per relation — naming the **same** relation twice is **refused** |
 | `select(...fields)`      | Return exactly these of this list's own fields                        | **Replaces**                               |
 | `limit(count)`           | At most this many rows                                                | **Replaces**                               |
 | `offset(count)`          | Skip this many rows                                                   | **Replaces**                               |
-| `distinct(...fields)`    | Collapse rows agreeing on every named column                          | Replaces                                   |
-| `distinctOn(...fields)`  | First row per distinct key, in `orderBy`'s order — so it requires one | Replaces                                   |
+| `distinct(...fields)`    | Collapse rows agreeing on every named column                          | **Refused** — a second `distinct`/`distinctOn` throws |
+| `distinctOn(...fields)`  | First row per distinct key, in `orderBy`'s order — so it requires one | **Refused** — a second `distinct`/`distinctOn` throws |
 | `cursor(values)`         | Resume from a known position                                          | **Replaces**                               |
 | `forUpdate()`            | [Take a row lock](#the-row-lock) — transaction-bound builder only     | —                                          |
 
 `limit()` shapes `all()` alone: `first()` is bounded by its own terminal and `nearest()` takes its bound from `options.limit`. `offset()` is honoured by **both** `all()` and `first()`, so `.offset(10).first()` is the eleventh row.
+
+The two refusals above are refusals, not replacements. Both distincts **accumulate** into the read's state; the second is rejected at the **terminal** — where every other refusal on this surface is made — with a `ValidationError` reading "Cannot read … through more than one distinct. Name every column in one call instead." `distinct` and `distinctOn` collapse rows by different rules and the variadic form already spells "on both columns" in one call, so there is no sensible last-wins. A repeated `include` is refused the same way.
 
 A [singleton list](/docs/reference/config-api) has `get()` in place of the composed read.
 
@@ -178,7 +202,7 @@ Includes are capped at **five levels** deep.
 **Arity decides nullability, not foreign-key nullability.** A to-one relation types as `Row | null` and a to-many as `Row[]`, whatever the column's `NOT NULL` says — because access control can scope a row away that the schema guarantees exists.
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function authorName(context: Context, postId: string) {
   const post = await context.db.Post.where({ id: postId })
@@ -234,7 +258,7 @@ The vocabulary is a **closed set**. It is the same grammar for a caller's `where
 
 **Relation quantifiers:** `some`, `every`, `none` — the same three for a to-one relation as for a to-many.
 
-**Logical keys:** `AND`, `OR`, `NOT`, each taking one predicate object or an array of them.
+**Logical keys:** `AND` and `NOT` each take one predicate object or an array of them. `OR` takes an **array only** on the generated types — the runtime accepts a bare object, but writing one is a compile error.
 
 ```typescript
 const rows = await context.db.Post.where({
@@ -310,7 +334,7 @@ A `connect` target the caller cannot read makes the whole write return `null` �
 ## Transactions
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function publish(context: Context, title: string) {
   return context.transaction(async (tx) => {
@@ -339,7 +363,7 @@ The shape is always the same: lock the parent **before** you read anything the g
 Both reads of `Slot` below are deliberate. The first takes the lock and answers only "may I proceed on this row"; the second fetches `capacity` in a statement that runs after the lock is held, because a locked read's own columns come from the snapshot taken before the lock. The count follows for the same reason.
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function book(context: Context, slotId: string) {
   return context.transaction(async (tx) => {
@@ -393,7 +417,7 @@ The point is that the answer is **identical** whether the row does not exist, th
 So every one of those results is checked before it is used:
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function rename(context: Context, id: string, title: string) {
   const post = await context.db.Post.update({ where: { id }, data: { title } })
@@ -423,7 +447,7 @@ Two predicates narrow without an `instanceof` chain: `isSerializationFailure(err
 
 ```typescript
 import { isSerializationFailure, isUniqueConstraintViolation } from '@opensaas/stack-core'
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 export async function register(context: Context, email: string) {
   try {
@@ -462,7 +486,7 @@ The **Unsafe surface performs no normalisation at all**: a failure there arrives
 |                                                                | Where-vocabulary validation                         |
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 export async function purgeExpiredSessions(context: Context) {
   const elevated = context.sudo()
@@ -485,7 +509,7 @@ It substitutes **who** hooks and access control see; it does not change **what**
 
 ```typescript
 import type { Session } from '@opensaas/stack-core'
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function completeAsOwner(context: Context, job: { ownerSession: Session; taskId: string }) {
   const asOwner = context.withSession(job.ownerSession)
@@ -527,7 +551,7 @@ What it does give you: codec-decoded values, the ORM's streaming result, and the
 `query()` returns a `LazyQueryResult<Row>` — an `AsyncIterable<Row>` that is also a `PromiseLike<Row[]>`, with `toArray()` and `first()`. That streaming is the reason the surface exists for bulk work: it is the one lane a genuinely unbounded read can take.
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function archiveEveryPost(context: Context) {
   const rows = context.unsafe.query<{ id: string }>(

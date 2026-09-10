@@ -479,7 +479,7 @@ An implicit join table is a row the application cannot see, gate or hook — whi
 Reading across it is one hop further:
 
 ```typescript
-import type { Context } from '@/.opensaas/context'
+import type { Context } from '@/.opensaas/types'
 
 async function teacherNames(context: Context, lessonId: string) {
   const lesson = await context.db.Lesson.where({ id: lessonId })
