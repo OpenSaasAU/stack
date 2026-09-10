@@ -8,8 +8,8 @@ import { richText } from '../src/fields/richText.js'
  * can reject `undefined` on its own yet still make its key required, or accept
  * it and still refuse an absent key. Only the enclosing object shows which.
  */
-function asKey(schema: z.ZodType) {
-  return z.object({ content: schema })
+function asKey(fieldName: string, schema: z.ZodType) {
+  return z.object({ [fieldName]: schema })
 }
 
 const DOC = { type: 'doc', content: [{ type: 'paragraph' }] }
@@ -19,12 +19,12 @@ describe('richText() zod schema', () => {
     const field = richText({ validation: { isRequired: true } })
 
     it('accepts a document on create', () => {
-      const schema = asKey(field.getZodSchema('content', 'create'))
+      const schema = asKey('content', field.getZodSchema('content', 'create'))
       expect(schema.safeParse({ content: DOC }).success).toBe(true)
     })
 
     it('rejects an absent key on create', () => {
-      const schema = asKey(field.getZodSchema('content', 'create'))
+      const schema = asKey('content', field.getZodSchema('content', 'create'))
       expect(schema.safeParse({}).success).toBe(false)
     })
 
@@ -32,12 +32,12 @@ describe('richText() zod schema', () => {
     // accepts a present `null` or explicit `undefined`, so a required field
     // could be created empty against a non-nullable column.
     it('rejects a present null on create', () => {
-      const schema = asKey(field.getZodSchema('content', 'create'))
+      const schema = asKey('content', field.getZodSchema('content', 'create'))
       expect(schema.safeParse({ content: null }).success).toBe(false)
     })
 
     it('rejects a present undefined on create', () => {
-      const schema = asKey(field.getZodSchema('content', 'create'))
+      const schema = asKey('content', field.getZodSchema('content', 'create'))
       expect(schema.safeParse({ content: undefined }).success).toBe(false)
     })
 
@@ -46,18 +46,28 @@ describe('richText() zod schema', () => {
     // undefined", because `z.union([schema, z.undefined()])` is still a
     // required key inside `z.object()`.
     it('accepts an absent key on update', () => {
-      const schema = asKey(field.getZodSchema('content', 'update'))
+      const schema = asKey('content', field.getZodSchema('content', 'update'))
       expect(schema.safeParse({}).success).toBe(true)
     })
 
     it('still rejects a present null on update', () => {
-      const schema = asKey(field.getZodSchema('content', 'update'))
+      const schema = asKey('content', field.getZodSchema('content', 'update'))
       expect(schema.safeParse({ content: null }).success).toBe(false)
     })
 
     it('accepts a document on update', () => {
-      const schema = asKey(field.getZodSchema('content', 'update'))
+      const schema = asKey('content', field.getZodSchema('content', 'update'))
       expect(schema.safeParse({ content: DOC }).success).toBe(true)
+    })
+
+    // The same form can carry a `richText()` and a core `json()`; both must
+    // address the field the same way, so this shares core's own formatter
+    // rather than interpolating the raw key.
+    it('addresses the field the way core does in its message', () => {
+      const schema = asKey('internalNotes', field.getZodSchema('internalNotes', 'create'))
+      const result = schema.safeParse({ internalNotes: null })
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0]?.message).toBe('Internal Notes is required')
     })
   })
 
@@ -65,17 +75,17 @@ describe('richText() zod schema', () => {
     const field = richText()
 
     it('accepts an absent key on create', () => {
-      const schema = asKey(field.getZodSchema('excerpt', 'create'))
+      const schema = asKey('excerpt', field.getZodSchema('excerpt', 'create'))
       expect(schema.safeParse({}).success).toBe(true)
     })
 
     it('accepts null on create', () => {
-      const schema = asKey(field.getZodSchema('excerpt', 'create'))
-      expect(schema.safeParse({ content: null }).success).toBe(true)
+      const schema = asKey('excerpt', field.getZodSchema('excerpt', 'create'))
+      expect(schema.safeParse({ excerpt: null }).success).toBe(true)
     })
 
     it('accepts an absent key on update', () => {
-      const schema = asKey(field.getZodSchema('excerpt', 'update'))
+      const schema = asKey('excerpt', field.getZodSchema('excerpt', 'update'))
       expect(schema.safeParse({}).success).toBe(true)
     })
   })

@@ -41,7 +41,7 @@ export type {
 // Resolves a `TypeDescriptor` to the TypeScript type expression the generated
 // bundle writes. An import descriptor becomes an inline `import('mod').Name`,
 // so the emitted file needs no import statement of its own for it.
-export { typeDescriptorToTypeString } from './fields/index.js'
+export { typeDescriptorToTypeString, formatFieldName } from './fields/index.js'
 
 // Contract derivation (ADR-0057) — the data a config derives to, which the
 // generator renders and `@opensaas/stack-core/contract` feeds into Prisma.

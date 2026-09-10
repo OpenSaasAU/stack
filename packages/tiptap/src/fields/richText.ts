@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { formatFieldName } from '@opensaas/stack-core/extend'
 import type { ContractFieldDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
 import type { RichTextField } from '../config/types.js'
 
@@ -54,7 +55,7 @@ export function richText<TTypeInfo extends TypeInfo = TypeInfo>(
         // nothing in it. The refinement closes both. Same shape as core's
         // `json()`.
         return baseSchema.refine((value) => value !== undefined && value !== null, {
-          message: `${fieldName} is required`,
+          message: `${formatFieldName(fieldName)} is required`,
         })
       } else if (isRequired && operation === 'update') {
         // A union with `z.undefined()` is still a required key inside
@@ -64,7 +65,7 @@ export function richText<TTypeInfo extends TypeInfo = TypeInfo>(
         // non-null. Same shape as core's `json()`.
         return baseSchema
           .refine((value) => value !== null, {
-            message: `${fieldName} is required`,
+            message: `${formatFieldName(fieldName)} is required`,
           })
           .optional()
       } else {

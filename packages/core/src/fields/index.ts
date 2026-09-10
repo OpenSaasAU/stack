@@ -60,7 +60,15 @@ export type {
   ContractRelationDescriptor,
 } from '../config/types.js'
 
-function formatFieldName(fieldName: string): string {
+/**
+ * Renders a field key the way validation messages address the user:
+ * `internalNotes` becomes `Internal notes`.
+ *
+ * Exported on `/extend` so a third-party field's messages read the same as a
+ * built-in one's — a `richText()` and a `json()` on the same form should not
+ * disagree about whether the field is called `content` or `Content`.
+ */
+export function formatFieldName(fieldName: string): string {
   return fieldName
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (str) => str.toUpperCase())
