@@ -1355,7 +1355,7 @@ A `uuid` foreign key column on the owning side, plus a relation on both sides. T
 - `many: false` — the related row or `null`, once the read names it with `.include()`
 - `many: true` — an array of related rows, empty when there are none
 
-A relation is not on the row unless the read asked for it. Every to-one read off an included row is a null check.
+A relation is not on the row unless the read asked for it, and the arity above decides the face's nullability rather than the foreign key's — see [what an include costs](/docs/reference/context-api).
 
 #### Write face
 
