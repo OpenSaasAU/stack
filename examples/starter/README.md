@@ -7,7 +7,7 @@ A minimal starter template for building applications with OpenSaas Stack.
 - **Admin UI** at `/admin` for managing your data
 - **User & Post models** with relationships
 - **Access control** examples
-- **SQLite database** (easy to switch to PostgreSQL)
+- **Postgres** — the Dev database `pnpm dev` runs for you, or your own via `DATABASE_URL`
 - **TypeScript** with full type safety
 - **Next.js 16** with App Router
 
@@ -19,7 +19,7 @@ A minimal starter template for building applications with OpenSaas Stack.
 pnpm install
 ```
 
-### 2. Generate Prisma Schema
+### 2. Generate
 
 ```bash
 pnpm generate
@@ -27,9 +27,12 @@ pnpm generate
 
 This creates:
 
-- `prisma/schema.prisma` - Database schema
+- `prisma/contract.ts` - The Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
+
+Commit everything but `.opensaas/`, which is regenerated.
 
 ### 3. Start Development Server
 
@@ -55,7 +58,7 @@ Visit:
 │   │   └── loading.tsx
 │   └── layout.tsx           # Root layout with UI styles
 ├── opensaas.config.ts       # Schema definition
-├── .env                     # Database connection
+├── .env                     # Environment (DATABASE_URL only for a Postgres of your own)
 └── package.json
 ```
 
@@ -66,8 +69,7 @@ Edit `opensaas.config.ts` to add your own models:
 ```typescript
 export default config({
   db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
+    provider: 'postgresql',
   },
   lists: {
     // Add your models here
@@ -91,7 +93,7 @@ plan is printed and the app keeps serving until you run `pnpm db:update`.
 - `pnpm dev` - Start development server
 - `pnpm build` - Build for production
 - `pnpm start` - Start production server
-- `pnpm generate` - Generate Prisma schema and types
+- `pnpm generate` - Generate the Contract module, its artifacts, and the types
 - `pnpm db:update` - Apply a staged schema change through the running dev loop
 - `pnpm clean` - Remove build artifacts
 

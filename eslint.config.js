@@ -28,6 +28,12 @@ export default [
       'packages/cli/tests/fixtures/contract-project/prisma.config.ts',
       'packages/cli/tests/fixtures/contract-project/migrations/**',
       'packages/cli/tests/tmp-*/**',
+      // The same generator output, committed by every example (ADR-0067).
+      'examples/*/prisma/**',
+      'examples/*/prisma.config.ts',
+      'examples/*/migrations/**',
+      // The nightly cold-clone scaffold, when one has been run locally.
+      '.cold-clone/**',
       // Doc-block compile check scratch (ESLint 9 flat config does not read .gitignore)
       'packages/rag/.doc-blocks-check-*/**',
     ],

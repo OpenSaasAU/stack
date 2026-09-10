@@ -636,7 +636,7 @@ describe('the two read surfaces scope a filtered to-one identically', () => {
       })
 
       const secured = await context.db.Post.where({ title: "bob's draft" }).include('author').all()
-      const plan = recorder.plans[recorder.plans.length - 1]
+      const plan = recorder.plans[0]
 
       // The same rule, in the shape the secured path carries it: inside the
       // include's own subquery rather than in a second round trip.

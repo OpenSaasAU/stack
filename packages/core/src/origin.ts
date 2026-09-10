@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { SqlMiddleware } from '@prisma/orm-postgres/family-runtime'
 import { classifyDriverError } from './lib/database-errors.js'
+import { processGlobal } from './lib/process-global.js'
 
 /**
  * Which declared surface is executing. The store carries this and nothing
@@ -22,7 +23,22 @@ export type QueryOrigin = 'engine' | 'unsafe'
  * needs to mark an execution should use {@link withOrigin} or
  * {@link preserveOrigin}, which enter it correctly.
  */
-export const originStore = new AsyncLocalStorage<QueryOrigin>()
+export const originStore = sharedOriginStore()
+
+/**
+ * One store per process, not per module instance. The generated context
+ * caches one client — and its tripwire — for every bundle, so a store held in
+ * module scope would be entered by one layer's Unsafe surface and read by the
+ * other layer's tripwire, which refuses the query as unmarked. See
+ * `lib/process-global.ts`.
+ */
+function sharedOriginStore(): AsyncLocalStorage<QueryOrigin> {
+  return processGlobal(
+    'originStore',
+    (value): value is AsyncLocalStorage<QueryOrigin> => value instanceof AsyncLocalStorage,
+    () => new AsyncLocalStorage<QueryOrigin>(),
+  )
+}
 
 /** The origin of the current async context, or `undefined` outside any scope. */
 export function currentOrigin(): QueryOrigin | undefined {

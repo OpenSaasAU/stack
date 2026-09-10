@@ -14,7 +14,7 @@ You'll be prompted for:
 
 - Project name
 - Whether to include authentication (Better-auth)
-- Whether to set up AI tooling (the MCP server)
+- Whether to enable AI development tools (MCP server + Claude Code plugin)
 
 There is no database prompt. `postgresql` is the only provider, and `pnpm dev`
 starts a Dev database for you — no connection string to supply before the first
@@ -36,9 +36,10 @@ npm create opensaas-app@latest my-app
 npm create opensaas-app@latest my-app --with-auth
 ```
 
-The scaffolded project runs against the Dev database `pnpm dev` starts. To point
-it at your own Postgres instead, set `DATABASE_URL` in `.env` — the generated
-`db` block in `opensaas.config.ts` carries no connection of its own.
+The scaffolded project runs on Postgres: `pnpm dev` starts the Dev database for
+it, and `DATABASE_URL` set in `.env` points it at a Postgres of your own instead.
+The generated `db` block in `opensaas.config.ts` carries no connection of its
+own.
 
 ### Using npx
 
@@ -55,6 +56,7 @@ A minimal starter with:
 
 - User + Post models
 - Admin UI at `/admin`
+- Postgres, on the Dev database `pnpm dev` runs
 - Access control examples
 - TypeScript + Next.js 16
 
@@ -83,11 +85,14 @@ A fully configured Next.js application with:
 
 ## After Creating
 
+The CLI has already installed dependencies and generated, so:
+
 ```bash
 cd my-app
-pnpm install        # Install dependencies
 pnpm dev            # Start the Dev database, generate, reconcile, run the app
 ```
+
+With `--no-install`, run `pnpm install` and `pnpm generate` first.
 
 Visit:
 

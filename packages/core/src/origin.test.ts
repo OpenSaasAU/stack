@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   currentOrigin,
   originStore,
@@ -342,5 +342,22 @@ describe('isolation between concurrent origins', () => {
 
     expect(engineSeen).toEqual(['engine'])
     expect(unsafeSeen).toEqual(['unsafe'])
+  })
+})
+
+describe('one store per process', () => {
+  it('a second instance of this module shares the first one’s store', async () => {
+    const first = await import('./origin.js')
+    vi.resetModules()
+    const second = await import('./origin.js')
+    expect(second).not.toBe(first)
+    expect(second.originStore).toBe(first.originStore)
+  })
+
+  it('an origin entered through one instance is read by the other’s tripwire', async () => {
+    const first = await import('./origin.js')
+    vi.resetModules()
+    const second = await import('./origin.js')
+    expect(first.originStore.run('unsafe', () => second.currentOrigin())).toBe('unsafe')
   })
 })

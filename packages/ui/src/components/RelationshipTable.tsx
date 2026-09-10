@@ -3,7 +3,9 @@ import {
   getRelationshipOptions,
   getUrlKey,
   resolveJunctionEdge,
+  engineContextOf,
   type AccessContext,
+  type AnyStackContext,
   type OpenSaasConfig,
   type FieldConfig,
   type ListConfig,
@@ -45,7 +47,7 @@ export interface RelationshipTableProps {
    * The access-scoped context, used to evaluate the related list's own access
    * (removal, create, and inline-edit gating) — never the parent's.
    */
-  context: AccessContext
+  context: AnyStackContext
   /** The list being edited (the parent record's list). */
   parentListKey: string
   /** The parent record's id — the link the pre-linked create drawer presets. */
@@ -339,11 +341,12 @@ export async function RelationshipTable({
   rows,
   total,
   basePath,
-  context,
+  context: appContext,
   parentListKey,
   parentId,
   serverAction,
 }: RelationshipTableProps) {
+  const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
 

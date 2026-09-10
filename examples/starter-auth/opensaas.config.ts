@@ -3,7 +3,6 @@ import { text, relationship, select, timestamp, integer } from '@opensaas/stack-
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from './.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
@@ -149,11 +148,7 @@ export default config({
   ],
 
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   lists: {
@@ -251,7 +246,7 @@ export default config({
         listView: {
           // Custom Bulk action (issue #736): "Publish" sets the selected posts'
           // status to published. The handler runs each id through the SECURED
-          // context (`context.db.post.update`), so `isAuthor` update access
+          // context (`context.db.Post.update`), so `isAuthor` update access
           // still applies per row — a post the signer doesn't own returns null
           // (Silent failure) and is absorbed into the "N of M" count without
           // revealing which rows were denied.
@@ -262,7 +257,7 @@ export default config({
               handler: async ({ ids, context }) => {
                 let published = 0
                 for (const id of ids) {
-                  const updated = await context.db.post.update({
+                  const updated = await context.db.Post.update({
                     where: { id },
                     data: { status: 'published' },
                   })
@@ -287,9 +282,9 @@ export default config({
 
           // If changing status to published and publishedAt isn't set yet
           if (operation === 'create' && data?.status === 'published') {
-            data.publishedAt = new Date()
+            data.publishedAt = new Date().toISOString()
           } else if (operation === 'update' && data?.status === 'published' && !item?.publishedAt) {
-            data.publishedAt = new Date()
+            data.publishedAt = new Date().toISOString()
           }
 
           return data

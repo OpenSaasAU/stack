@@ -75,32 +75,53 @@ jobs:
         run: pnpm format:check
 
       # `opensaas generate` must be deterministic: re-running it over a
-      # committed fixture project leaves contract.ts, prisma.config.ts,
-      # contract.json, contract.d.ts and the seeded extension contract space
-      # under migrations/ byte-identical. The examples cannot
-      # build on the integration branch (#1121, build spec 9), so this fixture
-      # stands in for them until they convert.
-      - name: Build the CLI for the contract fixture
-        run: turbo run build --filter=@opensaas/stack-cli
+      # committed project leaves contract.ts, prisma.config.ts, contract.json,
+      # contract.d.ts and the seeded extension contract space under migrations/
+      # byte-identical. The contract fixture covers the constructs whose
+      # emission is easiest to make unstable; the two converted examples cover
+      # what the scaffolder ships (ADR-0067). The other ten examples join this
+      # gate as each converts (#1129, wave 2).
+      # `opensaas generate` loads each example's config, so every package that
+      # config imports has to be built — turbo's `build` is `dependsOn:
+      # ["^build"]`, which reaches a package's own dependencies and not the
+      # examples'. Naming each example's closure builds whatever a newly
+      # imported package turns out to be, rather than turning this step red a
+      # wave later. `^...` is the dependency operator only on a package NAME;
+      # against a path filter it selects the example itself as well.
+      - name: Build the CLI and the examples' dependencies for the regeneration gate
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-cli
+          --filter=opensaas-starter-example^...
+          --filter=opensaas-starter-auth-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
         working-directory: ./packages/cli/tests/fixtures/contract-project
 
+      - name: Regenerate examples/starter
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/starter
+
+      - name: Regenerate examples/starter-auth
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/starter-auth
+
       # `git add --intent-to-add` first: a plain `git diff` only sees tracked
       # files, so a newly emitted artifact would land untracked and pass green.
       # Ignored paths (the `.opensaas` bundle) stay ignored.
-      - name: Fail on a dirty contract fixture
+      - name: Fail on a dirty regeneration
         run: |
-          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project
-          git diff --exit-code -- packages/cli/tests/fixtures/contract-project
+          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
+          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
 
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
-      # so it measures this branch's own declarations. The contract-fixture
-      # step above builds only the CLI, so the packages the doc blocks import
-      # are built here. turbo caches it, and the test steps below depend on the
-      # same task, so this is a reordering rather than an extra build.
+      # so it measures this branch's own declarations. The regeneration step
+      # above builds the CLI and the two examples' dependency closures, so the
+      # packages the doc blocks import beyond those are built here. turbo
+      # caches it, and the test steps below depend on the same task, so this is
+      # a reordering rather than an extra build.
       #
       # THE GATE. PRs into `main` are excluded because the fixtures cannot
       # describe that tree: `files.txt` names this branch's documents and
@@ -143,14 +164,22 @@ jobs:
           OPENAI_API_KEY: 'sk-testing-key'
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
-      # every examples/* package. On the prisma-8 integration branch the
-      # examples cannot build until they are converted (#1121, build spec 9),
-      # so PRs into any base other than main run the published packages only.
-      - name: Run package tests (integration branch — examples convert in spec 9)
+      # every examples/* package. On the prisma-8 integration branch only
+      # `starter` and `starter-auth` are converted (#1170); the other ten cannot
+      # build until wave 2 of #1129 converts them, and #1175 lifts this filter
+      # to the unfiltered run above once they have.
+      - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
-        run: turbo run test --filter='./packages/*'
+        run: >
+          turbo run test
+          --filter='./packages/*'
+          --filter=./examples/starter
+          --filter=./examples/starter-auth
         env:
           OPENAI_API_KEY: 'sk-testing-key'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
       - name: Run tests with coverage
         if: github.base_ref == 'main'
@@ -158,7 +187,8 @@ jobs:
         env:
           OPENAI_API_KEY: 'sk-testing-key'
 
-      - name: Run package tests with coverage (integration branch — examples convert in spec 9)
+      # Coverage is a package property; the examples carry no `test:coverage`.
+      - name: Run package tests with coverage (integration branch)
         if: github.base_ref != 'main'
         run: turbo run test:coverage --filter='./packages/*'
         env:
@@ -188,31 +218,53 @@ jobs:
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
 
-  # Every guard and the Playwright run below stands on the SQLite examples and
-  # the Prisma 7 scaffold, which the prisma-8 branch has dropped and cannot
-  # rebuild until its examples are converted (#1121, build spec 9). Until then
-  # this job runs only for PRs into main.
+  # Every guard and the Playwright run below stands on `examples/starter-auth`
+  # and the scaffold built from `examples/starter`, both on Prisma 8 (#1170).
+  #
+  # The job runs twice, and the two legs differ in exactly one variable. On the
+  # `dev-database` leg no `DATABASE_URL` is set: the Playwright harness and the
+  # auth guards call the same lookup the app does, and with nothing set they
+  # start the Dev database in-process (ADR-0063) — naming a URL would take the
+  # escape branch and the sidecar this leg exists to exercise would never
+  # start. On the `postgres` leg the variable names the service container
+  # below, which is story 25 of #1125: the same suites on the parity server CI
+  # keeps for production's sake. Services are job-scoped, so the container is
+  # started for both legs and only the `postgres` leg dials it.
   e2e:
-    if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # No `DATABASE_URL`: the Playwright harness calls the same lookup the app
-    # does, and with nothing set it starts the Dev database in-process
-    # (ADR-0063). Naming one here would take the escape branch instead, so the
-    # sidecar this job exists to exercise would never start — and a SQLite URL
-    # is a value the Prisma 8 toolchain cannot use at all.
-    #
-    # Story 25 of #1125 also wants this job on a Postgres service container in
-    # CI. It cannot be added here yet and stay honest: the gate above is the
-    # only condition this job runs under, so any expression keyed on the same
-    # condition resolves one way, and a service container plus a URL nothing
-    # dials is cost that reads as coverage. It belongs in the commit that lifts
-    # the gate, which is #1129.
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [dev-database, postgres]
+        include:
+          - database: dev-database
+            database_url: ''
+          - database: postgres
+            database_url: 'postgres://postgres:postgres@localhost:5432/postgres'
+
     env:
       BETTER_AUTH_URL: 'http://localhost:3000'
       BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+      # The lookup treats an empty variable as absent, so the dev-database leg
+      # still starts the sidecar.
+      DATABASE_URL: ${{ matrix.database_url }}
+
+    # Pinned by the same digest as the `test` job's; bump both together.
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -231,20 +283,21 @@ jobs:
           --filter=create-opensaas-app
 
       # Isolated first-run guard: scaffold the real CLI into an OS temp dir and
-      # run generate + db:push against the workspace toolchain (no network
-      # install). Opt-in via RUN_SCAFFOLD_GUARD so it stays out of the fast unit
-      # lane. See ADR-0002 and packages/create-opensaas-app/tests/scaffold-first-run-guard.test.ts.
+      # run generate against the workspace toolchain (no network install, no
+      # database — the first `pnpm dev` brings one up). Opt-in via
+      # RUN_SCAFFOLD_GUARD so it stays out of the fast unit lane. See ADR-0002
+      # and packages/create-opensaas-app/tests/scaffold-first-run-guard.test.ts.
       - name: Run scaffold first-run guard
         run: pnpm --filter create-opensaas-app test run scaffold-first-run-guard
         env:
           RUN_SCAFFOLD_GUARD: '1'
 
       # Live proof the database-backed rate limiter (issue #909) actually
-      # works: generates a real schema with the derived RateLimit list,
-      # pushes it to a real SQLite database, and drives real betterAuth()
-      # instances through it. Borrows the same offline toolchain as the
-      # scaffold guard above, so it needs no additional install. Opt-in via
-      # RUN_RATE_LIMIT_E2E so it stays out of the fast unit lane. See
+      # works: generates a real contract with the derived RateLimit list,
+      # applies it to a real Postgres (this leg's), and drives real
+      # betterAuth() instances through it. Borrows the same offline toolchain
+      # as the scaffold guard above, so it needs no additional install. Opt-in
+      # via RUN_RATE_LIMIT_E2E so it stays out of the fast unit lane. See
       # ADR-0002 and packages/auth/tests/rate-limit-e2e.test.ts.
       - name: Run database-backed rate limiter e2e guard
         run: pnpm --filter @opensaas/stack-auth test rate-limit-e2e
@@ -291,11 +344,20 @@ jobs:
         env:
           CI: true
 
+      # The harness reconciled the example's database, which rewrites the
+      # committed `db` ref and snapshot under migrations/ (ADR-0065, ADR-0067).
+      # A diff here means the committed ref describes a contract the config no
+      # longer derives.
+      - name: Fail on a stale committed migrations directory
+        run: |
+          git add --intent-to-add -- examples/starter-auth/migrations
+          git diff --exit-code -- examples/starter-auth/migrations
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.database }}
           path: playwright-report/
           retention-days: 7
 
@@ -303,7 +365,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results
+          name: test-results-${{ matrix.database }}
           path: test-results/
           retention-days: 7
 
