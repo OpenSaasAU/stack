@@ -81,8 +81,19 @@ jobs:
       # emission is easiest to make unstable; the two converted examples cover
       # what the scaffolder ships (ADR-0067). The other ten examples join this
       # gate as each converts (#1129, wave 2).
-      - name: Build the CLI for the regeneration gate
-        run: turbo run build --filter=@opensaas/stack-cli
+      # `opensaas generate` loads each example's config, so every package that
+      # config imports has to be built — turbo's `build` is `dependsOn:
+      # ["^build"]`, which reaches a package's own dependencies and not the
+      # examples'. Naming each example's closure builds whatever a newly
+      # imported package turns out to be, rather than turning this step red a
+      # wave later. `^...` is the dependency operator only on a package NAME;
+      # against a path filter it selects the example itself as well.
+      - name: Build the CLI and the examples' dependencies for the regeneration gate
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-cli
+          --filter=opensaas-starter-example^...
+          --filter=opensaas-starter-auth-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
