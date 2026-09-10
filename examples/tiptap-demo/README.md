@@ -25,7 +25,7 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
    cp .env.example .env
    ```
 
-3. Generate Prisma schema and types:
+3. Generate the Contract module and types:
 
    ```bash
    pnpm generate
@@ -44,7 +44,8 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
 - `opensaas.config.ts` - Configuration with `richText()` fields
 - `lib/register-fields.ts` - Client-side field registration
 - `app/admin/[[...admin]]/page.tsx` - Admin UI page with field registration
-- `lib/context.ts` - Database context with access control
+- `prisma/contract.ts` - the generated Contract module (commit it; `pnpm generate` rewrites it)
+- `tests/rich-text-round-trip.test.ts` - the round-trip proof (`pnpm test`)
 
 ## Using the Rich Text Field
 
@@ -107,18 +108,29 @@ excerpt: richText({
 
 ## Database Storage
 
-Rich text content is stored as JSON in the database:
+Rich text content is stored as a Postgres `jsonb` column. There is no
+`schema.prisma`: `pnpm generate` emits `prisma/contract.ts`, the Contract
+module, and this example's `Article` comes out as
 
-```prisma
-model Article {
-  id        String   @id @default(cuid())
-  title     String
-  content   Json     // Tiptap JSON content
-  excerpt   Json?    // Optional rich text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+```typescript
+const model_Article = (models.Article = model('Article', {
+  fields: {
+    id: field.id.uuidv7Native(),
+    title: field.text(),
+    slug: field.text().unique(),
+    content: field.json(), // Tiptap JSON content
+    excerpt: field.json().optional(), // Optional rich text
+    publishedAt: field.column(timestamptzStringColumn).optional(),
+    authorId: field.uuidNative().optional().column('author'),
+  },
+  relations: {
+    author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),
+  },
+}))
 ```
+
+`createdAt`/`updatedAt` are not added for you — auto-timestamps are off by
+default (ADR-0004), and this example does not opt in.
 
 ## Editor Features
 
@@ -147,6 +159,17 @@ fields: {
     ui: { fieldType: 'richTextExtended' },
   })
 }
+```
+
+## Testing
+
+`tests/rich-text-round-trip.test.ts` proves the round-trip: it stands up a real
+Dev database with `createTestContext` from `@opensaas/stack-core/testing`,
+writes a nested Tiptap document through the secured context, edits it, and
+reads it back. No database of your own is needed.
+
+```bash
+pnpm test
 ```
 
 ## Learn More

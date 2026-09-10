@@ -226,30 +226,46 @@ attachment: file({
 })
 ```
 
-For advanced validation (virus scanning, quota checks), add custom logic in field hooks:
+For advanced validation (virus scanning, quota checks), add custom logic in
+field hooks. A field hook reads its own value out of `resolvedData[fieldKey]` —
+there is no `inputValue` argument — and `context.session` is nullable:
 
 ```typescript
 attachment: file({
   storage: 'documents',
   hooks: {
-    resolveInput: async ({ inputValue, context }) => {
-      if (inputValue instanceof File) {
+    resolveInput: async ({ fieldKey, resolvedData, context }) => {
+      const incoming = resolvedData[fieldKey]
+      if (incoming instanceof File) {
         // Custom validation
-        const userQuota = await checkUserQuota(context.session.userId)
+        const userQuota = await checkUserQuota(context.session?.userId)
         if (userQuota.exceeded) {
           throw new Error('Storage quota exceeded')
         }
 
         // Virus scanning
-        const buffer = await inputValue.arrayBuffer()
+        const buffer = await incoming.arrayBuffer()
         await scanFileForViruses(Buffer.from(buffer))
       }
 
       // Continue with default upload behavior
-      return inputValue
+      return incoming
     },
   },
 })
+```
+
+## Testing
+
+`tests/upload-round-trip.test.ts` proves the round-trip: it stands up a real
+Dev database with `createTestContext` from `@opensaas/stack-core/testing`,
+passes it this package's storage surface with `createStorageUtils`, then
+uploads a real PNG and a real PDF through the secured context and reads both
+the stored metadata and the bytes on disk back. No database of your own is
+needed.
+
+```bash
+pnpm test
 ```
 
 ## Learn More

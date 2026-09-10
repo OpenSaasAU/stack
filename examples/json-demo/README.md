@@ -291,17 +291,18 @@ objects, arrays and scalars without a serialization step of your own.
 
 ## Access Control
 
-JSON fields respect the same access control as other fields:
+JSON fields respect the same access control as other fields. Field-level rules
+are declared on the field itself — a list's `access` carries only `operation`:
 
 ```typescript
-access: {
-  field: {
-    metadata: {
+fields: {
+  metadata: json({
+    access: {
       read: () => true,
       create: ({ session }) => !!session,
-      update: ({ session }) => !!session?.isAdmin,
-    }
-  }
+      update: ({ session }) => session?.role === 'admin',
+    },
+  })
 }
 ```
 
@@ -309,14 +310,19 @@ access: {
 
 Transform JSON data with field-level hooks:
 
+A field hook reads its own value out of `resolvedData[fieldKey]` — there is no
+`inputValue` argument. `resolveOutput` is the one that takes a `value`.
+
 ```typescript
 fields: {
   metadata: json({
     hooks: {
       // Transform before writing to database
-      resolveInput: async ({ inputValue }) => {
+      resolveInput: async ({ fieldKey, resolvedData }) => {
+        const incoming = resolvedData[fieldKey]
+        if (typeof incoming !== 'object' || incoming === null) return incoming
         // Add timestamp
-        return { ...inputValue, updatedAt: new Date().toISOString() }
+        return { ...incoming, updatedAt: new Date().toISOString() }
       },
       // Transform after reading from database
       resolveOutput: ({ value }) => {
