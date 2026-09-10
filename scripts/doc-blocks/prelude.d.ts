@@ -133,8 +133,7 @@ declare namespace DocBlocksPrelude {
 
   interface List<TRow, TRelations = NoRelations> extends Query<TRow>, Writes<TRow, TRelations> {}
   interface TxList<TRow, TRelations = NoRelations>
-    extends TxQuery<TRow>,
-      Writes<TRow, TRelations> {}
+    extends TxQuery<TRow>, Writes<TRow, TRelations> {}
 
   // `DocumentChunk.documentId` is the only foreign key any listed page writes,
   // so `document` is the only relation member modelled here.
