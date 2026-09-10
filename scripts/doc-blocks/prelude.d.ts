@@ -104,34 +104,52 @@ declare namespace DocBlocksPrelude {
     forUpdate(): this
   }
 
+  // What an owned relation accepts on a write. `connect` is engine-owned sugar
+  // for the foreign-key assignment and is legal only on the side holding the
+  // column, so the edge has two writable spellings — the relation member and
+  // the foreign-key column itself, which stays writable. A nullable column also
+  // takes `null` to clear the edge, which is not a `disconnect` (ADR-0050 and
+  // packages/core/src/types/inputs.ts).
+  type RelationInput = { connect: { id: string } } | null
+
+  type NoRelations = Record<never, never>
+
   // `CreateInput` requires a member exactly where the contract shows a
   // non-nullable column with no default — `validation: { isRequired: true }`
   // is an application-layer check and leaves the column nullable, which needs
   // `db: { isNullable: false }`. No listed page sets that on any of these
   // three lists, so nothing is required on create here, and `create` is fully
   // partial for the same reason it is in a project generated from these pages.
-  interface Writes<TRow> {
-    create(args: { data: Partial<Omit<TRow, SystemFieldKey>> }): Promise<TRow | null>
+  interface Writes<TRow, TRelations = NoRelations> {
+    create(args: {
+      data: Partial<Omit<TRow, SystemFieldKey>> & Partial<TRelations>
+    }): Promise<TRow | null>
     update(args: {
       where: { id: string }
-      data: Partial<Omit<TRow, SystemFieldKey>>
+      data: Partial<Omit<TRow, SystemFieldKey>> & Partial<TRelations>
     }): Promise<TRow | null>
     delete(args: { where: { id: string } }): Promise<TRow | null>
   }
 
-  interface List<TRow> extends Query<TRow>, Writes<TRow> {}
-  interface TxList<TRow> extends TxQuery<TRow>, Writes<TRow> {}
+  interface List<TRow, TRelations = NoRelations> extends Query<TRow>, Writes<TRow, TRelations> {}
+  interface TxList<TRow, TRelations = NoRelations>
+    extends TxQuery<TRow>,
+      Writes<TRow, TRelations> {}
+
+  // `DocumentChunk.documentId` is the only foreign key any listed page writes,
+  // so `document` is the only relation member modelled here.
+  type DocumentChunkRelations = { document: RelationInput }
 
   interface DB {
     Article: List<Article>
     Document: List<Document>
-    DocumentChunk: List<DocumentChunk>
+    DocumentChunk: List<DocumentChunk, DocumentChunkRelations>
   }
 
   interface TxDB {
     Article: TxList<Article>
     Document: TxList<Document>
-    DocumentChunk: TxList<DocumentChunk>
+    DocumentChunk: TxList<DocumentChunk, DocumentChunkRelations>
   }
 
   type Context = import('@opensaas/stack-core').StackContext<
