@@ -94,6 +94,7 @@ jobs:
           --filter=@opensaas/stack-cli
           --filter=opensaas-starter-example^...
           --filter=opensaas-starter-auth-example^...
+          --filter=opensaas-custom-field-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
@@ -107,13 +108,17 @@ jobs:
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/starter-auth
 
+      - name: Regenerate examples/custom-field
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/custom-field
+
       # `git add --intent-to-add` first: a plain `git diff` only sees tracked
       # files, so a newly emitted artifact would land untracked and pass green.
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
-          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
+          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field
+          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field
 
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
@@ -175,6 +180,7 @@ jobs:
           --filter='./packages/*'
           --filter=./examples/starter
           --filter=./examples/starter-auth
+          --filter=./examples/custom-field
         env:
           OPENAI_API_KEY: 'sk-testing-key'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
