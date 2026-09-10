@@ -7,9 +7,9 @@ import { Button } from '@opensaas/stack-ui/primitives'
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { createPost } from '../lib/actions'
 import type { PostCreateInput } from '../.opensaas/types'
-import { FieldConfig } from '@opensaas/stack-core'
+import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
 
-export function CreatePostDialog({ fields }: { fields: Record<string, FieldConfig> }) {
+export function CreatePostDialog({ fields }: { fields: Record<string, SerializableFieldConfig> }) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
 

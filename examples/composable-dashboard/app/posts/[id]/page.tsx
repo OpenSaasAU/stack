@@ -4,13 +4,13 @@ import { Button } from '@opensaas/stack-ui/primitives'
 import { getContext } from '@/.opensaas/context'
 import { demoSession } from '@/lib/demo-session'
 import { PostEditor } from './PostEditor'
-import { formFields } from '@/lib/form-fields'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 import config from '@/opensaas.config'
 
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const context = await getContext(await demoSession())
-  const fields = formFields((await config).lists.Post.fields)
+  const fields = serializeFieldConfigs((await config).lists.Post.fields)
 
   // `null` is not-found or denied — the two are deliberately indistinguishable
   const post = await context.db.Post.where({ id: { equals: params.id } })

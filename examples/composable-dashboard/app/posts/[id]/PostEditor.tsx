@@ -8,7 +8,7 @@ import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
 import { PostStatusBadge } from '../../../components/PostStatusBadge'
 import type { Post, PostUpdateInput } from '@/.opensaas/types'
-import { FieldConfig } from '@opensaas/stack-core'
+import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
 
 /**
  * What the editor is handed: the post's own columns, and the author narrowed
@@ -22,7 +22,7 @@ export function PostEditor({
   fields,
 }: {
   post: EditablePost
-  fields: Record<string, FieldConfig>
+  fields: Record<string, SerializableFieldConfig>
 }) {
   const [editing, setEditing] = useState(false)
   const router = useRouter()
