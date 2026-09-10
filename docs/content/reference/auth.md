@@ -38,8 +38,7 @@ export default config({
       access: {
         operation: {
           create: ({ session }) => !!session,
-          update: ({ session }) =>
-            session ? { authorId: { equals: session.userId } } : false,
+          update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
         },
       },
     }),
@@ -499,7 +498,10 @@ an application with a genuine need — an admin tool inspecting a live session t
 implementation verifying a password hash:
 
 ```typescript
-const found = await context.sudo().db.Session.where({ token: { equals: token } }).first()
+const found = await context
+  .sudo()
+  .db.Session.where({ token: { equals: token } })
+  .first()
 if (found !== null) {
   console.log(found.token)
 }

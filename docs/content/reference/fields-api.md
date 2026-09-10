@@ -859,13 +859,13 @@ if (person) {
 
 #### Comparison with `timestamp()`
 
-| Feature            | `calendarDay()`           | `timestamp()`               |
-| ------------------ | ------------------------- | --------------------------- |
-| **Time component** | No (date only)            | Yes (date + time + zone)    |
-| **Database column**| `date`                    | `timestamptz`               |
-| **TypeScript type**| `YYYY-MM-DD` string       | ISO 8601 string             |
-| **Use case**       | Birth dates, events       | Points in time              |
-| **Storage size**   | Smaller (date only)       | Larger (includes time)      |
+| Feature             | `calendarDay()`     | `timestamp()`            |
+| ------------------- | ------------------- | ------------------------ |
+| **Time component**  | No (date only)      | Yes (date + time + zone) |
+| **Database column** | `date`              | `timestamptz`            |
+| **TypeScript type** | `YYYY-MM-DD` string | ISO 8601 string          |
+| **Use case**        | Birth dates, events | Points in time           |
+| **Storage size**    | Smaller (date only) | Larger (includes time)   |
 
 ---
 
@@ -1807,10 +1807,16 @@ Field-level hooks for data transformation and side effects.
 type FieldHooks<TTypeInfo, TFieldKey> = {
   resolveInput?: (args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>) => ValueOrUndefined
   validate?: (args: FieldValidateHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
-  beforeOperation?: (args: FieldBeforeOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  beforeOperation?: (
+    args: FieldBeforeOperationHookArgs<TTypeInfo, TFieldKey>,
+  ) => Promise<void> | void
   afterOperation?: (args: FieldAfterOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
-  beforeTransaction?: (args: FieldBeforeTransactionHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
-  afterTransaction?: (args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  beforeTransaction?: (
+    args: FieldBeforeTransactionHookArgs<TTypeInfo, TFieldKey>,
+  ) => Promise<void> | void
+  afterTransaction?: (
+    args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>,
+  ) => Promise<void> | void
   resolveOutput?: (args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>) => ValueOrUndefined
 }
 ```
@@ -2154,11 +2160,11 @@ itemCount: virtual({
 
 A field whose descriptor is `kind: 'columns'` owes three more members, because the engine cannot derive the mapping between one logical value and several physical columns:
 
-| Member                             | Direction | Purpose                                                                        |
-| ---------------------------------- | --------- | ------------------------------------------------------------------------------ |
-| `getColumnNames(fieldName)`        | —         | The physical columns this field owns, so the read can strip the raw parts       |
-| `assembleColumns(fieldName, row)`  | read      | Build the logical value from the row's per-part columns                         |
-| `splitColumns(fieldName, value)`   | write     | Split the logical value back into per-part columns for the write payload        |
+| Member                            | Direction | Purpose                                                                   |
+| --------------------------------- | --------- | ------------------------------------------------------------------------- |
+| `getColumnNames(fieldName)`       | —         | The physical columns this field owns, so the read can strip the raw parts |
+| `assembleColumns(fieldName, row)` | read      | Build the logical value from the row's per-part columns                   |
+| `splitColumns(fieldName, value)`  | write     | Split the logical value back into per-part columns for the write payload  |
 
 Both transforms must stay pure. `assembleColumns` runs before field visibility; `splitColumns` runs after `resolveInput`.
 

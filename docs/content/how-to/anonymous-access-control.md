@@ -8,7 +8,10 @@ resolve, because the thing it scopes to doesn't exist yet. The tempting
 workaround is to drop to `sudo()` and re-implement ownership by hand:
 
 ```typescript
-const project = await context.sudo().db.Project.where({ id: { equals: projectId } }).first()
+const project = await context
+  .sudo()
+  .db.Project.where({ id: { equals: projectId } })
+  .first()
 if (project === null || project.workspaceId !== derivedWorkspaceId) {
   throw forbidden()
 }
@@ -366,7 +369,10 @@ crosses back out of the `sudo()` read — never the row itself:
 
 ```typescript
 async function isWorkspaceNameTaken(context: StackContext, name: string) {
-  const existing = await context.sudo().db.Workspace.where({ name: { equals: name } }).first()
+  const existing = await context
+    .sudo()
+    .db.Workspace.where({ name: { equals: name } })
+    .first()
   return existing !== null
 }
 ```

@@ -66,7 +66,7 @@ Claude will rewrite the helper functions and access blocks, then run `pnpm gener
 
 ### Checkpoint 1 — the access rules
 
-The helpers should now use the session for real. `isAuthor` and `isOwner` are operation rules, so they return a row *filter* rather than `false` for a signed-in caller: a non-author gets no error, they simply match nothing. `isAuthorOfItem` exists separately because field-level rules are boolean-only — they decide per fetched item and cannot scope rows — and `internalNotes` needs that shape. Each returns `false` for an anonymous caller, because the Where vocabulary refuses `undefined` rather than dropping it; `{ authorId: { equals: undefined } }` would be an error, not an open read.
+The helpers should now use the session for real. `isAuthor` and `isOwner` are operation rules, so they return a row _filter_ rather than `false` for a signed-in caller: a non-author gets no error, they simply match nothing. `isAuthorOfItem` exists separately because field-level rules are boolean-only — they decide per fetched item and cannot scope rows — and `internalNotes` needs that shape. Each returns `false` for an anonymous caller, because the Where vocabulary refuses `undefined` rather than dropping it; `{ authorId: { equals: undefined } }` would be an error, not an open read.
 
 ```typescript
 const isSignedIn: AccessControl = ({ session }) => !!session?.userId

@@ -407,15 +407,15 @@ its contents, so a session that cannot read the column is refused.
 
 ### RAG Plugin Configuration
 
-| Option           | Type                             | Default     | Description                                                                     |
-| ---------------- | -------------------------------- | ----------- | ------------------------------------------------------------------------------- |
-| `provider`       | `EmbeddingProviderConfig`        | —           | The single default provider                                                     |
-| `providers`      | `Record<string, …Config>`        | `{}`        | Named providers, when fields choose between them                                |
-| `chunking`       | `ChunkingConfig`                 | recursive   | Project-wide chunking defaults                                                  |
-| `enableMcpTools` | `boolean`                        | `true`      | Register a `semantic_search_<list>` MCP tool per searchable list                 |
-| `batchSize`      | `number`                         | `10`        | Texts per provider call during batch generation                                 |
-| `rateLimit`      | `number`                         | `100`       | Provider requests per minute                                                    |
-| `buildTime`      | `{ enabled, outputPath, … }`     | off         | Build-step embedding generation into a JSON index                               |
+| Option           | Type                         | Default   | Description                                                      |
+| ---------------- | ---------------------------- | --------- | ---------------------------------------------------------------- |
+| `provider`       | `EmbeddingProviderConfig`    | —         | The single default provider                                      |
+| `providers`      | `Record<string, …Config>`    | `{}`      | Named providers, when fields choose between them                 |
+| `chunking`       | `ChunkingConfig`             | recursive | Project-wide chunking defaults                                   |
+| `enableMcpTools` | `boolean`                    | `true`    | Register a `semantic_search_<list>` MCP tool per searchable list |
+| `batchSize`      | `number`                     | `10`      | Texts per provider call during batch generation                  |
+| `rateLimit`      | `number`                     | `100`     | Provider requests per minute                                     |
+| `buildTime`      | `{ enabled, outputPath, … }` | off       | Build-step embedding generation into a JSON index                |
 
 Name either `provider` or `providers`; with `providers`, a field selects one by
 key.
@@ -441,12 +441,12 @@ ragPlugin({
 `searchable(baseField, options)` keeps the base field as authored and adds the
 companion embedding column beside it.
 
-| Option               | Type              | Default                     |
-| -------------------- | ----------------- | --------------------------- |
-| `provider`           | `string`          | the plugin's default        |
-| `dimensions`         | `number`          | the provider's, else `1536` |
-| `chunking`           | `ChunkingConfig`  | the plugin's                |
-| `embeddingFieldName` | `string`          | the field's name plus `Embedding` |
+| Option               | Type             | Default                           |
+| -------------------- | ---------------- | --------------------------------- |
+| `provider`           | `string`         | the plugin's default              |
+| `dimensions`         | `number`         | the provider's, else `1536`       |
+| `chunking`           | `ChunkingConfig` | the plugin's                      |
+| `embeddingFieldName` | `string`         | the field's name plus `Embedding` |
 
 ```typescript
 content: searchable(text(), {
@@ -463,17 +463,17 @@ content: searchable(text(), {
 
 #### embedding() Field
 
-| Option              | Type                                       | Default                     |
-| ------------------- | ------------------------------------------ | --------------------------- |
-| `sourceField`       | `string`                                   | —                           |
-| `provider`          | `string`                                   | the plugin's default        |
-| `dimensions`        | `number`                                   | the provider's, else `1536` |
-| `distanceFunction`  | `'cosine' \| 'l2' \| 'inner_product'`      | `'cosine'`                  |
-| `index`             | `{ method, opclass?, m?, efConstruction?, lists? }` | none               |
-| `allowManualWrites` | `boolean`                                  | `false`                     |
-| `chunking`          | `ChunkingConfig`                           | the plugin's                |
-| `autoGenerate`      | `boolean`                                  | `true` when `sourceField` is set |
-| `ui`                | `{ showVector?, showMetadata? }`           | `false` / `true`            |
+| Option              | Type                                                | Default                          |
+| ------------------- | --------------------------------------------------- | -------------------------------- |
+| `sourceField`       | `string`                                            | —                                |
+| `provider`          | `string`                                            | the plugin's default             |
+| `dimensions`        | `number`                                            | the provider's, else `1536`      |
+| `distanceFunction`  | `'cosine' \| 'l2' \| 'inner_product'`               | `'cosine'`                       |
+| `index`             | `{ method, opclass?, m?, efConstruction?, lists? }` | none                             |
+| `allowManualWrites` | `boolean`                                           | `false`                          |
+| `chunking`          | `ChunkingConfig`                                    | the plugin's                     |
+| `autoGenerate`      | `boolean`                                           | `true` when `sourceField` is set |
+| `ui`                | `{ showVector?, showMetadata? }`                    | `false` / `true`                 |
 
 `dimensions` is a schema fact: changing it is a migration, and a declared value
 that disagrees with a statically known provider dimension fails `pnpm generate`.

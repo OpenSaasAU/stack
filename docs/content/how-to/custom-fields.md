@@ -137,7 +137,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import '../../../lib/register-fields' // Side-effect import
 
 export default async function AdminPage(props: AdminPageProps) {
-  return <AdminUI {...(await adminProps(props))} />
+  return <AdminUI {...await adminProps(props)} />
 }
 ```
 
@@ -163,7 +163,7 @@ export default async function AdminPage(props: AdminPageProps) {
   return (
     <>
       <FieldRegistration />
-      <AdminUI {...(await adminProps(props))} />
+      <AdminUI {...await adminProps(props)} />
     </>
   )
 }
@@ -583,8 +583,20 @@ interface RichTextFieldProps extends Omit<FieldComponentProps, 'value' | 'onChan
   enableMarkdown?: boolean
 }
 
-function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps }: RichTextFieldProps) {
-  return <Editor {...baseProps} minHeight={minHeight} placeholder={placeholder} markdown={enableMarkdown} />
+function RichTextField({
+  minHeight,
+  placeholder,
+  enableMarkdown,
+  ...baseProps
+}: RichTextFieldProps) {
+  return (
+    <Editor
+      {...baseProps}
+      minHeight={minHeight}
+      placeholder={placeholder}
+      markdown={enableMarkdown}
+    />
+  )
 }
 ```
 

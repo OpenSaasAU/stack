@@ -21,23 +21,23 @@ pnpm add @opensaas/stack-core
 
 ## Entry points
 
-| Specifier                              | Holds                                                                     |
-| -------------------------------------- | ------------------------------------------------------------------------- |
-| `@opensaas/stack-core`                  | The everyday surface — config builders, context factory, errors, types     |
-| `@opensaas/stack-core/fields`           | Field builders and their config types                                     |
-| `@opensaas/stack-core/extend`           | Plugin and third-party field authoring contracts                          |
-| `@opensaas/stack-core/mcp`              | MCP request handlers                                                      |
-| `@opensaas/stack-core/unsafe`           | The `context.unsafe` surface types and its refusals                       |
-| `@opensaas/stack-core/client`           | `resolveRuntimeConnection`, used by the generated context                 |
-| `@opensaas/stack-core/dev-database`     | The PGlite-backed Dev database the `dev` loop can resolve to              |
-| `@opensaas/stack-core/contract`         | Contract derivation fed into the Prisma builder                           |
-| `@opensaas/stack-core/origin`           | `originTripwire`, the middleware the generated context installs           |
-| `@opensaas/stack-core/config/plugin-engine` | Plugin dependency resolution and execution                            |
-| `@opensaas/stack-core/testing`          | Test helpers for exercising a config without a database                   |
-| `@opensaas/stack-core/internal`         | Plumbing shared with the other `@opensaas/*` packages — **no semver guarantees**, never import from application code |
+| Specifier                                   | Holds                                                                                                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `@opensaas/stack-core`                      | The everyday surface — config builders, context factory, errors, types                                               |
+| `@opensaas/stack-core/fields`               | Field builders and their config types                                                                                |
+| `@opensaas/stack-core/extend`               | Plugin and third-party field authoring contracts                                                                     |
+| `@opensaas/stack-core/mcp`                  | MCP request handlers                                                                                                 |
+| `@opensaas/stack-core/unsafe`               | The `context.unsafe` surface types and its refusals                                                                  |
+| `@opensaas/stack-core/client`               | `resolveRuntimeConnection`, used by the generated context                                                            |
+| `@opensaas/stack-core/dev-database`         | The PGlite-backed Dev database the `dev` loop can resolve to                                                         |
+| `@opensaas/stack-core/contract`             | Contract derivation fed into the Prisma builder                                                                      |
+| `@opensaas/stack-core/origin`               | `originTripwire`, the middleware the generated context installs                                                      |
+| `@opensaas/stack-core/config/plugin-engine` | Plugin dependency resolution and execution                                                                           |
+| `@opensaas/stack-core/testing`              | Test helpers for exercising a config without a database                                                              |
+| `@opensaas/stack-core/internal`             | Plumbing shared with the other `@opensaas/*` packages — **no semver guarantees**, never import from application code |
 
 There is no `@opensaas/stack-core/context`. `getContext` is on the root, but an
-application normally imports the *generated* factory from `@/.opensaas/context`
+application normally imports the _generated_ factory from `@/.opensaas/context`
 instead — that one carries the config and the client for you.
 
 ## Root exports
@@ -52,7 +52,7 @@ import type { OpenSaasConfig, ListConfig, DatabaseConfig, Session } from '@opens
 ### Access control
 
 `checkAccess`, `checkCreateAccess` and `mergeFilters` are the supported way for
-code reading *outside* `context.db` — a plugin composing its own query, say — to
+code reading _outside_ `context.db` — a plugin composing its own query, say — to
 evaluate a list's operation-level rule and fold the result into its own `where`.
 They scope rows only: field-level `read` access and `resolveOutput` run inside
 `context.db`, so a caller here owns field visibility itself.
@@ -83,7 +83,7 @@ import {
 - `SerializationFailure` — SQLSTATE 40001. Retrying is the caller's own loop; the stack ships no retry helper.
 - `UniqueConstraintViolation` — carries `constraintName`, `list` and `fields`, resolved to OpenSaaS field names through the generated constraint map. A hand-made constraint that isn't in the map keeps a generic message and `fields: []`.
 
-Access *denial* raises nothing at all — it is silent, returning `[]`, `null` or a
+Access _denial_ raises nothing at all — it is silent, returning `[]`, `null` or a
 zeroed aggregate. There is no `AccessDeniedError`.
 
 ### Database URL lookup
@@ -94,7 +94,11 @@ otherwise `DatabaseUrlUnresolvedError`. `findDatabaseUrl()` is the non-throwing
 variant the generated `prisma.config.ts` calls.
 
 ```typescript
-import { resolveDatabaseUrl, findDatabaseUrl, DatabaseUrlUnresolvedError } from '@opensaas/stack-core'
+import {
+  resolveDatabaseUrl,
+  findDatabaseUrl,
+  DatabaseUrlUnresolvedError,
+} from '@opensaas/stack-core'
 ```
 
 ### Fields

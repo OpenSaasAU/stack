@@ -102,7 +102,7 @@ afterTransaction: async ({ status, operation, item, context }) => {
 }
 ```
 
-The hook's own context is used to *find* the writer, never to write with. That
+The hook's own context is used to _find_ the writer, never to write with. That
 indirection is load-bearing, and a plugin that collapses it breaks under
 `context.transaction()`. The `context` the write itself uses is the `AccessContext`
 `Plugin.runtime` receives as its **first** argument — not the `StackContext`
@@ -1110,11 +1110,7 @@ import { writeFile } from 'fs/promises'
 export async function backupEmbeddings() {
   const context = await getContext()
 
-  const articles = await context.db.Article.select(
-    'id',
-    'title',
-    'contentEmbedding',
-  ).all()
+  const articles = await context.db.Article.select('id', 'title', 'contentEmbedding').all()
 
   const backup = {
     timestamp: new Date().toISOString(),

@@ -543,10 +543,7 @@ Post: list({
       query: ({ session }) =>
         session
           ? {
-              OR: [
-                { status: { equals: 'published' } },
-                { authorId: { equals: session.userId } },
-              ],
+              OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
             }
           : { status: { equals: 'published' } },
     },
