@@ -653,8 +653,8 @@ the plain object a real instance returns synchronously). If your app reads
 
 better-auth talks to the database through a stack-authored adapter built over
 `context.unsafe` (ADR-0060), deliberately outside the Access Filter — auth's own
-bookkeeping is not application data. Three consequences are worth knowing before
-you rely on a better-auth capability the adapter does not carry.
+bookkeeping is not application data. The adapter carries five known limits, and
+this is the whole set.
 
 **The adapter implements no joins.** `betterAuthOptions.advanced.database.joins`
 is refused at config time rather than accepted and ignored: better-auth's own
@@ -673,6 +673,29 @@ arrives as the driver's own — a raw SQLSTATE — rather than as a
 `UniqueConstraintViolation` with `constraintName`/`list`/`fields` populated. Code
 that catches around an auth call (two concurrent sign-ups racing the same email,
 say) must match on the driver's shape, not on the stack's error classes.
+
+**There is no issuer-scoped account uniqueness.** better-auth declares the
+account identity key (`providerId` + `accountId`) as a table-level `@@unique`,
+which the Auth lists do not emit yet
+([#986](https://github.com/OpenSaasAU/stack/issues/986)). Nothing in the database
+stops two concurrent sign-ins through the same issuer identity from creating two
+`AuthAccount` rows; better-auth's own existence check is all that stands between
+them. If duplicate accounts would corrupt your linking logic, guard it in your
+own code rather than relying on the schema.
+
+**A `databaseHooks` `before` hook runs outside the sign-up transaction.**
+better-auth swaps the transaction-bound adapter in only through its
+AsyncLocalStorage store, and the `AuthContext` a `databaseHooks` callback
+receives still carries the root adapter on the outer lane. So a hook that awaits
+`context.adapter.findOne(...)` queries the outer lane while the sign-up
+transaction is holding a connection. On the Dev database that is the only
+connection, so the hook waits out Prisma's acquire timeout and **sign-up hangs**;
+on pooled Postgres the read happens outside the transaction and survives the
+rollback the rest of sign-up gets. This is inherited from better-auth's own ALS
+routing — its Kysely and Prisma adapters split the same way — and is tracked in
+[#1252](https://github.com/OpenSaasAU/stack/issues/1252). It applies to the
+[`databaseHooks`](#betterauthoptions) shown above: keep a `before` hook to pure
+in-memory work, and do database reads in an `after` hook or outside auth.
 
 ## Client Setup
 
@@ -928,8 +951,8 @@ lists: {
 
 Note the explicit anonymous branch. A rule written
 `({ session }) => ({ authorId: { equals: session?.userId } })` is not an open
-read — an `undefined` condition is refused with an
-`UndefinedAccessFilterError` rather than dropped, so the read fails rather
+read — an `undefined` condition is refused with a
+`ValidationError` rather than dropped, so the read fails rather
 than widening.
 
 Field-level access is declared on the field itself, not on the list, and its

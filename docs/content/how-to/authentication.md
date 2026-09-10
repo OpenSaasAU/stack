@@ -694,8 +694,8 @@ Post: list({
 
 Write the anonymous branch out explicitly, as above. A rule spelled
 `({ session }) => ({ authorId: { equals: session?.userId } })` does **not** fall
-back to an open read: an `undefined` condition is refused with an
-`UndefinedAccessFilterError`, never dropped, so the read fails closed.
+back to an open read: an `undefined` condition is refused with a
+`ValidationError`, never dropped, so the read fails closed.
 
 The filter vocabulary is a closed set — `equals`, `not`, `in`, `notIn`, `lt`,
 `lte`, `gt`, `gte`, `contains` on a scalar; `some`, `every`, `none` on a
@@ -1332,9 +1332,10 @@ This suppresses the derived single-column index on `identifier` in favor of
 the composite, which serves the same lookups. Suppression is per-column: every
 other index the stack derives for that model is unaffected.
 
-An index column carries no sort direction — `{ field: 'createdAt', sort: 'desc' }`
-is refused at generate time. The index keeps the column order you declared, which
-is what serves the lookup.
+An index column carries no sort direction — `ListIndexFieldRef` has no `sort`
+key, so `{ field: 'createdAt', sort: 'desc' }` is a TypeScript excess-property
+error rather than a generate-time refusal. The index keeps the column order you
+declared, which is what serves the lookup.
 
 ### Linking your app User to the Auth identity
 

@@ -472,6 +472,7 @@ A `resolveOutput` hook only sees what the read actually fetched. If yours reads 
 Add `needs` to the field config your builder returns, or accept it from the caller and pass it through:
 
 ```typescript
+import { z } from 'zod'
 import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
 
 export type DisplayNameField = BaseFieldConfig<TypeInfo> & {
@@ -485,6 +486,8 @@ export function displayName(options?: Omit<DisplayNameField, 'type'>): DisplayNa
     ...options,
     outputType: 'string',
     getContractField: () => ({ kind: 'computed' }),
+    // A computed field accepts no input, so its input schema admits nothing.
+    getZodSchema: () => z.never(),
     hooks: {
       resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
     },

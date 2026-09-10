@@ -53,7 +53,7 @@ Notice what is **not** there: no connection string, and no client constructor. T
 
 This separation is why the same config file works unchanged across a laptop, CI, and production: the three differ only in which environment variable is set.
 
-The keys above cover the common cases — `idField` picks the primary-key strategy (`'uuid7'` by default), `timestamps` opts every list into `createdAt` / `updatedAt` (off by default), `schemas` declares the Postgres namespaces your lists live in, and `extensions` declares the extension packs the generator emits contract spaces for. Two more exist for narrower needs: `client` (pool options and a `pg` factory for serverless Postgres) and `keystoneCompat` (empty-string text defaults, for a Keystone migration).
+The keys above cover the common cases — `idField` picks the primary-key strategy (`'uuid7'` by default), `timestamps` opts every list into `createdAt` / `updatedAt` (off by default), `schemas` declares the Postgres namespaces your lists live in, and `extensions` declares the extension packs the generator emits contract spaces for. Three more exist for narrower needs: `client` (pool options and a `pg` factory for serverless Postgres), `keystoneCompat` (empty-string text defaults, for a Keystone migration), and `prismaGeneratorOptions` (`importFileExtension` and `moduleFormat` for the generated client). That is the whole of `DatabaseConfig` — eight keys, one required.
 
 See [Config API](/docs/reference/config-api) for the complete key reference.
 

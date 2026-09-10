@@ -49,8 +49,8 @@ The auth `User` list ships with no operation-level access by default (ADR-0013
 default](/docs/how-to/authentication#access-control-closed-by-default)). Every
 `owner: { connect: { id: … } }` below needs self-only `query` access granted
 on `User`, because a nested `connect` is gated by read access on its target
-list (see [Nested `connect` is gated by the owning relationship field's
-access](/docs/concepts/access-control#nested-connect-is-gated-by-the-owning-relationship-fields-access))
+list (see [`connect` is gated by the owning relationship field's
+access](/docs/concepts/access-control#connect-is-gated-by-the-owning-relationship-fields-access))
 — without it, every `Workspace` create in this guide would be denied:
 
 ```typescript
@@ -170,7 +170,7 @@ unconditionally is the mistake to avoid.
 
 Nothing evaluates `session.userId` for you and swaps in `false` when it's
 missing. Lowering a predicate is total: a condition that resolved to `undefined`
-is refused with an `UndefinedAccessFilterError`, never dropped as a clause — so
+is refused with a `ValidationError`, never dropped as a clause — so
 the first rule below fails the read outright rather than widening it to every
 row. The second denies, which is the answer you actually wanted:
 

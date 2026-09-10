@@ -106,7 +106,7 @@ Post: list({
 
 This is what keeps a field's value the same from every call site. A hook that
 reads something it did not declare finds nothing there — declaring it is what
-earns the data. See [`needs`](/docs/reference/config-api) and
+earns the data. See [`needs`](/docs/reference/fields-api#needs) and
 [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md).
 
 ### The cost: a declaration outranks a caller's `read` denial
