@@ -168,14 +168,24 @@ Results are ranked by semantic similarity (cosine distance).
 
 ### Admin Panel (`/admin`)
 
-Full CRUD interface for managing the knowledge base:
+Edit and delete interface for the knowledge base:
 
-- Create new articles
 - Edit existing articles
 - Delete articles
-- View embedding metadata (provider, model, dimensions, source hash)
 
-Embeddings are automatically generated/updated when articles are created or modified.
+Creating is **not** available here, by design. This list sets `create: () => false`
+(see [OpenSaas Stack Config](#opensaas-stack-config) below) so the seed script can demonstrate
+`sudo()` bypassing it, and the admin page builds an anonymous context, so a create
+from the admin UI is denied and silently saves nothing. `pnpm db:seed` is how
+articles get in.
+
+`contentEmbedding` has no admin component — no field component is registered for
+the `embedding` type — so the column renders as an unsupported field rather than
+showing its provider, model, dimensions and source hash. Read that metadata from
+the database, or from the script output in the section above.
+
+Embeddings are still generated and updated automatically whenever an article's
+`content` changes, including from an edit made here.
 
 ## Project Structure
 

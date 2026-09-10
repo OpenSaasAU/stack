@@ -209,7 +209,13 @@ fields: {
 }
 ```
 
-Both patterns are fully supported and produce the same results.
+Both patterns are fully supported, and for the field above they produce the same
+column: `searchable()` takes `dimensions` too, and where neither declares one the
+plugin fills it in from the provider — 768 here, not `embedding()`'s own 1536
+default. What `searchable()` cannot express is `distanceFunction`, `index` and
+`allowManualWrites`, none of which are `SearchableOptions`. Wanting one of those
+three is the reason to spell the field out, and Optimization Tip 2 below is an
+example of exactly that.
 
 ### 3. Automatic Generation
 
@@ -335,10 +341,12 @@ the `pgvector` space and SQL state `58P01`.
 ### Ollama's dimension
 
 `OLLAMA_EMBEDDING_DIMENSIONS` in `.env` is the model's output size, defaulting to
-768 (`nomic-embed-text`). It is read rather than discovered because it is a
-column's type and Ollama reports it only from a live embed call — which
-generation must not depend on. Change the model and you change this number, the
-`dimensions` in `opensaas.config.ts`, and the column: that is a migration.
+768 (`nomic-embed-text`). Only `test.ts` reads it, to build the provider it embeds
+a _query_ with. The column's own dimension is the literal `dimensions: 768` in
+`opensaas.config.ts`, which is why `ollamaEmbeddings` requires it: a column's type
+must not depend on a running Ollama, and Ollama reports its output size only from a
+live embed call. Change the model and you change both — and changing the column is
+a migration.
 
 ## Ollama Models
 
@@ -431,7 +439,8 @@ ollama pull nomic-embed-text
 
 - **First document**: ~500ms (Ollama warm-up)
 - **Subsequent documents**: ~100-200ms per document
-- **Batch processing**: Not yet implemented (planned)
+- **Batch processing**: available to call as `provider.embedBatch()`, but the
+  plugin's own `afterTransaction` embedding is per row and does not use it
 
 ### Search Performance
 
@@ -444,7 +453,8 @@ ollama pull nomic-embed-text
 
 ### Optimization Tips
 
-1. **Use batch endpoints** (when available):
+1. **Use batch endpoints** — `embedBatch` is on the provider interface and both
+   providers implement it:
 
    ```typescript
    const vectors = await provider.embedBatch([text1, text2, text3])

@@ -59,7 +59,7 @@
   "examples/rag-ollama-demo/README.md:199": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "examples/rag-ollama-demo/README.md:450": {
+  "examples/rag-ollama-demo/README.md:460": {
     "excuses": ["provider", "text1", "text2", "text3"],
     "reason": "bare names the prose supplies"
   },

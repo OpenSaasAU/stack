@@ -74,7 +74,9 @@ for it and records the step as already satisfied.
 
 1. **Chat:** Ask "What is OpenSaas Stack?" in the chatbot
 2. **Search:** Search for "access control" to see semantic matching
-3. **Admin:** Create a new article and watch embeddings generate automatically
+3. **Admin:** Edit an article's content and watch its embedding regenerate. Creating
+   is denied here on purpose — the list sets `create: () => false` so the seed can
+   demonstrate `sudo()` bypassing it, so new articles come from `pnpm db:seed`.
 
 ## Troubleshooting
 
