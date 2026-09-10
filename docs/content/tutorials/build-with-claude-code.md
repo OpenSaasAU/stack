@@ -66,9 +66,11 @@ Claude will rewrite the helper functions and access blocks, then run `pnpm gener
 
 ### Checkpoint 1 — the access rules
 
-The helpers should now use the session for real. `isAuthor` and `isOwner` are operation rules, so they return a row _filter_ rather than `false` for a signed-in caller: a non-author gets no error, they simply match nothing. `isAuthorOfItem` exists separately because field-level rules are boolean-only — they decide per fetched item and cannot scope rows — and `internalNotes` needs that shape. Each returns `false` for an anonymous caller, because the Where vocabulary refuses `undefined` rather than dropping it; `{ authorId: { equals: undefined } }` would be an error, not an open read.
+The helpers should now use the session for real. `isAuthor` and `isOwner` are operation rules, so they return a row _filter_ rather than `false` for a signed-in caller: a non-author gets no error, they simply match nothing. Each returns `false` for an anonymous caller, because the Where vocabulary refuses `undefined` rather than dropping it; `{ authorId: { equals: undefined } }` would be an error, not an open read.
 
 ```typescript
+import type { AccessControl, FieldAccess } from '@opensaas/stack-core'
+
 const isSignedIn: AccessControl = ({ session }) => !!session?.userId
 
 const isAuthor: AccessControl = ({ session }) =>
@@ -76,26 +78,29 @@ const isAuthor: AccessControl = ({ session }) =>
 
 const isOwner: AccessControl = ({ session }) =>
   session?.userId ? { id: { equals: session.userId } } : false
-
-const isAuthorOfItem: AccessControl = ({ session, item }) =>
-  !!session?.userId && item?.authorId === session.userId
 ```
 
-With `internalNotes` using the boolean helper:
+`internalNotes` needs a different shape. Field rules are boolean-only — they decide per fetched item and cannot scope rows — so they carry their own type, and **an `AccessControl` rule is not assignable to one**: its return type includes a filter, which is `TS2322` here and an `InvalidFieldAccessResultError` at runtime. That is why the checkpoint has a separate `FieldAccess` object rather than reusing `isAuthor`:
+
+```typescript
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session?.userId && item.authorId === session.userId,
+  create: ({ session }) => !!session?.userId,
+  update: ({ session, item }) => !!session?.userId && item?.authorId === session.userId,
+}
+```
+
+`read`'s `item` is always present, because a read rule is only ever evaluated against an already-fetched row; `create`'s is absent, because there is no row yet. Then:
 
 ```typescript
 internalNotes: text({
   ui: { displayMode: 'textarea' },
-  access: {
-    read: isAuthorOfItem,
-    create: isSignedIn,
-    update: isAuthorOfItem,
-  },
+  access: authorOnlyField,
 }),
 ```
 
 {% callout type="warning" %}
-**Operation rules may return filters; field rules must return booleans.** It's the one sharp edge in the access API, and the reason the checkpoint uses two helpers. An agent that reuses the filter-returning `isAuthor` on a field would get "allow" — filters aren't meaningful there.
+**Operation rules may return filters; field rules must return booleans.** It's the one sharp edge in the access API, and the reason the checkpoint declares `authorOnlyField` separately instead of reusing `isAuthor`. Reusing it is a `TS2322` at compile time, and if the types are bypassed, `checkFieldAccess` throws `InvalidFieldAccessResultError` — it does **not** default to allow.
 {% /callout %}
 
 And the `Post` list's operation access should be equivalent to the following, where `query` scopes an anonymous caller to published posts and widens a signed-in one to published posts plus their own:
