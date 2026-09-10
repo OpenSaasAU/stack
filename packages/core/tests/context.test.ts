@@ -260,6 +260,11 @@ describe('getContext', () => {
             update: vi.fn().mockResolvedValue({ id: 'l1', title: 'L' }),
             delete: vi.fn(),
           },
+          // The disconnect target-row form now verifies the target is reachable
+          // under the caller's own query access (#1384) before disconnecting it.
+          teacher: {
+            findUnique: vi.fn().mockResolvedValue({ id: 't1', name: 'T' }),
+          },
         }
         const m2mConfig: OpenSaasConfig = {
           db: { provider: 'postgresql', url: 'postgresql://localhost:5432/test' },

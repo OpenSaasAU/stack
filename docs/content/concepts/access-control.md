@@ -267,6 +267,53 @@ await context.db.post.update({
 > **define a `query` rule** that permits the connect (for example a permissive
 > `query: () => true` or a scoped filter). `sudo` bypasses the check entirely.
 
+## Nested `disconnect` is gated by target query access; `set`/`updateMany`/`deleteMany` are refused
+
+A nested `disconnect` runs no hooks, but its **target-row form** is gated the
+same way as `connect` — read/query access on the target list, evaluated
+against the database:
+
+```typescript
+// Requires Tag's operation.query access to permit reading { id: tagId }.
+await context.db.post.update({
+  where: { id },
+  data: { tags: { disconnect: { id: tagId } } },
+})
+```
+
+The **to-one boolean form**, `{ disconnect: true }`, is unaffected — it nulls
+the foreign key on the row already being updated, whose own write access is
+already checked by the enclosing write, so it carries no additional target
+check. This is the form the admin UI's relationship remove control emits for
+a to-one back-reference.
+
+Nested `set`, `updateMany` and `deleteMany` are **refused outright** for
+non-sudo contexts, throwing `NestedRelationInputError`: the target list's
+access rules cannot be run for these three kinds without a larger rewrite of
+the nested-write surface (tracked separately), so they fail closed instead of
+passing through to Prisma unchecked:
+
+```typescript
+import { NestedRelationInputError } from '@opensaas/stack-core'
+
+try {
+  await context.db.post.update({
+    where: { id },
+    data: { tags: { deleteMany: {} } },
+  })
+} catch (err) {
+  if (err instanceof NestedRelationInputError) {
+    // err.listKey / err.fieldKey / err.kinds identify the refused write.
+    // Author the write against the target list directly instead, wrapped in
+    // context.transaction() when it must land atomically with this write.
+  }
+}
+```
+
+`sudo()` still accepts all three kinds unchanged, as an unchecked pass-through
+to Prisma — the same escape hatch every other access-control refusal in this
+guide leans on.
+
 ## Access Control Execution Order
 
 For **write operations** (create/update):

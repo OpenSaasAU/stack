@@ -107,6 +107,14 @@ export { InvalidCreateAccessResultError } from './access/index.js'
 // validation failure.
 export { RelationFilterAccessDeniedError } from './access/index.js'
 
+// Thrown by a non-sudo write whose payload carries a nested `set`,
+// `updateMany` or `deleteMany` under a relationship key (see #1384). These
+// three kinds were a pass-through straight to Prisma with no target-list
+// access check and no hooks; `sudo()` still accepts them unchanged. Author
+// the writes against the target list directly instead (`context.db.<list>`,
+// wrapped in `context.transaction` when they must land atomically).
+export { NestedRelationInputError } from './context/nested-operations.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getPrismaType / getTypeScriptType / getZodSchema, or
 // getPrismaRelation for relationships) so a misimplemented field fails early

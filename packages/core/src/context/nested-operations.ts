@@ -35,6 +35,52 @@ import { applyCreateDefaults } from './apply-defaults.js'
  * persisted. See ADR-0010 for the full mechanism.
  */
 
+/**
+ * Thrown when a non-sudo write's payload carries a nested `set`, `updateMany`
+ * or `deleteMany` under a relationship key (#1384). These three kinds were
+ * historically a pass-through straight to Prisma: the target list's
+ * `operation.update`/`operation.delete` access was never consulted, no hooks
+ * ran, and an unscoped `updateMany`/`deleteMany` `where` reached rows well
+ * outside the parent's own subtree. ADR-0050 removes nested relation input
+ * from the secured write surface entirely on the `prisma-8` line, so building
+ * per-kind access machinery for these three kinds on `main` would be work
+ * that major deletes wholesale — this refuses them instead, an interim
+ * fail-closed fix mirroring ADR-0050's own refusal shape.
+ *
+ * The refusal fires before any part of the write executes, so a payload
+ * mixing a refused kind with a permitted one persists nothing. `sudo()`
+ * still accepts all three kinds unchanged — the same escape hatch every
+ * other access-control refusal in this module leans on.
+ *
+ * Replacement: author the writes against the target list directly, via
+ * `context.db.<targetList>`, wrapped in `context.transaction` when they must
+ * land atomically with this write.
+ */
+export class NestedRelationInputError extends Error {
+  public listKey: string
+  public fieldKey: string
+  public kinds: readonly string[]
+
+  constructor(listKey: string, fieldKey: string, kinds: readonly string[]) {
+    const kindList = kinds.map((kind) => `"${kind}"`).join(', ')
+    super(
+      `Cannot write "${listKey}.${fieldKey}" — this payload carries a nested ${kindList} ` +
+        `operation, which non-sudo contexts no longer accept (#1384): the target list's access ` +
+        `rules were never consulted for these kinds. Author the writes against the target list ` +
+        `directly (\`context.db.<targetList>\`), wrapped in \`context.transaction\` when they must ` +
+        `land atomically with this write, or use \`context.sudo()\` if this write is trusted to ` +
+        `bypass the target list's access entirely.`,
+    )
+    this.name = 'NestedRelationInputError'
+    this.listKey = listKey
+    this.fieldKey = fieldKey
+    this.kinds = kinds
+  }
+}
+
+/** Nested-op kinds refused outright for non-sudo contexts. See {@link NestedRelationInputError}. */
+const REFUSED_KINDS = ['set', 'updateMany', 'deleteMany'] as const
+
 /** A deferred nested `afterOperation` task, run once the parent has persisted. */
 export interface AfterTask {
   /** Field name on the parent linking to the related list (for include lookup). */
@@ -371,20 +417,30 @@ async function processNestedCreate(
 }
 
 /**
- * Verify that a single connection target is reachable for the caller.
+ * Verify that a single connection (or, for `disconnect`, disconnection)
+ * target is reachable for the caller.
  *
- * Connecting references an existing row rather than modifying it, so — mirroring
- * Keystone — it requires **read/query** access on the target (#578), not update.
- * A filter-result query access is evaluated in the DATABASE via
- * `findFirst({ where: { AND: [connection, accessFilter] } })` rather than in
- * memory, so it correctly handles arbitrary nested-relation predicates and
- * boolean combinators; a non-existent id is folded into the same check.
+ * Both directions reference an existing row rather than modifying it, so —
+ * mirroring Keystone — they require **read/query** access on the target
+ * (#578/#1384), not update. A filter-result query access is evaluated in the
+ * DATABASE via `findFirst({ where: { AND: [connection, accessFilter] } })`
+ * rather than in memory, so it correctly handles arbitrary nested-relation
+ * predicates and boolean combinators; a non-existent id is folded into the
+ * same check.
  *
- * In ADDITION, the OWNING relationship field's field-level access (e.g.
- * `Post.author`'s `create`/`update` access) must permit the connect (#588) —
- * the other half Keystone requires: read access on the target AND write access
- * on the owning field. A deny here denies the connect even when the target row
- * is readable/reachable.
+ * For `connect` (the default, `action: 'connect'`), the OWNING relationship
+ * field's field-level access (e.g. `Post.author`'s `create`/`update` access)
+ * must ADDITIONALLY permit the connect (#588) — the other half Keystone
+ * requires: read access on the target AND write access on the owning field. A
+ * deny here denies the connect even when the target row is readable/reachable.
+ *
+ * For `disconnect` (`action: 'disconnect'`), the caller passes
+ * `owningFieldAccess: undefined`, which makes this second gate a no-op
+ * (`checkFieldAccess` defaults an absent rule to allow) — deliberately: the
+ * owning field's write access is already enforced by Phase 5's
+ * `filterWritableFields` before nested-op processing ever sees this payload,
+ * so re-running it here would only duplicate that gate, not add one. See
+ * {@link processNestedDisconnect}.
  *
  * Sudo bypasses the entire check (handled by the caller).
  */
@@ -399,10 +455,15 @@ async function verifyConnectReachable(
   enclosingOperation: 'create' | 'update',
   enclosingItem: Record<string, unknown> | undefined,
   enclosingInputData: Record<string, unknown> | undefined,
+  action: 'connect' | 'disconnect' = 'connect',
 ): Promise<void> {
   // Access Prisma model dynamically - required because model names are generated at runtime
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const model = (prisma as any)[getDbKey(relatedListName)]
+  const deniedMessage =
+    action === 'connect'
+      ? 'Access denied: Cannot connect to this item'
+      : 'Access denied: Cannot disconnect from this item'
 
   // #588 owning-field gate (see docblock above). `item`/`inputData` are the
   // ENCLOSING write's `originalItem`/`inputData` — the same values the canonical
@@ -415,7 +476,7 @@ async function verifyConnectReachable(
     context,
   })
   if (!owningFieldAllowed) {
-    throw new Error('Access denied: Cannot connect to this item')
+    throw new Error(deniedMessage)
   }
 
   const queryAccess = relatedListConfig.access?.operation?.query
@@ -425,14 +486,14 @@ async function verifyConnectReachable(
   })
 
   if (accessResult === false) {
-    throw new Error('Access denied: Cannot connect to this item')
+    throw new Error(deniedMessage)
   }
 
   // Full access still verifies the row exists, to keep "Item not found" behaviour.
   if (accessResult === true) {
     const item = await model.findUnique({ where: connection })
     if (!item) {
-      throw new Error(`Cannot connect: Item not found`)
+      throw new Error(`Cannot ${action}: Item not found`)
     }
     return
   }
@@ -444,7 +505,7 @@ async function verifyConnectReachable(
   })
 
   if (!reachable) {
-    throw new Error('Access denied: Cannot connect to this item')
+    throw new Error(deniedMessage)
   }
 }
 
@@ -484,6 +545,56 @@ async function processNestedConnect(
   }
 
   return connections
+}
+
+/**
+ * Process a nested `disconnect` (#1384).
+ *
+ * `{ disconnect: true }` — the to-one boolean form — nulls the foreign key on
+ * the row already being updated; that row's own update access has already
+ * been checked (by the enclosing write), so it is left permitted, unchanged,
+ * with no target-list check. This is the form the admin UI's `removeRelated`
+ * action emits for a to-one back-reference (ADR-0018).
+ *
+ * `{ disconnect: { <criteria> } }` — or an array of criteria, for a to-many —
+ * names a target row on the OTHER list. This requires that target's
+ * `operation.query` access, Keystone's semantic, reusing `verifyConnectReachable`
+ * (see its docblock for why the owning-field gate is skipped here) rather than
+ * a second reachability check.
+ */
+async function processNestedDisconnect(
+  value: unknown,
+  relatedListName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  relatedListConfig: ListConfig<any>,
+  context: StackContext,
+  prisma: unknown,
+  enclosingOperation: 'create' | 'update',
+): Promise<unknown> {
+  if (value === true || context._isSudo) {
+    return value
+  }
+
+  const criteriaArray = Array.isArray(value)
+    ? (value as Array<Record<string, unknown>>)
+    : [value as Record<string, unknown>]
+
+  for (const criteria of criteriaArray) {
+    await verifyConnectReachable(
+      criteria,
+      relatedListName,
+      relatedListConfig,
+      context,
+      prisma,
+      undefined,
+      enclosingOperation,
+      undefined,
+      undefined,
+      'disconnect',
+    )
+  }
+
+  return value
 }
 
 /**
@@ -1000,10 +1111,19 @@ interface NestedOpHandler {
  *
  * Kinds that run the full hook pipeline (`create`, `update`, `delete`, and the
  * create branch of `connectOrCreate`) run `beforeOperation` inline and register
- * deferred `afterOperation` tasks. `connect`/`connectOrCreate`'s connect branch
- * enforce access only. Remaining pass-through kinds (`disconnect`, `set`,
- * `updateMany`, `deleteMany`) return their value unchanged so Prisma's own
- * constraints apply — they are intentionally NOT in scope for #569.
+ * deferred `afterOperation` tasks. `connect`/`connectOrCreate`'s connect branch,
+ * and `disconnect`'s target-row form, enforce access only — no hooks (#1384;
+ * this settles the `disconnect` half of #569's original scope note, which is
+ * now closed).
+ *
+ * `set`, `updateMany` and `deleteMany` are refused outright for non-sudo
+ * contexts before dispatch even reaches this registry (see `REFUSED_KINDS` /
+ * {@link NestedRelationInputError} near the top of this file) rather than
+ * given their own access machinery — ADR-0050 removes nested relation input
+ * from the secured write surface entirely on the `prisma-8` line, so that
+ * machinery would be built into a module the next major deletes wholesale.
+ * Their entries below therefore only ever run under `sudo()`, where they
+ * remain an unchecked, hook-free pass-through to Prisma, unchanged.
  */
 const nestedOpRegistry: Record<string, NestedOpHandler> = {
   create: {
@@ -1125,9 +1245,22 @@ const nestedOpRegistry: Record<string, NestedOpHandler> = {
         afterTasks,
       ),
   },
-  // Pass-through kinds: no hooks/access control, left to Prisma's own constraints.
-  // (Out of scope for #569 — see the issue's "Out of scope" notes.)
-  disconnect: { needsInclude: false, execute: ({ value }) => Promise.resolve(value) },
+  // Gated pass-through: no hooks, but the target-row form requires the target
+  // list's operation.query access (#1384). See processNestedDisconnect.
+  disconnect: {
+    needsInclude: false,
+    execute: ({ value, relatedListName, relatedListConfig, context, prisma, enclosingOperation }) =>
+      processNestedDisconnect(
+        value,
+        relatedListName,
+        relatedListConfig,
+        context,
+        prisma,
+        enclosingOperation,
+      ),
+  },
+  // Refused for non-sudo before dispatch reaches here (see REFUSED_KINDS) —
+  // these entries only ever run under sudo, as an unchecked pass-through.
   deleteMany: { needsInclude: false, execute: ({ value }) => Promise.resolve(value) },
   set: { needsInclude: false, execute: ({ value }) => Promise.resolve(value) },
   updateMany: { needsInclude: false, execute: ({ value }) => Promise.resolve(value) },
@@ -1161,6 +1294,18 @@ async function processFieldNestedOps(
   parentListName: string,
   parentOriginalItem: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown>> {
+  // Refuse a non-sudo payload carrying a refused kind BEFORE any part of the
+  // write executes — including before another kind on this same field
+  // dispatches (see NestedRelationInputError's docblock). Collects every
+  // refused kind present so a payload mixing e.g. `set` and `updateMany`
+  // reports both in one error, not just the first found.
+  if (!args.context._isSudo) {
+    const refusedKinds = REFUSED_KINDS.filter((kind) => valueRecord[kind] !== undefined)
+    if (refusedKinds.length > 0) {
+      throw new NestedRelationInputError(parentListName, fieldName, refusedKinds)
+    }
+  }
+
   const nestedOp: Record<string, unknown> = {}
 
   // Created-row recovery is only needed when this field has a creating kind
