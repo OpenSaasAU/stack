@@ -34,6 +34,24 @@
     "whole": "a bare `lists:` object-literal property, not a statement"
   },
 
+  "docs/content/how-to/deploy.md:141": {
+    "excuses": ["TS2307 '@neondatabase/serverless'", "TS2307 'ws'"],
+    "reason": "third-party packages this repo does not install"
+  },
+  "docs/content/how-to/deploy.md:182": {
+    "excuses": ["TS2307 'prisma/config'", "TS2307 '@prisma/orm-postgres/config'"],
+    "reason": "Prisma's own CLI config entry points, which this repo does not depend on"
+  },
+  "docs/content/how-to/deploy.md:529": {
+    "excuses": ["TS2307 './.opensaas/context'"],
+    "reason": "the block is the `webpackIgnore` anti-pattern the prose tells the reader to avoid, and the relative specifier is the point of it"
+  },
+
+  "docs/content/reference/core.md:140": {
+    "excuses": ["session", "TS2339 'Post'"],
+    "reason": "`session` is a bare name the prose supplies, and `Post` is not one of the three lists the prelude models"
+  },
+
   "docs/content/reference/rag.md:169": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
@@ -85,5 +103,10 @@
   "packages/rag/README.md:379": {
     "excuses": ["TS2451 'chunks'"],
     "reason": "three alternative snippets share one fence and each binds `chunks`"
+  },
+
+  "packages/ui/README.md:23": {
+    "excuses": ["TS2882 '@opensaas/stack-ui/styles'"],
+    "reason": "the package does export the subpath, as the stylesheet itself — a CSS side-effect import carries no declarations for the compiler to find"
   }
 }
