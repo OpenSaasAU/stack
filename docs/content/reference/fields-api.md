@@ -1769,17 +1769,26 @@ Field-level access control rules.
 
 ```typescript
 type FieldAccess = {
-  read?: AccessControl
-  create?: AccessControl
-  update?: AccessControl
+  read?: FieldAccessControl
+  create?: FieldAccessControl
+  update?: FieldAccessControl
 }
 
-type AccessControl = (args: {
-  session: Session
-  item?: T
+type FieldAccessControl = (args: {
+  session: Session | null
+  item: T // present on `read`/`update`; absent on `create`
+  inputData: TInput // present on `create`/`update`
   context: AccessContext
+  operation: 'read' | 'create' | 'update'
 }) => boolean | Promise<boolean>
 ```
+
+A field rule returns a **boolean only**, and the runtime enforces it: a
+non-boolean result throws `InvalidFieldAccessResultError` rather than defaulting
+to allow. This is what separates `FieldAccessControl` from the operation-level
+[`AccessControl`](/docs/concepts/access-control), which may also return a filter
+to scope rows — a filter is meaningless per field, so an operation rule is not
+reusable in these slots.
 
 **Example:**
 
