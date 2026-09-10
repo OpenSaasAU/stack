@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { SqlMiddleware } from '@prisma/orm-postgres/family-runtime'
 import { classifyDriverError } from './lib/database-errors.js'
+import { processGlobal } from './lib/process-global.js'
 
 /**
  * Which declared surface is executing. The store carries this and nothing
@@ -25,21 +26,18 @@ export type QueryOrigin = 'engine' | 'unsafe'
 export const originStore = sharedOriginStore()
 
 /**
- * One store per process, not per module instance. Next.js compiles the page
- * layer and the route-handler layer as separate bundles, each with its own
- * copy of this module, while the generated context caches one client — and
- * its tripwire — on `globalThis` for both. A store held in module scope would
- * then be entered by one layer's Unsafe surface and read by the other layer's
- * tripwire, which refuses the query as unmarked. `Symbol.for` is the same
- * cross-instance registry `globalThis` is.
+ * One store per process, not per module instance. The generated context
+ * caches one client — and its tripwire — for every bundle, so a store held in
+ * module scope would be entered by one layer's Unsafe surface and read by the
+ * other layer's tripwire, which refuses the query as unmarked. See
+ * `lib/process-global.ts`.
  */
 function sharedOriginStore(): AsyncLocalStorage<QueryOrigin> {
-  const key = Symbol.for('@opensaas/stack-core/originStore')
-  const existing: unknown = Reflect.get(globalThis, key)
-  if (existing instanceof AsyncLocalStorage) return existing
-  const created = new AsyncLocalStorage<QueryOrigin>()
-  Reflect.set(globalThis, key, created)
-  return created
+  return processGlobal(
+    'originStore',
+    (value): value is AsyncLocalStorage<QueryOrigin> => value instanceof AsyncLocalStorage,
+    () => new AsyncLocalStorage<QueryOrigin>(),
+  )
 }
 
 /** The origin of the current async context, or `undefined` outside any scope. */

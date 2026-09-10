@@ -1,5 +1,6 @@
 import type { AccessContext, Session } from '../access/types.js'
 import type { StackBaseContext } from '../types/context.js'
+import { processGlobalKey } from '../lib/process-global.js'
 
 /**
  * A context of either face. The generated `Context`, `BaseContext` and
@@ -10,8 +11,13 @@ import type { StackBaseContext } from '../types/context.js'
  * A framework component or a plugin that takes a context from the app types its
  * parameter as this, and narrows with {@link engineContextOf} where it needs the
  * engine's face.
+ *
+ * `plugins` is `Record<string, unknown>` on either face — the widest shape a
+ * consumer that does not know which plugins an app registered can be given,
+ * and the one `AccessContext` already carries.
  */
-export type AnyStackContext = StackBaseContext<object, Session, unknown> | AccessContext
+export type AnyStackContext =
+  StackBaseContext<object, Session, Record<string, unknown>> | AccessContext
 
 /**
  * The key under which an app-facing context carries its engine face.
@@ -22,10 +28,19 @@ export type AnyStackContext = StackBaseContext<object, Session, unknown> | Acces
  * operations and nothing of the plumbing. The link between them is this
  * property rather than a structural overlap, so the app-facing type stays free
  * of engine members and the narrowing has one thing to check.
+ *
+ * Registered rather than module-local, for the reason `lib/process-global.ts`
+ * gives: a context `getContext()` builds in one bundle is narrowed by
+ * `engineContextOf` compiled into another, and two module-local symbols are
+ * two different keys.
  */
-export const ENGINE_FACE: unique symbol = Symbol('opensaas.engineContext')
+export const ENGINE_FACE: unique symbol = Symbol.for(processGlobalKey('engineContext'))
 
-/** An object carrying its engine face — what `getContext` returns. */
+/**
+ * An object carrying its engine face — what `getContext` returns. Internal:
+ * {@link ENGINE_FACE} is not part of the package's public surface, so nothing
+ * outside core can produce or narrow this.
+ */
 export interface EngineFaced {
   readonly [ENGINE_FACE]: AccessContext
 }

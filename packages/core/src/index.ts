@@ -87,7 +87,7 @@ export { resolveJunctionEdge } from './context/junction.js'
 // holds the generated `Context` and needs `AccessContext` — two faces of one
 // request, and neither type is assignable to the other.
 export { engineContextOf, EngineContextUnavailableError } from './context/engine-context.js'
-export type { AnyStackContext, EngineFaced } from './context/engine-context.js'
+export type { AnyStackContext } from './context/engine-context.js'
 export type { JunctionEdge } from './context/junction.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).

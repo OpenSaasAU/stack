@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { config } from '../config/index.js'
 import { getContext } from './index.js'
 import { unavailableUnsafeSurface } from '../unsafe.js'
@@ -63,5 +63,23 @@ describe('engineContextOf', () => {
       _isSudo: false,
     }
     expect(() => engineContextOf(assembled)).toThrow(EngineContextUnavailableError)
+  })
+})
+
+describe('one engine-face key per process', () => {
+  it('a second instance of this module resolves the same key', async () => {
+    const first = await import('./engine-context.js')
+    vi.resetModules()
+    const second = await import('./engine-context.js')
+    expect(second).not.toBe(first)
+    expect(second.ENGINE_FACE).toBe(first.ENGINE_FACE)
+  })
+
+  it('narrows a context one instance built through the other instance', async () => {
+    const context = await engineBuiltContext()
+    const first = await import('./engine-context.js')
+    vi.resetModules()
+    const second = await import('./engine-context.js')
+    expect(second.engineContextOf(context)).toBe(first.engineContextOf(context))
   })
 })
