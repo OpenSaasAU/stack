@@ -1,6 +1,6 @@
 'use client'
 
-import { useEditor, EditorContent, UseEditorOptions } from '@tiptap/react'
+import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect } from 'react'
@@ -8,8 +8,8 @@ import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
   name: string
-  value: UseEditorOptions['content']
-  onChange: UseEditorOptions['onUpdate']
+  value: JSONContent | null
+  onChange: (value: JSONContent) => void
   label: string
   error?: string
   disabled?: boolean
@@ -54,9 +54,9 @@ export function TiptapField({
     editable: isEditable,
     // Don't render immediately on the server to avoid SSR issues
     immediatelyRender: false,
-    onUpdate: (props) => {
+    onUpdate: ({ editor }) => {
       if (isEditable && onChange) {
-        onChange(props)
+        onChange(editor.getJSON())
       }
     },
     editorProps: {
@@ -66,10 +66,16 @@ export function TiptapField({
     },
   })
 
+  // `getJSON()` allocates a fresh object on every call, so an identity check
+  // here is always unequal and re-ran `setContent` on every keystroke — which
+  // resets the document and drops the selection mid-typing. Comparing the
+  // serialised forms narrows this to a genuinely external change (a reset
+  // form, a row loaded after mount).
   useEffect(() => {
-    if (editor && value !== editor.getJSON()) {
-      editor.commands.setContent(value || '')
-    }
+    if (!editor) return
+    const incoming = value ?? null
+    if (JSON.stringify(incoming) === JSON.stringify(editor.getJSON())) return
+    editor.commands.setContent(incoming ?? '')
   }, [editor, value])
 
   useEffect(() => {

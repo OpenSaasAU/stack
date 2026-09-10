@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ContractFieldDescriptor } from '@opensaas/stack-core/extend'
+import type { ContractFieldDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
 import type { RichTextField } from '../config/types.js'
 
 /**
@@ -29,7 +29,9 @@ const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
  * }
  * ```
  */
-export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
+export function richText<TTypeInfo extends TypeInfo = TypeInfo>(
+  options?: Omit<RichTextField<TTypeInfo>, 'type'>,
+): RichTextField<TTypeInfo> {
   const isRequired = options?.validation?.isRequired === true
   const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
 
@@ -49,8 +51,16 @@ export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
         // Reject undefined on create.
         return baseSchema
       } else if (isRequired && operation === 'update') {
-        // Allow undefined on update (partial updates).
-        return z.union([baseSchema, z.undefined()])
+        // A union with `z.undefined()` is still a required key inside
+        // `z.object()`, so an update that never mentions this field was
+        // refused outright. `.optional()` is what makes the key absent-able;
+        // the refinement still rejects a present `null`, since required means
+        // non-null. Same shape as core's `json()`.
+        return baseSchema
+          .refine((value) => value !== null, {
+            message: `${fieldName} is required`,
+          })
+          .optional()
       } else {
         return baseSchema.optional()
       }
