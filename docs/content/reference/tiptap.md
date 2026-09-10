@@ -53,18 +53,28 @@ nothing you use.
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import '@/lib/register-fields'
 
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return context.serverAction(props)
+}
+
 export default async function AdminPage() {
-  return <AdminUI context={await getContext()} config={await config} />
+  return (
+    <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+  )
 }
 ```
 
 `config` from the generated bundle is a promise — plugins resolve
-asynchronously — so it is awaited here. See the
-[UI reference](/docs/reference/ui) for the full `AdminUI` prop set, including
-the `serverAction` wrapper mutations go through.
+asynchronously — so it is awaited here. `serverAction` is required: every
+mutation the admin UI performs, rich text edits included, goes through that
+wrapper. See the [UI reference](/docs/reference/ui) for the full `AdminUI` prop
+set.
 
 ### 3. Use in Config
 
@@ -302,9 +312,9 @@ export function ExtendedTiptapField({
     content: value || undefined,
     editable: isEditable,
     immediatelyRender: false, // Critical for Next.js SSR
-    onUpdate: ({ editor }) => {
+    onUpdate: (props) => {
       if (isEditable && onChange) {
-        onChange({ editor })
+        onChange(props)
       }
     },
   })
@@ -483,7 +493,7 @@ React component for rendering the Tiptap editor.
 
 - `name: string` - Field name (for form handling)
 - `value: UseEditorOptions['content']` - The Tiptap document, in the shape `useEditor` takes
-- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with `{ editor }`
+- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with Tiptap's whole update event (destructure the `editor` off it if that is all you need)
 - `label: string` - Field label text
 - `error?: string` - Validation error message
 - `disabled?: boolean` - Disable editing
@@ -560,12 +570,14 @@ const editor = useEditor({
 
 **Problem:** Editor content doesn't persist to database.
 
-**Solution:** Ensure your `onChange` handler updates the form state correctly:
+**Solution:** Forward Tiptap's update event to `onChange` whole. `onChange` is
+typed as `UseEditorOptions['onUpdate']`, so it expects the full event, not a
+rebuilt `{ editor }` object and not the JSON on its own:
 
 ```typescript
 const editor = useEditor({
-  onUpdate: ({ editor }) => {
-    onChange({ editor }) // Pass entire object, not just JSON
+  onUpdate: (props) => {
+    onChange(props)
   },
 })
 ```

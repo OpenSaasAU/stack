@@ -522,10 +522,15 @@ export async function register() {
 ```
 
 ```typescript
+import { config, list } from '@opensaas/stack-core'
+import { localStorage } from '@opensaas/stack-storage'
+import { image, file } from '@opensaas/stack-storage/fields'
+import { s3Storage } from '@opensaas/stack-storage-s3'
+import { vercelBlobStorage } from '@opensaas/stack-storage-vercel'
+
 export default config({
   db: { provider: 'postgresql' },
   storage: {
-    // Public avatars on S3 with CloudFront
     avatars: s3Storage({
       bucket: 'public-avatars',
       region: 'us-east-1',

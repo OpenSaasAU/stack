@@ -48,15 +48,26 @@ registerFieldComponent('richText', TiptapField)
 
 The registration import is for its side effect only. `config` from the generated
 bundle is a promise — plugins resolve asynchronously — so it is awaited.
+`serverAction` is required: every mutation the admin UI performs goes through
+that wrapper.
 
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import '@/lib/register-fields'
 
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return context.serverAction(props)
+}
+
 export default async function AdminPage() {
-  return <AdminUI context={await getContext()} config={await config} />
+  return (
+    <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+  )
 }
 ```
 
@@ -203,32 +214,35 @@ The `TiptapField` component includes:
 
 ### Custom Field Component
 
-Create a custom Tiptap component with additional extensions:
+Create a custom Tiptap component with additional extensions. Type it as
+`TiptapFieldProps` so it drops into the registry in place of the built-in field,
+and forward Tiptap's update event to `onChange` whole — `onChange` is
+`UseEditorOptions['onUpdate']`, so a rebuilt `{ editor }` object or the bare JSON
+will not do:
 
 ```typescript
 // components/CustomTiptapField.tsx
-"use client";
+'use client'
 
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
+import type { TiptapFieldProps } from '@opensaas/stack-tiptap'
 
-export function CustomTiptapField(props) {
+export function CustomTiptapField({ value, onChange }: TiptapFieldProps) {
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Link,
-      Image,
-    ],
-    content: props.value,
+    extensions: [StarterKit, Link, Image],
+    content: value,
     immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      props.onChange(editor.getJSON());
+    onUpdate: (props) => {
+      if (onChange) {
+        onChange(props)
+      }
     },
-  });
+  })
 
-  return <EditorContent editor={editor} />;
+  return <EditorContent editor={editor} />
 }
 ```
 
@@ -310,7 +324,7 @@ React component for rendering the Tiptap editor.
 
 - `name: string` - Field name
 - `value: UseEditorOptions['content']` - The Tiptap document, in the shape `useEditor` takes
-- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with `{ editor }`
+- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with Tiptap's whole update event (destructure the `editor` off it if that is all you need)
 - `label: string` - Field label
 - `error?: string` - Validation error message
 - `disabled?: boolean` - Disable editing
