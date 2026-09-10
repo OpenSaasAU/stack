@@ -83,6 +83,11 @@ export { TransactionOrmHandleError, TransactionUnavailableError } from './contex
 export { requireOrmHandle, OrmHandleUnresolvableError } from './context/index.js'
 export type { OrmRoot } from './context/index.js'
 export { resolveJunctionEdge } from './context/junction.js'
+// The engine's face of an app-facing context, for a component or plugin that
+// holds the generated `Context` and needs `AccessContext` — two faces of one
+// request, and neither type is assignable to the other.
+export { engineContextOf, EngineContextUnavailableError } from './context/engine-context.js'
+export type { AnyStackContext } from './context/engine-context.js'
 export type { JunctionEdge } from './context/junction.js'
 
 // The contract-keyed generics the Generated bundle instantiates (ADR-0052).

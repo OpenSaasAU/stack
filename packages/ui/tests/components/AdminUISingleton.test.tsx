@@ -58,6 +58,7 @@ function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
   const context = {
     db: delegates,
     session: null,
+    ormHandle: {},
     storage: {},
     plugins: {},
     _isSudo: false,

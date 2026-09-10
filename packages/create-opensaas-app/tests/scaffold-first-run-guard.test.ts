@@ -38,16 +38,6 @@ import { fileURLToPath } from 'node:url'
  * unit lane (`turbo run test`) and runs only in the heavier `e2e` CI job, where
  * `pnpm install` + `pnpm build` have run first. See ADR-0002 for why this is an
  * `e2e` guard rather than a unit test.
- *
- * ## Blocked on #1129
- *
- * The basic template is copied from `examples/starter`, which still declares
- * `provider: 'sqlite'` and builds a `PrismaBetterSqlite3` adapter. On this
- * branch `@prisma/adapter-better-sqlite3` is not resolvable, so `generate`
- * fails while loading the config — before it reaches anything this guard is
- * about. Converting the examples to Postgres is #1129; the guard checks the
- * template's declared provider and skips until that lands, rather than
- * asserting something the branch cannot yet satisfy.
  */
 
 const run = promisify(execFile)
@@ -75,20 +65,8 @@ const toolchainNodeModules = [
  */
 const guardEnabled = process.env.RUN_SCAFFOLD_GUARD === '1'
 
-/** The config `copy-templates.ts` copies into `templates/basic`. */
-const basicTemplateConfig = path.join(repoRoot, 'examples/starter/opensaas.config.ts')
-
-/**
- * Whether the basic template can load at all on this branch — see "Blocked on
- * #1129" above. Flips to true on its own once the template declares Postgres.
- */
-const templateOnPostgres =
-  fs.existsSync(basicTemplateConfig) &&
-  /provider:\s*['"]postgresql['"]/.test(fs.readFileSync(basicTemplateConfig, 'utf-8'))
-
 const prerequisitesPresent =
   guardEnabled &&
-  templateOnPostgres &&
   fs.existsSync(createCli) &&
   fs.existsSync(opensaasCli) &&
   toolchainNodeModules !== undefined
@@ -182,11 +160,10 @@ describe.skipIf(!prerequisitesPresent)('scaffold first-run guard (isolated)', ()
 })
 
 // Surface, in a normal unit run, why the heavier guard was skipped: it wasn't
-// opted into (`RUN_SCAFFOLD_GUARD=1`), its built prerequisites are missing (run
-// `pnpm install && pnpm build` first), or the basic template is still on SQLite
-// and cannot load (#1129).
+// opted into (`RUN_SCAFFOLD_GUARD=1`), or its built prerequisites are missing
+// (run `pnpm install && pnpm build` first).
 describe.runIf(!prerequisitesPresent)('scaffold first-run guard (skipped)', () => {
-  it('runs in the e2e job once the basic template is on Postgres (#1129)', () => {
+  it('runs only in the e2e job (set RUN_SCAFFOLD_GUARD=1 after install + build)', () => {
     expect(prerequisitesPresent).toBe(false)
   })
 })

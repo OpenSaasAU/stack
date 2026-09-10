@@ -88,8 +88,9 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # The examples cannot build on the integration branch until they are
-    # converted (#1121, build spec 9).
+    # `starter` and `starter-auth` build on every PR into the integration
+    # branch (test.yml, #1170); the other ten cannot build until wave 2 of
+    # #1129 converts them, and #1175 lifts this gate once they have.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -143,12 +144,10 @@ jobs:
   # `node_modules` rather than installing from the registry, the same trick the
   # PR-gate scaffold guard uses: the integration branch's packages are not
   # published, so the workspace is the only source of the toolchain.
-  # This job is expected to FAIL until #1129 converts `examples/starter` off
-  # the Prisma 7 / SQLite template the scaffolder still copies — a cold start
-  # that cannot start is exactly what it should report, and a red nightly beats
-  # a gate that quietly passes. Do not disable it or add continue-on-error.
-  # It carries no `if:`: a scheduled run always fires on the default branch, so
-  # any gate on `github.ref_name` would skip it on every cron.
+  # `examples/starter` is on Prisma 8 (#1170), so this job is expected to pass;
+  # a red run is a real cold-start regression. Do not disable it or add
+  # continue-on-error. It carries no `if:`: a scheduled run always fires on the
+  # default branch, so any gate on `github.ref_name` would skip it on every cron.
   cold-clone:
     name: Cold clone — create then dev
     runs-on: ubuntu-latest
@@ -169,10 +168,16 @@ jobs:
           --filter=@opensaas/stack-cli
           --filter=create-opensaas-app
 
-      - name: Scaffold a project outside the workspace
+      # `.cold-clone/` is gitignored and sits inside the workspace on purpose:
+      # Turbopack takes the nearest lockfile directory as its filesystem root
+      # and refuses a `node_modules` symlink that points outside it, which a
+      # scaffold under `mktemp -d` with a link back into the workspace does.
+      - name: Scaffold a project into the ignored cold-clone directory
         run: |
           set -euo pipefail
-          WORKDIR="$(mktemp -d)"
+          WORKDIR="$GITHUB_WORKSPACE/.cold-clone"
+          rm -rf "$WORKDIR"
+          mkdir -p "$WORKDIR"
           echo "COLD_CLONE_DIR=$WORKDIR" >> "$GITHUB_ENV"
           cd "$WORKDIR"
           node "$GITHUB_WORKSPACE/packages/create-opensaas-app/dist/index.js" \
@@ -185,8 +190,10 @@ jobs:
           cd "$COLD_CLONE_DIR/myapp"
           node "$GITHUB_WORKSPACE/packages/cli/bin/opensaas.js" dev > dev.log 2>&1 &
           DEV_PID=$!
+          # The basic template ships the admin and no root page, so `/admin`
+          # is the route that proves the app serves — `/` is a 404 by design.
           for _ in $(seq 1 120); do
-            if curl -sf http://localhost:3000 > /dev/null; then break; fi
+            if curl -sf http://localhost:3000/admin > /dev/null; then break; fi
             if ! kill -0 "$DEV_PID" 2> /dev/null; then
               echo '`opensaas dev` exited before the app answered:'
               cat dev.log
@@ -194,7 +201,7 @@ jobs:
             fi
             sleep 2
           done
-          curl -sf http://localhost:3000 > /dev/null
+          curl -sf http://localhost:3000/admin > /dev/null
           test -f .opensaas/dev-db.json
           kill "$DEV_PID"
 

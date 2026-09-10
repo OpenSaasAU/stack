@@ -1,60 +1,34 @@
 import { describe, it, expect } from 'vitest'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import { existsSync } from 'node:fs'
-import fsp from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { createAuth } from '../src/server/index.js'
-import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
+import { betterAuth } from 'better-auth'
+import { buildBetterAuthOptions } from '../src/server/index.js'
+import { generateProject, toolchainPresent } from './generated-project.js'
 
 /**
  * Live end-to-end proof that consolidating the plugin-table derivation onto
  * `deriveAuthLists` (issue #992) actually closes the orphaned-row defect
- * #992's own triage confirmed: generates a real Prisma schema (MCP plugin
- * enabled, so the OAuth tables are derived with real foreign keys), pushes
- * it to a real SQLite database, signs up a real user through a real
- * `betterAuth()` instance (via `createAuth()`, the package's own source, not
- * a stale build), attaches OAuth rows to that user via the raw Prisma client
- * (the same path better-auth's own adapter writes through — these lists ship
- * closed per ADR-0013), deletes the user through better-auth's own
- * `/delete-user` endpoint (the exact `internalAdapter.deleteUser` path
- * #992's triage traced), and asserts the database cascade removed every
- * OAuth row rather than leaving them orphaned.
+ * #992's own triage confirmed: generates a real contract (MCP plugin enabled,
+ * so the OAuth tables are derived with real foreign keys), applies it to a
+ * real Postgres, signs up a real user through a real `betterAuth()` instance
+ * (over `buildBetterAuthOptions()`, the package's own source), attaches OAuth
+ * rows to that user through better-auth's own adapter (these lists ship
+ * closed, ADR-0013), deletes the user through better-auth's own `/delete-user`
+ * endpoint (the exact `internalAdapter.deleteUser` path #992's triage
+ * traced), and asserts the database cascade removed every OAuth row rather
+ * than leaving them orphaned.
  *
- * Follows the same opt-in/offline-toolchain pattern as `rate-limit-e2e.test.ts`
- * (see ADR-0002) — kept out of the fast unit lane, run only in the `e2e` CI
- * job where `pnpm install && pnpm build` have already run.
+ * Opt-in via an env flag, run only in the `e2e` CI job (ADR-0002); the
+ * project, toolchain and database come from `generated-project.ts`.
  */
 
-const run = promisify(execFile)
-const here = path.dirname(new URL(import.meta.url).pathname)
-const repoRoot = path.resolve(here, '../../..')
-
-const opensaasCli = path.join(repoRoot, 'packages/cli/dist/index.js')
-const coreDist = path.join(repoRoot, 'packages/core/dist')
-const authDist = path.join(repoRoot, 'packages/auth/dist')
-const toolchainNodeModules = path.join(repoRoot, 'examples/starter-auth/node_modules')
-
 const guardEnabled = process.env.RUN_MCP_OAUTH_CASCADE_E2E === '1'
+const prerequisitesPresent = guardEnabled && toolchainPresent()
 
-const prerequisitesPresent =
-  guardEnabled &&
-  existsSync(opensaasCli) &&
-  existsSync(coreDist) &&
-  existsSync(authDist) &&
-  existsSync(path.join(toolchainNodeModules, '.bin', 'opensaas')) &&
-  existsSync(path.join(toolchainNodeModules, '.bin', 'prisma')) &&
-  existsSync(path.join(toolchainNodeModules, '@prisma', 'adapter-better-sqlite3'))
-
-/** The temp project's `opensaas.config.ts`: sqlite + the MCP plugin + self-service account deletion enabled. */
+/** The temp project's `opensaas.config.ts`: the MCP plugin + self-service account deletion enabled. */
 function configSource(): string {
   return `import { config } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
   plugins: [
@@ -83,88 +57,32 @@ export default config({
       },
     }),
   ],
-  db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {},
 })
 `
-}
-
-/** Scaffold a fresh temp project with the MCP plugin enabled and push its schema. Returns the project dir. */
-async function setupProject(): Promise<string> {
-  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'opensaas-mcp-cascade-e2e-'))
-  const dir = path.join(tmpRoot, 'project')
-  await fsp.mkdir(dir, { recursive: true })
-
-  await fsp.writeFile(path.join(dir, 'opensaas.config.ts'), configSource())
-  await fsp.writeFile(
-    path.join(dir, 'package.json'),
-    JSON.stringify(
-      { name: 'mcp-cascade-e2e-project', version: '0.0.0', private: true, type: 'module' },
-      null,
-      2,
-    ),
-  )
-  await fsp.writeFile(path.join(dir, '.env'), 'DATABASE_URL=file:./dev.db\n')
-  await fsp.symlink(toolchainNodeModules, path.join(dir, 'node_modules'))
-
-  const env = {
-    ...process.env,
-    DATABASE_URL: 'file:./dev.db',
-    BETTER_AUTH_SECRET: 'e2e-test-secret-not-for-production-0000000000',
-    BETTER_AUTH_URL: 'http://localhost:3000',
-  }
-  const binDir = path.join(dir, 'node_modules', '.bin')
-  await run(path.join(binDir, 'opensaas'), ['generate'], { cwd: dir, env })
-  await run(path.join(binDir, 'prisma'), ['db', 'push'], { cwd: dir, env })
-
-  return dir
-}
-
-/** Import the temp project's config + generated context and build a real auth instance via `createAuth()`. */
-async function createAuthInstanceForProject(dir: string) {
-  process.env.DATABASE_URL = `file:${path.join(dir, 'dev.db')}`
-
-  // `@vite-ignore` suppresses Vite's static analysis of this computed,
-  // external (outside the package root) specifier.
-  const config = (
-    (await import(/* @vite-ignore */ pathToFileURL(path.join(dir, 'opensaas.config.ts')).href)) as {
-      default: OpenSaasConfig | Promise<OpenSaasConfig>
-    }
-  ).default
-  const { rawOpensaasContext } = (await import(
-    /* @vite-ignore */ pathToFileURL(path.join(dir, '.opensaas/context.ts')).href
-  )) as { rawOpensaasContext: Promise<AccessContext> }
-
-  const resolvedContext = await rawOpensaasContext
-  return { auth: createAuth(config, resolvedContext), context: resolvedContext }
-}
-
-async function cleanupProject(dir: string): Promise<void> {
-  // See rate-limit-e2e.test.ts for why this global must be cleared between projects.
-  delete (globalThis as { prisma?: unknown }).prisma
-
-  const linkPath = path.join(dir, 'node_modules')
-  if (existsSync(linkPath)) {
-    await fsp.unlink(linkPath)
-  }
-  await fsp.rm(path.dirname(dir), { recursive: true, force: true })
 }
 
 describe.skipIf(!prerequisitesPresent)(
   'MCP plugin OAuth tables cascade on user deletion — live end-to-end (issue #992)',
   () => {
     it('deleting a user via better-auth’s own /delete-user removes their OAuth clients, access tokens and consents; another user’s rows survive', async () => {
-      const dir = await setupProject()
+      const project = await generateProject('mcp-cascade-e2e', configSource(), {
+        BETTER_AUTH_SECRET: 'e2e-test-secret-not-for-production-0000000000',
+        BETTER_AUTH_URL: 'http://localhost:3000',
+      })
       try {
-        const { auth, context } = await createAuthInstanceForProject(dir)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the temp project's own generated Prisma Client, not a type this package can import
-        const ormHandle = context.ormHandle as any
+        // A real instance rather than `createAuth()`'s lazy proxy: `$context`
+        // is read below, and the proxy surfaces every member through an async
+        // wrapper (packages/auth/CLAUDE.md, "Typed auth.api.* reads").
+        const auth = betterAuth(await buildBetterAuthOptions(project.config, project.context))
+        // The OAuth lists ship closed (ADR-0013). They are seeded through
+        // better-auth's own adapter — the path its OAuth flows write through
+        // — and read back under `sudo()`.
+        const { adapter } = await auth.$context
+        const seeded = project.context.sudo().db
+        const count = async (list: 'OauthClient' | 'OauthAccessToken' | 'OauthConsent') =>
+          (await seeded[list].aggregate((aggregate) => ({ n: aggregate.count() }))).n
 
         const { headers: deletedHeaders } = await auth.api.signUpEmail({
           body: { email: 'deleted@example.com', password: 'password1234', name: 'Deleted User' },
@@ -185,18 +103,17 @@ describe.skipIf(!prerequisitesPresent)(
         })
         const survivorUserId = survivorSession!.user.id
 
-        // OAuth rows are created through the raw Prisma client — these lists
-        // ship closed (ADR-0013), and this is the same path better-auth's own
-        // OAuth flows write through in production. better-auth 1.7's OAuth
-        // Provider (issue #986) splits what the pre-1.7 MCP plugin modelled
-        // as a single "application" with embedded access/refresh tokens into
-        // oauthClient (the registered client) plus a standalone
-        // oauthAccessToken (no more combined access+refresh token row).
+        // better-auth 1.7's OAuth Provider (issue #986) splits what the pre-1.7
+        // MCP plugin modelled as a single "application" with embedded tokens
+        // into oauthClient (the registered client) plus a standalone
+        // oauthAccessToken. `clientId` on the token and consent rows is a
+        // plain scalar, not an id-based foreign key (packages/auth/CLAUDE.md).
         for (const [suffix, userId] of [
           ['deleted', deletedUserId],
           ['survivor', survivorUserId],
         ]) {
-          await ormHandle.oauthClient.create({
+          await adapter.create({
+            model: 'oauthClient',
             data: {
               name: `App ${suffix}`,
               clientId: `client-${suffix}`,
@@ -204,7 +121,8 @@ describe.skipIf(!prerequisitesPresent)(
               userId,
             },
           })
-          await ormHandle.oauthAccessToken.create({
+          await adapter.create({
+            model: 'oauthAccessToken',
             data: {
               token: `access-${suffix}`,
               clientId: `client-${suffix}`,
@@ -212,21 +130,22 @@ describe.skipIf(!prerequisitesPresent)(
               expiresAt: new Date(Date.now() + 3_600_000),
               // oauthAccessToken declares createdAt but not updatedAt
               // upstream, so it derives as an ordinary required column with
-              // no DB-level default (see hasSymmetricTimestamps in
+              // no default (see hasSymmetricTimestamps in
               // derive-auth-lists.ts) — better-auth's own adapter always
-              // supplies it explicitly, so this raw-Prisma seed must too.
+              // supplies it explicitly, so this seed must too.
               createdAt: new Date(),
               userId,
             },
           })
-          await ormHandle.oauthConsent.create({
+          await adapter.create({
+            model: 'oauthConsent',
             data: { clientId: `client-${suffix}`, scopes: 'openid', userId },
           })
         }
 
-        expect(await ormHandle.oauthClient.count()).toBe(2)
-        expect(await ormHandle.oauthAccessToken.count()).toBe(2)
-        expect(await ormHandle.oauthConsent.count()).toBe(2)
+        expect(await count('OauthClient')).toBe(2)
+        expect(await count('OauthAccessToken')).toBe(2)
+        expect(await count('OauthConsent')).toBe(2)
 
         const deleteResult = await auth.api.deleteUser({
           body: {},
@@ -234,30 +153,23 @@ describe.skipIf(!prerequisitesPresent)(
         })
         expect(deleteResult).toEqual({ success: true, message: 'User deleted' })
 
-        expect(await ormHandle.user.findUnique({ where: { id: deletedUserId } })).toBeNull()
+        expect(await seeded.User.where({ id: { equals: deletedUserId } }).first()).toBeNull()
 
         // No orphans: every row belonging to the deleted user is gone via the
         // database cascade, not just the user row itself.
-        expect(
-          await ormHandle.oauthClient.findFirst({ where: { userId: deletedUserId } }),
-        ).toBeNull()
-        expect(
-          await ormHandle.oauthAccessToken.findFirst({ where: { userId: deletedUserId } }),
-        ).toBeNull()
-        expect(
-          await ormHandle.oauthConsent.findFirst({ where: { userId: deletedUserId } }),
-        ).toBeNull()
+        const ownedBy = { userId: { equals: deletedUserId } }
+        expect(await seeded.OauthClient.where(ownedBy).first()).toBeNull()
+        expect(await seeded.OauthAccessToken.where(ownedBy).first()).toBeNull()
+        expect(await seeded.OauthConsent.where(ownedBy).first()).toBeNull()
 
         // The other user's rows are untouched — the cascade is scoped to the
         // deleted user's own foreign key, not a wholesale table wipe.
-        expect(await ormHandle.user.findUnique({ where: { id: survivorUserId } })).not.toBeNull()
-        expect(await ormHandle.oauthClient.count()).toBe(1)
-        expect(await ormHandle.oauthAccessToken.count()).toBe(1)
-        expect(await ormHandle.oauthConsent.count()).toBe(1)
-
-        await context.ormHandle.$disconnect()
+        expect(await seeded.User.where({ id: { equals: survivorUserId } }).first()).not.toBeNull()
+        expect(await count('OauthClient')).toBe(1)
+        expect(await count('OauthAccessToken')).toBe(1)
+        expect(await count('OauthConsent')).toBe(1)
       } finally {
-        await cleanupProject(dir)
+        await project.close()
       }
     }, 120_000)
   },

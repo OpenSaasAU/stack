@@ -60,9 +60,9 @@ scaffolder did for you, and which you re-run with `pnpm generate`) produces:
 
 - **`prisma/contract.ts`** — the schema contract, and what `prisma.config.ts` points at
 - **`prisma/contract.json`** and **`prisma/contract.d.ts`** — the artifacts emitted beside it; commit all three
-- **`prisma.config.ts`** — Prisma CLI configuration
+- **`prisma.config.ts`** — Prisma CLI configuration; commit it too
 - **`.opensaas/types.ts`** — TypeScript types for your lists
-- **`.opensaas/context.ts`** — the access-controlled context factory
+- **`.opensaas/context.ts`** — the access-controlled context factory (`.opensaas/` is regenerated, not committed)
 
 You interact with the database through the generated context, which enforces
 access control automatically:
@@ -71,14 +71,15 @@ access control automatically:
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext() // pass a session for authenticated access
-const posts = await context.db.post.findMany()
+const posts = await context.db.Post.all()
+const published = await context.db.Post.where({ status: { equals: 'published' } }).all()
 ```
 
 Access-denied operations return `null` or `[]` instead of throwing, so always
 null-check writes:
 
 ```typescript
-const post = await context.db.post.update({ where: { id }, data })
+const post = await context.db.Post.update({ where: { id }, data })
 if (!post) {
   // Either it doesn't exist, or the current session can't access it.
   return { error: 'Not found or access denied' }

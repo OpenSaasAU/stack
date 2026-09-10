@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
+import type { OpenSaasConfig, AnyStackContext, Session } from '@opensaas/stack-core'
 import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
 import { opensaasAuthAdapter } from '../adapter/index.js'
 import { getAuthListRegistry } from '../lists/index.js'
@@ -102,7 +102,7 @@ function isTransactionCapable(value: unknown): value is TransactionCapableContex
 function getDatabaseConfig(
   opensaasConfig: OpenSaasConfig,
   authConfig: NormalizedAuthConfig,
-  context: AccessContext,
+  context: AnyStackContext,
 ): BetterAuthOptions['database'] {
   const unsafe = Reflect.get(context, 'unsafe')
   if (!isUnsafeSurface(unsafe) || !isTransactionCapable(context)) {
@@ -301,16 +301,16 @@ function mergeBetterAuthOptions(
  */
 export async function buildBetterAuthOptions(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
 ): Promise<BetterAuthOptions>
 export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins: TPlugins,
 ): Promise<ResolvedBetterAuthOptions<TPlugins>>
 export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins?: TPlugins,
 ): Promise<BetterAuthOptions | ResolvedBetterAuthOptions<TPlugins>> {
   const resolvedConfig = await Promise.resolve(opensaasConfig)
@@ -480,16 +480,16 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
  */
 export function createAuth(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
 ): Auth<BetterAuthOptions>
 export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins: TPlugins,
 ): Auth<ResolvedBetterAuthOptions<TPlugins>>
 export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins?: TPlugins,
 ): Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>> {
   const configPromise = Promise.resolve(opensaasConfig)

@@ -30,3 +30,8 @@ pnpm-lock.yaml
 .design-sync/
 ds-bundle/
 .ds-sync/
+# Generator output the examples commit (ADR-0067) — the same determinism gate
+# regenerates it, so it keeps the generator's own bytes.
+examples/*/prisma/
+examples/*/prisma.config.ts
+examples/*/migrations/

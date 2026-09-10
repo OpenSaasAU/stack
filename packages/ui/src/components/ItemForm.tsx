@@ -8,9 +8,11 @@ import { Card } from '../primitives/card.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
+  type AnyStackContext,
   type FieldConfig,
   type ListConfig,
   type SecuredQuery,
+  engineContextOf,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -18,7 +20,7 @@ import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemFor
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
 export interface ItemFormProps {
-  context: AccessContext
+  context: AnyStackContext
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
@@ -272,7 +274,7 @@ async function ItemViewLayoutView({
 }
 
 export async function ItemForm({
-  context,
+  context: appContext,
   config,
   listKey,
   mode,
@@ -280,6 +282,7 @@ export async function ItemForm({
   basePath = '/admin',
   serverAction,
 }: ItemFormProps) {
+  const context = engineContextOf(appContext)
   const listConfig = config.lists[listKey]
   const urlKey = getUrlKey(listKey)
 

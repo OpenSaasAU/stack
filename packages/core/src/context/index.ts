@@ -19,6 +19,7 @@ import {
   type UnsafeSurface,
   type UnsafeTransactionScope,
 } from '../unsafe.js'
+import { ENGINE_FACE, type EngineFaced } from './engine-context.js'
 import type { StackContext, StackTransactionContext } from '../types/context.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
@@ -1156,7 +1157,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     return Promise.reject(new TransactionUnavailableError())
   }
 
-  const returned: StackContext<AccessControlledDB> = {
+  const returned: StackContext<AccessControlledDB> & EngineFaced = {
     db: db as AccessControlledDB,
     session,
     unsafe,
@@ -1167,6 +1168,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     withSession,
     transaction,
     _isSudo,
+    [ENGINE_FACE]: context,
   }
   return returned
 }

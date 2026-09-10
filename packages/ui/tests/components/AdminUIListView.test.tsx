@@ -30,6 +30,7 @@ function makeContext(): AccessContext {
   const context = {
     db: {},
     session: null,
+    ormHandle: {},
     storage: {},
     plugins: {},
     _isSudo: false,

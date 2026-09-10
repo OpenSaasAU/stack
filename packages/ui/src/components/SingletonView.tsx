@@ -3,12 +3,17 @@ import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AnyStackContext,
+  engineContextOf,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
 
 export interface SingletonViewProps {
-  context: AccessContext
+  context: AnyStackContext
   config: OpenSaasConfig
   listKey: string
   basePath?: string
@@ -43,12 +48,13 @@ export interface SingletonViewProps {
  * a denied envelope, which `ItemFormClient` surfaces as an error.
  */
 export async function SingletonView({
-  context,
+  context: appContext,
   config,
   listKey,
   basePath = '/admin',
   serverAction,
 }: SingletonViewProps) {
+  const context = engineContextOf(appContext)
   const listConfig = config.lists[listKey]
   const urlKey = getUrlKey(listKey)
 
