@@ -182,7 +182,7 @@ articles get in.
 `contentEmbedding` has no admin component — no field component is registered for
 the `embedding` type — so the column renders as an unsupported field rather than
 showing its provider, model, dimensions and source hash. Read that metadata from
-the database, or from the script output in the section above.
+the `contentEmbeddingMetadata` column instead.
 
 Embeddings are still generated and updated automatically whenever an article's
 `content` changes, including from an edit made here.
