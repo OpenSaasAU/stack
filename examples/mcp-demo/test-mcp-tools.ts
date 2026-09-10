@@ -49,6 +49,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isNamedTool(value: unknown): value is { name: string } {
+  return isRecord(value) && typeof value.name === 'string'
+}
+
+function isContentPart(value: unknown): value is { type: string; text: string } {
+  return isRecord(value) && typeof value.type === 'string' && typeof value.text === 'string'
+}
+
+/**
+ * The envelope validated rather than asserted: `Response.json()` answers `any`,
+ * so every member below is checked before the suite reads it, and a malformed
+ * reply fails here naming what it was instead of undefined-ing downstream.
+ */
+function isJsonRpcResult(value: unknown): value is JsonRpcResult {
+  if (!isRecord(value)) return false
+
+  const { jsonrpc, id, result, error } = value
+  if (jsonrpc !== undefined && typeof jsonrpc !== 'string') return false
+  if (id !== undefined && id !== null && typeof id !== 'number' && typeof id !== 'string') {
+    return false
+  }
+
+  if (result !== undefined) {
+    if (!isRecord(result)) return false
+    const { tools, content } = result
+    if (tools !== undefined && !(Array.isArray(tools) && tools.every(isNamedTool))) return false
+    if (content !== undefined && !(Array.isArray(content) && content.every(isContentPart))) {
+      return false
+    }
+  }
+
+  if (error !== undefined) {
+    if (!isRecord(error)) return false
+    if (typeof error.code !== 'number' || typeof error.message !== 'string') return false
+  }
+
+  return true
+}
+
 function readString(value: unknown, key: string): string {
   assert(isRecord(value), `expected an object, got ${JSON.stringify(value)}`)
   const field = value[key]
@@ -103,7 +142,9 @@ async function main(): Promise<void> {
       }),
     )
     assert.equal(response.status, 200, `${method} answered ${response.status}`)
-    return (await response.json()) as JsonRpcResult
+    const body: unknown = await response.json()
+    assert(isJsonRpcResult(body), `${method} answered ${JSON.stringify(body)}`)
+    return body
   }
 
   const tool = async (name: string, args: unknown): Promise<unknown> =>
