@@ -82,10 +82,12 @@ examples/auth-demo/
 The `internalNotes` field on Post:
 
 - **Read**: Only the author can see
-- **Create**: Only the author can set
+- **Create**: Must be signed in — there is no `item` yet on create, and the
+  author is whoever is creating the post
 - **Update**: Only the author can modify
 
-This demonstrates field-level access control - the field will be filtered out for non-authors.
+This demonstrates field-level access control - the field is stripped from the
+row a non-author reads, rather than the read failing.
 
 ## Setup
 
@@ -108,13 +110,15 @@ cd ../..
 ### 2. Configure Environment
 
 ```bash
-cd examples/blog
+cd examples/auth-demo
 cp .env.example .env
 ```
 
+Set `BETTER_AUTH_SECRET` to something of your own (`openssl rand -base64 32`).
+
 `DATABASE_URL` is left unset, so `pnpm dev` runs the Dev database for this project.
 
-### 3. Generate Schema and Types
+### 3. Generate the Contract and Types
 
 ```bash
 pnpm generate
@@ -122,84 +126,38 @@ pnpm generate
 
 This reads `opensaas.config.ts` and generates:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types for your models and context
 
 `pnpm dev` runs this for you, and reconciles the database with what it emits.
+Commit everything but `.opensaas/`, which is regenerated.
 
-## Testing Access Control
-
-Create a test file to see access control in action:
-
-```typescript
-// test.ts
-import { getContext, getContextWithUser } from './lib/context'
-import { prisma } from './lib/context'
-
-async function test() {
-  // Create a user directly (bypassing access control for setup)
-  const user = await prisma.user.create({
-    data: {
-      name: 'Alice',
-      email: 'alice@example.com',
-      password: 'hashed_password',
-    },
-  })
-
-  // Get context as Alice
-  const contextAlice = await getContextWithUser(user.id)
-
-  // Create a post as Alice
-  const post = await contextAlice.db.post.create({
-    data: {
-      title: 'My First Post',
-      slug: 'my-first-post',
-      content: 'Hello world!',
-      internalNotes: 'TODO: Add images',
-      author: { connect: { id: user.id } },
-    },
-  })
-
-  console.log('Post created:', post)
-  console.log('Internal notes visible to author:', post?.internalNotes)
-
-  // Try to read as anonymous user
-  const contextAnon = await getContext()
-  const postAnon = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (draft):', postAnon) // null
-
-  // Publish the post
-  await contextAlice.db.post.update({
-    where: { id: post!.id },
-    data: { status: 'published' },
-  })
-
-  // Now it's visible to anonymous users
-  const postAnonPublished = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (published):', postAnonPublished?.title)
-  console.log('Internal notes hidden from anon:', postAnonPublished?.internalNotes) // undefined
-
-  // Cleanup
-  await prisma.post.deleteMany()
-  await prisma.user.deleteMany()
-}
-
-test()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect())
-```
-
-Run it with `pnpm dev` running in another terminal:
+### 4. Run the Development Server
 
 ```bash
-npx tsx test.ts
+pnpm dev
 ```
+
+Then sign up at [http://localhost:3003/sign-up](http://localhost:3003/sign-up).
+
+## Seeing Access Control Work
+
+Sign up, then sign in, and the rules in `opensaas.config.ts` are visible in the
+admin at [http://localhost:3003/admin](http://localhost:3003/admin):
+
+- **Anonymous**: only published posts are readable; `internalNotes` never is,
+  and nothing is writable.
+- **Signed in, not the author**: the post is readable, `internalNotes` is
+  stripped from the row rather than the read failing, and update and delete
+  return `null` — denied and not-found are deliberately indistinguishable.
+- **The author**: reads and writes everything on their own posts, including
+  `internalNotes`.
+- **Session, Account and Verification** ship closed (ADR-0013), which is why
+  they list as empty in the admin even to a signed-in user.
+
+`examples/blog` carries a runnable suite over the same rules
+(`pnpm --filter opensaas-blog-example test`).
 
 ## Example Server Actions
 
@@ -226,7 +184,7 @@ const result = await updatePost(userId, postId, {
   title: 'Updated Title',
 })
 
-// Returns null if user is not the author (silent failure)
+// `success: false` if the user is not the author (silent failure)
 ```
 
 ### Publish a Post
@@ -250,15 +208,19 @@ const posts = await getPublishedPosts()
 ## File Structure
 
 ```
-examples/blog/
+examples/auth-demo/
 ├── opensaas.config.ts      # Schema definition with access control
 ├── lib/
-│   ├── context.ts          # Context creation helper
+│   ├── auth.ts             # Better-auth server instance and session lookup
 │   └── actions/
+│       ├── auth.ts         # Sign-in/sign-up/password-reset server actions
 │       ├── posts.ts        # Post CRUD operations
 │       └── users.ts        # User CRUD operations
+├── types/session.d.ts      # Session shape the access rules read
 ├── prisma/
-│   └── schema.prisma       # Generated Prisma schema
+│   ├── contract.ts         # Generated Contract module
+│   ├── contract.json       # Emitted contract artifact
+│   └── contract.d.ts       # Emitted contract types
 ├── .opensaas/
 │   └── types.ts            # Generated TypeScript types
 └── package.json
@@ -314,7 +276,7 @@ internalNotes: text({
 ### 4. Silent Failures
 
 ```typescript
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
