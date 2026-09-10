@@ -57,7 +57,7 @@ pnpm install
 cp .env.example .env
 ```
 
-3. Generate Prisma schema and types:
+3. Generate the Contract module and types:
 
 ```bash
 pnpm generate

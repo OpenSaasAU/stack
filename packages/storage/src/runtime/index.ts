@@ -1,4 +1,5 @@
 import type { OpenSaasConfig } from '@opensaas/stack-core'
+import type { StorageUtils } from '@opensaas/stack-core/internal'
 import type {
   StorageProvider,
   FileMetadata,
@@ -229,6 +230,75 @@ export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadat
       }
     }
   }
+}
+
+/**
+ * Builds the storage surface a `file()`/`image()` field writes through.
+ *
+ * `StorageUtils` types its option and metadata arguments as `unknown` because
+ * core cannot name this package's types — core is this package's dependency,
+ * not the other way round. This factory is the one place that re-narrows them,
+ * so a consumer needing the surface (a test on `@opensaas/stack-core/testing`,
+ * a custom context) does not have to write that conversion itself.
+ *
+ * @example
+ * ```typescript
+ * import { createStorageUtils } from '@opensaas/stack-storage/runtime'
+ * import { createTestContext } from '@opensaas/stack-core/testing'
+ *
+ * const harness = await createTestContext(config, null, {
+ *   storage: createStorageUtils(config),
+ * })
+ * ```
+ */
+export function createStorageUtils(config: OpenSaasConfig): StorageUtils {
+  return {
+    uploadFile: (providerName, file, buffer, options) =>
+      uploadFile(config, providerName, { file, buffer }, uploadFileOptions(options)),
+    uploadImage: (providerName, file, buffer, options) =>
+      uploadImage(config, providerName, { file, buffer }, uploadImageOptions(options)),
+    deleteFile: (providerName, filename) => deleteFile(config, providerName, filename),
+    deleteImage: (metadata) =>
+      isImageMetadata(metadata) ? deleteImage(config, metadata) : Promise.resolve(),
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
+  if (!isRecord(options)) return undefined
+  const result: UploadFileOptions = {}
+  const { validation, metadata } = options
+  if (isRecord(validation)) result.validation = validation
+  if (isRecord(metadata)) result.metadata = stringRecord(metadata)
+  return result
+}
+
+function uploadImageOptions(options: unknown): UploadImageOptions | undefined {
+  const base = uploadFileOptions(options)
+  if (!isRecord(options)) return base
+  const { transformations } = options
+  if (!isRecord(transformations)) return base
+  const result: UploadImageOptions = { ...base, transformations: {} }
+  for (const [name, transformation] of Object.entries(transformations)) {
+    if (isRecord(transformation))
+      result.transformations = { ...result.transformations, [name]: transformation }
+  }
+  return result
+}
+
+function stringRecord(value: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'string') result[key] = entry
+  }
+  return result
+}
+
+function isImageMetadata(value: unknown): value is ImageMetadata {
+  return isRecord(value) && typeof value.filename === 'string' && typeof value.url === 'string'
 }
 
 export { parseFileFromFormData } from '../utils/upload.js'

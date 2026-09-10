@@ -13,16 +13,18 @@ export async function createPost(data: {
   try {
     const context = await getContext()
 
-    const post = await context.db.post.create({
+    const post = await context.db.Post.create({
       data: {
         title: data.title,
         content: data.content,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        coverImage: (data.coverImage ?? undefined) as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        attachment: (data.attachment ?? undefined) as any,
+        coverImage: data.coverImage,
+        attachment: data.attachment,
       },
     })
+
+    if (!post) {
+      return { success: false, error: 'Failed to create post — access denied' }
+    }
 
     revalidatePath('/admin')
 
