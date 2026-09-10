@@ -588,12 +588,17 @@ export async function GET(request: NextRequest, { params }: { params: { filename
 Use different storage providers for development and production:
 
 ```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { localStorage } from '@opensaas/stack-storage'
+import { s3Storage } from '@opensaas/stack-storage-s3'
+
 const storage =
   process.env.NODE_ENV === 'production'
     ? {
         avatars: s3Storage({
-          bucket: process.env.AWS_BUCKET,
-          region: process.env.AWS_REGION,
+          bucket: process.env.AWS_BUCKET!,
+          region: process.env.AWS_REGION!,
         }),
       }
     : {
@@ -604,10 +609,17 @@ const storage =
       }
 
 export default config({
+  db: { provider: 'postgresql' },
   storage,
-  // ...
+  lists: {
+    User: list({ fields: { name: text() } }),
+  },
 })
 ```
+
+Import `localStorage` explicitly even in an abbreviated sample. Without the
+import the name resolves to the browser's `Window.localStorage`, which type-checks
+as a call and then fails at runtime.
 
 ## Security
 
