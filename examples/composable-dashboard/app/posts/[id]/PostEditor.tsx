@@ -36,7 +36,13 @@ export function PostEditor({
         <CardContent>
           <ItemEditForm<PostUpdateInput>
             fields={fields}
-            initialData={post as unknown as PostUpdateInput}
+            initialData={{
+              title: post.title,
+              slug: post.slug,
+              content: post.content,
+              internalNotes: post.internalNotes,
+              status: post.status,
+            }}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data)
 

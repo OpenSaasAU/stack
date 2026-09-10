@@ -66,7 +66,10 @@ function writtenItem(payload: unknown): Record<string, unknown> {
 
 /** The rows a query tool answers with, out of its `{ items, count }` envelope. */
 function queriedItems(payload: unknown): Record<string, unknown>[] {
-  assert(isRecord(payload) && Array.isArray(payload.items), `query failed: ${JSON.stringify(payload)}`)
+  assert(
+    isRecord(payload) && Array.isArray(payload.items),
+    `query failed: ${JSON.stringify(payload)}`,
+  )
   return payload.items.filter(isRecord)
 }
 
@@ -110,7 +113,12 @@ async function main(): Promise<void> {
   const listed = await call('tools/list')
   const names = (listed.result?.tools ?? []).map((t) => t.name)
   await check('the derived CRUD tools for Post are advertised', () => {
-    for (const expected of ['list_post_query', 'list_post_create', 'list_post_update', 'list_post_delete']) {
+    for (const expected of [
+      'list_post_query',
+      'list_post_create',
+      'list_post_update',
+      'list_post_delete',
+    ]) {
       assert(names.includes(expected), `${expected} missing from ${names.join(', ')}`)
     }
   })
