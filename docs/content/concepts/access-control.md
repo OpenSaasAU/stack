@@ -149,15 +149,16 @@ defaulting to allow, so filter-returning helpers cannot be reused here.
 
 ## Access Functions
 
-An operation-level rule is called with exactly three arguments:
+An operation-level rule is called with exactly three arguments. `session` is the
+app's session or `null`. `item` is the existing row — present for `update` and
+`delete`, absent for `query` and `create`, which is why its type is optional.
+`context` is the `AccessContext`, carrying `session`, `db`, `plugins` and
+`storage`.
 
 ```typescript
 import type { AccessControl } from '@opensaas/stack-core'
 
 const rule: AccessControl = ({ session, item, context }) => {
-  // `session` is the app's session or null.
-  // `item` is the existing row — present for update/delete, absent for query/create.
-  // `context` is the AccessContext: `session`, `db`, `plugins`, `storage`.
   return !!session
 }
 ```

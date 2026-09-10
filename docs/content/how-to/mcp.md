@@ -33,7 +33,22 @@ You'll need:
 
 ### 1. Enable Auth Plugin with MCP
 
-In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin:
+In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin.
+
+Four things about this block come from better-auth rather than from the stack,
+and each is load-bearing:
+
+- **`jwt()` sits beside `mcp()`.** Since better-auth 1.7, `mcp()` is built on the
+  OAuth Provider, which issues JWT-based access tokens and requires better-auth's
+  own `jwt()` plugin registered alongside it.
+- **`mcp` is imported from `@opensaas/stack-auth/plugins`.** better-auth 1.7 split
+  it out of `better-auth/plugins` into the optional `@better-auth/mcp` peer, which
+  the stack re-exports.
+- **`consentPage` is required**, and names the page where a user approves or
+  denies an MCP client's requested scopes.
+- **`resource` is the canonical protected-resource identifier** (RFC 8707/9728).
+  It must match the `mcp.basePath` set in the next step, and `http` is accepted
+  only on loopback hosts.
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
@@ -45,27 +60,16 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      // Add MCP plugin to Better Auth
       betterAuthPlugins: [
-        // better-auth 1.7's mcp() is built on the OAuth Provider, which
-        // issues JWT-based access tokens and requires better-auth's own
-        // jwt() plugin registered alongside it.
         jwt(),
         mcp({
           loginPage: '/sign-in',
-          // The page where a user approves/denies an MCP client's requested
-          // scopes — also required since better-auth 1.7's MCP plugin.
           consentPage: '/consent',
-          // Canonical protected-resource identifier (RFC 8707/9728) —
-          // required since better-auth 1.7's MCP plugin, and must match
-          // `mcp.basePath` below. HTTP is only accepted on loopback hosts.
           resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
         }),
       ],
     }),
   ],
-
-  // ... rest of config
 })
 ```
 
@@ -290,15 +294,18 @@ The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase for
 
 **Description:** Query records with filters, sorting, and pagination
 
-**Input Schema:**
+**Input Schema:** `where` takes the secured read's own closed vocabulary, not a
+Prisma filter — the same operators [Access Control](/docs/concepts/access-control)
+lists. `fields` is a projection, covered under "Selecting Related Data" below.
+`take` is capped at 100.
 
 ```typescript
 {
-  where?: Record<string, any>,  // Prisma where filters
+  where?: Record<string, unknown>,
   orderBy?: Record<string, 'asc' | 'desc'>,
   take?: number,
   skip?: number,
-  fields?: Record<string, any>, // Projection — see "Selecting Related Data" below
+  fields?: Record<string, unknown>,
 }
 ```
 
@@ -353,9 +360,12 @@ The schema is generated **per session**: a relation whose related list denies th
 
 **Input Schema:**
 
+The tool derives one property per writable field, so `data` is checked against
+the list's own schema rather than accepting anything:
+
 ```typescript
 {
-  data: Record<string, any> // Fields to set
+  data: Record<string, unknown>
 }
 ```
 
@@ -380,10 +390,13 @@ The schema is generated **per session**: a relation whose related list denies th
 
 **Input Schema:**
 
+`where` is identity-only — exactly one key, `id`. A secondary unique column is
+refused before the access gate runs.
+
 ```typescript
 {
   where: { id: string },
-  data: Record<string, any>
+  data: Record<string, unknown>
 }
 ```
 

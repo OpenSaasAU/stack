@@ -519,14 +519,14 @@ Projects scaffolded with `create-opensaas-app` already have this flag set, so ne
 **2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles and traces it:
 
 ```typescript
-// Supported: a static import the host build can compile + file-trace
+// Supported
 import { getContext } from '@/.opensaas/context'
 ```
 
 Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the bundle's files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module" on Vercel even though local dev works):
 
 ```typescript
-// Avoid: the tracer can't follow this, so the bundle is dropped from the build
+// Avoid
 const { getContext } = await import(/* webpackIgnore: true */ './.opensaas/context')
 ```
 

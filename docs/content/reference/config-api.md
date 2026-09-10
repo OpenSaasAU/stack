@@ -765,20 +765,26 @@ hooks: {
 
 **Examples:**
 
+A rule that returns a boolean allows or denies the whole operation. A rule that
+returns a filter scopes it, so a caller who owns nothing matches nothing rather
+than receiving an error — that is how "only the author may update" is written,
+without reaching for `item`.
+
+Each filter-returning rule denies outright when there is no session to scope to.
+That branch is not defensive style: the engine refuses a predicate that resolved
+to `undefined` rather than dropping it, so `{ authorId: session?.userId }` is an
+error for an anonymous caller, not a match-everything read.
+
+`create` is the exception — it accepts a boolean result only, because there are
+no existing rows to scope. Returning a filter from it throws.
+
 ```typescript
-// Boolean: Allow all authenticated users to query
 query: ({ session }) => !!session
 
-// Filter: Users can only update their own posts
-update: ({ session, item }) => session?.userId === item.authorId
+update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
 
-// Filter object: Scope access to specific records. Deny outright when there is
-// no session to scope to — the engine refuses a predicate that resolved to
-// `undefined` rather than dropping it, so `{ authorId: session?.userId }` is
-// an error for an anonymous caller, not a match-everything read.
 query: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
 
-// Boolean only — create cannot be scoped by a filter
 create: ({ session }) => !!session
 ```
 
@@ -1512,7 +1518,8 @@ Maps provider names to their configurations.
 **Example:**
 
 ```typescript
-import { s3Storage, localStorage } from '@opensaas/stack-storage'
+import { localStorage } from '@opensaas/stack-storage'
+import { s3Storage } from '@opensaas/stack-storage-s3'
 
 storage: {
   avatars: s3Storage({

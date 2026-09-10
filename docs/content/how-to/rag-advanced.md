@@ -975,7 +975,10 @@ The weights above bias towards title matches, then summary, then body.
 
 ### 1. Error Handling
 
-Handle embedding generation failures gracefully:
+Handle embedding generation failures gracefully. The helper below retries with
+exponential backoff, reports the exhausted case to your monitoring service, and
+then returns `null` rather than throwing — so a provider outage degrades the
+embedding instead of failing the write that triggered it.
 
 ```typescript
 // hooks/embedding-error-handling.ts
@@ -992,18 +995,15 @@ async function generateEmbeddingWithRetry(text: string, provider: EmbeddingProvi
       lastError = error instanceof Error ? error : new Error(String(error))
       console.error(`Embedding generation failed (attempt ${i + 1}/${maxRetries}):`, error)
 
-      // Wait before retry (exponential backoff)
       await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, i)))
     }
   }
 
-  // Log to monitoring service
   await logToSentry('Embedding generation failed after retries', {
     text: text.substring(0, 100),
     error: lastError,
   })
 
-  // Return null instead of throwing (allows item creation to succeed)
   return null
 }
 ```

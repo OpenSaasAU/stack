@@ -180,8 +180,8 @@ supplied, `AdminUI` skips `resolveNavCounts` — host-owned chrome resolves its
 own access-scoped counts (it's already exported for this):
 
 ```tsx
-import { NavLink, resolveNavCounts } from '@opensaas/stack-ui'
-import { deriveCurrentPath } from '@opensaas/stack-ui'
+import { NavLink, deriveCurrentPath } from '@opensaas/stack-ui'
+import { resolveNavCounts } from '@opensaas/stack-core'
 
 const currentPath = deriveCurrentPath(params.admin)
 const navCounts = await resolveNavCounts(context, config)
@@ -599,7 +599,8 @@ Then use it in your config:
 
 ```typescript
 // opensaas.config.ts
-import { config, list, text } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 
 export default config({
   lists: {

@@ -33,11 +33,11 @@ const rows = await context.db.Post.select('title', 'excerpt').all()
 ```
 
 A computed field is selectable like any other. Selecting one returns it whether
-or not you named the columns it is computed from:
+or not you named the columns it is computed from. Below, `wordCount` declares
+`needs: ['body']`: the engine reads `body`, computes the field, and leaves `body`
+out of the result, because the call site never asked for it.
 
 ```typescript
-// `wordCount` declares `needs: ['body']`. The engine reads `body`, computes
-// the field, and `body` is not in the result — you did not ask for it.
 const rows = await context.db.Post.select('wordCount').all()
 ```
 
@@ -85,7 +85,9 @@ const recent = await context.db.Post.orderBy({ createdAt: 'desc' }).limit(20).al
 ## What a `resolveOutput` hook sees
 
 A computed field's hook is handed **exactly its own declared dependencies plus
-the list's system fields** — never what the caller happened to select.
+the list's system fields** — never what the caller happened to select. So the
+`item` below is `{ id, createdAt, updatedAt, body }` on every read of the list,
+no matter what the call site selected.
 
 ```typescript
 Post: list({
@@ -95,8 +97,6 @@ Post: list({
       type: 'number',
       needs: ['body'],
       hooks: {
-        // `item` is { id, createdAt, updatedAt, body } — on every read,
-        // whatever the call site selected.
         resolveOutput: ({ item }) => item.body.split(/\s+/).length,
       },
     }),

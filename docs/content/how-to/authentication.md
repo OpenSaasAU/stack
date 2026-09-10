@@ -164,12 +164,15 @@ flat `Session` object the stack's access rules read — it projects exactly the
 names you listed in `sessionFields`, reading them from the resolved config at
 runtime, so changing `sessionFields` takes effect without regenerating this file.
 It returns `null` only when there is genuinely no session. Pass its result
-straight to `getContext()`:
+straight to `getContext()`.
+
+Plugin data is typed `Record<string, unknown>` — the config carries no plugin's
+own type — so the read below narrows rather than asserts, and falls back to the
+three default names when the plugin declared none:
 
 ```typescript
 // lib/auth.ts
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
-import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
 import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import { headers } from 'next/headers'
@@ -179,8 +182,14 @@ export const auth = createAuth(config, rawOpensaasContext)
 
 export async function getSession(): Promise<Session | null> {
   const resolvedConfig = await config
-  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
-  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  const authData = resolvedConfig._pluginData?.auth
+  const declared =
+    typeof authData === 'object' && authData !== null && 'sessionFields' in authData
+      ? authData.sessionFields
+      : undefined
+  const sessionFields = Array.isArray(declared)
+    ? declared.filter((field): field is string => typeof field === 'string')
+    : ['userId', 'email', 'name']
   return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
@@ -1626,7 +1635,6 @@ export default config({
 ```typescript
 // lib/auth.ts
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
-import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
 import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import { rawOpensaasContext } from '@/.opensaas/context'
@@ -1636,8 +1644,14 @@ export const auth = createAuth(config, rawOpensaasContext)
 
 export async function getSession(): Promise<Session | null> {
   const resolvedConfig = await config
-  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
-  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  const authData = resolvedConfig._pluginData?.auth
+  const declared =
+    typeof authData === 'object' && authData !== null && 'sessionFields' in authData
+      ? authData.sessionFields
+      : undefined
+  const sessionFields = Array.isArray(declared)
+    ? declared.filter((field): field is string => typeof field === 'string')
+    : ['userId', 'email', 'name']
   return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
