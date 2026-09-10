@@ -3,28 +3,13 @@ import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { replaceWorkspaceVersions } from './lib/package-json.js'
+import { copyTemplate as copyTemplateFiles } from './lib/templates.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const packageDir = path.join(__dirname, '..')
 const templatesDir = path.join(packageDir, 'templates')
 const examplesDir = path.join(packageDir, '../../examples')
 const corePackageJsonPath = path.join(packageDir, '../core/package.json')
-
-const excludePatterns = [
-  'node_modules',
-  '.next',
-  '.turbo',
-  '.opensaas',
-  '/prisma',
-  '/migrations',
-  'tsconfig.tsbuildinfo',
-  'next-env.d.ts',
-  'pnpm-lock.yaml',
-]
-
-function shouldExclude(filePath: string): boolean {
-  return excludePatterns.some((pattern) => filePath.includes(pattern))
-}
 
 async function updatePackageJsonVersions(
   packageJsonPath: string,
@@ -45,23 +30,13 @@ async function copyTemplate(
 
   console.log(`Copying ${sourceName} → templates/${targetName}...`)
 
-  await fs.copy(source, target, {
-    filter: (src) => {
-      const shouldCopy = !shouldExclude(src)
-      if (!shouldCopy) {
-        console.log(`  Skipping: ${path.relative(source, src)}`)
-      }
-      return shouldCopy
-    },
+  const files = await copyTemplateFiles(source, target, (relativePath) => {
+    console.log(`  Skipping: ${relativePath}`)
   })
 
-  const packageJsonPath = path.join(target, 'package.json')
-  if (await fs.pathExists(packageJsonPath)) {
-    await updatePackageJsonVersions(packageJsonPath, stackVersion)
-    console.log(`  Updated package.json versions to ^${stackVersion}`)
-  }
-
-  console.log(`✓ Copied ${sourceName}`)
+  await updatePackageJsonVersions(path.join(target, 'package.json'), stackVersion)
+  console.log(`  Updated package.json versions to ^${stackVersion}`)
+  console.log(`✓ Copied ${sourceName} (${files.length} files)`)
 }
 
 async function main(): Promise<void> {
