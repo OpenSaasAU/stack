@@ -4,10 +4,14 @@ This is a working example demonstrating the OpenSaas stack with a simple blog ap
 
 ## Schema
 
-This example includes two models:
+This example includes five lists:
 
 - **User**: Users who can create blog posts
 - **Post**: Blog posts with title, content, status, and internal notes
+- **Tag**: A label a post can carry
+- **PostTag**: One edge of the Post↔Tag many-to-many — adding a tag is a create
+  of this row under its own access, not a nested write on either side
+- **Settings**: A singleton, reached with `context.db.Settings.get()`
 
 ## Access Control Rules
 
@@ -32,10 +36,12 @@ This example includes two models:
 The `internalNotes` field on Post:
 
 - **Read**: Only the author can see
-- **Create**: Only the author can set
+- **Create**: Must be signed in — there is no `item` yet on create, and the
+  author is whoever is creating the post
 - **Update**: Only the author can modify
 
-This demonstrates field-level access control - the field will be filtered out for non-authors.
+This demonstrates field-level access control - the field is stripped from the
+row a non-author reads, rather than the read failing.
 
 ## Setup
 
@@ -64,7 +70,7 @@ cp .env.example .env
 
 `DATABASE_URL` is left unset, so `pnpm dev` runs the Dev database for this project.
 
-### 3. Generate Schema and Types
+### 3. Generate the Contract and Types
 
 ```bash
 pnpm generate
@@ -72,8 +78,11 @@ pnpm generate
 
 This reads `opensaas.config.ts` and generates:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types for your models and context
+
+Commit everything but `.opensaas/`, which is regenerated.
 
 ### 4. Run the Development Server
 
@@ -87,77 +96,26 @@ on every start and on every edit to `opensaas.config.ts`.
 
 ## Testing Access Control
 
-Create a test file to see access control in action:
-
-```typescript
-// test.ts
-import { getContext, getContextWithUser } from './lib/context'
-import { prisma } from './lib/context'
-
-async function test() {
-  // Create a user directly (bypassing access control for setup)
-  const user = await prisma.user.create({
-    data: {
-      name: 'Alice',
-      email: 'alice@example.com',
-      password: 'hashed_password',
-    },
-  })
-
-  // Get context as Alice
-  const contextAlice = await getContextWithUser(user.id)
-
-  // Create a post as Alice
-  const post = await contextAlice.db.post.create({
-    data: {
-      title: 'My First Post',
-      slug: 'my-first-post',
-      content: 'Hello world!',
-      internalNotes: 'TODO: Add images',
-      author: { connect: { id: user.id } },
-    },
-  })
-
-  console.log('Post created:', post)
-  console.log('Internal notes visible to author:', post?.internalNotes)
-
-  // Try to read as anonymous user
-  const contextAnon = await getContext()
-  const postAnon = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (draft):', postAnon) // null
-
-  // Publish the post
-  await contextAlice.db.post.update({
-    where: { id: post!.id },
-    data: { status: 'published' },
-  })
-
-  // Now it's visible to anonymous users
-  const postAnonPublished = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (published):', postAnonPublished?.title)
-  console.log('Internal notes hidden from anon:', postAnonPublished?.internalNotes) // undefined
-
-  // Cleanup
-  await prisma.post.deleteMany()
-  await prisma.user.deleteMany()
-}
-
-test()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect())
-```
-
-Run it with `pnpm dev` running in another terminal:
+`test-access-control.ts` is the suite, and `pnpm test` runs it:
 
 ```bash
-npx tsx test.ts
+pnpm test
 ```
+
+That is `opensaas dev -- tsx test-access-control.ts`, so the Dev database is up
+and reconciled before the script starts and stopped again when it exits — you
+do not need `pnpm dev` running in another terminal. Set `DATABASE_URL` to run
+the same suite against a Postgres of your own.
+
+It reads and writes through the same `getContext` a server action uses, and
+covers every path the rules below describe:
+
+- anonymous reads are scoped to published posts, and anonymous writes are
+  denied silently
+- a signed-in non-author reads a draft but cannot update or delete it, and
+  never sees `internalNotes`
+- the author reads and writes `internalNotes`, publishes, and reaches the
+  post's tags through the junction rows
 
 ## Example Server Actions
 
@@ -184,7 +142,7 @@ const result = await updatePost(userId, postId, {
   title: 'Updated Title',
 })
 
-// Returns null if user is not the author (silent failure)
+// `success: false` if the user is not the author (silent failure)
 ```
 
 ### Publish a Post
@@ -211,12 +169,14 @@ const posts = await getPublishedPosts()
 examples/blog/
 ├── opensaas.config.ts      # Schema definition with access control
 ├── lib/
-│   ├── context.ts          # Context creation helper
 │   └── actions/
 │       ├── posts.ts        # Post CRUD operations
 │       └── users.ts        # User CRUD operations
+├── test-access-control.ts  # The access-control suite (`pnpm test`)
 ├── prisma/
-│   └── schema.prisma       # Generated Prisma schema
+│   ├── contract.ts         # Generated Contract module
+│   ├── contract.json       # Emitted contract artifact
+│   └── contract.d.ts       # Emitted contract types
 ├── .opensaas/
 │   └── types.ts            # Generated TypeScript types
 └── package.json
@@ -227,7 +187,7 @@ examples/blog/
 ### 1. Access Control Helpers
 
 ```typescript
-const isSignedIn: AccessControl = ({ session }) => {
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
   return !!session
 }
 
@@ -238,6 +198,9 @@ const isAuthor: AccessControl = ({ session }) => {
   }
 }
 ```
+
+The session shape they read is declared in `types/session.d.ts`, which augments
+`Session` from `@opensaas/stack-core`.
 
 ### 2. Operation-Level Access
 
@@ -259,12 +222,16 @@ access: {
 
 ### 3. Field-Level Access
 
+Field access is a per-field visibility decision, so it cannot honour the row
+filter `isAuthor` returns — the per-field rules compare `item.authorId`
+directly and answer a boolean:
+
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,
-    create: isAuthor,
-    update: isAuthor,
+    read: isAuthorOfItem,
+    create: isSignedIn,
+    update: isAuthorOfItem,
   },
 })
 ```
@@ -272,7 +239,7 @@ internalNotes: text({
 ### 4. Silent Failures
 
 ```typescript
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })

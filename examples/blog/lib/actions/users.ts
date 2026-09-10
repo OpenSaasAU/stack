@@ -9,7 +9,7 @@ import type { UserCreateInput } from '../../.opensaas/types'
 export async function createUser(data: UserCreateInput) {
   const context = await getContext()
 
-  const user = await context.db.user.create({
+  const user = await context.db.User.create({
     data,
   })
 
@@ -21,16 +21,12 @@ export async function createUser(data: UserCreateInput) {
 }
 
 /**
- * Get a user by ID
+ * Get a user by ID: `null` is not-found or denied
  */
 export async function getUser(userId: string) {
   const context = await getContext()
 
-  const user = await context.db.user.findUnique({
-    where: { id: userId },
-  })
-
-  return user
+  return context.db.User.where({ id: { equals: userId } }).first()
 }
 
 /**
@@ -40,7 +36,7 @@ export async function getUser(userId: string) {
 export async function updateUser(userId: string, data: { name?: string; email?: string }) {
   const context = await getContext({ userId })
 
-  const user = await context.db.user.update({
+  const user = await context.db.User.update({
     where: { id: userId },
     data,
   })
