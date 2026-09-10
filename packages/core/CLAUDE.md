@@ -513,9 +513,12 @@ if (!post) {
 ```typescript
 password: password({
   hooks: {
-    resolveInput: async ({ value }) => {
-      if (value) return await bcrypt.hash(value, 10)
-      return value
+    // A field `resolveInput` gets the whole payload, not a `value` argument —
+    // `value` is `resolveOutput`'s. Read the field out under `fieldKey`.
+    resolveInput: async ({ resolvedData, fieldKey }) => {
+      const incoming = resolvedData[fieldKey]
+      if (typeof incoming === 'string') return await bcrypt.hash(incoming, 10)
+      return incoming
     },
     resolveOutput: ({ value }) => {
       return new HashedPassword(value) // Wrap for security

@@ -96,10 +96,14 @@ For complex validation, use `validateInput` hooks:
 
 ```typescript
 hooks: {
-  validateInput: async ({ operation, resolvedData, context }) => {
-    if (operation === 'delete') return
-    if (resolvedData.url && !isValidUrl(resolvedData.url)) {
-      throw new ValidationError([{ path: 'url', message: 'Invalid URL format' }])
+  // The `delete` member of the args union has no `resolvedData`, so narrow on
+  // `operation` before destructuring.
+  validateInput: async (args) => {
+    if (args.operation === 'delete') return
+    const { url } = args.resolvedData
+    if (typeof url === 'string' && !isValidUrl(url)) {
+      // `ValidationError(errors: string[], fieldErrors?: Record<string, string>)`
+      throw new ValidationError(['Invalid URL format'], { url: 'Invalid URL format' })
     }
   }
 }
@@ -187,12 +191,14 @@ The stack does not automatically log access control denials or sensitive operati
 
 ```typescript
 hooks: {
-  afterOperation: async ({ operation, item, context }) => {
+  // `item` is on the create/update members; `delete` carries `originalItem`
+  // instead. Narrow on `operation` before reading either.
+  afterOperation: async (args) => {
     await auditLog.create({
-      userId: context.session?.userId,
-      operation,
+      userId: args.context.session?.userId,
+      operation: args.operation,
       listKey: 'Post',
-      itemId: item.id,
+      itemId: args.operation === 'delete' ? args.originalItem.id : args.item.id,
       timestamp: new Date(),
     })
   },
