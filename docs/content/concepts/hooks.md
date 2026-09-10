@@ -247,7 +247,8 @@ The names that recur:
 - `resolvedData` — the data as the `resolveInput` chain has left it so far.
 - `item` — the existing row. Absent on `create`; present on `update`/`delete`.
 - `originalItem` — the pre-write row, on `afterOperation` for update and delete.
-- `fieldKey` — on field hooks only, the field this hook belongs to.
+- `fieldKey` — on field hooks only, the field this hook belongs to. The one
+  exception is field `resolveOutput`, which names it `fieldName`.
 - `addValidationError(msg)` — on `validate` hooks only.
 
 The [Config API reference](/docs/reference/config-api) gives each hook's exact
@@ -277,24 +278,49 @@ resolveInput: async ({ resolvedData, operation }) => {
 ### Slug Generation
 
 A field-level `resolveInput` returns the field's own new value, not the whole
-payload. Returning `undefined` leaves the caller's value alone:
+payload. Two rules decide whether it can do this job at all, and both point the
+same way:
+
+{% callout type="warning" %}
+**A field `resolveInput` only runs when its own key is already in the payload**
+— `if (!(fieldKey in result)) continue`
+(`packages/core/src/hooks/index.ts:468`). On the create this recipe is written
+for, where the caller supplies `title` and omits `slug`, a field hook on `slug`
+never fires. And its return value is assigned **unconditionally**
+(`hooks/index.ts:484`), so returning `undefined` does not leave the existing
+value alone — it writes `undefined`.
+{% /callout %}
+
+Deriving a field the caller did not send is therefore list-level work. A
+list-level `resolveInput` always runs and returns the whole payload, so it can
+add a key that was not there:
 
 ```typescript
-fields: {
-  slug: text({
-    hooks: {
-      resolveInput: async ({ resolvedData }) => {
-        if (typeof resolvedData.slug === 'string' && resolvedData.slug.length > 0) return undefined
-        if (typeof resolvedData.title !== 'string') return undefined
-        return resolvedData.title
+Post: list({
+  fields: {
+    title: text({ validation: { isRequired: true } }),
+    slug: text({ isIndexed: 'unique' }),
+  },
+  hooks: {
+    resolveInput: async ({ resolvedData }) => {
+      const { slug, title } = resolvedData
+      if (typeof slug === 'string' && slug.length > 0) return resolvedData
+      if (typeof title !== 'string') return resolvedData
+      return {
+        ...resolvedData,
+        slug: title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-      },
+          .replace(/^-|-$/g, ''),
+      }
     },
-  }),
-}
+  },
+})
 ```
+
+Use a field `resolveInput` for the job it is shaped for: transforming a value
+the caller **did** send — hashing a password, normalising a phone number,
+trimming whitespace.
 
 ### Cache Invalidation
 

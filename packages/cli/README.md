@@ -10,8 +10,9 @@ pnpm add -D @opensaas/stack-cli
 
 ## Commands
 
-The CLI carries `generate`, `init`, `dev`, and the command groups `db`, `mcp`
-and `migrate`.
+The CLI carries `generate`, `init`, `dev` and `migrate`, plus the command groups
+`db` and `mcp`. `migrate` is a single command with options, not a group — it has
+no subcommands.
 
 ### `opensaas generate`
 
@@ -87,10 +88,13 @@ migrate`).
 
 **What it does:**
 
-1. Runs initial generation
-2. Watches `opensaas.config.ts` for changes
-3. Automatically regenerates when file changes
-4. Runs until you press Ctrl+C
+1. Sends one reconcile request to the `opensaas dev` loop already running
+2. Exits — non-zero if no loop is listening, or if the change needs a
+   `--confirm` token it was not given
+
+It is not a watcher and it does not stay resident: the watching, regenerating
+and Ctrl+C-until-stopped behaviour all belong to [`opensaas dev`](#opensaas-dev),
+which must already be running for this command to have anything to talk to.
 
 **Example package.json scripts:**
 

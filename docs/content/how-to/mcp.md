@@ -501,7 +501,7 @@ error rather than a silent allow.
 
 ### Silent Failures
 
-When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a successful tool result marked `isError: true` ("Access denied or record not found") that deliberately does not distinguish between a missing record and denied access — this is a recoverable tool failure, not a JSON-RPC protocol error, so the calling model can see it and adjust its request.
+When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a successful tool result marked `isError: true` that deliberately does not distinguish between a missing record and denied access — this is a recoverable tool failure, not a JSON-RPC protocol error, so the calling model can see it and adjust its request. Update and delete answer "Failed to update/delete record. Access denied or record not found."; create, which has no record to miss, answers "Failed to create record. Access denied or validation failed."
 
 ### Session Fields over MCP
 
