@@ -1,0 +1,11 @@
+# Markdown files whose fenced TypeScript blocks are compiled by
+# scripts/check-doc-typescript-blocks.mjs. A listed file that cannot be read
+# fails the check by name, and its fragments.json keys are reported as orphans
+# rather than retired with it. The one exception is a `.changeset/*` path,
+# which release consumes: that one is skipped, and its keys are skipped too.
+.changeset/swift-pandas-listen.md
+docs/content/how-to/rag-advanced.md
+docs/content/reference/rag.md
+examples/rag-ollama-demo/README.md
+packages/rag/CLAUDE.md
+packages/rag/README.md
