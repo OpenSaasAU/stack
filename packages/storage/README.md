@@ -99,8 +99,8 @@ import { uploadFile, uploadImage, parseFileFromFormData } from '@opensaas/stack-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const storageProvider = formData.get('storage') as string
-    const fieldType = formData.get('fieldType') as 'file' | 'image'
+    const storageProvider = String(formData.get('storage') ?? '')
+    const fieldType = formData.get('fieldType') === 'image' ? 'image' : 'file'
 
     // Parse file from FormData
     const fileData = await parseFileFromFormData(formData, 'file')

@@ -355,7 +355,7 @@ export default config({
       token: process.env.BLOB_READ_WRITE_TOKEN,
       pathPrefix: 'uploads',
       public: true,
-      cacheControl: 'public, max-age=31536000, immutable',
+      cacheControlMaxAge: 31536000,
     }),
   },
   lists: {
@@ -573,10 +573,13 @@ Use local storage in development, cloud storage in production. Register only the
 ```typescript
 // instrumentation.ts
 import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+// The type is erased at build time, so a static `import type` does not pull the
+// provider into the development bundle — only the dynamic import below loads it.
+import type { S3StorageConfig } from '@opensaas/stack-storage-s3'
 
 export async function register() {
   if (process.env.NODE_ENV === 'production') {
-    const { S3StorageProvider, type S3StorageConfig } = await import('@opensaas/stack-storage-s3')
+    const { S3StorageProvider } = await import('@opensaas/stack-storage-s3')
     registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
   }
   // 'local' is built in — no registration needed for development

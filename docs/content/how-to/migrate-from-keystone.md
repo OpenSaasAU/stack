@@ -180,7 +180,7 @@ Production: list({
 
 When timestamps resolve to on **and** a list already declares its own `createdAt` / `updatedAt`, the auto column is skipped for the declared field(s) so the schema never carries a duplicate column. If your Keystone lists declared timestamps explicitly, keep declaring them as fields and leave `db.timestamps` off.
 
-One behavioural difference to plan for: `createdAt` takes a database default, but `updatedAt` is maintained application-side with no database backstop. A write that goes around the secured surface — a raw SQL statement, an unsafe-surface write, a data-migration script — will not move it.
+One behavioural difference to plan for: `createdAt` takes a database default, but `updatedAt` is maintained application-side with no database backstop. A write that goes around the secured surface — a raw SQL statement, an unsafe-surface write, a data-migration script — will not move it. That matters most during a migration, when data is loaded outside the ORM; the full statement of the cost, including what to do if you need a database-enforced modification time, is at [Cost: `updatedAt` is application-side](/docs/reference/config-api#cost-updatedat-is-application-side).
 
 ### Keystone-compat mode: empty-string text defaults
 

@@ -323,7 +323,6 @@ fields: {
   password: password({
     validation: {
       isRequired: true,
-      length: { min: 8 },
     },
   }),
 }
@@ -332,8 +331,10 @@ fields: {
 **Options:**
 
 - `validation.isRequired`: Boolean
-- `validation.length.min`: Minimum length
-- `validation.length.max`: Maximum length
+
+That is the whole of `PasswordField.validation`. There is no `length` here — a
+minimum password length is an auth concern, set through
+[`authPlugin({ emailAndPassword: { minPasswordLength } })`](/docs/reference/auth#emailandpassword).
 
 A read returns a `HashedPassword` — a string subclass with a `compare(plaintext)` method — and serialisation (`JSON.stringify`, the admin UI) redacts it to `{ isSet: boolean }`, so the hash never reaches a browser.
 
@@ -792,9 +793,11 @@ text({
       // Transform input data
       return resolvedData[fieldKey]?.toLowerCase()
     },
-    resolveOutput: async ({ item, fieldKey }) => {
+    // `resolveOutput` names the field `fieldName`; every other field hook
+    // names it `fieldKey`.
+    resolveOutput: async ({ item, fieldName }) => {
       // Transform output data
-      return item[fieldKey]?.toUpperCase()
+      return item[fieldName]?.toUpperCase()
     },
   },
 })

@@ -230,7 +230,7 @@ storage: {
     token: process.env.BLOB_READ_WRITE_TOKEN,
     pathPrefix: 'images',
     public: true, // default
-    cacheControl: 'public, max-age=31536000, immutable',
+    cacheControlMaxAge: 31536000, // seconds
   }),
 }
 ```

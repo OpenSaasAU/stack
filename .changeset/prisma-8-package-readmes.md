@@ -5,6 +5,7 @@
 '@opensaas/stack-ui': minor
 '@opensaas/stack-rag': minor
 '@opensaas/stack-storage': minor
+'@opensaas/stack-storage-vercel': minor
 '@opensaas/stack-tiptap': minor
 'create-opensaas-app': minor
 ---
@@ -46,3 +47,27 @@ carries — `provider: 'postgresql'`, `idField`, `timestamps`, `schemas`,
 `extensions` and `client`. `prismaClientConstructor`, `db.url` and
 `extendPrismaSchema` are gone, and the connection is resolved from the
 environment rather than named in the config.
+
+Review round two swept each README against the built `.d.ts` rather than against
+another doc, and corrected what the grep-shaped sweep had missed:
+
+- The UI README's theming block documented bare `--background`/`--primary` HSL
+  triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
+  `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
+  stylesheet's own header says the design exists "without a duplicated `.dark`
+  block". Its primitives list also omitted eight real exports (`Textarea`,
+  `Popover`, `Calendar`, `TimePicker`, `DateTimePicker`, `Combobox`, `Badge`,
+  `Avatar`), and two samples read `config.lists` without awaiting `config`.
+- The tiptap README reused a filter-returning `AccessControl` rule as
+  **field-level** `access.update`. `FieldAccess` types those slots as
+  boolean-returning, so that is a type error and a runtime
+  `InvalidFieldAccessResultError`, not a scoped update.
+- The storage README's upload route was the last copy still casting
+  `formData.get(...) as string` / `as 'file' | 'image'` off a
+  `FormDataEntryValue | null`.
+- The auth README's Account shape named `providerId: 'credentials'`; better-auth
+  1.7 uses `'credential'` for email/password, and the model carries `issuer`.
+- The Vercel Blob README passed `cacheControl` to `vercelBlobStorage()`. The
+  provider option is `cacheControlMaxAge` (a number of seconds);
+  `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
+  type-checked and was silently ignored.

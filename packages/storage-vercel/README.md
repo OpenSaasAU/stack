@@ -160,7 +160,7 @@ Private blobs aren't fetchable via their plain URL — `provider.download(filena
 ```typescript
 images: vercelBlobStorage({
   pathPrefix: 'images',
-  cacheControl: 'public, max-age=86400', // 1 day
+  cacheControlMaxAge: 86400, // seconds — 1 day
 })
 ```
 
