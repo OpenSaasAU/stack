@@ -323,7 +323,7 @@ const posts = await context.db.Post.where({ published: { equals: true } })
   .all()
 ```
 
-Each row carries the selected columns plus the list's system fields, and `author` arrives as the included row **or `null`** — arity decides that, not the foreign key's nullability, so `post.author?.name` stays a null-check even against a `NOT NULL` column.
+Each row carries the selected columns plus the list's system fields, and `author` arrives as the included row **or `null`** — arity decides that, not the foreign key's nullability, so `post.author?.name` stays a null-check even against a `NOT NULL` column. The full statement is at [Cost: every to-one read off an included row is a null-check](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 
 See [Queries & projections](/docs/concepts/queries) for the complete reference on `.select()`, `.include()` refinements, and what a computed field's hook is handed.
 

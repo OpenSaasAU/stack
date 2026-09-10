@@ -109,22 +109,10 @@ only `update`.
 ### The privilege it needs
 
 pgvector is not a trusted extension, so enabling it is not something an
-unprivileged role can do. One of these has to hold:
-
-- The role your migration connects as is a **superuser**, or your provider has
-  **granted** it the extension. The Dev database and CI's container run as
-  superuser; managed Postgres services generally grant it to the app role.
-- Or the extension is **pre-created** in the database by hand, once, by someone
-  who does have that privilege. The migration prechecks for it, finds it
-  present, and records the step as already satisfied rather than failing.
-
-Either route arrives in the same place, and a following `pnpm db:update` is a
-no-op.
-
-If the server has no pgvector at all, the migration stops with Prisma's own
-error — it names the `pgvector` space, the missing `vector.control` file and SQL
-state `58P01`. The app's own tables are untouched, because each apply runs in
-one transaction.
+unprivileged role can do — superuser, a provider grant, or a one-off pre-create
+by someone who holds the privilege. Plan for that before your first release: the
+full statement, including what a server with no pgvector at all does, is at
+[Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have).
 
 ### Indexes
 
@@ -794,10 +782,9 @@ ERROR: permission denied to create extension "vector"
 
 **Solution:**
 
-pgvector is not a trusted extension, so the migrating role needs superuser or a
-provider grant. Either grant the role that privilege, or have someone who
-already holds it pre-create the extension in the database once — the migration
-prechecks for it and records the step as already satisfied.
+Grant the migrating role the privilege, or have someone who already holds it
+pre-create the extension once — see
+[Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have).
 
 ### OpenAI Rate Limit Errors
 

@@ -7,42 +7,42 @@
   "docs/content/how-to/rag-advanced.md:73": {
     "whole": "the body of an object literal: `runtime:` and `afterTransaction:` are bare properties, not statements, and the hook's parameters are typed by the list it is injected into"
   },
-  "docs/content/how-to/rag-advanced.md:239": {
+  "docs/content/how-to/rag-advanced.md:245": {
     "excuses": ["TS2307 'cohere-ai'"],
     "reason": "a third-party SDK this repo does not install"
   },
-  "docs/content/how-to/rag-advanced.md:299": {
+  "docs/content/how-to/rag-advanced.md:305": {
     "excuses": ["TS2307 '@/lib/providers/cohere'"],
     "reason": "imports the file the reader wrote in the block above"
   },
-  "docs/content/how-to/rag-advanced.md:331": {
+  "docs/content/how-to/rag-advanced.md:337": {
     "excuses": ["TS2307 '@huggingface/inference'"],
     "reason": "a third-party SDK this repo does not install"
   },
-  "docs/content/how-to/rag-advanced.md:542": {
+  "docs/content/how-to/rag-advanced.md:548": {
     "whole": "a bare `DocumentChunk:` object-literal property — one entry of a `lists:` object — not a statement"
   },
-  "docs/content/how-to/rag-advanced.md:710": {
+  "docs/content/how-to/rag-advanced.md:716": {
     "excuses": ["TS2451 'matches'"],
     "reason": "a bad/good pair shares one fence and both snippets bind `matches`"
   },
-  "docs/content/how-to/rag-advanced.md:847": {
+  "docs/content/how-to/rag-advanced.md:853": {
     "excuses": ["TS2307 '@huggingface/inference'"],
     "reason": "a third-party SDK this repo does not install"
   },
-  "docs/content/how-to/rag-advanced.md:902": {
+  "docs/content/how-to/rag-advanced.md:908": {
     "whole": "a bare `lists:` object-literal property, not a statement"
   },
 
-  "docs/content/how-to/deploy.md:141": {
+  "docs/content/how-to/deploy.md:143": {
     "excuses": ["TS2307 '@neondatabase/serverless'", "TS2307 'ws'"],
     "reason": "third-party packages this repo does not install"
   },
-  "docs/content/how-to/deploy.md:182": {
+  "docs/content/how-to/deploy.md:184": {
     "excuses": ["TS2307 'prisma/config'", "TS2307 '@prisma/orm-postgres/config'"],
     "reason": "Prisma's own CLI config entry points, which this repo does not depend on"
   },
-  "docs/content/how-to/deploy.md:529": {
+  "docs/content/how-to/deploy.md:531": {
     "excuses": ["TS2307 './.opensaas/context'"],
     "reason": "the block is the `webpackIgnore` anti-pattern the prose tells the reader to avoid, and the relative specifier is the point of it"
   },

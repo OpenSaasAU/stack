@@ -71,3 +71,23 @@ another doc, and corrected what the grep-shaped sweep had missed:
   provider option is `cacheControlMaxAge` (a number of seconds);
   `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
   type-checked and was silently ignored.
+
+Round three corrected what round two's sweeps could not see, each having keyed
+on where a construct sat rather than on what it was:
+
+- The Vercel Blob README's **options listing** still named `cacheControl` 112
+  lines above the call site round two fixed, so the page contradicted itself and
+  the half a reader consults first was the wrong half.
+- Sixteen hook samples across the docs and the core, cli and example READMEs
+  destructured a member the `delete` branch of its args union does not carry, so
+  the destructure failed before any in-body `operation` guard could narrow. Three
+  more named an argument on no branch at all: `value` and `inputValue` on
+  `resolveInput`/`afterOperation`, and `session` on `ResolveInputHookArgs`.
+- The core README carried a third instance of the field-access class — a bare
+  `text({ access: … })` excerpt with no enclosing `fields: {` — plus
+  `query: true` where `OperationAccess.query` takes a function, a
+  `ValidationError` built from a string where the constructor takes `string[]`,
+  and a stale claim that `password()` is excluded from reads.
+- The cli README's "What it does" block under `opensaas db update` described
+  `opensaas dev`, and called `migrate` a command group when it has no
+  subcommands.

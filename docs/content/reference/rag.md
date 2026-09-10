@@ -327,14 +327,9 @@ What the deployment owns is provisioning:
   needs the extension installed (`pgvector/pgvector` Docker images,
   `brew install pgvector`, `postgresql-16-pgvector`).
 - **Privilege.** pgvector is not a trusted extension, so the role your migration
-  connects as needs superuser or a provider grant. Where a locked-down server
-  offers neither, someone who does hold the privilege pre-creates the extension
-  once; the migration prechecks for it and records the step as already
-  satisfied, rather than failing.
-
-A server with no pgvector fails the migration with Prisma's own error, naming
-the `pgvector` space, the missing `vector.control` file and SQL state `58P01`.
-The app's own tables are untouched, because each apply runs in one transaction.
+  connects as needs superuser, a provider grant, or a one-off pre-create — see
+  [Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have),
+  which also covers what a server with no pgvector at all does.
 
 #### Search exactness
 

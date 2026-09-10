@@ -951,7 +951,7 @@ const posts = await context.db.Post.where({ published: { equals: true } })
   .all()
 ```
 
-Arity decides nullability, not the foreign key's: a to-one include lands as `Row | null` and a to-many as `Row[]`. So `post.author?.name` stays a null-check even where the column is `NOT NULL` — the row may simply be one this session cannot read.
+Arity decides nullability, not the foreign key's: a to-one include lands as `Row | null` and a to-many as `Row[]`, so `post.author?.name` stays a null-check even where the column is `NOT NULL`. The full statement, including why, is at [Cost: every to-one read off an included row is a null-check](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 
 Composability comes from the query value itself: it is immutable, so a partially composed read can be shared and narrowed at each call site.
 

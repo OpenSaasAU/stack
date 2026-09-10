@@ -19,10 +19,10 @@ For the ideas behind the read surface — projection, computed fields, what a `r
 import { getContext, rawOpensaasContext, config } from '@/.opensaas/context'
 ```
 
-| Export                           | Type                         | Use                                                                                                           |
-| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `getContext<TSession>(session?)` | `Promise<Context<TSession>>` | The normal door. `await` it per request.                                                                      |
-| `rawOpensaasContext`             | `Promise<Context>`           | For module-init-time consumers that cannot `await`. Pass the promise itself; do not await it at module scope. |
+| Export                           | Type                         | Use                                                                                                                                                                                                                                        |
+| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getContext<TSession>(session?)` | `Promise<Context<TSession>>` | The normal door. `await` it per request.                                                                                                                                                                                                   |
+| `rawOpensaasContext`             | `Promise<Context>`           | For module-init-time consumers that cannot `await`. Pass the promise itself; do not await it at module scope.                                                                                                                              |
 | `config`                         | `Promise<OpenSaasConfig>`    | The resolved config, with the emitted tables attached. The generator emits `export const config = getConfig()` and `getConfig` is `async`, so this is a **promise** — `await` it, or pass `config={await config}` from a server component. |
 
 ```typescript
@@ -124,18 +124,18 @@ const posts = await context.db.Post.where({ published: { equals: true } })
 
 These are the methods on `context.db.<List>`, and there are no others:
 
-| Composer                 | Effect                                                                | Composition                                |
-| ------------------------ | --------------------------------------------------------------------- | ------------------------------------------ |
-| `where(predicate)`       | Narrow the read                                                       | **Accumulates** — repeated calls are ANDed |
-| `orderBy(order)`         | Sort by this list's own scalar columns                                | **Accumulates**                            |
+| Composer                 | Effect                                                                | Composition                                                                             |
+| ------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `where(predicate)`       | Narrow the read                                                       | **Accumulates** — repeated calls are ANDed                                              |
+| `orderBy(order)`         | Sort by this list's own scalar columns                                | **Accumulates**                                                                         |
 | `include(name, refine?)` | Reach one hop into a relation                                         | Accumulates, one entry per relation — naming the **same** relation twice is **refused** |
-| `select(...fields)`      | Return exactly these of this list's own fields                        | **Replaces**                               |
-| `limit(count)`           | At most this many rows                                                | **Replaces**                               |
-| `offset(count)`          | Skip this many rows                                                   | **Replaces**                               |
-| `distinct(...fields)`    | Collapse rows agreeing on every named column                          | **Refused** — a second `distinct`/`distinctOn` throws |
-| `distinctOn(...fields)`  | First row per distinct key, in `orderBy`'s order — so it requires one | **Refused** — a second `distinct`/`distinctOn` throws |
-| `cursor(values)`         | Resume from a known position                                          | **Replaces**                               |
-| `forUpdate()`            | [Take a row lock](#the-row-lock) — transaction-bound builder only     | —                                          |
+| `select(...fields)`      | Return exactly these of this list's own fields                        | **Replaces**                                                                            |
+| `limit(count)`           | At most this many rows                                                | **Replaces**                                                                            |
+| `offset(count)`          | Skip this many rows                                                   | **Replaces**                                                                            |
+| `distinct(...fields)`    | Collapse rows agreeing on every named column                          | **Refused** — a second `distinct`/`distinctOn` throws                                   |
+| `distinctOn(...fields)`  | First row per distinct key, in `orderBy`'s order — so it requires one | **Refused** — a second `distinct`/`distinctOn` throws                                   |
+| `cursor(values)`         | Resume from a known position                                          | **Replaces**                                                                            |
+| `forUpdate()`            | [Take a row lock](#the-row-lock) — transaction-bound builder only     | —                                                                                       |
 
 `limit()` shapes `all()` alone: `first()` is bounded by its own terminal and `nearest()` takes its bound from `options.limit`. `offset()` is honoured by **both** `all()` and `first()`, so `.offset(10).first()` is the eleventh row.
 
