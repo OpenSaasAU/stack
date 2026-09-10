@@ -25,7 +25,7 @@ npm create opensaas-app@latest team-blog --with-ai
 cd team-blog
 ```
 
-The scaffolder installs dependencies, generates the schema, and creates a SQLite database for you. Start the dev server:
+The scaffolder installs dependencies and generates from the config. Start the dev loop, which brings up the **Dev database** — a Postgres the stack runs for your project — and reconciles it with your config as you edit:
 
 ```bash
 pnpm dev
@@ -66,21 +66,17 @@ Claude will rewrite the helper functions and access blocks, then run `pnpm gener
 
 ### Checkpoint 1 — the access rules
 
-The helpers should now use the session for real — equivalent to:
+The helpers should now use the session for real. `isAuthor` and `isOwner` are operation rules, so they return a row *filter* rather than `false` for a signed-in caller: a non-author gets no error, they simply match nothing. `isAuthorOfItem` exists separately because field-level rules are boolean-only — they decide per fetched item and cannot scope rows — and `internalNotes` needs that shape. Each returns `false` for an anonymous caller, because the Where vocabulary refuses `undefined` rather than dropping it; `{ authorId: { equals: undefined } }` would be an error, not an open read.
 
 ```typescript
 const isSignedIn: AccessControl = ({ session }) => !!session?.userId
 
-// As an operation rule this returns a row *filter*, so non-authors
-// don't get an error — they simply match nothing.
 const isAuthor: AccessControl = ({ session }) =>
   session?.userId ? { authorId: { equals: session.userId } } : false
 
 const isOwner: AccessControl = ({ session }) =>
   session?.userId ? { id: { equals: session.userId } } : false
 
-// Field-level rules are boolean-only — they decide per fetched item,
-// they can't scope rows. So internalNotes gets its own helper:
 const isAuthorOfItem: AccessControl = ({ session, item }) =>
   !!session?.userId && item?.authorId === session.userId
 ```
@@ -102,12 +98,11 @@ internalNotes: text({
 **Operation rules may return filters; field rules must return booleans.** It's the one sharp edge in the access API, and the reason the checkpoint uses two helpers. An agent that reuses the filter-returning `isAuthor` on a field would get "allow" — filters aren't meaningful there.
 {% /callout %}
 
-And the `Post` list's operation access should be equivalent to:
+And the `Post` list's operation access should be equivalent to the following, where `query` scopes an anonymous caller to published posts and widens a signed-in one to published posts plus their own:
 
 ```typescript
 access: {
   operation: {
-    // Anonymous: published only. Signed in: published + your own.
     query: ({ session }) =>
       session?.userId
         ? {
@@ -124,28 +119,31 @@ access: {
 },
 ```
 
-Notice what these rules are: **not** middleware, **not** per-route checks — data rules, declared once, that the engine merges into every operation. A rule returns a boolean (allow/deny the operation) or a Prisma filter (scope which rows it can touch).
+Notice what these rules are: **not** middleware, **not** per-route checks — data rules, declared once, that the engine merges into every operation. A rule returns a boolean (allow/deny the operation) or a filter written in the Where vocabulary (scope which rows it can touch).
 
 Refresh `/admin`: with the mock session still `null`, the admin now shows **only published posts** — the admin UI runs through the same secured context as everything else, so it can never show a session more than the rules allow.
 
 ## 4. Try to break it
 
-Rules only count if they hold when code — anyone's code, any agent's code — comes at the database from a new direction. Create `guardrails-check.ts` in the project root:
+Rules only count if they hold when code — anyone's code, any agent's code — comes at the database from a new direction. Create `guardrails-check.ts` in the project root.
+
+The script seeds through `sudo()`, which bypasses access control for exactly this kind of trusted script and never for request handling, then reads the same list back as three different callers. Two details of the secured surface shape it. Lists are keyed by their PascalCase config key — `db.Post`, not `db.post`, which is a compile error. And every write returns `Row | null`, because a denied write is indistinguishable from a missing row; the seed throws on `null` so a failure surfaces here rather than as a confusing read further down.
 
 ```typescript
 import { getContext } from './.opensaas/context'
 
 async function main() {
-  // Seed with sudo(): access control bypassed, for exactly this kind of
-  // trusted script — never for request handling.
   const seed = (await getContext()).sudo()
-  const alice = await seed.db.user.create({
+
+  const alice = await seed.db.User.create({
     data: { name: 'Alice', email: 'alice@example.com', password: 'correct-horse' },
   })
-  const bob = await seed.db.user.create({
+  const bob = await seed.db.User.create({
     data: { name: 'Bob', email: 'bob@example.com', password: 'battery-staple' },
   })
-  await seed.db.post.create({
+  if (!alice || !bob) throw new Error('seeding the users failed')
+
+  const published = await seed.db.Post.create({
     data: {
       title: 'Hello world',
       slug: 'hello-world',
@@ -153,7 +151,7 @@ async function main() {
       author: { connect: { id: alice.id } },
     },
   })
-  const draft = await seed.db.post.create({
+  const draft = await seed.db.Post.create({
     data: {
       title: 'Secret draft',
       slug: 'secret-draft',
@@ -161,19 +159,18 @@ async function main() {
       author: { connect: { id: alice.id } },
     },
   })
+  if (!published || !draft) throw new Error('seeding the posts failed')
 
-  // Read as three different callers.
   const anonymous = await getContext()
   const asAlice = await getContext({ userId: alice.id })
   const asBob = await getContext({ userId: bob.id })
 
   const show = (posts: { title: string }[]) => posts.map((p) => p.title).join(', ')
-  console.log('anonymous sees:', show(await anonymous.db.post.findMany()))
-  console.log('alice sees:    ', show(await asAlice.db.post.findMany()))
-  console.log('bob sees:      ', show(await asBob.db.post.findMany()))
+  console.log('anonymous sees:', show(await anonymous.db.Post.all()))
+  console.log('alice sees:    ', show(await asAlice.db.Post.all()))
+  console.log('bob sees:      ', show(await asBob.db.Post.all()))
 
-  // Bob attacks Alice's draft.
-  const stolen = await asBob.db.post.update({
+  const stolen = await asBob.db.Post.update({
     where: { id: draft.id },
     data: { title: 'Bob was here' },
   })
@@ -200,7 +197,7 @@ bob updating alice's draft returns: null
 
 Three things worth staring at:
 
-1. **Nobody filtered anything in application code.** The same `findMany()` returned different rows per caller, because the engine merged each session's access filter into the query before it hit the database.
+1. **Nobody filtered anything in application code.** The same `.all()` returned different rows per caller, because the engine merged each session's access filter into the query before it hit the database.
 2. **Bob's attack returns `null`, not an error.** This is [silent failure](/docs/concepts/access-control#silent-failures): a denied operation is indistinguishable from "not found", so Bob can't even probe whether Alice's draft exists.
 3. **`internalNotes` never leaves the server** for anyone but the author — field-level access strips it from reads after the rows come back.
 
@@ -212,7 +209,7 @@ Now that you trust the loop, add a whole feature in one prompt:
 
 > Add comments. A comment has a required text body, an author (a User), and belongs to a post. Anyone can read comments; signed-in users can create them; only a comment's author can edit or delete it.
 
-Claude adds the list, regenerates, and pushes the schema. Check the checkpoint:
+Claude adds the list and regenerates; the running `pnpm dev` loop reconciles the Dev database with the new config. Check the checkpoint:
 
 ### Checkpoint 2 — the Comment list
 
