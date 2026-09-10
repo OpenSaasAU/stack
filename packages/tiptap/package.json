@@ -22,7 +22,9 @@
     "build": "tsc && npm run copy:css",
     "copy:css": "mkdir -p dist/styles && cp src/styles/tiptap.css dist/styles/",
     "dev": "tsc --watch",
-    "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo"
+    "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "opensaas",
@@ -63,9 +65,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
+    "@vitest/coverage-v8": "^4.1.10",
     "next": "^16.2.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10"
   }
 }

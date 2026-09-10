@@ -48,8 +48,14 @@ export function richText<TTypeInfo extends TypeInfo = TypeInfo>(
       const baseSchema = z.any()
 
       if (isRequired && operation === 'create') {
-        // Reject undefined on create.
-        return baseSchema
+        // `z.any()` inside `z.object()` rejects an absent key but accepts a
+        // present `null` or explicit `undefined`, so a required field could be
+        // created empty and the write reached a non-nullable column with
+        // nothing in it. The refinement closes both. Same shape as core's
+        // `json()`.
+        return baseSchema.refine((value) => value !== undefined && value !== null, {
+          message: `${fieldName} is required`,
+        })
       } else if (isRequired && operation === 'update') {
         // A union with `z.undefined()` is still a required key inside
         // `z.object()`, so an update that never mentions this field was
