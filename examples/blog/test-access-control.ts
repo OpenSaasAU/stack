@@ -16,6 +16,7 @@
 import assert from 'node:assert/strict'
 import { ValidationError } from '@opensaas/stack-core'
 import { getContext } from './.opensaas/context.ts'
+import { getPost } from './lib/actions/posts.ts'
 
 let checks = 0
 
@@ -156,6 +157,10 @@ async function run(): Promise<void> {
   await check('a draft is invisible to an anonymous reader', async () => {
     assert.equal(await anonymous.db.Post.where({ id: { equals: draft.id } }).first(), null)
     assert.deepEqual(await anonymous.db.Post.all(), [])
+  })
+  await check('the server action reads a draft as anonymous when given no user id', async () => {
+    assert.equal(await getPost(draft.id), null)
+    assert.equal((await getPost(draft.id, alice.id))?.id, draft.id)
   })
 
   const published = await asAlice.db.Post.update({
