@@ -2,29 +2,38 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { Button } from '@opensaas/stack-ui/primitives'
 import { config, getContext } from '@/.opensaas/context'
+import { demoSession } from '../lib/demo-session'
 import { CreatePostDialog } from '../components/CreatePostDialog'
+import { formFields } from '../lib/form-fields'
 import { PostStatusBadge } from '../components/PostStatusBadge'
 import { connection } from 'next/server'
 
 export default async function HomePage() {
   await connection()
   // Use context for access-controlled queries
-  const context = await getContext()
+  const context = await getContext(await demoSession())
 
-  // Get stats (using Prisma directly for counts is fine)
-  const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
-    context.db.post.count(),
-    context.db.post.count({ where: { status: 'published' } }),
-    context.db.post.count({ where: { status: 'draft' } }),
-    context.db.user.count(),
+  // Each count is an aggregate over the rows this session may see
+  const [posts, published, drafts, users] = await Promise.all([
+    context.db.Post.aggregate((aggregate) => ({ total: aggregate.count() })),
+    context.db.Post.where({ status: { equals: 'published' } }).aggregate((aggregate) => ({
+      total: aggregate.count(),
+    })),
+    context.db.Post.where({ status: { equals: 'draft' } }).aggregate((aggregate) => ({
+      total: aggregate.count(),
+    })),
+    context.db.User.aggregate((aggregate) => ({ total: aggregate.count() })),
   ])
+  const totalPosts = posts.total
+  const publishedPosts = published.total
+  const draftPosts = drafts.total
+  const totalUsers = users.total
 
   // Get recent posts using context (access control applied)
-  const recentPosts = await context.db.post.findMany({
-    take: 5,
-    orderBy: { createdAt: 'desc' },
-    include: { author: true },
-  })
+  const recentPosts = await context.db.Post.orderBy({ createdAt: 'desc' })
+    .limit(5)
+    .include('author', (author) => author.select('name'))
+    .all()
 
   return (
     <div className="min-h-screen bg-background">
@@ -99,7 +108,7 @@ export default async function HomePage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <CreatePostDialog fields={(await config).lists.Post.fields} />
+              <CreatePostDialog fields={formFields((await config).lists.Post.fields)} />
               <Link href="/posts" className="block">
                 <Button variant="outline" className="w-full">
                   View All Posts
