@@ -529,11 +529,9 @@ const vectors = await provider.embedBatch(chunks.map((chunk) => chunk.text))
 
 ```typescript
 // Combine traditional search with semantic search
-const keywordResults = await context.db.Article.findMany({
-  where: {
-    OR: [{ title: { contains: query } }, { content: { contains: query } }],
-  },
-})
+const keywordResults = await context.db.Article.where({
+  OR: [{ title: { contains: query } }, { content: { contains: query } }],
+}).all()
 
 const semanticResults = await context.db.Article.nearest('contentEmbedding', queryVector)
 

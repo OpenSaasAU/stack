@@ -28,6 +28,8 @@ export default [
       'packages/cli/tests/fixtures/contract-project/prisma.config.ts',
       'packages/cli/tests/fixtures/contract-project/migrations/**',
       'packages/cli/tests/tmp-*/**',
+      // Doc-block compile check scratch (ESLint 9 flat config does not read .gitignore)
+      'packages/rag/.doc-blocks-check-*/**',
     ],
   },
   js.configs.recommended,
