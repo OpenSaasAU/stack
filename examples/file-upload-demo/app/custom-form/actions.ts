@@ -28,9 +28,11 @@ export async function createPost(data: {
 
     revalidatePath('/admin')
 
+    // The id, not the row: everything else — the stored file and image
+    // metadata included — would cross the server/client boundary unread.
     return {
       success: true,
-      post,
+      id: post.id,
     }
   } catch (error) {
     console.error('Error creating post:', error)
