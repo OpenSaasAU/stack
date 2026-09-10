@@ -52,6 +52,7 @@ and each is load-bearing:
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
@@ -70,6 +71,13 @@ export default config({
       ],
     }),
   ],
+  db: { provider: 'postgresql' },
+  lists: {
+    Post: list({
+      fields: { title: text() },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 

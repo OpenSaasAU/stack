@@ -42,6 +42,7 @@ import { localStorage } from '@opensaas/stack-storage'
 import { file, image } from '@opensaas/stack-storage/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   storage: {
     documents: localStorage({
       uploadDir: './public/uploads/documents',

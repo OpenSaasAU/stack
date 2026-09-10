@@ -138,7 +138,9 @@ For local development without API costs:
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
+import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
   plugins: [
@@ -153,7 +155,12 @@ export default config({
     }),
   ],
   db: { provider: 'postgresql' },
-  // ... lists
+  lists: {
+    Article: list({
+      fields: { content: searchable(text(), { dimensions: 768 }) },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 
@@ -379,14 +386,14 @@ const chunks = chunkText(longDocument, {
 })
 
 // Sentence-based chunking (preserves sentences)
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
 })
 
 // Token-aware chunking (for token limits)
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'token-aware',
   tokenLimit: 500, // ~500 tokens per chunk
   chunkOverlap: 50,

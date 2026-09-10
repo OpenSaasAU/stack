@@ -296,8 +296,10 @@ export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConf
 **Usage:**
 
 ```typescript
-import { config } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin } from '@opensaas/stack-rag'
+import { searchable } from '@opensaas/stack-rag/fields'
 import { cohereEmbeddings } from '@/lib/providers/cohere'
 
 export default config({
@@ -310,7 +312,12 @@ export default config({
     }),
   ],
   db: { provider: 'postgresql' },
-  // ... lists
+  lists: {
+    Article: list({
+      fields: { content: searchable(text(), { dimensions: 1024 }) },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 
@@ -425,7 +432,7 @@ const chunks = chunkText(longDocument, {
 Preserves sentence boundaries. Best for maintaining semantic coherence.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
@@ -449,7 +456,7 @@ const chunks = chunkText(document, {
 Fixed-size windows that slide across text. Best for uniform processing.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sliding-window',
   chunkSize: 800,
   chunkOverlap: 200,
@@ -475,7 +482,7 @@ is the one strategy where `chunkOverlap` counts tokens rather than characters,
 and the only one that reads `tokenLimit`.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'token-aware',
   tokenLimit: 512,
   chunkOverlap: 50,

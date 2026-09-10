@@ -26,13 +26,19 @@ Create `opensaas.config.ts`:
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, integer, select, relationship } from '@opensaas/stack-core/fields'
-import type { AccessControl } from '@opensaas/stack-core'
+import type { AccessControl, FieldAccess } from '@opensaas/stack-core'
 
 const isSignedIn: AccessControl = ({ session }) => !!session
 
 const isAuthor: AccessControl = ({ session }) => {
   if (!session) return false
   return { authorId: { equals: session.userId } }
+}
+
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session && item?.authorId === session.userId,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
 }
 
 export default config({
@@ -58,13 +64,7 @@ export default config({
           defaultValue: 'draft',
         }),
         author: relationship({ ref: 'User.posts' }),
-        internalNotes: text({
-          access: {
-            read: isAuthor,
-            create: isAuthor,
-            update: isAuthor,
-          },
-        }),
+        internalNotes: text({ access: authorOnlyField }),
       },
       access: {
         operation: {
@@ -81,6 +81,13 @@ export default config({
   },
 })
 ```
+
+`isAuthor` and `authorOnlyField` are not interchangeable, and the compiler
+enforces it. An **operation** rule may return a filter, which is how `update` and
+`delete` scope themselves to rows the caller owns. A **field** rule decides per
+fetched item and must return a boolean — a filter is meaningless there, so
+`FieldAccess` types the three slots as boolean-returning and reusing `isAuthor`
+on a field is a type error rather than a silent "allow".
 
 ### 2. Generate Schema and Types
 
@@ -391,10 +398,15 @@ generate` runs both steps.
 
 ### TypeScript Types
 
+`writeTypes` takes the declared-dependency table alongside the config, because
+the emitted `Lists.<List>.TypeInfo` narrows each `resolveOutput` hook's `item` to
+exactly what its field declared in `needs`. Derive the table from the same config:
+
 ```typescript
+import { deriveDependencyTable } from '@opensaas/stack-core'
 import { writeTypes } from '@opensaas/stack-cli/generator'
 
-writeTypes(config, './.opensaas/types.ts')
+writeTypes(config, './.opensaas/types.ts', deriveDependencyTable(config))
 ```
 
 ### Utility Functions

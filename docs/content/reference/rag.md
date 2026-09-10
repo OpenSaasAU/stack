@@ -732,7 +732,7 @@ Sentence chunking keeps sentences whole:
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'
 
-const bySentence = chunkText(document, {
+const bySentence = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
@@ -744,7 +744,7 @@ Token-aware chunking bounds each chunk by an estimated token count instead:
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'
 
-const byToken = chunkText(document, {
+const byToken = chunkText(longDocument, {
   strategy: 'token-aware',
   tokenLimit: 500,
   chunkOverlap: 50,

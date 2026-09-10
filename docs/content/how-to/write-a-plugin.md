@@ -356,19 +356,18 @@ const auditTrail = await context.plugins.audit.getAuditTrail('Post', postId)
 
 ## Plugin Dependency Resolution
 
-Plugins can depend on other plugins. The stack automatically orders execution using topological sort.
+Plugins can depend on other plugins. The stack automatically orders execution using topological sort. Naming `auth` in `dependencies` is what guarantees that by the time `init` runs, the auth plugin has already run and its `User` list exists with the auth fields on it.
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export function myPlugin(): Plugin {
   return {
     name: 'my-plugin',
     version: '0.1.0',
-    dependencies: ['auth'], // This plugin requires auth plugin
+    dependencies: ['auth'],
 
     init: async (context) => {
-      // Auth plugin has already run
-      // User list exists and has auth fields
-
       context.extendList('User', {
         fields: {
           apiKey: text(), // Add to existing User from auth
@@ -394,6 +393,8 @@ Multiple plugins can add hooks to the same list. They execute in plugin order â€
 below, `normalise` first, then `validation`:
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export function normalisePlugin(): Plugin {
   return {
     name: 'normalise',
@@ -531,6 +532,8 @@ init: async (context) => {
 Use TypeScript for plugin configuration:
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export interface MyPluginOptions {
   apiKey: string
   endpoint?: string
@@ -552,6 +555,8 @@ export function myPlugin(options: MyPluginOptions): Plugin {
 Validate plugin options early:
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export function myPlugin(options: MyPluginOptions): Plugin {
   if (!options.apiKey) {
     throw new Error('myPlugin: apiKey is required')
@@ -570,6 +575,8 @@ export function myPlugin(options: MyPluginOptions): Plugin {
 Use environment variables for secrets:
 
 ```typescript
+import type { Plugin } from '@opensaas/stack-core/extend'
+
 export function myPlugin(options?: { apiKey?: string }): Plugin {
   const apiKey = options?.apiKey || process.env.MY_PLUGIN_API_KEY
 
