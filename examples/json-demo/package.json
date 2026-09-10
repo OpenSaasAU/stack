@@ -9,7 +9,7 @@
     "start": "next start -p 3005",
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
-    "test": "vitest run"
+    "test": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",

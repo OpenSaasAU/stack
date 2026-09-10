@@ -10,6 +10,20 @@ function present<T>(value: T | null, what: string): T {
   return value
 }
 
+/**
+ * `createTestContext` is not generic over the config's lists — it hands back
+ * `StackContext<AccessControlledDB>`, whose rows are untyped — so an id read
+ * off a row arrives as `unknown` and cannot be fed straight back into a
+ * `where`. Checked at runtime rather than asserted, so a shape change fails
+ * here instead of further down.
+ */
+function idOf(row: unknown, what: string): string {
+  if (typeof row !== 'object' || row === null || !('id' in row) || typeof row.id !== 'string') {
+    throw new Error(`${what} has no string id`)
+  }
+  return row.id
+}
+
 describe('json fields round-trip through the secured context', () => {
   let harness: TestContext
 
@@ -37,7 +51,9 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Product.where({ id: { equals: created.id } }).first(),
+      await harness.context.db.Product.where({
+        id: { equals: idOf(created, 'created row') },
+      }).first(),
       'Product read',
     )
     expect(read.metadata).toEqual(metadata)
@@ -76,7 +92,9 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Article.where({ id: { equals: created.id } }).first(),
+      await harness.context.db.Article.where({
+        id: { equals: idOf(created, 'created row') },
+      }).first(),
       'Article read',
     )
     expect(read.content).toBeNull()
@@ -95,7 +113,9 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Article.where({ id: { equals: created.id } }).first(),
+      await harness.context.db.Article.where({
+        id: { equals: idOf(created, 'created row') },
+      }).first(),
       'Article read',
     )
     expect(read.taxonomy).toEqual(taxonomy)

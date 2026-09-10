@@ -10,6 +10,21 @@ function present<T>(value: T | null, what: string): T {
   return value
 }
 
+/**
+ * `createTestContext` is not generic over the config's lists — it hands back
+ * `StackContext<AccessControlledDB>`, whose rows are untyped — so a value read
+ * off a row arrives as `unknown`. Checked at runtime rather than asserted, so a
+ * shape change fails here instead of further down.
+ */
+function stringField(row: unknown, key: string, what: string): string {
+  if (typeof row !== 'object' || row === null || !(key in row)) {
+    throw new Error(`${what} has no ${key}`)
+  }
+  const value = Reflect.get(row, key)
+  if (typeof value !== 'string') throw new Error(`${what}.${key} is not a string`)
+  return value
+}
+
 /** The shape Tiptap actually serializes: a nested document with marks. */
 const DOC = {
   type: 'doc',
@@ -47,7 +62,7 @@ describe('rich text round-trips through the secured context', () => {
       }),
       'User.create',
     )
-    authorId = author.id
+    authorId = stringField(author, 'id', 'User')
   }, BOOT)
 
   afterAll(async () => {
@@ -64,7 +79,9 @@ describe('rich text round-trips through the secured context', () => {
     )
 
     const read = present(
-      await context.db.Article.where({ id: { equals: created.id } }).first(),
+      await context.db.Article.where({
+        id: { equals: stringField(created, 'id', 'created row') },
+      }).first(),
       'Article read',
     )
     expect(read.content).toEqual(DOC)
@@ -90,7 +107,9 @@ describe('rich text round-trips through the secured context', () => {
     expect(updated.content).toEqual(edited)
 
     const read = present(
-      await context.db.Article.where({ id: { equals: created.id } }).first(),
+      await context.db.Article.where({
+        id: { equals: stringField(created, 'id', 'created row') },
+      }).first(),
       'Article read',
     )
     expect(read.content).toEqual(edited)
@@ -142,12 +161,13 @@ describe('rich text round-trips through the secured context', () => {
     )
 
     const read = present(
-      await context.db.Article.where({ id: { equals: created.id } })
+      await context.db.Article.where({ id: { equals: stringField(created, 'id', 'created row') } })
         .include('author')
         .first(),
       'Article read',
     )
     // A to-one include is `Row | null` whether or not its column is nullable.
-    expect(read.author?.name).toBe('Ada')
+    expect(read.author).not.toBeNull()
+    expect(stringField(read.author, 'name', 'included author')).toBe('Ada')
   })
 })
