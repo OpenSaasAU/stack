@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getContext } from '../src/context/index.js'
 import { config, list } from '../src/config/index.js'
 import { text, relationship } from '../src/fields/index.js'
+import { NestedRelationInputError } from '../src/context/nested-operations.js'
 
 /**
  * These tests pin the behaviour of the nested-operation handler registry that
  * sits behind `processNestedOperations`. Each nested-op kind (create, connect,
- * connectOrCreate, update) plus the pass-through kinds (disconnect, delete,
- * deleteMany, set, updateMany) is dispatched via the registry. The tests assert
- * the exact payload handed to Prisma so a regression in dispatch/ordering is
- * caught.
+ * connectOrCreate, update, delete) plus `disconnect` (gated, #1384) is
+ * dispatched via the registry. `set`/`updateMany`/`deleteMany` are refused
+ * for non-sudo contexts (#1384) rather than dispatched at all. The tests
+ * assert the exact payload handed to Prisma so a regression in
+ * dispatch/ordering is caught.
  */
 
 function createMockPrisma() {
@@ -105,8 +107,8 @@ describe('Nested Operation Handler Registry', () => {
     mockPrisma.post.update.mockResolvedValue({ id: '1', title: 'Original' })
   })
 
-  describe('pass-through kinds', () => {
-    it('passes disconnect through unchanged', async () => {
+  describe('disconnect (gated, #1384)', () => {
+    it('passes { disconnect: true } through unchanged with no target check', async () => {
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
       await context.db.post.update({
@@ -116,33 +118,47 @@ describe('Nested Operation Handler Registry', () => {
 
       const passedData = mockPrisma.post.update.mock.calls[0][0].data
       expect(passedData.author).toEqual({ disconnect: true })
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
     })
 
-    it('passes deleteMany, set and updateMany through unchanged', async () => {
-      // NOTE (#569 / ADR-0010): nested `delete` is no longer a pass-through kind —
-      // it now runs the full delete hook pipeline (access + before/afterOperation),
-      // so it is tested separately below. `deleteMany`/`set`/`updateMany` remain
-      // pass-through (out of scope for #569) and the payload is handed to Prisma
-      // unchanged.
+    it('verifies target query access before passing a criteria-form disconnect through', async () => {
+      mockPrisma.tag.findUnique.mockResolvedValue({ id: 'old-tag', label: 'x' })
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
       await context.db.post.update({
         where: { id: '1' },
-        data: {
-          tags: {
-            deleteMany: { label: { contains: 'x' } },
-            set: [{ id: 'b' }],
-            updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
-          },
-        },
+        data: { tags: { disconnect: { id: 'old-tag' } } },
       })
 
+      expect(mockPrisma.tag.findUnique).toHaveBeenCalledWith({ where: { id: 'old-tag' } })
       const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
-      expect(passedTags).toEqual({
-        deleteMany: { label: { contains: 'x' } },
-        set: [{ id: 'b' }],
-        updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
+      expect(passedTags).toEqual({ disconnect: { id: 'old-tag' } })
+    })
+
+    it('denies a criteria-form disconnect naming a target the session cannot reach', async () => {
+      mockPrisma.tag.findUnique.mockResolvedValue(null)
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
+
+      await expect(
+        context.db.post.update({
+          where: { id: '1' },
+          data: { tags: { disconnect: { id: 'missing-tag' } } },
+        }),
+      ).rejects.toThrow(/Cannot disconnect: Item not found/)
+      expect(mockPrisma.post.update).not.toHaveBeenCalled()
+    })
+
+    it('skips the target check under sudo, matching the historical pass-through', async () => {
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' }).sudo()
+
+      await context.db.post.update({
+        where: { id: '1' },
+        data: { tags: { disconnect: { id: 'old-tag' } } },
       })
+
+      expect(mockPrisma.tag.findUnique).not.toHaveBeenCalled()
+      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      expect(passedTags).toEqual({ disconnect: { id: 'old-tag' } })
     })
 
     it('runs the delete hook pipeline for nested delete then hands the payload to Prisma', async () => {
@@ -168,8 +184,78 @@ describe('Nested Operation Handler Registry', () => {
     })
   })
 
+  describe('refused kinds (set/updateMany/deleteMany, #1384)', () => {
+    it('refuses a non-sudo deleteMany/set/updateMany payload, naming the list, field and kinds', async () => {
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
+
+      let caught: unknown
+      try {
+        await context.db.post.update({
+          where: { id: '1' },
+          data: {
+            tags: {
+              deleteMany: { label: { contains: 'x' } },
+              set: [{ id: 'b' }],
+              updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
+            },
+          },
+        })
+      } catch (err) {
+        caught = err
+      }
+
+      expect(caught).toBeInstanceOf(NestedRelationInputError)
+      const error = caught as NestedRelationInputError
+      expect(error.listKey).toBe('Post')
+      expect(error.fieldKey).toBe('tags')
+      expect(error.kinds).toEqual(['set', 'updateMany', 'deleteMany'])
+      // Nothing persisted — the refusal fires before the parent write executes.
+      expect(mockPrisma.post.update).not.toHaveBeenCalled()
+    })
+
+    it('refuses even when the same payload also carries a permitted kind', async () => {
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
+
+      await expect(
+        context.db.post.update({
+          where: { id: '1' },
+          data: {
+            tags: {
+              create: { label: 'new-tag' },
+              deleteMany: { label: { contains: 'x' } },
+            },
+          },
+        }),
+      ).rejects.toThrow(NestedRelationInputError)
+      expect(mockPrisma.post.update).not.toHaveBeenCalled()
+    })
+
+    it('still passes deleteMany, set and updateMany through unchanged under sudo', async () => {
+      const context = getContext(await buildConfig(), mockPrisma, { userId: '1' }).sudo()
+
+      await context.db.post.update({
+        where: { id: '1' },
+        data: {
+          tags: {
+            deleteMany: { label: { contains: 'x' } },
+            set: [{ id: 'b' }],
+            updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
+          },
+        },
+      })
+
+      const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
+      expect(passedTags).toEqual({
+        deleteMany: { label: { contains: 'x' } },
+        set: [{ id: 'b' }],
+        updateMany: { where: { id: 'c' }, data: { label: 'renamed' } },
+      })
+    })
+  })
+
   describe('multiple kinds on a single field', () => {
     it('dispatches create and disconnect together, preserving both', async () => {
+      mockPrisma.tag.findUnique.mockResolvedValue({ id: 'old-tag', label: 'x' })
       const context = getContext(await buildConfig(), mockPrisma, { userId: '1' })
 
       await context.db.post.update({
@@ -185,7 +271,7 @@ describe('Nested Operation Handler Registry', () => {
       const passedTags = mockPrisma.post.update.mock.calls[0][0].data.tags
       // create is processed through hooks/access (object preserved)
       expect(passedTags.create).toEqual({ label: 'new-tag' })
-      // disconnect is passed through untouched
+      // disconnect is passed through once its target is verified reachable
       expect(passedTags.disconnect).toEqual({ id: 'old-tag' })
     })
   })
