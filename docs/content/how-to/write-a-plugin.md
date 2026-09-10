@@ -653,7 +653,7 @@ test('audit plugin logs operations', async () => {
 `context.unsafe` is the deliberate bypass on the request context, and it skips
 **everything** the secured surface does: access control, Field Visibility,
 `resolveOutput`, computed fields, hooks, and error normalisation — a failure
-here arrives as the raw driver error, not a `DatabaseError`. It carries four
+here arrives as the raw driver error, not a `DatabaseError`. It carries five
 members:
 
 | Member                                 | What it is                                                                                                                                                              |
