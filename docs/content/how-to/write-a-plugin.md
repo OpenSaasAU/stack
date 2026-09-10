@@ -545,7 +545,9 @@ export function myPlugin(options: MyPluginOptions): Plugin {
 
   return {
     name: 'my-plugin',
-    // ...
+    init: async (context) => {
+      context.setPluginData('my-plugin', { apiKey, endpoint, retries })
+    },
   }
 }
 ```
@@ -566,7 +568,12 @@ export function myPlugin(options: MyPluginOptions): Plugin {
     throw new Error('myPlugin: retries must be positive')
   }
 
-  return {/* ... */}
+  return {
+    name: 'my-plugin',
+    init: async (context) => {
+      context.setPluginData('my-plugin', options)
+    },
+  }
 }
 ```
 
@@ -584,7 +591,12 @@ export function myPlugin(options?: { apiKey?: string }): Plugin {
     throw new Error('myPlugin: API key not found')
   }
 
-  return {/* ... */}
+  return {
+    name: 'my-plugin',
+    init: async (context) => {
+      context.setPluginData('my-plugin', options)
+    },
+  }
 }
 ```
 

@@ -297,107 +297,162 @@ Standalone components allow you to build custom admin interfaces by composing in
 
 A standalone form for creating new items.
 
+The form renders the field configs you hand it and calls `onSubmit` with the
+collected values. It never touches the database itself — it holds no context, so
+the write stays on the server, where access control and hooks run. Below, the
+server component resolves the config, and the write is an inline server action;
+it works the same when the action lives in its own `'use server'` module.
+
 ```typescript
+// app/posts/new/page.tsx
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import { getContext } from '@/.opensaas/context'
-import { getSession } from '@/lib/auth'
+import { config, getContext } from '@/.opensaas/context'
+import type { PostCreateInput } from '@/.opensaas/types'
 
 export default async function CreatePostPage() {
-  const session = await getSession()
-  const context = await getContext(session ?? undefined)
+  const resolvedConfig = await config
+
+  async function createPost(data: PostCreateInput) {
+    'use server'
+    const context = await getContext()
+    const post = await context.db.Post.create({ data })
+    if (!post) return { success: false, error: 'Could not create the post' }
+    return { success: true }
+  }
 
   return (
-    <ItemCreateForm
+    <ItemCreateForm<PostCreateInput>
+      fields={resolvedConfig.lists.Post.fields}
       listKey="Post"
-      context={context}
-      onSuccess={(item) => {
-        // Redirect or show success message
-        console.log('Created item:', item.id)
-      }}
-      onError={(error) => {
-        // Handle error
-        console.error('Failed to create:', error)
-      }}
+      config={resolvedConfig}
+      onSubmit={createPost}
+      submitLabel="Create Post"
     />
   )
 }
 ```
 
+`create()` returns `null` on denial as well as on failure, so the handler turns a
+falsy result into `{ success: false }` rather than dereferencing it — the form
+renders whatever `error` you return.
+
 **Props:**
 
-- `listKey` - The name of the list (e.g., "Post", "User")
-- `context` - Admin context with session and database access
-- `onSuccess?` - Optional callback when item is created successfully
-- `onError?` - Optional callback when creation fails
+- `fields` - The field configs to render, keyed by field name (`config.lists.Post.fields`)
+- `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`; returning `success: false` keeps the form open and shows `error`
+- `listKey?` and `config?` - Supply both to have the non-owning end of a one-to-one render read-only with an explanation, the way the admin item form does
+- `onCancel?` - Called when the cancel button is pressed; the button is hidden without it
+- `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
+- `submitLabel?`, `cancelLabel?` - Button text
+- `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ### ItemEditForm
 
 A standalone form for editing existing items.
 
-```typescript
-import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { getContext } from '@/.opensaas/context'
-import { getSession } from '@/lib/auth'
+`ItemEditForm` is `ItemCreateForm` plus `initialData` — the values the form opens
+with. There is no `itemId` prop and no fetching inside the component: you read
+the row yourself, seed the form from it, and decide what the update does.
 
-export default async function EditPostPage({ params }: { params: { id: string } }) {
-  const session = await getSession()
-  const context = await getContext(session ?? undefined)
+```typescript
+// app/posts/[id]/page.tsx
+import { notFound } from 'next/navigation'
+import { ItemEditForm } from '@opensaas/stack-ui/standalone'
+import { config, getContext } from '@/.opensaas/context'
+import type { PostUpdateInput } from '@/.opensaas/types'
+
+export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const resolvedConfig = await config
+  const context = await getContext()
+
+  const post = await context.db.Post.where({ id }).first()
+  if (!post) notFound()
+
+  async function updatePost(data: PostUpdateInput) {
+    'use server'
+    const context = await getContext()
+    const updated = await context.db.Post.update({ where: { id }, data })
+    if (!updated) return { success: false, error: 'Could not update the post' }
+    return { success: true }
+  }
 
   return (
-    <ItemEditForm
+    <ItemEditForm<PostUpdateInput>
+      fields={resolvedConfig.lists.Post.fields}
       listKey="Post"
-      itemId={params.id}
-      context={context}
-      onSuccess={(item) => {
-        console.log('Updated item:', item.id)
-      }}
-      onError={(error) => {
-        console.error('Failed to update:', error)
-      }}
+      config={resolvedConfig}
+      initialData={{ title: post.title, slug: post.slug, content: post.content }}
+      onSubmit={updatePost}
     />
   )
 }
 ```
 
+`first()` returns `null` for a row that does not exist and for one this session
+may not read, so the `notFound()` branch covers both. The same is true of
+`update()`'s `null`.
+
 **Props:**
 
-- `listKey` - The name of the list
-- `itemId` - The ID of the item to edit
-- `context` - Admin context
-- `onSuccess?` - Optional callback when item is updated successfully
-- `onError?` - Optional callback when update fails
+- `fields` - The field configs to render, keyed by field name
+- `initialData` - The values the form opens with
+- `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
+- `listKey?` and `config?` - As for `ItemCreateForm`, for the non-owning end of a one-to-one
+- `onCancel?` - Called when the cancel button is pressed
+- `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
+- `submitLabel?`, `cancelLabel?`, `basePath?` - Button text and the admin base path for links
+- `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ### ListTable
 
 A standalone table component for displaying lists of items.
 
+`ListTable` renders rows you have already read. It takes no list key and no
+context — you compose the read, and you tell the table how to render each column
+with `fieldTypes`, a map from column name to field type name.
+
 ```typescript
+// app/posts/page.tsx
 import { ListTable } from '@opensaas/stack-ui/standalone'
 import { getContext } from '@/.opensaas/context'
-import { getSession } from '@/lib/auth'
 
 export default async function PostsPage() {
-  const session = await getSession()
-  const context = await getContext(session ?? undefined)
+  const context = await getContext()
+
+  const posts = await context.db.Post.orderBy({ createdAt: 'desc' }).limit(20).all()
 
   return (
     <div>
       <h1>Posts</h1>
       <ListTable
-        listKey="Post"
-        context={context}
-        columns={['title', 'status', 'author', 'createdAt']}
+        items={posts}
+        fieldTypes={{ title: 'text', status: 'select', createdAt: 'timestamp' }}
+        columns={['title', 'status', 'createdAt']}
+        sortable
+        emptyMessage="No posts yet."
       />
     </div>
   )
 }
 ```
 
+A denied read is an empty array, so the table shows `emptyMessage` rather than
+failing. Columns are keys of the row objects you pass, which need not be list
+fields — map a relation onto a scalar of its own (`authorName`) and give it a
+`fieldTypes` entry, or declare the relation in `relationshipRefs`.
+
 **Props:**
 
-- `listKey` - The name of the list
-- `context` - Admin context
-- `columns?` - Optional array of field names to display (defaults to all fields)
+- `items` - The rows to render
+- `fieldTypes` - Field type per column (`{ title: 'text', status: 'select' }`), which decides how each cell renders
+- `columns?` - Which columns to show, in order (defaults to the row's own keys, curated by `fields`)
+- `relationshipRefs?` - `ref` string per relationship column, e.g. `{ author: 'User.posts' }`
+- `fieldOptions?` - Select options per column, so a `select` column resolves its label and badge variant
+- `fields?` - Serialised field configs, used only to honour `ui.listView.defaultColumn` when `columns` is absent
+- `onRowClick?`, `renderActions?` - Row click handler, and a per-row actions cell
+- `sortable?`, `emptyMessage?`, `basePath?` - Client-side column sorting, empty-state text, admin base path for links
+- `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ### SearchBar
 
@@ -427,31 +482,48 @@ export default function SearchPage() {
 
 A button with confirmation dialog for deleting items.
 
-```typescript
-import { DeleteButton } from '@opensaas/stack-ui/standalone'
+The button owns the confirmation dialog and the error banner; it does not own the
+delete. `onDelete` takes no arguments — it closes over whatever row you are
+deleting — and its result decides whether the dialog closes or shows an error.
 
-export default function ItemActions({ itemId }: { itemId: string }) {
+```typescript
+// app/posts/[id]/page.tsx
+import { DeleteButton } from '@opensaas/stack-ui/standalone'
+import { getContext } from '@/.opensaas/context'
+
+export default async function PostActions({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+
+  async function deletePost() {
+    'use server'
+    const context = await getContext()
+    const removed = await context.db.Post.delete({ where: { id } })
+    if (!removed) return { success: false, error: 'Could not delete the post' }
+    return { success: true }
+  }
+
   return (
     <DeleteButton
-      listKey="Post"
-      itemId={itemId}
-      onSuccess={() => {
-        console.log('Item deleted')
-      }}
-      onError={(error) => {
-        console.error('Failed to delete:', error)
-      }}
+      onDelete={deletePost}
+      itemName="post"
+      confirmMessage="This will permanently delete the post and all its comments."
+      buttonVariant="destructive"
     />
   )
 }
 ```
 
+`delete()` answers `null` for a row that is gone and for one this session may not
+delete — indistinguishable by design — so a single falsy branch covers both.
+
 **Props:**
 
-- `listKey` - The name of the list
-- `itemId` - The ID of the item to delete
-- `onSuccess?` - Optional callback when item is deleted successfully
-- `onError?` - Optional callback when deletion fails
+- `onDelete` - `() => Promise<{ success: boolean; error?: string }>`; `success: false` keeps the dialog open and shows `error`
+- `itemName?` - Used in the default confirmation copy ("Delete post?")
+- `confirmTitle?`, `confirmMessage?`, `confirmLabel?`, `cancelLabel?`, `buttonLabel?` - Override the dialog and trigger text
+- `variant?` - `'danger'` (default) or `'warning'`, the dialog's tone
+- `buttonVariant?`, `size?`, `disabled?` - Trigger button styling and state
+- `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ## Field Components
 
@@ -492,13 +564,16 @@ from `@opensaas/stack-ui`.
 
 ### Example Usage
 
+A `SelectField` clears to `null` rather than to an empty string, so its state has
+to admit `null` — `useState('draft')` infers `string` and rejects the handler.
+
 ```typescript
 import { TextField, SelectField } from '@opensaas/stack-ui/fields'
 import { useState } from 'react'
 
 export default function CustomForm() {
   const [title, setTitle] = useState('')
-  const [status, setStatus] = useState('draft')
+  const [status, setStatus] = useState<string | null>('draft')
 
   return (
     <form>
@@ -603,6 +678,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   lists: {
     Theme: list({
       fields: {
@@ -734,17 +810,29 @@ The UI package is optimized for performance:
 
 ### Custom Dashboard
 
-Build a custom dashboard using standalone components:
+Build a custom dashboard using standalone components. One page does the reading
+and the writing; the components render what it hands them.
 
 ```typescript
+// app/dashboard/page.tsx
 import { ListTable, ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { Card, CardHeader, CardContent } from '@opensaas/stack-ui/primitives'
-import { getContext } from '@/.opensaas/context'
-import { getSession } from '@/lib/auth'
+import { config, getContext } from '@/.opensaas/context'
+import type { PostCreateInput } from '@/.opensaas/types'
 
 export default async function CustomDashboard() {
-  const session = await getSession()
-  const context = await getContext(session ?? undefined)
+  const resolvedConfig = await config
+  const context = await getContext()
+
+  const posts = await context.db.Post.orderBy({ createdAt: 'desc' }).limit(10).all()
+
+  async function createPost(data: PostCreateInput) {
+    'use server'
+    const context = await getContext()
+    const post = await context.db.Post.create({ data })
+    if (!post) return { success: false, error: 'Could not create the post' }
+    return { success: true }
+  }
 
   return (
     <div className="grid gap-4 p-4">
@@ -754,9 +842,10 @@ export default async function CustomDashboard() {
         </CardHeader>
         <CardContent>
           <ListTable
-            listKey="Post"
-            context={context}
+            items={posts}
+            fieldTypes={{ title: 'text', status: 'select', createdAt: 'timestamp' }}
             columns={['title', 'status', 'createdAt']}
+            emptyMessage="No posts yet."
           />
         </CardContent>
       </Card>
@@ -766,12 +855,11 @@ export default async function CustomDashboard() {
           <h2>Create New Post</h2>
         </CardHeader>
         <CardContent>
-          <ItemCreateForm
+          <ItemCreateForm<PostCreateInput>
+            fields={resolvedConfig.lists.Post.fields}
             listKey="Post"
-            context={context}
-            onSuccess={(item) => {
-              console.log('Created:', item.id)
-            }}
+            config={resolvedConfig}
+            onSubmit={createPost}
           />
         </CardContent>
       </Card>

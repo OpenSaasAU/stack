@@ -141,43 +141,75 @@ export async function POST(request: NextRequest) {
 
 ### 3. Use in Admin UI
 
-The file and image fields work automatically in the admin UI. For custom forms, provide an `onUpload` handler:
+The file and image fields work automatically in the admin UI. In a custom form
+there is no upload handler to pass: `ImageField` and `FileField` hold the browser
+`File` the user picked and hand it to `onChange`, and the upload happens
+server-side when you write the row, through the field's own hooks. So the state
+these fields drive is `File | ImageMetadata | null` — a `File` while the user has
+just picked one, the stored metadata once a saved row is loaded back.
 
 ```typescript
-import { FileField, ImageField } from '@opensaas/stack-ui/fields'
+'use client'
 
-function CustomForm() {
-  const [avatar, setAvatar] = useState<ImageMetadata | null>(null)
+import { useState } from 'react'
+import { ImageField } from '@opensaas/stack-ui/fields'
+import type { ImageMetadata } from '@opensaas/stack-storage'
 
-  const handleUpload = async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('storage', 'avatars')
-    formData.append('fieldType', 'image')
-
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      throw new Error('Upload failed')
-    }
-
-    return await response.json()
-  }
+export function CustomForm({
+  onSave,
+}: {
+  onSave: (avatar: File | ImageMetadata | null) => Promise<{ error: string | null }>
+}) {
+  const [avatar, setAvatar] = useState<File | ImageMetadata | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   return (
-    <ImageField
-      name="avatar"
-      value={avatar}
-      onChange={setAvatar}
-      label="Avatar"
-      onUpload={handleUpload}
-    />
+    <form
+      onSubmit={async (event) => {
+        event.preventDefault()
+        const result = await onSave(avatar)
+        setError(result.error)
+      }}
+    >
+      <ImageField
+        name="avatar"
+        value={avatar}
+        onChange={setAvatar}
+        label="Avatar"
+        helpText="JPG, PNG or WebP, up to 5MB — uploaded when you save"
+        showPreview
+        previewSize={200}
+      />
+      {error && <p role="alert">{error}</p>}
+      <button type="submit">Save</button>
+    </form>
   )
 }
 ```
+
+The `onSave` it is handed is a server action that writes the `File` straight into
+the field; the image field's hooks upload it and store the resulting metadata:
+
+```typescript
+'use server'
+
+import { getContext } from '@/.opensaas/context'
+import type { ImageMetadata } from '@opensaas/stack-storage'
+
+export async function saveAvatar(userId: string, avatar: File | ImageMetadata | null) {
+  const context = await getContext()
+  const user = await context.db.User.update({ where: { id: userId }, data: { avatar } })
+  if (!user) return { error: 'Could not save the avatar' }
+  return { error: null }
+}
+```
+
+`update()` returns `null` for a row that is gone and for one this session may not
+write, so the falsy branch covers both.
+
+The `/api/upload` route above is for flows that need the file stored before the
+row is written — a standalone uploader, or a draft that outlives the form. A
+plain create-or-edit form does not need it.
 
 ## Storage Providers
 

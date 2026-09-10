@@ -676,7 +676,10 @@ say) must match on the driver's shape, not on the stack's error classes.
 
 ## Client Setup
 
-Create a client for authentication in your components:
+Create a client for reading the session in client components. The pre-built forms
+do **not** use it — they submit through app-owned server actions (see
+[UI Components](#ui-components)), so the client is only needed for `useSession`
+and an explicit `signOut`:
 
 ```typescript
 // lib/auth-client.ts
@@ -698,18 +701,119 @@ export const {
 
 ## UI Components
 
-The auth package includes pre-built UI components:
+The auth package includes pre-built UI components. None of them talks to the auth
+API from the browser: each form takes an **auth action** — an app-owned
+`'use server'` function that calls `auth.api.*` on your own auth instance — as a
+prop, one prop per concern (ADR-0020). The package exports the contract types
+those actions satisfy; your app owns the implementations, conventionally in
+`lib/actions/auth.ts`.
+
+### Auth actions
+
+`AuthActionResult` is `{ success: true } | { success: false; error: string }`, and
+the form renders the `error` message. Email actions resolve to that result and let
+the form handle `redirectTo`; `signInSocialAction` has to leave the app, so it
+performs a server-side `redirect()` to the provider and resolves to `void`.
+
+```typescript
+// lib/actions/auth.ts
+'use server'
+
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+import type {
+  AuthActionResult,
+  SignInInput,
+  SignUpInput,
+  RequestPasswordResetInput,
+  ResetPasswordInput,
+} from '@opensaas/stack-auth/ui'
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({
+      body: { email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign in failed') }
+  }
+}
+
+export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signUpEmail({
+      body: { name: input.name, email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign up failed') }
+  }
+}
+
+export async function requestPasswordResetAction(
+  input: RequestPasswordResetInput,
+): Promise<AuthActionResult> {
+  try {
+    await auth.api.requestPasswordReset({
+      body: { email: input.email, redirectTo: '/reset-password' },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
+  }
+}
+
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.resetPassword({
+      body: { newPassword: input.password, token: input.token },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to reset password') }
+  }
+}
+
+export async function signInSocialAction(provider: string): Promise<void> {
+  const response = await auth.api.signInSocial({
+    body: { provider, callbackURL: '/admin' },
+    headers: await headers(),
+  })
+  if (response && 'url' in response && response.url) {
+    redirect(response.url)
+  }
+}
+```
+
+`createAuth()` appends better-auth's `nextCookies()` plugin, so the session cookie
+these actions set is written into Next's `cookies()` without any extra step.
 
 ### SignInForm
 
+`signInAction` is the only required prop. The OAuth buttons render only when
+`signInSocialAction` is supplied — `showSocialProviders` alone does not summon
+them.
+
 ```typescript
+// app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction, signInSocialAction } from '@/lib/actions/auth'
 
 export default function SignInPage() {
   return (
     <SignInForm
-      authClient={authClient}
+      signInAction={signInAction}
+      signInSocialAction={signInSocialAction}
       redirectTo="/admin"
       showSocialProviders={true}
     />
@@ -720,17 +824,51 @@ export default function SignInPage() {
 ### SignUpForm
 
 ```typescript
+// app/sign-up/page.tsx
 import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction, signInSocialAction } from '@/lib/actions/auth'
 
 export default function SignUpPage() {
   return (
     <SignUpForm
-      authClient={authClient}
+      signUpAction={signUpAction}
+      signInSocialAction={signInSocialAction}
       redirectTo="/admin"
       showSocialProviders={true}
     />
   )
+}
+```
+
+### ForgotPasswordForm and ResetPasswordForm
+
+`ForgotPasswordForm` requests the reset email. `ResetPasswordForm` completes the
+reset and additionally takes the `token` from the email link — the page reads it
+from `searchParams` and passes it in; an empty token renders an "invalid or
+expired link" state instead of a password form.
+
+```typescript
+// app/forgot-password/page.tsx
+import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
+
+export default function ForgotPasswordPage() {
+  return <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
+}
+```
+
+```typescript
+// app/reset-password/page.tsx
+import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
+import { resetPasswordAction } from '@/lib/actions/auth'
+
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+  return <ResetPasswordForm resetPasswordAction={resetPasswordAction} token={token ?? ''} />
 }
 ```
 

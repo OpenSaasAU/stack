@@ -203,7 +203,10 @@ client are ready.
 
 ### Client Setup
 
-Create a client-side auth instance:
+Create a client-side auth instance. This is for reading the session in client
+components (`useSession`) and for an explicit `signOut` — the sign-in, sign-up and
+password-reset forms below do not use it, because they submit through server
+actions instead:
 
 ```typescript
 // lib/auth-client.ts
@@ -237,6 +240,92 @@ This handles all auth endpoints:
 - `/api/auth/forgot-password`
 - `/api/auth/reset-password`
 
+### Auth Actions
+
+The pre-built forms never call the auth API from the browser. Each one takes an
+**auth action** — a `'use server'` function in your own app that calls
+`auth.api.*` on the instance from `lib/auth.ts` — as a prop, one prop per concern.
+The package ships the forms and the contract types; you own the four functions,
+conventionally in `lib/actions/auth.ts`.
+
+An email action resolves to `AuthActionResult` (`{ success: true }` or
+`{ success: false, error }`, whose message the form renders) and leaves the
+redirect to the form's `redirectTo`. Social sign-in has to leave the app, so its
+action performs a server-side `redirect()` to the provider and resolves to `void`.
+
+```typescript
+// lib/actions/auth.ts
+'use server'
+
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+import type {
+  AuthActionResult,
+  SignInInput,
+  SignUpInput,
+  RequestPasswordResetInput,
+  ResetPasswordInput,
+} from '@opensaas/stack-auth/ui'
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({
+      body: { email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign in failed') }
+  }
+}
+
+export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signUpEmail({
+      body: { name: input.name, email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign up failed') }
+  }
+}
+
+export async function requestPasswordResetAction(
+  input: RequestPasswordResetInput,
+): Promise<AuthActionResult> {
+  try {
+    await auth.api.requestPasswordReset({
+      body: { email: input.email, redirectTo: '/reset-password' },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
+  }
+}
+
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.resetPassword({
+      body: { newPassword: input.password, token: input.token },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to reset password') }
+  }
+}
+```
+
+`createAuth()` appends better-auth's `nextCookies()` plugin, so the session cookie
+set inside these actions persists — there is no extra wiring for that.
+
 ### Sign-In Page
 
 Create a sign-in page using the pre-built component:
@@ -244,14 +333,14 @@ Create a sign-in page using the pre-built component:
 ```typescript
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction } from '@/lib/actions/auth'
 
 export default function SignInPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Sign In</h1>
       <SignInForm
-        authClient={authClient}
+        signInAction={signInAction}
         redirectTo="/admin"
         showSocialProviders={false}
       />
@@ -267,14 +356,14 @@ Create a sign-up page:
 ```typescript
 // app/sign-up/page.tsx
 import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction } from '@/lib/actions/auth'
 
 export default function SignUpPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Sign Up</h1>
       <SignUpForm
-        authClient={authClient}
+        signUpAction={signUpAction}
         redirectTo="/admin"
         requirePasswordConfirmation={true}
       />
@@ -290,13 +379,39 @@ Create a password reset request page:
 ```typescript
 // app/forgot-password/page.tsx
 import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
 
 export default function ForgotPasswordPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Reset Password</h1>
-      <ForgotPasswordForm authClient={authClient} />
+      <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
+    </div>
+  )
+}
+```
+
+### Reset Password Page
+
+The reset link in the email lands here. `ResetPasswordForm` takes the token from
+`searchParams` alongside its action; an empty token renders an "invalid or expired
+link" state rather than a password form.
+
+```typescript
+// app/reset-password/page.tsx
+import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
+import { resetPasswordAction } from '@/lib/actions/auth'
+
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+  return (
+    <div className="container mx-auto max-w-md py-16">
+      <h1 className="text-3xl font-bold mb-8">Choose a New Password</h1>
+      <ResetPasswordForm resetPasswordAction={resetPasswordAction} token={token ?? ''} />
     </div>
   )
 }
@@ -310,14 +425,30 @@ Stack doesn't use Next.js middleware for authentication. Instead, protect routes
 
 Redirect or render a refusal when `getSession()` returns `null`, then hand the
 session to `getContext()`. The generated `config` export is a promise, so it is
-awaited alongside the context:
+awaited alongside the context. `serverAction` is required: it is the wrapper every
+admin mutation goes through, and it re-reads the session on the server so a write
+is checked against the caller's own access rules rather than the session the page
+rendered with:
 
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { getUrlKey } from '@opensaas/stack-core'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  const result = await context.serverAction(props)
+  if (result && typeof result === 'object' && 'success' in result && result.success) {
+    redirect(`/admin/${getUrlKey(props.listKey)}`)
+  }
+  return result
+}
 
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>
@@ -338,6 +469,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       params={(await params).admin}
       searchParams={await searchParams}
       basePath="/admin"
+      serverAction={serverAction}
     />
   )
 }
@@ -795,17 +927,49 @@ Supported providers: `github`, `google`, `discord`, `twitter`
 
 ### Using Social Login in UI
 
-Enable social providers in your sign-in form:
+OAuth needs its own action, because it navigates away from your app instead of
+returning a result to the form: it asks better-auth for the provider URL and
+redirects there.
 
 ```typescript
-<SignInForm
-  authClient={authClient}
-  showSocialProviders={true}
-  socialProviders={['github', 'google']}
-/>
+// lib/actions/auth.ts
+'use server'
+
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+
+export async function signInSocialAction(provider: string): Promise<void> {
+  const response = await auth.api.signInSocial({
+    body: { provider, callbackURL: '/admin' },
+    headers: await headers(),
+  })
+  if (response && 'url' in response && response.url) {
+    redirect(response.url)
+  }
+}
 ```
 
-The form will automatically render OAuth buttons for the specified providers.
+Pass it to the form to get OAuth buttons for the listed providers. The buttons
+render only when `signInSocialAction` is present — `showSocialProviders` on its
+own is not enough:
+
+```typescript
+// app/sign-in/page.tsx
+import { SignInForm } from '@opensaas/stack-auth/ui'
+import { signInAction, signInSocialAction } from '@/lib/actions/auth'
+
+export default function SignInPage() {
+  return (
+    <SignInForm
+      signInAction={signInAction}
+      signInSocialAction={signInSocialAction}
+      showSocialProviders={true}
+      socialProviders={['github', 'google']}
+    />
+  )
+}
+```
 
 ### Custom OAuth Button Styling
 
@@ -1464,6 +1628,8 @@ app/
 │   └── page.tsx              # Sign up page
 ├── forgot-password/
 │   └── page.tsx              # Password reset request
+├── reset-password/
+│   └── page.tsx              # Password reset (target of the email link)
 ├── admin/
 │   └── [[...admin]]/
 │       └── page.tsx          # Protected admin area
@@ -1474,9 +1640,10 @@ app/
 
 lib/
 ├── auth.ts                   # Server auth instance
-├── auth-client.ts            # Client auth instance
+├── auth-client.ts            # Client auth instance (session reading only)
 └── actions/
-    └── *.ts                  # Server actions with auth
+    ├── auth.ts               # Auth actions the pre-built forms submit through
+    └── *.ts                  # Other server actions with auth
 
 opensaas.config.ts            # Config with authPlugin
 ```
@@ -1509,24 +1676,28 @@ authPlugin({
 
 ### Error Handling
 
-Handle auth errors gracefully:
+The pre-built forms already render the `error` an action returns. In a form of
+your own, the same contract applies: an auth action resolves to an
+`AuthActionResult` rather than throwing, so a failed sign-in arrives as
+`{ success: false, error }` and there is nothing to catch:
 
 ```typescript
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { signInAction } from '@/lib/actions/auth'
+
 export function SignInButton() {
   const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
   async function handleSignIn(email: string, password: string) {
-    try {
-      await authClient.signIn.email({ email, password })
+    const result = await signInAction({ email, password })
+    if (result.success) {
       router.push('/admin')
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('An error occurred')
-      }
+    } else {
+      setError(result.error)
     }
   }
 
@@ -1660,28 +1831,40 @@ export const POST = auth.handler
 ```
 
 ```typescript
-// lib/auth-client.ts
-'use client'
+// lib/actions/auth.ts
+'use server'
 
-import { createClient } from '@opensaas/stack-auth/client'
+import { headers } from 'next/headers'
+import { auth } from '@/lib/auth'
+import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
-export const authClient = createClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-})
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({
+      body: { email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error && err.message ? err.message : 'Sign in failed'
+    return { success: false, error: message }
+  }
+}
 ```
 
 ```typescript
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction } from '@/lib/actions/auth'
 
 export default function SignInPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Sign In</h1>
       <SignInForm
-        authClient={authClient}
+        signInAction={signInAction}
         redirectTo="/admin"
+        showSocialProviders={false}
       />
     </div>
   )
@@ -1691,9 +1874,22 @@ export default function SignInPage() {
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
+import { getUrlKey } from '@opensaas/stack-core'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  const result = await context.serverAction(props)
+  if (result && typeof result === 'object' && 'success' in result && result.success) {
+    redirect(`/admin/${getUrlKey(props.listKey)}`)
+  }
+  return result
+}
 
 interface AdminPageProps {
   params: Promise<{ admin?: string[] }>
@@ -1714,6 +1910,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       params={(await params).admin}
       searchParams={await searchParams}
       basePath="/admin"
+      serverAction={serverAction}
     />
   )
 }
