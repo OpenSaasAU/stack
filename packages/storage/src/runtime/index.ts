@@ -246,8 +246,11 @@ export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadat
  * import { createStorageUtils } from '@opensaas/stack-storage/runtime'
  * import { createTestContext } from '@opensaas/stack-core/testing'
  *
- * const harness = await createTestContext(config, null, {
- *   storage: createStorageUtils(config),
+ * // A config carrying plugins is a Promise, so resolve it once.
+ * const resolved = await config
+ *
+ * const harness = await createTestContext(resolved, null, {
+ *   storage: createStorageUtils(resolved),
  * })
  * ```
  */
@@ -258,9 +261,26 @@ export function createStorageUtils(config: OpenSaasConfig): StorageUtils {
     uploadImage: (providerName, file, buffer, options) =>
       uploadImage(config, providerName, { file, buffer }, uploadImageOptions(options)),
     deleteFile: (providerName, filename) => deleteFile(config, providerName, filename),
-    deleteImage: (metadata) =>
-      isImageMetadata(metadata) ? deleteImage(config, metadata) : Promise.resolve(),
+    // Resolving on an unrecognised shape would make this surface *quieter*
+    // than an application: the generated context always calls `deleteImage`,
+    // so a test would pass over a value that throws in production. Refuse it
+    // here, where the message can name the shape.
+    deleteImage: async (metadata) => {
+      if (!isImageMetadata(metadata)) {
+        throw new Error(
+          `deleteImage expected ImageMetadata, received ${describeMetadata(metadata)}`,
+        )
+      }
+      return deleteImage(config, metadata)
+    },
   }
+}
+
+function describeMetadata(value: unknown): string {
+  if (value === null) return 'null'
+  if (!isRecord(value)) return typeof value
+  const keys = Object.keys(value)
+  return keys.length === 0 ? 'an empty object' : `an object with keys: ${keys.join(', ')}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -297,8 +317,44 @@ function stringRecord(value: Record<string, unknown>): Record<string, string> {
   return result
 }
 
+/**
+ * Checks every required member of {@link ImageMetadata}, not just the ones
+ * {@link deleteImage} happens to read.
+ *
+ * A `value is T` predicate is taken on trust by the compiler, so a partial
+ * check hands the rest of the program a type it never established: checking
+ * only `filename` and `url` let a value through with no `storageProvider`,
+ * which `deleteImage` dereferences first and which surfaced as
+ * `Storage provider 'undefined' not found in config` from deep inside the
+ * provider registry.
+ */
 function isImageMetadata(value: unknown): value is ImageMetadata {
-  return isRecord(value) && typeof value.filename === 'string' && typeof value.url === 'string'
+  return (
+    isRecord(value) &&
+    typeof value.filename === 'string' &&
+    typeof value.originalFilename === 'string' &&
+    typeof value.url === 'string' &&
+    typeof value.mimeType === 'string' &&
+    typeof value.size === 'number' &&
+    typeof value.uploadedAt === 'string' &&
+    typeof value.storageProvider === 'string' &&
+    typeof value.width === 'number' &&
+    typeof value.height === 'number' &&
+    (value.metadata === undefined || isRecord(value.metadata)) &&
+    (value.transformations === undefined ||
+      (isRecord(value.transformations) &&
+        Object.values(value.transformations).every(isImageTransformationResult)))
+  )
+}
+
+function isImageTransformationResult(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.url === 'string' &&
+    typeof value.width === 'number' &&
+    typeof value.height === 'number' &&
+    typeof value.size === 'number'
+  )
 }
 
 export { parseFileFromFormData } from '../utils/upload.js'

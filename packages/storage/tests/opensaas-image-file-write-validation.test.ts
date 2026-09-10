@@ -23,11 +23,16 @@ import type { ImageMetadata, FileMetadata } from '../src/config/types.js'
  * (validate the LOGICAL value before splitting into physical columns).
  */
 
-/** A File-like stub with an arrayBuffer() method (triggers an upload). */
+/**
+ * A File-like stub that triggers an upload. It carries every member the
+ * upload path reads — `name`, `type`, `size` and `arrayBuffer()` — because
+ * that is what `isFileLike` establishes before narrowing to `File`.
+ */
 function fakeFile(bytes = [1, 2, 3]): File {
   return {
     name: 'photo.png',
     type: 'image/png',
+    size: bytes.length,
     arrayBuffer: async () => new Uint8Array(bytes).buffer,
   } as unknown as File
 }
