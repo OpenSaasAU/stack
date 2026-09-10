@@ -8,7 +8,7 @@ This example demonstrates the JSON field type in OpenSaaS Stack, showing both th
 
 The `json()` field builder stores arbitrary JSON data in the database:
 
-- **Type**: Uses Prisma's `Json` type (PostgreSQL/MySQL) or TEXT in SQLite
+- **Type**: A Postgres `jsonb` column
 - **Validation**: Optional `isRequired` validation
 - **UI Options**: Configurable placeholder, rows, and formatting
 - **Type Safety**: TypeScript type is `unknown` (can be narrowed with custom types)
@@ -71,7 +71,8 @@ pnpm generate
 
 This generates:
 
-- `prisma/schema.prisma` - Database schema
+- `prisma/contract.ts` - the Contract module, and its emitted `contract.json` / `contract.d.ts`
+- `prisma.config.ts` - the Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
@@ -256,24 +257,16 @@ For building custom JSON editors:
 ### Default (Unknown)
 
 ```typescript
-const item = await context.db.product.findUnique({ where: { id } })
+const item = await context.db.Product.where({ id: { equals: id } }).first()
+if (!item) return // `null` is not-found or denied
 const metadata: unknown = item.metadata // TypeScript type
 ```
 
-### With Type Narrowing
-
-```typescript
-interface ProductMetadata {
-  brand: string
-  tags: string[]
-  specs: Record<string, unknown>
-}
-
-const metadata = item.metadata as ProductMetadata
-// Now you have autocomplete and type checking
-```
-
 ### With Zod Schema (Recommended)
+
+A cast would only silence the compiler — the value came from the database and
+nothing has checked its shape. Parse it instead, and the narrowed type is
+earned rather than asserted:
 
 ```typescript
 import { z } from 'zod'
@@ -292,23 +285,9 @@ const metadata = ProductMetadataSchema.parse(item.metadata)
 
 ## Database Behavior
 
-### SQLite
-
-- Stored as TEXT
-- Automatically serialized/deserialized by Prisma
-- Queryable with JSON functions in raw SQL
-
-### PostgreSQL
-
-- Stored as JSONB
-- Supports JSON operators and indexing
-- Better performance for JSON queries
-
-### MySQL
-
-- Stored as JSON
-- Supports JSON functions
-- Validation at database level
+The database is Postgres, and only Postgres. A `json()` field is a `jsonb`
+column: it supports Postgres' JSON operators and indexing, and round-trips
+objects, arrays and scalars without a serialization step of your own.
 
 ## Access Control
 
@@ -342,8 +321,9 @@ fields: {
       // Transform after reading from database
       resolveOutput: ({ value }) => {
         // Remove internal fields
-        const { _internal, ...public } = value as any
-        return public
+        if (typeof value !== 'object' || value === null) return value
+        const { _internal, ...rest } = value
+        return rest
       },
     },
   })
@@ -352,79 +332,13 @@ fields: {
 
 ## Testing
 
-Create a test script to verify JSON field behavior:
-
-```typescript
-// test.ts
-import { getContext } from './.opensaas/context.js'
-
-async function test() {
-  const context = await getContext()
-
-  // Create product with JSON data
-  const product = await context.db.product.create({
-    data: {
-      name: 'Test Product',
-      metadata: {
-        brand: 'Acme',
-        tags: ['electronics', 'new'],
-        specs: { weight: '1kg', color: 'blue' },
-      },
-      settings: {
-        notifications: true,
-        theme: 'dark',
-      },
-      configuration: {
-        apiKey: 'test-key',
-        endpoint: 'https://api.example.com',
-      },
-    },
-  })
-
-  console.log('Created product:', product)
-
-  // Create article with taxonomy data
-  const article = await context.db.article.create({
-    data: {
-      title: 'Getting Started with OpenSaaS',
-      content: {
-        sections: [
-          { type: 'heading', text: 'Introduction' },
-          { type: 'paragraph', text: 'Welcome to OpenSaaS Stack...' },
-        ],
-      },
-      taxonomy: [
-        { type: 'tag', name: 'author', value: 'john-doe' },
-        { type: 'tag', name: 'difficulty', value: 'beginner' },
-        { type: 'category', name: 'topic', value: 'tutorials' },
-        { type: 'category', name: 'technology', value: 'nextjs' },
-      ],
-    },
-  })
-
-  console.log('Created article:', article)
-
-  // Update JSON field
-  const updated = await context.db.product.update({
-    where: { id: product.id },
-    data: {
-      metadata: {
-        ...(product.metadata as any),
-        tags: ['electronics', 'new', 'featured'],
-      },
-    },
-  })
-
-  console.log('Updated product:', updated)
-}
-
-test()
-```
-
-Run it with `pnpm dev` running in another terminal:
+`tests/json-round-trip.test.ts` proves the round-trip: it stands up a real
+Dev database with `createTestContext` from `@opensaas/stack-core/testing`,
+writes nested objects and top-level arrays through the secured context, and
+reads them back. No database of your own is needed.
 
 ```bash
-npx tsx test.ts
+pnpm test
 ```
 
 ## Next Steps
@@ -437,6 +351,6 @@ npx tsx test.ts
 
 ## Resources
 
-- [OpenSaaS Stack Documentation](https://github.com/anthropics/opensaas-stack)
-- [Prisma JSON Fields](https://www.prisma.io/docs/concepts/components/prisma-schema/data-model#json)
+- [OpenSaaS Stack Documentation](https://stack.opensaas.au/)
+- [OpenSaaS Stack on GitHub](https://github.com/OpenSaasAU/stack)
 - [react-json-view-lite](https://github.com/AnyRoad/react-json-view-lite)
