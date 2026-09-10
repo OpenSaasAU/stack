@@ -135,19 +135,27 @@ content: richText({
 Rich text fields work seamlessly with OpenSaas access control:
 
 ```typescript
+import type { FieldAccess } from '@opensaas/stack-core'
+
+const authorOnlyField: FieldAccess = {
+  read: () => true,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
+}
+
 Article: list({
   fields: {
     content: richText({
       validation: { isRequired: true },
-      access: {
-        read: () => true,
-        create: isSignedIn,
-        update: isAuthor,
-      },
+      access: authorOnlyField,
     }),
   },
 })
 ```
+
+A field rule returns a **boolean** — it decides per fetched item. A
+filter-returning rule, the kind an operation-level `update` or `delete` takes,
+is a type error in these slots rather than a silent allow.
 
 ### Database Operations
 

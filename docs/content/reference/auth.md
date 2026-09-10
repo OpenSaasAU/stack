@@ -26,6 +26,13 @@ export default config({
         minPasswordLength: 8,
       },
       sessionFields: ['userId', 'email', 'name'],
+      // The other end of `Post.author`. Without it `pnpm generate` refuses the
+      // relationship: the two ends must name each other.
+      extendUserList: {
+        fields: {
+          posts: relationship({ ref: 'Post.author', many: true }),
+        },
+      },
     }),
   ],
   db: { provider: 'postgresql' },
@@ -86,10 +93,19 @@ authPlugin({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8, // default: 8
-    requireConfirmation: true, // default: true
   },
 })
 ```
+
+{% callout type="warning" %}
+**`requireConfirmation` here has no effect.** It is on the type, but
+`createAuth()` never reads it — there is no better-auth option to forward it to —
+and warns when it is set to anything but the default. The real knob is the form's
+own `requirePasswordConfirmation` prop:
+`<SignUpForm requirePasswordConfirmation={false} />` /
+`<ResetPasswordForm requirePasswordConfirmation={false} />`, both defaulting to
+`true`.
+{% /callout %}
 
 `sendResetPassword` is forwarded straight through to better-auth's own `emailAndPassword.sendResetPassword` — no stack wrapping. It receives exactly what better-auth passes (`user`, `url`, `token`), so you build the subject line and body yourself:
 
@@ -429,10 +445,14 @@ Stores OAuth provider information and password hashes:
 - `id` (String, auto-generated)
 - `userId` (String, foreign key to User)
 - `accountId` (String, provider-specific user ID)
-- `providerId` (String, e.g., 'github', 'google')
+- `providerId` (String, e.g., `'github'`, `'google'`, `'credential'` for email/password)
+- `issuer` (String, the identity issuer the account is scoped to)
 - `accessToken` (String, optional — **read-denied**, see below)
 - `refreshToken` (String, optional — **read-denied**, see below)
-- `expiresAt` (DateTime, optional)
+- `idToken` (String, optional — **read-denied**, see below)
+- `accessTokenExpiresAt` (DateTime, optional)
+- `refreshTokenExpiresAt` (DateTime, optional)
+- `scope` (String, optional)
 - `password` (String, optional, hashed — **read-denied**, see below)
 - `createdAt` (DateTime, auto)
 - `updatedAt` (DateTime, auto)

@@ -479,19 +479,25 @@ fields: {
   title: text({
     access: {
       read: () => true,
-      create: isSignedIn,
-      update: isAuthor,
+      create: ({ session }) => !!session,
+      update: ({ session, item }) => !!session && item?.authorId === session.userId,
     },
   }),
   internalNotes: text({
     access: {
-      read: isAuthor,  // Only author can see
-      create: isAuthor,
-      update: isAuthor,
+      // Only the author can see it
+      read: ({ session, item }) => !!session && item?.authorId === session.userId,
+      create: ({ session }) => !!session,
+      update: ({ session, item }) => !!session && item?.authorId === session.userId,
     },
   }),
 }
 ```
+
+A field rule returns a **boolean**, not a filter: it decides per fetched item.
+The operation-level `isAuthor` above returns a filter and is not reusable here —
+`FieldAccess` types the three slots as boolean-returning, so passing it is a type
+error rather than a silent allow.
 
 ### Silent Failures
 

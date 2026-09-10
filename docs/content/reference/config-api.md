@@ -920,7 +920,7 @@ type BaseFieldConfig = {
   access?: FieldAccess
   defaultValue?: unknown
   hooks?: FieldHooks
-  typePatch?: TypePatchConfig
+  needs?: string[]
   ui?: object
 }
 ```
@@ -962,12 +962,6 @@ Default value when creating new items.
 Field-level hooks for data transformation.
 
 **Type:** [`FieldHooks`](#fieldhooks)
-
-##### `typePatch`
-
-Configuration for patching Prisma-generated TypeScript types (advanced).
-
-**Type:** [`TypePatchConfig`](#typepatchconfig)
 
 ##### `ui`
 
@@ -1531,47 +1525,6 @@ storage: {
     serveUrl: '/api/files',
   }),
 }
-```
-
----
-
-### `TypePatchConfig`
-
-Configuration for patching Prisma-generated TypeScript types (advanced use).
-
-```typescript
-typePatch: {
-  resultType: string,
-  patchScope?: 'scalars-only' | 'all',
-}
-```
-
-#### Properties
-
-##### `resultType` (required)
-
-TypeScript import statement for the type to use in Prisma result types.
-
-**Type:** `string`
-
-**Format:** `"import('@package/name').TypeName"`
-
-##### `patchScope`
-
-Where to apply the type patch.
-
-**Type:** `'scalars-only' | 'all'`
-**Default:** `'scalars-only'`
-
-**Example:**
-
-```typescript
-password: password({
-  typePatch: {
-    resultType: "import('@opensaas/stack-core').HashedPassword",
-    patchScope: 'scalars-only',
-  },
-})
 ```
 
 ---

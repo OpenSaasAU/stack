@@ -104,7 +104,6 @@ export default config({
       emailAndPassword: {
         enabled: true,
         minPasswordLength: 8,
-        requireConfirmation: true,
       },
       passwordReset: {
         enabled: true,
@@ -231,13 +230,15 @@ Create the catch-all auth route:
 export { GET, POST } from '@/lib/auth'
 ```
 
-This handles all auth endpoints:
+This handles all auth endpoints. The paths are better-auth's own — there is no
+bare `/sign-in` or `/sign-up`:
 
-- `/api/auth/sign-in`
-- `/api/auth/sign-up`
+- `/api/auth/sign-in/email`
+- `/api/auth/sign-in/social`
+- `/api/auth/sign-up/email`
 - `/api/auth/sign-out`
-- `/api/auth/session`
-- `/api/auth/forgot-password`
+- `/api/auth/get-session`
+- `/api/auth/request-password-reset`
 - `/api/auth/reset-password`
 
 ### Auth Actions
@@ -1488,10 +1489,14 @@ Stores OAuth provider information and password hashes:
   id: string // Auto-generated UUID
   userId: string // Foreign key to User
   accountId: string // Provider-specific user ID
-  providerId: string // 'github', 'google', 'email-password'
+  providerId: string // 'github', 'google', 'credential' (email/password)
+  issuer: string // The identity issuer this account is scoped to
   accessToken: string | null // OAuth access token
   refreshToken: string | null // OAuth refresh token
-  expiresAt: DateTime | null // Token expiration
+  idToken: string | null // OIDC id token
+  accessTokenExpiresAt: DateTime | null
+  refreshTokenExpiresAt: DateTime | null
+  scope: string | null // Granted OAuth scopes
   password: string | null // Hashed password (for email/password)
   createdAt: DateTime // Auto-generated
   updatedAt: DateTime // Auto-updated

@@ -237,7 +237,9 @@ The list view displays items in a table with search, sorting, and actions.
 - Sortable columns
 - Search functionality
 - Edit and delete actions
-- Pagination (coming soon)
+- Pagination — `page` and `pageSize` props, defaulting to `1` and `50`. The
+  total is the same access-scoped read counted in the database, so it can only
+  ever equal the number of rows the session may page through.
 - Responsive table layout
 
 ### Filtering and sorting

@@ -189,6 +189,7 @@ export async function CreatePostPage() {
         onSubmit={async (data) => {
           try {
             const post = await createPost(data)
+            if (!post) return { success: false, error: 'Could not create the post' }
             toast.success(`Created "${post.title}"`)
             router.push(`/posts/${post.id}`)
             return { success: true }
@@ -209,12 +210,15 @@ export async function CreatePostPage() {
 ```typescript
 interface ItemCreateFormProps {
   fields: Record<string, FieldConfig>
+  listKey?: string
+  config?: OpenSaasConfig
   onSubmit: (data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
   submitLabel?: string
   cancelLabel?: string
   className?: string
+  classNames?: ItemFormClassNames
 }
 ```
 
@@ -224,11 +228,14 @@ Standalone form for editing existing items.
 
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
+import { config } from '@/.opensaas/context'
 
-export function EditPostPage({ post }) {
+export async function EditPostPage({ post }) {
+  const { lists } = await config
+
   return (
     <ItemEditForm
-      fields={config.lists.Post.fields}
+      fields={lists.Post.fields}
       initialData={post}
       onSubmit={async (data) => {
         const updated = await updatePost(post.id, data)
@@ -262,8 +269,10 @@ export function RecentPosts({ posts }) {
       renderActions={(post) => (
         <DeleteButton
           onDelete={async () => {
-            await deletePost(post.id)
-            return { success: true }
+            // A denied delete answers `null`, so report the denial rather
+            // than a success the caller never got.
+            const deleted = await deletePost(post.id)
+            return { success: !!deleted }
           }}
         />
       )}
@@ -313,7 +322,8 @@ export function PostActions({ postId }) {
   return (
     <DeleteButton
       onDelete={async () => {
-        await deletePost(postId)
+        const deleted = await deletePost(postId)
+        if (!deleted) return { success: false, error: 'Not found, or you cannot delete it' }
         router.push('/posts')
         return { success: true }
       }}
@@ -416,8 +426,13 @@ for the full API, including the public `NavLink` component and the
 
 Combine standalone components for complex workflows:
 
+A client component cannot `await config` itself, so a server component reads the
+field configs and passes them down as props:
+
 ```tsx
-export function OnboardingWizard() {
+'use client'
+
+export function OnboardingWizard({ userFields, subscriptionFields }) {
   const [step, setStep] = useState(1)
   const [userId, setUserId] = useState('')
 
@@ -425,9 +440,10 @@ export function OnboardingWizard() {
     <div className="max-w-2xl mx-auto">
       {step === 1 && (
         <ItemCreateForm
-          fields={config.lists.User.fields}
+          fields={userFields}
           onSubmit={async (data) => {
             const user = await createUser(data)
+            if (!user) return { success: false, error: 'Could not create the user' }
             setUserId(user.id)
             setStep(2)
             return { success: true }
@@ -438,10 +454,12 @@ export function OnboardingWizard() {
 
       {step === 2 && (
         <ItemCreateForm
-          fields={config.lists.Subscription.fields}
-          initialData={{ userId }}
+          fields={subscriptionFields}
           onSubmit={async (data) => {
-            await createSubscription(data)
+            // `ItemCreateForm` has no `initialData` — that is `ItemEditForm`'s
+            // prop. Carry state the form does not collect through the handler.
+            const subscription = await createSubscription({ ...data, userId })
+            if (!subscription) return { success: false, error: 'Could not create the subscription' }
             router.push('/dashboard')
             return { success: true }
           }}
@@ -463,7 +481,7 @@ import { ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { Dialog, DialogContent } from '@opensaas/stack-ui/primitives'
 
-export function CustomDashboard() {
+export function CustomDashboard({ postFields }) {
   const [showCreate, setShowCreate] = useState(false)
 
   return (
@@ -499,9 +517,10 @@ export function CustomDashboard() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <ItemCreateForm
-            fields={config.lists.Post.fields}
+            fields={postFields}
             onSubmit={async (data) => {
-              await createPost(data)
+              const post = await createPost(data)
+              if (!post) return { success: false, error: 'Could not create the post' }
               setShowCreate(false)
               return { success: true }
             }}
@@ -518,16 +537,17 @@ export function CustomDashboard() {
 Toggle between view and edit modes:
 
 ```tsx
-export function PostDetailPage({ post }) {
+export function PostDetailPage({ post, postFields }) {
   const [editing, setEditing] = useState(false)
 
   if (editing) {
     return (
       <ItemEditForm
-        fields={config.lists.Post.fields}
+        fields={postFields}
         initialData={post}
         onSubmit={async (data) => {
-          await updatePost(post.id, data)
+          const updated = await updatePost(post.id, data)
+          if (!updated) return { success: false, error: 'Could not save your changes' }
           setEditing(false)
           return { success: true }
         }}

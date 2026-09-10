@@ -382,7 +382,8 @@ The following lists are automatically created when you use `authPlugin()`:
   id: string
   userId: string
   accountId: string
-  providerId: string ('github', 'google', 'credentials', etc.)
+  providerId: string ('github', 'google', 'credential' for email/password)
+  issuer: string
   accessToken?: string
   refreshToken?: string
   accessTokenExpiresAt?: Date

@@ -157,26 +157,28 @@ content: richText({
 Rich text fields work seamlessly with field-level access control:
 
 ```typescript
-import type { AccessControl } from '@opensaas/stack-core'
+import type { FieldAccess } from '@opensaas/stack-core'
 
-const isAuthor: AccessControl = ({ session, item }) => {
-  if (!session) return false
-  return { authorId: { equals: session.userId } }
+const authorOnlyField: FieldAccess = {
+  read: () => true, // Anyone can read
+  create: ({ session }) => !!session, // Must be signed in to create
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
 }
 
 Article: list({
   fields: {
     content: richText({
       validation: { isRequired: true },
-      access: {
-        read: () => true, // Anyone can read
-        create: ({ session }) => !!session, // Must be signed in to create
-        update: isAuthor, // Only author can edit
-      },
+      access: authorOnlyField,
     }),
   },
 })
 ```
+
+A field rule decides per fetched item and returns a **boolean**. A
+filter-returning rule — the kind an operation-level `update` or `delete` takes —
+is not interchangeable here: `FieldAccess` types the three slots as
+boolean-returning, so passing one is a type error rather than a silent allow.
 
 ## Editor Features
 
@@ -479,8 +481,8 @@ const field = richText({
   },
   access: {
     read: () => true,
-    create: isSignedIn,
-    update: isAuthor,
+    create: ({ session }) => !!session,
+    update: ({ session, item }) => !!session && item?.authorId === session.userId,
   },
 })
 ```
