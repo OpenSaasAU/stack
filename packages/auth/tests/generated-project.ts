@@ -25,7 +25,9 @@ import type { AccessControlledDB, OpenSaasConfig, StackContext } from '@opensaas
  * Known limits:
  * - One project at a time per process: the generated bundle caches its client
  *   on `globalThis`, and the working directory is process-wide. `close()`
- *   clears both, so projects are used in sequence, never concurrently.
+ *   restores the working directory and every environment variable this module
+ *   set, closes and drops the cached client, and removes the project — so
+ *   projects are used in sequence, never concurrently.
  */
 
 const run = promisify(execFile)
@@ -127,40 +129,66 @@ export async function generateProject(
   const database = await createTestDatabase(config)
 
   const previousCwd = process.cwd()
-  const previousEnv = new Map(ESCAPE_VARIABLES.map((v) => [v, process.env[v]] as const))
+  const touched = [...ESCAPE_VARIABLES, ...Object.keys(env)]
+  const previousEnv = new Map(touched.map((v) => [v, process.env[v]] as const))
   for (const variable of ESCAPE_VARIABLES) delete process.env[variable]
   for (const [key, value] of Object.entries(env)) process.env[key] = value
-  if (database.provenance === 'escape') {
-    process.env.DATABASE_URL = database.url
-  } else {
-    await fsp.mkdir(path.join(dir, '.opensaas'), { recursive: true })
-    await fsp.writeFile(
-      path.join(dir, '.opensaas', 'dev-db.json'),
-      JSON.stringify({ url: database.url, pid: process.pid }),
-    )
-  }
-  process.chdir(dir)
 
-  const context = await importRawContext(path.join(dir, '.opensaas', 'context.ts'))
-  if (!isStackContext(context)) throw new Error(`${dir}/.opensaas/context.ts exported no context`)
-
-  return {
-    dir,
-    config,
-    database,
-    context,
-    toolchainModule: (relativePath) =>
-      import(/* @vite-ignore */ pathToFileURL(path.join(dir, 'node_modules', relativePath)).href),
-    close: async () => {
-      process.chdir(previousCwd)
-      for (const [variable, value] of previousEnv) {
-        if (value === undefined) delete process.env[variable]
-        else process.env[variable] = value
-      }
-      Reflect.deleteProperty(globalThis, 'opensaasClient')
-      await database.close()
-      await fsp.unlink(path.join(dir, 'node_modules'))
-      await fsp.rm(tmpRoot, { recursive: true, force: true })
-    },
+  const restore = async (): Promise<void> => {
+    process.chdir(previousCwd)
+    for (const [variable, value] of previousEnv) {
+      if (value === undefined) delete process.env[variable]
+      else process.env[variable] = value
+    }
+    await closeCachedClient()
+    await database.close()
+    await fsp.rm(path.join(dir, 'node_modules'), { force: true })
+    await fsp.rm(tmpRoot, { recursive: true, force: true })
   }
+
+  try {
+    if (database.provenance === 'escape') {
+      process.env.DATABASE_URL = database.url
+    } else {
+      await fsp.mkdir(path.join(dir, '.opensaas'), { recursive: true })
+      await fsp.writeFile(
+        path.join(dir, '.opensaas', 'dev-db.json'),
+        JSON.stringify({ url: database.url, pid: process.pid }),
+      )
+    }
+    process.chdir(dir)
+
+    const context = await importRawContext(path.join(dir, '.opensaas', 'context.ts'))
+    if (!isStackContext(context)) throw new Error(`${dir}/.opensaas/context.ts exported no context`)
+
+    return {
+      dir,
+      config,
+      database,
+      context,
+      toolchainModule: (relativePath) =>
+        import(/* @vite-ignore */ pathToFileURL(path.join(dir, 'node_modules', relativePath)).href),
+      close: restore,
+    }
+  } catch (error) {
+    // The state-file lookup is cwd-relative, so a failure that left the
+    // process inside this project would make the NEXT project resolve this
+    // one's `dev-db.json` and fail somewhere else entirely.
+    await restore()
+    throw error
+  }
+}
+
+/**
+ * Close and drop the client the generated bundle memoised on `globalThis`.
+ * Dropping it alone leaves its pool connected for the rest of the worker.
+ */
+async function closeCachedClient(): Promise<void> {
+  const cached: unknown = Reflect.get(globalThis, 'opensaasClient')
+  if (isClosable(cached)) await cached.close()
+  Reflect.deleteProperty(globalThis, 'opensaasClient')
+}
+
+function isClosable(value: unknown): value is { close: () => PromiseLike<unknown> | unknown } {
+  return isRecord(value) && typeof value.close === 'function'
 }

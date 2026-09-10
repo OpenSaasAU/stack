@@ -96,6 +96,20 @@ describe.skipIf(!prerequisitesPresent)(
         await project.close()
       }
     }, 120_000)
+
+    it('leaves the process as it found it, so the next project starts from a clean environment', async () => {
+      const before = { ...process.env }
+      const cwd = process.cwd()
+      const project = await setupProject(60, 3)
+      expect(process.env.BETTER_AUTH_SECRET).toBe('e2e-test-secret-not-for-production-0000000000')
+      await project.close()
+
+      expect(process.cwd()).toBe(cwd)
+      expect(process.env.BETTER_AUTH_SECRET).toBe(before.BETTER_AUTH_SECRET)
+      expect(process.env.BETTER_AUTH_URL).toBe(before.BETTER_AUTH_URL)
+      expect(process.env.DATABASE_URL).toBe(before.DATABASE_URL)
+      expect(Reflect.get(globalThis, 'opensaasClient')).toBeUndefined()
+    }, 120_000)
   },
 )
 

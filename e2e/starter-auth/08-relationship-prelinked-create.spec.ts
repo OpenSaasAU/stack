@@ -40,14 +40,10 @@ test.describe('Relationship-table pre-linked create drawer', () => {
   test('adds a post pre-linked to the user via the drawer, including a required non-column field', async ({
     page,
   }) => {
-    // The create commits before the action returns (the row is in the database
-    // and a document reload shows it), but the RSC payload `router.refresh()`
-    // fetches right after the drawer closes is the pre-create render on about
-    // two runs in three, on the Dev database and on Postgres alike. That is a
-    // ui/Next refresh defect surfaced by the first e2e run on Prisma 8 (#1170),
-    // not something the drawer's inputs or the write can change; it is
-    // reported rather than retried until the refresh is fixed.
-    test.fixme(true, 'router.refresh() after the drawer create serves the pre-create render')
+    test.fixme(
+      true,
+      'router.refresh() after the drawer create serves the pre-create render — #1376',
+    )
     const user = generateTestUser()
     await signUp(page, user)
 
