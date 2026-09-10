@@ -34,6 +34,8 @@ export default [
       'examples/*/migrations/**',
       // The nightly cold-clone scaffold, when one has been run locally.
       '.cold-clone/**',
+      // Doc-block compile check scratch (ESLint 9 flat config does not read .gitignore)
+      'packages/rag/.doc-blocks-check-*/**',
     ],
   },
   js.configs.recommended,

@@ -1093,13 +1093,7 @@ import { writeFile } from 'fs/promises'
 export async function backupEmbeddings() {
   const context = await getContext()
 
-  const articles = await context.db.Article.findMany({
-    select: {
-      id: true,
-      title: true,
-      contentEmbedding: true,
-    },
-  })
+  const articles = await context.db.Article.select('id', 'title', 'contentEmbedding').all()
 
   const backup = {
     timestamp: new Date().toISOString(),

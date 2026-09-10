@@ -115,6 +115,48 @@ jobs:
           git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
           git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth
 
+      # Unlike its two sibling checks above, this one reads compiled output: it
+      # resolves @opensaas/* through each package's own `exports` to its dist,
+      # so it measures this branch's own declarations. The regeneration step
+      # above builds the CLI and the two examples' dependency closures, so the
+      # packages the doc blocks import beyond those are built here. turbo
+      # caches it, and the test steps below depend on the same task, so this is
+      # a reordering rather than an extra build.
+      #
+      # THE GATE. PRs into `main` are excluded because the fixtures cannot
+      # describe that tree: `files.txt` names this branch's documents and
+      # `fragments.json` keys entries by `file:line`, so against main's RAG
+      # documents every entry would report as orphaned. Unlike the test steps
+      # below, the exclusion has no `== 'main'` run counterpart, so it cannot
+      # expire on its own: once prisma-8 lands, base_ref is always 'main' and
+      # the check would stop running for good. Flipping it is part of that
+      # merge — drop the `!= 'main'` gates on the steps below, delete the
+      # notice step, and re-key scripts/doc-blocks/fragments.json against
+      # main's documents. Tracked on #1301. Every other mention of the flip
+      # points here.
+      - name: Build packages for the doc-block check
+        if: github.base_ref != 'main'
+        run: turbo run build --filter='./packages/*'
+
+      # The checker's own fixture of known-bad and known-good blocks: every bad
+      # block must be reported FAIL and every good one must pass, before the
+      # real documents are trusted to a run of it.
+      - name: Self-test the doc-block checker
+        if: github.base_ref != 'main'
+        run: node scripts/check-doc-typescript-blocks.mjs --self-test
+
+      - name: Check documented TypeScript blocks compile
+        if: github.base_ref != 'main'
+        run: pnpm check:doc-ts-blocks
+
+      # The counterpart the skip above would otherwise lack. It does not run
+      # the check — it makes the gap visible on every PR into main, so the
+      # flip is prompted by CI rather than remembered.
+      - name: Note the skipped doc-block check
+        if: github.base_ref == 'main'
+        run: |
+          echo "::warning title=Doc-block typecheck did not run::pnpm check:doc-ts-blocks runs on PRs into prisma-8 only. The instruction for flipping that gate is the comment above it in .github/workflows/test.yml (#1301)."
+
       - name: Run tests
         if: github.base_ref == 'main'
         run: turbo run test
