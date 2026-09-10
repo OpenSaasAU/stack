@@ -48,7 +48,11 @@ vercelBlobStorage({
   allowOverwrite?: boolean          // Allow overwriting an existing blob at the same pathname
                                     // (default: true when generateUniqueFilenames is false, false otherwise)
   public?: boolean                  // Make files publicly accessible (default: true)
-  cacheControl?: string             // Cache control header (default: 'public, max-age=31536000, immutable')
+  cacheControlMaxAge?: number       // Cache max-age in SECONDS. Left unset the provider sends
+                                    // nothing and @vercel/blob applies its own default of one
+                                    // year. There is no `cacheControl` string option — and
+                                    // because this config carries an index signature, that
+                                    // misspelling type-checks and is silently ignored.
 })
 ```
 
