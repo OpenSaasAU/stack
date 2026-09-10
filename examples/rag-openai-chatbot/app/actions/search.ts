@@ -37,16 +37,23 @@ export async function searchKnowledge(
     const queryVector = await provider.embed(query)
 
     // One scoped query: the access filter, the minScore bound and the ranking
-    // all live inside `nearest()` (ADR-0045).
-    const matches = await context.db.KnowledgeBase.where({
-      published: { equals: true },
-    }).nearest('contentEmbedding', queryVector, { limit, minScore })
+    // all live inside `nearest()` (ADR-0045). No `published` filter here — this
+    // context is anonymous, and the list's own `query` rule bounds it to
+    // published rows before the ranking runs.
+    const matches = await context.db.KnowledgeBase.nearest(
+      'contentEmbedding',
+      queryVector,
+      {
+        limit,
+        minScore,
+      }
+    )
 
     return matches.map((match) => ({
-      id: String(match.item.id),
-      title: String(match.item.title),
-      content: String(match.item.content),
-      category: String(match.item.category),
+      id: match.item.id,
+      title: match.item.title,
+      content: match.item.content,
+      category: match.item.category,
       score: match.score,
     }))
   } catch (error) {

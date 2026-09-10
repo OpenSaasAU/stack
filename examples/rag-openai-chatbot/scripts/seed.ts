@@ -10,7 +10,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Access Control System',
-    content: `The access control system is OpenSaas Stack's primary innovation. It automatically secures all database operations through a context wrapper that intercepts Prisma queries. Access control has three levels: operation-level (controls query/create/update/delete), field-level (controls which fields are readable/writable), and filter-based (scopes which records are accessible). Users define access rules in opensaas.config.ts using AccessControl functions. Operations return null or empty arrays on denial rather than throwing errors, preventing information leakage. All operations must go through context.db instead of direct Prisma access to ensure security. The access control engine automatically merges filters with Prisma where clauses.`,
+    content: `The access control system is OpenSaas Stack's primary innovation. It automatically secures every database operation: context.db is a secured surface over the ORM rather than the ORM itself. Access control has three levels: operation-level (controls query/create/update/delete), field-level (controls which fields are readable/writable), and filter-based (scopes which records are accessible). Users define access rules in opensaas.config.ts using AccessControl functions. Operations return null or empty arrays on denial rather than throwing errors, preventing information leakage. The engine ANDs a filter-returning rule into the read's own predicate in the same query, so a terminal like nearest() ranks inside the scoped set rather than filtering a ranked one. The deliberate bypass is context.unsafe, which skips the access filter, field visibility, hooks and error normalisation alike — reaching for it is a visible act, and the call site should say why.`,
     category: 'ai-ml',
     published: true,
   },
@@ -34,7 +34,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Hooks System',
-    content: `The hooks system in OpenSaas Stack provides data transformation and side effects during database operations. Hooks are available at list and field levels. Data transformation hooks include resolveInput (transform data going in) and resolveOutput (transform data coming out). Side effect hooks include beforeOperation and afterOperation for actions without modifying data. There's also validateInput for custom validation logic. Hook execution order for writes: list resolveInput, field resolveInput, validateInput, field validation, access control, beforeOperation hooks, database operation, then afterOperation hooks. For reads: database operation, access control, field resolveOutput — there is no afterOperation on the read path, only on create, update and delete. Common use cases include hashing passwords, auto-setting timestamps, sending notifications, and cache invalidation.`,
+    content: `The hooks system in OpenSaas Stack provides data transformation and side effects during database operations. Hooks are available at list and field levels. Data transformation hooks include resolveInput (transform data going in) and resolveOutput (transform data coming out). Side effect hooks include beforeOperation and afterOperation for actions without modifying data. There's also validateInput for custom validation logic. Hook execution order for writes: list resolveInput, field resolveInput, validateInput, field validation, access control, beforeOperation hooks, database operation, then afterOperation hooks — all inside the write's own transaction. afterTransaction runs after that transaction commits, and is where work that must not hold a database connection belongs: the RAG plugin generates embeddings there, because calling an embedding provider is a network round trip. For reads: database operation, access control, field resolveOutput — there is no afterOperation on the read path, only on create, update and delete. Common use cases include hashing passwords, auto-setting timestamps, sending notifications, and cache invalidation.`,
     category: 'web-dev',
     published: true,
   },
@@ -52,7 +52,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack RAG Integration',
-    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. The searchable() field wrapper automatically creates embedding fields and hooks for regeneration on content changes. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings. Embeddings are stored in a native pgvector column, with their metadata in a jsonb column beside it, and search runs through nearest() on the secured read surface so the ranking and the access filter live in the same query. The package provides runtime utilities like semanticSearch(), generateEmbedding(), and chunkText(). The stored metadata includes model, provider, dimensions, and a source hash for change detection.`,
+    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. There are two equivalent ways to declare a vector: the searchable() wrapper, which adds the companion embedding field for you, and embedding() written out, which is what lets the column declare its own dimensions, distanceFunction and index. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings; ollamaEmbeddings requires dimensions, because Ollama reports its output size only from a live embed call and the value is a column's type. Embeddings are stored in a native pgvector column, with their metadata in a jsonb column beside it, and search runs through nearest() on the secured read surface so the ranking and the access filter live in the same query. The column is a plugin output and is write-denied to application code by default: a create or update naming it throws unless the field sets allowManualWrites. ragPlugin declares the pgvector extension pack itself, so applying the contract enables the extension and there is no CREATE EXTENSION step and no install script. The package provides runtime utilities like semanticSearch(), generateEmbedding(), and chunkText(). The stored metadata includes model, provider, dimensions, and a source hash for change detection, which is what stops an unrelated field change from costing an API call.`,
     category: 'database',
     published: true,
   },
@@ -76,7 +76,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Context and Database Access',
-    content: `The context is the primary interface for database operations in OpenSaas Stack. Generated automatically in .opensaas/context.ts, it provides getContext() for creating access-controlled database wrappers. Context must be used instead of direct Prisma access to ensure access control enforcement. Usage: 'const context = await getContext()' for anonymous access or 'await getContext({ userId: 'user-123' })' for authenticated access. The context wraps Prisma Client with interceptors that check access rules before every operation. Operations return null or empty arrays on denial (silent failures to prevent info leakage). The context builds its own client from the emitted contract; a config declares extension packs and a pool binding rather than a client constructor. All hooks, access control functions, and MCP tools receive context for database access.`,
+    content: `The context is the primary interface for database operations in OpenSaas Stack. Generated automatically in .opensaas/context.ts, it provides getContext() for creating access-controlled database wrappers. Context must be used instead of the unsecured surface to ensure access control enforcement. Usage: 'const context = await getContext()' for anonymous access or 'await getContext({ userId: 'user-123' })' for authenticated access. Reads compose — context.db.Post.where({ ... }).orderBy(...).limit(10).all(), with .first() for one row, .aggregate() for a count and .nearest() for a vector ranking — and writes are create({ data }), update({ where: { id }, data }) and delete({ where: { id } }), relating records with connect: { id } on the side that owns the foreign key. Access rules are resolved into the query the engine builds rather than applied after it. Operations return null or empty arrays on denial (silent failures to prevent info leakage). The context builds its own client from the emitted contract; a config declares extension packs and a pool binding rather than a client constructor. All hooks, access control functions, and MCP tools receive context for database access.`,
     category: 'software-eng',
     published: true,
   },
@@ -100,7 +100,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Relationships and Foreign Keys',
-    content: `Relationships in OpenSaas Stack use a ref format to connect lists. The ref specifies 'ListName.fieldName' to establish bidirectional relationships. For one-to-many relationships: 'posts: relationship({ ref: "Post.author", many: true })' on User and 'author: relationship({ ref: "User.posts" })' on Post. Prisma automatically generates foreign keys and handles cascading. The relationship field type supports many-to-one, one-to-many, and one-to-one patterns. Access control applies to relationships - users must have access to both the source and target records. The admin UI provides relationship pickers for selecting related items. Generated types include the full relationship types from Prisma. Circular references are supported. Relationships respect the same PascalCase naming conventions as lists.`,
+    content: `Relationships in OpenSaas Stack use a ref format to connect lists. The ref specifies 'ListName.fieldName' to establish bidirectional relationships. For one-to-many relationships: 'posts: relationship({ ref: "Post.author", many: true })' on User and 'author: relationship({ ref: "User.posts" })' on Post. The emitted contract declares the foreign keys and their onDelete/onUpdate actions. The relationship field type supports many-to-one, one-to-many, and one-to-one patterns. Access control applies to relationships - users must have access to both the source and target records, and a related record the reader cannot see reads back as null for a to-one and an empty array for a to-many rather than removing the parent row. Every to-one relationship reads as possibly null for that reason, so guard before dereferencing. Relate records with connect: { id } on the side that owns the foreign key; there are no nested writes and no disconnect - clearing a to-one is writing null. The admin UI provides relationship pickers for selecting related items. Circular references are supported. Relationships respect the same PascalCase naming conventions as lists.`,
     category: 'database',
     published: true,
   },
@@ -113,46 +113,55 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
 ]
 
 async function seed() {
-  console.log('🌱 Starting database seed...\n')
+  console.log('🌱 Seeding the knowledge base...\n')
 
-  // Use sudo() to bypass access control while still executing all hooks
-  // This ensures embeddings are generated even if access control denies creation
+  // sudo() bypasses access control and still runs every hook, which is what
+  // gets past this list's `create: () => false` while leaving the RAG plugin's
+  // embedding generation in place.
   const context = (await getContext()).sudo()
 
   try {
-    // Check if articles already exist
-    const existing = await context.db.KnowledgeBase.count()
-
-    if (existing > 0) {
-      console.log(`⚠️  Database already contains ${existing} article(s). Skipping seed.`)
-      console.log('   To re-seed, delete all articles first or drop the database.\n')
-      return
+    // Clear first, so the seed re-runs from empty rather than refusing on a
+    // populated database. An embedding is derived data: it is regenerated from
+    // the article text below, never carried over.
+    const existing = await context.db.KnowledgeBase.all()
+    for (const article of existing) {
+      await context.db.KnowledgeBase.delete({ where: { id: article.id } })
+    }
+    if (existing.length > 0) {
+      console.log(`🗑️  Removed ${existing.length} existing article(s)\n`)
     }
 
     console.log(`📝 Creating ${sampleArticles.length} articles...\n`)
 
-    let created = 0
     for (const article of sampleArticles) {
-      try {
-        await context.db.KnowledgeBase.create({
-          data: article,
-        })
-        created++
-        console.log(`✅ Created: "${article.title}" (${article.category})`)
-      } catch (error) {
-        console.error(`❌ Failed to create "${article.title}":`, error)
-      }
+      await context.db.KnowledgeBase.create({ data: article })
+      console.log(`✅ Created: "${article.title}" (${article.category})`)
     }
 
-    console.log(`\n✨ Successfully created ${created}/${sampleArticles.length} articles!`)
+    console.log(`\n✨ Created ${sampleArticles.length} articles.`)
+
+    // The plugin embeds after each write's own transaction commits (ADR-0045),
+    // so the columns fill in behind this loop rather than during it.
+    console.log('\n⏳ Waiting for embeddings...')
+    const deadline = Date.now() + 180_000
+    let embedded = 0
+    while (embedded < sampleArticles.length && Date.now() < deadline) {
+      const rows = await context.db.KnowledgeBase.all()
+      embedded = rows.filter((row) => row.contentEmbedding !== null).length
+      if (embedded < sampleArticles.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+    }
+    console.log(`✅ ${embedded}/${sampleArticles.length} articles embedded`)
+
+    if (embedded < sampleArticles.length) {
+      throw new Error(
+        'Some articles have no embedding. Check the dev server console for provider errors.'
+      )
+    }
 
     console.log('\n🎉 Seeding complete!')
-    console.log(
-      '\n💡 Note: Embeddings are automatically generated via the RAG plugin hooks.'
-    )
-    console.log(
-      '   This may take a moment after creation. Check the contentEmbedding field.'
-    )
   } catch (error) {
     console.error('\n❌ Seeding failed:', error)
     process.exit(1)

@@ -17,7 +17,7 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 
 - **OpenSaas Stack** - Config-first Next.js framework with built-in access control
 - **Vercel AI SDK** - Streaming AI responses with `ai`, `@ai-sdk/react`, and `@ai-sdk/openai`
-- **OpenAI** - `text-embedding-3-small` for embeddings, `gpt-4o-mini` for chat completions
+- **OpenAI** - `text-embedding-3-small` for embeddings, `gpt-5-nano` for chat completions
 - **pgvector** - PostgreSQL extension for efficient vector similarity search
 - **Next.js 16** - App Router with streaming responses
 - **TypeScript** - End-to-end type safety
@@ -130,7 +130,13 @@ With `pnpm dev` running in another terminal:
 pnpm db:seed
 ```
 
-This creates 18 articles about OpenSaas Stack. Embeddings are generated automatically via the RAG plugin hooks.
+This creates 18 articles about OpenSaas Stack. Embeddings are generated
+automatically by the RAG plugin once each write commits, and the script waits
+for them rather than exiting while columns are still null.
+
+It clears the list first, so it re-runs from empty as often as you like. An
+embedding is derived data — it is regenerated from the article text, never
+carried over.
 
 ## Usage
 
@@ -147,7 +153,7 @@ The chatbot will:
 
 1. Convert your question to a vector embedding
 2. Search for the 3 most relevant articles
-3. Use them as context for GPT-4 to generate an informed response
+3. Use them as context for the chat model to generate an informed response
 4. Show which sources were used with similarity scores
 
 ### Semantic Search (`/search`)
@@ -206,18 +212,35 @@ When an article is created or updated:
 
 ```typescript
 // Defined in opensaas.config.ts
-content: searchable(text(), {
+content: text({ validation: { isRequired: true } }),
+contentEmbedding: embedding({
+  sourceField: 'content',
   provider: 'openai',
   dimensions: 1536,
-})
+  distanceFunction: 'cosine',
+  autoGenerate: true,
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
+}),
 ```
 
-The `searchable()` wrapper:
+This example writes the companion field out; `rag-ollama-demo` shows the
+`searchable()` wrapper, which adds the same field for you. Spelling it out is
+what lets the column declare its own distance function and index.
 
-- Automatically creates a `contentEmbedding` field
+The field:
+
 - Adds an `afterTransaction` hook that embeds the persisted text once the write commits
 - Uses OpenAI's `text-embedding-3-small` model (1536 dimensions)
 - Stores the vector in a pgvector `vector(1536)` column, with its metadata (model, provider, dimensions, source hash) in a `jsonb` column beside it
+- Is write-denied to application code: an ordinary create or update naming it
+  throws, because the vector is the plugin's output
+
+**Known limit:** `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
+types, so that `index` declaration derives the column type and operator class
+and is **not** yet lowered to a `CREATE INDEX`
+([#1265](https://github.com/OpenSaasAU/stack/issues/1265)). Every search is an
+exact scan — `EXPLAIN` reports a sequential scan and a sort. At 18 articles that
+is irrelevant; at corpus scale it is not.
 
 ### 2. Semantic Search
 
@@ -232,10 +255,12 @@ const provider = createEmbeddingProvider({
 const queryVector = await provider.embed(query)
 
 // One scoped query: the Access Filter, the minScore bound and the ranking all
-// live inside nearest().
-const matches = await context.db.KnowledgeBase.where({
-  published: { equals: true },
-}).nearest('contentEmbedding', queryVector, { limit, minScore })
+// live inside nearest(). No `published` filter is written here — this context
+// is anonymous, and the list's own `query` rule bounds it before the ranking.
+const matches = await context.db.KnowledgeBase.nearest('contentEmbedding', queryVector, {
+  limit,
+  minScore,
+})
 ```
 
 ### 3. RAG Chat Flow
@@ -244,7 +269,7 @@ When chatting (in `app/api/chat/route.ts`):
 
 1. **Retrieve:** Search for top 3 relevant articles using semantic search
 2. **Augment:** Build system message with context from retrieved articles
-3. **Generate:** Stream response from GPT-4 using Vercel AI SDK
+3. **Generate:** Stream the response from the chat model using the Vercel AI SDK
 
 ```typescript
 // Perform semantic search
@@ -265,15 +290,15 @@ if (searchResults.length > 0) {
 
 // Stream response with Vercel AI SDK
 const result = streamText({
-  model: openai('gpt-4o-mini'),
+  model: openai(process.env.OPENAI_CHAT_MODEL || 'gpt-5-nano'),
   system: systemMessage,
-  messages: convertToModelMessages(messages),
+  messages: await convertToModelMessages(messages),
 })
 
 return result.toUIMessageStreamResponse({
-  data: {
+  messageMetadata: () => ({
     sources: searchResults.map((r) => ({ id: r.id, title: r.title, score: r.score })),
-  },
+  }),
 })
 ```
 
@@ -297,9 +322,12 @@ export default config({
     KnowledgeBase: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        content: searchable(text({ validation: { isRequired: true } }), {
+        content: text({ validation: { isRequired: true } }),
+        contentEmbedding: embedding({
+          sourceField: 'content',
           provider: 'openai',
           dimensions: 1536,
+          autoGenerate: true,
         }),
         category: select({
           options: [
@@ -314,7 +342,11 @@ export default config({
       },
       access: {
         operation: {
-          query: () => true,
+          // Anonymous readers — the search page and the chatbot — see published
+          // articles only. `nearest()` ranks inside that scope, so an
+          // unpublished article cannot reach an answer even when it is the
+          // closest match.
+          query: ({ session }) => (session ? true : { published: { equals: true } }),
           // Denied so the seed script can demonstrate sudo() bypassing it
           create: () => false,
           update: () => true,
@@ -392,8 +424,12 @@ OpenAI has rate limits. For batch operations, use the `batchProcess()` utility f
 Edit `.env`:
 
 ```env
-OPENAI_CHAT_MODEL="gpt-4o"  # Use GPT-4 instead of GPT-4o-mini
+OPENAI_CHAT_MODEL="gpt-4o"  # the /chat route defaults to gpt-5-nano
 ```
+
+The embedding model is not an environment variable: it is declared in
+`opensaas.config.ts`, because its dimension is the vector column's type and
+changing it is a migration rather than a setting.
 
 ### Change Embedding Dimensions
 
@@ -408,12 +444,19 @@ ragPlugin({
   // ...
 })
 
-// Update field dimensions
-content: searchable(text(), {
+// Update the column's dimension to match
+contentEmbedding: embedding({
+  sourceField: 'content',
   provider: 'openai',
   dimensions: 3072,
 })
 ```
+
+The dimension is the column's type, so this retypes the column and no stored
+vector survives it. That makes it a destructive plan the dev loop will not apply
+unasked — consent from a second terminal with
+`pnpm db:update --confirm postgres` — and every row is then left with a null
+embedding. Re-run `pnpm db:seed` to regenerate them from the article text.
 
 ### Add Your Own Articles
 
