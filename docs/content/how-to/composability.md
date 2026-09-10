@@ -35,11 +35,19 @@ Each level builds on the one below, providing progressively higher-level abstrac
 
 ### Example: Custom Login Form
 
+Every primitive comes from the one `@opensaas/stack-ui/primitives` entry point —
+there are no per-component subpaths:
+
 ```tsx
-import { Button } from '@opensaas/stack-ui/primitives/button'
-import { Input } from '@opensaas/stack-ui/primitives/input'
-import { Label } from '@opensaas/stack-ui/primitives/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives/card'
+import {
+  Button,
+  Input,
+  Label,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@opensaas/stack-ui/primitives'
 
 export function LoginForm() {
   return (
@@ -131,17 +139,22 @@ export function CheckoutForm() {
 All field components share a common interface:
 
 ```typescript
-interface FieldProps {
-  name: string // Field name
-  value: any // Current value
-  onChange: (value: any) => void // Change handler
-  label: string // Display label
-  error?: string // Validation error
-  disabled?: boolean // Disabled state
-  required?: boolean // Required indicator
-  mode?: 'read' | 'edit' // Display mode
+type FieldComponentProps = {
+  name: string
+  value: unknown
+  onChange: (value: unknown) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  required?: boolean
+  mode?: 'read' | 'edit'
 }
 ```
+
+`value` and `onChange` are `unknown` on the shared type — each field type
+narrows them for itself, and a component receives whatever extra props the
+field's `ui` options carry on top. Import the type from
+`@opensaas/stack-ui/fields`.
 
 ## Level 3: Standalone Components
 
@@ -155,19 +168,24 @@ interface FieldProps {
 
 Standalone form for creating items with custom submission handling.
 
+`config` here is the resolved config from the generated bundle. Its default
+export is a promise when plugins are present, so a server component awaits it
+before reading `lists`:
+
 ```tsx
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import config from '../opensaas.config'
+import { config } from '@/.opensaas/context'
 
-export function CreatePostPage() {
+export async function CreatePostPage() {
   const router = useRouter()
+  const { lists } = await config
 
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-6">Create New Post</h1>
 
       <ItemCreateForm
-        fields={config.lists.Post.fields}
+        fields={lists.Post.fields}
         onSubmit={async (data) => {
           try {
             const post = await createPost(data)
@@ -175,7 +193,7 @@ export function CreatePostPage() {
             router.push(`/posts/${post.id}`)
             return { success: true }
           } catch (error) {
-            return { success: false, error: error.message }
+            return { success: false, error: error instanceof Error ? error.message : String(error) }
           }
         }}
         onCancel={() => router.back()}
@@ -191,7 +209,7 @@ export function CreatePostPage() {
 ```typescript
 interface ItemCreateFormProps {
   fields: Record<string, FieldConfig>
-  onSubmit: (data: Record<string, any>) => Promise<{ success: boolean; error?: string }>
+  onSubmit: (data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
   submitLabel?: string
@@ -315,22 +333,46 @@ export function PostActions({ postId }) {
 
 ### Example: Complete Admin Route
 
+There is no `getAdminContext` helper. Your route resolves the session itself and
+builds the context with `getContext` from the generated `.opensaas/context`
+module — the same context every other part of your app uses, so `AdminUI` runs
+under exactly the access control your config declares.
+
+`@opensaas/stack-ui/server` is types-only; `ServerActionInput` is what you import
+from it, to type the `'use server'` wrapper `AdminUI` calls for mutations.
+
 ```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import { getAdminContext } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+import { getSession } from '@/lib/auth'
 
-export default async function AdminPage({ params, searchParams }) {
-  const context = await getAdminContext(config, prisma, session)
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
+  return context.serverAction(props)
+}
+
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const { admin } = await params
+  const resolvedSearchParams = await searchParams
+  const session = await getSession()
 
   return (
     <AdminUI
-      context={context}
-      params={params?.admin}
-      searchParams={searchParams}
+      context={await getContext(session ?? undefined)}
+      config={await config}
+      params={admin}
+      searchParams={resolvedSearchParams}
       basePath="/admin"
-      serverAction={handleServerAction}
+      serverAction={serverAction}
     />
   )
 }
@@ -533,7 +575,7 @@ All primitives are built with Radix UI, providing:
 
 ## Next Steps
 
-- See the [API Reference](/docs/reference/config-api) for complete prop documentation
-- Explore the composable dashboard example for working code
-- Read the Custom Field Guide for extending field types
-- Check out the [GitHub repository](https://github.com/OpenSaasAU/stack) for more examples
+- See the [UI reference](/docs/reference/ui) for complete prop documentation
+- See the [Config API reference](/docs/reference/config-api) for field and list options
+- Read the [Custom fields guide](/docs/how-to/custom-fields) for extending field types
+- Explore the [composable dashboard example](https://github.com/OpenSaasAU/stack/tree/main/examples/composable-dashboard) for working code

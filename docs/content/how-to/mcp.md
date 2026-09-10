@@ -124,7 +124,10 @@ lists: {
 
 ### 4. Add Custom Tools (Optional)
 
-Create specialized operations for your lists:
+Create specialized operations for your lists. A custom tool's handler reaches the
+database through the same access-controlled `context.db` surface as the rest of
+your app, so a denied write returns `null` rather than throwing — check it and
+answer the client, as below:
 
 ```typescript
 import { z } from 'zod'
@@ -154,7 +157,7 @@ lists: {
             postId: z.string(),
           }),
           handler: async ({ input, context }) => {
-            const post = await context.db.post.update({
+            const post = await context.db.Post.update({
               where: { id: input.postId },
               data: {
                 status: 'published',
@@ -162,7 +165,7 @@ lists: {
               },
             })
 
-            if (!post) {
+            if (post === null) {
               return {
                 error: 'Failed to publish post. Access denied or post not found.',
               }

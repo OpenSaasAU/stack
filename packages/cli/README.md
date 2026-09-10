@@ -10,9 +10,13 @@ pnpm add -D @opensaas/stack-cli
 
 ## Commands
 
+The CLI carries `generate`, `init`, `dev`, and the command groups `db`, `mcp`
+and `migrate`.
+
 ### `opensaas generate`
 
-Generate Prisma schema and TypeScript types from your `opensaas.config.ts`.
+Generate the schema contract and TypeScript types from your
+`opensaas.config.ts`.
 
 ```bash
 opensaas generate
@@ -20,26 +24,15 @@ opensaas generate
 
 **What it does:**
 
-1. Reads `opensaas.config.ts` from current directory
-2. Generates `prisma/schema.prisma` - Prisma schema
-3. Generates `.opensaas/types.ts` - TypeScript types
-4. Outputs success message with next steps
-
-**Output:**
-
-```
-🚀 OpenSaas Generator
-- Loading configuration...
-✔ Generation complete
-✅ Prisma schema generated
-✅ TypeScript types generated
-✨ Generation complete!
-
-Next steps:
-  1. Run: npx prisma generate
-  2. Run: npx prisma db push
-  3. Start using your generated types!
-```
+1. Reads `opensaas.config.ts` from the current directory
+2. Writes `prisma/contract.ts`, the contract module
+3. Shells to `prisma contract emit`, which writes `prisma/contract.json` and
+   `prisma/contract.d.ts` — the artifacts the runtime executes
+4. Writes the generated bundle: `.opensaas/types.ts`, `.opensaas/context.ts`,
+   `.opensaas/lists.ts`, `.opensaas/tables.ts`, `.opensaas/plugin-types.ts`
+5. Writes `prisma.config.ts` at the project root
+6. Seeds an Extension contract space under `migrations/` for every extension
+   pack the config declares
 
 **Example package.json script:**
 
@@ -53,11 +46,44 @@ Next steps:
 
 ### `opensaas dev`
 
-Watch `opensaas.config.ts` and automatically regenerate on changes.
+Start the Dev database, generate, reconcile the schema, and run the app. This is
+the whole local loop in one process.
 
 ```bash
 opensaas dev
 ```
+
+Pass your own app command after `--` to run something other than `next dev`:
+
+```bash
+opensaas dev -- vite dev
+```
+
+The loop owns the Dev database's data directory, the staged generation and the
+app child, so it is the only thing holding a connection. Leave it running while
+you work.
+
+### `opensaas db update`
+
+Apply the staged schema change through the running `opensaas dev` loop — what
+`pnpm db:update` points at.
+
+```bash
+opensaas db update
+```
+
+The command opens **no connection of its own**: it hands the request to the
+running loop and exits non-zero when none is listening. A destructive change
+needs consent, passed through to Prisma's `--confirm` as the database name (the
+Dev database's is `postgres`):
+
+```bash
+opensaas db update --confirm postgres
+```
+
+`update` is the only subcommand under `db`. There is no `opensaas db migrate` —
+production applies committed migrations with the Prisma CLI (`prisma db
+migrate`).
 
 **What it does:**
 
@@ -66,34 +92,13 @@ opensaas dev
 3. Automatically regenerates when file changes
 4. Runs until you press Ctrl+C
 
-**Output:**
-
-```
-🚀 OpenSaas Generator
-- Loading configuration...
-✔ Generation complete
-✅ Prisma schema generated
-✅ TypeScript types generated
-
-👀 Watching opensaas.config.ts for changes...
-Press Ctrl+C to stop
-```
-
-When changes detected:
-
-```
-Config changed, regenerating...
-
-🚀 OpenSaas Generator
-...
-```
-
-**Example package.json script:**
+**Example package.json scripts:**
 
 ```json
 {
   "scripts": {
-    "dev": "opensaas dev"
+    "dev": "opensaas dev",
+    "db:update": "opensaas db update"
   }
 }
 ```
@@ -138,10 +143,11 @@ This command runs `npx create-opensaas-app@latest` with the provided arguments. 
 ```bash
 cd my-project
 pnpm install
-pnpm generate    # Generate Prisma schema and types
-pnpm db:push     # Create database
-pnpm dev         # Start dev server
+pnpm dev
 ```
+
+`pnpm dev` starts the Dev database, generates, reconciles the schema and runs
+the app. Nothing needs creating first.
 
 ### `opensaas migrate`
 
@@ -229,8 +235,6 @@ Without `--with-ai`, the command provides project analysis and you create the co
 npm create opensaas-app@latest my-project
 cd my-project
 pnpm install
-pnpm generate
-pnpm db:push
 pnpm dev
 ```
 
@@ -240,8 +244,6 @@ pnpm dev
 npx @opensaas/stack-cli init my-project
 cd my-project
 pnpm install
-pnpm generate
-pnpm db:push
 pnpm dev
 ```
 
@@ -255,29 +257,36 @@ pnpm add -D @opensaas/stack-cli
 {
   "scripts": {
     "generate": "opensaas generate",
-    "dev": "opensaas dev"
+    "dev": "opensaas dev",
+    "db:update": "opensaas db update"
   }
 }
 
 # Generate code
 pnpm generate
 
-# Or watch for changes
+# Or run the whole dev loop
 pnpm dev
 ```
 
 ### Development Workflow
 
+`opensaas dev` runs the Dev database, the generator and the app together, so one
+terminal is the normal case:
+
 ```bash
-# Terminal 1: Watch config and regenerate
 pnpm dev
-
-# Terminal 2: Run Next.js dev server
-pnpm next dev
-
-# Terminal 3: Watch Prisma Studio (optional)
-pnpm db:studio
 ```
+
+When you change the config, the loop stages the new generation and tells you what
+applying it would do. Accept it from a second terminal:
+
+```bash
+pnpm db:update
+```
+
+That command talks to the running loop, so `pnpm dev` has to be up for it to do
+anything.
 
 ### CI/CD Integration
 
@@ -293,7 +302,6 @@ jobs:
       - uses: pnpm/action-setup@v2
       - run: pnpm install
       - run: pnpm generate
-      - run: npx prisma generate
       - run: pnpm test
 ```
 
@@ -309,10 +317,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 
 export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -323,64 +328,47 @@ export default config({
 })
 ```
 
+`postgresql` is the only provider. The connection is resolved at run time from
+`DIRECT_DATABASE_URL`, then `DATABASE_URL`, then the Dev database `opensaas dev`
+starts — there is no `db.url` key and no `prismaClientConstructor`. See the
+[config API reference](https://stack.opensaas.au/docs/reference/config-api) for
+the complete `db` key list.
+
 ## Output Files
 
-### Prisma Schema (`prisma/schema.prisma`)
+### Contract module (`prisma/contract.ts`)
 
-Generated Prisma schema with:
+The schema, as a TypeScript module: one table per list, the columns each field
+declares, the relations between them and the indexes. `prisma contract emit`
+reads it and writes `prisma/contract.json` and `prisma/contract.d.ts` beside it —
+those two are what the runtime executes.
 
-- Database provider configuration
-- Models for each list
-- Field types and modifiers
-- Indexes
-- Relationships
+### Generated bundle (`.opensaas/`)
 
-**Example output:**
+- `types.ts` — row, create-input and update-input interfaces per list
+- `context.ts` — `getContext`, `rawOpensaasContext` and `config`
+- `lists.ts`, `tables.ts`, `plugin-types.ts`
 
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
-
-### TypeScript Types (`.opensaas/types.ts`)
-
-Generated TypeScript types for:
-
-- List items
-- Create/update input types
-- Context types
-
-**Example output:**
+**Example `types.ts` output:**
 
 ```typescript
-export type Post = {
-  id: string
-  title: string
-  createdAt: Date
-  updatedAt: Date
-}
-
-export type PostCreateInput = {
-  title: string
-}
-
-export type PostUpdateInput = {
-  title?: string
-}
+export interface Post extends Stack$Row<Stack$Contract, Remainder, 'Post'> {}
+export interface PostCreateInput extends Stack$CreateInput<Stack$Contract, Remainder, 'Post'> {}
+export interface PostUpdateInput extends Stack$UpdateInput<Stack$Contract, Remainder, 'Post'> {}
 ```
+
+Each interface is its own named symbol resolved lazily from the emitted
+contract, so a list's shape follows the contract without being restated here.
+
+### Migrations (`migrations/`)
+
+`generate` seeds one Extension contract space per declared extension pack. These
+files are committed — they are derived from `db.extensions` and the installed
+pack version, and a stale copy is a wrong-version migration.
+
+### `prisma.config.ts`
+
+Written at the project root, for the Prisma CLI.
 
 ## Troubleshooting
 
@@ -410,47 +398,36 @@ Error: EACCES: permission denied
 
 ## Examples
 
-### Generate after config changes
+### Changing the schema during development
+
+With `pnpm dev` running, edit `opensaas.config.ts`. The loop regenerates,
+stages the change and reports what applying it would do. Accept it from a second
+terminal:
 
 ```bash
-# Edit opensaas.config.ts
-vim opensaas.config.ts
-
-# Regenerate
-pnpm generate
-
-# Update database
-pnpm db:push
+pnpm db:update
 ```
 
-### Watch mode during development
+If the change would destroy data, pass the database name as consent — `postgres`
+for the Dev database:
 
 ```bash
-# Start watch mode
-pnpm dev
-
-# In another terminal, edit config
-vim opensaas.config.ts
-
-# Generator automatically reruns!
+pnpm db:update --confirm postgres
 ```
 
-## Integration with Prisma
+### Preparing a production migration
 
-After running `opensaas generate`:
+Planning a migration needs a database to plan against, and a direct
+(non-pooled) connection, which `DIRECT_DATABASE_URL` supplies:
 
 ```bash
-# Generate Prisma Client
-npx prisma generate
+DIRECT_DATABASE_URL=... npx prisma migration plan
+```
 
-# Push schema to database
-npx prisma db push
+Commit the resulting `migrations/` directory. The release step applies it:
 
-# Create migration
-npx prisma migrate dev --name init
-
-# Open Prisma Studio
-npx prisma studio
+```bash
+npx prisma db migrate
 ```
 
 ## Learn More

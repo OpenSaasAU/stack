@@ -19,68 +19,60 @@ Defined at the list level, these hooks run for all operations on the list:
 
 ```typescript
 Post: list({
-  fields: {/* ... */},
+  fields: { title: text(), status: text(), publishedAt: timestamp() },
   hooks: {
-    resolveInput: async ({ resolvedData, operation, context }) => {
-      // Transform input data before database operation
+    resolveInput: async ({ resolvedData, operation }) => {
       if (operation === 'create' && resolvedData.status === 'published') {
         resolvedData.publishedAt = new Date()
       }
       return resolvedData
     },
-    validateInput: async ({ operation, resolvedData, addValidationError }) => {
-      if (operation === 'delete') return
-      // Custom validation logic
-      if (resolvedData.title?.includes('spam')) {
-        addValidationError('Title cannot contain spam')
+    validate: async (args) => {
+      if (args.operation === 'delete') return
+      const title = args.resolvedData.title
+      if (typeof title === 'string' && title.includes('spam')) {
+        args.addValidationError('Title cannot contain spam')
       }
     },
-    beforeOperation: async ({ operation, resolvedData, context }) => {
-      // Side effects before database operation
+    beforeOperation: async ({ operation }) => {
       console.log(`About to ${operation} a post`)
     },
-    afterOperation: async ({ operation, item, originalItem, context }) => {
-      // Side effects after database operation
-      if (operation === 'create') {
-        // Send notification, invalidate cache, etc.
-      }
-      if (operation === 'update' && originalItem) {
-        // Compare previous and new values
-        console.log('Changed from:', originalItem, 'to:', item)
+    afterOperation: async (args) => {
+      if (args.operation === 'update') {
+        console.log('Changed from:', args.originalItem, 'to:', args.item)
       }
     },
-    beforeTransaction: async ({ operation, inputData }) => {
-      // OUTSIDE the transaction — non-transactional side effects only.
+    beforeTransaction: async ({ listKey, operation }) => {
+      await audit.recordIntent(listKey, operation)
     },
-    afterTransaction: async (args) => {
-      // OUTSIDE the transaction — always runs; compensate on rollback.
-      if (args.status === 'rolled-back') {
-        // undo whatever beforeTransaction did externally (args.error explains why)
-      }
+    afterTransaction: async ({ listKey, operation, status }) => {
+      if (status === 'rolled-back') await audit.withdrawIntent(listKey, operation)
     },
   },
 })
 ```
 
+`validate` is the current name; `validateInput` is kept as a deprecated alias
+for Keystone compatibility and behaves identically. `beforeTransaction` and
+`afterTransaction` run **outside** the write's transaction and are for
+non-transactional side effects only — the section below explains the split.
+
 ### Field-Level Hooks
 
-Defined on individual fields:
+Defined on individual fields. A field hook is handed `fieldKey`, and reads its own value out of
+`resolvedData[fieldKey]`. `resolveOutput` is handed the value directly, as
+`value`:
 
 ```typescript
 fields: {
   password: password({
     hooks: {
       resolveInput: async ({ resolvedData, fieldKey }) => {
-        // Hash password before saving
         const plaintext = resolvedData[fieldKey]
-        if (plaintext) {
-          return await bcrypt.hash(plaintext, 10)
-        }
+        if (typeof plaintext !== 'string') return undefined
+        return await bcrypt.hash(plaintext, 10)
       },
-      resolveOutput: async ({ item, fieldKey }) => {
-        // Wrap with HashedPassword class
-        return new HashedPassword(item[fieldKey])
-      },
+      resolveOutput: ({ value }) => (typeof value === 'string' ? mask(value) : value),
     },
   }),
 }
@@ -90,23 +82,42 @@ fields: {
 
 ### Write Operations (create/update)
 
-1. **List-level `resolveInput`** - Transform input data at list level
-2. **Field-level `resolveInput`** - Transform individual field values
-3. **List-level `validateInput`** - Custom validation logic
-4. **Field validation** - Built-in rules (isRequired, length, min/max)
-5. **Field-level access control** - Filter writable fields
-6. **Field-level `beforeOperation`** - Side effects for individual fields
-7. **List-level `beforeOperation`** - Side effects at list level
-8. **Database operation**
-9. **List-level `afterOperation`** - Side effects at list level
-10. **Field-level `afterOperation`** - Side effects for individual fields
+Everything below sits **inside** the write's transaction except step 0 and the
+`beforeTransaction`/`afterTransaction` bracket around the whole thing.
+
+0. **Operation-level access check** — a denial short-circuits to `null` here,
+   before any hook runs. A denied write fires no hooks at all, boundary hooks
+   included.
+1. **List-level `resolveInput`** — transform input data at list level
+2. **Field-level `resolveInput`** — transform individual field values
+3. **List-level `validate`** — custom validation logic
+4. **Field-level `validate`** — custom validation for individual fields
+5. **Field validation** — built-in rules (`isRequired`, length, min/max)
+6. **Field-level access control** — filter writable fields
+7. **Relation resolution** — a `connect` becomes a foreign key, or `null` clears
+   one. An unreachable target ends the write as `null`, before step 8.
+8. **Field-level `beforeOperation`** — side effects for individual fields
+9. **List-level `beforeOperation`** — side effects at list level
+10. **Database operation**
+11. **List-level `afterOperation`** — side effects at list level
+12. **Field-level `afterOperation`** — side effects for individual fields
+
+A `delete` skips steps 1–2 and 5–7: there is no input to shape, so it runs
+`validate` (list, then field), then the `beforeOperation`/`afterOperation`
+brackets around the database call.
+
+Validation is the one failure that is **not** silent: steps 3–5 throw a
+`ValidationError`. Every other refusal on this list answers `null`.
 
 ### Read Operations (query)
 
 1. **Database operation**
-2. **Field-level access control** - Filter readable fields
-3. **Field-level `resolveOutput`** - Transform individual field values
-4. **Field-level `afterOperation`** - Side effects for individual fields
+2. **Field-level access control** — filter readable fields
+3. **Field-level `resolveOutput`** — transform individual field values, and
+   compute virtual fields
+
+There is no `beforeOperation`/`afterOperation` on a read. `resolveOutput` is the
+only hook a query runs.
 
 ## In-transaction vs transaction-boundary hooks
 
@@ -158,11 +169,9 @@ hooks split into two families by where they run relative to that transaction:
     and only the **first** nested record's `inputData` for that operation is
     surfaced. Many nested records of the same `(list, operation)` fire the bracket
     once.
-  - **`connectOrCreate` is enumerated as create-involvement best-effort.** A
-    `connectOrCreate` that resolves to **connect** (the row already exists) still
-    fires the bracket as a `create` involvement even though no row is written.
-    Write your compensators to be **idempotent** so a no-op write is safe to
-    compensate.
+  - **Write your compensators to be idempotent.** A bracket can fire for an
+    involvement that turns out to write no row, so a no-op compensation must be
+    safe to run.
   - **`afterTransaction` reports the OUTERMOST transaction, not the write's own
     return (ADR-0028).** A write that joins a transaction it did not open — one
     made inside `context.transaction()`, or a hook's own `context.db` write —
@@ -183,8 +192,9 @@ hooks split into two families by where they run relative to that transaction:
       stale in what the compensator sees.
     - **A rejected `context.transaction()` no longer implies rollback.** If the
       transaction commits and a deferred `afterTransaction` then throws,
-      `context.transaction()` rejects with `AfterTransactionError` over data
-      that is already final. A transaction error — `SerializationFailure` among
+      `context.transaction()` rejects with an `AfterTransactionError` over data
+      that is already final. That class is not exported, so match on
+      `error.name`. A transaction error — `SerializationFailure` among
       them — still takes precedence, so a retry loop keyed on it is unaffected;
       one that catches broadly should not treat every rejection as "not
       committed".
@@ -193,63 +203,72 @@ hooks split into two families by where they run relative to that transaction:
       that transaction open for its duration. Keep it fast, or hoist slow
       external work above `context.transaction()` — a `context.db` write from
       inside it can otherwise block on rows the transaction itself is writing.
-    - **A write with no transaction owner at all** (an application managing its
-      own `prisma.$transaction`, or a client that cannot open one — e.g. a bare
-      test mock, with no `context.transaction()` wrapping it) still fires
-      `afterTransaction` optimistically at write time, exactly as before — there
-      is no owner to defer to and no settle to wait for.
+    - **A write with no transaction owner at all** — a client that cannot open
+      one, such as a bare test double, with no `context.transaction()` wrapping
+      it — still fires `afterTransaction` optimistically at write time: there is
+      no owner to defer to and no settle to wait for.
 
 ### Compensation pattern
 
 Pair an external action in `beforeTransaction` with its undo in
-`afterTransaction`'s `rolled-back` branch:
+`afterTransaction`'s `rolled-back` branch. Both hooks are discriminated unions
+over `operation` and (for `afterTransaction`) `status`, so narrow before
+reaching for a field — a `delete` rollback carries no `inputData` at all:
 
 ```typescript
 hooks: {
-  beforeTransaction: async ({ operation, inputData }) => {
-    // Non-transactional side effect — reserve an external resource.
-    await billing.reserveSeat(inputData.seatId)
+  beforeTransaction: async (args) => {
+    if (args.operation !== 'create') return
+    await billing.reserveSeat(args.inputData.seatId)
   },
   afterTransaction: async (args) => {
+    if (args.operation !== 'create') return
     if (args.status === 'rolled-back') {
-      // The DB write did not persist — release what beforeTransaction reserved.
       await billing.releaseSeat(args.inputData.seatId)
-    } else {
-      // Committed — finalize the external action.
-      await billing.confirmSeat(args.item.seatId)
+      return
     }
+    if (args.item !== undefined) await billing.confirmSeat(args.item.seatId)
   },
 }
 ```
 
-## Hook Context
+## Hook Arguments
 
-All hooks receive a context object with relevant information:
+Every hook receives an object, and every one of those objects carries `listKey`,
+`operation` and `context` — the `AccessContext`, whose members are `session`,
+`db`, `storage`, `plugins` and `ormHandle`. The rest differs per hook and per
+operation, because the shapes are **discriminated unions on `operation`** rather
+than one wide type with everything optional: a `create`'s `resolveInput` has no
+`item`, and TypeScript will not let you read one.
 
-```typescript
-interface HookContext {
-  operation: 'create' | 'update' | 'delete' | 'query'
-  session: Session | null
-  context: Context
-  listKey: string
-  resolvedData?: any // For input hooks
-  item?: any // Current item (after operation)
-  originalItem?: any // Original item before operation (for update/delete)
-  originalInput?: any // Original input before transformations
-}
-```
+The names that recur:
+
+- `inputData` — the data as the caller passed it, before any transformation.
+- `resolvedData` — the data as the `resolveInput` chain has left it so far.
+- `item` — the existing row. Absent on `create`; present on `update`/`delete`.
+- `originalItem` — the pre-write row, on `afterOperation` for update and delete.
+- `fieldKey` — on field hooks only, the field this hook belongs to.
+- `addValidationError(msg)` — on `validate` hooks only.
+
+The [Config API reference](/docs/reference/config-api) gives each hook's exact
+argument shape per operation.
 
 ## Common Use Cases
 
-### Auto-Set Timestamps
+### Timestamps
+
+`createdAt` and `updatedAt` are not something to write a hook for. Set
+`db: { timestamps: true }` — on one list, or on `db` for every list at once —
+and the generator adds both. `createdAt` takes a database default; `updatedAt`
+is maintained by the write pipeline.
+
+Reach for `resolveInput` for a _domain_ timestamp instead — one whose value is a
+decision rather than a clock reading:
 
 ```typescript
 resolveInput: async ({ resolvedData, operation }) => {
-  if (operation === 'create') {
-    resolvedData.createdAt = new Date()
-  }
-  if (operation === 'update') {
-    resolvedData.updatedAt = new Date()
+  if (operation === 'update' && resolvedData.status === 'published') {
+    resolvedData.publishedAt = new Date()
   }
   return resolvedData
 }
@@ -257,71 +276,101 @@ resolveInput: async ({ resolvedData, operation }) => {
 
 ### Slug Generation
 
+A field-level `resolveInput` returns the field's own new value, not the whole
+payload. Returning `undefined` leaves the caller's value alone:
+
 ```typescript
 fields: {
   slug: text({
     hooks: {
-      resolveInput: async ({ resolvedData, item, operation }) => {
-        // Generate slug from title if not provided
-        if (!resolvedData.slug && resolvedData.title) {
-          return resolvedData.title
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-        }
+      resolveInput: async ({ resolvedData }) => {
+        if (typeof resolvedData.slug === 'string' && resolvedData.slug.length > 0) return undefined
+        if (typeof resolvedData.title !== 'string') return undefined
+        return resolvedData.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
       },
     },
   }),
 }
 ```
 
-### Password Hashing
-
-```typescript
-password: password({
-  hooks: {
-    resolveInput: async ({ resolvedData, fieldKey }) => {
-      const plaintext = resolvedData[fieldKey]
-      if (plaintext) {
-        return await bcrypt.hash(plaintext, 10)
-      }
-    },
-  },
-})
-```
-
 ### Cache Invalidation
 
-```typescript
-afterOperation: async ({ operation, item, originalItem, context }) => {
-  if (['create', 'update', 'delete'].includes(operation)) {
-    // Invalidate cache
-    await redis.del(`post:${item.id}`)
+`afterOperation` narrows on `operation`: only `update` carries both `item` and
+`originalItem`, and `delete` carries `originalItem` alone.
 
-    // For updates, you can compare previous and new values
-    if (operation === 'update' && originalItem) {
-      if (originalItem.status !== item.status) {
-        console.log(`Status changed from ${originalItem.status} to ${item.status}`)
-      }
-    }
+```typescript
+afterOperation: async (args) => {
+  if (args.operation === 'delete') {
+    await redis.del(`post:${args.originalItem.id}`)
+    return
+  }
+
+  await redis.del(`post:${args.item.id}`)
+
+  if (args.operation === 'update' && args.originalItem.status !== args.item.status) {
+    console.log(`Status changed from ${args.originalItem.status} to ${args.item.status}`)
   }
 }
 ```
 
 ### Audit Logging
 
+A hook's `context.db` is bound to the write's own transaction, so the audit row
+rolls back with the write it describes. It is also still access controlled — a
+`create` the session may not perform answers `null` rather than throwing, so
+check it if the audit row is load-bearing:
+
 ```typescript
-beforeOperation: async ({ operation, resolvedData, context }) => {
-  await context.db.auditLog.create({
+beforeOperation: async ({ listKey, operation, context }) => {
+  const entry = await context.db.AuditLog.create({
     data: {
+      listName: listKey,
       operation,
-      userId: context.session?.userId,
-      timestamp: new Date(),
-      data: resolvedData,
+      userId: context.session?.userId ?? 'anonymous',
     },
   })
+
+  if (entry === null) throw new Error(`Could not record an audit entry for ${listKey}.${operation}`)
 }
 ```
+
+## What a `resolveOutput` hook may read
+
+A `resolveOutput` hook is handed **exactly its field's declared `needs` plus the
+list's system fields** — never what the caller selected. That is what keeps a
+computed field's value the same from every call site, and
+[Queries & projections](/docs/concepts/queries) explains the mechanism.
+
+### The cost: undeclared reads, dead branches, and the second hop
+
+Three prices come with that guarantee, and they are worth naming outright.
+
+**An undeclared read breaks silently — unless you are typed.** A hook that reads
+a column its field did not declare in `needs` finds `undefined` there at
+runtime, and nothing tells you: the field just computes the wrong value. Typed
+through the generated `Lists.<List>.TypeInfo` — the documented pattern,
+`list<Lists.Post.TypeInfo>({ … })` — it is a **compile error** instead, because
+`item` is narrowed to precisely the declared set. Annotate your lists; the
+declaration is only enforced where you asked for it to be.
+
+**A declared-only branch computes nothing.** When `needs` names a relation, the
+engine fetches that relation's **stored columns** for your hook and stops. It
+does not run the related list's own computed fields over it, because those
+fields' dependency sets were never fetched — a hook reading one there would
+dereference `undefined` and fail the whole read. So a declared relation gives
+you data, not a fully resolved row.
+
+**Two hops cost a privileged read.** `needs` is one hop and non-transitive: it
+names stored columns and immediate relations on the same list, nothing further.
+A value two relations away is not something you can declare — the hook has to go
+and read it, through a context that can see it, and pay for that read on every
+row it runs on.
+
+See [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md)
+and [ADR-0052](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0052-the-generated-types-declare-the-contract-remainder-and-instantiate-core-generics.md).
 
 ## Best Practices
 
@@ -376,5 +425,7 @@ resolveInput: ({ resolvedData }) => {
 ## Next Steps
 
 - **[Access Control](/docs/concepts/access-control)** - Secure your data
+- **[Queries & projections](/docs/concepts/queries)** - What a read returns, and what a hook is handed
+- **[Context API](/docs/reference/context-api)** - `context.transaction()`, row locks and the unsafe surface
 - **[Field Types](/docs/concepts/field-types)** - Available field types
 - **[Custom Fields](/docs/how-to/custom-fields)** - Create custom field types

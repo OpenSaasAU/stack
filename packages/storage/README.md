@@ -368,7 +368,7 @@ await deleteImage(config, imageMetadata)
 ### Validation Utilities
 
 ```typescript
-import { validateFile, formatFileSize, getMimeType } from '@opensaas/stack-storage/utils'
+import { validateFile, formatFileSize, getMimeType } from '@opensaas/stack-storage'
 
 const validation = validateFile(
   { size: file.size, name: file.name, type: file.type },

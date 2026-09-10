@@ -22,7 +22,8 @@ Here's the minimal setup to add authentication to your app:
 
 ```typescript
 // opensaas.config.ts
-import { config } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
@@ -32,8 +33,10 @@ export default config({
       sessionFields: ['userId', 'email', 'name'],
     }),
   ],
-  db: { provider: 'sqlite', url: 'file:./dev.db' },
-  lists: {/* your lists */},
+  db: { provider: 'postgresql' },
+  lists: {
+    Post: list({ fields: { title: text() } }),
+  },
 })
 ```
 
@@ -65,11 +68,13 @@ pnpm add @opensaas/stack-auth
 
 ### 2. Set Environment Variables
 
-Create a `.env` file with the following:
+Create a `.env` file with the following. Postgres is the only provider, and
+`DATABASE_URL` is read from the environment rather than declared in your config —
+omit it in local development and `opensaas dev` provisions a Dev database for you.
 
 ```bash
 # Database
-DATABASE_URL=file:./dev.db
+DATABASE_URL=postgresql://localhost:5432/myapp
 
 # Better Auth
 BETTER_AUTH_SECRET=your_secret_key_here  # Generate with: openssl rand -base64 32
@@ -89,29 +94,23 @@ Add the auth plugin to your OpenSaaS config:
 
 ```typescript
 // opensaas.config.ts
-import { config, list, text, relationship } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
   plugins: [
     authPlugin({
-      // Email and password authentication
       emailAndPassword: {
         enabled: true,
         minPasswordLength: 8,
         requireConfirmation: true,
       },
-
-      // Password reset functionality
       passwordReset: {
         enabled: true,
-        tokenExpiration: 3600, // 1 hour
+        tokenExpiration: 3600,
       },
-
-      // Fields available in session object
       sessionFields: ['userId', 'email', 'name'],
-
-      // Extend User list with custom fields
       extendUserList: {
         fields: {
           posts: relationship({ ref: 'Post.author', many: true }),
@@ -120,10 +119,7 @@ export default config({
     }),
   ],
 
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
 
   lists: {
     Post: list({
@@ -141,6 +137,12 @@ export default config({
 })
 ```
 
+`sessionFields` names what lands on the `session` object your access rules see;
+`extendUserList` adds fields to the plugin's own `User` list. Token expirations
+are in seconds. The `db` block carries the provider and nothing about the
+connection — see the [Config API](/docs/reference/config-api#db) for its
+complete key list.
+
 ### 4. Generate Database Schema
 
 ```bash
@@ -155,29 +157,40 @@ soon as you save the config.
 
 ### Server Setup
 
-Create a server-side auth instance:
+Create a server-side auth instance.
+
+`getSessionFromAuth()` is what turns better-auth's own resolved session into the
+flat `Session` object the stack's access rules read — it projects exactly the
+names you listed in `sessionFields`, reading them from the resolved config at
+runtime, so changing `sessionFields` takes effect without regenerating this file.
+It returns `null` only when there is genuinely no session. Pass its result
+straight to `getContext()`:
 
 ```typescript
 // lib/auth.ts
-import { createAuth } from '@opensaas/stack-auth/server'
+import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
+import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
+import { headers } from 'next/headers'
 import { rawOpensaasContext } from '@/.opensaas/context'
 
-// Create auth instance
 export const auth = createAuth(config, rawOpensaasContext)
 
-// Helper to get current session
-export async function getAuth() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
-  return session
+export async function getSession(): Promise<Session | null> {
+  const resolvedConfig = await config
+  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
-// Export handlers for API routes
 export const GET = auth.handler
 export const POST = auth.handler
 ```
+
+`createAuth()` takes the `rawOpensaasContext` **promise** — do not await it at
+module scope. It defers construction behind a lazy proxy until the config and the
+client are ready.
 
 ### Client Setup
 
@@ -286,44 +299,36 @@ Stack doesn't use Next.js middleware for authentication. Instead, protect routes
 
 ### Protecting Admin Pages
 
+Redirect or render a refusal when `getSession()` returns `null`, then hand the
+session to `getContext()`. The generated `config` export is a promise, so it is
+awaited alongside the context:
+
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import { getContext, config } from '@/.opensaas/context'
-import { getAuth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
-export default async function AdminPage({ params, searchParams }) {
-  const session = await getAuth()
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
 
-  // Redirect unauthenticated users
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const session = await getSession()
+
   if (!session) {
     redirect('/sign-in')
   }
 
-  // Or show an error message
-  if (!session) {
-    return (
-      <div className="p-8">
-        <div className="bg-destructive/10 border border-destructive rounded-lg p-6">
-          <h2 className="text-xl font-bold mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">
-            You must be logged in to access the admin interface.
-          </p>
-          <a href="/sign-in" className="text-primary underline mt-4 inline-block">
-            Sign In
-          </a>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <AdminUI
-      context={await getContext(session.user)}
+      context={await getContext(session)}
       config={await config}
-      params={params.admin}
-      searchParams={searchParams}
+      params={(await params).admin}
+      searchParams={await searchParams}
+      basePath="/admin"
     />
   )
 }
@@ -331,30 +336,35 @@ export default async function AdminPage({ params, searchParams }) {
 
 ### Protecting Server Actions
 
+A write returns the row or `null` — `null` covers both "denied" and "no such
+row", deliberately, so the caller cannot tell which. Check it before treating the
+write as done. The relation field takes `{ connect: { id } }`; there is no nested
+create:
+
 ```typescript
 // lib/actions/posts.ts
 'use server'
 
 import { getContext } from '@/.opensaas/context'
-import { getAuth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
-export async function createPost(data: PostCreateInput) {
-  const session = await getAuth()
+export async function createPost(title: string) {
+  const session = await getSession()
 
   if (!session) {
     return { success: false, error: 'Not authenticated' }
   }
 
-  const context = await getContext(session.user)
+  const context = await getContext(session)
 
-  const post = await context.db.post.create({
+  const post = await context.db.Post.create({
     data: {
-      ...data,
-      author: { connect: { id: session.user.id } },
+      title,
+      author: { connect: { id: String(session.userId) } },
     },
   })
 
-  if (!post) {
+  if (post === null) {
     return { success: false, error: 'Access denied' }
   }
 
@@ -392,10 +402,10 @@ export function ProtectedComponent() {
 Get the current session in server components or actions:
 
 ```typescript
-import { getAuth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
 export default async function MyPage() {
-  const session = await getAuth()
+  const session = await getSession()
 
   if (!session) {
     return <div>Not signed in</div>
@@ -403,33 +413,36 @@ export default async function MyPage() {
 
   return (
     <div>
-      <h1>Welcome, {session.user.name}!</h1>
-      <p>Email: {session.user.email}</p>
+      <h1>Welcome, {String(session.name)}!</h1>
+      <p>Email: {String(session.email)}</p>
     </div>
   )
 }
 ```
 
-The session object contains:
+The object `getSession()` returns is **flat** — one key per name in
+`sessionFields`, projected off better-auth's own resolved session. With
+`sessionFields: ['userId', 'email', 'name']` it is:
 
 ```typescript
 {
-  user: {
-    id: string
-    email: string
-    name: string | null
-    image: string | null
-    emailVerified: boolean
-    // ... any custom fields from sessionFields
-  }
-  session: {
-    token: string
-    expiresAt: Date
-    ipAddress: string | null
-    userAgent: string | null
-  }
+  userId: string
+  email: string
+  name: string
 }
 ```
+
+This is the same object your access rules receive as `session`, which is why they
+read `session.userId` rather than `session.user.id`. `userId` is special-cased to
+the authenticated user's `id`; every other name resolves against the first hit in
+the resolved session's top-level keys, then its `user` object, then its `session`
+sub-object — so a session-only field like the admin plugin's `impersonatedBy` is
+reachable too. A name that resolves nowhere is omitted and logs a warning once
+per process, rather than silently surfacing as `undefined` inside an access rule.
+
+If you need better-auth's own nested `{ user, session }` shape — its `token`,
+`expiresAt`, `ipAddress` and `userAgent` — call `auth.api.getSession()` directly
+alongside `getSession()`.
 
 ### Client-Side Session Hook
 
@@ -487,7 +500,10 @@ The session is automatically injected into all access control functions. This ma
 
 ### Operation-Level Access Control
 
-Control who can perform operations on a list:
+A list's `access` carries exactly one member, `operation`, with a rule per
+operation. `create` must return a boolean — there is no row to test yet, so a
+filter result throws `InvalidCreateAccessResultError` rather than being taken as
+an allow. `query`, `update` and `delete` may return either a boolean or a filter:
 
 ```typescript
 Post: list({
@@ -505,77 +521,66 @@ Post: list({
   },
   access: {
     operation: {
-      // Anyone can view published posts
       query: () => true,
-
-      // Only authenticated users can create posts
       create: ({ session }) => !!session,
-
-      // Only the author can update their posts
-      update: ({ session, item }) => {
-        if (!session) return false
-        return session.userId === item.authorId
-      },
-
-      // Only the author can delete their posts
-      delete: ({ session, item }) => {
-        if (!session) return false
-        return session.userId === item.authorId
-      },
+      update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
+      delete: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
     },
   },
 })
 ```
 
-### Filter-Based Access Control
+### Scoping rows with a returned filter
 
-Filter which records users can access:
+There is no separate `filter` block. A rule scopes rows by **returning** a
+Prisma-shaped filter, which is ANDed into whatever `where` the caller supplied —
+so a rule can only ever narrow what a session sees, never widen it:
 
 ```typescript
 Post: list({
   access: {
     operation: {
-      query: () => true, // Allow the query operation
-    },
-    filter: {
-      query: ({ session }) => {
-        // Anonymous users: only published posts
-        if (!session) {
-          return { status: { equals: 'published' } }
-        }
-
-        // Authenticated users: published posts + their own drafts
-        return {
-          OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
-        }
-      },
+      query: ({ session }) =>
+        session
+          ? {
+              OR: [
+                { status: { equals: 'published' } },
+                { authorId: { equals: session.userId } },
+              ],
+            }
+          : { status: { equals: 'published' } },
     },
   },
 })
 ```
 
+Write the anonymous branch out explicitly, as above. A rule spelled
+`({ session }) => ({ authorId: { equals: session?.userId } })` does **not** fall
+back to an open read: an `undefined` condition is refused with an
+`UndefinedAccessFilterError`, never dropped, so the read fails closed.
+
+The filter vocabulary is a closed set — `equals`, `not`, `in`, `notIn`, `lt`,
+`lte`, `gt`, `gte`, `contains` on a scalar; `some`, `every`, `none` on a
+relationship; `AND`, `OR`, `NOT`. A bare value means equality, and `contains` is
+case-insensitive. There is no `startsWith`, `endsWith` or `mode`.
+
 ### Field-Level Access Control
 
-Control access to individual fields:
+Field rules are declared on the field and return a **boolean only** — a field
+decision is per-field visibility, not a row filter, and a non-boolean result
+throws `InvalidFieldAccessResultError`. A denied field is stripped from the
+returned row; the rest of the row comes back normally:
 
 ```typescript
 Post: list({
   fields: {
     title: text(),
     content: text(),
-
-    // Only the author can read/write internal notes
     internalNotes: text({
       access: {
-        read: ({ session, item }) => {
-          if (!session) return false
-          return session.userId === item.authorId
-        },
+        read: ({ session, item }) => session?.userId === item.authorId,
         create: ({ session }) => !!session,
-        update: ({ session, item }) => {
-          if (!session) return false
-          return session.userId === item.authorId
-        },
+        update: ({ session, item }) => session?.userId === item.authorId,
       },
     }),
   },
@@ -584,31 +589,28 @@ Post: list({
 
 ### Access Control Helpers
 
-Create reusable access control functions:
+Extract the rules you repeat. `AccessControl` is the type for an operation-level
+rule, so `isAuthor` below can return a filter while `isSignedIn` and `isAdmin`
+return booleans:
 
 ```typescript
 // opensaas.config.ts
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 
-// Check if user is signed in
-const isSignedIn: AccessControl = ({ session }) => {
-  return !!session
-}
+const isSignedIn: AccessControl = ({ session }) => !!session
 
-// Check if user is the author
-const isAuthor: AccessControl = ({ session, item }) => {
-  if (!session) return false
-  return { authorId: { equals: session.userId } }
-}
+const isAuthor: AccessControl = ({ session }) =>
+  session ? { authorId: { equals: session.userId } } : false
 
-// Check if user is an admin
-const isAdmin: AccessControl = ({ session }) => {
-  return session?.role === 'admin'
-}
+const isAdmin: AccessControl = ({ session }) => session?.role === 'admin'
 
 export default config({
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
+      fields: { title: text() },
       access: {
         operation: {
           create: isSignedIn,
@@ -617,17 +619,13 @@ export default config({
         },
       },
     }),
-
-    User: list({
-      access: {
-        operation: {
-          delete: isAdmin,
-        },
-      },
-    }),
   },
 })
 ```
+
+`isSignedIn` and `isAdmin` are safe on `create`; `isAuthor` is not, because it
+returns a filter. Reach for the boolean form wherever a rule may land on
+`create`.
 
 ## User List Customization
 
@@ -680,15 +678,12 @@ authPlugin({
 })
 ```
 
-Now you can access these in access control:
+`session.role` is now available in every access control function:
 
 ```typescript
 access: {
   operation: {
-    delete: ({ session }) => {
-      // session.role is now typed and available
-      return session?.role === 'admin'
-    },
+    delete: ({ session }) => session?.role === 'admin',
   },
 }
 ```
@@ -723,19 +718,18 @@ authPlugin({
 
 ### Custom Hooks on User List
 
-Add lifecycle hooks to the User list:
+Add lifecycle hooks to the User list. `afterOperation`'s arguments are a union
+over the operation — only `create` and `update` carry `item`, and `delete`
+carries `originalItem` instead — so narrow on `args.operation` before reaching
+for a row:
 
 ```typescript
 authPlugin({
   extendUserList: {
     hooks: {
-      afterOperation: async ({ operation, item, context }) => {
-        if (operation === 'create') {
-          console.log('New user created:', item.email)
-
-          // Send welcome email
-          await sendWelcomeEmail(item.email)
-        }
+      afterOperation: async (args) => {
+        if (args.operation !== 'create') return
+        await sendWelcomeEmail(args.item.email)
       },
     },
   },
@@ -868,6 +862,7 @@ authPlugin({
 
 ```typescript
 import { Resend } from 'resend'
+import { authPlugin } from '@opensaas/stack-auth'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -901,6 +896,7 @@ authPlugin({
 
 ```typescript
 import sgMail from '@sendgrid/mail'
+import { authPlugin } from '@opensaas/stack-auth'
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY!)
 
@@ -996,29 +992,30 @@ adoption knobs already set to the conventions of a standard separate-schema
 better-auth install, and you spread it into `authPlugin` alongside the rest of
 your config:
 
+The spread supplies the adoption defaults — `AuthUser`/`AuthSession`/
+`AuthAccount`/`AuthVerification` in the `auth` Postgres schema, matching a live
+better-auth install — and the rest of your auth config composes on top of it as
+normal. Your own domain `User` stays in `public` and is not touched by the
+plugin:
+
 ```typescript
-import { config } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin, adoptBetterAuthTables } from '@opensaas/stack-auth'
 
 export default config({
-  db: { provider: 'postgresql', url: process.env.DATABASE_URL },
+  db: { provider: 'postgresql' },
   plugins: [
     authPlugin({
-      // Adoption defaults: AuthUser/AuthSession/AuthAccount/AuthVerification
-      // in the `auth` Postgres schema — matching a live better-auth install.
       ...adoptBetterAuthTables(),
-
-      // The rest of your auth config composes as normal:
       emailAndPassword: { enabled: true },
       sessionFields: ['userId', 'email', 'name'],
     }),
   ],
   lists: {
-    // Your own domain User stays in `public` and is NOT touched by the plugin.
     User: list({
       fields: {
         subjectId: text({ validation: { isRequired: true } }),
-        // ...your domain fields
       },
     }),
   },
@@ -1032,12 +1029,11 @@ Auth lists therefore reach **Schema parity** — they diff clean against your li
 tables, so adding the plugin produces **no destructive auth migration**. The
 lists are modelled for runtime and types, not migrated.
 
-Verify with a schema diff after generating:
+Regenerate, then diff the result against your live database with your project's
+own `prisma migrate diff` setup — the auth tables should report no changes:
 
 ```bash
 pnpm generate
-# Diff the generated schema against your live database — the auth tables should
-# report no changes (Schema parity). See your project's prisma migrate diff setup.
 ```
 
 ### Customising the recipe
@@ -1157,7 +1153,7 @@ a per-identifier resend-cooldown check on the verification table:
 ```typescript
 authPlugin({
   verification: {
-    indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+    indexes: [{ fields: ['identifier', 'createdAt'] }],
   },
 })
 ```
@@ -1165,6 +1161,10 @@ authPlugin({
 This suppresses the derived single-column index on `identifier` in favor of
 the composite, which serves the same lookups. Suppression is per-column: every
 other index the stack derives for that model is unaffected.
+
+An index column carries no sort direction — `{ field: 'createdAt', sort: 'desc' }`
+is refused at generate time. The index keeps the column order you declared, which
+is what serves the lookup.
 
 ### Linking your app User to the Auth identity
 
@@ -1201,18 +1201,23 @@ access control belongs to the application, not the plugin. The four Auth
 lists (User/Session/Account/Verification) ship with **no** operation-level
 access — with nothing configured, `context.db` reads/writes against them
 return `null`/`[]` and they don't appear in the admin UI. This does not affect
-sign-in/sign-up/session flows: better-auth talks to these tables through the
-raw Prisma client (the driver adapter), bypassing access control entirely.
+sign-in/sign-up/session flows: better-auth talks to these tables through its own
+adapter, outside access control entirely.
 
 Grant access explicitly with `authPlugin({ access: { … } })`, keyed by
 better-auth model name (`user`/`session`/`account`/`verification`, not the
 derived list key — so it keeps working if you rename a model via `modelName`).
-Each entry is a full list access config (operation **and** field-level):
+Each entry is a list access config: an `operation` block, and nothing else.
+
+Below, signed-in users can browse the directory but only write themselves;
+sessions and accounts are scoped to their owner by a returned filter. Crossing
+the `user` relationship needs a quantifier — `some` here — because a
+relationship key in a filter takes only `some`, `every` or `none`. Verification
+tokens stay closed: better-auth manages them directly.
 
 ```typescript
 authPlugin({
   access: {
-    // Signed-in users can browse the directory; only self can write.
     user: {
       operation: {
         query: ({ session }) => !!session,
@@ -1220,29 +1225,32 @@ authPlugin({
         delete: ({ session, item }) => session?.userId === item.id,
       },
     },
-    // A user can read only their own sessions.
     session: {
       operation: {
-        query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
+        query: ({ session }) =>
+          session ? { user: { some: { id: { equals: session.userId } } } } : false,
       },
     },
-    // Hide OAuth tokens from field-level reads even for the account owner.
     account: {
       operation: {
-        query: ({ session }) => (session ? { user: { id: { equals: session.userId } } } : false),
-      },
-      fields: {
-        accessToken: { read: () => false },
-        refreshToken: { read: () => false },
+        query: ({ session }) =>
+          session ? { user: { some: { id: { equals: session.userId } } } } : false,
       },
     },
-    // Verification tokens stay closed — better-auth manages them directly.
   },
 })
 ```
 
+There is no `fields` block here, and none is needed for the credential columns:
+`Account.accessToken`/`refreshToken`/`password`, `Session.token` and
+`Verification.value` ship field-level read-denied already (ADR-0036), so granting
+operation access above does **not** expose them. See [Credential fields are
+read-denied](/docs/reference/auth#credential-fields-are-read-denied-adr-0036) for
+the full set. To deny a further field, declare the rule on the field itself —
+via `extendUserList.fields` for the `User` list.
+
 For the `user` model specifically, `extendUserList.access` (the pre-existing
-per-field User customization surface — see
+User customization surface — see
 [Custom Access Control on User List](#custom-access-control-on-user-list))
 is still honored and takes precedence over `access.user` if both are set.
 
@@ -1380,21 +1388,25 @@ authPlugin({
    ```
 
 2. **Silent Failures**
-   Access-denied operations return `null` or `[]` instead of throwing errors. This prevents information leakage about whether records exist:
+   Access-denied operations return `null` (a single row), `[]` (a list) or a
+   zeroed aggregate instead of throwing. There is no `AccessDeniedError` to
+   catch — a `null` covers both "no such row" and "not allowed", and that
+   ambiguity is the point:
 
    ```typescript
-   const post = await context.db.post.update({ where: { id }, data })
-   if (!post) {
-     // Could mean: doesn't exist OR access denied
+   const post = await context.db.Post.update({ where: { id }, data })
+   if (post === null) {
      return { error: 'Access denied' }
    }
    ```
 
 3. **Never Expose Sensitive Fields**
+   A `password()` field is excluded from reads for you. Anything else you want
+   hidden needs its own field-level `read` rule, which returns a boolean:
 
    ```typescript
    fields: {
-     password: password(), // Automatically excluded from reads
+     password: password(),
      apiKey: text({
        access: {
          read: ({ session, item }) => session?.userId === item.id,
@@ -1525,19 +1537,21 @@ export function SignInButton() {
 
 Here's a complete working example of an authenticated blog application:
 
+The `User` list ships closed by default (ADR-0013), so the config grants it
+explicitly. `Post.query` scopes reads by returning a filter rather than declaring
+one in a separate block:
+
 ```typescript
 // opensaas.config.ts
-import { config, list, text, select, relationship } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, select, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl } from '@opensaas/stack-core'
 
-// Access control helpers
 const isSignedIn: AccessControl = ({ session }) => !!session
 
-const isAuthor: AccessControl = ({ session, item }) => {
-  if (!session) return false
-  return { authorId: { equals: session.userId } }
-}
+const isAuthor: AccessControl = ({ session }) =>
+  session ? { authorId: { equals: session.userId } } : false
 
 export default config({
   plugins: [
@@ -1558,8 +1572,6 @@ export default config({
           }),
         },
       },
-      // The User list ships closed by default (ADR-0013) — grant access
-      // explicitly. See "Access control: closed by default" above.
       access: {
         user: {
           operation: {
@@ -1571,10 +1583,7 @@ export default config({
     }),
   ],
 
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
 
   lists: {
     Post: list({
@@ -1598,20 +1607,18 @@ export default config({
       },
       access: {
         operation: {
-          query: () => true,
+          query: ({ session }) =>
+            session
+              ? {
+                  OR: [
+                    { status: { equals: 'published' } },
+                    { authorId: { equals: session.userId } },
+                  ],
+                }
+              : { status: { equals: 'published' } },
           create: isSignedIn,
           update: isAuthor,
           delete: isAuthor,
-        },
-        filter: {
-          query: ({ session }) => {
-            if (!session) {
-              return { status: { equals: 'published' } }
-            }
-            return {
-              OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
-            }
-          },
         },
       },
     }),
@@ -1621,18 +1628,20 @@ export default config({
 
 ```typescript
 // lib/auth.ts
-import { createAuth } from '@opensaas/stack-auth/server'
+import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
+import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import { rawOpensaasContext } from '@/.opensaas/context'
 import { headers } from 'next/headers'
 
 export const auth = createAuth(config, rawOpensaasContext)
 
-export async function getAuth() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
-  return session
+export async function getSession(): Promise<Session | null> {
+  const resolvedConfig = await config
+  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
+  return getSessionFromAuth(auth, sessionFields, await headers())
 }
 
 export const GET = auth.handler
@@ -1672,11 +1681,16 @@ export default function SignInPage() {
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import { getContext, config } from '@/.opensaas/context'
-import { getAuth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
-export default async function AdminPage({ params, searchParams }) {
-  const session = await getAuth()
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const session = await getSession()
 
   if (!session) {
     redirect('/sign-in')
@@ -1684,10 +1698,11 @@ export default async function AdminPage({ params, searchParams }) {
 
   return (
     <AdminUI
-      context={await getContext(session.user)}
+      context={await getContext(session)}
       config={await config}
-      params={params.admin}
-      searchParams={searchParams}
+      params={(await params).admin}
+      searchParams={await searchParams}
+      basePath="/admin"
     />
   )
 }
@@ -1697,15 +1712,18 @@ export default async function AdminPage({ params, searchParams }) {
 
 ### "Session is null" in Access Control
 
-Make sure you're passing the session when creating the context:
+Make sure you're passing the session when creating the context, and that you're
+passing the flat projection `getSession()` returns rather than better-auth's
+nested `{ user, session }` object — access rules read `session.userId`, which only
+the projection carries:
 
 ```typescript
-// ❌ Wrong
+// ❌ Anonymous — no session reaches the access rules
 const context = await getContext()
 
 // ✅ Correct
-const session = await getAuth()
-const context = await getContext(session?.user)
+const session = await getSession()
+const context = await getContext(session ?? undefined)
 ```
 
 ### OAuth Redirect Not Working

@@ -12,8 +12,11 @@ const summaries = await context.db.Post.where({ published: { equals: true } })
   .all()
 ```
 
-Everything below runs through the same secured terminals, so your
-[access control](/docs/concepts/access-control) rules are always enforced.
+Everything below runs through the same secured terminals — `.all()`,
+`.first()`, `.aggregate()`, `.nearest()` — so your
+[access control](/docs/concepts/access-control) rules are always enforced. The
+[Context API reference](/docs/reference/context-api) describes each terminal and
+what it returns; this page is about what a projection means.
 
 {% callout type="info" %}
 Migrating from Keystone? See the [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide for a side-by-side translation table.
@@ -106,11 +109,20 @@ reads something it did not declare finds nothing there — declaring it is what
 earns the data. See [`needs`](/docs/reference/config-api) and
 [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md).
 
-A declaration also outranks a caller-facing `read` denial on the same column or
+### The cost: a declaration outranks a caller's `read` denial
+
+A declaration outranks a caller-facing `read` denial on the same column or
 relation: the value reaches the hook, and is still stripped before the caller
-sees it. Adding a `read` rule elsewhere therefore cannot silently change a
-computed field's value — but it also means `needs: ['passwordHash']` is a
-deliberate, greppable way to surface a denied column's derived value. Own it.
+sees it. That is what buys the property above — adding a `read` rule elsewhere
+cannot silently change a computed field's value.
+
+The price is the other direction of the same rule. `needs: ['passwordHash']` is
+a deliberate, greppable way to surface a denied column's derived value: the
+column's own `read` rule does not stop the hook from seeing it, and whatever the
+hook returns is a field of its own, subject only to _that_ field's rules. The
+stack does not try to guess which derivations are safe, so this is a cost you
+own — grep your `needs` declarations when you audit a `read` denial. See
+[ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md).
 
 ## A read with no projection
 

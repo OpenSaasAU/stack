@@ -50,7 +50,7 @@ export function myPlugin(options: MyPluginOptions): Plugin {
       return files
     },
 
-    runtime: (context) => {
+    runtime: (context, sudo) => {
       // Provide runtime services (optional)
       return {
         myUtility: async () => {
@@ -64,18 +64,23 @@ export function myPlugin(options: MyPluginOptions): Plugin {
 
 ### Plugin Context API
 
-The `context` object passed to `init()` provides these methods:
+The `context` object passed to `init()` provides these members:
 
-```typescript
-type PluginContext = {
-  readonly config: OpenSaasConfig
-  addList: (name: string, listConfig: ListConfig) => void
-  extendList: (name: string, extension: object) => void
-  registerFieldType?: (type: string, builder: Function) => void
-  registerMcpTool?: (tool: McpCustomTool) => void
-  setPluginData: <T>(pluginName: string, data: T) => void
-}
-```
+| Member                              | What it does                                                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`                            | The current config, read-only. Modify it through the methods below, never by mutation.                                                            |
+| `addList(name, listConfig)`         | Add a new list. Throws if the name is taken.                                                                                                      |
+| `extendList(name, extension)`       | Merge `fields`, `hooks` or `mcp` into an existing list. Throws if the list does not exist.                                                        |
+| `addExtension({ name, from })`      | Declare a Postgres extension pack the plugin's field types need, as if the app had listed it under `db.extensions`. Idempotent for the same pair. |
+| `registerFieldType?(type, builder)` | Register a field builder globally, for third-party field packages.                                                                                |
+| `registerMcpTool?(tool)`            | Register a custom MCP tool on the global server.                                                                                                  |
+| `setPluginData(pluginName, data)`   | Store data on the config for the plugin's own runtime to read back.                                                                               |
+
+`extendList` refuses an extension that carries `access.operation` at all —
+throwing, not merging. Access control belongs to whoever created the list, never
+to a plugin extending it ([ADR-0013](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0013-access-control-belongs-to-the-application-not-plugins.md)).
+A list the plugin creates itself with `addList` declares its own access as
+normal.
 
 ## Plugin Lifecycle
 
@@ -113,12 +118,12 @@ init: async (context) => {
 
 ### 2. Before Generation (`beforeGenerate`)
 
-Transform the full config before Prisma schema generation.
+Transform the full config before the Contract module is derived from it. Adding
+a field to every list:
 
 ```typescript
 beforeGenerate: async (config) => {
-  // Add a field to all lists
-  for (const [listName, listConfig] of Object.entries(config.lists)) {
+  for (const listConfig of Object.values(config.lists)) {
     listConfig.fields.createdBy = text()
   }
 
@@ -128,11 +133,13 @@ beforeGenerate: async (config) => {
 
 ### 3. After Generation (`afterGenerate`)
 
-Post-process generated files.
+Post-process the generated files. This runs **before** `prisma contract emit`,
+so a rewritten Contract module is the one the emitted `contract.json` and
+`contract.d.ts` describe — and a rewrite the contract toolchain rejects fails
+`opensaas generate` rather than landing on disk unemitted.
 
 ```typescript
 afterGenerate: async (files) => {
-  // Modify or add generated files
   files['custom-output.ts'] = generateCustomFile()
 
   return files
@@ -141,45 +148,57 @@ afterGenerate: async (files) => {
 
 ### 4. Runtime Services (`runtime`)
 
-Provide utilities accessible in access control and hooks.
+Provide utilities accessible in access control and hooks. The factory takes two
+arguments: the request's `AccessContext`, and a `sudo()` that returns an
+access-bypassing (but still hook-firing) context for the same request. Reach for
+`sudo()` when the service must not depend on the caller's own list access — an
+identity lookup, or an audit trail the audited session could otherwise scope
+away.
 
 ```typescript
-runtime: (context) => ({
+runtime: (context, sudo) => ({
   sendEmail: async (to: string, subject: string, body: string) => {
     // Email service implementation
   },
-  logEvent: async (event: string, data: unknown) => {
-    // Analytics implementation
+  whoAmI: async () => {
+    const userId = context.session?.userId
+    if (typeof userId !== 'string') return null
+    return sudo()
+      .db.User.where({ id: { equals: userId } })
+      .first()
   },
 })
-
-// Access in your app:
-// context.plugins.myPlugin.sendEmail(...)
 ```
+
+The return value lands on `context.plugins.<pluginName>`, so an app calls
+`context.plugins.audit.getAuditTrail(…)`.
 
 ## Real-World Example: Audit Plugin
 
-Let's create a complete audit logging plugin:
+A complete audit logging plugin.
+`AuditLog` is readable by admins and writable by nobody: `create` is denied on
+the secured surface too, so the only way a row lands there is the plugin's own
+elevated write. `afterOperation` is a union discriminated on `operation`, so the
+hook narrows before it reaches for `item` or `originalItem`.
 
 ```typescript
 // audit-plugin.ts
-import { list, text, timestamp } from '@opensaas/stack-core/fields'
+import { list } from '@opensaas/stack-core'
+import { text, timestamp } from '@opensaas/stack-core/fields'
 import type { Plugin } from '@opensaas/stack-core/extend'
 
 export interface AuditPluginConfig {
   excludeLists?: string[]
-  logReads?: boolean
 }
 
 export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
-  const { excludeLists = [], logReads = false } = options
+  const { excludeLists = [] } = options
 
   return {
     name: 'audit',
     version: '0.1.0',
 
     init: async (context) => {
-      // Add AuditLog list
       context.addList(
         'AuditLog',
         list({
@@ -188,13 +207,13 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
             itemId: text(),
             operation: text({ validation: { isRequired: true } }),
             userId: text(),
-            changes: text(), // JSON string of changes
-            timestamp: timestamp({ defaultValue: { kind: 'now' } }),
+            changes: text(),
+            recordedAt: timestamp({ defaultValue: { kind: 'now' } }),
           },
           access: {
             operation: {
               query: ({ session }) => session?.role === 'admin',
-              create: () => true, // Hooks can always create
+              create: () => false,
               update: () => false,
               delete: () => false,
             },
@@ -202,43 +221,37 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
         }),
       )
 
-      // Add audit hooks to all lists
-      for (const [listName, listConfig] of Object.entries(context.config.lists)) {
+      for (const listName of Object.keys(context.config.lists)) {
         if (excludeLists.includes(listName)) continue
 
         context.extendList(listName, {
           hooks: {
-            afterOperation: async ({ operation, item, context: ctx }) => {
-              // Skip reads unless configured
-              if (operation === 'query' && !logReads) return
+            afterOperation: async (args) => {
+              const row = args.operation === 'delete' ? args.originalItem : args.item
+              const ctx = args.context
+              const collection = ormCollection(ctx.ormHandle, 'AuditLog')
 
-              // Create audit log entry
-              await ctx.ormHandle.auditLog.create({
-                data: {
-                  listName,
-                  itemId: item?.id || '',
-                  operation,
-                  userId: ctx.session?.userId || 'anonymous',
-                  changes: JSON.stringify(item),
-                  timestamp: new Date(),
-                },
+              await collection.create({
+                listName,
+                itemId: typeof row.id === 'string' ? row.id : '',
+                operation: args.operation,
+                userId: String(ctx.session?.userId ?? 'anonymous'),
+                changes: JSON.stringify(row),
               })
             },
           },
         })
       }
 
-      // Store config for runtime
       context.setPluginData('audit', options)
     },
 
-    runtime: (context) => ({
-      // Provide utility to query audit logs
+    runtime: (_context, sudo) => ({
       getAuditTrail: async (listName: string, itemId: string) => {
-        return context.ormHandle.auditLog.findMany({
-          where: { listName, itemId },
-          orderBy: { timestamp: 'desc' },
-        })
+        return sudo()
+          .db.AuditLog.where({ listName: { equals: listName }, itemId: { equals: itemId } })
+          .orderBy({ recordedAt: 'desc' })
+          .all()
       },
     }),
   }
@@ -248,25 +261,56 @@ export function auditPlugin(options: AuditPluginConfig = {}): Plugin {
 #### Which database handle does a plugin get?
 
 The `context` a hook or a `runtime()` factory receives is an `AccessContext`, and
-it carries two database surfaces:
+it carries two database surfaces. Neither is `context.unsafe`: an
+`AccessContext` has **no `unsafe` member**. That one lives on the request
+context an application holds (`StackBaseContext`), and the
+[Context API reference](/docs/reference/context-api) covers it.
 
-- **`context.db`** — the secured surface. Access control, field visibility and
-  hooks all apply. Reach for this by default.
-- **`context.ormHandle`** — the engine's own ORM handle, the client `context.db`
-  runs its queries through. It enforces **nothing**: no access control, no field
-  visibility, no hooks, no error normalisation. The audit plugin above uses it
-  deliberately: an audit trail that the audited session's own access rules can
-  scope away is not an audit trail.
+- **`context.db`** — the secured surface, keyed by PascalCase list name. Access
+  control, Field Visibility and hooks all apply, and every terminal is nullable
+  or empty on denial. Reach for this by default.
+- **`context.ormHandle`** — the engine's own ORM handle: the map of list key to
+  Prisma collection that `context.db` runs its own queries through. It enforces
+  **nothing** — no access control, no Field Visibility, no `resolveOutput`, no
+  computed fields, no hooks, and no error normalisation, so a failure arrives as
+  the raw driver error rather than a `DatabaseError`. It is engine plumbing, and
+  a plugin that reaches for it is opting out of the same guarantees
+  `context.unsafe` opts out of. Say why at the call site.
+
+`ormHandle` is keyed by **list key**, so it is `ormHandle.AuditLog`, never
+`ormHandle.auditLog`. Its values are Prisma 8 collections typed as `unknown`,
+because the per-list types belong to the generated bundle — a plugin that uses
+one narrows it itself:
+
+```typescript
+import type { OrmClient } from '@opensaas/stack-core'
+
+interface OrmCollection {
+  create(data: Record<string, unknown>): Promise<Record<string, unknown>>
+}
+
+function isOrmCollection(value: unknown): value is OrmCollection {
+  if (typeof value !== 'object' || value === null) return false
+  return typeof Reflect.get(value, 'create') === 'function'
+}
+
+function ormCollection(handle: OrmClient, listKey: string): OrmCollection {
+  const collection = handle[listKey]
+  if (!isOrmCollection(collection)) {
+    throw new Error(`The ORM client exposes no collection for "${listKey}".`)
+  }
+  return collection
+}
+```
+
+The plugin above pays that cost for its hook, where there is no `sudo()` to
+reach for, and takes the typed `sudo().db` path in `runtime()`, where there is.
 
 The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, so the
 two are always in the same transaction state as each other. Every write opens a
-transaction (ADR-0010), so database work a `beforeOperation`/`afterOperation`
-hook does through either handle **is** rolled back when the write fails.
-
-`context.ormHandle` is not the same thing as `context.unsafe`, the application's
-documented bypass on the request context (`StackBaseContext`). An `AccessContext`
-has no `unsafe` member; `ormHandle` is what a plugin gets, and it bypasses just
-as much — say why at the call site.
+transaction ([ADR-0010](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0010-nested-writes-decompose-into-a-single-transaction.md)),
+so database work a `beforeOperation`/`afterOperation` hook does through either
+handle **is** rolled back when the write fails.
 
 ### Using the Audit Plugin
 
@@ -279,30 +323,34 @@ export default config({
   plugins: [
     auditPlugin({
       excludeLists: ['AuditLog', 'Session'],
-      logReads: false,
     }),
   ],
-  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
         title: text(),
         content: text(),
       },
+      access: { operation: { query: () => true } },
     }),
   },
 })
 ```
 
+`postgresql` is the only provider, and the connection string is not part of the
+config: it is resolved from `DIRECT_DATABASE_URL`, `DATABASE_URL` or the running
+dev database. See the [deployment guide](/docs/how-to/deploy).
+
 ### Accessing Audit Trail
 
+Reach the plugin's services on `context.plugins.<pluginName>`, from a server
+action or a route handler:
+
 ```typescript
-// In server actions or API routes
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext({ userId: 'user-123' })
-
-// Use plugin runtime service
 const auditTrail = await context.plugins.audit.getAuditTrail('Post', postId)
 ```
 
@@ -342,19 +390,21 @@ export function myPlugin(): Plugin {
 
 ### Hook Chaining
 
-Multiple plugins can add hooks to the same list. They execute in plugin order.
+Multiple plugins can add hooks to the same list. They execute in plugin order —
+below, `normalise` first, then `validation`:
 
 ```typescript
-// Plugin 1: Add timestamp
-export function timestampPlugin(): Plugin {
+export function normalisePlugin(): Plugin {
   return {
-    name: 'timestamp',
+    name: 'normalise',
     init: async (context) => {
       for (const listName of Object.keys(context.config.lists)) {
         context.extendList(listName, {
           hooks: {
             resolveInput: async ({ resolvedData }) => {
-              resolvedData.updatedAt = new Date()
+              if (typeof resolvedData.title === 'string') {
+                resolvedData.title = resolvedData.title.trim()
+              }
               return resolvedData
             },
           },
@@ -364,7 +414,6 @@ export function timestampPlugin(): Plugin {
   }
 }
 
-// Plugin 2: Add validation
 export function validationPlugin(): Plugin {
   return {
     name: 'validation',
@@ -372,10 +421,10 @@ export function validationPlugin(): Plugin {
       for (const listName of Object.keys(context.config.lists)) {
         context.extendList(listName, {
           hooks: {
-            validateInput: async ({ operation, resolvedData, addValidationError }) => {
-              if (operation === 'delete') return
-              if (resolvedData.spam) {
-                addValidationError('Spam detected')
+            validate: async (args) => {
+              if (args.operation === 'delete') return
+              if (args.resolvedData.spam) {
+                args.addValidationError('Spam detected')
               }
             },
           },
@@ -384,9 +433,11 @@ export function validationPlugin(): Plugin {
     },
   }
 }
-
-// Both hooks execute in order: timestamp → validation
 ```
+
+Don't reach for a `resolveInput` hook to maintain `createdAt`/`updatedAt` — set
+`db: { timestamps: true }` and the generator emits both, with `createdAt`
+defaulted in the database and `updatedAt` maintained by the write pipeline.
 
 ### Conditional List Extension
 
@@ -416,28 +467,38 @@ init: async (context) => {
 
 ### Custom Field Types
 
-Register custom field types globally:
+A field builder describes its column through `getContractField`, and its
+TypeScript faces through `outputType` and `inputType`. The builder the plugin
+registers takes `unknown`, so narrow the options rather than spreading them:
 
 ```typescript
 init: async (context) => {
-  // Register custom field type
-  context.registerFieldType?.('geolocation', (options) => ({
-    type: 'geolocation',
-    ...options,
-    getZodSchema: (fieldName, operation) => {
-      return z.object({
-        lat: z.number(),
-        lng: z.number(),
-      })
-    },
-    getContractField: (fieldName) => ({
-      kind: 'column',
-      name: fieldName,
-      type: { pack: 'pg', type: 'jsonb' },
-      nullable: false,
-    }),
-    outputType: '{ lat: number; lng: number }',
-  }))
+  context.registerFieldType?.('geolocation', (options) => {
+    const base = typeof options === 'object' && options !== null ? options : {}
+
+    return {
+      ...base,
+      type: 'geolocation',
+      getZodSchema: () => z.object({ lat: z.number(), lng: z.number() }),
+      getContractField: (fieldName: string) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'jsonb' },
+        nullable: false,
+      }),
+      outputType: '{ lat: number; lng: number }',
+      inputType: '{ lat: number; lng: number }',
+    }
+  })
+}
+```
+
+A field type that needs a Postgres extension declares it in the same `init`, so
+an app gets the pack by using the field rather than by remembering to list it:
+
+```typescript
+init: async (context) => {
+  context.addExtension({ name: 'pgvector', from: '@prisma/orm-extension-pgvector' })
 }
 ```
 
@@ -526,27 +587,35 @@ export function myPlugin(options?: { apiKey?: string }): Plugin {
 
 Test plugin initialization and behavior:
 
-```typescript
+````typescript
 import { describe, test, expect } from 'vitest'
 import { config, list } from '@opensaas/stack-core'
 import { myPlugin } from './my-plugin'
 
+`config()` returns a `Promise` when the config declares plugins, so `await` it:
+
+```typescript
+import { describe, test, expect } from 'vitest'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { myPlugin } from './my-plugin'
+
 describe('myPlugin', () => {
-  test('adds AuditLog list', () => {
-    const cfg = config({
+  test('adds AuditLog list', async () => {
+    const cfg = await config({
       plugins: [myPlugin()],
-      db: { provider: 'sqlite', url: 'file::memory:' },
+      db: { provider: 'postgresql' },
       lists: {},
     })
 
     expect(cfg.lists.AuditLog).toBeDefined()
-    expect(cfg.lists.AuditLog.fields.action).toBeDefined()
+    expect(cfg.lists.AuditLog.fields.listName).toBeDefined()
   })
 
-  test('extends User list when present', () => {
-    const cfg = config({
+  test('extends User list when present', async () => {
+    const cfg = await config({
       plugins: [myPlugin()],
-      db: { provider: 'sqlite', url: 'file::memory:' },
+      db: { provider: 'postgresql' },
       lists: {
         User: list({ fields: { name: text() } }),
       },
@@ -555,36 +624,70 @@ describe('myPlugin', () => {
     expect(cfg.lists.User.fields.apiKey).toBeDefined()
   })
 })
-```
+````
 
 ### Integration Testing
 
-Test with full stack:
+An integration test runs the plugin against a real database and reads back
+through the same surfaces an application would. The audit trail is the
+interesting case, because the assertion cannot use `context.db.AuditLog`: the
+plugin denies `query` to everyone but an admin, which is the whole point. Reach
+past the secured surface deliberately, with `context.unsafe`:
 
 ```typescript
 test('audit plugin logs operations', async () => {
-  // Setup config with plugin
-  const cfg = config({
-    plugins: [auditPlugin()],
-    // ...
-  })
-
-  // Generate schema
-  await generatePrismaSchema(cfg)
-  await prisma.$executeRawUnsafe('...')
-
-  // Create context
   const context = await getContext()
 
-  // Perform operation
-  await context.db.post.create({ data: { title: 'Test' } })
+  const post = await context.db.Post.create({ data: { title: 'Test' } })
+  expect(post).not.toBeNull()
 
-  // Check audit log
-  const logs = await context.db.auditLog.findMany()
-  expect(logs).toHaveLength(1)
-  expect(logs[0].operation).toBe('create')
+  const entries = await context.unsafe.orm.public.AuditLog.where((row) =>
+    row.listName.eq('Post'),
+  ).all()
+
+  expect(entries).toHaveLength(1)
+  expect(entries[0].operation).toBe('create')
 })
 ```
+
+`context.unsafe` is the deliberate bypass on the request context, and it skips
+**everything** the secured surface does: access control, Field Visibility,
+`resolveOutput`, computed fields, hooks, and error normalisation — a failure
+here arrives as the raw driver error, not a `DatabaseError`. It carries four
+members:
+
+| Member                                 | What it is                                                                                                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unsafe.orm.<namespace>.<Model>`       | Prisma's own collections, behind a marking proxy. The namespace is the schema — `public` unless the list declares a `db.schema`.                                        |
+| `unsafe.sql`                           | Prisma's typed SQL builder, untouched. A plan it builds runs through `query()` or `execute()`.                                                                          |
+| `unsafe.raw.sql`                       | Prisma's raw tag, used as a template tag.                                                                                                                               |
+| `unsafe.query(plan)` / `execute(plan)` | The executors. `query` returns a lazy result — `AsyncIterable<Row> & PromiseLike<Row[]>`, with `toArray()` and `first()` on it. `execute` returns statement statistics. |
+
+Hand-written SQL goes through the raw tag and one of the executors:
+
+```typescript
+const rows = await context.unsafe
+  .query(context.unsafe.sql.public.AuditLog.select({ id: true, operation: true }).build())
+  .toArray()
+
+const stats = await context.unsafe.execute(
+  context.unsafe.raw
+    .sql`DELETE FROM "public"."AuditLog" WHERE "recordedAt" < now() - interval '90 days'`
+    .affectedCount()
+    .build(),
+)
+```
+
+The surface hands out **neither the client nor `prepare()`/`runtime()`**, so
+there is no way to compile a plan that would execute unobserved. Scoping a
+statement written here is yours alone.
+
+{% callout type="warning" %}
+A plugin's own hooks and its `runtime()` factory do **not** get `context.unsafe`.
+They are handed an `AccessContext`, which has no such member — their equivalent
+is `context.ormHandle`, engine plumbing with exactly the same absence of
+protection. `context.unsafe` is on the request context an application holds.
+{% /callout %}
 
 ## Best Practices
 
@@ -606,17 +709,11 @@ Document your plugin thoroughly:
  *
  * @example
  * ```typescript
- * plugins: [
- *   auditPlugin({
- *     excludeLists: ['Session'],
- *     logReads: false
- *   })
- * ]
+ * plugins: [auditPlugin({ excludeLists: ['Session'] })]
  * ```
  *
  * @param options - Plugin configuration
  * @param options.excludeLists - Lists to skip audit logging
- * @param options.logReads - Whether to log read operations
  */
 export function auditPlugin(options: AuditPluginConfig): Plugin
 ````
@@ -678,7 +775,7 @@ The storage plugin demonstrates:
 - Image optimization and transforms
 - Runtime file management utilities
 
-See: `packages/storage/src/config/plugin.ts`
+See: `packages/storage/src/config/index.ts`
 
 ## Publishing Plugins
 

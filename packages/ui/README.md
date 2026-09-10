@@ -308,8 +308,8 @@ import type {
 
 ## Learn More
 
-- [Composability Guide](../../docs/COMPOSABILITY.md) - Complete guide to all four levels
-- [API Reference](../../docs/API.md) - Full API documentation
+- [Composability Guide](https://stack.opensaas.au/docs/how-to/composability) - Complete guide to all four levels
+- [UI Reference](https://stack.opensaas.au/docs/reference/ui) - Full API documentation
 - [OpenSaas Stack](../../README.md) - Stack overview
 
 ## License

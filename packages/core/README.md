@@ -36,10 +36,7 @@ const isAuthor: AccessControl = ({ session }) => {
 }
 
 export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     User: list({
       fields: {
@@ -91,48 +88,44 @@ export default config({
 opensaas generate
 ```
 
-This creates:
+This writes the generated bundle:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the contract module the ORM executes against
 - `.opensaas/types.ts` - TypeScript types
+- `.opensaas/context.ts` - the context factory
+- `.opensaas/lists.ts`, `.opensaas/tables.ts`, `.opensaas/plugin-types.ts`
+- `prisma.config.ts` at the project root
 
-### 3. Create Context
+The connection is resolved from `DIRECT_DATABASE_URL`, then `DATABASE_URL`, then
+the Dev database `opensaas dev` starts. There is no `db.url` key and no
+`prismaClientConstructor`.
 
-```typescript
-// lib/context.ts
-import { getContext } from '@opensaas/stack-core'
-import { PrismaClient } from '@prisma/client'
-import config from '../opensaas.config'
+### 3. Use the Generated Context
 
-export const prisma = new PrismaClient()
-
-export async function getContextWithUser(userId: string) {
-  return getContext(config, prisma, { userId })
-}
-
-export async function getContext() {
-  return getContext(config, prisma, null)
-}
-```
-
-### 4. Use in Your App
+`.opensaas/context.ts` exports `getContext`. You do not construct a Prisma
+client — the factory owns it.
 
 ```typescript
-import { getContextWithUser } from './lib/context'
+// lib/posts.ts
+import { getContext } from '@/.opensaas/context'
+import type { PostCreateInput } from '@/.opensaas/types'
 
-export async function createPost(userId: string, data: any) {
-  const context = await getContextWithUser(userId)
+export async function createPost(userId: string, data: PostCreateInput) {
+  const context = await getContext({ userId })
 
-  // Access control automatically enforced
-  const post = await context.db.post.create({ data })
+  const post = await context.db.Post.create({ data })
 
-  if (!post) {
+  if (post === null) {
     return { error: 'Access denied' }
   }
 
   return { post }
 }
 ```
+
+List keys on `context.db` are **PascalCase**, matching the config —
+`context.db.Post`, not `context.db.post`. A denied write returns `null`, so every
+`create`, `update` and `delete` result is checked before use.
 
 ## Field Types
 
@@ -259,15 +252,16 @@ internalNotes: text({
 
 Access-denied operations return `null` or `[]` instead of throwing:
 
+`null` here means denied **or** absent — the two are deliberately
+indistinguishable, so nothing leaks about which:
+
 ```typescript
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
 
-if (!post) {
-  // Either doesn't exist OR user lacks access
-  // No information leaked about which
+if (post === null) {
   return { error: 'Not found' }
 }
 ```
@@ -322,28 +316,62 @@ hooks: {
 
 ### Creating Context
 
+`getContext` comes from the generated bundle and takes the session alone — the
+config and the ORM client are already bound.
+
 ```typescript
-import { getContext } from '@opensaas/stack-core'
+import { getContext } from '@/.opensaas/context'
 
-// With session
-const context = await getContext(config, prisma, { userId: '123' })
-
-// Anonymous
-const context = await getContext(config, prisma, null)
+const authenticated = await getContext({ userId: '123' })
+const anonymous = await getContext()
 ```
 
-### Using Context
+### Reading
+
+A read is composed and then run by a terminal. `where` and `orderBy` accumulate;
+`select`, `limit`, `offset` and `cursor` replace.
 
 ```typescript
-// All Prisma operations supported
-const post = await context.db.post.create({ data })
-const posts = await context.db.post.findMany()
-const post = await context.db.post.findUnique({ where: { id } })
-const post = await context.db.post.update({ where: { id }, data })
-const post = await context.db.post.delete({ where: { id } })
+const published = await context.db.Post.where({ status: { equals: 'published' } })
+  .orderBy({ title: 'asc' })
+  .limit(20)
+  .all()
 
-// Access control is automatic
-// Returns null/[] if access denied
+const one = await context.db.Post.where({ id: postId }).first()
+
+const { total } = await context.db.Post.aggregate((a) => ({ total: a.count() }))
+```
+
+`all()` answers `[]` when the read is denied, `first()` answers `null`, and
+`aggregate()` answers `0` under every key. There is no `findMany`, `findUnique`,
+`findFirst` or `count()`.
+
+The `where` vocabulary is a closed set: `equals`, `not`, `in`, `notIn`, `lt`,
+`lte`, `gt`, `gte`, `contains` for scalars, and `some`, `every`, `none` for
+relations, combined with `AND` / `OR` / `NOT`. A bare value means equality,
+`contains` is case-insensitive, and `undefined` is refused rather than dropped —
+so `{ authorId: session?.userId }` on a missing session is an error, not an open
+read.
+
+### Writing
+
+```typescript
+const created = await context.db.Post.create({ data: { title: 'Hello' } })
+const updated = await context.db.Post.update({ where: { id }, data: { title: 'Hi' } })
+const deleted = await context.db.Post.delete({ where: { id } })
+```
+
+`where` on a write is identity-only: exactly one key, `id`. Each of the three
+returns `null` when the operation is denied.
+
+An edge on the foreign-key-owning side is written as `{ connect: { id } }`, or
+`null` to clear it. Nested creates and updates are refused.
+
+```typescript
+await context.db.Post.update({
+  where: { id },
+  data: { author: { connect: { id: userId } } },
+})
 ```
 
 ## Generators
@@ -417,30 +445,31 @@ hooks: {
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { getContext } from '@opensaas/stack-core'
-import config from './opensaas.config'
+import { getContext } from '@/.opensaas/context'
 
 describe('Post access control', () => {
   it('allows author to update their post', async () => {
-    const context = await getContext(config, prisma, { userId: authorId })
-    const updated = await context.db.post.update({
+    const context = await getContext({ userId: authorId })
+    const updated = await context.db.Post.update({
       where: { id: postId },
       data: { title: 'New Title' },
     })
-    expect(updated).toBeTruthy()
     expect(updated?.title).toBe('New Title')
   })
 
   it('denies non-author from updating post', async () => {
-    const context = await getContext(config, prisma, { userId: otherUserId })
-    const updated = await context.db.post.update({
+    const context = await getContext({ userId: otherUserId })
+    const updated = await context.db.Post.update({
       where: { id: postId },
       data: { title: 'Hacked!' },
     })
-    expect(updated).toBeNull() // Silent failure
+    expect(updated).toBeNull()
   })
 })
 ```
+
+The denied case returns `null` rather than throwing — that is the silent-failure
+rule, and it is what the second test asserts.
 
 ## Examples
 
@@ -449,9 +478,9 @@ describe('Post access control', () => {
 
 ## Learn More
 
-- [API Reference](../../docs/API.md) - Complete API documentation
+- [Context API reference](https://stack.opensaas.au/docs/reference/context-api) - The full `context.db` surface
+- [Config API reference](https://stack.opensaas.au/docs/reference/config-api) - Every config and field option
 - [OpenSaas Stack](../../README.md) - Stack overview
-- [CLAUDE.md](../../CLAUDE.md) - Development guide
 
 ## License
 

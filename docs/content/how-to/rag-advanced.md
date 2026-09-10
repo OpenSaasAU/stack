@@ -18,16 +18,19 @@ When you add `ragPlugin()` to your config, it:
 4. **Injects an `afterTransaction` hook** into the lists that own those fields
 5. **Registers MCP tools** (if enabled)
 
+Concretely: given this plugin and this field,
+
 ```typescript
-// What happens internally
 ragPlugin({
   provider: openaiEmbeddings({ apiKey: '...' }),
 })
 
-// Plugin scans config and finds:
 content: searchable(text(), { provider: 'openai', dimensions: 1536 })
+```
 
-// Plugin injects the companion field:
+the plugin injects a companion field beside `content` equivalent to:
+
+```typescript
 contentEmbedding: embedding({
   sourceField: 'content',
   provider: 'openai',
@@ -62,9 +65,11 @@ Two things drive that:
 4. Otherwise it calls the provider and writes the vector and its metadata to the
    columns.
 
+Simplified, that is: the writer closes over the context `runtime` is handed and
+is published on `context.plugins`, and the hook looks it up rather than writing
+with its own context.
+
 ```typescript
-// Simplified. The writer closes over the context `runtime` is handed, and is
-// published on `context.plugins` for the hook to look up.
 runtime: (context) => ({
   [WRITE_EMBEDDING]: async (listName, id, fieldName, value) =>
     await writePluginOwnedField({ context, listName, id, fieldName, value }),
@@ -82,7 +87,6 @@ afterTransaction: async ({ status, operation, item, context }) => {
 
   const vector = await provider.embed(sourceText)
 
-  // The hook's own context is used to *find* the writer, never to write with.
   const write = embeddingWriter(context)
 
   await write(listName, item.id, fieldName, {
@@ -98,7 +102,8 @@ afterTransaction: async ({ status, operation, item, context }) => {
 }
 ```
 
-The indirection is load-bearing, and a plugin that collapses it breaks under
+The hook's own context is used to *find* the writer, never to write with. That
+indirection is load-bearing, and a plugin that collapses it breaks under
 `context.transaction()`. The `context` the write itself uses is the `AccessContext`
 `Plugin.runtime` receives as its **first** argument — not the `StackContext`
 `getContext` returns, and not `sudo()`, both of which carry no ORM handle and are
@@ -272,7 +277,6 @@ class CohereEmbeddingProvider {
   }
 }
 
-// Register the provider
 registerEmbeddingProvider('cohere', (config) => {
   if (!('apiKey' in config) || typeof config.apiKey !== 'string') {
     throw new Error('cohere embeddings require an apiKey')
@@ -284,7 +288,6 @@ registerEmbeddingProvider('cohere', (config) => {
   })
 })
 
-// Export helper
 export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConfig {
   return { type: 'cohere', ...config }
 }
@@ -313,6 +316,10 @@ export default config({
 
 ### Example: HuggingFace Provider
 
+HuggingFace's inference API has no batch endpoint for feature extraction, so
+`embedBatch` fans out over `embed`. `featureExtraction` also returns a nested
+shape for some models, so the vector is narrowed rather than cast:
+
 ```typescript
 // lib/providers/huggingface.ts
 import { HfInference } from '@huggingface/inference'
@@ -338,17 +345,18 @@ class HuggingFaceEmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
-    const response = await this.client.featureExtraction({
+    const response: unknown = await this.client.featureExtraction({
       model: this.model,
       inputs: text,
     })
-    return Array.from(response as number[])
+    if (!Array.isArray(response) || !response.every((n) => typeof n === 'number')) {
+      throw new Error(`${this.model} did not return a flat embedding vector`)
+    }
+    return response
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    // HuggingFace doesn't have batch API, so we process individually
-    const embeddings = await Promise.all(texts.map((text) => this.embed(text)))
-    return embeddings
+    return await Promise.all(texts.map((text) => this.embed(text)))
   }
 }
 
@@ -391,10 +399,12 @@ import { chunkText } from '@opensaas/stack-rag/runtime'
 
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
-  chunkSize: 1000, // Max characters per chunk
-  chunkOverlap: 200, // Overlap between chunks
+  chunkSize: 1000,
+  chunkOverlap: 200,
 })
 ```
+
+`chunkSize` and `chunkOverlap` are in characters here.
 
 **How it works:**
 
@@ -460,13 +470,15 @@ const chunks = chunkText(document, {
 
 #### 4. Token-Aware Chunking
 
-Respects token limits for embedding models. Best for API cost optimization.
+Respects token limits for embedding models. Best for API cost optimization. This
+is the one strategy where `chunkOverlap` counts tokens rather than characters,
+and the only one that reads `tokenLimit`.
 
 ```typescript
 const chunks = chunkText(document, {
   strategy: 'token-aware',
-  tokenLimit: 512, // Max tokens per chunk (not characters)
-  chunkOverlap: 50, // Overlap in tokens
+  tokenLimit: 512,
+  chunkOverlap: 50,
 })
 ```
 
@@ -541,14 +553,12 @@ const provider = createEmbeddingProvider({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Chunk long document
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
   chunkSize: 1000,
   chunkOverlap: 200,
 })
 
-// Generate embeddings for each chunk
 const chunkEmbeddings = await Promise.all(
   chunks.map(async (chunk, index) => {
     const embedding = await provider.embed(chunk.text)
@@ -562,12 +572,11 @@ const chunkEmbeddings = await Promise.all(
   }),
 )
 
-// Store chunks in database, all in one transaction
 await context.transaction(async (tx) => {
   for (const ce of chunkEmbeddings) {
-    await tx.db.DocumentChunk.create({
+    const row = await tx.db.DocumentChunk.create({
       data: {
-        documentId: documentId,
+        document: { connect: { id: documentId } },
         chunkIndex: ce.chunkIndex,
         content: ce.chunkText,
         embedding: {
@@ -583,9 +592,18 @@ await context.transaction(async (tx) => {
         endOffset: ce.endOffset,
       },
     })
+    if (row === null) {
+      throw new Error('Not allowed to write a document chunk')
+    }
   }
 })
 ```
+
+Every row goes in under one `context.transaction`, so a failure part-way leaves
+no half-chunked document behind. `create` returns `null` when the write is
+denied — throwing inside the callback rolls the whole transaction back. The
+`document` edge is written as `{ connect: { id } }`; writing the `documentId`
+column directly is equally valid, but spelling both in one payload is refused.
 
 ## Performance Optimization
 
@@ -617,11 +635,9 @@ contentEmbedding: embedding({
 - Declaring an `opclass` that disagrees with the field's `distanceFunction`
   fails `pnpm generate` rather than building an index the search cannot use.
 
-Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
-types, so a declaration derives the column type and the operator class and is
-not yet lowered to a `CREATE INDEX`
-([#1265](https://github.com/OpenSaasAU/stack/issues/1265)). Searches are correct
-without one; they are unindexed scans until the pack ships index support.
+No index is actually built today, so every search is an exact scan — correct,
+but unindexed. [Search exactness](/docs/reference/rag) has the pack limit behind
+that, and what a built index would change about how many rows come back.
 
 ### 2. Batch Embedding Generation
 
@@ -746,28 +762,33 @@ async function precomputeQueryEmbeddings() {
 
 ### Hybrid Search (Keyword + Semantic)
 
-Combine traditional keyword search with semantic search for best results.
+Combine traditional keyword search with semantic search for best results. Four
+steps: a `contains` read for keywords, a `nearest()` ranking for meaning, a merge
+keyed on id, then a weighted sort where `alpha` is the semantic weight on `[0, 1]`.
+
+`contains` is case-insensitive — it lowers to `ilike` — and the vocabulary has no
+`startsWith` or `mode`, so a keyword pass is `contains` or nothing.
 
 ```typescript
 // lib/hybrid-search.ts
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
+type Scored<TRow> = { item: TRow; keywordScore: number; semanticScore: number }
+
 export async function hybridSearch(
   query: string,
   options: { limit?: number; alpha?: number } = {},
 ) {
-  const { limit = 10, alpha = 0.7 } = options // alpha: semantic weight (0-1)
+  const { limit = 10, alpha = 0.7 } = options
   const context = await getContext()
 
-  // 1. Keyword search
   const keywordResults = await context.db.Article.where({
     OR: [{ title: { contains: query } }, { content: { contains: query } }],
   })
     .limit(limit * 2)
     .all()
 
-  // 2. Semantic search
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
@@ -778,15 +799,10 @@ export async function hybridSearch(
     limit: limit * 2,
   })
 
-  // 3. Merge results with weighted scoring
-  const scoreMap = new Map()
+  const scoreMap = new Map<string, Scored<(typeof keywordResults)[number]>>()
 
   keywordResults.forEach((item) => {
-    scoreMap.set(item.id, {
-      item,
-      keywordScore: 1.0, // Present in keyword results
-      semanticScore: 0,
-    })
+    scoreMap.set(item.id, { item, keywordScore: 1, semanticScore: 0 })
   })
 
   semanticResults.forEach((result) => {
@@ -802,7 +818,6 @@ export async function hybridSearch(
     }
   })
 
-  // 4. Calculate hybrid scores and sort
   const hybridResults = Array.from(scoreMap.values())
     .map((entry) => ({
       item: entry.item,
@@ -906,6 +921,10 @@ lists: {
 
 **Querying multiple embeddings:**
 
+Every field above names the same provider, so one query vector fits all three
+columns. A field on a different provider needs its own vector — the provider
+fixes the column's width, and a vector of the wrong length is refused.
+
 ```typescript
 import type { NearestMatch } from '@opensaas/stack-core'
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
@@ -920,16 +939,12 @@ async function multiVectorSearch(query: string) {
   })
   const queryVector = await provider.embed(query)
 
-  // Search each embedding field. Every field here names the same provider, so
-  // one query vector fits all three columns — a field on a different provider
-  // needs its own vector, because the provider fixes the column's width.
   const [titleResults, summaryResults, contentResults] = await Promise.all([
     context.db.Article.nearest('titleEmbedding', queryVector, { limit: 10 }),
     context.db.Article.nearest('summaryEmbedding', queryVector, { limit: 10 }),
     context.db.Article.nearest('contentEmbedding', queryVector, { limit: 10 }),
   ])
 
-  // Combine and deduplicate
   const scoreMap = new Map<string, { item: { id: string }; score: number }>()
 
   const addResults = (results: NearestMatch<{ id: string }>[], weight: number) => {
@@ -944,7 +959,7 @@ async function multiVectorSearch(query: string) {
     })
   }
 
-  addResults(titleResults, 1.5) // Higher weight for title matches
+  addResults(titleResults, 1.5)
   addResults(summaryResults, 1.2)
   addResults(contentResults, 1.0)
 
@@ -953,6 +968,8 @@ async function multiVectorSearch(query: string) {
     .slice(0, 10)
 }
 ```
+
+The weights above bias towards title matches, then summary, then body.
 
 ## Production Best Practices
 
@@ -1093,13 +1110,11 @@ import { writeFile } from 'fs/promises'
 export async function backupEmbeddings() {
   const context = await getContext()
 
-  const articles = await context.db.Article.findMany({
-    select: {
-      id: true,
-      title: true,
-      contentEmbedding: true,
-    },
-  })
+  const articles = await context.db.Article.select(
+    'id',
+    'title',
+    'contentEmbedding',
+  ).all()
 
   const backup = {
     timestamp: new Date().toISOString(),
@@ -1157,6 +1172,10 @@ describe('OpenAI Provider', () => {
 
 ### Integration Testing Search
 
+The seed runs through `sudo()`, so it does not depend on the fixture's session.
+The score assertion is on a cosine column, where the score is the raw cosine —
+`0.7` is a genuinely tight bound there:
+
 ```typescript
 // __tests__/integration/search.test.ts
 import { describe, it, expect, beforeAll } from 'vitest'
@@ -1165,8 +1184,6 @@ import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 describe('Semantic Search', () => {
   beforeAll(async () => {
-    // `sudo()` returns a context that bypasses access control, so the seed
-    // does not depend on the fixture's session.
     const context = (await getContext()).sudo()
 
     await context.db.Article.create({
@@ -1193,7 +1210,6 @@ describe('Semantic Search', () => {
 
     expect(matches.length).toBeGreaterThan(0)
     expect(matches[0].item.title).toContain('Machine Learning')
-    // A cosine column scores the raw cosine, so this is a genuinely tight bound.
     expect(matches[0].score).toBeGreaterThan(0.7)
   })
 })

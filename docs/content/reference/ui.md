@@ -240,6 +240,39 @@ The list view displays items in a table with search, sorting, and actions.
 - Pagination (coming soon)
 - Responsive table layout
 
+### Filtering and sorting
+
+The list view's Filter builder and the `?search=` query it serialises are one
+grammar. A token is `field:value`, optionally with a comparison
+(`views:>100`); a bare word is free text, OR-matched across every field that
+declares itself free-text. Tokens combine with implicit AND, and a token the
+list cannot honour — an unknown field, an unsupported operator, an empty value —
+degrades to free text rather than erroring.
+
+Each field type declares which operators it accepts. Text fields accept `eq`
+only, and lower it to `contains`. Numbers, decimals, big integers and timestamps
+accept `eq`, `gt`, `gte`, `lt` and `lte`.
+
+#### What filtering costs
+
+Three consequences of lowering these filters onto the secured read's closed
+`where` vocabulary. Each is a deliberate trade, not a defect:
+
+- **`contains` and text `eq` in filter URLs are case-insensitive.** The
+  vocabulary's `contains` lowers to `ilike`, and a text field's `eq` lowers to
+  `contains` — so `?search=title:Draft` also matches `draft`. There is no `mode`
+  option to make either case-sensitive.
+- **A to-many count filter other than presence degrades to free text.** Only
+  three count expressions map onto a relation quantifier: `orders:0` becomes
+  `none`, and `orders:>0` and `orders:>=1` both become `some`. Anything else —
+  `orders:3`, `orders:>=2`, `orders:<5` — has no quantifier to lower to, so it
+  falls through to the free-text pass.
+- **Sorting by a to-many count is gone.** `orderBy` takes this list's own scalar
+  columns; a relationship is refused. Order by a stored counter column if you
+  need that ordering.
+
+(ADR-0055.)
+
 ### ItemForm
 
 Forms for creating and editing items with validation and field-level access control.
@@ -439,18 +472,23 @@ Field components are used internally by forms but can also be used directly for 
 All field components share a common set of props:
 
 ```typescript
-interface FieldComponentProps {
+type FieldComponentProps = {
   name: string
-  value: any
-  onChange: (value: any) => void
+  value: unknown
+  onChange: (value: unknown) => void
   label: string
   error?: string
   disabled?: boolean
   required?: boolean
   mode?: 'read' | 'edit'
-  // Additional props from field.ui options
 }
 ```
+
+`value` and `onChange` are `unknown` on the shared type because each field type
+narrows them differently — a `TextField` takes a `string`, an `IntegerField` a
+`number`. A concrete component declares its own narrowed props and receives any
+extra keys the field's `ui` options carry. `FieldComponentProps` is exported
+from `@opensaas/stack-ui`.
 
 ### Example Usage
 
@@ -749,7 +787,6 @@ Create a custom field component:
 // components/ColorPickerField.tsx
 'use client'
 
-import { useState } from 'react'
 import type { FieldComponentProps } from '@opensaas/stack-ui/fields'
 
 export function ColorPickerField({
@@ -769,7 +806,7 @@ export function ColorPickerField({
       <input
         type="color"
         name={name}
-        value={value || '#000000'}
+        value={typeof value === 'string' ? value : '#000000'}
         onChange={(e) => onChange(e.target.value)}
       />
       {error && <p className="text-red-500">{error}</p>}
@@ -798,6 +835,8 @@ registerFieldComponent('color', ColorPickerField)
 
 ## See Also
 
-- [Custom Field Example](/examples/custom-field) - Complete example of custom field components
-- [Composable Dashboard Example](/examples/composable-dashboard) - Using standalone components
-- [Core Package Documentation](/packages/core) - Config and field types
+- [Composability guide](/docs/how-to/composability) - Building custom admin surfaces from these pieces
+- [Custom fields guide](/docs/how-to/custom-fields) - Writing your own field components
+- [Config API reference](/docs/reference/config-api) - Config and field types
+- [Custom Field Example](https://github.com/OpenSaasAU/stack/tree/main/examples/custom-field) - Complete example of custom field components
+- [Composable Dashboard Example](https://github.com/OpenSaasAU/stack/tree/main/examples/composable-dashboard) - Using standalone components

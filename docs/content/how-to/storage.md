@@ -115,6 +115,10 @@ mkdir -p public/uploads
 
 ### 4. Create Upload API Route
 
+The transformation set is chosen on the server rather than taken from the
+request: transformations cost CPU and storage, so letting a client name them is
+an amplification hole.
+
 ```typescript
 // app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server.js'
@@ -124,20 +128,19 @@ import { uploadFile, uploadImage, parseFileFromFormData } from '@opensaas/stack-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const storageProvider = formData.get('storage') as string
-    const fieldType = formData.get('fieldType') as 'file' | 'image'
+    const storageProvider = String(formData.get('storage') ?? '')
+    const fieldType = formData.get('fieldType') === 'image' ? 'image' : 'file'
 
-    // Parse file from FormData
     const fileData = await parseFileFromFormData(formData, 'file')
     if (!fileData) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    // Upload based on field type
     if (fieldType === 'image') {
-      const transformations = JSON.parse((formData.get('transformations') as string) || '{}')
       const metadata = await uploadImage(config, storageProvider, fileData, {
-        transformations,
+        transformations: {
+          thumbnail: { width: 100, height: 100, fit: 'cover' },
+        },
         validation: {
           maxFileSize: 5 * 1024 * 1024,
           acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],

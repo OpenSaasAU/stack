@@ -2,6 +2,10 @@
 
 Stack provides a comprehensive set of field types for building your schema. Each field type includes validation, access control, and UI configuration options.
 
+A field is the unit the whole stack delegates to. It decides its own validation schema, the column (or columns) it contributes to the generated contract, and the TypeScript faces a read and a write see — so adding a field type never means editing core. The exact members it owes are in [The Field Builder Contract](#the-field-builder-contract) below, and described member by member in the [Fields API reference](/docs/reference/fields-api).
+
+Field values are read through the composed read described in [Queries](/docs/concepts/queries) and gated by [Access Control](/docs/concepts/access-control); options that shape the generated schema at the list or config level live in the [Config API reference](/docs/reference/config-api).
+
 ## Core Field Types
 
 ### Text Field
@@ -145,50 +149,35 @@ fields: {
 - `db.isNullable`: Override nullability (default: based on `isRequired`)
 - `isIndexed`: Boolean or `'unique'` for indexing
 
-**Database Type:**
+**Database column:**
 
-Generates Prisma's `Decimal` type with precision and scale:
-
-```prisma
-price Decimal @db.Decimal(10, 2)
-```
-
-**TypeScript Type:**
-
-Uses `Decimal` from `decimal.js` for precise arithmetic:
+A Postgres `numeric` column carrying the declared precision and scale. In the generated contract module that is:
 
 ```typescript
-import type { Decimal } from 'decimal.js'
-
-// In your types
-price: Decimal | null
+price: field.column(numericColumn(10, 2))
 ```
 
-**Usage with Decimal.js:**
+**TypeScript type:**
+
+A **decimal string**, in both directions. The value never passes through JavaScript's `number`, which is the whole point of the field: `0.1 + 0.2` is a rounding error, `'0.1'` is not. Arithmetic is yours to do with a decimal library, constructed from the string the read hands back:
 
 ```typescript
 import { Decimal } from 'decimal.js'
 
-// Creating records
-const product = await context.db.product.create({
-  data: {
-    name: 'Widget',
-    price: '19.99', // Can use string
-    // price: 19.99,  // or number (converted to Decimal)
-  },
+const product = await context.db.Product.create({
+  data: { name: 'Widget', price: '19.99' },
 })
 
-// Performing calculations
-const total = product.price.times(quantity) // Precise multiplication
-const withTax = product.price.times('1.1') // Add 10% tax
+if (product) {
+  const unit = new Decimal(product.price)
+  const withTax = unit.times('1.1').toDecimalPlaces(2)
+}
 ```
 
-{% callout type="info" %}
-The decimal field type uses Prisma's `Decimal` type, which is backed by the `decimal.js` library. This ensures precise decimal arithmetic without floating-point errors, making it ideal for financial applications where accuracy is critical.
-{% /callout %}
+The `create` returns `null` when access is denied, so the value is null-checked before it is read — see [Access Control](/docs/concepts/access-control).
 
 {% callout type="warning" %}
-Always use string values for `validation.min`, `validation.max`, and `defaultValue` to maintain precision. Using JavaScript numbers may introduce floating-point errors.
+Always use string values for `validation.min`, `validation.max`, and `defaultValue`. A JavaScript number literal has already lost precision before the field sees it.
 {% /callout %}
 
 ### Checkbox Field
@@ -212,18 +201,15 @@ fields: {
 
 ### Timestamp Field
 
-Date/time field with auto-now support:
+Date/time field, stored as a Postgres `timestamptz`:
 
 ```typescript
 import { timestamp } from '@opensaas/stack-core/fields'
 
 fields: {
   publishedAt: timestamp(),
-  createdAt: timestamp({
+  openedAt: timestamp({
     defaultValue: { kind: 'now' },
-  }),
-  updatedAt: timestamp({
-    db: { updatedAt: true }, // Auto-update on changes
   }),
   scheduledAt: timestamp({
     isIndexed: true,
@@ -233,9 +219,14 @@ fields: {
 
 **Options:**
 
-- `defaultValue.kind`: `'now'` for current timestamp
-- `db.updatedAt`: Boolean - auto-update on record changes
+- `defaultValue`: `{ kind: 'now' }` for a database-side current timestamp, or a fixed `Date`
 - `isIndexed`: Boolean or `'unique'` for indexing (not indexed by default)
+
+Reads and writes exchange an **ISO 8601 string**, not a `Date` — the column's codec renders `timestamptz` as text so the value survives a round trip unchanged. Pass `new Date().toISOString()` where you would have passed a `Date`.
+
+#### Automatic `createdAt` / `updatedAt`
+
+There is no per-field auto-update option. A list gets both timestamps together, from `db.timestamps` in the [Config API](/docs/reference/config-api) — set at config level for every list, or per list to override it. It is off by default. `createdAt` takes a database `now()` default; `updatedAt` is maintained by the stack on write. Declaring your own `createdAt` or `updatedAt` field replaces the automatic column of that name.
 
 ### Calendar Day Field
 
@@ -269,35 +260,22 @@ fields: {
 - `db.isNullable`: Override nullability (default: based on `isRequired`)
 - `isIndexed`: Boolean or `'unique'` for indexing
 
-**Database Type:**
+**Database column:**
 
-Uses Prisma's `DateTime` type with the `@db.Date` attribute:
-
-- **PostgreSQL/MySQL**: Native DATE type (stores date only, no time)
-- **SQLite**: String representation in ISO8601 format
-
-**Generated Prisma schema:**
-
-```prisma
-birthDate  DateTime  @db.Date
-startDate  DateTime? @db.Date @default("2025-01-01") @map("start_date")
-eventDate  DateTime? @db.Date @index
-```
-
-**TypeScript Type:**
-
-Uses JavaScript's native `Date` object:
+A native Postgres `date` column — the date only, with no time and no timezone. In the generated contract module:
 
 ```typescript
-birthDate: Date
-startDate: Date | null
+birthDate: field.column(dateStringColumn)
 ```
+
+**TypeScript type:**
+
+A `YYYY-MM-DD` **string**, in both directions. Passing a `Date` is a compile error, which is deliberate: a `Date` carries a time and a timezone that a calendar day does not have, and converting one is where off-by-one bugs come from.
 
 **Usage Example:**
 
 ```typescript
-// Creating records with calendar day values
-const event = await context.db.event.create({
+const event = await context.db.Event.create({
   data: {
     name: 'Annual Conference',
     startDate: '2025-06-15',
@@ -305,15 +283,13 @@ const event = await context.db.event.create({
   },
 })
 
-// Querying by date
-const upcomingEvents = await context.db.event.findMany({
-  where: {
-    startDate: {
-      gte: '2025-01-01',
-    },
-  },
-})
+const upcoming = await context.db.Event.where({ startDate: { gte: '2025-01-01' } })
+  .orderBy({ startDate: 'asc' })
+  .limit(20)
+  .all()
 ```
+
+`create` returns `null` when access is denied and `.all()` returns `[]` — see [Queries](/docs/concepts/queries) for the full set of terminals and what each returns on denial.
 
 {% callout type="info" %}
 The calendarDay field is ideal for dates without time components like birth dates, event dates, deadlines, or publish dates. Use the `timestamp` field when you need both date and time information.
@@ -338,7 +314,7 @@ Always use ISO8601 date format (YYYY-MM-DD) when setting values. The field valid
 
 ### Password Field
 
-String field automatically excluded from reads:
+String field that hashes on write and never serialises its hash:
 
 ```typescript
 import { password } from '@opensaas/stack-core/fields'
@@ -359,8 +335,10 @@ fields: {
 - `validation.length.min`: Minimum length
 - `validation.length.max`: Maximum length
 
+A read returns a `HashedPassword` — a string subclass with a `compare(plaintext)` method — and serialisation (`JSON.stringify`, the admin UI) redacts it to `{ isSet: boolean }`, so the hash never reaches a browser.
+
 {% callout type="warning" %}
-Password fields are automatically excluded from all read operations for security.
+Redaction on serialisation is not an access denial. A `password` field is still readable by any caller `context.db` lets through; if the hash should never reach application code either, deny it with field-level `access.read` — see [Access Control](/docs/concepts/access-control).
 {% /callout %}
 
 ### Select Field
@@ -431,7 +409,11 @@ fields: {
 
 - `ref`: String in format `'ListName.fieldName'` (bidirectional) or `'ListName'` (list-only)
 - `many`: Boolean - true for one-to-many relationships
-- `db.foreignKey`: Boolean - controls which side stores the foreign key in one-to-one relationships
+- `db.foreignKey`: Boolean, or `{ map }` to rename the foreign key column — controls which side stores the foreign key in one-to-one relationships
+- `db.isNullable`: Boolean - makes the foreign key column required (FK-owning side only)
+- `db.onDelete` / `db.onUpdate`: `ReferentialAction` - what the database does to this row when the referenced row is deleted or its id changes
+
+A relationship is written by connecting an id, not by nesting a create: `{ author: { connect: { id } } }` on the foreign-key-owning side, or `null` to clear the edge. See [Queries](/docs/concepts/queries).
 
 #### One-to-One Relationships
 
@@ -456,70 +438,31 @@ Account: list({
 }),
 ```
 
-**Generated Prisma schema:**
-
-```prisma
-model User {
-  accountId String?  @unique
-  account   Account? @relation(fields: [accountId], references: [id])
-}
-
-model Account {
-  user User?
-}
-```
+`User` gets a `accountId` column and a `belongsTo` relation; `Account` gets the matching `hasOne`.
 
 **Default behavior:** If `db.foreignKey` is not specified, the foreign key is placed on the alphabetically first list. For example, in a `User ↔ Profile` relationship, `Profile` would store the `userId`.
 
 {% callout type="warning" %}
-You cannot set `db.foreignKey: true` on both sides of a one-to-one relationship. The generator will throw an error if you attempt this.
+You cannot set `db.foreignKey: true` on both sides of a one-to-one relationship. `opensaas generate` refuses the config if you do.
 {% /callout %}
 
-#### Extending Relationship Schema
+#### Referential Actions
 
-Relationship fields support `extendPrismaSchema` in their `db` config for granular modification of the generated Prisma schema. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions:
+What the database does when the referenced row goes is declared on the foreign-key-owning side, as a typed `db.onDelete` / `db.onUpdate` — there is no escape hatch that edits generated schema text. A self-referential parent link that should detach its children rather than take them with it:
 
 ```typescript
 fields: {
   parent: relationship({
     ref: 'Category.children',
-    db: {
-      foreignKey: true,
-      extendPrismaSchema: ({ fkLine, relationLine }) => ({
-        fkLine,
-        relationLine: relationLine.replace(
-          '@relation(',
-          '@relation(onDelete: SetNull, onUpdate: Cascade, '
-        ),
-      }),
-    },
+    db: { foreignKey: true, onDelete: 'setNull', onUpdate: 'cascade' },
   }),
   children: relationship({ ref: 'Category.parent', many: true }),
 }
 ```
 
-**Generated Prisma schema:**
+The five actions are `'cascade'`, `'restrict'`, `'noAction'`, `'setNull'` and `'setDefault'`, and they are re-emitted verbatim onto the generated foreign key. `'setNull'` writes NULL into the foreign key column, so pairing it with `db: { isNullable: false }` describes a constraint Postgres cannot satisfy.
 
-```prisma
-model Category {
-  id        String      @id @default(cuid())
-  name      String
-  parentId  String?     @unique @map("parent")
-  parent    Category?   @relation(onDelete: SetNull, onUpdate: Cascade, fields: [parentId], references: [id])
-  children  Category[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-}
-```
-
-The function receives:
-
-- `fkLine`: The foreign key field line (e.g., `"parentId String?"`), only present for single relationships that own the FK
-- `relationLine`: The relation field line (e.g., `"parent Category? @relation(...)"`)
-
-{% callout type="info" %}
-Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular field modifications and broad schema-wide changes.
-{% /callout %}
+Constraints spanning more than one field — a unique pair, a composite index — are a list-level concern rather than a field one: see `db.indexes` in the [Config API](/docs/reference/config-api).
 
 ### Virtual Field
 
@@ -559,8 +502,36 @@ fields: {
 **Options:**
 
 - `type`: TypeScript type string, import string, or type descriptor (see Custom Scalar Types below)
+- `needs`: The columns and relations the computation reads (see Declared Dependencies below)
 - `hooks.resolveOutput`: **Required** - Compute field value from other fields
 - `hooks.resolveInput`: Optional - Side effects during create/update
+
+#### Declared Dependencies (`needs`)
+
+A `resolveOutput` hook only sees what the read actually fetched. `needs` is how a computed field says what that must include, so the computation does not silently work in the admin UI (which reads everything) and return `undefined` from a narrowed read.
+
+```typescript
+fields: {
+  title: text({ validation: { isRequired: true } }),
+  lineItems: relationship({ ref: 'LineItem.order', many: true }),
+  summary: virtual({
+    type: 'string',
+    needs: ['title', 'lineItems'],
+    hooks: {
+      resolveOutput: ({ item }) => `${item.title} (${item.lineItems.length} items)`,
+    },
+  }),
+}
+```
+
+The rules are narrow on purpose:
+
+- Entries are **column keys** on this same list — stored columns and immediate relationship fields. No dotted paths, no reaching through a relation, never another computed field. `opensaas generate` refuses an entry that names none of those, and refuses a `needs` on a field with no `resolveOutput` hook, since nothing could consume it.
+- One hop, and **non-transitive**. A declared relation is fetched; what that relation's own computed fields need is that relation's business.
+- A dependency is **private plumbing, not an implicit include**. It is fetched wherever the field is computed — at the root of a read and at every nested level alike — and then **stripped from the result** unless the caller named it too. Adding or removing one changes this field's implementation, never the shape of every read of the list.
+- A relation dependency is scoped by the Access Filter exactly like a caller-named one. A session that cannot query the relation does not get it fetched, and the hook sees nothing in its place — so write the hook to tolerate that.
+
+The cost of computing on every read, and the shape of the item a hook is handed, are covered in [Hooks](/docs/concepts/hooks).
 
 #### Custom Scalar Types
 
@@ -628,14 +599,17 @@ The TypeScript type generator automatically collects and generates the necessary
 **Usage Example:**
 
 ```typescript
-// Query with virtual field
-const user = await context.db.user.findUnique({ where: { id } })
+const user = await context.db.User.where({ id }).first()
 
-console.log(user.fullName) // "John Doe"
+if (user) {
+  console.log(user.fullName)
+}
 ```
 
-{% callout type="warning" %}
-`context.db` reads do not honour Prisma's `select` argument — passing `select` logs a runtime warning and is otherwise a no-op. Narrow a read with `include` (relationships) or a fragment `query`. Virtual fields are computed via `resolveOutput` on every read regardless.
+`.first()` returns `null` when the row does not exist or the session cannot read it — one indistinguishable answer, so the result is null-checked before the computed value is read.
+
+{% callout type="info" %}
+`.select()` narrows a read to named fields of this list, computed ones included, and the engine honours it exactly — selecting a computed field widens the underlying query to fetch that field's declared dependencies, then strips them back out. Relations are not selectable; they arrive through `.include()`. See [Queries](/docs/concepts/queries).
 {% /callout %}
 
 ### JSON Field
@@ -667,6 +641,8 @@ fields: {
 - `ui.rows`: Number of textarea rows
 - `ui.formatted`: Format JSON with indentation
 
+Stored in a Postgres `jsonb` column; reads and writes exchange a JSON value (object, array, string, number, boolean or `null`). A required `json` field means non-null: an update may omit the key, but may not set it to `null`.
+
 ## Third-Party Field Types
 
 ### Rich Text Field
@@ -697,15 +673,16 @@ import { image } from '@opensaas/stack-storage/fields'
 
 fields: {
   avatar: image({
-    storage: 's3',
+    storage: 'images',
     validation: {
-      isRequired: true,
+      maxFileSize: 5 * 1024 * 1024,
+      acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     },
   }),
 }
 ```
 
-See the [Storage package documentation](/docs/reference/storage) for more details.
+`storage` names a provider declared in the config's `storage` block, not a provider type. See the [Storage package documentation](/docs/reference/storage) for more details.
 
 ## Common Field Options
 
@@ -723,11 +700,10 @@ text({
 })
 ```
 
-The `db.map` option adds a Prisma `@map` attribute to customize the column name in the database. This is useful for:
+The `db.map` option renames the underlying column without touching the field name. This is useful for:
 
 - **Legacy database compatibility**: Match existing column naming conventions
 - **Database naming standards**: Use snake_case in the database while using camelCase in code
-- **Multiple databases**: Support different column names across database providers
 
 **Example:**
 
@@ -744,17 +720,15 @@ fields: {
 }
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-model User {
-  firstName    String @map("first_name")
-  emailAddress String @unique @map("email")
-}
+```typescript
+firstName: field.text().column('first_name')
+emailAddress: field.text().optional().column('email').unique()
 ```
 
 {% callout type="info" %}
-The `db.map` option affects only the database column name. Your application code continues to use the field name defined in the config (e.g., `firstName`, `emailAddress`).
+The `db.map` option affects only the database column name. Your application code continues to use the field name defined in the config (e.g., `firstName`, `emailAddress`), and so does the Where vocabulary.
 {% /callout %}
 
 #### Relationship Foreign Key Mapping
@@ -770,31 +744,27 @@ author: relationship({
 })
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-model Post {
-  authorId String? @map("author_user_id")
-  author   User?   @relation(fields: [authorId], references: [id])
-}
+```typescript
+authorId: field.uuidNative().optional().column('author_user_id')
 ```
+
+The relation field stays `author` in your code and in the Where vocabulary; only the physical column moves.
 
 **Default behavior:** When `db.foreignKey` is `true` (without `map`), the foreign key column defaults to the field name:
 
 ```typescript
 author: relationship({
   ref: 'User.posts',
-  db: { foreignKey: true }, // Foreign key column defaults to 'author'
+  db: { foreignKey: true },
 })
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-model Post {
-  authorId String? @map("author")
-  author   User?   @relation(fields: [authorId], references: [id])
-}
+```typescript
+authorId: field.uuidNative().optional().column('author')
 ```
 
 {% callout type="info" %}
@@ -956,6 +926,10 @@ outputType: "import('@opensaas/stack-storage').ImageMetadata | null"
 Required on a virtual field and on a `kind: 'columns'` field: neither has a single column to be typed from, so `opensaas generate` refuses one that omits it. Optional everywhere else, where it is an override.
 
 `inputType` follows the same shape for the write face. `opensaas generate` never requires it: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it alongside `outputType` — every multi-column field in this repo does.
+
+### `needs`
+
+The column keys this field's `resolveOutput` hook cannot compute without — stored columns and immediate relations on the same list, one hop, non-transitive, and stripped from the result unless the caller named them too. It is the only supported way for a field to widen the read it is computed inside. Declaring it without a `resolveOutput` hook is a refusal at generate time, because nothing would consume the declaration. See [Declared Dependencies](#declared-dependencies-needs) above.
 
 ## Best Practices
 

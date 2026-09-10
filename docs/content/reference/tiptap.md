@@ -47,16 +47,24 @@ registerFieldComponent('richText', TiptapField)
 
 Import the registration file in your admin page to trigger the side-effect:
 
+The import is for its side effect only — it registers the component and exports
+nothing you use.
+
 ```typescript
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
-import config from '../../../opensaas.config'
-import '../../../lib/register-fields' // Side-effect import
+import { getContext, config } from '@/.opensaas/context'
+import '@/lib/register-fields'
 
 export default async function AdminPage() {
-  return <AdminUI config={config} />
+  return <AdminUI context={await getContext()} config={await config} />
 }
 ```
+
+`config` from the generated bundle is a promise — plugins resolve
+asynchronously — so it is awaited here. See the
+[UI reference](/docs/reference/ui) for the full `AdminUI` prop set, including
+the `serverAction` wrapper mutations go through.
 
 ### 3. Use in Config
 
@@ -69,10 +77,7 @@ import { text } from '@opensaas/stack-core/fields'
 import { richText } from '@opensaas/stack-tiptap/fields'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -101,17 +106,13 @@ pnpm generate
 
 `pnpm dev` applies it to the database.
 
-This creates a `Json` field in your database:
+`postgresql` is the only provider; the connection comes from `DATABASE_URL` (or
+the Dev database `opensaas dev` starts), not from a `db.url` key. See the
+[Config API reference](/docs/reference/config-api) for the complete `db` key
+list.
 
-```prisma
-model Article {
-  id        String   @id @default(cuid())
-  title     String
-  content   Json     // Tiptap JSON content
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
+A `richText()` field emits one `jsonb` column named after the field, holding the
+Tiptap document.
 
 ## Field Options
 
@@ -197,15 +198,16 @@ The Tiptap editor includes a formatting toolbar with:
 
 ## Database Operations
 
-Content is stored as JSON and can be queried using Prisma:
+Content is stored as JSON and read and written through the secured surface like
+any other field. `create` returns `null` when the write is denied, so check it
+before using the row:
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 
-// Create article with rich text
-const article = await context.db.article.create({
+const article = await context.db.Article.create({
   data: {
     title: 'My Article',
     content: {
@@ -220,13 +222,20 @@ const article = await context.db.article.create({
   },
 })
 
-// Query articles
-const articles = await context.db.article.findMany({
-  select: {
-    title: true,
-    content: true,
-  },
-})
+if (article === null) {
+  throw new Error('Not allowed to create an article')
+}
+```
+
+Reading is the composed read — `select()` narrows the columns, `all()` runs it,
+and a denied read answers `[]`:
+
+```typescript
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext()
+
+const articles = await context.db.Article.select('title', 'content').all()
 ```
 
 ## Advanced Usage
@@ -246,7 +255,6 @@ Article: list({
       },
     }),
     excerpt: richText({
-      // Optional field
       ui: {
         placeholder: 'Write a brief excerpt...',
         minHeight: 150,
@@ -474,8 +482,8 @@ React component for rendering the Tiptap editor.
 **Props:**
 
 - `name: string` - Field name (for form handling)
-- `value: any` - JSON content value from Tiptap
-- `onChange: (props: { editor: Editor }) => void` - Change handler
+- `value: UseEditorOptions['content']` - The Tiptap document, in the shape `useEditor` takes
+- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with `{ editor }`
 - `label: string` - Field label text
 - `error?: string` - Validation error message
 - `disabled?: boolean` - Disable editing

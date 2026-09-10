@@ -53,7 +53,6 @@ export default config({
     Article: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        // Use searchable() wrapper for automatic embedding generation
         content: searchable(text({ validation: { isRequired: true } }), {
           provider: 'openai',
           dimensions: 1536,
@@ -79,24 +78,28 @@ pnpm generate
 
 `pnpm dev` applies it to the database.
 
-Now create content (embeddings generated automatically):
+Now create content. You never write the embedding — the plugin derives it from
+`content` on the way in, and `create` returns `null` when access is denied:
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 
-// Embedding is automatically generated from content
-await context.db.Article.create({
+const article = await context.db.Article.create({
   data: {
     title: 'Introduction to AI',
     content: 'Artificial intelligence is...',
-    // No need to manually create embedding - it's automatic!
   },
 })
+
+if (article === null) {
+  throw new Error('Not allowed to create an article')
+}
 ```
 
-Perform semantic search:
+Perform semantic search. The ranking, the `minScore` bound, the Access Filter and
+Field Visibility all live inside the one `nearest()` query:
 
 ```typescript
 import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
@@ -105,15 +108,12 @@ import { getContext } from '@/.opensaas/context'
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate embedding for search query
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // Ranked inside one scoped query: the Access Filter, Field Visibility, the
-  // minScore bound and the ordering all live inside nearest().
   return await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
     minScore: 0.25,
@@ -336,9 +336,24 @@ A server with no pgvector fails the migration with Prisma's own error, naming
 the `pgvector` space, the missing `vector.control` file and SQL state `58P01`.
 The app's own tables are untouched, because each apply runs in one transaction.
 
-Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
-types, so an `index` declaration derives the column type and the operator class
-but is not yet lowered to a `CREATE INDEX`.
+#### Search exactness
+
+Two separate statements, both about how many rows a search returns.
+
+**A cost of ranking inside the access filter.** An approximate HNSW scan under a
+selective access filter can return fewer than `limit` rows: the index walks a
+bounded candidate list, and rows the session may not see are discarded from it
+rather than replaced. Under an **exact** scan the result is exact — `limit` rows
+whenever `limit` rows qualify. Under an approximate scan it is bounded by
+pgvector's iterative-scan budget instead (ADR-0045).
+
+**A known limit of the pack this ships against.**
+`@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index types, so an
+`index` declaration derives the column type and the operator class and nothing
+else — no `CREATE INDEX` is emitted. Every search today is therefore an exact
+scan, and the paragraph above describes what changes when the pack gains index
+support. Tracked as
+[#1265](https://github.com/OpenSaasAU/stack/issues/1265).
 
 ### Automatic Embedding Generation
 
@@ -364,18 +379,20 @@ The plugin stores a SHA-256 hash of the source text in the embedding metadata. T
 
 All semantic searches automatically respect your existing access control rules. This ensures users can only search content they have permission to view.
 
+A `where` predicate composes with the search; the session's own filter is ANDed
+onto it, so a user only ever ranks over articles they may read:
+
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
-// Search respects access control
 const context = await getContext({ userId: 'user-123' })
 
 const matches = await context.db.Article.where({
-  published: { equals: true }, // Additional filters
+  published: { equals: true },
 }).nearest('contentEmbedding', queryVector)
-
-// Users only see articles they have access to
 ```
+
+A denied read answers `[]`, the same value an empty scoped set gives.
 
 `nearest()` is a terminal on the secured read surface, so operation-level,
 filter-level and field-level access control are enforced exactly as they are for
@@ -390,27 +407,30 @@ its contents, so a session that cannot read the column is refused.
 
 ### RAG Plugin Configuration
 
-The `ragPlugin()` function accepts comprehensive configuration options:
+| Option           | Type                             | Default     | Description                                                                     |
+| ---------------- | -------------------------------- | ----------- | ------------------------------------------------------------------------------- |
+| `provider`       | `EmbeddingProviderConfig`        | —           | The single default provider                                                     |
+| `providers`      | `Record<string, …Config>`        | `{}`        | Named providers, when fields choose between them                                |
+| `chunking`       | `ChunkingConfig`                 | recursive   | Project-wide chunking defaults                                                  |
+| `enableMcpTools` | `boolean`                        | `true`      | Register a `semantic_search_<list>` MCP tool per searchable list                 |
+| `batchSize`      | `number`                         | `10`        | Texts per provider call during batch generation                                 |
+| `rateLimit`      | `number`                         | `100`       | Provider requests per minute                                                    |
+| `buildTime`      | `{ enabled, outputPath, … }`     | off         | Build-step embedding generation into a JSON index                               |
+
+Name either `provider` or `providers`; with `providers`, a field selects one by
+key.
 
 ```typescript
 ragPlugin({
-  // Single provider
-  provider: openaiEmbeddings({
-    apiKey: process.env.OPENAI_API_KEY!,
-    model: 'text-embedding-3-small',
-  }),
-
-  // OR multiple providers
   providers: {
-    openai: openaiEmbeddings({/* ... */}),
-    ollama: ollamaEmbeddings({/* ... */}),
+    openai: openaiEmbeddings({
+      apiKey: process.env.OPENAI_API_KEY!,
+      model: 'text-embedding-3-small',
+    }),
+    ollama: ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 }),
   },
-
-  // Enable MCP semantic search tools
   enableMcpTools: true,
-
-  // Default rate limiting
-  rateLimit: 100, // Requests per minute
+  rateLimit: 100,
 })
 ```
 
@@ -418,13 +438,22 @@ ragPlugin({
 
 #### searchable() Wrapper
 
+`searchable(baseField, options)` keeps the base field as authored and adds the
+companion embedding column beside it.
+
+| Option               | Type              | Default                     |
+| -------------------- | ----------------- | --------------------------- |
+| `provider`           | `string`          | the plugin's default        |
+| `dimensions`         | `number`          | the provider's, else `1536` |
+| `chunking`           | `ChunkingConfig`  | the plugin's                |
+| `embeddingFieldName` | `string`          | the field's name plus `Embedding` |
+
 ```typescript
 content: searchable(text(), {
-  provider: 'openai', // Provider to use
-  dimensions: 1536, // Vector dimensions
-  embeddingFieldName: 'customEmbedding', // Custom field name
+  provider: 'openai',
+  dimensions: 1536,
+  embeddingFieldName: 'customEmbedding',
   chunking: {
-    // Text chunking for long content, in tokens (ChunkingConfig)
     strategy: 'recursive',
     maxTokens: 250,
     overlap: 50,
@@ -434,14 +463,32 @@ content: searchable(text(), {
 
 #### embedding() Field
 
+| Option              | Type                                       | Default                     |
+| ------------------- | ------------------------------------------ | --------------------------- |
+| `sourceField`       | `string`                                   | —                           |
+| `provider`          | `string`                                   | the plugin's default        |
+| `dimensions`        | `number`                                   | the provider's, else `1536` |
+| `distanceFunction`  | `'cosine' \| 'l2' \| 'inner_product'`      | `'cosine'`                  |
+| `index`             | `{ method, opclass?, m?, efConstruction?, lists? }` | none               |
+| `allowManualWrites` | `boolean`                                  | `false`                     |
+| `chunking`          | `ChunkingConfig`                           | the plugin's                |
+| `autoGenerate`      | `boolean`                                  | `true` when `sourceField` is set |
+| `ui`                | `{ showVector?, showMetadata? }`           | `false` / `true`            |
+
+`dimensions` is a schema fact: changing it is a migration, and a declared value
+that disagrees with a statically known provider dimension fails `pnpm generate`.
+`allowManualWrites` defaults to `false`, which makes the builder attach
+`access: { create: () => false, update: () => false }` to the field — the
+embedding is a plugin output, so an ordinary write naming it is refused.
+
 ```typescript
 contentEmbedding: embedding({
-  sourceField: 'content', // Field to generate embeddings from
-  provider: 'openai', // Provider to use
-  dimensions: 1536, // Vector dimensions
-  autoGenerate: true, // Auto-generate on changes
+  sourceField: 'content',
+  provider: 'openai',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  autoGenerate: true,
   chunking: {
-    // Text chunking configuration, in tokens (ChunkingConfig)
     strategy: 'sentence',
     maxTokens: 125,
   },
@@ -608,7 +655,6 @@ import { getContext } from '@/.opensaas/context'
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate query embedding
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
@@ -659,33 +705,48 @@ const similar = await findSimilar({
   fieldName: 'contentEmbedding',
   itemId: 'article-123',
   limit: 5,
-  excludeSelf: true, // Don't include the source article
+  excludeSelf: true,
 })
 ```
 
 ### Text Chunking
 
+`chunkText` sizes in **characters** (`chunkSize`, `chunkOverlap`); only
+`'token-aware'` reads `tokenLimit`. This is the standalone runtime helper — the
+`chunking` option on a field is `ChunkingConfig`, which sizes in tokens.
+
+Recursive chunking respects paragraph and sentence boundaries:
+
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'
 
-// Recursive chunking (respects paragraph/sentence boundaries)
-const chunks = chunkText(longDocument, {
+const recursive = chunkText(longDocument, {
   strategy: 'recursive',
   chunkSize: 1000,
   chunkOverlap: 200,
 })
+```
 
-// Sentence-based chunking (preserves sentences)
-const chunks = chunkText(document, {
+Sentence chunking keeps sentences whole:
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
+
+const bySentence = chunkText(document, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
 })
+```
 
-// Token-aware chunking (for token limits)
-const chunks = chunkText(document, {
+Token-aware chunking bounds each chunk by an estimated token count instead:
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
+
+const byToken = chunkText(document, {
   strategy: 'token-aware',
-  tokenLimit: 500, // ~500 tokens per chunk
+  tokenLimit: 500,
   chunkOverlap: 50,
 })
 ```

@@ -79,8 +79,8 @@ import { uploadFile, uploadImage, parseFileFromFormData } from '@opensaas/stack-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const storageProvider = formData.get('storage') as string
-    const fieldType = formData.get('fieldType') as 'file' | 'image'
+    const storageProvider = String(formData.get('storage') ?? '')
+    const fieldType = formData.get('fieldType') === 'image' ? 'image' : 'file'
 
     const fileData = await parseFileFromFormData(formData, 'file')
     if (!fileData) {
@@ -348,15 +348,14 @@ file({
 
 ## Metadata Storage
 
-Files and images store metadata as JSON in your database. The Prisma schema uses the `Json` type:
+By default a `file()` or `image()` field is one `jsonb` column, named after the
+field, holding the whole metadata object. So a `User` with `avatar: image()` and
+`resume: file()` emits `avatar jsonb` and `resume jsonb`, nullable unless
+`db: { isNullable: false }` says otherwise.
 
-```prisma
-model User {
-  id     String  @id @default(cuid())
-  avatar Json?   // ImageMetadata
-  resume Json?   // FileMetadata
-}
-```
+Multi-column mode is the alternative, for adopting a live Keystone database in
+place: the field maps onto Keystone's existing per-part columns (seven for an
+image, three for a file) and assembles them into one metadata value on read.
 
 ### File Metadata
 
@@ -445,7 +444,7 @@ await deleteImage(config, imageMetadata)
 ### Validation Utilities
 
 ```typescript
-import { validateFile, formatFileSize, getMimeType } from '@opensaas/stack-storage/utils'
+import { validateFile, formatFileSize, getMimeType } from '@opensaas/stack-storage'
 
 const validation = validateFile(
   { size: file.size, name: file.name, type: file.type },
@@ -467,7 +466,7 @@ getMimeType('document.pdf') // "application/pdf"
 ### Parse FormData
 
 ```typescript
-import { parseFileFromFormData } from '@opensaas/stack-storage/utils'
+import { parseFileFromFormData } from '@opensaas/stack-storage/runtime'
 
 const fileData = await parseFileFromFormData(formData, 'file')
 if (fileData) {

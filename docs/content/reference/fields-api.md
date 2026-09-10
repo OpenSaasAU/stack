@@ -2,6 +2,8 @@
 
 Complete API reference for all built-in field types in Stack. For usage examples and guides, see the [Field Types guide](/docs/concepts/field-types).
 
+Reads in the examples below use the composed read described in [Queries](/docs/concepts/queries); every terminal on it can answer `null` or `[]` for an access denial, so results are null-checked before use ([Access Control](/docs/concepts/access-control)). List- and config-level schema options — `db.timestamps`, `db.indexes`, `db.idField` — are in the [Config API](/docs/reference/config-api).
+
 ## Core Field Types
 
 ### `text()`
@@ -25,7 +27,7 @@ text(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<string, string>
+  hooks?: FieldHooks<TTypeInfo>
   defaultValue?: string
 })
 ```
@@ -68,7 +70,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
 **Example:**
 
@@ -87,7 +89,7 @@ Custom database column name.
 
 **Purpose:**
 
-Customize the column name in the database using Prisma's `@map` attribute. Useful for:
+Rename the underlying column without changing the field name. Useful for:
 
 - **Legacy databases**: Match existing column names
 - **Naming conventions**: Use snake_case in database, camelCase in code
@@ -106,14 +108,14 @@ emailAddress: text({
 })
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-firstName    String @map("first_name")
-emailAddress String @unique @map("email")
+```typescript
+firstName: field.text().optional().column('first_name')
+emailAddress: field.text().optional().column('email').unique()
 ```
 
-The field names in your code (`firstName`, `emailAddress`) remain unchanged, but the database columns will use the mapped names.
+The field names in your code (`firstName`, `emailAddress`) remain unchanged, and so do the keys the Where vocabulary accepts. Only the database columns use the mapped names.
 
 ##### `ui.displayMode`
 
@@ -130,13 +132,13 @@ description: text({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `String`
+Postgres `text` (`field.text()`).
 
 #### TypeScript Type
 
-`string` (optional if not required)
+`string`, or `string | null` when the column is nullable.
 
 ---
 
@@ -158,7 +160,7 @@ integer(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<number, number>
+  hooks?: FieldHooks<TTypeInfo>
   defaultValue?: number
 })
 ```
@@ -213,7 +215,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
 **Example:**
 
@@ -223,13 +225,13 @@ rank: integer({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `Int`
+Postgres `int4` (`field.int()`) — a 32-bit integer. Use [`bigInt()`](#bigint) beyond that range.
 
 #### TypeScript Type
 
-`number` (optional if not required)
+`number`, or `number | null` when the column is nullable.
 
 ---
 
@@ -257,7 +259,7 @@ bigInt(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<bigint, bigint>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -310,15 +312,15 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
-#### Database Type
+#### Database column
 
-Prisma: `BigInt`
+Postgres `int8` (`field.bigint()`).
 
 #### TypeScript Type
 
-`bigint` (optional if not required)
+`bigint`, or `bigint | null` when the column is nullable.
 
 #### Write coercion
 
@@ -327,14 +329,14 @@ Create/update accept `bigint`, an integer `number`, or a numeric `string`, and a
 - A non-integer value (e.g. `1.5`) is rejected.
 - A `number` above `Number.MAX_SAFE_INTEGER` is rejected rather than silently coerced — by the time a `number` reaches that range it has already lost precision, so accepting it would reintroduce the exact defect this field exists to prevent. Pass a `bigint` literal or a numeric string for values beyond that range.
 
+A `bigint` literal is always safe; a `number` is safe below `Number.MAX_SAFE_INTEGER`; a numeric string is safe at any size.
+
 ```typescript
-await context.db.event.create({
-  data: {
-    occurredAtMs: 9007199254740993n, // bigint — always safe
-    // occurredAtMs: 1700000000000,  // number — safe below Number.MAX_SAFE_INTEGER
-    // occurredAtMs: '9223372036854775807', // string — safe at any size
-  },
+const event = await context.db.Event.create({
+  data: { occurredAtMs: 9007199254740993n },
 })
+
+if (!event) throw new Error('Not permitted to create an Event')
 ```
 
 #### Wire representation over MCP
@@ -372,7 +374,7 @@ decimal(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<Decimal, Decimal>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -501,7 +503,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
 **Example:**
 
@@ -513,84 +515,50 @@ accountNumber: decimal({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `Decimal` with precision and scale
+Postgres `numeric` carrying the declared precision and scale.
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-price Decimal @db.Decimal(10, 2)
+```typescript
+price: field.column(numericColumn(10, 2))
 ```
 
 #### TypeScript Type
 
-`import('decimal.js').Decimal` (from `decimal.js` library)
-
-**Import:**
-
-```typescript
-import type { Decimal } from 'decimal.js'
-```
+A **decimal string**, in both directions — the exact digits, never a JavaScript `number`. Reading `19.99` back gives `'19.99'`.
 
 #### Usage Example
+
+Arithmetic is the caller's, with a decimal library constructed from the string. `decimal.js` is one such library; the stack does not depend on it and does not return its type.
 
 ```typescript
 import { Decimal } from 'decimal.js'
 
-// Creating records
-const product = await context.db.product.create({
-  data: {
-    name: 'Widget',
-    price: '19.99', // Can use string
-    // price: 19.99,  // or number (converted to Decimal)
-  },
+const product = await context.db.Product.create({
+  data: { name: 'Widget', price: '19.99' },
 })
 
-// Performing precise calculations
-const quantity = 3
-const subtotal = product.price.times(quantity) // Decimal: 59.97
-const tax = subtotal.times('0.1') // Decimal: 5.997
-const total = subtotal.plus(tax) // Decimal: 65.967
-
-// Rounding for currency
-const totalCents = total.toDecimalPlaces(2) // Decimal: 65.97
-
-// Converting to string/number
-const priceString = product.price.toString() // '19.99'
-const priceNumber = product.price.toNumber() // 19.99
+if (product) {
+  const subtotal = new Decimal(product.price).times(3)
+  const total = subtotal.plus(subtotal.times('0.1')).toDecimalPlaces(2)
+  await context.db.Order.create({ data: { total: total.toFixed(2) } })
+}
 ```
 
-#### Decimal.js API
+The `create` returns `null` on an access denial, so the result is checked before the value is read.
 
-The `Decimal` type from `decimal.js` provides precise arithmetic operations:
-
-**Common methods:**
-
-- `.plus(n)` - Addition
-- `.minus(n)` - Subtraction
-- `.times(n)` - Multiplication
-- `.div(n)` - Division
-- `.toDecimalPlaces(dp)` - Round to decimal places
-- `.toString()` - Convert to string
-- `.toNumber()` - Convert to number (may lose precision)
-- `.lessThan(n)` - Comparison
-- `.greaterThan(n)` - Comparison
-- `.equals(n)` - Equality check
-
-**See:** [decimal.js documentation](https://github.com/MikeMcl/decimal.js/) for complete API
-
-{% callout type="info" %}
-The decimal field type uses Prisma's `Decimal` type, which is backed by the `decimal.js` library. This ensures precise decimal arithmetic without floating-point errors, making it ideal for financial applications where accuracy is critical.
+{% callout type="warning" %}
+The write face is a string. Passing a JavaScript `number` where a price belongs reintroduces exactly the rounding error this field exists to prevent — the literal `19.99` is already inexact before the field sees it.
 {% /callout %}
 
 #### Key Features
 
-1. **Precision**: No floating-point errors (unlike JavaScript's `number`)
+1. **Precision**: No floating-point errors — the value never becomes a JavaScript `number`
 2. **Configurable**: Set precision and scale for your use case
 3. **Validation**: String-based min/max for precise bounds
-4. **Database-Native**: Uses native `DECIMAL` type in PostgreSQL/MySQL
-5. **Type-Safe**: Full TypeScript support with `Decimal` type
+4. **Database-native**: A real Postgres `numeric` column, not a text approximation
 
 #### Use Cases
 
@@ -614,7 +582,7 @@ checkbox(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<boolean, boolean>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -633,19 +601,19 @@ isPublished: checkbox({ defaultValue: false })
 emailVerified: checkbox({ defaultValue: true })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `Boolean`
+Postgres `bool` (`field.boolean()`).
 
 #### TypeScript Type
 
-`boolean` (optional if no default value)
+`boolean`, or `boolean | null` when the column is nullable (a `defaultValue` makes it non-nullable).
 
 ---
 
 ### `timestamp()`
 
-Date/time field with automatic timestamp support.
+Date/time field stored as a Postgres `timestamptz`.
 
 ```typescript
 import { timestamp } from '@opensaas/stack-core/fields'
@@ -657,7 +625,7 @@ timestamp(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<Date, Date>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -677,12 +645,14 @@ Default timestamp value.
 **Example:**
 
 ```typescript
-createdAt: timestamp({
+openedAt: timestamp({
   defaultValue: { kind: 'now' },
 })
 
 publishedAt: timestamp()
 ```
+
+There is no `db.updatedAt` option — a field never maintains itself on write. Automatic `createdAt`/`updatedAt` columns come from `db.timestamps` on the list or the config; see the [Config API](/docs/reference/config-api).
 
 ##### `isIndexed`
 
@@ -696,7 +666,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
 `timestamp` does not default to indexed — an explicit `isIndexed: true` is required, even for a field commonly used as a sort key, so an existing config's generated schema never changes without an intentional edit.
 
@@ -708,20 +678,25 @@ publishedAt: timestamp({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `DateTime`
+Postgres `timestamptz` (`field.column(timestamptzStringColumn)`).
 
 #### TypeScript Type
 
-`Date` (optional if no default value)
+An **ISO 8601 string**, not a `Date`. The column's codec renders `timestamptz` as text in both directions, so a value survives the round trip byte for byte instead of through a local-timezone `Date`. Nullable unless `defaultValue: { kind: 'now' }` is set.
+
+```typescript
+const post = await context.db.Post.where({ id }).first()
+
+if (post?.publishedAt) {
+  const when = new Date(post.publishedAt)
+}
+```
 
 #### Validation
 
-Accepts:
-
-- `Date` objects
-- ISO 8601 datetime strings
+The declared write type is the ISO 8601 string. The runtime validator also accepts a `Date` object, so a value that reaches a write through untyped code still passes.
 
 ---
 
@@ -746,7 +721,7 @@ calendarDay(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<Date, Date>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -798,7 +773,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column.
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction.
 
 **Example:**
 
@@ -838,24 +813,28 @@ endDate: calendarDay({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `DateTime` with `@db.Date` attribute
+A native Postgres `date` — the date only, with no time and no timezone.
 
-- **PostgreSQL/MySQL**: Native `DATE` type (date only, no time)
-- **SQLite**: String representation in ISO8601 format
+**Generated contract module:**
 
-**Generated Prisma:**
-
-```prisma
-birthDate  DateTime  @db.Date
-startDate  DateTime? @db.Date @default("2025-01-01")
-eventDate  DateTime? @db.Date @index
+```typescript
+birthDate: field.column(dateStringColumn)
+startDate: field.column(dateStringColumn).optional().default('2025-01-01')
 ```
 
 #### TypeScript Type
 
-`Date` (nullable if not required)
+A `YYYY-MM-DD` **string** in both directions, nullable if not required. Passing a `Date` is a compile error, deliberately: a `Date` carries a time and a timezone a calendar day does not have, and the conversion between them is where off-by-one bugs live.
+
+```typescript
+const person = await context.db.Person.where({ id }).first()
+
+if (person) {
+  const birthDate: string = person.birthDate
+}
+```
 
 #### Validation
 
@@ -882,10 +861,10 @@ eventDate  DateTime? @db.Date @index
 
 | Feature            | `calendarDay()`           | `timestamp()`               |
 | ------------------ | ------------------------- | --------------------------- |
-| **Time component** | No (date only)            | Yes (date + time)           |
-| **Database type**  | DATE (PostgreSQL/MySQL)   | DATETIME/TIMESTAMP          |
-| **Input format**   | ISO8601 date (YYYY-MM-DD) | Date object or ISO datetime |
-| **Use case**       | Birth dates, events       | Created/updated timestamps  |
+| **Time component** | No (date only)            | Yes (date + time + zone)    |
+| **Database column**| `date`                    | `timestamptz`               |
+| **TypeScript type**| `YYYY-MM-DD` string       | ISO 8601 string             |
+| **Use case**       | Birth dates, events       | Points in time              |
 | **Storage size**   | Smaller (date only)       | Larger (includes time)      |
 
 ---
@@ -905,7 +884,7 @@ password(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<string, HashedPassword>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -937,34 +916,31 @@ password: password({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `String`
+Postgres `text` (`field.text()`), holding the hash.
 
 #### TypeScript Type
 
-`string` for input, `HashedPassword` for output
+`string` for input, `HashedPassword` for output — declared with the field's `outputType`, since the column's own codec would type it as a plain `string`.
 
 #### Usage Example
 
+The write is hashed by the field's own `resolveInput`; the read is wrapped by its `resolveOutput`. Neither is something the caller arranges.
+
 ```typescript
-// Creating a user - password is automatically hashed
-const user = await context.db.user.create({
-  data: {
-    email: 'user@example.com',
-    password: 'plaintextPassword', // Hashed before storage
-  },
+await context.db.User.create({
+  data: { email: 'user@example.com', password: 'plaintextPassword' },
 })
 
-// Authenticating - use the compare() method
-const user = await context.db.user.findUnique({
-  where: { email: 'user@example.com' },
-})
+const user = await context.db.User.where({ email: 'user@example.com' }).first()
 
 if (user && (await user.password.compare('plaintextPassword'))) {
-  // Password is correct
+  // the password matches
 }
 ```
+
+`.first()` answers `null` both for a row that does not exist and for one this session cannot read, so the result is checked before `password` is touched.
 
 #### HashedPassword API
 
@@ -1006,7 +982,7 @@ select(options: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<string, string>
+  hooks?: FieldHooks<TTypeInfo>
 })
 ```
 
@@ -1081,7 +1057,7 @@ Database index configuration.
 - `'unique'` - Create unique index (enforces uniqueness)
 - `false` or omitted - No index
 
-`isIndexed` is sugar for an unnamed single-column `@@index`/`@@unique`. For a named constraint (e.g. adopting a live table's existing constraint name), a `sort` direction, or a constraint spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. Well-defined under both the default string column and a native-enum column (`db: { type: 'enum' }`).
+`isIndexed` is sugar for an unnamed single-column index or unique constraint. For a named constraint (e.g. adopting a live table's existing constraint name), or one spanning more than one field, use the list's [`db.indexes`](/docs/reference/config-api#dbindexes) instead — the two must not both target the same column. An index column carries no sort direction. Well-defined under both the default string column and a native-enum column (`db: { type: 'enum' }`).
 
 **Example:**
 
@@ -1092,13 +1068,13 @@ status: select({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `String`
+Postgres `text` by default. With `db: { type: 'enum' }`, a native Postgres enum type named `<List><Field>` (override with `db.enumName`) whose values must be valid identifiers.
 
 #### TypeScript Type
 
-Union of option values (e.g., `'draft' | 'published' | 'archived'`)
+Union of option values (e.g., `'draft' | 'published' | 'archived'`), declared through the field's `outputType`/`inputType` so it holds under either column type.
 
 ---
 
@@ -1112,9 +1088,12 @@ import { relationship } from '@opensaas/stack-core/fields'
 relationship(options: {
   ref: string
   many?: boolean
+  isIndexed?: boolean | 'unique'
   db?: {
-    foreignKey?: boolean
+    foreignKey?: boolean | { map?: string }
     isNullable?: boolean
+    onDelete?: ReferentialAction
+    onUpdate?: ReferentialAction
   }
   ui?: {
     displayMode?: 'select' | 'cards'
@@ -1214,18 +1193,14 @@ Account: list({
 })
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-model User {
-  accountId String?  @unique
-  account   Account? @relation(fields: [accountId], references: [id])
-}
-
-model Account {
-  user User?
-}
+```typescript
+accountId: field.uuidNative().optional().unique()
+account: rel.belongsTo(() => models.Account, { from: 'accountId', to: 'id' })
 ```
+
+`Account` gets the matching `rel.hasOne(() => models.User, { by: 'accountId' })` and no column of its own.
 
 **Default behavior:** If `db.foreignKey` is not specified on either side, the foreign key is placed on the alphabetically first list. For example:
 
@@ -1253,10 +1228,11 @@ Controls DB-level nullability of the foreign key column and its relation field, 
 
 **Example:**
 
+Every session genuinely belongs to a user, so the foreign key is made required:
+
 ```typescript
 Session: list({
   fields: {
-    // Every session genuinely belongs to a user — make the FK required
     user: relationship({
       ref: 'User.sessions',
       db: { isNullable: false },
@@ -1265,13 +1241,45 @@ Session: list({
 })
 ```
 
-**Generated Prisma schema:**
+**Generated contract module:**
 
-```prisma
-model Session {
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-}
+```typescript
+userId: field.uuidNative()
+user: rel.belongsTo(() => models.User, { from: 'userId', to: 'id' })
+```
+
+##### `db.onDelete` / `db.onUpdate`
+
+What the database does to this row when the referenced row is deleted, or when its id changes.
+
+**Type:** `ReferentialAction`
+
+```typescript
+type ReferentialAction = 'cascade' | 'restrict' | 'noAction' | 'setNull' | 'setDefault'
+```
+
+**Constraints:**
+
+- Only meaningful on the foreign-key-owning side — the many side owns no foreign key to act on
+- `'setNull'` writes NULL into the foreign key column, so it describes a constraint Postgres cannot satisfy alongside `db: { isNullable: false }`
+
+**Example:**
+
+```typescript
+Profile: list({
+  fields: {
+    user: relationship({
+      ref: 'User.profile',
+      db: { foreignKey: true, onDelete: 'cascade' },
+    }),
+  },
+})
+```
+
+**Generated contract module:**
+
+```typescript
+constraints.foreignKey(cols.userId, model_User.refs.id, { index: false, onDelete: 'cascade' })
 ```
 
 ##### `ui.displayMode`
@@ -1336,14 +1344,35 @@ Profile: list({
 })
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: Foreign key relationship with `@relation` directive
+A `uuid` foreign key column on the owning side, plus a relation on both sides. The many side contributes no column.
 
 #### TypeScript Type
 
-- `many: false` - `string` (ID of related item, optional)
-- `many: true` - `string[]` (array of IDs, optional)
+**Arity decides what a read hands back, not foreign-key nullability**:
+
+- `many: false` — the related row or `null`, once the read names it with `.include()`
+- `many: true` — an array of related rows, empty when there are none
+
+A relation is not on the row unless the read asked for it. Every to-one read off an included row is a null check.
+
+#### Write face
+
+A relationship is written by connecting an id, on the foreign-key-owning side only:
+
+```typescript
+await context.db.Post.create({
+  data: { title: 'Hello', author: { connect: { id: authorId } } },
+})
+
+await context.db.Post.update({
+  where: { id: postId },
+  data: { author: null },
+})
+```
+
+`null` clears the edge — there is no `disconnect`, and nested `create`/`update`/`delete`/`connectOrCreate`/`set` are refused. Spelling one edge both ways (`author` and `authorId` in the same write) is an error. A `connect` target the caller cannot read makes the whole write return `null`, one indistinguishable answer. See [Queries](/docs/concepts/queries).
 
 ---
 
@@ -1365,7 +1394,7 @@ json(options?: {
     [key: string]: unknown
   }
   access?: FieldAccess
-  hooks?: FieldHooks<unknown, unknown>
+  hooks?: FieldHooks<TTypeInfo>
   defaultValue?: unknown
 })
 ```
@@ -1412,9 +1441,12 @@ metadata: json({
     formatted: true,
   },
 })
+```
 
-// Creating with JSON data
-const item = await context.db.item.create({
+A write takes a JSON value; a read returns the parsed value, not a string.
+
+```typescript
+await context.db.Item.create({
   data: {
     metadata: {
       tags: ['tag1', 'tag2'],
@@ -1423,20 +1455,22 @@ const item = await context.db.item.create({
   },
 })
 
-// Querying returns parsed JSON
-const item = await context.db.item.findUnique({
-  where: { id: '...' },
-})
-console.log(item.metadata.tags) // ['tag1', 'tag2']
+const item = await context.db.Item.where({ id: itemId }).first()
+
+if (item && typeof item.metadata === 'object' && item.metadata !== null) {
+  // narrow the JSON value before reading into it
+}
 ```
 
-#### Database Type
+#### Database column
 
-Prisma: `Json` (native JSON in PostgreSQL/MySQL, TEXT in SQLite)
+Postgres `jsonb` (`field.json()`).
 
 #### TypeScript Type
 
-`unknown` (requires type assertion or type guard when using)
+A JSON value — object, array, string, number, boolean or `null`. It is deliberately not narrowed to your shape, so narrow it with a type guard or a schema at the point of use rather than asserting.
+
+A required `json` field means non-null: an update may omit the key, but may not set it to `null`.
 
 ---
 
@@ -1448,24 +1482,10 @@ Computed field that is not stored in the database.
 import { virtual } from '@opensaas/stack-core/fields'
 
 virtual(options: {
-  type: string
-  hooks: {
-    resolveOutput: (args: {
-      operation: 'query'
-      value: unknown
-      item: TItem
-      listKey: string
-      fieldName: string
-      context: AccessContext
-    }) => unknown
-    resolveInput?: (args: {
-      operation: 'create' | 'update'
-      inputValue: unknown
-      item?: TItem
-      listKey: string
-      fieldName: string
-      context: AccessContext
-    }) => Promise<unknown> | unknown
+  type: TypeDescriptor
+  needs?: string[]
+  hooks: FieldHooks<TTypeInfo> & {
+    resolveOutput: NonNullable<FieldHooks<TTypeInfo>['resolveOutput']>
   }
   ui?: {
     [key: string]: unknown
@@ -1473,6 +1493,8 @@ virtual(options: {
   access?: FieldAccess
 })
 ```
+
+`type` is converted into the field's `outputType`; a virtual field has no column for the contract to type it from, so it is required. `resolveOutput` is required too — `virtual()` throws at config time without it.
 
 #### Options
 
@@ -1562,9 +1584,29 @@ The TypeScript type generator automatically collects and generates the necessary
 - **Custom data structures**: Return domain-specific types from virtual fields
 - **Third-party libraries**: Integrate types from any npm package
 
+##### `needs`
+
+The columns and relations the computation reads. See [`needs`](#needs) under Field Builder Contract for the full rules; on a virtual field it is the ordinary way to widen the read.
+
+**Type:** `string[]`
+
+**Example:**
+
+```typescript
+byline: virtual({
+  type: 'string',
+  needs: ['title', 'author'],
+  hooks: {
+    resolveOutput: ({ item }) => `${item.title} by ${item.author?.name ?? 'unknown'}`,
+  },
+})
+```
+
+`opensaas generate` refuses an entry that names nothing on the list, names a computed field, or reaches through a relation with a dotted path — and refuses a `needs` on a field with no `resolveOutput` hook.
+
 ##### `hooks.resolveOutput` (required)
 
-Compute the field value from other fields in the item.
+Compute the field value.
 
 **Type:** Function
 
@@ -1572,10 +1614,10 @@ Compute the field value from other fields in the item.
 
 - `operation` - Always `'query'` for virtual fields
 - `value` - Database value (always `undefined` for virtual fields)
-- `item` - The full item with all selected fields
+- `item` - Exactly this field's declared dependency set plus the list's system fields. Reading a column the field did not declare in `needs` is a compile error
 - `listKey` - The list name (e.g., `'User'`)
 - `fieldName` - The field name (e.g., `'fullName'`)
-- `context` - Access context with session and db
+- `context` - The access context
 
 **Returns:** Computed value of the type specified in `type` option
 
@@ -1584,30 +1626,20 @@ Compute the field value from other fields in the item.
 ```typescript
 displayName: virtual({
   type: 'string',
+  needs: ['name', 'email'],
   hooks: {
-    resolveOutput: ({ item }) => {
-      return `${item.name} (${item.email})`
-    },
+    resolveOutput: ({ item }) => `${item.name} (${item.email})`,
   },
 })
 ```
 
 ##### `hooks.resolveInput` (optional)
 
-Perform side effects during create/update operations.
+Perform side effects during create/update operations. The return value is ignored — a virtual field stores nothing.
 
 **Type:** Function (optional)
 
-**Parameters:**
-
-- `operation` - Either `'create'` or `'update'`
-- `inputValue` - Input value provided (if any)
-- `item` - Existing item (undefined for create)
-- `listKey` - The list name
-- `fieldName` - The field name
-- `context` - Access context
-
-**Returns:** `undefined` (return value is ignored, use for side effects only)
+**Parameters:** the ordinary field `resolveInput` arguments — `{ listKey, fieldKey, operation, inputData, item, resolvedData, context }`. See [Hooks](/docs/concepts/hooks).
 
 **Use cases:**
 
@@ -1621,12 +1653,11 @@ Perform side effects during create/update operations.
 syncToExternal: virtual({
   type: 'boolean',
   hooks: {
-    resolveInput: async ({ item, operation }) => {
-      // Side effect: sync to external API
+    resolveInput: async ({ operation, item }) => {
       if (operation === 'update') {
         await syncToExternalAPI(item)
       }
-      return undefined // Return value is ignored
+      return undefined
     },
     resolveOutput: () => true,
   },
@@ -1635,11 +1666,10 @@ syncToExternal: virtual({
 
 #### Key Characteristics
 
-1. **No Database Storage**: Virtual fields do not create database columns
-2. **On-Demand Computation**: Only computed when explicitly selected/included
-3. **Type Safety**: TypeScript type is generated from `type` option
-4. **Performance**: Efficient - only computed for requested fields
-5. **Flexible**: Can combine multiple fields or perform complex computations
+1. **No database storage**: a virtual field contributes no column — its contract descriptor is `kind: 'computed'`
+2. **Computed wherever it is returned**: at the root of a read and at every nested level alike, not only when named
+3. **Type safety**: the TypeScript face comes from `type`, which becomes the field's `outputType`
+4. **Explicit dependencies**: `needs` is the only way the computation widens the read it runs inside
 
 #### Usage Examples
 
@@ -1652,36 +1682,43 @@ User: list({
     lastName: text(),
     fullName: virtual({
       type: 'string',
+      needs: ['firstName', 'lastName'],
       hooks: {
         resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
       },
     }),
   },
 })
-
-// Usage
-const user = await context.db.user.findUnique({ where: { id } })
-console.log(user.fullName) // "John Doe" — computed via resolveOutput on every read
 ```
 
-##### Complex Computed Value
+Reading it back:
+
+```typescript
+const user = await context.db.User.where({ id }).first()
+
+if (user) {
+  console.log(user.fullName)
+}
+```
+
+##### Computed From a Relation
 
 ```typescript
 Order: list({
   fields: {
-    items: json(), // Array of { price: number, quantity: number }
-    total: virtual({
+    lineItems: relationship({ ref: 'LineItem.order', many: true }),
+    itemCount: virtual({
       type: 'number',
+      needs: ['lineItems'],
       hooks: {
-        resolveOutput: ({ item }) => {
-          if (!item.items || !Array.isArray(item.items)) return 0
-          return item.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-        },
+        resolveOutput: ({ item }) => item.lineItems.length,
       },
     }),
   },
 })
 ```
+
+`lineItems` is fetched because `itemCount` declared it, scoped by the Access Filter exactly as a caller-named include would be, and stripped from the result unless the caller named it too.
 
 ##### Write Side Effects
 
@@ -1693,8 +1730,7 @@ Post: list({
     searchIndexSync: virtual({
       type: 'boolean',
       hooks: {
-        resolveInput: async ({ item, operation }) => {
-          // Update search index when post is created or updated
+        resolveInput: async ({ operation, item }) => {
           if (operation === 'create' || operation === 'update') {
             await updateSearchIndex(item)
           }
@@ -1707,29 +1743,13 @@ Post: list({
 })
 ```
 
-#### Important Notes
+#### Database column
 
-{% callout type="warning" %}
-`context.db` reads do not honour Prisma's `select` argument — passing `select` logs a runtime warning and is otherwise a no-op. Narrow a read with `include` (relationships) or a fragment `query`. Virtual fields are always computed via `resolveOutput` on every read.
-{% /callout %}
-
-```typescript
-// Virtual field is computed on every read — no select needed
-const user = await context.db.user.findUnique({ where: { id } })
-// user.fullName is "John Doe"
-```
-
-{% callout type="info" %}
-The `resolveOutput` hook must be provided. Virtual fields cannot exist without a computation function.
-{% /callout %}
-
-#### Database Type
-
-None - virtual fields do not create database columns
+None — a virtual field creates no column.
 
 #### TypeScript Type
 
-Type specified in `type` option
+The type given in `type`, which the builder converts into the field's `outputType`.
 
 #### Validation
 
@@ -1781,47 +1801,21 @@ internalNotes: text({
 
 Field-level hooks for data transformation and side effects.
 
-**Type:** `FieldHooks<TInput, TOutput>`
+**Type:** `FieldHooks<TTypeInfo, TFieldKey>` — the field's slot is typed from the generated `Lists.<List>.TypeInfo`, so `item` and `resolvedData` are the real shapes for that list.
 
 ```typescript
-type FieldHooks<TInput, TOutput> = {
-  resolveInput?: (args: {
-    operation: 'create' | 'update'
-    inputValue: TInput | undefined
-    item?: TItem
-    listKey: string
-    fieldName: string
-    context: AccessContext
-  }) => Promise<TInput | undefined> | TInput | undefined
-
-  resolveOutput?: (args: {
-    operation: 'query'
-    value: TInput | undefined
-    item: TItem
-    listKey: string
-    fieldName: string
-    context: AccessContext
-  }) => TOutput | undefined
-
-  beforeOperation?: (args: {
-    operation: 'create' | 'update' | 'delete'
-    resolvedValue: TInput | undefined
-    item?: TItem
-    listKey: string
-    fieldName: string
-    context: AccessContext
-  }) => Promise<void> | void
-
-  afterOperation?: (args: {
-    operation: 'create' | 'update' | 'delete' | 'query'
-    value: TInput | TOutput | undefined
-    item: TItem
-    listKey: string
-    fieldName: string
-    context: AccessContext
-  }) => Promise<void> | void
+type FieldHooks<TTypeInfo, TFieldKey> = {
+  resolveInput?: (args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>) => ValueOrUndefined
+  validate?: (args: FieldValidateHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  beforeOperation?: (args: FieldBeforeOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  afterOperation?: (args: FieldAfterOperationHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  beforeTransaction?: (args: FieldBeforeTransactionHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  afterTransaction?: (args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>) => Promise<void> | void
+  resolveOutput?: (args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>) => ValueOrUndefined
 }
 ```
+
+Every write-side hook receives `{ listKey, fieldKey, operation, inputData, item, resolvedData, context }` — the field's own value is at `resolvedData[fieldKey]`, not a separate `inputValue` argument. `resolveOutput` receives `{ operation, value, item, listKey, fieldName, context }`. Execution order, the transaction-boundary pair, and what each argument holds per operation are in [Hooks](/docs/concepts/hooks).
 
 #### Hook Types
 
@@ -1835,15 +1829,15 @@ Transform field value before database write.
 
 **Example:**
 
+Deriving a slug from the title when the write did not supply one:
+
 ```typescript
 slug: text({
   hooks: {
-    resolveInput: async ({ inputValue, item }) => {
-      // Auto-generate slug from title if not provided
-      if (!inputValue && item?.title) {
-        return item.title.toLowerCase().replace(/\s+/g, '-')
-      }
-      return inputValue
+    resolveInput: ({ resolvedData, fieldKey }) => {
+      const value = resolvedData[fieldKey]
+      if (value) return value
+      return resolvedData.title?.toLowerCase().replace(/\s+/g, '-')
     },
   },
 })
@@ -1862,36 +1856,31 @@ Transform field value after database read.
 ```typescript
 profileImage: text({
   hooks: {
-    resolveOutput: ({ value }) => {
-      // Add CDN prefix to image URLs
-      return value ? `https://cdn.example.com/${value}` : null
-    },
+    resolveOutput: ({ value }) => (value ? `https://cdn.example.com/${value}` : null),
   },
 })
 ```
 
 ##### `beforeOperation`
 
-Side effects before database operation. Does NOT modify data.
+Side effects before the database operation. Does NOT modify data.
 
-**When called:** Before `create`, `update`, or `delete` operations, after validation
+**When called:** Before `create`, `update`, or `delete`, after validation, inside the write's transaction
 
-**Use cases:** Logging, validation, pre-operation checks
+**Use cases:** Logging, pre-operation checks
 
-**Example:**
+The argument is a union discriminated by `operation` — `create` carries no `item`, `delete` carries no `resolvedData` — so narrow before destructuring:
 
 ```typescript
 status: select({
-  options: [/* ... */],
+  options: [{ label: 'Draft', value: 'draft' }],
   hooks: {
-    beforeOperation: async ({ operation, resolvedValue, item }) => {
-      // Log status changes
-      if (operation === 'update' && item.status !== resolvedValue) {
-        await auditLog.record({
-          event: 'status_change',
-          from: item.status,
-          to: resolvedValue,
-        })
+    beforeOperation: async (args) => {
+      if (args.operation !== 'update') return
+      const { fieldKey, item, resolvedData } = args
+      const next = resolvedData[fieldKey]
+      if (item[fieldKey] !== next) {
+        await auditLog.record({ event: 'status_change', from: item[fieldKey], to: next })
       }
     },
   },
@@ -1900,29 +1889,34 @@ status: select({
 
 ##### `afterOperation`
 
-Side effects after database operation. Does NOT modify data.
+Side effects after the database operation. Does NOT modify data.
 
-**When called:** After `create`, `update`, `delete`, or `query` operations
+**When called:** After `create`, `update` or `delete`, inside the write's transaction
 
 **Use cases:** Cache invalidation, webhooks, cleanup
 
-**Example:**
+Also a union discriminated by `operation`: `create` carries no `originalItem`, `delete` carries no `item`. Cleaning up a replaced file by comparing the row before and after:
 
 ```typescript
 thumbnail: text({
   hooks: {
-    afterOperation: async ({ operation, value, item }) => {
-      if (operation === 'delete' && value) {
-        // Delete file from storage
-        await deleteFromCDN(value)
-      } else if (operation === 'update' && value) {
-        // Invalidate CDN cache
-        await invalidateCDNCache(value)
+    afterOperation: async (args) => {
+      if (args.operation === 'delete') {
+        await deleteFromCDN(args.originalItem[args.fieldKey])
+        return
+      }
+      if (args.operation === 'update') {
+        const previous = args.originalItem[args.fieldKey]
+        if (previous && previous !== args.item[args.fieldKey]) {
+          await deleteFromCDN(previous)
+        }
       }
     },
   },
 })
 ```
+
+`beforeTransaction` and `afterTransaction` are the pair that run outside the write's transaction, for side effects that must not hold one open and cannot be rolled back with it.
 
 **See:** [Hooks guide](/docs/concepts/hooks) for execution order and patterns
 
@@ -2119,6 +2113,69 @@ inputType?: TypeDescriptor
 
 ---
 
+### `needs`
+
+The immediate columns and relations this field's `resolveOutput` hook cannot compute without.
+
+**Signature:**
+
+```typescript
+needs?: string[]
+```
+
+Entries are **column keys** on the same list: stored columns and immediate relationship fields, spelled by their config key.
+
+**The rules:**
+
+- **Same list only.** No dotted paths, no reaching through a relation, and never a computed field. `opensaas generate` refuses an entry that names none of the above.
+- **Requires a `resolveOutput` hook.** A `needs` on a field without one is dead config and is refused at generate time, since nothing could consume the declaration.
+- **One hop, non-transitive.** A declared relation is fetched; what that relation's own computed fields need is that relation's business.
+- **Private plumbing, not an implicit include.** Each dependency is fetched wherever the field is computed — at the root of a read and at every nested level alike — and then stripped from the result unless the caller named it too. Adding or removing one changes the field's implementation, never the shape of every read of the list.
+- **Scoped like any other read.** A relation dependency goes through the Access Filter exactly as a caller-named include does. A session that cannot query it does not get it fetched, and the hook sees nothing in its place.
+
+The generated `Lists.<List>.TypeInfo` narrows the `item` a `resolveOutput` receives to exactly the declared set plus the list's system fields, so reading an undeclared column is a compile error in a config annotated with it.
+
+**Example:**
+
+```typescript
+lineItems: relationship({ ref: 'LineItem.order', many: true }),
+itemCount: virtual({
+  type: 'number',
+  needs: ['lineItems'],
+  hooks: {
+    resolveOutput: ({ item }) => item.lineItems.length,
+  },
+}),
+```
+
+---
+
+### Multi-column members
+
+A field whose descriptor is `kind: 'columns'` owes three more members, because the engine cannot derive the mapping between one logical value and several physical columns:
+
+| Member                             | Direction | Purpose                                                                        |
+| ---------------------------------- | --------- | ------------------------------------------------------------------------------ |
+| `getColumnNames(fieldName)`        | —         | The physical columns this field owns, so the read can strip the raw parts       |
+| `assembleColumns(fieldName, row)`  | read      | Build the logical value from the row's per-part columns                         |
+| `splitColumns(fieldName, value)`   | write     | Split the logical value back into per-part columns for the write payload        |
+
+Both transforms must stay pure. `assembleColumns` runs before field visibility; `splitColumns` runs after `resolveInput`.
+
+---
+
+### `getVectorColumn(fieldName)`
+
+The opt-in that makes a field reachable by `nearest()`: it describes the field's stored vector column, its dimensions, and the distance function a search measures with. A field that does not answer this is not searchable, which is what makes `nearest('title', …)` a refusal rather than a query the database rejects.
+
+---
+
+### `getFilterSpec(fieldName, listKey, config)`
+
+Optional and additive: the field's filtering capability for the admin UI's filter builder. A field that omits it is simply not filterable and is never suggested — `password`, `json` and `virtual` all omit it. The returned `toCondition` mapper must stay pure; its output is ANDed with the access filter.
+
+---
+
 ## Creating Custom Field Types
 
 Custom field types must implement the `BaseFieldConfig` interface:
@@ -2192,12 +2249,17 @@ content: richText({
 
 ### Image & File (`@opensaas/stack-storage`)
 
+`storage` names a provider declared in the config's `storage` block, not a provider type.
+
 ```typescript
 import { image, file } from '@opensaas/stack-storage/fields'
 
 avatar: image({
-  storage: 's3',
-  validation: { isRequired: true },
+  storage: 'images',
+  validation: {
+    maxFileSize: 5 * 1024 * 1024,
+    acceptedMimeTypes: ['image/jpeg', 'image/png'],
+  },
   transformations: {
     thumbnail: { width: 150, height: 150 },
     large: { width: 1200, height: 1200 },
@@ -2205,13 +2267,15 @@ avatar: image({
 })
 
 document: file({
-  storage: 'local',
+  storage: 'documents',
   validation: {
-    maxSize: 10 * 1024 * 1024, // 10MB
-    allowedTypes: ['application/pdf', 'text/plain'],
+    maxFileSize: 10 * 1024 * 1024,
+    acceptedMimeTypes: ['application/pdf', 'text/plain'],
   },
 })
 ```
+
+Both write a `File` and read back metadata, so they declare their own `outputType` and `inputType`. In multi-column mode their descriptor is `kind: 'columns'` and they carry the three multi-column members above.
 
 **See:** [Storage package documentation](/docs/reference/storage)
 
@@ -2259,9 +2323,12 @@ Validation errors include:
 
 ### Validation Execution Order
 
-1. Field-level Zod schema validation (from `getZodSchema()`)
-2. List-level `validateInput` hook
-3. Field-level access control (filter writable fields)
+1. List-level and field-level `resolveInput` hooks
+2. List-level and field-level `validate` hooks
+3. Field-level Zod schema validation (from `getZodSchema()`)
+4. Field-level access control (filter writable fields)
+
+**See:** [Hooks](/docs/concepts/hooks) for the full order, including the transaction-boundary pair.
 
 ---
 
@@ -2320,16 +2387,31 @@ slug: text({
 ### 5. Use Hooks for Transformation
 
 ```typescript
-// ✅ Good: Use hooks for data transformation
+// ✅ Good: normalise in a field hook, where every write path goes through it
 email: text({
   hooks: {
-    resolveInput: async ({ inputValue }) => {
-      return inputValue?.toLowerCase().trim()
-    },
+    resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey]?.toLowerCase().trim(),
   },
 })
 
-// ❌ Bad: Don't transform in application code
+// ❌ Bad: normalise at each call site, where one path will eventually forget
+```
+
+### 6. Declare What a Computed Field Reads
+
+```typescript
+// ✅ Good: the read fetches the dependency wherever the field is computed
+itemCount: virtual({
+  type: 'number',
+  needs: ['lineItems'],
+  hooks: { resolveOutput: ({ item }) => item.lineItems.length },
+})
+
+// ❌ Bad: works in the admin UI, returns nothing from a narrowed read
+itemCount: virtual({
+  type: 'number',
+  hooks: { resolveOutput: ({ item }) => item.lineItems.length },
+})
 ```
 
 ---
@@ -2337,6 +2419,7 @@ email: text({
 ## Next Steps
 
 - **[Field Types Guide](/docs/concepts/field-types)** - Usage examples and patterns
+- **[Queries](/docs/concepts/queries)** - Reading and writing field values
 - **[Hooks System](/docs/concepts/hooks)** - Field-level data transformation
 - **[Access Control](/docs/concepts/access-control)** - Field-level security
 - **[Custom Fields Guide](/docs/how-to/custom-fields)** - Create custom field types

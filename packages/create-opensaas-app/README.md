@@ -14,7 +14,11 @@ You'll be prompted for:
 
 - Project name
 - Whether to include authentication (Better-auth)
-- Which database (SQLite by default, or PostgreSQL)
+- Whether to set up AI tooling (the MCP server)
+
+There is no database prompt. `postgresql` is the only provider, and `pnpm dev`
+starts a Dev database for you — no connection string to supply before the first
+run.
 
 ### With Project Name
 
@@ -32,8 +36,9 @@ npm create opensaas-app@latest my-app
 npm create opensaas-app@latest my-app --with-auth
 ```
 
-The scaffolded project uses the database its template declares. Change it by
-editing `db` in the generated `opensaas.config.ts`.
+The scaffolded project runs against the Dev database `pnpm dev` starts. To point
+it at your own Postgres instead, set `DATABASE_URL` in `.env` — the generated
+`db` block in `opensaas.config.ts` carries no connection of its own.
 
 ### Using npx
 
@@ -50,7 +55,6 @@ A minimal starter with:
 
 - User + Post models
 - Admin UI at `/admin`
-- SQLite database
 - Access control examples
 - TypeScript + Next.js 16
 
