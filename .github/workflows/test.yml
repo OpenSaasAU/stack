@@ -194,8 +194,9 @@ jobs:
       # remaining five cannot build until #1172 and #1173 convert them, and
       # #1175 lifts this filter to the unfiltered run above once they have.
       #
-      # These five carry no `test` script, so this is a build gate for them.
-      # The two examples that DO carry one run in their own steps below.
+      # None of the five examples filtered in above carries a `test` script, so
+      # for them this is a build gate. The two examples that DO carry one —
+      # blog and mcp-demo — run in their own steps below.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -218,19 +219,28 @@ jobs:
       # second reconcile sees the first's tables as rows to drop and refuses,
       # non-interactively, for want of consent. Each suite gets a database of
       # its own on the same service container instead.
-      - name: Create a database per example suite (integration branch)
+      #
+      # This step and the two suites below are gated to the integration branch
+      # only because the main leg runs the unfiltered `turbo run test` above,
+      # which would run both suites against one DATABASE_URL. #1175 lifts that
+      # filter — and must move these three onto the main leg at the same time,
+      # or the collision the paragraph above describes lands on main.
+      #
+      # `psql` comes from the ubuntu-latest runner image; nothing in this repo
+      # installs or pins it.
+      - name: Create a database per example suite (integration branch, #1175)
         if: github.base_ref != 'main'
         run: |
           psql "$DATABASE_URL" -c 'create database blog_example'
           psql "$DATABASE_URL" -c 'create database mcp_demo_example'
 
-      - name: Run the blog access-control suite (integration branch)
+      - name: Run the blog access-control suite (integration branch, #1175)
         if: github.base_ref != 'main'
         run: turbo run test --filter=./examples/blog
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
 
-      - name: Run the mcp-demo tool suite (integration branch)
+      - name: Run the mcp-demo tool suite (integration branch, #1175)
         if: github.base_ref != 'main'
         run: turbo run test --filter=./examples/mcp-demo
         env:

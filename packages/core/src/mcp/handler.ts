@@ -74,7 +74,7 @@ function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
  * import { getContext } from '@/.opensaas/context'
  *
  * const { GET, POST, DELETE } = createMcpHandlers({
- *   config,
+ *   config: await config,
  *   getSession: createBetterAuthMcpAdapter(auth),
  *   getContext
  * })

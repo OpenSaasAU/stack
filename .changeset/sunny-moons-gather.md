@@ -7,7 +7,7 @@ Scaffolded apps no longer read another user's drafts as an anonymous caller
 `lib/actions/posts.ts` in both templates built its context as
 `getContext({ userId })` from a `getPost(postId, userId?)` whose id is optional.
 `getContext` stores what it is handed as `session ?? null`, so `{ userId: undefined }`
-is a *signed-in* session with no user: `Post`'s query rule took its `return true`
+is a _signed-in_ session with no user: `Post`'s query rule took its `return true`
 branch instead of the published-only filter, and an anonymous caller read drafts.
 
 The session is now derived from the optional id in one place, so the shape cannot
