@@ -163,6 +163,11 @@ describe('refuseNestedRelationInput', () => {
     expect(() => refuseNestedRelationInput('Author', author, config, { posts: null })).toThrow(
       NonOwningRelationInputError,
     )
+
+    // And the new advice followed: the target list is `Post`, and `author` is
+    // the field there that owns the column. The same pass accepts it, which is
+    // what makes the message a route out rather than a second dead end.
+    expect(() => refuseNestedRelationInput('Post', post, config, { author: null })).not.toThrow()
   })
 
   it('points a synthetic back-relation disconnect at the target list too', () => {
@@ -179,6 +184,14 @@ describe('refuseNestedRelationInput', () => {
     const message = (thrown as Error).message
     expect(message).toContain('target list')
     expect(message).not.toContain('assigning `null` to "from_Post_category"')
+
+    expect(() =>
+      refuseNestedRelationInput('Category', category, config, { from_Post_category: null }),
+    ).toThrow(NonOwningRelationInputError)
+
+    // The new advice followed: the synthetic key reflects `Post.category`,
+    // which is the end that owns the column.
+    expect(() => refuseNestedRelationInput('Post', post, config, { category: null })).not.toThrow()
   })
 
   it('refuses a relation object that carries no spelling at all', () => {
