@@ -16,8 +16,7 @@ jobs:
     # The escape belongs to the job, not to the steps that happen to need it: a
     # suite whose guarantee PGlite cannot exercise skips itself by name when the
     # variable is absent, and a skip that reads as coverage is what this guards
-    # against (ADR-0063). PRs into `main` keep the SQLite string that branch
-    # still uses; the integration branch names the service container below.
+    # against (ADR-0063). It names the service container below.
     #
     # Setting it here is necessary but not sufficient: turbo's strict env mode
     # (the default since 2.x) strips any variable a task does not declare, so
@@ -25,14 +24,13 @@ jobs:
     # `env` in turbo.json. `test` did not, and silently ran on PGlite while
     # `test:coverage` ran on the container beside it.
     env:
-      DATABASE_URL: ${{ github.base_ref == 'main' && 'file:./dev.db' || 'postgres://postgres:postgres@localhost:5432/postgres' }}
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
 
-    # The real Postgres the test harness runs against on the integration branch
-    # (ADR-0057's `DATABASE_URL` escape, #1143). pgvector's image rather than
-    # the plain one, so a pack-declaring contract's `CREATE EXTENSION vector`
-    # has something to install — ADR-0065 makes provisioning the deployment's
-    # job, and CI is a deployment. PRs into `main` point the job's DATABASE_URL
-    # at SQLite instead, so this container simply goes unused there.
+    # The real Postgres the test harness runs against (ADR-0057's
+    # `DATABASE_URL` escape, #1143). pgvector's image rather than the plain
+    # one, so a pack-declaring contract's `CREATE EXTENSION vector` has
+    # something to install — ADR-0065 makes provisioning the deployment's job,
+    # and CI is a deployment.
     services:
       postgres:
         # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
@@ -194,57 +192,33 @@ jobs:
       # caches it, and the test steps below depend on the same task, so this is
       # a reordering rather than an extra build.
       #
-      # THE GATE. PRs into `main` are excluded because the fixtures cannot
-      # describe that tree: `files.txt` names this branch's documents and
-      # `fragments.json` keys entries by `file:line`, so against main's RAG
-      # documents every entry would report as orphaned. Unlike the test steps
-      # below, the exclusion has no `== 'main'` run counterpart, so it cannot
-      # expire on its own: once prisma-8 lands, base_ref is always 'main' and
-      # the check would stop running for good. Flipping it is part of that
-      # merge — drop the `!= 'main'` gates on the steps below, delete the
-      # notice step, and re-key scripts/doc-blocks/fragments.json against
-      # main's documents. Tracked on #1301. Every other mention of the flip
-      # points here.
+      # The doc-block fixtures describe THIS tree: `files.txt` names the
+      # repository's documents and `fragments.json` keys entries by
+      # `file:line`, so a fixture re-key is part of any change that moves a
+      # documented block (#1301).
       - name: Build packages for the doc-block check
-        if: github.base_ref != 'main'
         run: turbo run build --filter='./packages/*'
 
       # The checker's own fixture of known-bad and known-good blocks: every bad
       # block must be reported FAIL and every good one must pass, before the
       # real documents are trusted to a run of it.
       - name: Self-test the doc-block checker
-        if: github.base_ref != 'main'
         run: node scripts/check-doc-typescript-blocks.mjs --self-test
 
       - name: Check documented TypeScript blocks compile
-        if: github.base_ref != 'main'
         run: pnpm check:doc-ts-blocks
 
-      # The counterpart the skip above would otherwise lack. It does not run
-      # the check — it makes the gap visible on every PR into main, so the
-      # flip is prompted by CI rather than remembered.
-      - name: Note the skipped doc-block check
-        if: github.base_ref == 'main'
-        run: |
-          echo "::warning title=Doc-block typecheck did not run::pnpm check:doc-ts-blocks runs on PRs into prisma-8 only. The instruction for flipping that gate is the comment above it in .github/workflows/test.yml (#1301)."
-
-      - name: Run tests
-        if: github.base_ref == 'main'
-        run: turbo run test
-        env:
-          OPENAI_API_KEY: 'sk-testing-key'
-
-      # turbo's `test` task depends on `build`, so an unfiltered run also builds
-      # every examples/* package. On the prisma-8 integration branch the
-      # converted examples are `starter`/`starter-auth` (#1170), the three
-      # demos added by #1172 — each of which also carries a `test` script that
-      # stands up a Dev database and round-trips its own feature — the five of
-      # #1171, and the two RAG demos of #1173. With #1173 landed, no example is
-      # left out of this filter for want of a build. `plain-css-theming` is
-      # absent because it has no scripts at all — it is static HTML, and the
+      # turbo's `test` task depends on `build`, so this run also builds every
+      # examples/* package it names: `starter`/`starter-auth` (#1170), the
+      # three demos added by #1172 — each of which also carries a `test` script
+      # that stands up a Dev database and round-trips its own feature — the
+      # five of #1171, and the two RAG demos of #1173. No example is left out
+      # of this filter for want of a build. `plain-css-theming` is absent
+      # because it has no scripts at all — it is static HTML, and the
       # `data-slot` promise it rests on is covered by
       # packages/ui/tests/browser/primitives/data-slot.browser.test.tsx in the
-      # browser run below. #1175 lifts this filter to the unfiltered run above.
+      # browser run below. #1175 replaces this enumeration with an unfiltered
+      # run.
       #
       # Of #1171's five, custom-field, composable-dashboard and auth-demo carry
       # no `test` script, so for them this is a build gate. The two that DO
@@ -253,8 +227,7 @@ jobs:
       # rag-openai-chatbot has no suite, and rag-ollama-demo's is `test:rag`,
       # deliberately off `test` because it needs an Ollama server on
       # localhost:11434 that CI does not run. Both are build gates here.
-      - name: Run package tests and build the converted examples (integration branch)
-        if: github.base_ref != 'main'
+      - name: Run package tests and build the converted examples
         run: >
           turbo run test
           --filter='./packages/*'
@@ -281,28 +254,25 @@ jobs:
       # non-interactively, for want of consent. Each suite gets a database of
       # its own on the same service container instead.
       #
-      # This step and the two suites below are gated to the integration branch
-      # only because the main leg runs the unfiltered `turbo run test` above,
-      # which would run both suites against one DATABASE_URL. #1175 lifts that
-      # filter — and must move these three onto the main leg at the same time,
-      # or the collision the paragraph above describes lands on main.
+      # This is why the run above is a filtered enumeration that excludes blog
+      # and mcp-demo: an unfiltered `turbo run test` would put both suites on
+      # one DATABASE_URL. #1175 replaces that enumeration, and must keep these
+      # three steps — or reproduce the per-suite databases some other way — or
+      # the collision the paragraph above describes comes back.
       #
       # `psql` comes from the ubuntu-latest runner image; nothing in this repo
       # installs or pins it.
-      - name: Create a database per example suite (integration branch, #1175)
-        if: github.base_ref != 'main'
+      - name: Create a database per example suite
         run: |
           psql "$DATABASE_URL" -c 'create database blog_example'
           psql "$DATABASE_URL" -c 'create database mcp_demo_example'
 
-      - name: Run the blog access-control suite (integration branch, #1175)
-        if: github.base_ref != 'main'
+      - name: Run the blog access-control suite
         run: turbo run test --filter=./examples/blog
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
 
-      - name: Run the mcp-demo tool suite (integration branch, #1175)
-        if: github.base_ref != 'main'
+      - name: Run the mcp-demo tool suite
         run: turbo run test --filter=./examples/mcp-demo
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
@@ -310,15 +280,8 @@ jobs:
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
-      - name: Run tests with coverage
-        if: github.base_ref == 'main'
-        run: turbo run test:coverage
-        env:
-          OPENAI_API_KEY: 'sk-testing-key'
-
       # Coverage is a package property; the examples carry no `test:coverage`.
-      - name: Run package tests with coverage (integration branch)
-        if: github.base_ref != 'main'
+      - name: Run package tests with coverage
         run: turbo run test:coverage --filter='./packages/*'
         env:
           OPENAI_API_KEY: 'sk-testing-key'
