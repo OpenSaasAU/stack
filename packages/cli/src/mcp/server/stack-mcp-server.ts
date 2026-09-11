@@ -270,7 +270,7 @@ ${featureDefinition.dependsOn && featureDefinition.dependsOn.length > 0 ? `\n## 
 1. Check that all required lists are defined in your config
 2. Verify access control is properly configured
 3. Test the feature in your development environment
-4. Run \`pnpm generate\` and \`pnpm db:push\` successfully
+4. Run \`pnpm generate\` and \`pnpm dev\` successfully (a held-back change is applied with \`pnpm db:update\`)
 
 **Note**: Full automatic validation coming soon! For now, use this checklist to verify your implementation.`,
         },

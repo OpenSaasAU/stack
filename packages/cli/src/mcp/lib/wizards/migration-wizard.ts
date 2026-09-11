@@ -197,10 +197,10 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
 
     questions.push({
       id: 'db_provider',
-      text: 'Which database are you using?',
+      text: 'OpenSaaS Stack targets Postgres — confirm the database the migrated project will use.',
       type: 'select',
-      options: ['sqlite', 'postgresql', 'mysql'],
-      defaultValue: analysis?.provider || 'sqlite',
+      options: ['postgresql'],
+      defaultValue: 'postgresql',
     })
 
     questions.push({
@@ -244,10 +244,10 @@ ${this.renderQuestion(nextQuestion, questionNum, questions.length)}
 
     questions.push({
       id: 'db_provider',
-      text: 'Which database provider are you using?',
+      text: 'OpenSaaS Stack targets Postgres — confirm the database the migrated project will use.',
       type: 'select',
-      options: ['sqlite', 'postgresql', 'mysql'],
-      defaultValue: analysis?.provider || 'sqlite',
+      options: ['postgresql'],
+      defaultValue: 'postgresql',
     })
 
     questions.push({

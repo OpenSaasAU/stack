@@ -125,7 +125,7 @@ describe('MigrationWizard', () => {
       const invalidResult = await wizard.answerQuestion(sessionId, 'mongodb')
 
       expect(invalidResult.content[0].text).toContain('Invalid')
-      expect(invalidResult.content[0].text).toContain('sqlite, postgresql, mysql')
+      expect(invalidResult.content[0].text).toContain('postgresql')
     })
 
     it('should accept valid select answer', async () => {
@@ -150,7 +150,7 @@ describe('MigrationWizard', () => {
 
       // Progress to auth_methods question (multiselect)
       await wizard.answerQuestion(sessionId, true) // preserve_database
-      await wizard.answerQuestion(sessionId, 'sqlite') // db_provider
+      await wizard.answerQuestion(sessionId, 'postgresql') // db_provider
       await wizard.answerQuestion(sessionId, true) // enable_auth
 
       // Try invalid multiselect
@@ -166,7 +166,7 @@ describe('MigrationWizard', () => {
 
       // Progress to auth_methods question
       await wizard.answerQuestion(sessionId, true)
-      await wizard.answerQuestion(sessionId, 'sqlite')
+      await wizard.answerQuestion(sessionId, 'postgresql')
       await wizard.answerQuestion(sessionId, true)
 
       // Answer with array
@@ -183,7 +183,7 @@ describe('MigrationWizard', () => {
 
       // Progress to auth_methods question
       await wizard.answerQuestion(sessionId, true)
-      await wizard.answerQuestion(sessionId, 'sqlite')
+      await wizard.answerQuestion(sessionId, 'postgresql')
       await wizard.answerQuestion(sessionId, true)
 
       // Answer with comma-separated string
@@ -201,7 +201,7 @@ describe('MigrationWizard', () => {
 
       // Answer all questions
       await wizard.answerQuestion(sessionId, true) // preserve_database
-      await wizard.answerQuestion(sessionId, 'sqlite') // db_provider
+      await wizard.answerQuestion(sessionId, 'postgresql') // db_provider
       await wizard.answerQuestion(sessionId, 'no') // enable_auth (use string instead of boolean)
       await wizard.answerQuestion(sessionId, 'public-read-auth-write') // default_access
       await wizard.answerQuestion(sessionId, '/admin') // admin_base_path
@@ -242,7 +242,7 @@ describe('MigrationWizard', () => {
 
       // Complete wizard
       await wizard.answerQuestion(sessionId, 'yes')
-      await wizard.answerQuestion(sessionId, 'sqlite')
+      await wizard.answerQuestion(sessionId, 'postgresql')
       await wizard.answerQuestion(sessionId, 'no')
       await wizard.answerQuestion(sessionId, 'public-read-auth-write')
       await wizard.answerQuestion(sessionId, '/admin')

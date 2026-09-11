@@ -6,22 +6,19 @@
 
 import type { Feature, FeatureImplementation, GeneratedFile } from '../types.js'
 
-const SQLITE_DB_BLOCK = `db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
+const DB_BLOCK = `db: {
+    provider: 'postgresql',
   }`
 
-const POSTGRES_DB_BLOCK = `db: {
-    provider: 'postgresql',
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
-  }`
+/**
+ * The dev loop reconciles the database on every config edit; only a change it
+ * holds back as destructive needs the second step. See examples/starter's
+ * README for the contract these steps have to match.
+ */
+const DB_STEPS = [
+  'Run `pnpm dev` — `opensaas dev` starts the Dev database, regenerates, and reconciles it with the new schema',
+  'If the change is held back as destructive, review the printed plan and apply it with `pnpm db:update`',
+]
 
 export class FeatureGenerator {
   constructor(
@@ -80,7 +77,10 @@ export class FeatureGenerator {
       )
     }
     if (userFields.includes('Avatar')) {
-      extendFields.push(`avatar: text() // or an image() field — see the file-upload feature`)
+      // The comment goes above, not after: these entries are comma-joined, and
+      // a trailing `//` would swallow the separator and the next field.
+      extendFields.push(`// An image() field works here too — see the file-upload feature
+          avatar: text()`)
     }
     if (userFields.includes('Bio')) {
       extendFields.push(`bio: text({ ui: { displayMode: 'textarea' } })`)
@@ -98,11 +98,23 @@ export class FeatureGenerator {
     const fieldImports = ['text']
     if (hasRoles) fieldImports.push('select')
 
+    const socialProviderEntries: string[] = []
+    if (hasGoogle) {
+      socialProviderEntries.push(`google: {
+          clientId: process.env.GOOGLE_CLIENT_ID!,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        },`)
+    }
+    if (hasGithub) {
+      socialProviderEntries.push(`github: {
+          clientId: process.env.GITHUB_CLIENT_ID!,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        },`)
+    }
     const socialProvidersBlock = hasOAuth
       ? `
       socialProviders: {
-        ${hasGoogle ? `google: {\n          clientId: process.env.GOOGLE_CLIENT_ID!,\n          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,\n        },` : ''}
-        ${hasGithub ? `github: {\n          clientId: process.env.GITHUB_CLIENT_ID!,\n          clientSecret: process.env.GITHUB_CLIENT_SECRET!,\n        },` : ''}
+        ${socialProviderEntries.join('\n        ')}
       },`
       : ''
 
@@ -110,7 +122,6 @@ export class FeatureGenerator {
 import type { AccessControl } from '@opensaas/stack-core'
 import { ${fieldImports.join(', ')} } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 // Access control helpers (see lib/access-control.ts for the full set)
 const isSignedIn: AccessControl = ({ session }) => !!session
@@ -144,9 +155,7 @@ export default config({
       },
     }),
   ],
-  ${SQLITE_DB_BLOCK},
-  // For PostgreSQL use @prisma/adapter-pg instead:
-  // ${POSTGRES_DB_BLOCK.replace(/\n/g, '\n  // ')}
+  ${DB_BLOCK},
   lists: {
     // Your app lists go here. User, Session, Account, and Verification are
     // added automatically by authPlugin.
@@ -430,7 +439,6 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
     })
 
     const envVars: Record<string, string> = {
-      DATABASE_URL: 'file:./dev.db',
       BETTER_AUTH_SECRET: '<generate-with-openssl-rand-base64-32>',
       BETTER_AUTH_URL: 'http://localhost:3000',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
@@ -447,14 +455,12 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
     }
 
     const nextSteps = [
-      'Install dependencies: `pnpm add @opensaas/stack-auth @prisma/adapter-better-sqlite3`',
+      'Install dependencies: `pnpm add @opensaas/stack-auth`',
       'Merge the config updates into your `opensaas.config.ts`',
       'Create the files shown above in your project',
       'Add environment variables to your `.env` file',
       hasOAuth ? 'Set up OAuth applications in Google/GitHub developer consoles' : null,
-      'Run `pnpm generate` to update the Prisma schema and generated context',
-      'Run `pnpm db:push` to update your database',
-      'Start your dev server: `pnpm dev`',
+      ...DB_STEPS,
       `Visit http://localhost:3000/${hasPassword ? 'sign-up' : 'sign-in'} to test authentication`,
     ].filter(Boolean) as string[]
 
@@ -566,7 +572,10 @@ const currentUser = session
     }
 
     if (postFields.includes('Featured image')) {
-      fields.push('featuredImage: text() // URL — or an image() field, see the file-upload feature')
+      // The comment goes above, not after: these entries are comma-joined, and
+      // a trailing `//` would swallow the separator and the next field.
+      fields.push(`// A URL — an image() field works here too, see the file-upload feature
+        featuredImage: text()`)
     }
     if (postFields.includes('Excerpt/summary')) {
       fields.push("excerpt: text({ ui: { displayMode: 'textarea' } })")
@@ -768,8 +777,7 @@ export default async function BlogPostPage({
         ? 'For public rendering of rich text, add `@tiptap/html` and `@tiptap/starter-kit`'
         : null,
       'Create the blog pages in your `app/` directory',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       'Create your first blog post in the admin UI at /admin',
     ].filter(Boolean) as string[]
 
@@ -893,8 +901,7 @@ ${targetLists
         (target) => `Add the \`comments\` relationship field to your ${target} list`,
       ),
       'Add the `comments` relationship to the User list (via authPlugin `extendUserList`)',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       requiresApproval
         ? 'Moderate comments in the admin UI at /admin/comment (flip status to approved)'
         : 'View comments in the admin UI at /admin/comment',
@@ -1026,8 +1033,7 @@ export default config({
       `Install dependencies: \`pnpm add @opensaas/stack-storage${extraDependency ? ` ${extraDependency}` : ''}\``,
       'Merge the storage config and fields into your `opensaas.config.ts`',
       Object.keys(envVars).length > 0 ? 'Add environment variables to your `.env` file' : null,
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       'Upload files through the admin UI — the image/file fields render an upload widget automatically',
     ].filter(Boolean) as string[]
 
@@ -1119,8 +1125,7 @@ export default config({
         ? 'Install and start Ollama, then pull the embedding model: `ollama pull nomic-embed-text`'
         : 'Set OPENAI_API_KEY in your `.env` file',
       'Merge the plugin and searchable() fields into your `opensaas.config.ts`',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       `Query with the RAG runtime — see the ${useOllama ? 'rag-ollama-demo' : 'rag-openai-chatbot'} example for a full search API route`,
     ]
 
