@@ -707,14 +707,19 @@ const result = await context.transaction(async (tx) => {
   import postgres from '@prisma/orm-postgres/runtime'
   import { Pool } from 'pg'
   import { originTripwire } from '@opensaas/stack-core/origin'
+  import type { Contract } from '../prisma/contract.d.js'
   import contractJson from '../prisma/contract.json' with { type: 'json' }
 
-  export const syncClient = postgres({
+  export const syncClient = postgres<Contract>({
     contractJson,
     middleware: [originTripwire],
     pg: new Pool({ connectionString: process.env.DATABASE_URL }),
   })
   ```
+
+  The type-only import of the emitted declarations is spelled `contract.d.js`,
+  not `contract.d.ts`: the Contract module (`prisma/contract.ts`) sits in the
+  same directory and TypeScript resolves `./contract.d.ts` to **it**.
 
   This client is a **second connection**, separate from the framework's singleton, and it carries none of `context.db`'s access control or hooks. Both are intentional for this use case; state them explicitly wherever the pattern is reused. Install the tripwire as shown — a client without it executes statements neither surface declared, which is exactly what the tripwire exists to refuse. See ADR-0014 and ADR-0059.
 
