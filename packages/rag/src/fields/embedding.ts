@@ -8,6 +8,7 @@ import type {
   VectorDistanceFunction,
 } from '@opensaas/stack-core/extend'
 import type { EmbeddingProviderName, ChunkingConfig, StoredEmbedding } from '../config/types.js'
+import { redactEmbeddingForClient } from './embedding-display.js'
 
 /** The access methods pgvector builds a vector index with. */
 export type VectorIndexMethod = 'hnsw' | 'ivfflat'
@@ -147,11 +148,22 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
 
   ui?: {
     /**
+     * Render the vector itself in the admin UI.
+     *
+     * Off by default, and that governs the page payload as well as the
+     * display: a vector the admin UI does not render is not serialised to the
+     * browser either. The field still reports the vector's width when it is
+     * withheld.
+     *
      * @default false (usually too large to display)
      */
     showVector?: boolean
 
     /**
+     * Render the embedding's metadata — provider, model, dimensions,
+     * generation time and source hash. Withheld from the page payload when
+     * off, the same as {@link showVector}.
+     *
      * @default true
      */
     showMetadata?: boolean
@@ -275,6 +287,9 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
     ? options?.access
     : { ...options?.access, create: () => false, update: () => false }
 
+  const showVector = options?.ui?.showVector ?? false
+  const showMetadata = options?.ui?.showMetadata ?? true
+
   return {
     type: 'embedding',
     ...options,
@@ -282,6 +297,21 @@ export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
     distanceFunction,
     autoGenerate,
     allowManualWrites,
+    ui: {
+      ...options?.ui,
+      showVector,
+      showMetadata,
+      allowManualWrites,
+      // A vector is unreadable in a table and costs a row's worth of floats to
+      // put there, so it stays out of the default column set the way `password`
+      // does. Naming the field in `initialColumns` still shows it.
+      listView: {
+        defaultColumn: false,
+        ...options?.ui?.listView,
+      },
+      valueForClientSerialization: ({ value }) =>
+        redactEmbeddingForClient(value, { showVector, showMetadata }),
+    },
     outputType: "import('@opensaas/stack-rag').StoredEmbedding | null",
     inputType: "import('@opensaas/stack-rag').StoredEmbedding | null",
 

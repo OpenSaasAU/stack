@@ -22,6 +22,7 @@ packages/rag/
 ├── src/
 │   ├── config/         # ragPlugin(), provider helpers
 │   ├── fields/         # embedding() field type, searchable() wrapper
+│   ├── components/     # Admin UI renderers + their registry registration
 │   ├── providers/      # OpenAI, Ollama embedding providers
 │   ├── runtime/        # generateEmbeddings(), semanticSearch()
 │   └── mcp/            # Types for custom MCP tools — no tools, no generators;
@@ -40,6 +41,53 @@ packages/rag/
 
 - `embedding({ ... })` - Vector embedding field type
 - `searchable(field, { ... })` - Wraps a field so the list also carries its companion `embedding()`
+
+### Components (`@opensaas/stack-rag/components`)
+
+- `EmbeddingField` - Read-only admin UI renderer for an `embedding()` field
+- `EmbeddingCell` - List-table rendering of an embedding (its size, never its contents)
+
+`@opensaas/stack-rag/components/register` registers both against the admin UI's
+registries as a side effect. The registries live in the browser bundle, so the
+import has to happen from a **client** component — a server component importing
+it registers nothing:
+
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+
+import '@opensaas/stack-rag/components/register'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
+// app/admin/[[...admin]]/page.tsx
+<>
+  <FieldRegistration />
+  <AdminUI ... />
+</>
+```
+
+Without this, the admin UI has no component for the `embedding` type and
+renders `Unsupported field type: embedding` in its place.
+
+The field renders read-only whatever mode it is asked for — the column is a
+plugin output and an ordinary write naming it is refused (ADR-0045). What it
+shows is governed by the field's `ui`:
+
+- `ui.showMetadata` (default `true`) — provider, model, dimensions, generation
+  time, source hash.
+- `ui.showVector` (default `false`) — the vector itself. This also governs the
+  page payload, not just the display: a vector the admin UI does not render is
+  not serialised to the browser either, so the default keeps a 768- or
+  1536-float array out of every admin page.
+
+An embedding is also out of the **default** list-table columns (a vector is
+unreadable in a table); naming it in `ui.listView.initialColumns` still shows
+it, through `EmbeddingCell`.
 
 ### Providers (`@opensaas/stack-rag/providers`)
 

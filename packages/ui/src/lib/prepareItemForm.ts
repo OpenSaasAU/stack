@@ -7,6 +7,7 @@ import {
   type SerializableFieldConfig,
 } from './serializeFieldConfig.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
+import { applyClientValueTransforms } from './clientValueTransforms.js'
 
 /**
  * One record's id as the string the client form carries. An `int autoincrement`
@@ -113,7 +114,6 @@ export async function prepareItemForm(
     const fieldConfigAny = fieldConfig as {
       type: string
       many?: boolean
-      ui?: Record<string, unknown>
     }
     if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
       const value = formData[fieldName]
@@ -124,19 +124,9 @@ export async function prepareItemForm(
         if (id !== null) formData[fieldName] = id
       }
     }
-
-    if (
-      fieldConfigAny.ui?.valueForClientSerialization &&
-      typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
-    ) {
-      const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
-        value: unknown
-      }) => unknown
-      formData[fieldName] = transformer({ value: formData[fieldName] })
-    }
   }
 
-  const initialData = jsonSafeClone(formData)
+  const initialData = jsonSafeClone(applyClientValueTransforms(listConfig.fields, formData))
 
   return { serializableFields, initialData, relationshipData }
 }

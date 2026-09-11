@@ -78,7 +78,7 @@ describe('Embedding Field', () => {
         },
       })
 
-      expect(field.ui).toEqual({
+      expect(field.ui).toMatchObject({
         showVector: true,
         showMetadata: true,
       })
@@ -554,7 +554,7 @@ describe('Embedding Field', () => {
     it('should default to hiding vector display', () => {
       const field = embedding()
 
-      expect(field.ui?.showVector).toBeUndefined()
+      expect(field.ui?.showVector).toBe(false)
     })
 
     it('should allow showing vector in UI', () => {
@@ -568,7 +568,7 @@ describe('Embedding Field', () => {
     it('should default to showing metadata', () => {
       const field = embedding()
 
-      expect(field.ui?.showMetadata).toBeUndefined()
+      expect(field.ui?.showMetadata).toBe(true)
     })
 
     it('should allow customizing metadata display', () => {
