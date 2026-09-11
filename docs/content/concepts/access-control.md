@@ -374,9 +374,22 @@ try {
 
 Write the related rows against their own list, wrapped in
 `context.transaction()` when they must land together. To clear an edge, assign
-`null` to the relationship field — the replacement for `disconnect`. That is a
-foreign-key column on the row being written, so it carries the enclosing
-write's own operation and field-level access and names no target row to gate.
+`null` to the relationship field **that owns the foreign key** — the
+replacement for `disconnect`. That is a foreign-key column on the row being
+written, so it carries the enclosing write's own operation and field-level
+access and names no target row to gate.
+
+`null` is only ever that column's own spelling, so it goes where the column is.
+On a field that owns no foreign key — a to-many, the non-owning half of a
+one-to-one, a synthetic back-relation — `null` is refused with
+`NonOwningRelationInputError` exactly as `connect` is. Clearing such an edge is
+an update against the **target** list, assigning `null` to the field there that
+owns the column:
+
+```typescript
+// Not `Author.posts`, which owns no column:
+await context.db.Post.update({ where: { id: postId }, data: { author: null } })
+```
 
 ## Access Control Execution Order
 

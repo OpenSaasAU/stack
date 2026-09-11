@@ -123,8 +123,8 @@ describe('refuseNestedRelationInput', () => {
   })
 
   it('refuses disconnect permanently, pointing at the null assignment that replaces it', () => {
-    // ADR-0050 removes `disconnect` rather than deferring it: clearing an edge
-    // is `null` on the same field.
+    // ADR-0050 removes `disconnect` rather than deferring it: on the side that
+    // owns the column, clearing an edge is `null` on the same field.
     let thrown: unknown
     try {
       refuseNestedRelationInput('Post', post, config, { category: { disconnect: true } })
@@ -135,8 +135,52 @@ describe('refuseNestedRelationInput', () => {
     expect(thrown).toBeInstanceOf(NestedRelationInputError)
     const message = (thrown as Error).message
     expect(message).toContain('`disconnect`')
-    expect(message).toContain('`null`')
-    expect(message).toContain('"category"')
+    expect(message).toContain('assigning `null` to "category"')
+
+    // The advice the message just gave has to be a payload the same pass
+    // accepts, or the reader's next call throws too (#1439).
+    expect(() =>
+      refuseNestedRelationInput('Post', post, config, { category: null }),
+    ).not.toThrow()
+  })
+
+  it('points a to-many disconnect at the target list, not at null on the field', () => {
+    // `Author.posts` owns no column, so `null` on it is refused in turn. The
+    // reader of this message is by definition migrating a to-many `disconnect`
+    // — the caller the `null` advice is wrong for (#1439).
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Author', author, config, { posts: { disconnect: [{ id: 'p1' }] } })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(NestedRelationInputError)
+    const message = (thrown as Error).message
+    expect(message).toContain('`disconnect`')
+    expect(message).toContain('target list')
+    expect(message).not.toContain('assigning `null` to "posts"')
+
+    // What the old message advised, proving it was advice this pass rejects.
+    expect(() => refuseNestedRelationInput('Author', author, config, { posts: null })).toThrow(
+      NonOwningRelationInputError,
+    )
+  })
+
+  it('points a synthetic back-relation disconnect at the target list too', () => {
+    let thrown: unknown
+    try {
+      refuseNestedRelationInput('Category', category, config, {
+        from_Post_category: { disconnect: [{ id: 'p1' }] },
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(NestedRelationInputError)
+    const message = (thrown as Error).message
+    expect(message).toContain('target list')
+    expect(message).not.toContain('assigning `null` to "from_Post_category"')
   })
 
   it('refuses a relation object that carries no spelling at all', () => {
