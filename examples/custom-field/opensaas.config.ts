@@ -1,18 +1,13 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 import type { Lists } from './.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * OpenSaas Configuration
  */
 export default config({
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   lists: {
@@ -109,7 +104,7 @@ export default config({
 
           // Auto-set publishedAt when status changes to published
           if (result.status === 'published' && !item?.publishedAt) {
-            result.publishedAt = new Date()
+            result.publishedAt = new Date().toISOString()
           }
 
           // Auto-generate slug from title if not provided

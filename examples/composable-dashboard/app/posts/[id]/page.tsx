@@ -2,21 +2,22 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Button } from '@opensaas/stack-ui/primitives'
 import { getContext } from '@/.opensaas/context'
-import type { Post } from '@/.opensaas/types'
+import { demoSession } from '@/lib/demo-session'
 import { PostEditor } from './PostEditor'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 import config from '@/opensaas.config'
 
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
-  const context = await getContext()
-  const fields = (await config).lists.Post.fields
+  const context = await getContext(await demoSession())
+  const fields = serializeFieldConfigs((await config).lists.Post.fields)
 
-  const post = (await context.db.post.findUnique({
-    where: { id: params.id },
-    include: { author: true },
-  })) as Post
+  // `null` is not-found or denied — the two are deliberately indistinguishable
+  const post = await context.db.Post.where({ id: { equals: params.id } })
+    .include('author', (author) => author.select('name'))
+    .first()
 
-  if (!post) {
+  if (post === null) {
     notFound()
   }
 

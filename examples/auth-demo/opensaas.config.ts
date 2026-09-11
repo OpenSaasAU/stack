@@ -3,7 +3,6 @@ import { text, relationship, select, timestamp } from '@opensaas/stack-core/fiel
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
@@ -79,11 +78,7 @@ export default config({
   ],
 
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   lists: {
@@ -169,7 +164,7 @@ export default config({
           if (operation === 'create' && resolvedData?.status === 'published') {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           } else if (
             operation === 'update' &&
@@ -178,7 +173,7 @@ export default config({
           ) {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           }
           return { ...resolvedData }

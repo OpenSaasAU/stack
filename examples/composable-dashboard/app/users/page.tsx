@@ -2,22 +2,25 @@ import Link from 'next/link'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { ListTable } from '@opensaas/stack-ui/standalone'
 import { getContext } from '@/.opensaas/context'
+import { demoSession } from '../../lib/demo-session'
 import { connection } from 'next/server'
 
 export default async function UsersPage() {
   await connection()
-  const context = await getContext()
+  const context = await getContext(await demoSession())
 
-  const users = await context.db.user.findMany({
-    include: {
-      posts: true,
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  // `.select()` because the table shows four columns and an unprojected row
+  // carries `password`, which reads as a `HashedPassword` and is not something
+  // a Client Component may be handed; the relation is reduced to its count
+  // rather than fetched and measured here.
+  const users = await context.db.User.orderBy({ createdAt: 'desc' })
+    .select('id', 'name', 'email', 'createdAt')
+    .include('posts', (posts) => posts.count())
+    .all()
 
   const usersWithPostCount = users.map((user) => ({
     ...user,
-    postCount: user.posts?.length || 0,
+    postCount: user.posts,
   }))
 
   return (

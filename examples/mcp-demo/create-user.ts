@@ -1,6 +1,6 @@
 /**
  * Script to create a new user with email and password
- * Run with: npx tsx create-user.ts
+ * Run with: pnpm seed
  */
 
 import { auth } from './lib/auth'

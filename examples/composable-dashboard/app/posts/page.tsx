@@ -2,28 +2,35 @@ import Link from 'next/link'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
 import { config, getContext } from '@/.opensaas/context'
+import { demoSession } from '../../lib/demo-session'
 import { CreatePostDialog } from '../../components/CreatePostDialog'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
   const searchParams = await props.searchParams
   const search = searchParams.search || ''
-  const context = await getContext()
+  const context = await getContext(await demoSession())
 
-  // Fetch posts with search using context (access control applied)
-  const posts = await context.db.post.findMany({
-    where: search
-      ? {
-          OR: [{ title: { contains: search } }, { content: { contains: search } }],
-        }
-      : undefined,
-    include: { author: true },
-    orderBy: { createdAt: 'desc' },
-  })
+  // Fetch posts with search using context (access control applied). `OR` and
+  // `contains` are both in the Where vocabulary, so the predicate is unchanged
+  // from Prisma 7; only the call shape moved to the composed read.
+  // The included author is projected to the one column the table shows: an
+  // unprojected row carries `password`, which reads as a `HashedPassword` and
+  // is not something a Client Component may be handed.
+  const listing = context.db.Post.orderBy({ createdAt: 'desc' }).include('author', (author) =>
+    author.select('name'),
+  )
+  const posts = await (
+    search
+      ? listing.where({ OR: [{ title: { contains: search } }, { content: { contains: search } }] })
+      : listing
+  ).all()
 
-  // Transform posts to include author name for display
+  // Transform posts to include author name for display. The included to-one is
+  // `Row | null` whether or not its column is nullable, so it is null-checked.
   const postsWithAuthorName = posts.map((post) => ({
     ...post,
-    authorName: post.author?.name || 'Unknown',
+    authorName: post.author?.name ?? 'Unknown',
   }))
 
   return (
@@ -52,7 +59,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
       <main className="container mx-auto px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold">Posts</h2>
-          <CreatePostDialog fields={(await config).lists.Post.fields} />
+          <CreatePostDialog fields={serializeFieldConfigs((await config).lists.Post.fields)} />
         </div>
 
         {/* Search Bar — structured classNames slots (issue #709) let us tune a
