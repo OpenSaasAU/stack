@@ -17,7 +17,13 @@ import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
  * against another list hidden inside one call — N hook chains staged against
  * one atomic decision — so a caller writing several rows authors them inside
  * `context.transaction`. `disconnect` is removed with a named replacement
- * instead: assigning `null` to the same relationship field.
+ * instead: assigning `null` to whichever field owns the foreign key — the same
+ * field when it owns one, and a field on the target list when it does not,
+ * since `null` on a non-owning field is itself refused
+ * (`NonOwningRelationInputError`).
+ *
+ * `connect` is absent from this list by design: it lowers onto the owned
+ * foreign-key column and survives ADR-0050.
  */
 const REFUSED_KINDS = [
   'create',
@@ -36,17 +42,24 @@ const REFUSED_KINDS = [
  * runtime half, for a payload that reached the engine untyped — a server
  * action's form data, an MCP tool call, a plugin — or one a `resolveInput`
  * hook assembled after the types had their say.
+ *
+ * `ownsForeignKey` decides which replacement the message names rather than
+ * describing the refused payload: `null` replaces `disconnect` only on the
+ * field that owns the column. On any other field `null` is refused in turn
+ * (`NonOwningRelationInputError`), so naming it there sends the reader
+ * straight into a second error (#1439).
  */
 export class NestedRelationInputError extends Error {
   constructor(
     readonly listName: string,
     readonly fieldKey: string,
     readonly kinds: readonly string[],
+    ownsForeignKey: boolean,
   ) {
     super(
       `Cannot write "${listName}" — "${fieldKey}" carries a nested ` +
         `${quoteKinds(kinds)} operation, which the write payload no longer accepts. A payload ` +
-        `holds this list's own scalars; ${replacementFor(fieldKey, kinds)}.`,
+        `holds this list's own scalars; ${replacementFor(fieldKey, kinds, ownsForeignKey)}.`,
     )
     this.name = 'NestedRelationInputError'
   }
@@ -163,7 +176,11 @@ function quoteKinds(kinds: readonly string[]): string {
   return kinds.map((kind) => `\`${kind}\``).join(', ')
 }
 
-function replacementFor(fieldKey: string, kinds: readonly string[]): string {
+function replacementFor(
+  fieldKey: string,
+  kinds: readonly string[],
+  ownsForeignKey: boolean,
+): string {
   const parts: string[] = []
   if (kinds.some((kind) => kind !== 'disconnect')) {
     parts.push(
@@ -172,7 +189,12 @@ function replacementFor(fieldKey: string, kinds: readonly string[]): string {
     )
   }
   if (kinds.includes('disconnect')) {
-    parts.push(`clear an edge by assigning \`null\` to "${fieldKey}"`)
+    parts.push(
+      ownsForeignKey
+        ? `clear an edge by assigning \`null\` to "${fieldKey}"`
+        : `clear an edge against the target list, assigning \`null\` to the field there that ` +
+            `owns the foreign key — "${fieldKey}" owns none, so \`null\` on it is refused too`,
+    )
   }
   return parts.join('; ')
 }
@@ -367,7 +389,9 @@ export function refuseNestedRelationInput(
     }
 
     const nested = kindsIn(value, REFUSED_KINDS)
-    if (nested.length > 0) throw new NestedRelationInputError(listName, fieldKey, nested)
+    if (nested.length > 0) {
+      throw new NestedRelationInputError(listName, fieldKey, nested, key.kind === 'owning')
+    }
 
     if (value === undefined) continue
     if (key.kind === 'inverse') throw new NonOwningRelationInputError(listName, fieldKey)

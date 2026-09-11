@@ -48,13 +48,19 @@ Because the filter is lowered through the same Where vocabulary a read uses, an
 Access Filter must now name fields the list declares — a rule that scoped by an
 undeclared column is refused rather than silently passed through.
 
-Nested relation input is gone from the write payload (ADR-0050).
+Nested relation input leaves the write payload, `connect` excepted (ADR-0050).
 `create`/`update`/`delete`/`connectOrCreate`/`disconnect`/`set`/`updateMany`/`deleteMany`
 under a relationship key are a compile error against the generated input types
-and a `NestedRelationInputError` at runtime. `disconnect` has a direct
-replacement — assign `null` to the relationship field, which is the same column
-and the same lowering — and the rest have none: write the related rows yourself
-and wrap them in `context.transaction` when they must land together:
+and a `NestedRelationInputError` at runtime; `{ connect: { id } }` survives,
+because it lowers onto a foreign-key column the row being written owns.
+
+`disconnect` has a direct replacement on the side that owns that column — assign
+`null` to the relationship field, which is the same column and the same
+lowering. On a field owning no column, `null` is refused in turn with
+`NonOwningRelationInputError`, so that edge is cleared by an update against the
+target list. The remaining kinds have no replacement in the payload at all:
+write the related rows yourself and wrap them in `context.transaction` when they
+must land together:
 
 ```typescript
 await context.transaction(async (tx) => {
@@ -63,14 +69,15 @@ await context.transaction(async (tx) => {
 })
 ```
 
-`connect` is the one spelling ADR-0050 keeps, and the engine has no lowering for
-it yet. Until it does, a `connect` — or any other object where a relationship
-key's column value belongs — is refused by name with a
-`RelationInputNotLoweredError` naming the list, the field and the issue that
-brings it back (#1153), rather than reaching the driver as a column value and
-failing as a raw type error that names none of those. The refusal is checked
-against both the caller's payload and the data a `resolveInput` hook produced,
-and it covers a synthetic `from_<List>_<field>` back-relation key as well.
+`connect` is the one spelling ADR-0050 keeps, and the engine lowers it onto the
+column the row carries — see `amber-keys-reach.md` for the reachability query it
+issues first. An owning field carrying neither `{ connect: { id } }` nor `null`
+is refused by name with a `MalformedRelationInputError` naming the list and the
+field, rather than reaching the driver as a column value and failing as a raw
+type error that names neither. Every refusal on this surface is checked against
+both the caller's payload and the data a `resolveInput` hook produced, and each
+recognises a synthetic `from_<List>_<field>` back-relation key rather than
+mistaking it for a column of this list.
 
 `afterTransaction` no longer reports `committed` for a write that persisted
 nothing. A write whose predicate matched no row — the row dropped by a
