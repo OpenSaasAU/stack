@@ -292,13 +292,14 @@ packages/tiptap/
 
 ## Exports
 
+The package declares two subpaths, and nothing else resolves:
+
 ```typescript
-// Main export
+// Root: the field builder, the component and their types
 import { richText, TiptapField } from '@opensaas/stack-tiptap'
 
-// Subpath exports
+// The field builder on its own, for a config that never touches the component
 import { richText } from '@opensaas/stack-tiptap/fields'
-import { TiptapField } from '@opensaas/stack-tiptap/components'
 ```
 
 ## Example
