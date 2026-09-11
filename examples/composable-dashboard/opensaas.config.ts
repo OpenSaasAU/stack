@@ -1,7 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, password } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 /**
  * Access control helpers
  */
@@ -39,14 +38,10 @@ const isOwner: AccessControl = ({ session, item }) => {
  */
 export default config({
   db: {
-    provider: 'sqlite',
+    provider: 'postgresql',
     // Auto-timestamps are OFF by default (ADR-0004). This dashboard sorts and
     // displays `createdAt`/`updatedAt`, so opt back in globally.
     timestamps: true,
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
   },
 
   lists: {
@@ -162,7 +157,7 @@ export default config({
           if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           }
           return { ...resolvedData }

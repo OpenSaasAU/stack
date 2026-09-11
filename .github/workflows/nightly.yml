@@ -88,13 +88,16 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # `starter` and `starter-auth` (#1170) plus json-demo, tiptap-demo and
-    # file-upload-demo (#1172) build on every PR into the integration branch
-    # (test.yml). This job stays `main`-only because it is the UNFILTERED
-    # `pnpm build:examples`, and seven examples still cannot build: blog,
-    # custom-field, composable-dashboard, auth-demo and mcp-demo until #1171
-    # converts them, rag-ollama-demo and rag-openai-chatbot until #1173 does.
-    # #1175 drops this `if:` once the seven have landed.
+    # All twelve database-backed examples now build on every PR into the
+    # integration branch (test.yml): `starter` and `starter-auth` (#1170),
+    # json-demo, tiptap-demo and file-upload-demo (#1172), blog, custom-field,
+    # composable-dashboard, auth-demo and mcp-demo (#1171), and rag-ollama-demo
+    # and rag-openai-chatbot (#1173). `plain-css-theming` is the only example
+    # absent there, and it is static HTML with nothing to build. So this job is
+    # no longer `main`-only for want of an example that cannot build — that
+    # reason expired with #1173. It stays gated because test.yml's run is a
+    # filtered enumeration and this one is the UNFILTERED `pnpm build:examples`;
+    # #1175 drops this `if:` as part of replacing that enumeration.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -111,10 +114,11 @@ jobs:
         run: pnpm build
 
       # Create a runnable `.env` for every example by copying its committed
-      # `.env.example`. Each `.env.example` defaults DATABASE_URL to a value that
-      # matches its config's Prisma provider (#462), so no per-example overrides
-      # are needed. Other DB/secret placeholders come from the .env.example values
-      # plus the job-level env below.
+      # `.env.example`. A converted example's `.env.example` no longer defaults
+      # DATABASE_URL — leaving it unset is what makes `opensaas dev` start the
+      # Dev database — so the job-level DATABASE_URL below is what its
+      # generate/build resolves. DB/secret placeholders come from the
+      # .env.example values plus that job-level env.
       - name: Create .env for every example
         run: |
           set -euo pipefail
@@ -129,8 +133,11 @@ jobs:
       - name: Build all examples
         run: pnpm build:examples
         env:
-          # SQLite by default; the postgres-provider example (rag-openai-chatbot)
-          # keeps its own placeholder URL and never connects during generate/build.
+          # SQLite by default, for the examples wave 2 of #1129 has yet to
+          # convert. No example connects during generate or build, so a
+          # converted Postgres example is unaffected by the value: generation
+          # reads the config and `next build` renders no database-backed page.
+          # #1175 replaces this with a Postgres URL when the last one converts.
           DATABASE_URL: 'file:./dev.db'
           # Placeholder secrets so generate/build don't fail on missing vars.
           OPENAI_API_KEY: 'sk-testing-key'

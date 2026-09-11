@@ -89,11 +89,20 @@ pnpm install
 cp .env.example .env
 ```
 
-### 3. Generate Schema and Types
+### 3. Seed a demo author and some posts
 
 ```bash
-pnpm generate
+pnpm seed
 ```
+
+That is `opensaas dev -- tsx seed.ts`, so the Dev database is up, generated and
+reconciled before the script runs and stopped again when it exits. Re-running it
+replaces the same three posts under fresh ids.
+
+The example wires in no auth provider and acts as the first user in the
+directory (`lib/demo-session.ts`), so seeding is what gives it a session: with
+an empty directory every page reads as an anonymous visitor would — published
+posts only, no drafts, and no `internalNotes`.
 
 ### 4. Run Development Server
 
@@ -103,22 +112,12 @@ pnpm dev
 
 Open [http://localhost:3002](http://localhost:3002)
 
-### 5. Seed Some Data (Optional)
-
-With `pnpm dev` running in another terminal:
-
-```bash
-npx tsx seed.ts
-```
-
-Or by hand, with any Postgres client pointed at the connection string `pnpm dev`
-prints on startup:
+To browse the data by hand, point any Postgres client at the connection string
+`pnpm dev` prints on startup:
 
 ```bash
 psql "$DATABASE_URL"
 ```
-
-Create a few users and posts to see the dashboard in action.
 
 ## Features Demonstrated
 
@@ -260,12 +259,12 @@ export function middleware(request) {
 Update API routes to use OpenSaas context:
 
 ```tsx
-// app/api/posts/route.ts
-import { getContextWithUser } from '@/lib/context'
+// lib/actions.ts
+import { getContext } from '@/.opensaas/context'
 
-const context = await getContextWithUser(session.userId)
-const post = await context.db.post.create({ data })
-// Access control automatically enforced!
+const context = await getContext({ userId: session.userId })
+const post = await context.db.Post.create({ data })
+// Access control automatically enforced — `null` is denied-or-not-found
 ```
 
 ### Add More Features

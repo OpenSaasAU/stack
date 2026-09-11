@@ -9,7 +9,7 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
-    "test:rag": "tsx test.ts"
+    "test:rag": "tsx --env-file-if-exists=.env test.ts"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",

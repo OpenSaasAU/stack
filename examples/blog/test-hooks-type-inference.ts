@@ -54,7 +54,8 @@ const testHooksTypeInference = list<Lists.Post.TypeInfo>({
         const _existingTitle: string = args.item.title
         const _existingContent: string | null = args.item.content
         const _id: string = args.item.id
-        const _createdAt: Date = args.item.createdAt
+        // A timestamp column's codec is a string on the wire, not a `Date`.
+        const _createdAt: string = args.item.createdAt
       }
 
       if (args.operation === 'create') {

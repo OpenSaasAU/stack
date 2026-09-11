@@ -377,6 +377,90 @@ describe('the MCP surface', () => {
     )
   })
 
+  /**
+   * The face an application actually hands in. Every other test in this file
+   * builds the engine's `AccessContext`, but a route wires the generated
+   * `getContext()` up, which returns the app-facing `StackContext` — a secured
+   * `db` and none of the engine's plumbing. The two are not assignable to each
+   * other, so a suite that only ever passes the engine face proves nothing
+   * about the consumer (#1171).
+   */
+  describe('the context factory an application hands in', () => {
+    /** What the generated `getContext()` returns: no `ormHandle`, no `_resolveOutputChain`. */
+    function appFacingContextFor(config: OpenSaasConfig) {
+      const orm = ormClientFor(database.data, database.client.orm)
+      return async (given?: Session) =>
+        getContext(
+          config,
+          orm,
+          given ?? null,
+          undefined,
+          false,
+          undefined,
+          undefined,
+          database.client,
+        )
+    }
+
+    test(
+      'the app-facing context carries no engine members',
+      async () => {
+        const context = await appFacingContextFor(schemaConfig())()
+
+        expect('ormHandle' in context).toBe(false)
+        expect('_resolveOutputChain' in context).toBe(false)
+      },
+      BOOT,
+    )
+
+    test(
+      'tools/list and a write both work through it',
+      async () => {
+        const config = schemaConfig()
+        const handlers = createMcpHandlers({
+          config,
+          getSession: session,
+          getContext: appFacingContextFor(config),
+        })
+
+        const post = async (method: string, params?: unknown) => {
+          const response = await handlers.POST(
+            new Request('http://localhost/api/mcp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+            }),
+          )
+          return { status: response.status, body: JSON.parse(await response.text()) }
+        }
+
+        const listed = await post('tools/list')
+        expect(
+          (listed.body.result as { tools: ToolList }).tools.map((tool) => tool.name),
+        ).toContain('list_post_create')
+
+        const called = await post('tools/call', {
+          name: 'list_post_create',
+          arguments: { data: { title: 'through the app-facing context' } },
+        })
+        expect(called.status).toBe(200)
+        const payload = JSON.parse(
+          (called.body.result as { content: Array<{ text: string }> }).content[0].text,
+        )
+        expect(payload).toMatchObject({
+          success: true,
+          item: { title: 'through the app-facing context' },
+        })
+
+        const context = await appFacingContextFor(config)()
+        expect(await context.db.Post.all()).toMatchObject([
+          { title: 'through the app-facing context' },
+        ])
+      },
+      BOOT,
+    )
+  })
+
   describe('the vocabulary tools/list publishes', () => {
     test(
       'a readable list gets its four CRUD tools',

@@ -6,6 +6,21 @@
       "outputs": [".next/**"],
       "env": ["OPENAI_API_KEY"]
     },
+    "opensaas-auth-example#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL"]
+    },
+    "opensaas-mcp-example#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
+    },
+    "opensaas-mcp-example#test": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
@@ -14,13 +29,13 @@
     "test": {
       "dependsOn": ["build"],
       "cache": false,
-      "env": ["DATABASE_URL"]
+      "env": ["DATABASE_URL", "OPENAI_API_KEY"]
     },
     "test:coverage": {
       "dependsOn": ["build"],
       "cache": false,
       "outputs": ["coverage/**"],
-      "env": ["DATABASE_URL"]
+      "env": ["DATABASE_URL", "OPENAI_API_KEY"]
     },
     "dev": {
       "cache": false,

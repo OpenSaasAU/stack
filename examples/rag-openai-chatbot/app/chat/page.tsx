@@ -32,7 +32,8 @@ export default function ChatPage() {
               The top 3 most relevant articles are found using cosine similarity search
             </li>
             <li>
-              The articles are provided as context to GPT-4 for generating the response
+              The articles are provided as context to the chat model for generating the
+              response
             </li>
             <li>The response includes citations to the knowledge base articles used</li>
           </ol>

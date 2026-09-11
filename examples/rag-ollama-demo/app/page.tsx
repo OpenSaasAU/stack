@@ -26,10 +26,11 @@ export default function HomePage() {
           Pull the embedding model: <code>ollama pull nomic-embed-text</code>
         </li>
         <li>
-          Visit the <Link href="/admin">Admin UI</Link> to create documents and articles
+          Visit the <Link href="/admin">Admin UI</Link> to create documents and articles (editing an
+          existing row fails — the form resubmits the write-denied embedding)
         </li>
         <li>
-          Run the test script: <code>pnpm test</code> to see semantic search in action
+          Run the test script: <code>pnpm test:rag</code> to see semantic search in action
         </li>
       </ol>
 

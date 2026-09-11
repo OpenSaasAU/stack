@@ -12,33 +12,47 @@ import {
 } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
+ *
+ * The session shape these read is declared in `types/session.d.ts`, which
+ * augments `Session` from `@opensaas/stack-core`.
  */
 
-// Check if user is signed in
-//
-// Typed as `Parameters<AccessControl>[0]` rather than the whole function as
-// `: AccessControl`, and returning `boolean` explicitly: these helpers are
-// reused for both operation-level access (which accepts a Prisma filter) and
-// field-level access (which does not, and never has — field access is a
-// per-field visibility decision, not a row filter). Since none of these
-// return a filter, pinning the return type to `boolean` keeps them valid at
-// both call sites.
-const isSignedIn = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
-  return true
+// Check if user is signed in. Typed by its parameter (`Parameters<AccessControl>[0]`)
+// rather than as a whole `: AccessControl`, with an explicit `boolean` return: this
+// helper is reused for both operation-level access (which accepts a row filter) and
+// field-level access (which does not, and never has — field access is a per-field
+// visibility decision, not a row filter). Since it never returns a filter, pinning
+// the return type to `boolean` keeps it valid at both call sites.
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
+  return !!session
 }
 
-// Check if user is the author of a post
-const isAuthor = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
-  return true
+// Check if user is the author of a post. Scopes ROWS, so it stays `AccessControl`
+// (filter-returning) and is used only at the operation level — field-level access
+// cannot honour a filter, so the per-field checks below compare `item.authorId`
+// directly and return a `boolean`.
+const isAuthor: AccessControl = ({ session }) => {
+  if (!session) return false
+  return {
+    authorId: { equals: session.userId },
+  }
+}
+
+// The per-field counterpart of `isAuthor`. The `!` on `item` is deliberate: the
+// admin UI's inline-edit affordance check calls field-level `update` rules without
+// an `item` — it is deciding whether to show the affordance per column, not per row
+// — and treats a throw there as "potentially writable, let the real per-row check at
+// commit time decide".
+const isAuthorOfItem = ({ session, item }: Parameters<AccessControl>[0]): boolean => {
+  return !!session && session.userId === item!.authorId
 }
 
 // Check if user is the owner of their own user record
-const isOwner = ({ session: _session, item: _item }: Parameters<AccessControl>[0]): boolean => {
-  return true
+const isOwner = ({ session, item }: Parameters<AccessControl>[0]): boolean => {
+  return !!session && session.userId === item?.id
 }
 
 /**
@@ -46,14 +60,10 @@ const isOwner = ({ session: _session, item: _item }: Parameters<AccessControl>[0
  */
 export default config({
   db: {
-    provider: 'sqlite',
+    provider: 'postgresql',
     // Auto-timestamps are OFF by default (ADR-0004). This example sorts and
     // reads `createdAt`/`updatedAt`, so opt back in globally.
     timestamps: true,
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
   },
 
   lists: {
@@ -97,12 +107,15 @@ export default config({
           ref: 'Post.author',
           many: true,
         }),
-        // Virtual field - computed from name and email, not stored in database
+        // Virtual field - computed from name and email, not stored in database.
+        // A hook's `item` is exactly its declared dependency set plus the
+        // list's system fields (ADR-0051), so the columns it reads have to be
+        // named here or they arrive undefined.
         displayName: virtual({
           type: 'string', // TypeScript output type
+          needs: ['name', 'email'],
           hooks: {
             resolveOutput: ({ item }) => {
-              // item is now typed as User with name, email, etc.
               return `${item.name || 'Unknown'} (${item.email || 'no-email'})`
             },
           },
@@ -133,7 +146,7 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            update: isAuthorOfItem,
           },
         }),
         slug: text({
@@ -145,16 +158,18 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            update: isAuthorOfItem,
           },
         }),
         internalNotes: text({
           ui: { displayMode: 'textarea' },
-          // Only the author can read/write internal notes
+          // Only the author can read/write internal notes. There is no `item` yet
+          // on create, so "signed in" is the create-time check — the author is
+          // whoever is creating the post.
           access: {
-            read: isAuthor,
-            create: isAuthor,
-            update: isAuthor,
+            read: isAuthorOfItem,
+            create: isSignedIn,
+            update: isAuthorOfItem,
           },
         }),
         status: select({
@@ -187,7 +202,10 @@ export default config({
         operation: {
           // Non-authenticated users can only see published posts
           // Authenticated users can see all posts
-          query: ({ session: _session }) => {
+          query: ({ session }) => {
+            if (!session) {
+              return { status: { equals: 'published' } }
+            }
             return true
           },
           // Must be signed in to create
@@ -205,7 +223,7 @@ export default config({
           if (resolvedData?.status === 'published' && !item?.publishedAt) {
             return {
               ...resolvedData,
-              publishedAt: new Date(),
+              publishedAt: new Date().toISOString(),
             }
           }
           return { ...resolvedData }
