@@ -6,6 +6,7 @@ import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
+import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -313,7 +314,9 @@ export async function ListView({
     return resolved
   })
 
-  const serializedItems = jsonSafeClone(itemsWithResolvedLabels)
+  const serializedItems = jsonSafeClone(
+    itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
+  )
 
   // Collect each filterable field's serializable Filter spec metadata (fields,
   // operators, enumerated values / relationship label search) to drive the

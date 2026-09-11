@@ -1,4 +1,5 @@
 import { AdminUI } from '@opensaas/stack-ui'
+import { FieldRegistration } from './FieldRegistration'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 
@@ -21,13 +22,16 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
   return (
-    <AdminUI
-      context={await getContext()}
-      config={await config}
-      params={resolvedParams.admin}
-      searchParams={resolvedSearchParams}
-      basePath="/admin"
-      serverAction={serverAction}
-    />
+    <>
+      <FieldRegistration />
+      <AdminUI
+        context={await getContext()}
+        config={await config}
+        params={resolvedParams.admin}
+        searchParams={resolvedSearchParams}
+        basePath="/admin"
+        serverAction={serverAction}
+      />
+    </>
   )
 }
