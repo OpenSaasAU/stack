@@ -25,11 +25,27 @@ import {
 /**
  * How long the config file must sit unwritten before a save counts as one
  * save. `fs.writeFileSync` truncates then writes, which Linux inotify can
- * deliver as two change events; macOS FSEvents coalesces them.
+ * deliver as two change events; macOS FSEvents coalesces them. The loop pays
+ * this much latency on every save before it reacts.
  */
 const CONFIG_WRITE_SETTLE_MS = 200
 
 const DEFAULT_APP_COMMAND = ['next', 'dev'] as const
+
+/**
+ * What to do with a save the loop skipped. The guard compares the config's own
+ * bytes, so it skips two things a developer may well have meant: a retry after
+ * a reconcile that failed, and a change that lives in a module the config
+ * imports rather than in the config. `db update` regenerates and reconciles
+ * from the current config either way, so it is the route out of both.
+ */
+const NOTHING_TO_RECONCILE_ROUTE =
+  'To regenerate and reconcile anyway — after a failed reconcile, or for a change in a ' +
+  'module the config imports — run `pnpm db:update` (`opensaas db update`) in another terminal.\n'
+
+/** How a parked destructive change is applied, named wherever one is waiting. */
+const PARKED_ROUTE =
+  'To apply it, run `pnpm db:update` (`opensaas db update --confirm postgres`) in another terminal.\n'
 
 /** The Dev database's data directory, inside the Generated bundle (ADR-0063). */
 const DEV_DATABASE_DIR = path.join('.opensaas', 'dev-db')
@@ -128,10 +144,22 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   /** One reconcile at a time: a burst of writes must not race itself. */
   let queue = Promise.resolve()
   /**
-   * The config source the loop has already generated from. Everything the loop
-   * emits is derived from these bytes, so a save that reproduces them has
-   * nothing to reconcile — and promoting a fresh generation over the live
-   * bundle on the strength of one would rewrite files the user did not change.
+   * The config source the loop has already generated from, held only while a
+   * reconcile that ran to a promote or a deliberate park stands behind it.
+   * Everything the loop emits is derived from these bytes, so a save that
+   * reproduces them has nothing to reconcile — and promoting a fresh
+   * generation over the live bundle on the strength of one would rewrite files
+   * the user did not change.
+   *
+   * Compared as bytes, not as meaning: a reformat or a comment tweak reconciles
+   * and promotes in full. That is the safe direction — this must never skip a
+   * save that changed something — and comparing generated output instead would
+   * make the guard depend on every generator and plugin `afterGenerate` being
+   * byte-deterministic, which nothing enforces.
+   *
+   * Bytes the config *imports* are outside it: the loader disables its module
+   * cache, so `opensaas db update` regenerates from them, and the skip message
+   * names that route.
    */
   let reconciledSource: string | undefined
 
@@ -165,6 +193,17 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   process.once('SIGTERM', onSigterm)
   process.once('exit', onExit)
 
+  /** How the loop reports that it could not get as far as a staged generation. */
+  const sayNothingStaged = (say: (message: string) => void, error: unknown): undefined => {
+    say(
+      `Generation failed, so nothing was staged: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+    say('The app keeps serving the contract the database already carries.')
+    return undefined
+  }
+
   /**
    * Generates into staging. The app keeps running on the contract it has if
    * this refuses — a half-saved config must not take the loop down with it.
@@ -178,13 +217,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     try {
       return await generateCommand({ stagingDir, throwOnFailure: true })
     } catch (error) {
-      say(
-        `Generation failed, so nothing was staged: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      )
-      say('The app keeps serving the contract the database already carries.')
-      return undefined
+      return sayNothingStaged(say, error)
     }
   }
 
@@ -200,14 +233,32 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   const onConfigChange = async (): Promise<void> => {
-    const source = fs.readFileSync(configPath, 'utf-8')
+    const say = (message: string): void => console.log(chalk.gray(message))
+
+    // Inside the refusal this file already has: a config removed or renamed
+    // between the watcher event and this read is a config the loop cannot
+    // stage from, which is what that refusal says.
+    let source: string
+    try {
+      source = fs.readFileSync(configPath, 'utf-8')
+    } catch (error) {
+      sayNothingStaged(say, error)
+      return
+    }
+
     if (source === reconciledSource) {
-      console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.\n'))
+      console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.'))
+      console.log(
+        chalk.gray(
+          staged === undefined
+            ? NOTHING_TO_RECONCILE_ROUTE
+            : `The change staged earlier is still parked. ${PARKED_ROUTE}`,
+        ),
+      )
       return
     }
 
     console.log(chalk.yellow('\nConfig changed: staging the new contract...\n'))
-    const say = (message: string): void => console.log(chalk.gray(message))
 
     // Before staging, not after: generation seeds each declared pack's
     // extension contract space into the project's own `migrations/`, so a
@@ -224,6 +275,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
+      reconciledSource = undefined
       restoreMigrationRefs(cwd, refs)
       reportFailure((message) => console.error(chalk.red(message)), planned.failure.output)
       return
@@ -234,17 +286,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       staged = generation
       console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
       for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
-      console.log(
-        chalk.yellow(
-          '\nThe app keeps serving the previous schema. To apply it, run `pnpm db:update` ' +
-            '(`opensaas db update --confirm postgres`) in another terminal.\n',
-        ),
-      )
+      console.log(chalk.yellow(`\nThe app keeps serving the previous schema. ${PARKED_ROUTE}`))
       return
     }
 
     const applied = await planDatabaseUpdate(cwd, generation.prismaConfig)
     if (!applied.ok) {
+      reconciledSource = undefined
       restoreMigrationRefs(cwd, refs)
       reportFailure((message) => console.error(chalk.red(message)), applied.failure.output)
       return
@@ -333,6 +381,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     })
     watcher.on('change', () => {
       queue = queue.then(onConfigChange).catch((error: unknown) => {
+        // Whatever threw, it was not a promote and not a park, so the bytes it
+        // was working from have not reached the database or the live bundle.
+        reconciledSource = undefined
         console.error(chalk.red('\nStaged reconcile failed:'), error)
       })
     })
