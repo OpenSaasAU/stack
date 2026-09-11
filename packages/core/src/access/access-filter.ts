@@ -376,16 +376,7 @@ async function buildAccessScopedCountSelect(
       throw new UndeclaredCountKeyError(listKey, key)
     }
 
-    // `fieldConfig` is undefined for a synthetic back-relation (#1082) — it has
-    // no field of its own on THIS list, so there is no field-level `read`
-    // access to fold in; `resolveCountAccessEntryForList` treats a missing
-    // `fieldAccess` as exempt, matching the ordinary include path's own lack
-    // of a field-level gate for a synthetic key (issue #1111).
-    const accessEntry = await resolveCountAccessEntryForList(
-      relatedConfig.listConfig,
-      args,
-      fieldConfig?.access,
-    )
+    const accessEntry = await resolveCountAccessEntryForList(relatedConfig.listConfig, args)
 
     // Denial is checked BEFORE the caller's nested `where` is validated —
     // mirroring `buildAccessScopedWhere`'s own ordering below. A fully denied

@@ -75,12 +75,12 @@
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
-    "@types/pg": "^8.23.1",
+    "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "openai": "^6.32.0",
-    "pg": "^8.23.0",
+    "pg": "^8.22.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"
   }
