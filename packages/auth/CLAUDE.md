@@ -100,8 +100,8 @@ lists cannot silently drift from what better-auth itself declares (issue
   through to `getAuthTables` as its own options object, so an override path
   (`adoptBetterAuthTables`, a renamed model, a remapped column) is inherited
   for free rather than re-implemented as a parallel normalization
-- `modelName` → list key (and Prisma model name); `tableName` → table
-  `@@map`, **independent of `modelName`** (defaults to `modelName` when it
+- `modelName` → list key (and the contract's model name); `tableName` → the
+  list's `db.map`, **independent of `modelName`** (defaults to `modelName` when it
   differs from the better-auth default, otherwise unset — i.e. unchanged
   output when `tableName` isn't set)
 - every scalar field's type, nullability, uniqueness, index, column map, and
@@ -134,7 +134,7 @@ lists cannot silently drift from what better-auth itself declares (issue
 
 With no `modelName`/`tableName`/`fields` overrides the base list/table shape
 is otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
-field shapes, no table `@@map`).
+field shapes, no `db.map`).
 
 ```typescript
 // Adopt an existing better-auth installation (Auth lists ≠ app User)
@@ -167,7 +167,7 @@ better-auth is driven by a stack-authored adapter in `src/adapter/`, built with
 better-auth's `createAdapterFactory` over the running context's **Unsafe
 surface** — its ORM lane for the eight methods a `Collection` can express, its
 typed SQL lane for `incrementOne` and an empty-`where` `deleteMany`. There is
-no better-auth Prisma Client adapter in the path, and no second client:
+no better-auth ORM-client adapter in the path, and no second client:
 `getDatabaseConfig` reads `unsafe` and `transaction` off the resolved context
 structurally, because `AccessContext` names neither (ADR-0038).
 
@@ -209,7 +209,7 @@ Grant access via `authPlugin({ access: { user, session, account, verification } 
 keyed by better-auth model name (not the derived list key, so it survives a
 `modelName` remap). Each entry is applied on the plugin's own `addList` path
 in `deriveAuthLists` (`src/config/derive-auth-lists.ts`), so it rides along
-with the list's `@@map`/`@@schema`/fields — it is **not** forwarded on the
+with the list's `db.map`/`db.schema`/fields — it is **not** forwarded on the
 `extendList` path (an app-declared list of the same key keeps its own
 access, unchanged since #678/ADR-0013).
 
@@ -239,19 +239,36 @@ Operation-level access is all-or-nothing at the list, not the column — so
 the deny above (list-level) isn't the whole story for a credential-bearing
 field: `deriveAuthLists` sets a field-level `access: { read: () => false }`
 on each one unconditionally, independent of whatever `accessConfig` an app
-supplies. Opening `query` on `Session` for a "your active sessions" screen no
-longer also exposes `token` — the field is stripped from a returned row (the
-ordinary field-access-denial behavior), the row itself still returns. This
-holds even for a `findUnique` lookup that selects the row BY the denied
-field (`context.db.session.findUnique({ where: { token } })` still finds
-the session; `token` just comes back stripped) — `findUnique`'s `where` is
-a unique selector, not a predicate the read-access check walks. Naming the
-field in `findMany`'s (or `count`'s) `where`/`orderBy` instead takes the
-predicate-time path (`validateQueryFieldReadAccess` in
-`packages/core/src/access/query-validation.ts`) and throws a
-`ValidationError` up front rather than stripping anything; `sudo()` is
-required for that shape too, not only for reading the column back off a
-row fetched another way.
+supplies. Opening `query` on `Session` for a "your active sessions" screen
+no longer also exposes `token` — the field is stripped from a returned row (the
+ordinary field-access-denial behavior), the row itself still returns.
+
+Naming a read-denied field in a composed read's `where` or `orderBy` is a
+different thing: that takes the **predicate-time read check**
+(`validateQueryFieldReadAccess` in
+`packages/core/src/access/query-validation.ts`), which throws a
+`ValidationError` up front rather than stripping anything. Without it a
+withheld value could be recovered by probing a query that returns no row
+carrying it — an `aggregate` count, say (ADR-0031).
+
+```typescript
+// Throws: `token` is read-denied, and this predicate would otherwise be an oracle.
+await context.db.Session.where({ token: { equals: candidate } }).first()
+
+// Reads the row, with `token` stripped from it.
+const session = await context.db.Session.where({ id: { equals: id } }).first()
+if (session === null) throw new Error('Access denied')
+
+// Reads the row with `token` on it, and owns the decision to elevate.
+const full = await context
+  .sudo()
+  .db.AuthSession.where({ id: { equals: id } })
+  .first()
+if (full === null) throw new Error('Not found')
+```
+
+`sudo()` is required for both shapes — naming the field in a predicate as much
+as reading the column back off a row fetched another way.
 
 This is not a closed list of six base-model fields — it also covers **plugin
 table** credential fields the stack has first-class support for (ADR-0034),
@@ -302,15 +319,15 @@ neither a reliable nor a complete signal (see ADR-0036).
 ### Schema placement (relocatable Auth lists)
 
 A plugin-level `schema` option places all generated Auth lists in a non-`public`
-Postgres schema via `@@schema(...)`, so they can adopt a separate-schema
+Postgres schema — a contract **namespace** — so they can adopt a separate-schema
 better-auth layout (e.g. an `auth` schema) and reach **Schema parity** with the
-live tables. Combined with the derived keys/`@@map`/field `@map`s above, the
+live tables. Combined with the derived keys and the table and column maps above, the
 generated lists diff CLEAN against an existing `auth`-schema install — they are
 modelled for runtime/types without producing a migration.
 
 ```typescript
 authPlugin({
-  schema: 'auth', // all Auth lists get @@schema("auth")
+  schema: 'auth', // every Auth list lands in the `auth` namespace
   user: { modelName: 'AuthUser' },
   session: { modelName: 'AuthSession' },
   account: { modelName: 'AuthAccount' },
@@ -322,15 +339,15 @@ authPlugin({
 
 How it wires up (Postgres multi-schema):
 
-- Each Auth list gets a list-level `db.schema` → `@@schema(...)` (per-model
+- Each Auth list gets a list-level `db.schema`, which the contract carries as
+  that model's namespace (per-model
   `schema` override, else the plugin-level `schema`).
 - The plugin's `beforeGenerate` hook adds the auth schema(s) (always plus
   `public`) to the datasource `db.schemas` array and defaults any list without
   an explicit `db.schema` to `public`, so the generated multi-schema Prisma
-  schema is valid (the generator emits `previewFeatures = ["multiSchema"]` and
-  `schemas = [...]`).
-- With no `schema` option the Auth lists stay in `public` and no `@@schema` /
-  `schemas` / preview feature is emitted (greenfield default unchanged).
+  contract declares every namespace it uses.
+- With no `schema` option the Auth lists stay in `public` and the contract
+  declares no namespace beyond it (greenfield default unchanged).
 
 ### Adopting an existing better-auth install (`adoptBetterAuthTables`)
 
@@ -363,7 +380,7 @@ wins over `useBetterAuthTableNames` for any model it names):
 authPlugin({
   ...adoptBetterAuthTables({ useBetterAuthTableNames: true }),
   // → AuthUser/AuthSession/AuthAccount/AuthVerification list keys,
-  //   @@map("user")/@@map("session")/@@map("account")/@@map("verification")
+  //   db.map "user"/"session"/"account"/"verification"
 })
 ```
 
@@ -372,7 +389,7 @@ directly on `authPlugin`, and spreading it before your own keys lets you
 override per model. Because the derived user key is `AuthUser` (not `User`), an
 app's own domain `User` is left untouched — the plugin only ever adds/extends
 its derived keys. Combined with the derivation + schema placement above, the
-generated Auth lists reach **Schema parity** (clean `schema:diff`) against a live
+generated Auth lists reach **Schema parity** (an empty migration plan) against a live
 `auth`-schema install — they are modelled for runtime/types, not migrated.
 
 **App User ≠ Auth identity.** The plugin models the **Auth identity** (the
@@ -384,14 +401,20 @@ existing better-auth installation”) for the end-to-end migrator walkthrough.
 
 ### Session Provider
 
-Better-auth resolves the session, and the generated bundle hands it to the
+Better-auth resolves the session; the application projects it through
+`getSessionFromAuth()` and hands the **projected fields themselves** to the
 context factory:
 
 ```typescript
-// Generated .opensaas/context.ts uses this pattern:
-const session = await auth.api.getSession({ headers })
-const context = await getContext({ session })
+// lib/session.ts
+const session = await getSessionFromAuth(auth, sessionFields, await headers())
+const context = session ? await getContext(session) : await getContext()
 ```
+
+**Never wrap the session in an object.** `getContext({ session })` is a bug that
+reads as **signed in for an anonymous caller**: the factory distinguishes a
+session from `null` and nothing else, and `{ session: undefined }` is truthy. A
+caller that may have no session branches on it, as above.
 
 ### Session Fields Configuration
 
@@ -530,7 +553,7 @@ would create two unranked ways to set the same thing — worse for `plugins`,
 since the stack must append `nextCookies()` last (see "Auth forms submit
 through server actions" below). `additionalFields` under `user`/`session`/
 `account`/`verification` is rejected too — it adds columns with no
-corresponding change to the generated Prisma schema, which is exactly the
+corresponding change to the generated contract, which is exactly the
 silent-divergence failure mode this passthrough exists to avoid elsewhere.
 Add fields to the derived list instead: `extendUserList` for the user model,
 or declare the list yourself in your own `lists` config for the others (the
@@ -604,7 +627,7 @@ constructs a real instance and does not have this gap.
 
 - Merges auth lists into core config
 - Session flows through context to all access control functions
-- Generator creates Prisma schema with auth tables
+- The generator emits the Auth lists into the contract like any other list
 
 ### With MCP (Model Context Protocol)
 
@@ -619,7 +642,7 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 ```
 
-`createAuth()` returns a `Proxy` synchronously and defers the real `betterAuth()` construction (and the `context.ormHandle` it wraps) until `rawOpensaasContext` resolves — the sanctioned pattern for a module-init-time consumer that only needs to defer method calls, not obtain a resolved client value. See ADR-0014 and root `CLAUDE.md`'s "Getting the ORM client outside a request" for the full decision record and the synchronous-client alternative.
+`createAuth()` returns a `Proxy` synchronously and defers the real `betterAuth()` construction (and the Unsafe surface it drives the Auth adapter over) until `rawOpensaasContext` resolves — the sanctioned pattern for a module-init-time consumer that only needs to defer method calls, not obtain a resolved client value. See ADR-0014 and root `CLAUDE.md`'s "Getting the ORM client outside a request" for the full decision record and the synchronous-client alternative.
 
 ### With Better-auth
 
