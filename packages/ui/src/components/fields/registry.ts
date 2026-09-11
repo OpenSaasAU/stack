@@ -5,6 +5,7 @@ import { BigIntField } from './BigIntField.js'
 import { CheckboxField } from './CheckboxField.js'
 import { SelectField } from './SelectField.js'
 import { TimestampField } from './TimestampField.js'
+import { CalendarDayField } from './CalendarDayField.js'
 import { PasswordField } from './PasswordField.js'
 import { RelationshipField } from './RelationshipField.js'
 import { JsonField } from './JsonField.js'
@@ -39,6 +40,7 @@ export const fieldComponentRegistry: Record<string, ComponentType<any>> = {
   checkbox: CheckboxField,
   select: SelectField,
   timestamp: TimestampField,
+  calendarDay: CalendarDayField,
   password: PasswordField,
   relationship: RelationshipField,
   json: JsonField,

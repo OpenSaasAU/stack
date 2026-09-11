@@ -5,6 +5,7 @@ import { IntegerCell } from './IntegerCell.js'
 import { CheckboxCell } from './CheckboxCell.js'
 import { SelectCell } from './SelectCell.js'
 import { TimestampCell } from './TimestampCell.js'
+import { CalendarDayCell } from './CalendarDayCell.js'
 import { RelationshipCell } from './RelationshipCell.js'
 import { PasswordCell } from './PasswordCell.js'
 
@@ -47,6 +48,7 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   checkbox: CheckboxCell,
   select: SelectCell,
   timestamp: TimestampCell,
+  calendarDay: CalendarDayCell,
   relationship: RelationshipCell,
   password: PasswordCell,
 }
