@@ -538,6 +538,7 @@ Field components are used internally by forms but can also be used directly for 
 - `CheckboxField` - Checkbox for boolean fields
 - `SelectField` - Dropdown for enum fields
 - `TimestampField` - Date/time picker for timestamp fields
+- `CalendarDayField` - Date-only picker for `calendarDay` fields (reads and writes `YYYY-MM-DD`, never timezone-shifted)
 - `PasswordField` - Password input (hidden by default)
 - `RelationshipField` - Combobox for relationship fields
 

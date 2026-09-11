@@ -27,14 +27,14 @@ shadcn/ui components:
 - `Card`, `CardHeader`, `CardContent`, `CardFooter`
 - `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableCell`
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter`
-- `Popover`, `Calendar`, `DatetimePicker`, `TimePicker`
+- `Popover`, `Calendar`, `DatetimePicker`, `DatePicker`, `TimePicker`
 - `Combobox` - Search and select component
 
 ### Fields (`/fields`)
 
 Field components for forms:
 
-- `TextField`, `IntegerField`, `CheckboxField`, `TimestampField`
+- `TextField`, `IntegerField`, `CheckboxField`, `TimestampField`, `CalendarDayField`
 - `PasswordField`, `SelectField`, `RelationshipField`
 - `FieldRenderer` - Renders field based on config (uses registry)
 

@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-cli",
-  "version": "0.42.3",
+  "version": "0.43.0",
   "description": "CLI tools for OpenSaas Stack",
   "type": "module",
   "engines": {
@@ -68,7 +68,7 @@
     "prisma": "8.0.0-rc.12",
     "prompts": "^2.4.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@opensaas/stack-rag": "workspace:*",
