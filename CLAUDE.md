@@ -378,7 +378,7 @@ Plugin data is stored in `config._pluginData[pluginName]`.
 
 1. **`prisma/contract.ts`** — the Contract module: standalone and fully literal, importing nothing from the config, so the builder's purity rules hold by construction
 2. **`prisma/contract.json`** + **`prisma/contract.d.ts`** — the **Contract artifacts**, written by `prisma contract emit`, committed and byte-deterministic. The `.d.ts` carries per-field nullability, codecs, the column map and the relation graph, so nothing downstream re-derives them
-3. **`prisma.config.ts`** — Prisma's CLI config, importing each declared pack's control descriptor and resolving the database URL through `resolveDatabaseUrl()`
+3. **`prisma.config.ts`** — Prisma's CLI config, importing each declared pack's control descriptor and resolving the database URL through `findDatabaseUrl()` — the non-throwing accessor, because this file is evaluated for every Prisma command including the offline ones
 4. **`migrations/<space>/**`** — one **Extension contract space** per declared pack, regenerated on every `generate`; Prisma runs `CREATE EXTENSION` from it on every path
 5. **`.opensaas/`** — the **Generated bundle**: `context.ts`, `types.ts`, `lists.ts`, `plugin-types.ts` and `tables.ts` (the emitted dependency-set table and constraint map)
 
@@ -650,7 +650,7 @@ const context = userId ? await getContext({ userId }) : await getContext()
 
 **Reads are composed, then run by a terminal.** `where`, `orderBy`, `select`, `include`, `limit`, `offset`, `cursor`, `distinct`/`distinctOn` build an immutable value; `all()`, `first()`, `aggregate()` and `nearest()` run it. A method appears on the surface only where the engine knows how to scope it — omission is the signal, not an oversight. A read materialises: no terminal is an async iterable, and a caller that needs a cursor uses `context.unsafe`.
 
-**Writes take scalars plus `connect`.** `create(data)`, `where(...).update(data)` and `where(...).delete()` accept the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
+**Writes take scalars plus `connect`.** `create({ data })`, `update({ where, data })` and `delete({ where })` are members of the list itself, never terminals chained off a composed read — and `where` there is the row's identity, `{ id }`, alone. `data` accepts the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
 
 **Interactive transactions:** `context.transaction(async (txContext) => { … })` runs several access-checked, hook-firing `context.db` operations atomically. Unlike a transaction on `context.unsafe` (which bypasses access control and hooks), `txContext.db` keeps the security and validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.
 
@@ -1195,7 +1195,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - A `resolveOutput` hook reading an undeclared column breaks silently unless it is typed through `Lists.<List>.TypeInfo`, where it is a compile error
 - Every to-one read off an included row is a null check, `NOT NULL` column or not
 - A secured read holds its whole result; bounding a large read is the caller's job
-- A row lock is two round trips, and `all().forUpdate()` binds a bounded key set
+- A row lock is two round trips, and `.forUpdate().all()` binds a bounded key set
 - A required-foreign-key cycle is unwritable through the secured surface
 - `contains` and text equality in filter URLs are case-insensitive; a to-many count filter other than presence degrades to free text
 - An approximate vector scan under a selective access filter can return fewer rows than asked for

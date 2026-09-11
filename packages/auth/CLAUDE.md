@@ -262,7 +262,7 @@ if (session === null) throw new Error('Access denied')
 // Reads the row with `token` on it, and owns the decision to elevate.
 const full = await context
   .sudo()
-  .db.AuthSession.where({ id: { equals: id } })
+  .db.Session.where({ id: { equals: id } })
   .first()
 if (full === null) throw new Error('Not found')
 ```
