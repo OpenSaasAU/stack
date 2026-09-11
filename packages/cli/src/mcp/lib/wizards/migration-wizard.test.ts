@@ -26,7 +26,7 @@ describe('MigrationWizard config-generation failure', () => {
     const start = await wizard.startMigration('keystone')
     const sessionId = getSessionId(start.content[0].text)
 
-    await wizard.answerQuestion(sessionId, 'sqlite') // db_provider
+    await wizard.answerQuestion(sessionId, 'postgresql') // db_provider
     await wizard.answerQuestion(sessionId, false) // enable_auth (skips auth_methods)
     const final = await wizard.answerQuestion(sessionId, true) // confirm -> generates
 

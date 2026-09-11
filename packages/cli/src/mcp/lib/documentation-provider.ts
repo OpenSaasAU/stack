@@ -262,11 +262,7 @@ const isAuthor = ({ session, item }) =>
 
 export default config({
   db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      // ... adapter setup
-    },
+    provider: 'postgresql',
   },
   lists: {
     Post: list({
@@ -362,7 +358,7 @@ access: {
       content: text(),
       author: relationship({ ref: 'User.posts' }),
       comments: relationship({ ref: 'Comment.post', many: true }),
-      tags: relationship({ ref: 'Tag.posts', many: true }),
+      tags: relationship({ ref: 'PostTag.post', many: true }),
     },
   }),
 
@@ -377,12 +373,23 @@ access: {
   Tag: list({
     fields: {
       name: text(),
-      posts: relationship({ ref: 'Post.tags', many: true }),
+      posts: relationship({ ref: 'PostTag.tag', many: true }),
+    },
+  }),
+
+  // A many-to-many is its own list: there is no implicit join table (ADR-0048).
+  PostTag: list({
+    fields: {
+      post: relationship({ ref: 'Post.tags' }),
+      tag: relationship({ ref: 'Tag.posts' }),
+    },
+    db: {
+      indexes: [{ fields: ['post', 'tag'], unique: true }],
     },
   }),
 }`,
         notes:
-          'Relationships use `ref: "ListName.fieldName"` format. Set `many: true` for one-to-many or many-to-many.',
+          'Relationships use `ref: "ListName.fieldName"` format. Set `many: true` for the to-many side of a one-to-many. A many-to-many is authored as a junction list with a to-one relationship to each side and a unique index over the pair — both ends then point at the junction with `many: true`.',
         sourcePath: 'examples/blog/opensaas.config.ts',
       },
 
@@ -499,7 +506,7 @@ export const fields = {
 
 1. **Models → Lists**: Prisma models become OpenSaaS lists
 2. **Access Control**: Add operation-level and field-level access
-3. **Database URL**: Now provided via prismaClientConstructor
+3. **Database URL**: Read from \`DATABASE_URL\`; leave it unset and \`opensaas dev\` runs a Dev database for you
 4. **Relationships**: Use \`ref: 'ListName.fieldName'\` format
 
 ## Common Patterns
@@ -538,7 +545,7 @@ Post: list({
 KeystoneJS and OpenSaaS Stack are very similar. Migration is mostly:
 1. Update import paths
 2. Minor syntax adjustments
-3. Add prismaClientConstructor for Prisma 7
+3. Point the database config at Postgres
 
 ## Key Changes
 
@@ -561,16 +568,14 @@ db: {
   url: 'file:./dev.db',
 }
 
-// After (Prisma 7 requires adapters)
+// After — Postgres only, and the URL comes from DATABASE_URL
 db: {
-  provider: 'sqlite',
-  url: 'file:./dev.db',
-  prismaClientConstructor: (PrismaClient) => {
-    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-    return new PrismaClient({ adapter })
-  },
+  provider: 'postgresql',
 }
 \`\`\`
+
+\`DATABASE_URL\` unset means \`opensaas dev\` starts a Dev database for the
+project; set it and everything talks to the server you point it at.
 
 ## Field Types (1:1 mapping)
 
@@ -600,8 +605,8 @@ If you have a Next.js project without Prisma, you'll need to:
 
 1. **Install Dependencies**
 \`\`\`bash
-pnpm add @opensaas/stack-core @prisma/client prisma
-pnpm add -D @prisma/adapter-better-sqlite3 better-sqlite3
+pnpm add @opensaas/stack-core @prisma/orm-postgres
+pnpm add -D @opensaas/stack-cli prisma
 \`\`\`
 
 2. **Create opensaas.config.ts**
@@ -611,11 +616,7 @@ import { text, integer } from '@opensaas/stack-core/fields'
 
 export default config({
   db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      // See examples for adapter setup
-    },
+    provider: 'postgresql',
   },
   lists: {
     // Define your models here
@@ -623,12 +624,15 @@ export default config({
 })
 \`\`\`
 
-3. **Generate and Push**
+3. **Generate and Run**
 \`\`\`bash
 pnpm opensaas generate
-npx prisma generate
-npx prisma db push
+pnpm opensaas dev
 \`\`\`
+
+\`opensaas dev\` starts a Dev database (unless \`DATABASE_URL\` is set),
+regenerates, and reconciles the database on every config edit. A change it
+holds back as destructive is applied with \`opensaas db update\`.
 
 ## If You're Using an Auth Library
 

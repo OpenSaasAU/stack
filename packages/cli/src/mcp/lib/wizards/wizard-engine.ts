@@ -253,8 +253,9 @@ ${implementation.devGuideSection}
 If you encounter issues:
 1. Ensure all dependencies are installed: \`pnpm install\`
 2. Check that environment variables are set correctly
-3. Run \`pnpm generate\` to update Prisma schema
-4. Run \`pnpm db:push\` to update database
+3. Run \`pnpm generate\` to regenerate the contract and types
+4. Run \`pnpm dev\` — it reconciles the database with what the config emits
+5. If a change is held back as destructive, apply it with \`pnpm db:update\`
 
 For more help, see the docs at https://stack.opensaas.au/
 
