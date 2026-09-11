@@ -90,12 +90,12 @@ jobs:
       # emission is easiest to make unstable; `starter`/`starter-auth` cover
       # what the scaffolder ships, the three demos added by #1172 cover the
       # field packages a scaffold does not reach — json, tiptap's richText, and
-      # storage's file/image (ADR-0067) — and the five of #1171 join them here.
-      # Two examples are still outside this gate: rag-ollama-demo and
-      # rag-openai-chatbot join as #1173 converts them.
-      # `examples/plain-css-theming` will never appear here — it is static HTML
-      # with no config to generate from. #1175 lifts the gate to an unfiltered
-      # run once the two have landed.
+      # storage's file/image — the five of #1171 join them here, and the two RAG
+      # demos added by #1173 cover the pgvector projects (ADR-0067). With #1173
+      # landed, every example that has a config to generate from is named here;
+      # `examples/plain-css-theming` is the one that never will be, because it
+      # is static HTML with no config to generate from. #1175 replaces this
+      # enumeration with an unfiltered run.
       # `opensaas generate` loads each example's config, so every package that
       # config imports has to be built — turbo's `build` is `dependsOn:
       # ["^build"]`, which reaches a package's own dependencies and not the
@@ -117,6 +117,8 @@ jobs:
           --filter=opensaas-json-demo-example^...
           --filter=opensaas-tiptap-example^...
           --filter=opensaas-file-upload-example^...
+          --filter=opensaas-rag-ollama-example^...
+          --filter=opensaas-rag-openai-chatbot-example^...
 
       - name: Regenerate the contract fixture
         run: node ../../../bin/opensaas.js generate
@@ -162,12 +164,25 @@ jobs:
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/file-upload-demo
 
+      - name: Regenerate examples/rag-ollama-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-ollama-demo
+
+      # `opensaas.config.ts` reads OPENAI_API_KEY, so generation needs one
+      # present. Nothing here calls OpenAI: generation reads the config, and the
+      # embedding provider is not constructed until a write or a search runs.
+      - name: Regenerate examples/rag-openai-chatbot
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-openai-chatbot
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+
       # `git add --intent-to-add` first: a plain `git diff` only sees tracked
       # files, so a newly emitted artifact would land untracked and pass green.
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo examples/json-demo examples/tiptap-demo examples/file-upload-demo"
+          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo examples/json-demo examples/tiptap-demo examples/file-upload-demo examples/rag-ollama-demo examples/rag-openai-chatbot"
           git add --intent-to-add -- $PATHS
           git diff --exit-code -- $PATHS
 
@@ -223,9 +238,9 @@ jobs:
       # every examples/* package. On the prisma-8 integration branch the
       # converted examples are `starter`/`starter-auth` (#1170), the three
       # demos added by #1172 — each of which also carries a `test` script that
-      # stands up a Dev database and round-trips its own feature — and the five
-      # of #1171. Two examples still cannot build: rag-ollama-demo and
-      # rag-openai-chatbot, until #1173 converts them. `plain-css-theming` is
+      # stands up a Dev database and round-trips its own feature — the five of
+      # #1171, and the two RAG demos of #1173. With #1173 landed, no example is
+      # left out of this filter for want of a build. `plain-css-theming` is
       # absent because it has no scripts at all — it is static HTML, and the
       # `data-slot` promise it rests on is covered by
       # packages/ui/tests/browser/primitives/data-slot.browser.test.tsx in the
@@ -234,7 +249,10 @@ jobs:
       # Of #1171's five, custom-field, composable-dashboard and auth-demo carry
       # no `test` script, so for them this is a build gate. The two that DO
       # carry one — blog and mcp-demo — run in their own steps below, each
-      # against a database of its own.
+      # against a database of its own. Neither RAG demo carries one either:
+      # rag-openai-chatbot has no suite, and rag-ollama-demo's is `test:rag`,
+      # deliberately off `test` because it needs an Ollama server on
+      # localhost:11434 that CI does not run. Both are build gates here.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -248,6 +266,8 @@ jobs:
           --filter=./examples/json-demo
           --filter=./examples/tiptap-demo
           --filter=./examples/file-upload-demo
+          --filter=./examples/rag-ollama-demo
+          --filter=./examples/rag-openai-chatbot
         env:
           OPENAI_API_KEY: 'sk-testing-key'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'

@@ -2,6 +2,15 @@ import { config, list } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
+import type { AccessControl } from '@opensaas/stack-core'
+
+// An anonymous reader sees published rows only. `nearest()` ranks inside the
+// scoped set rather than filtering a ranked one, so this bound is what makes a
+// semantic search return a different result for a signed-in reader.
+const publishedOrSignedIn: AccessControl = ({ session }) => {
+  if (session) return true
+  return { published: { equals: true } }
+}
 
 export default config({
   plugins: [
@@ -37,7 +46,7 @@ export default config({
       },
       access: {
         operation: {
-          query: () => true,
+          query: publishedOrSignedIn,
           create: () => true,
           update: () => true,
           delete: () => true,
@@ -66,7 +75,7 @@ export default config({
       },
       access: {
         operation: {
-          query: () => true,
+          query: publishedOrSignedIn,
           create: () => true,
           update: () => true,
           delete: () => true,
