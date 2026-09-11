@@ -83,40 +83,36 @@ declaration is a generator emission: `pnpm generate` seeds the pack's contract
 space under `migrations/pgvector/` — it writes no app migration of its own — and
 that space enables the extension ahead of your tables.
 
+Start the dev loop in one terminal:
+
+```bash
+pnpm dev
+```
+
+Then, in another:
+
 ```bash
 pnpm generate
 pnpm db:update
 ```
 
-`opensaas db update` opens no connection of its own: it hands the request to a
-running `opensaas dev` loop and exits non-zero when none is listening. Keep
-`pnpm dev` up in another terminal for the command above.
+`pnpm db:update` needs that loop running. See
+[Migrations and the dev loop](/docs/how-to/migrate) for why, and for the
+`--confirm` token a destructive change asks for.
 
-In a deployment there is no loop for `db:update` to talk to, so the same
-committed space is applied as a migration instead: `prisma migration plan` once
-against a database you are willing to open a planning connection to, commit the
-result, then `prisma db migrate`. There is no `opensaas db migrate` — `opensaas
-db` carries only `update`.
+In a deployment there is no loop, so the same committed space is applied as a
+migration instead: `prisma migration plan` once against a database you are
+willing to open a planning connection to, commit the result, then
+`prisma db migrate`. There is no `opensaas db migrate` — `opensaas db` carries
+only `update`.
 
 ### The privilege it needs
 
 pgvector is not a trusted extension, so enabling it is not something an
-unprivileged role can do. One of these has to hold:
-
-- The role your migration connects as is a **superuser**, or your provider has
-  **granted** it the extension. The Dev database and CI's container run as
-  superuser; managed Postgres services generally grant it to the app role.
-- Or the extension is **pre-created** in the database by hand, once, by someone
-  who does have that privilege. The migration prechecks for it, finds it
-  present, and records the step as already satisfied rather than failing.
-
-Either route arrives in the same place, and a following `pnpm db:update` — with
-`pnpm dev` still up, as above — is a no-op.
-
-If the server has no pgvector at all, the migration stops with Prisma's own
-error — it names the `pgvector` space, the missing `vector.control` file and SQL
-state `58P01`. The app's own tables are untouched, because each apply runs in
-one transaction.
+unprivileged role can do — superuser, a provider grant, or a one-off pre-create
+by someone who holds the privilege. Plan for that before your first release: the
+full statement, including what a server with no pgvector at all does, is at
+[Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have).
 
 ### Indexes
 
@@ -141,10 +137,10 @@ contentEmbedding: embedding({
 - The operator class is derived from the field's `distanceFunction` and column
   type, so the two cannot disagree.
 
-Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
-types, so an `index` declaration derives the column type and the operator class
-but is not yet lowered to a `CREATE INDEX`. Searches are correct without it;
-they are unindexed scans until the pack ships index support.
+Declaring an index today derives the column type and the operator class but does
+not yet build an index — searches are correct, and exact, without one. See
+[Search exactness](/docs/reference/rag) for the pack limit behind that and for
+what changes once it lifts.
 
 ## Provider Configuration
 
@@ -209,6 +205,10 @@ ollama pull nomic-embed-text
 
 #### Configure Provider
 
+`dimensions` is required here. Ollama reports its model's output size only from
+a live embed call, and `pnpm generate` must not depend on a running Ollama, so
+the dimension has to be declared:
+
 ```typescript
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
 
@@ -216,8 +216,6 @@ ragPlugin({
   provider: ollamaEmbeddings({
     baseURL: 'http://localhost:11434',
     model: 'nomic-embed-text',
-    // Required. Ollama reports its output size only from a live embed call,
-    // and generation must not depend on a running Ollama.
     dimensions: 768,
   }),
 })
@@ -254,21 +252,25 @@ ragPlugin({
     }),
   },
 })
+```
 
-// Use different providers for different fields
+Each field then names the provider it wants by key — local Ollama for short
+titles, OpenAI for the body:
+
+```typescript
 lists: {
   Article: list({
     fields: {
       title: text(),
       titleEmbedding: embedding({
         sourceField: 'title',
-        provider: 'ollama', // Fast, local embeddings for titles
+        provider: 'ollama',
         dimensions: 768,
       }),
       content: text(),
       contentEmbedding: embedding({
         sourceField: 'content',
-        provider: 'openai', // High-quality embeddings for content
+        provider: 'openai',
         dimensions: 1536,
       }),
     },
@@ -313,7 +315,6 @@ export default config({
         title: text({
           validation: { isRequired: true },
         }),
-        // Using searchable() wrapper for automatic embeddings
         content: searchable(
           text({
             validation: { isRequired: true },
@@ -337,8 +338,6 @@ export default config({
       },
       access: {
         operation: {
-          // A rule scopes a read by returning a filter rather than a boolean;
-          // there is no separate `access.filter` block.
           query: ({ session }) => (session ? true : { published: { equals: true } }),
           create: ({ session }) => !!session,
           update: ({ session }) => !!session,
@@ -361,6 +360,9 @@ you save the config.
 
 ### Create a Semantic Search Function
 
+The whole search is one scoped query — the Access Filter, the `minScore` bound
+and the ranking all live inside `nearest()`:
+
 ```typescript
 // lib/search.ts
 'use server'
@@ -371,15 +373,12 @@ import { getContext } from '@/.opensaas/context'
 export async function searchArticles(query: string, limit = 10) {
   const context = await getContext()
 
-  // Generate query embedding
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // One scoped query: the Access Filter, the minScore bound and the ranking
-  // all live inside nearest().
   const matches = await context.db.Article.where({
     published: { equals: true },
   }).nearest('contentEmbedding', queryVector, { limit, minScore: 0.25 })
@@ -416,16 +415,17 @@ reach. Start loose and tighten against your own data.
 import { useState } from 'react'
 import { searchArticles } from '@/lib/search'
 
+type SearchHit = Awaited<ReturnType<typeof searchArticles>>[number]
+
 export default function SearchPage() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
+  const [results, setResults] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    const results = await searchArticles(query)
-    setResults(results)
+    setResults(await searchArticles(query))
     setLoading(false)
   }
 
@@ -547,17 +547,17 @@ import { streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { searchKnowledge } from '@/lib/knowledge-search'
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string }
+
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  const { messages }: { messages: ChatMessage[] } = await req.json()
   const lastMessage = messages[messages.length - 1]
 
-  // Retrieve relevant context from knowledge base
   const searchResults = await searchKnowledge(lastMessage.content, {
     limit: 3,
     minScore: 0.25,
   })
 
-  // Build system message with RAG context
   let systemMessage = 'You are a helpful AI assistant.'
 
   if (searchResults.length > 0) {
@@ -568,7 +568,6 @@ export async function POST(req: Request) {
     systemMessage += 'Use this information to provide accurate, informed responses.'
   }
 
-  // Stream response with RAG context
   const result = streamText({
     model: openai('gpt-4o-mini'),
     system: systemMessage,
@@ -654,6 +653,9 @@ export default function ChatPage() {
 
 ### Step 5: Seed Knowledge Base
 
+The script runs with no session, so it reaches the database through `sudo()`,
+which bypasses access control:
+
 ```typescript
 // scripts/seed-knowledge.ts
 import { getContext } from '@/.opensaas/context'
@@ -669,12 +671,9 @@ const articles = [
     content: 'The access control system automatically secures all database operations...',
     category: 'technical',
   },
-  // Add more articles
 ]
 
 async function seed() {
-  // `sudo()` returns a context that bypasses access control, for a script
-  // that runs with no session.
   const context = (await getContext()).sudo()
 
   for (const article of articles) {
@@ -763,9 +762,9 @@ MIGRATION.RUNNER_FAILED ... could not open extension control file ... vector.con
 **Solution:**
 
 pgvector is not present on the server. Make it available, then re-run
-`pnpm db:update` with `pnpm dev` up in another terminal — the command hands the
-request to that loop and exits non-zero when none is listening. In a deployment,
-re-run `prisma db migrate` instead:
+`pnpm db:update` with `pnpm dev` up in another terminal (see
+[Migrations and the dev loop](/docs/how-to/migrate)). In a deployment, re-run
+`prisma db migrate` instead:
 
 - **Docker**: use the `pgvector/pgvector:pg16` image
 - **Homebrew**: `brew install pgvector`
@@ -783,10 +782,9 @@ ERROR: permission denied to create extension "vector"
 
 **Solution:**
 
-pgvector is not a trusted extension, so the migrating role needs superuser or a
-provider grant. Either grant the role that privilege, or have someone who
-already holds it pre-create the extension in the database once — the migration
-prechecks for it and records the step as already satisfied.
+Grant the migrating role the privilege, or have someone who already holds it
+pre-create the extension once — see
+[Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have).
 
 ### OpenAI Rate Limit Errors
 

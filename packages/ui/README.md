@@ -51,13 +51,21 @@ Low-level UI components based on Radix UI and shadcn/ui.
 **Available Components:**
 
 - Button - Buttons with variants
+- Badge - Status and category labels
+- Avatar - User images with a fallback
 - Input - Text inputs
+- Textarea - Multi-line text inputs
 - Label - Form labels
 - Card - Content containers
 - Table - Data tables
 - Dialog - Modal dialogs
 - Select - Dropdown selects
 - Checkbox - Checkboxes
+- Popover - Anchored overlays
+- Calendar - Date picker calendar
+- TimePicker - Time-of-day input
+- DateTimePicker - Combined date and time input
+- Combobox - Searchable select
 
 **Example:**
 
@@ -114,10 +122,16 @@ Complete, reusable components for common admin tasks.
 
 #### ItemCreateForm
 
+`config`'s default export is a promise when plugins are present, so a server
+component awaits it before reading `lists`:
+
 ```tsx
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
+import { config } from '@/.opensaas/context'
+
+const { lists } = await config
 ;<ItemCreateForm
-  fields={config.lists.Post.fields}
+  fields={lists.Post.fields}
   onSubmit={async (data) => {
     const post = await createPost(data)
     return { success: !!post }
@@ -130,8 +144,11 @@ import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
+import { config } from '@/.opensaas/context'
+
+const { lists } = await config
 ;<ItemEditForm
-  fields={config.lists.Post.fields}
+  fields={lists.Post.fields}
   initialData={post}
   onSubmit={async (data) => {
     const updated = await updatePost(post.id, data)
@@ -247,34 +264,49 @@ fields: {
 
 ## Theming
 
-All components use Tailwind CSS v4 with CSS variables:
+All components use Tailwind CSS v4 and consume one set of named CSS custom
+property tokens — `--color-*`, `--font-*`, `--radius*`, `--shadow-*`. Those
+names are the compatibility promise; they carry `oklch()` values, not bare HSL
+triplets, and there is no `.dark` class. Light and dark are the same tokens
+resolved through `light-dark()`, switched by a `data-theme` attribute on
+`<html>`.
+
+The usual override path is `ui.theme` in `opensaas.config.ts`:
+
+```typescript
+import { config } from '@opensaas/stack-core'
+
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {},
+  ui: {
+    theme: {
+      preset: 'modern', // 'modern' | 'classic' | 'neon'
+      colors: { primary: 'oklch(0.55 0.2 264)' },
+      darkColors: { primary: 'oklch(0.62 0.19 264)' },
+      radius: 0.5,
+    },
+  },
+})
+```
+
+To override from your own stylesheet instead, write the same contract tokens in a
+sheet loaded after the package styles — the config layer and the stylesheet
+target identical variables, so the two cannot drift. A contract token set this
+way applies to both schemes:
 
 ```css
-/* app/globals.css */
-@import '@opensaas/stack-ui/styles';
-
+/* app/admin-theme.css — imported after '@opensaas/stack-ui/styles' */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 3.9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --muted: 0 0% 96.1%;
-  --muted-foreground: 0 0% 45.1%;
-  --accent: 0 0% 96.1%;
-  --accent-foreground: 0 0% 9%;
-  --border: 0 0% 89.8%;
-  --input: 0 0% 89.8%;
-  --ring: 0 0% 3.9%;
-}
-
-.dark {
-  --background: 0 0% 3.9%;
-  --foreground: 0 0% 98%;
-  /* ... */
+  --color-primary: #6d28d9;
+  --color-ring: #6d28d9;
+  --radius: 0.375rem;
+  --font-sans: 'Inter', system-ui, sans-serif;
 }
 ```
+
+See the [Theming guide](https://stack.opensaas.au/docs/how-to/theming) for the
+full token vocabulary and the customization ladder.
 
 ## Accessibility
 
@@ -308,8 +340,8 @@ import type {
 
 ## Learn More
 
-- [Composability Guide](../../docs/COMPOSABILITY.md) - Complete guide to all four levels
-- [API Reference](../../docs/API.md) - Full API documentation
+- [Composability Guide](https://stack.opensaas.au/docs/how-to/composability) - Complete guide to all four levels
+- [UI Reference](https://stack.opensaas.au/docs/reference/ui) - Full API documentation
 - [OpenSaas Stack](../../README.md) - Stack overview
 
 ## License

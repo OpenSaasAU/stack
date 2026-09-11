@@ -6,13 +6,16 @@ The access-control engine is why Stack exists. Application code — yours or you
 
 Every operation goes through the context wrapper, and every context operation passes access control before anything is returned.
 
-```typescript
-// Instead of using Prisma directly
-const posts = await prisma.post.findMany()
+Reads are composed on `context.db.<List>`, keyed by the **PascalCase list name**
+the config uses, and reach the database only through a terminal:
 
-// Use the context (which includes access control)
-const posts = await context.db.post.findMany()
+```typescript
+const posts = await context.db.Post.where({ status: { equals: 'published' } }).all()
 ```
+
+There is no unscoped sibling of that call to reach for by accident. The
+deliberate bypass — `context.unsafe` — is a different name on a different
+object, and every use of it is meant to say why.
 
 Two defaults set the tone:
 
@@ -23,15 +26,15 @@ Two defaults set the tone:
 
 Writes check operation-level access, filter writable fields, then persist. Reads are a **two-phase** pipeline:
 
-1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and merges the resulting filter into the Prisma `where`/`include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for, one hop at a time: a read with no `include` fetches the row's own columns and computed fields only, matching Prisma's own semantics, and naming a relation fetches that relation's own columns and stops — reaching further means naming further in the `include`. A relation nobody named never has its list's `query` access evaluated at all. See [Queries & projections](/docs/concepts/queries).
+1. **Access Filter** (pre-query): the engine evaluates operation-level `query` access and ANDs the resulting filter into the read's own `where` and into each `include` — rows and relations a session can't see never leave the database. This only runs for relations the caller actually asked for, one hop at a time: a read with no `include` fetches the row's own columns and computed fields only, matching the ORM's own semantics, and naming a relation fetches that relation's own columns and stops — reaching further means naming further. A relation nobody named never has its list's `query` access evaluated at all. See [Queries & projections](/docs/concepts/queries).
 2. **Field Visibility** (post-query): on the returned rows, fields the session can't read are removed, `resolveOutput` hooks run, and virtual fields are computed.
 
 In order:
 
 1. **Define access rules** in your `opensaas.config.ts`
-2. **Operations go through context** wrapper: `context.db.post.update()`
+2. **Operations go through context**: `context.db.Post.update({ where, data })`
 3. **Access control engine checks** operation-level access
-4. **Access filters are merged** with Prisma where clauses
+4. **Access filters are ANDed** into the read's `where`
 5. **Field-level access** controls which fields are readable/writable
 6. **Operations return** `null` or `[]` on access denial (silent failures)
 
@@ -41,44 +44,78 @@ In order:
 
 Controls whether a user can perform an operation at all:
 
+Each slot takes a **function**, not a literal — `query: true` is a compile
+error, `query: () => true` is the rule that always allows:
+
 ```typescript
 Post: list({
+  fields: { title: text() },
   access: {
     operation: {
-      query: true, // Anyone can query
-      create: ({ session }) => !!session?.userId, // Must be signed in
-      update: isAuthor, // Only author can update
-      delete: isAdmin, // Only admins can delete
+      query: () => true,
+      create: ({ session }) => !!session?.userId,
+      update: isAuthor,
+      delete: isAdmin,
     },
   },
 })
 ```
 
-**Return Types:**
+A rule returns one of two things, synchronously or as a `Promise`:
 
-- **Boolean**: `true` (allow all) or `false` (deny all)
-- **Prisma Filter**: Filter which records the user can access
-- **Async Function**: All access functions can be async
+- **A boolean** — `true` allows the operation, `false` denies it outright.
+- **A filter** — the operation proceeds, scoped to the rows the filter matches.
 
-### Filter-Based Access
+`create` is the exception: it accepts a **boolean result only**. There is no
+existing row for a filter to scope, so a `create` rule that returns one throws
+`InvalidCreateAccessResultError` rather than being read as an allow. To gate a
+create on the incoming data, evaluate the condition in a `resolveInput` or
+`validate` [hook](/docs/concepts/hooks), where the input is in scope.
 
-Return a Prisma filter to scope which records a user can access:
+### Scoping by returning a filter
+
+A rule scopes a read by **returning** a filter. There is no separate
+`access: { filter }` block, and no list-level `access: { fields }` — a list's
+`access` is either one function applied to all four operations, or an object
+whose only member is `operation`.
 
 ```typescript
 query: ({ session }) => {
-  if (!session) {
-    // Anonymous users only see published posts
+  if (!session?.userId) {
     return { status: { equals: 'published' } }
   }
 
-  // Authenticated users see published posts OR their own drafts
   return {
     OR: [{ status: { equals: 'published' } }, { authorId: { equals: session.userId } }],
   }
 }
 ```
 
-The filter is automatically merged with the operation's where clause.
+The returned filter is ANDed into whatever `where` the caller composed, so a
+session never widens its own scope by asking for more.
+
+### The filter vocabulary is a closed set
+
+A returned filter is written in the same grammar as `.where()`, and that grammar
+is finite. Scalar operators: `equals`, `not`, `in`, `notIn`, `lt`, `lte`, `gt`,
+`gte`, `contains`. Relation quantifiers: `some`, `every`, `none`. Logical keys:
+`AND`, `OR`, `NOT`. A bare value means equality; `contains` is case-insensitive.
+There is no `startsWith`, no `endsWith`, no `mode`, and no `is`/`isNot` — naming
+one is refused, not ignored.
+
+{% callout type="warning" %}
+**`undefined` is refused, never dropped.** A filter value of `undefined` raises
+a `ValidationError` instead of quietly vanishing from the predicate. This is the
+fail-closed rule that matters most in an access rule: the tempting shorthand
+
+```typescript
+query: ({ session }) => ({ authorId: { equals: session?.userId } })
+```
+
+is an **error** for an anonymous session, not an unfiltered read of every post.
+Branch on the session and return a real predicate — or `false` — for the
+anonymous case, as the example above does.
+{% /callout %}
 
 ### Field-Level Access
 
@@ -88,37 +125,48 @@ Control access to individual fields:
 fields: {
   internalNotes: text({
     access: {
-      read: isAuthor, // Only author can read
-      create: isSignedIn, // Any signed-in user can set
-      update: isAuthor, // Only author can update
+      read: ({ session, item }) => session?.userId === item.authorId,
+      create: ({ session }) => !!session?.userId,
+      update: ({ session, item }) => session?.userId === item.authorId,
     },
   }),
-  password: password({
+  secret: password({
     access: {
-      read: false, // Never readable (automatically enforced)
+      read: () => false,
     },
   }),
 }
 ```
 
 {% callout type="warning" %}
-**Field-level rules are boolean-only.** An operation-level rule may return a Prisma filter to scope rows; a field-level rule decides allow/deny for one field (using `session` and, where available, the fetched `item`). Returning a filter from a field rule does not scope anything — don't reuse filter-returning helpers on fields.
+**Field-level rules are boolean-only, and are still functions.** `read: false`
+is a compile error; `read: () => false` is the rule. An operation-level rule may
+return a filter to scope rows; a field-level rule decides allow/deny for one
+field, from `session`, the fetched `item` and — on `create`/`update` — the
+`inputData`. A field rule that somehow returns a non-boolean throws rather than
+defaulting to allow, so filter-returning helpers cannot be reused here.
 {% /callout %}
 
 ## Access Functions
 
-Access functions receive a context object with:
+An operation-level rule is called with exactly three arguments. `session` is the
+app's session or `null`. `item` is the existing row — present for `update` and
+`delete`, absent for `query` and `create`, which is why its type is optional.
+`context` is the `AccessContext`, carrying `session`, `db`, `plugins` and
+`storage`.
 
 ```typescript
-interface AccessContext {
-  session: Session | null // Current user session
-  listKey: string // e.g., "Post"
-  operation: 'query' | 'create' | 'update' | 'delete'
-  originalInput?: any // The input data for create/update
-  item?: any // The existing item for update/delete (includes all fields)
-  context: Context // Full context for database queries
+import type { AccessControl } from '@opensaas/stack-core'
+
+const rule: AccessControl = ({ session, item, context }) => {
+  return !!session
 }
 ```
+
+The list key and the operation are not passed in: a rule is already registered
+against one list under one slot, so both are known where you wrote it. A rule
+that genuinely needs to serve several slots is an ordinary function you name in
+each of them.
 
 ### Common Patterns
 
@@ -145,35 +193,42 @@ const isAdmin: AccessControl = ({ session }) => {
 }
 ```
 
-**Complex filter combining multiple conditions:**
+**Complex filter combining multiple conditions.** The `authorId` branch only
+exists when there is a user id to compare against — an `undefined` there would
+be refused, not skipped:
 
 ```typescript
-query: ({ session }) => ({
-  AND: [
-    { status: { equals: 'published' } },
-    { visibility: { equals: 'public' } },
-    {
-      OR: [{ publishedAt: { lte: new Date() } }, { authorId: { equals: session?.userId } }],
-    },
-  ],
-})
+const visibleToSession: AccessControl = ({ session }) => {
+  const published = {
+    AND: [
+      { status: { equals: 'published' } },
+      { visibility: { equals: 'public' } },
+      { publishedAt: { lte: new Date() } },
+    ],
+  }
+
+  const userId = session?.userId
+  if (typeof userId !== 'string') return published
+
+  return { OR: [published, { authorId: { equals: userId } }] }
+}
 ```
 
 ## Silent Failures
 
-Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist.
+Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist. There is no `AccessDeniedError` to catch: a denial is not an exception, it is an empty answer.
+
+Every access-controlled read and write is therefore nullable at the call site. `.first()`, `create`, `update` and `delete` all return `T | null`, and `.aggregate()` answers `0` under every key. Check before you dereference:
 
 ```typescript
-const post = await context.db.post.findUnique({ where: { id: '123' } })
+const post = await context.db.Post.where({ id: { equals: postId } }).first()
 
 if (!post) {
-  // Either:
-  // 1. Post doesn't exist, OR
-  // 2. User doesn't have access
-  // The user can't tell which!
   return { error: 'Post not found' }
 }
 ```
+
+`null` here means the post does not exist **or** this session may not see it, and the caller cannot tell which. That conflation is the point.
 
 **Why silent failures?**
 
@@ -186,18 +241,20 @@ if (!post) {
 
 The Access Filter — the pass that scopes relation `include`s before the database is queried — only scopes an `include` up to a fixed nesting depth (`READ_INCLUDE_MAX_DEPTH`, currently 5 hops from the list you queried). This is a cost limit, not an inability to scope: since the walk only ever follows branches a request itself names, there is no unscoped subtree to fail open on past the cap. If a caller-supplied `include` names a relation nested **past** that depth, the engine declines to serve a tree this expensive rather than serving it anyway, so it throws `AccessScopeDepthExceededError`:
 
+The error carries `listKey`, `fieldKey` and `depth`, which together name the hop that went too deep. The remedy is to split the read into separate, shallower ones:
+
 ```typescript
 import { AccessScopeDepthExceededError } from '@opensaas/stack-core'
 
 try {
-  await context.db.post.findMany({
-    include: { author: { include: {/* … nested 5+ levels deep */} } },
-  })
-} catch (err) {
-  if (err instanceof AccessScopeDepthExceededError) {
-    // err.listKey / err.fieldKey / err.depth identify where the include went too deep.
-    // Restructure the query into separate, shallower reads instead.
+  await context.db.Post.include('author', (author) =>
+    author.include('organisation', (org) => org.include('owner')),
+  ).all()
+} catch (error) {
+  if (error instanceof AccessScopeDepthExceededError) {
+    console.error(`include too deep at ${error.listKey}.${error.fieldKey} (${error.depth})`)
   }
+  throw error
 }
 ```
 
@@ -217,16 +274,20 @@ All three names, where the list has them, are:
 
 You cannot override access control for system fields.
 
-## Nested `connect` is gated by the owning relationship field's access
+## `connect` is gated by the owning relationship field's access
 
-When a write uses a nested `connect` (or the connect branch of `connectOrCreate`)
-to link an existing related row, the connect is gated by the **owning relationship
-field's create/update field-level access** (e.g. the `access` on `Post.author`),
-evaluated for the enclosing write's operation. If that field's field-level access
-denies the write, the connect is denied — exactly as for any other field on the
-write. This gate receives the same `item` (the row being updated) and `inputData`
-(the write payload) the parent write's field-access check uses, so a rule that
-depends on either evaluates identically wherever the field is enforced.
+Relation input on the side that owns the foreign key is `{ connect: { id } }`,
+or `null` to clear the edge. Those are the only two shapes: there is no
+`disconnect`, and nested `create`/`update`/`delete`/`connectOrCreate`/`set`/
+`updateMany`/`deleteMany` are refused. A write is one list's row.
+
+A `connect` is gated by the **owning relationship field's create/update
+field-level access** (e.g. the `access` on `Post.author`), evaluated for the
+enclosing write's operation. If that field's field-level access denies the
+write, the connect is denied — exactly as for any other field on the write. This
+gate receives the same `item` (the row being updated) and `inputData` (the write
+payload) the parent write's field-access check uses, so a rule that depends on
+either evaluates identically wherever the field is enforced.
 
 For context, the connect is **also** gated by **read/query access on the target
 list** (evaluated against the database): the caller must be able to _read_ the row
@@ -234,14 +295,16 @@ to connect it, because a connect references an existing row but does not modify 
 data, so it requires read access on the target, not `update`. Both checks must pass
 for a connect to succeed.
 
+Below, `Author` defines a permissive `update` but no `query` rule, so its read
+access is deny-by-default:
+
 ```typescript
 lists: {
   Author: list({
     fields: { name: text() },
     access: {
       operation: {
-        // Without a `query` rule, read access is DENY-BY-DEFAULT...
-        update: () => true, // ...even though update is permissive.
+        update: () => true,
       },
     },
   }),
@@ -253,14 +316,22 @@ lists: {
     access: { operation: { query: () => true, update: () => true } },
   }),
 }
+```
 
-// This nested connect is DENIED, because Author has no `query` rule
-// (deny-by-default), even though Author's `update` is permissive:
-await context.db.post.update({
-  where: { id },
+The connect below is therefore **denied**, and the whole write answers `null`
+— one indistinguishable answer, whether the author row is missing or merely
+unreadable:
+
+```typescript
+const post = await context.db.Post.update({
+  where: { id: postId },
   data: { author: { connect: { id: authorId } } },
 })
 ```
+
+`where` on a write is identity-only: exactly one key, `id`. A secondary unique
+column is a compile error, so a write can never target a row by a value the
+caller happens to know.
 
 > **Behaviour change / migration note.** Because the access engine is
 > **deny-by-default** for an undefined access rule, a related list that defines a
@@ -277,14 +348,14 @@ For **write operations** (create/update):
 
 1. List-level operation access check
 2. Field-level write access check (filter writable fields)
-3. Hook execution (resolveInput, validateInput, etc.)
+3. Hook execution (`resolveInput`, `validate`, …)
 4. Database operation
 5. Field-level read access check (filter readable fields in response)
 
 For **read operations** (query):
 
 1. List-level operation access check
-2. Merge access filters with where clause
+2. AND the returned access filter into the read's `where`
 3. Database operation
 4. Field-level read access check (filter readable fields in response)
 
@@ -297,7 +368,7 @@ Start with restrictive access and open up as needed:
 ```typescript
 access: {
   operation: {
-    query: isSignedIn, // Require auth by default
+    query: isSignedIn,
     create: isAdmin,
     update: isAdmin,
     delete: isAdmin,
@@ -314,11 +385,15 @@ const isAuthor: AccessControl = ({ session, item }) => {
   return session?.userId === item?.authorId
 }
 
-const isAdminOrAuthor: AccessControl = ({ session, item }) => {
-  if (session?.role === 'admin') return true
-  return isAuthor({ session, item })
+const isAdminOrAuthor: AccessControl = (args) => {
+  if (args.session?.role === 'admin') return true
+  return isAuthor(args)
 }
 ```
+
+Forward the whole argument object rather than picking fields out of it: a rule
+that reconstructs `{ session, item }` by hand drops `context`, and stops
+compiling the moment it needs it.
 
 ### 3. Always Check for Session
 
@@ -346,13 +421,14 @@ Always test your access rules with different user scenarios:
 
 Fields can have different access rules based on context:
 
+Admins read every address; everyone else reads only their own:
+
 ```typescript
 email: text({
   access: {
     read: ({ session, item }) => {
-      // Users can read their own email, admins can read all emails
       if (session?.role === 'admin') return true
-      return session?.userId === item?.id
+      return session?.userId === item.id
     },
   },
 })
@@ -360,28 +436,36 @@ email: text({
 
 ### Cross-List Access Checks
 
-Use the context to query other lists:
+A rule can read another list through `context.db`. That read is itself access
+controlled, so it answers `null` when the session cannot see the membership row
+— which is the same answer as "there is no such membership", and the right one
+either way. Guard the session first so no filter value can be `undefined`:
 
 ```typescript
-delete: async ({ session, item, context }) => {
-  // Check if user is org admin
-  const membership = await context.db.orgMembership.findFirst({
-    where: {
-      userId: session?.userId,
-      orgId: item?.orgId,
-      role: 'admin',
-    },
-  })
+const isOrgAdmin: AccessControl<{ orgId: string }> = async ({ session, item, context }) => {
+  const userId = session?.userId
+  if (typeof userId !== 'string' || item === undefined) return false
 
-  return !!membership
+  const membership = await context.db.OrgMembership.where({
+    userId: { equals: userId },
+    orgId: { equals: item.orgId },
+    role: { equals: 'admin' },
+  }).first()
+
+  return membership !== null
 }
 ```
 
 ### Time-Based Access
 
+Editable for the first 24 hours, and by the author alone:
+
 ```typescript
-update: ({ session, item }) => {
-  // Can only edit within 24 hours of creation
+const isRecentAndMine: AccessControl<{ authorId: string; createdAt: Date }> = ({
+  session,
+  item,
+}) => {
+  if (item === undefined) return false
   const dayInMs = 24 * 60 * 60 * 1000
   const isRecent = Date.now() - item.createdAt.getTime() < dayInMs
 
@@ -393,32 +477,45 @@ update: ({ session, item }) => {
 
 ### Forgetting to Check Session
 
-```typescript
-// ❌ Bad: Doesn't check if session exists
-update: ({ session, item }) => item.authorId === session.userId
+Dereferencing a null session throws inside the rule, which fails the whole
+operation rather than denying it. Guard first, and return `false`:
 
-// ✅ Good: Checks session exists first
+```typescript
 update: ({ session, item }) => {
-  if (!session?.userId) return false
+  if (!session?.userId || item === undefined) return false
   return item.authorId === session.userId
+}
+```
+
+### Building a Filter Out of an Optional
+
+The single most expensive mistake on this page. `session?.userId` is
+`string | undefined`, and `undefined` in a filter is a `ValidationError` — so
+this rule does not "match nothing" for an anonymous caller, it fails the read:
+
+```typescript
+query: ({ session }) => ({ authorId: { equals: session?.userId } })
+```
+
+Narrow to a value the vocabulary accepts, and decide explicitly what the
+anonymous case should see:
+
+```typescript
+query: ({ session }) => {
+  const userId = session?.userId
+  if (typeof userId !== 'string') return { status: { equals: 'published' } }
+  return { authorId: { equals: userId } }
 }
 ```
 
 ### Over-Permissive Defaults
 
-```typescript
-// ❌ Bad: Too permissive
-access: {
-  operation: {
-    query: true,
-    create: true, // Anyone can create!
-  },
-}
+`create: () => true` lets anyone write. Spell out who may:
 
-// ✅ Good: Explicit about permissions
+```typescript
 access: {
   operation: {
-    query: true,
+    query: () => true,
     create: isSignedIn,
   },
 }
@@ -426,16 +523,16 @@ access: {
 
 ### Not Testing Access Denial
 
-Always test that access is denied when it should be:
+Always test that access is denied when it should be. A non-author's update
+resolves to `null` rather than throwing, so a test that only checks for an
+absence of exceptions passes against a broken rule:
 
 ```typescript
-// Test that non-authors can't update
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
 
-// Should be null because user isn't the author
 expect(post).toBe(null)
 ```
 

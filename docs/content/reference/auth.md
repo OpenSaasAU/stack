@@ -14,7 +14,8 @@ Add the auth plugin to your OpenSaaS config:
 
 ```typescript
 // opensaas.config.ts
-import { config, list, text, relationship } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text, relationship } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
@@ -25,12 +26,16 @@ export default config({
         minPasswordLength: 8,
       },
       sessionFields: ['userId', 'email', 'name'],
+      // The other end of `Post.author`. Without it `pnpm generate` refuses the
+      // relationship: the two ends must name each other.
+      extendUserList: {
+        fields: {
+          posts: relationship({ ref: 'Post.author', many: true }),
+        },
+      },
     }),
   ],
-  db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -40,13 +45,17 @@ export default config({
       access: {
         operation: {
           create: ({ session }) => !!session,
-          update: ({ session, item }) => session?.userId === item.authorId,
+          update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
         },
       },
     }),
   },
 })
 ```
+
+`postgresql` is the only provider, and the connection string is resolved from the
+environment rather than declared here — see the
+[Config API](/docs/reference/config-api#db) for the complete `db` key list.
 
 Then set up the server and client:
 
@@ -84,10 +93,19 @@ authPlugin({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8, // default: 8
-    requireConfirmation: true, // default: true
   },
 })
 ```
+
+{% callout type="warning" %}
+**`requireConfirmation` here has no effect.** It is on the type, but
+`createAuth()` never reads it — there is no better-auth option to forward it to —
+and warns when it is set to anything but the default. The real knob is the form's
+own `requirePasswordConfirmation` prop:
+`<SignUpForm requirePasswordConfirmation={false} />` /
+`<ResetPasswordForm requirePasswordConfirmation={false} />`, both defaulting to
+`true`.
+{% /callout %}
 
 `sendResetPassword` is forwarded straight through to better-auth's own `emailAndPassword.sendResetPassword` — no stack wrapping. It receives exactly what better-auth passes (`user`, `url`, `token`), so you build the subject line and body yourself:
 
@@ -269,19 +287,26 @@ authPlugin({
       },
     },
     hooks: {
-      afterOperation: async ({ operation, item }) => {
-        if (operation === 'create') {
-          console.log('New user created:', item.email)
-        }
+      afterOperation: async (args) => {
+        if (args.operation !== 'create') return
+        console.log('New user created:', args.item.email)
       },
     },
   },
 })
 ```
 
+`afterOperation`'s arguments are a union over the operation: `create` and
+`update` carry `item`, `delete` carries `originalItem` instead. Narrow on
+`args.operation` before reaching for a row.
+
 ### `betterAuthPlugins`
 
-Add Better Auth plugins for additional functionality:
+Add Better Auth plugins for additional functionality. `mcp()` is imported from
+`@opensaas/stack-auth/plugins` rather than `better-auth/plugins` — better-auth 1.7
+split it into the optional `@better-auth/mcp` peer, and this package re-exports it
+from there. It is built on the OAuth Provider, which issues JWT-based access
+tokens, so better-auth's own `jwt()` must be registered alongside it:
 
 ```typescript
 import { authPlugin } from '@opensaas/stack-auth'
@@ -290,23 +315,20 @@ import { jwt } from 'better-auth/plugins'
 
 authPlugin({
   betterAuthPlugins: [
-    // better-auth 1.7's mcp() is built on the OAuth Provider, which issues
-    // JWT-based access tokens and requires better-auth's own jwt() plugin
-    // registered alongside it.
     jwt(),
     mcp({
       loginPage: '/sign-in',
-      // The page where a user approves/denies an MCP client's requested
-      // scopes — also required since better-auth 1.7's MCP plugin.
       consentPage: '/consent',
-      // Canonical protected-resource identifier (RFC 8707/9728) — required
-      // since better-auth 1.7's MCP plugin. Must match `mcp.basePath` below.
       resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
     }),
-    // Add other Better Auth plugins here
   ],
 })
 ```
+
+`consentPage` is where a user approves or denies an MCP client's requested
+scopes; `resource` is the canonical protected-resource identifier (RFC 8707/9728)
+and must match the app's `mcp.basePath`. Both became required with better-auth
+1.7's MCP plugin.
 
 The auth plugin automatically converts Better Auth plugin schemas to OpenSaaS lists.
 
@@ -330,17 +352,17 @@ Escape hatch for any better-auth option the stack doesn't model as its own confi
 ```typescript
 authPlugin({
   betterAuthOptions: {
-    // Sync a domain user row for every better-auth user
     databaseHooks: { user: { create: { after: syncDomainUser } } },
-    // 5-minute session cookie cache
     session: { cookieCache: { enabled: true, maxAge: 300 } },
-    // Keep PII out of the verification table
     verification: { storeIdentifier: 'hashed' },
-    // Derive the base URL instead of relying on env vars
     baseURL: process.env.BETTER_AUTH_URL,
   },
 })
 ```
+
+Those four, in order: sync a domain user row for every better-auth user; cache the
+session cookie for five minutes; keep PII out of the verification table; and derive
+the base URL rather than relying on better-auth's own env lookup.
 
 `database` and `plugins` are rejected — they're already the dedicated seams (the stack's `db` config, and `betterAuthPlugins` above) and accepting them here would create two unranked ways to set the same thing. So is `additionalFields` under `user`/`session`/`account`/`verification`: it has schema consequences (new columns) that a passthrough can't also apply to the generated Prisma schema, so add fields to the derived list instead — `extendUserList` for the user model, or declare the list yourself in your own `lists` config for the others.
 
@@ -423,10 +445,14 @@ Stores OAuth provider information and password hashes:
 - `id` (String, auto-generated)
 - `userId` (String, foreign key to User)
 - `accountId` (String, provider-specific user ID)
-- `providerId` (String, e.g., 'github', 'google')
+- `providerId` (String, e.g., `'github'`, `'google'`, `'credential'` for email/password)
+- `issuer` (String, the identity issuer the account is scoped to)
 - `accessToken` (String, optional — **read-denied**, see below)
 - `refreshToken` (String, optional — **read-denied**, see below)
-- `expiresAt` (DateTime, optional)
+- `idToken` (String, optional — **read-denied**, see below)
+- `accessTokenExpiresAt` (DateTime, optional)
+- `refreshTokenExpiresAt` (DateTime, optional)
+- `scope` (String, optional)
 - `password` (String, optional, hashed — **read-denied**, see below)
 - `createdAt` (DateTime, auto)
 - `updatedAt` (DateTime, auto)
@@ -481,21 +507,27 @@ An entry naming a field that doesn't exist on a model your app actually derives 
 registered) throws at config time, naming the model and field; an entry for a model your app doesn't
 derive at all (the plugin isn't registered) is a silent no-op.
 
-Naming a denied field in `findMany`'s (or `count`'s) `where`/`orderBy` is different: that's rejected
-up front with a `ValidationError` rather than silently stripped, the same as any other field-level
-`read` deny. A `findUnique` lookup is not — its `where` only unique-selects the row, so
-`context.db.session.findUnique({ where: { token } })` still finds and returns the session, just with
-`token` stripped from the result like any other read.
+Naming a denied field in a read's `where` or `orderBy` is different: that's rejected up front with a
+`ValidationError` rather than silently stripped. The message is the same one an undeclared field
+gets, deliberately — a refusal that distinguished the two would be an existence oracle (ADR-0031).
+Writes are unaffected because a write's `where` is identity-only: it carries `id` and nothing else,
+so a credential column can never appear in one.
 
-`sudo()` bypasses both — it is the supported path for an application with a genuine need:
+`sudo()` bypasses both the field-level deny and the predicate refusal, and is the supported path for
+an application with a genuine need — an admin tool inspecting a live session token, or an auth
+implementation verifying a password hash:
 
 ```typescript
-// An admin tool that must inspect a live session token, filter sessions BY
-// token, or an auth implementation verifying a password hash — all bypass
-// the deny deliberately.
-const session = await context.sudo().db.session.findUnique({ where: { token } })
-session.token // present
+const found = await context
+  .sudo()
+  .db.Session.where({ token: { equals: token } })
+  .first()
+if (found !== null) {
+  console.log(found.token)
+}
 ```
+
+`sudo()` still validates the Where vocabulary; only access is skipped.
 
 The deny is keyed to better-auth's own model/field, not the app's list key or column name, so it
 still applies after a `modelName` remap (`session: { modelName: 'AuthSession' }`) or a column
@@ -595,12 +627,14 @@ export const appBetterAuthPlugins = [emailOTP({ sendVerificationOTP })]
 
 ```typescript
 // opensaas.config.ts
+import { config } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 import { appBetterAuthPlugins } from './auth-plugins'
 
 export default config({
   plugins: [authPlugin({ betterAuthPlugins: appBetterAuthPlugins })],
-  // ...
+  db: { provider: 'postgresql' },
+  lists: {},
 })
 ```
 
@@ -635,9 +669,60 @@ the plain object a real instance returns synchronously). If your app reads
 `auth.api.*` in typed code, reach for `buildBetterAuthOptions()` plus
 `betterAuth()` — it constructs a real instance and does not have this gap.
 
+## Known limits of the Auth adapter
+
+better-auth talks to the database through a stack-authored adapter built over
+`context.unsafe` (ADR-0060), deliberately outside the Access Filter — auth's own
+bookkeeping is not application data. The adapter carries five known limits, and
+this is the whole set.
+
+**The adapter implements no joins.** `betterAuthOptions.advanced.database.joins`
+is refused at config time rather than accepted and ignored: better-auth's own
+fallback to separate per-model queries is silent, so accepting the flag would
+claim a capability nothing provides. Leave it unset.
+
+**The adapter implements no `createSchema`.** The Auth lists derive from
+better-auth's `getAuthTables` and the stack's own generator emits the contract
+and the migration, so better-auth's schema CLI — `generate` and `migrate` — is
+unsupported against this adapter. Run `pnpm generate` and the stack's own
+migration flow instead.
+
+**A raced unique violation surfaces raw.** The Unsafe surface is excluded from
+the stack's error normalisation (ADR-0042), so an error raised on an auth write
+arrives as the driver's own — a raw SQLSTATE — rather than as a
+`UniqueConstraintViolation` with `constraintName`/`list`/`fields` populated. Code
+that catches around an auth call (two concurrent sign-ups racing the same email,
+say) must match on the driver's shape, not on the stack's error classes.
+
+**There is no issuer-scoped account uniqueness.** better-auth declares the
+account identity key (`providerId` + `accountId`) as a table-level `@@unique`,
+which the Auth lists do not emit yet
+([#986](https://github.com/OpenSaasAU/stack/issues/986)). Nothing in the database
+stops two concurrent sign-ins through the same issuer identity from creating two
+`AuthAccount` rows; better-auth's own existence check is all that stands between
+them. If duplicate accounts would corrupt your linking logic, guard it in your
+own code rather than relying on the schema.
+
+**A `databaseHooks` `before` hook runs outside the sign-up transaction.**
+better-auth swaps the transaction-bound adapter in only through its
+AsyncLocalStorage store, and the `AuthContext` a `databaseHooks` callback
+receives still carries the root adapter on the outer lane. So a hook that awaits
+`context.adapter.findOne(...)` queries the outer lane while the sign-up
+transaction is holding a connection. On the Dev database that is the only
+connection, so the hook waits out Prisma's acquire timeout and **sign-up hangs**;
+on pooled Postgres the read happens outside the transaction and survives the
+rollback the rest of sign-up gets. This is inherited from better-auth's own ALS
+routing — its Kysely and Prisma adapters split the same way — and is tracked in
+[#1252](https://github.com/OpenSaasAU/stack/issues/1252). It applies to the
+[`databaseHooks`](#betterauthoptions) shown above: keep a `before` hook to pure
+in-memory work, and do database reads in an `after` hook or outside auth.
+
 ## Client Setup
 
-Create a client for authentication in your components:
+Create a client for reading the session in client components. The pre-built forms
+do **not** use it — they submit through app-owned server actions (see
+[UI Components](#ui-components)), so the client is only needed for `useSession`
+and an explicit `signOut`:
 
 ```typescript
 // lib/auth-client.ts
@@ -659,18 +744,119 @@ export const {
 
 ## UI Components
 
-The auth package includes pre-built UI components:
+The auth package includes pre-built UI components. None of them talks to the auth
+API from the browser: each form takes an **auth action** — an app-owned
+`'use server'` function that calls `auth.api.*` on your own auth instance — as a
+prop, one prop per concern (ADR-0020). The package exports the contract types
+those actions satisfy; your app owns the implementations, conventionally in
+`lib/actions/auth.ts`.
+
+### Auth actions
+
+`AuthActionResult` is `{ success: true } | { success: false; error: string }`, and
+the form renders the `error` message. Email actions resolve to that result and let
+the form handle `redirectTo`; `signInSocialAction` has to leave the app, so it
+performs a server-side `redirect()` to the provider and resolves to `void`.
+
+```typescript
+// lib/actions/auth.ts
+'use server'
+
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+import type {
+  AuthActionResult,
+  SignInInput,
+  SignUpInput,
+  RequestPasswordResetInput,
+  ResetPasswordInput,
+} from '@opensaas/stack-auth/ui'
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signInEmail({
+      body: { email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign in failed') }
+  }
+}
+
+export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.signUpEmail({
+      body: { name: input.name, email: input.email, password: input.password },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Sign up failed') }
+  }
+}
+
+export async function requestPasswordResetAction(
+  input: RequestPasswordResetInput,
+): Promise<AuthActionResult> {
+  try {
+    await auth.api.requestPasswordReset({
+      body: { email: input.email, redirectTo: '/reset-password' },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
+  }
+}
+
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
+  try {
+    await auth.api.resetPassword({
+      body: { newPassword: input.password, token: input.token },
+      headers: await headers(),
+    })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: errorMessage(err, 'Failed to reset password') }
+  }
+}
+
+export async function signInSocialAction(provider: string): Promise<void> {
+  const response = await auth.api.signInSocial({
+    body: { provider, callbackURL: '/admin' },
+    headers: await headers(),
+  })
+  if (response && 'url' in response && response.url) {
+    redirect(response.url)
+  }
+}
+```
+
+`createAuth()` appends better-auth's `nextCookies()` plugin, so the session cookie
+these actions set is written into Next's `cookies()` without any extra step.
 
 ### SignInForm
 
+`signInAction` is the only required prop. The OAuth buttons render only when
+`signInSocialAction` is supplied — `showSocialProviders` alone does not summon
+them.
+
 ```typescript
+// app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signInAction, signInSocialAction } from '@/lib/actions/auth'
 
 export default function SignInPage() {
   return (
     <SignInForm
-      authClient={authClient}
+      signInAction={signInAction}
+      signInSocialAction={signInSocialAction}
       redirectTo="/admin"
       showSocialProviders={true}
     />
@@ -681,17 +867,51 @@ export default function SignInPage() {
 ### SignUpForm
 
 ```typescript
+// app/sign-up/page.tsx
 import { SignUpForm } from '@opensaas/stack-auth/ui'
-import { authClient } from '@/lib/auth-client'
+import { signUpAction, signInSocialAction } from '@/lib/actions/auth'
 
 export default function SignUpPage() {
   return (
     <SignUpForm
-      authClient={authClient}
+      signUpAction={signUpAction}
+      signInSocialAction={signInSocialAction}
       redirectTo="/admin"
       showSocialProviders={true}
     />
   )
+}
+```
+
+### ForgotPasswordForm and ResetPasswordForm
+
+`ForgotPasswordForm` requests the reset email. `ResetPasswordForm` completes the
+reset and additionally takes the `token` from the email link — the page reads it
+from `searchParams` and passes it in; an empty token renders an "invalid or
+expired link" state instead of a password form.
+
+```typescript
+// app/forgot-password/page.tsx
+import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
+import { requestPasswordResetAction } from '@/lib/actions/auth'
+
+export default function ForgotPasswordPage() {
+  return <ForgotPasswordForm requestPasswordResetAction={requestPasswordResetAction} />
+}
+```
+
+```typescript
+// app/reset-password/page.tsx
+import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
+import { resetPasswordAction } from '@/lib/actions/auth'
+
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>
+}) {
+  const { token } = await searchParams
+  return <ResetPasswordForm resetPasswordAction={resetPasswordAction} token={token ?? ''} />
 }
 ```
 
@@ -713,7 +933,14 @@ export function UserProfile() {
 
 ## Access Control Integration
 
-The session is automatically available in all access control functions:
+The session is automatically available in all access control functions.
+
+A list's `access` carries exactly one member, `operation`. There is no separate
+`filter` block: an `operation.query`, `operation.update` or `operation.delete`
+rule scopes rows by **returning** a Prisma-shaped filter instead of a boolean, and
+that filter is ANDed into the caller's own `where`. `operation.create` is the
+exception — it takes a boolean result only, and returning a filter from it throws
+`InvalidCreateAccessResultError`.
 
 ```typescript
 lists: {
@@ -725,41 +952,46 @@ lists: {
     },
     access: {
       operation: {
-        // Only authenticated users can create posts
         create: ({ session }) => !!session,
-
-        // Only the author can update their posts
-        update: ({ session, item }) => {
-          return session?.userId === item.authorId
-        },
-
-        // Everyone can read published posts
-        query: () => true,
-      },
-      filter: {
-        // Users can only see their own drafts
-        query: ({ session }) => {
-          if (!session) {
-            return { status: { equals: 'published' } }
-          }
-          return {
-            OR: [
-              { status: { equals: 'published' } },
-              { authorId: { equals: session.userId } },
-            ],
-          }
-        },
+        update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false),
+        query: ({ session }) =>
+          session
+            ? {
+                OR: [
+                  { status: { equals: 'published' } },
+                  { authorId: { equals: session.userId } },
+                ],
+              }
+            : { status: { equals: 'published' } },
       },
     },
   }),
 }
 ```
 
+Note the explicit anonymous branch. A rule written
+`({ session }) => ({ authorId: { equals: session?.userId } })` is not an open
+read — an `undefined` condition is refused with a
+`ValidationError` rather than dropped, so the read fails rather
+than widening.
+
+Field-level access is declared on the field itself, not on the list, and its
+`read`/`create`/`update` rules return a boolean only — a non-boolean throws
+`InvalidFieldAccessResultError`.
+
 ## MCP Integration
 
 To enable Model Context Protocol support with Better Auth authentication:
 
+`mcp()` comes from `@opensaas/stack-auth/plugins`, which re-exports it from the
+optional `@better-auth/mcp` peer — better-auth 1.7 moved it out of
+`better-auth/plugins`. It is built on the OAuth Provider and issues JWT-based
+access tokens, so `jwt()` from `better-auth/plugins` must be registered alongside
+it. `resource` must match the MCP route's canonical URL:
+
 ```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
@@ -769,7 +1001,6 @@ export default config({
     authPlugin({
       emailAndPassword: { enabled: true },
       betterAuthPlugins: [
-        // better-auth 1.7's mcp() requires the jwt() plugin alongside it.
         jwt(),
         mcp({
           loginPage: '/sign-in',
@@ -779,6 +1010,7 @@ export default config({
       ],
     }),
   ],
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: {
@@ -787,7 +1019,7 @@ export default config({
     },
   },
   lists: {
-    // Your lists
+    Post: list({ fields: { title: text() } }),
   },
 })
 ```

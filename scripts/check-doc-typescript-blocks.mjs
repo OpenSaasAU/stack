@@ -32,7 +32,10 @@
 //     member exactly where the contract shows a non-nullable column with no
 //     default and no listed page declares one — a documented create omitting a
 //     field a reader's own stricter list requires is therefore not a compile
-//     error here. A wrong-cased or unknown list, a misspelt vector column, a
+//     error here. A write also takes the one relation member a listed page
+//     writes, `DocumentChunk.document`, because `connect` is a legal spelling
+//     of a foreign key the row owns; relations no listed page writes are not
+//     modelled. A wrong-cased or unknown list, a misspelt vector column, a
 //     missing null check and a misspelt row field are compile errors. The
 //     generated `SecuredList` cannot be used here because it is instantiated
 //     from the emitted Prisma contract, which nothing but the generator can

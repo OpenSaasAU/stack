@@ -18,28 +18,62 @@ Before deploying, make sure you have:
 The deployment process involves:
 
 1. Setting up a production database (Neon PostgreSQL)
-2. Pointing your config at it (provider + driver adapter)
-3. Configuring environment variables (pooled app URL + direct migration URL)
-4. Deploying to Vercel
-5. Applying database migrations
-6. Verifying your deployment
+2. Configuring environment variables (pooled app URL + direct migration URL)
+3. Deploying to Vercel
+4. Applying database migrations
+5. Verifying your deployment
 
 **Total time:** ~10-15 minutes for first deployment
 
 ## How database connections flow
 
-Stack uses Prisma 7, which requires a **driver adapter** at runtime. There are two distinct places a database URL is consumed, and on serverless Postgres they intentionally point at different connection strings:
+`postgresql` is the only provider, and there is no driver adapter to install or
+construct: the generated `.opensaas/context.ts` builds the runtime client from
+the committed `prisma/contract.json`, and takes its connection from the stack's
+own URL lookup. Nothing in `opensaas.config.ts` names a connection string.
 
-- **The running app** connects through a driver adapter built in your `prismaClientConstructor` (in `opensaas.config.ts`). On serverless platforms like Vercel this must use the **pooled** `DATABASE_URL` to avoid exhausting connection limits.
-- **The Prisma CLI** (migrations, Studio) reads the datasource from the generated `prisma.config.ts`. That file prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so migrations run over a **direct** (non-pooled) connection.
+That lookup — `resolveDatabaseUrl()` — reads, in order:
 
-This is the **pooled-app / direct-CLI split**: set `DATABASE_URL` to Neon's pooled URL (used by the app) and `DIRECT_DATABASE_URL` to Neon's direct URL (used by migrations). The lookup prefers `DIRECT_DATABASE_URL` and falls back to `DATABASE_URL`, so setting only the latter is fine where there is no pooler.
+1. **`DIRECT_DATABASE_URL`**
+2. **`DATABASE_URL`**
+3. the **dev-database state file** written by a running `opensaas dev`
+4. otherwise it throws `DatabaseUrlUnresolvedError`, naming both remedies
+
+`DIRECT_DATABASE_URL` wins deliberately, so a schema command reaches a direct
+connection rather than a pooler that cannot run DDL
+([ADR-0003](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0003-deployment-uses-postgres-and-prisma-migrate.md)).
+Two functions are exported from `@opensaas/stack-core`: `resolveDatabaseUrl`,
+which throws, and `findDatabaseUrl`, which does not — the latter is what the
+generated `prisma.config.ts` calls, because that file is evaluated for every
+Prisma command including the offline ones.
+
+There are still two consumers, and on serverless Postgres they want different
+strings:
+
+- **The running app** builds its client from the resolved URL. On a platform
+  like Vercel that should be the **pooled** connection, so serverless functions
+  share connections instead of exhausting the limit.
+- **The Prisma CLI** (`prisma migration plan`, `prisma db migrate`) reads its
+  connection from the generated `prisma.config.ts`, which calls the same lookup.
+
+Set `DATABASE_URL` to Neon's pooled URL and `DIRECT_DATABASE_URL` to Neon's
+direct URL. Because the lookup prefers `DIRECT_DATABASE_URL`, the app process
+would then also take the direct string — which is fine for a long-lived server
+and wrong for serverless. See [Binding your own pool](#binding-your-own-pool)
+below for the fix; where there is no pooler at all, set `DATABASE_URL` only and
+neither problem exists.
 
 ### The Database escape
 
 Setting either variable **is** the escape: the lookup takes the environment branch, and no Dev database starts. In production that is the only branch there is — a deployment with neither variable set gets an error naming both remedies, never a silent in-process database. Locally you set neither, and `pnpm dev` runs the Dev database instead; set one to develop against a Postgres of your own for parity or contention.
 
-**Provisioning an extension your config declares.** A declared extension pack (pgvector, for instance) is a committed **Extension contract space** in `migrations/`, and Prisma runs `CREATE EXTENSION IF NOT EXISTS` from it on every path — the Dev database, CI, and `prisma db migrate` in production. Your job is provisioning, not DDL: make the extension available on the server, and either let the migrating role create it or pre-create it. An extension that is already installed is detected and skipped, so a DBA who runs `CREATE EXTENSION vector` once is not in conflict with the migration. This matters because pgvector is **not** a trusted extension: creating it needs superuser or a provider grant (Neon, Supabase and RDS grant it to the app role; a locked-down Postgres does not). Where the server does not have it available at all, the migration fails with Prisma's own error naming the failing space, the missing control file and SQL state `58P01`, and the app's own migration is untouched — every apply runs in one transaction. See [ADR-0065](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0065-the-extension-contract-space-is-a-generator-emission-and-prisma-runs-create-extension.md).
+### Provisioning an extension your config declares
+
+A declared extension pack (pgvector, for instance) is a committed **Extension contract space** in `migrations/`, and Prisma runs `CREATE EXTENSION IF NOT EXISTS` from it on every path — the Dev database, CI, and `prisma db migrate` in production. Your job is provisioning, not DDL: make the extension available on the server, and either let the migrating role create it or pre-create it. An extension that is already installed is detected and skipped, so a DBA who runs `CREATE EXTENSION vector` once is not in conflict with the migration.
+
+#### Cost: pgvector needs a privilege you may not have
+
+pgvector is not a trusted extension, so `CREATE EXTENSION` requires **superuser, or a provider grant on the migrating role — otherwise a DBA has to pre-create it**. Neon, Supabase and RDS grant it to the app role; a locked-down, self-hosted Postgres does not, and on that server your deploy needs a human with rights the migration does not have. Plan for that before the first release, not during it. Where the server does not have the extension available at all, the migration fails with Prisma's own error naming the failing space, the missing control file and SQL state `58P01`, and the app's own migration is untouched — every apply runs in one transaction. See [ADR-0065](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0065-the-extension-contract-space-is-a-generator-emission-and-prisma-runs-create-extension.md).
 
 ## Step 1: Create Production Database
 
@@ -63,7 +97,7 @@ Neon provides serverless PostgreSQL with automatic scaling and a generous free t
    - It looks like: `postgresql://username:password@ep-xxx.region.aws.neon.tech/dbname?sslmode=require`
    - Neon provides two flavours — copy **both**:
      - **Pooled connection** (recommended for serverless): use this for `DATABASE_URL` (the app)
-     - **Direct connection**: use this for `DIRECT_DATABASE_URL` (migrations and Prisma Studio)
+     - **Direct connection**: use this for `DIRECT_DATABASE_URL` (migrations)
 
 4. **Enable Connection Pooling (Recommended)**
    - In your Neon project dashboard, go to "Settings" → "Connection Pooling"
@@ -71,67 +105,53 @@ Neon provides serverless PostgreSQL with automatic scaling and a generous free t
    - Use the **pooled** connection string for `DATABASE_URL`
    - Use the **direct** connection string for `DIRECT_DATABASE_URL`
 
-## Step 2: Switch Your Config to PostgreSQL
+## Step 2: Check Your `db` Block
 
-Locally your app is configured for SQLite with the `PrismaBetterSqlite3` adapter. For production, switch the `db` block of `opensaas.config.ts` to PostgreSQL — change the `provider` and swap the driver adapter. This is a one-time, well-signposted change.
-
-### Install the PostgreSQL adapter
-
-For a standard Postgres connection (works with Neon and any Postgres host):
-
-```bash
-pnpm add @prisma/adapter-pg pg
-```
-
-For Neon's serverless driver (uses WebSockets, optimised for serverless/edge):
-
-```bash
-pnpm add @prisma/adapter-neon @neondatabase/serverless ws
-```
-
-### Update `opensaas.config.ts`
-
-Replace the SQLite `db` block with a PostgreSQL one. The driver adapter connects using the **pooled** `DATABASE_URL`.
-
-**Option A — `@prisma/adapter-pg` (standard Postgres driver):**
+There is nothing to switch. Your local and production databases are both
+Postgres, so the `db` block is the same in both, and it names no connection
+string at all:
 
 ```typescript
 import { config } from '@opensaas/stack-core'
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
 
 export default config({
-  db: {
-    provider: 'postgresql',
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     // ... your lists
   },
 })
 ```
 
-**Option B — `@prisma/adapter-neon` (Neon serverless driver):**
+The complete set of keys on `db` is `provider`, `idField`, `extensions`,
+`client`, `schemas`, `timestamps`, `keystoneCompat` and
+`prismaGeneratorOptions`. There is no `url`, no `directUrl`, and no
+`prismaClientConstructor` — the [Config API reference](/docs/reference/config-api)
+describes each key.
+
+### Binding your own pool
+
+`db.client.pg` is the one hook for taking over how the runtime connects. It is a
+**lazy factory**, not an instance: the config is loaded by the CLI and by tooling
+that never issues a query, and none of that should open a connection. The
+generated context calls it at most once, under its client singleton.
+
+Reach for it when the resolved URL is the wrong one for the app process — the
+pooled-app / direct-CLI split above — or when you want a driver of your own,
+like Neon's WebSocket pool on a serverless runtime:
 
 ```typescript
 import { config } from '@opensaas/stack-core'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
+import { Pool, neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 
 export default config({
   db: {
     provider: 'postgresql',
-    prismaClientConstructor: (PrismaClient) => {
-      neonConfig.webSocketConstructor = ws
-      const adapter = new PrismaNeon({
-        connectionString: process.env.DATABASE_URL,
-      })
-      return new PrismaClient({ adapter })
+    client: {
+      pg: () => {
+        neonConfig.webSocketConstructor = ws
+        return new Pool({ connectionString: process.env.DATABASE_URL })
+      },
     },
   },
   lists: {
@@ -140,7 +160,15 @@ export default config({
 })
 ```
 
-There is **no** top-level `url` or `directUrl` in the `db` block — Prisma 7 takes the URL through the adapter, and the direct/migration URL lives in `prisma.config.ts` (see below). Don't add fields that no longer exist.
+An explicit pool wins outright, including over the Dev database's own binding —
+so leave `db.client.pg` unset locally, or gate it on the environment. `pnpm dev`
+warns rather than silently rebinding.
+
+Under the hood, the generated context spreads `resolveRuntimeConnection(config.db.client)`
+into its client construction. That function is exported from
+`@opensaas/stack-core/client` if you ever need to build a client outside the
+generated bundle; pair it with `import contractJson from '../prisma/contract.json' with { type: 'json' }`,
+exactly as `.opensaas/context.ts` does. Do not hand-roll an equivalent.
 
 ### Regenerate
 
@@ -148,27 +176,36 @@ There is **no** top-level `url` or `directUrl` in the `db` block — Prisma 7 ta
 pnpm generate
 ```
 
-This rewrites `prisma/schema.prisma` for the `postgresql` provider and regenerates `prisma.config.ts`. The generated `prisma.config.ts` looks like this — it's CLI-only and prefers the direct URL:
+This rewrites the Contract module and the generated bundle, and regenerates the
+project-root `prisma.config.ts`. That file is CLI-only, never read by the running
+app, and you don't edit it:
 
 ```typescript
-import 'dotenv/config'
-import { defineConfig } from 'prisma/config'
+// ⚠️  GENERATED FILE - DO NOT EDIT
+// Generated by 'opensaas generate' from opensaas.config.ts.
 
-// Read an environment variable, returning undefined when unset so the
-// `??` fallback below can take effect. (The `env` helper from
-// 'prisma/config' throws on missing variables, which would break the
-// fallback.)
-const env = (name: string): string | undefined => process.env[name]
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { definePrismaConfig } from 'prisma/config'
+import { defineConfig } from '@prisma/orm-postgres/config'
+import { findDatabaseUrl } from '@opensaas/stack-core'
 
-export default defineConfig({
-  schema: 'prisma',
-  datasource: {
-    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),
-  },
+// The Prisma CLI evaluates this file without loading a .env of its own, and
+// `process.loadEnvFile` throws when the file is absent.
+const envFile = join(import.meta.dirname, '.env')
+if (existsSync(envFile)) process.loadEnvFile(envFile)
+
+export default definePrismaConfig({
+  orm: defineConfig({
+    contract: './prisma/contract.ts',
+    output: './prisma',
+    extensions: [],
+    db: { connection: findDatabaseUrl() },
+  }),
 })
 ```
 
-You don't edit this file — it's generated. It only affects Prisma CLI commands, never the running app.
+`extensions` gains one entry per pack your config declares under `db.extensions`.
 
 ## Step 3: Configure Environment Variables
 
@@ -179,7 +216,7 @@ Create a `.env.production.local` file in your project root to test against the p
 ```bash
 # .env.production.local
 
-# Pooled connection — used by the app (driver adapter)
+# Pooled connection — used by the app
 DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/dbname?sslmode=require"
 
 # Direct connection — used by Prisma CLI (migrations / Studio)
@@ -188,7 +225,7 @@ DIRECT_DATABASE_URL="postgresql://user:pass@ep-xxx.region.aws.neon.tech/dbname?s
 
 **Why two URLs?**
 
-- `DATABASE_URL` (pooled): the connection your **app** uses at runtime, via the driver adapter. Pooling lets serverless functions share connections instead of exhausting the database's limit.
+- `DATABASE_URL` (pooled): the connection your **app** uses at runtime. Bind it with `db.client.pg` where `DIRECT_DATABASE_URL` is also set. Pooling lets serverless functions share connections instead of exhausting the database's limit.
 - `DIRECT_DATABASE_URL` (direct): the connection the **Prisma CLI** uses for `migration plan` / `db migrate`. Migrations need a direct, non-pooled connection. The generated `prisma.config.ts` reads it as `DIRECT_DATABASE_URL ?? DATABASE_URL`.
 
 ### Environment Variables for Better Auth (If Using)
@@ -222,17 +259,17 @@ openssl rand -base64 32
 
 ### Environment variable checklist
 
-| Variable               | Used by             | Value                                                  | Required          |
-| ---------------------- | ------------------- | ------------------------------------------------------ | ----------------- |
-| `DATABASE_URL`         | App (adapter)       | Neon **pooled** connection string                      | Always            |
-| `DIRECT_DATABASE_URL`  | Prisma CLI          | Neon **direct** connection string                      | Always (Postgres) |
-| `BETTER_AUTH_SECRET`   | Better Auth         | `openssl rand -base64 32`                              | If using auth     |
-| `BETTER_AUTH_URL`      | Better Auth         | Your deployed URL (e.g. `https://your-app.vercel.app`) | If using auth     |
-| `NEXT_PUBLIC_APP_URL`  | Client              | Your deployed URL                                      | If using auth     |
-| `GITHUB_CLIENT_ID`     | Better Auth (OAuth) | From your GitHub OAuth app                             | If using GitHub   |
-| `GITHUB_CLIENT_SECRET` | Better Auth (OAuth) | From your GitHub OAuth app                             | If using GitHub   |
-| `GOOGLE_CLIENT_ID`     | Better Auth (OAuth) | From your Google OAuth client                          | If using Google   |
-| `GOOGLE_CLIENT_SECRET` | Better Auth (OAuth) | From your Google OAuth client                          | If using Google   |
+| Variable               | Used by              | Value                                                  | Required          |
+| ---------------------- | -------------------- | ------------------------------------------------------ | ----------------- |
+| `DATABASE_URL`         | App (runtime client) | Neon **pooled** connection string                      | Always            |
+| `DIRECT_DATABASE_URL`  | Prisma CLI           | Neon **direct** connection string                      | Always (Postgres) |
+| `BETTER_AUTH_SECRET`   | Better Auth          | `openssl rand -base64 32`                              | If using auth     |
+| `BETTER_AUTH_URL`      | Better Auth          | Your deployed URL (e.g. `https://your-app.vercel.app`) | If using auth     |
+| `NEXT_PUBLIC_APP_URL`  | Client               | Your deployed URL                                      | If using auth     |
+| `GITHUB_CLIENT_ID`     | Better Auth (OAuth)  | From your GitHub OAuth app                             | If using GitHub   |
+| `GITHUB_CLIENT_SECRET` | Better Auth (OAuth)  | From your GitHub OAuth app                             | If using GitHub   |
+| `GOOGLE_CLIENT_ID`     | Better Auth (OAuth)  | From your Google OAuth client                          | If using Google   |
+| `GOOGLE_CLIENT_SECRET` | Better Auth (OAuth)  | From your Google OAuth client                          | If using Google   |
 
 ## Step 4: Author the First Migration
 
@@ -248,7 +285,7 @@ pnpm migrate
 
 `pnpm migrate` runs `prisma migration plan`, which writes a migration package into the `migrations/` directory at your project root. Commit that whole directory to Git. It is your schema history, and it holds more than your app's own space: `pnpm generate` seeds an **Extension contract space** into it for every extension pack your config declares, and the production release step replays all of them together.
 
-> **Local dev vs production.** `pnpm dev` reconciles the Dev database with your config directly. That has **no migration history** and can drop data on a schema change, so it is **not** a supported path to production. Production always migrates from the committed directory.
+> **Local dev vs production.** `pnpm dev` reconciles the Dev database with your config directly, and `opensaas db update` hands that loop your consent for a change it is waiting on. That path has **no migration history** and can drop data on a schema change, so it is **not** a route to production — there is no `opensaas db migrate`, and `opensaas migrate` is an unrelated project-analysis assistant. Production always migrates from the committed `migrations/` directory with the Prisma CLI.
 
 ## Step 5: Deploy to Vercel
 
@@ -393,7 +430,7 @@ psql "$DIRECT_DATABASE_URL"
 
 2. **Test Database Connectivity**
    - If you have an admin UI (`/admin`), try creating a record
-   - Verify it appears in Prisma Studio
+   - Verify it landed, with `psql "$DIRECT_DATABASE_URL"`
    - Check for any console errors
 
 3. **Smoke-check access control**
@@ -484,14 +521,14 @@ Projects scaffolded with `create-opensaas-app` already have this flag set, so ne
 **2. Import the bundle statically.** Reach the bundle through a normal static import so `next build` compiles and traces it:
 
 ```typescript
-// Supported: a static import the host build can compile + file-trace
+// Supported
 import { getContext } from '@/.opensaas/context'
 ```
 
 Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the bundle's files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module" on Vercel even though local dev works):
 
 ```typescript
-// Avoid: the tracer can't follow this, so the bundle is dropped from the build
+// Avoid
 const { getContext } = await import(/* webpackIgnore: true */ './.opensaas/context')
 ```
 
@@ -503,14 +540,13 @@ Serverless functions (like Vercel) create many database connections. Use connect
 
 **Neon provides built-in pooling:**
 
-- Use the pooled connection string for `DATABASE_URL` (the app's driver adapter)
+- Use the pooled connection string for `DATABASE_URL` (the app's runtime client)
 - Use the direct connection string for `DIRECT_DATABASE_URL` (migrations)
-- No additional configuration needed
+- Bind the pooled string with `db.client.pg` so the app's client takes it rather than the direct one the lookup prefers
 
-**Alternative: Prisma Accelerate**
-
-- [Prisma Accelerate](https://www.prisma.io/accelerate) provides connection pooling
-- Good for multi-region deployments
+**Tuning the runtime's own pool.** Where the runtime opens its own pool from the
+resolved URL, `db.client.poolOptions` is handed to it as-is. It applies only
+when no `pg` factory is given — an explicit pool is yours to configure.
 
 ### Environment Variables Management
 
@@ -522,7 +558,7 @@ Serverless functions (like Vercel) create many database connections. Use connect
 
 **Environment-specific variables:**
 
-- Development: `.env` / `.env.local` (SQLite `DATABASE_URL`)
+- Development: neither variable set — `pnpm dev` runs the Dev database
 - Production: Vercel Dashboard or `vercel env` (`DATABASE_URL` + `DIRECT_DATABASE_URL`)
 - Preview: Can inherit from Production or set separately
 
@@ -587,7 +623,7 @@ Before going live:
 - Verify `DATABASE_URL` is correct (copy from Neon Console)
 - Check `sslmode=require` is in the connection string
 - Ensure the Neon project is not paused (happens on free tier after inactivity)
-- Test the migration connection: `npx prisma db pull` (uses `DIRECT_DATABASE_URL` via `prisma.config.ts`)
+- Test the migration connection directly: `psql "$DIRECT_DATABASE_URL" -c 'select 1'`
 
 ### "Too many connections"
 
@@ -600,8 +636,8 @@ Before going live:
   ```
   postgresql://...?sslmode=require&connection_limit=10
   ```
+- Bind the pooled connection explicitly with `db.client.pg`, so a `DIRECT_DATABASE_URL` set for migrations does not become the app's connection too
 - Upgrade your Neon plan for more connections
-- Use Prisma Accelerate for connection pooling
 
 ### "Migration failed"
 
@@ -692,7 +728,7 @@ git push origin main
 
 ### Using Different Database Providers
 
-While this guide focuses on Neon, Stack works with any PostgreSQL provider. The pattern is the same: set `provider: 'postgresql'`, build a `PrismaPg` (or provider-specific) adapter in `prismaClientConstructor` with the pooled `DATABASE_URL`, and point `DIRECT_DATABASE_URL` at the direct connection.
+While this guide focuses on Neon, Stack works with any PostgreSQL provider, and there is nothing provider-specific in the config. The pattern is always the same: point `DATABASE_URL` at the connection the app should use and `DIRECT_DATABASE_URL` at the direct one migrations need. Only reach for `db.client.pg` when the app process needs a pool the resolved URL would not give it.
 
 **Supabase:**
 
@@ -712,7 +748,7 @@ While this guide focuses on Neon, Stack works with any PostgreSQL provider. The 
 
 ### Docker Deployment (Self-Hosting)
 
-For deploying to your own infrastructure, use the `@prisma/adapter-pg` adapter (Option A above) pointed at your Postgres instance, and run `pnpm migrate:deploy` as part of your release process.
+For deploying to your own infrastructure, point `DATABASE_URL` at your Postgres instance and run `pnpm migrate:deploy` as part of your release process. Nothing else changes. If your Postgres is behind a pooler that cannot run DDL, set `DIRECT_DATABASE_URL` at the direct connection as well, and bind the pooled one with `db.client.pg`.
 
 ## Next Steps
 
@@ -728,8 +764,8 @@ Now that your app is deployed:
 You've successfully deployed your Stack application! Here's what you accomplished:
 
 - Created a production PostgreSQL database on Neon
-- Switched your config to the PostgreSQL driver adapter (pooled `DATABASE_URL`)
 - Configured the pooled-app / direct-CLI environment variable split
+- Planned and committed the first migration package
 - Deployed to Vercel with automatic deployments
 - Applied versioned migrations with `prisma db migrate`
 - Verified your deployment and access control are working

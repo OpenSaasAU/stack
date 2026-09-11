@@ -335,9 +335,13 @@ fields: {
   metadata: json({
     hooks: {
       // Transform before writing to database
-      resolveInput: async ({ inputValue }) => {
+      // A field `resolveInput` receives the whole resolved payload and reads
+      // its own value out of it under `fieldKey` — there is no `inputValue`.
+      resolveInput: async ({ resolvedData, fieldKey }) => {
         // Add timestamp
-        return { ...inputValue, updatedAt: new Date().toISOString() }
+        const incoming = resolvedData[fieldKey]
+        if (incoming === null || typeof incoming !== 'object') return incoming
+        return { ...incoming, updatedAt: new Date().toISOString() }
       },
       // Transform after reading from database
       resolveOutput: ({ value }) => {
