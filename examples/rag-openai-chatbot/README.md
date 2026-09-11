@@ -540,8 +540,8 @@ psql "$(node -p "require('./.opensaas/dev-db.json').url")" \
 
 With no vector left to cast, `pnpm db:update --confirm postgres` exits 0 and
 reports `Applied, promoted.`. Re-run `pnpm db:seed` to regenerate the embeddings
-from the article text — it clears both lists first, so it is safe on either
-route. Asked for consent in a non-interactive session, `db update` prints:
+from the article text — it clears the list before recreating it, so it is safe on
+either route. Asked for consent in a non-interactive session, `db update` prints:
 
 ```
 "Apply 1 destructive operation(s) to postgres? Data they remove cannot be recovered:
