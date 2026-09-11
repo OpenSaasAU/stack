@@ -231,7 +231,7 @@ When you create or update a document:
 3. If changed, generates new embedding via Ollama
 4. Writes the vector and its metadata through core's `writePluginOwnedField` —
    the columns are write-denied to application code, and that write runs no
-   hook of the list's (ADR-0066)
+   hook of the list's (ADR-0068)
 
 ### 4. Semantic Search
 
