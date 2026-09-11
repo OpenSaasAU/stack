@@ -19,7 +19,7 @@
     "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@tailwindcss/postcss": "^4.3.3",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^13.0.3",
     "next": "^16.2.10",
     "postcss": "^8.5.26",
     "react": "^19.2.8",
