@@ -234,8 +234,11 @@ there is no `inputValue` argument — and `context.session` is nullable:
 attachment: file({
   storage: 'documents',
   hooks: {
-    resolveInput: async ({ fieldKey, resolvedData, context }) => {
+    // A field `resolveInput` receives the whole resolved payload and reads its
+    // own value out of it under `fieldKey` — there is no `inputValue` argument.
+    resolveInput: async ({ resolvedData, fieldKey, context }) => {
       const incoming = resolvedData[fieldKey]
+
       if (incoming instanceof File) {
         // Custom validation
         const userQuota = await checkUserQuota(context.session?.userId)

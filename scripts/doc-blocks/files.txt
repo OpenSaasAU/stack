@@ -4,8 +4,12 @@
 # rather than retired with it. The one exception is a `.changeset/*` path,
 # which release consumes: that one is skipped, and its keys are skipped too.
 .changeset/swift-pandas-listen.md
+docs/content/how-to/deploy.md
 docs/content/how-to/rag-advanced.md
+docs/content/reference/core.md
 docs/content/reference/rag.md
 examples/rag-ollama-demo/README.md
+packages/create-opensaas-app/README.md
 packages/rag/CLAUDE.md
 packages/rag/README.md
+packages/ui/README.md
