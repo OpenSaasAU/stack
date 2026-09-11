@@ -96,6 +96,19 @@ describe('devCommand', () => {
   let exitCode: number | undefined
   let originalExit: typeof process.exit
   let originalDatabaseUrl: string | undefined
+  let revision = 0
+
+  /**
+   * Rewrites the watched config so a fired `change` carries bytes the loop has
+   * not already generated from — the loop skips one that does not.
+   */
+  const editConfig = (): void => {
+    revision += 1
+    fs.writeFileSync(
+      path.join(tempDir, 'opensaas.config.ts'),
+      `export default { revision: ${revision} }\n`,
+    )
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -275,10 +288,12 @@ describe('devCommand', () => {
     const change = watcherHandlers.get('change')
     expect(change).toBeDefined()
 
+    editConfig()
     change?.()
     await until(() => stagedGenerations === 1)
     expect(fs.existsSync(staged.contractModule)).toBe(true)
 
+    editConfig()
     change?.()
     await until(() => stagedGenerations === 2)
 
@@ -323,6 +338,7 @@ describe('devCommand', () => {
     const { CONTROL_FILE } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
+    editConfig()
     watcherHandlers.get('change')?.()
     await until(() => refusals === 1)
     await until(() => !fs.existsSync(path.join(refsDir, 'seeded.json')))

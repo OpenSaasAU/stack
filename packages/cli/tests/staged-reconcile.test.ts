@@ -268,8 +268,21 @@ describe('staged reconcile under opensaas dev', () => {
     const rootPrismaConfig = path.join(projectDir, 'prisma.config.ts')
     fs.appendFileSync(rootPrismaConfig, '\n// held back until promotion\n', 'utf-8')
 
+    // The same bytes saved again, which is what `fs.writeFileSync`'s
+    // truncate-then-write can reach a Linux inotify watcher as: two change
+    // events for one save. A save that changes nothing must reconcile nothing,
+    // or the second event promotes a fresh generation over the stamp.
+    const beforeUnchangedSave = loop.output().length
+    writeConfig(projectDir, '\n        note: text(),')
+    await waitForOutput(loop, 'Config saved with no change', { from: beforeUnchangedSave })
+    expect(
+      fs.readFileSync(rootPrismaConfig, 'utf-8'),
+      'a save that changes nothing must not rewrite the live root config',
+    ).toContain('// held back until promotion')
+
+    const beforeDestructiveEdit = loop.output().length
     writeConfig(projectDir, '')
-    await waitForOutput(loop, 'pnpm db:update')
+    await waitForOutput(loop, 'pnpm db:update', { from: beforeDestructiveEdit })
 
     expect(
       fs.readFileSync(rootPrismaConfig, 'utf-8'),

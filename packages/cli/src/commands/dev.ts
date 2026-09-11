@@ -22,6 +22,13 @@ import {
   STAGING_DIR,
 } from '../dev/staged-reconcile.js'
 
+/**
+ * How long the config file must sit unwritten before a save counts as one
+ * save. `fs.writeFileSync` truncates then writes, which Linux inotify can
+ * deliver as two change events; macOS FSEvents coalesces them.
+ */
+const CONFIG_WRITE_SETTLE_MS = 200
+
 const DEFAULT_APP_COMMAND = ['next', 'dev'] as const
 
 /** The Dev database's data directory, inside the Generated bundle (ADR-0063). */
@@ -120,6 +127,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   let staged: GenerationResult | undefined
   /** One reconcile at a time: a burst of writes must not race itself. */
   let queue = Promise.resolve()
+  /**
+   * The config source the loop has already generated from. Everything the loop
+   * emits is derived from these bytes, so a save that reproduces them has
+   * nothing to reconcile — and promoting a fresh generation over the live
+   * bundle on the strength of one would rewrite files the user did not change.
+   */
+  let reconciledSource: string | undefined
 
   const stop = async (): Promise<void> => {
     await watcher?.close()
@@ -186,6 +200,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   const onConfigChange = async (): Promise<void> => {
+    const source = fs.readFileSync(configPath, 'utf-8')
+    if (source === reconciledSource) {
+      console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.\n'))
+      return
+    }
+
     console.log(chalk.yellow('\nConfig changed: staging the new contract...\n'))
     const say = (message: string): void => console.log(chalk.gray(message))
 
@@ -200,6 +220,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       restoreMigrationRefs(cwd, refs)
       return
     }
+    reconciledSource = source
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -292,6 +313,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     fs.rmSync(stagingDir, { recursive: true, force: true })
 
+    // Read before generating, so an edit landing during startup leaves bytes
+    // the watcher will not recognise as already reconciled.
+    reconciledSource = fs.readFileSync(configPath, 'utf-8')
     await generateCommand()
 
     if (!(await reconcile(cwd)) || interrupted) {
@@ -302,7 +326,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // Armed only now: `queue` serialises reconciles against each other, not
     // against this startup generate and reconcile, so a save landing earlier
     // would run a second `db update` against the same database concurrently.
-    watcher = chokidar.watch(configPath, { persistent: true, ignoreInitial: true })
+    watcher = chokidar.watch(configPath, {
+      persistent: true,
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: CONFIG_WRITE_SETTLE_MS, pollInterval: 50 },
+    })
     watcher.on('change', () => {
       queue = queue.then(onConfigChange).catch((error: unknown) => {
         console.error(chalk.red('\nStaged reconcile failed:'), error)
