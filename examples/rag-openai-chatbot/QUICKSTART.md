@@ -74,9 +74,11 @@ for it and records the step as already satisfied.
 
 1. **Chat:** Ask "What is OpenSaas Stack?" in the chatbot
 2. **Search:** Search for "access control" to see semantic matching
-3. **Admin:** Edit an article's content and watch its embedding regenerate. Creating
-   is denied here on purpose — the list sets `create: () => false` so the seed can
-   demonstrate `sudo()` bypassing it, so new articles come from `pnpm db:seed`.
+3. **Admin:** Browse the seeded articles and delete one. Creating and editing are
+   both refused here on purpose — the list sets `create: () => false` so the seed
+   can demonstrate `sudo()` bypassing it, and the embedding column is write-denied
+   while the item form still submits it. New and changed articles come from
+   `pnpm db:seed`.
 
 ## Troubleshooting
 

@@ -19,10 +19,6 @@ export default config({
       provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-        // Unset reaches OpenAI. Point it at Azure OpenAI or any endpoint that
-        // speaks the same embeddings API to use that instead — the model's
-        // dimension still has to match the column's 1536.
-        ...(process.env.OPENAI_BASE_URL ? { baseURL: process.env.OPENAI_BASE_URL } : {}),
       }),
     }),
   ],

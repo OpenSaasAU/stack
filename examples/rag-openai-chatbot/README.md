@@ -168,24 +168,36 @@ Results are ranked by semantic similarity (cosine distance).
 
 ### Admin Panel (`/admin`)
 
-Edit and delete interface for the knowledge base:
+A browse-and-delete interface for the knowledge base. Browsing and deleting work.
+Creating and editing are both offered and both always refused, for two different
+reasons.
 
-- Edit existing articles
-- Delete articles
-
-Creating is **not** available here, by design. This list sets `create: () => false`
+Creating is offered but always refused. This list sets `create: () => false`
 (see [OpenSaas Stack Config](#opensaas-stack-config) below) so the seed script can demonstrate
-`sudo()` bypassing it, and the admin page builds an anonymous context, so a create
-from the admin UI is denied and silently saves nothing. `pnpm db:seed` is how
-articles get in.
+`sudo()` bypassing it, and the admin page builds an anonymous context. The Create
+button on a list view carries no access check at all, and
+`/admin/knowledge-base/create` returns the form regardless — so the create is
+offered, attempted, and refused **loudly**, with `Access denied or operation
+failed` above the form. `pnpm db:seed` is how articles get in.
 
 `contentEmbedding` has no admin component — no field component is registered for
 the `embedding` type — so the column renders as an unsupported field rather than
 showing its provider, model, dimensions and source hash. Read that metadata from
-the `contentEmbeddingMetadata` column instead.
+`contentEmbedding.metadata`: the field is one logical value assembled from two
+columns, and core strips the per-part columns on the way out, so the raw
+`contentEmbeddingMetadata` column never reaches a caller.
 
-Embeddings are still generated and updated automatically whenever an article's
-`content` changes, including from an edit made here.
+Editing is offered and refused too, for an unrelated reason. `contentEmbedding` is
+write-denied to application code, and the item form submits every field it was
+handed rather than only the ones that changed — so a Save carries the embedding
+back and core refuses it with
+`Validation failed: Cannot update "contentEmbedding": field-level access denied.`
+above the fields, leaving the row untouched.
+
+Embeddings are still regenerated automatically whenever an article's `content`
+changes — from `pnpm db:seed`, or from any `context.db.KnowledgeBase.update()`
+naming only the fields you mean to write. An edit made in the admin UI is not one
+of those.
 
 ## Project Structure
 
@@ -239,7 +251,8 @@ what lets the column declare its own distance function and index.
 
 The field:
 
-- Adds an `afterTransaction` hook that embeds the persisted text once the write commits
+- Is what `ragPlugin` scans for: seeing `autoGenerate`, the plugin installs an
+  `afterTransaction` hook on the list that embeds the persisted text once the write commits
 - Uses OpenAI's `text-embedding-3-small` model (1536 dimensions)
 - Stores the vector in a pgvector `vector(1536)` column, with its metadata (model, provider, dimensions, source hash) in a `jsonb` column beside it
 - Is write-denied to application code: an ordinary create or update naming it
@@ -260,6 +273,7 @@ When searching (in `app/actions/search.ts`):
 const provider = createEmbeddingProvider({
   type: 'openai',
   apiKey: process.env.OPENAI_API_KEY!,
+  model: 'text-embedding-3-small',
 })
 
 const queryVector = await provider.embed(query)
@@ -331,13 +345,21 @@ export default config({
   lists: {
     KnowledgeBase: list({
       fields: {
-        title: text({ validation: { isRequired: true } }),
-        content: text({ validation: { isRequired: true } }),
+        title: text({
+          validation: { isRequired: true },
+          ui: { displayMode: 'input' },
+        }),
+        content: text({
+          validation: { isRequired: true },
+          ui: { displayMode: 'textarea' },
+        }),
         contentEmbedding: embedding({
           sourceField: 'content',
           provider: 'openai',
           dimensions: 1536,
+          distanceFunction: 'cosine',
           autoGenerate: true,
+          index: { method: 'hnsw', m: 16, efConstruction: 64 },
         }),
         category: select({
           options: [
@@ -347,6 +369,8 @@ export default config({
             { label: 'Database', value: 'database' },
             { label: 'DevOps', value: 'devops' },
           ],
+          validation: { isRequired: true },
+          ui: { displayMode: 'select' },
         }),
         published: checkbox({ defaultValue: true }),
       },
@@ -443,7 +467,8 @@ changing it is a migration rather than a setting.
 
 ### Change Embedding Dimensions
 
-For `text-embedding-3-large` (3072 dimensions):
+For `text-embedding-3-large` (3072 dimensions). Note that the committed field's
+`index` declaration has to go with it — see below:
 
 ```typescript
 ragPlugin({
@@ -454,23 +479,50 @@ ragPlugin({
   // ...
 })
 
-// Update the column's dimension to match
+// Update the column's dimension to match, and drop `index`
 contentEmbedding: embedding({
   sourceField: 'content',
   provider: 'openai',
   dimensions: 3072,
+  distanceFunction: 'cosine',
+  autoGenerate: true,
 })
 ```
 
+Dropping `index` is not optional at this dimension. pgvector indexes `vector` to
+2,000 dimensions, so an **indexed** field above that resolves to a `halfvec`
+column — and `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers only `Vector`.
+Keeping the `index` this example's config declares therefore fails `pnpm generate`
+outright, before any migration is planned:
+
+```
+❌ Error: prisma contract emit failed (exit 2).
+CONTRACT.SOURCE_LOAD_FAILED ... "why":"type.pgvector.HalfVector is not a function"
+```
+
+With `index` dropped, the column emits as an unindexed `vector(3072)` — which
+costs nothing here, since that `index` declaration is not yet lowered to a
+`CREATE INDEX` anyway (#1265, the Known limit noted on the field).
+
 The dimension is the column's type, so this retypes the column and no stored
 vector survives it. That makes it a destructive plan the dev loop will not apply
-unasked — consent from a second terminal with
-`pnpm db:update --confirm postgres` — and every row is then left with a null
-embedding. Re-run `pnpm db:seed` to regenerate them from the article text.
+unasked:
+
+```
+"Apply 1 destructive operation(s) to postgres? Data they remove cannot be recovered:
+  - Alter type of "KnowledgeBase"."contentEmbedding" to vector(3072)"
+requires explicit consent
+```
+
+Consent from a second terminal with `pnpm db:update --confirm postgres`, and
+every row is then left with a null embedding. Re-run `pnpm db:seed` to regenerate
+them from the article text.
 
 ### Add Your Own Articles
 
-Use the Admin UI at `/admin` or seed script in `scripts/seed.ts`.
+Add them to `sampleArticles` in `scripts/seed.ts` and re-run `pnpm db:seed`. The
+Admin UI is not a route in: this list denies `create`, and the seed's `sudo()` is
+what gets past it.
 
 ## Troubleshooting
 

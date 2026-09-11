@@ -156,7 +156,7 @@ export default config({
   plugins: [
     ragPlugin({
       provider: ollamaEmbeddings({
-        baseURL: 'http://localhost:11434',
+        baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
         model: 'nomic-embed-text',
         dimensions: 768,
       }),
@@ -341,8 +341,10 @@ the `pgvector` space and SQL state `58P01`.
 ### Ollama's dimension
 
 `OLLAMA_EMBEDDING_DIMENSIONS` in `.env` is the model's output size, defaulting to
-768 (`nomic-embed-text`). Only `test.ts` reads it, to build the provider it embeds
-a _query_ with. The column's own dimension is the literal `dimensions: 768` in
+768 (`nomic-embed-text`). Only `test.ts` in this example reads it, to build the
+provider it embeds a _query_ with; `@opensaas/stack-rag/runtime`'s
+`getProviderConfigFromEnv` reads it too, for the same reason. The column's own
+dimension is the literal `dimensions: 768` in
 `opensaas.config.ts`, which is why `ollamaEmbeddings` requires it: a column's type
 must not depend on a running Ollama, and Ollama reports its output size only from a
 live embed call. Change the model and you change both — and changing the column is
