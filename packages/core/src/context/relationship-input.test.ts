@@ -139,9 +139,7 @@ describe('refuseNestedRelationInput', () => {
 
     // The advice the message just gave has to be a payload the same pass
     // accepts, or the reader's next call throws too (#1439).
-    expect(() =>
-      refuseNestedRelationInput('Post', post, config, { category: null }),
-    ).not.toThrow()
+    expect(() => refuseNestedRelationInput('Post', post, config, { category: null })).not.toThrow()
   })
 
   it('points a to-many disconnect at the target list, not at null on the field', () => {
