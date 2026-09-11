@@ -49,7 +49,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
-    "playwright": "^1.61.1",
+    "playwright": "^1.63.0",
     "prettier": "^3.9.6",
     "turbo": "^2.10.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
