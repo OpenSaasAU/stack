@@ -75,7 +75,7 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.0",
     "@vitest/ui": "^4.1.10",
     "better-auth": "^1.7.1",
     "next": "^16.2.10",
