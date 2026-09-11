@@ -30,6 +30,6 @@
     "prisma": "8.0.0-rc.12",
     "tsx": "^4.23.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

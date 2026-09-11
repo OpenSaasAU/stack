@@ -157,7 +157,7 @@ deletes `PrismaClientLike` and `AccessControlledDB`'s structural probing; this
 says the hook args must be keyed at the same time rather than left reading a
 deleted default.
 
-What a hook's context is keyed to is settled here; what it *carries* is not.
+What a hook's context is keyed to is settled here; what it _carries_ is not.
 Under this record every hook — `resolveInput`, `validate`,
 `beforeOperation`, `afterOperation` and a field `resolveOutput` — receives
 `StackBaseContext<DB, S, PluginServices>`, emitted per app as `BaseContext`:

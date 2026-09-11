@@ -338,7 +338,7 @@ plugin runtimes.
 
 Because a hook cannot reach `sudo()`, an elevated write that must be atomic with
 this one is a plugin's own column write (`writePluginOwnedField`, ADR-0068) or a
-`context.transaction` the *caller* opened around the write.
+`context.transaction` the _caller_ opened around the write.
 
 - **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) keep
   the plain `AccessContext`, bound to the BASE client, always — see ADR-0028

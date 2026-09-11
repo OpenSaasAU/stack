@@ -32,6 +32,6 @@
     "dotenv": "^17.4.2",
     "prisma": "8.0.0-rc.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
