@@ -1,6 +1,7 @@
-import type { Session, AccessContext, PrismaFilter } from './types.js'
+import type { Session, AccessContext, PrismaFilter, FieldAccess } from './types.js'
 import type { ListConfig, FieldConfig } from '../config/types.js'
 import { checkAccess } from './engine.js'
+import { isFieldReadableForPredicate } from './field-access.js'
 
 /**
  * What a to-many relationship count is allowed to see (issue #732).
@@ -10,6 +11,15 @@ import { checkAccess } from './engine.js'
  * access by the engine. What survives here is the shared resolution of that
  * access into a per-relation entry, which `access-filter.ts` still needs for a
  * caller-supplied `_count` (issue #1087).
+ *
+ * `fieldAccess` is the COUNTING list's own relationship field access, checked
+ * before the related list's `query` access so a field-level denial
+ * short-circuits (issue #1111). It is `undefined` for a synthetic
+ * back-relation, which has no field of its own on the counting list. The
+ * secured read reaches its counts through `secured/include.ts`, which gates
+ * the same field one layer up; this parameter keeps the gate attached to the
+ * entry itself so a future caller of this function cannot reopen #1111 by
+ * omitting it.
  *
  * A count comparison is no longer expressible as a filter: Prisma 8 cannot
  * compare a relation count in a `where`, and the id-list resolver that used to
@@ -54,7 +64,13 @@ export async function resolveCountAccessEntryForList(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   relatedListConfig: ListConfig<any>,
   args: CountArgs,
+  fieldAccess?: FieldAccess,
 ): Promise<CountAccessEntry> {
+  if (fieldAccess) {
+    const canReadField = await isFieldReadableForPredicate(fieldAccess, args)
+    if (!canReadField) return { kind: 'denied' }
+  }
+
   const queryAccess = relatedListConfig.access?.operation?.query
   const result = await checkAccess(queryAccess, { session: args.session, context: args.context })
 
