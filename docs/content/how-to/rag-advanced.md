@@ -51,7 +51,7 @@ Two things drive that:
   of a module-private symbol — not through anything on the package's exported
   surface (ADR-0045). That write runs **no** hook of the list's: it carries the
   embedding column alone, so re-running `resolveInput` over it would recompute a
-  derived field from input that is not there (ADR-0066).
+  derived field from input that is not there (ADR-0068).
 
 **On create and on update:**
 

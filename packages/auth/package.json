@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-auth",
-  "version": "0.40.0",
+  "version": "0.42.3",
   "description": "Better-auth integration for OpenSaas Stack",
   "type": "module",
   "engines": {
@@ -83,14 +83,14 @@
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
-    "@types/pg": "^8.20.0",
-    "@types/react": "^19.2.14",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "better-auth": "^1.7.1",
     "next": "^16.2.10",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.10"

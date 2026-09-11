@@ -58,6 +58,8 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
  *         create: import('./types.ts').PostCreateInput
  *         update: import('./types.ts').PostUpdateInput
  *       }
+ *       prisma: import('./prisma-client/client.ts').PrismaClient
+ *       db: import('./types.ts').CustomDB
  *     }
  *   }
  * }
@@ -144,6 +146,8 @@ export function generateListsNamespace(
     lines.push(`        create: import('./types.ts').${listName}CreateInput`)
     lines.push(`        update: import('./types.ts').${listName}UpdateInput`)
     lines.push(`      }`)
+    lines.push(`      prisma: import('./prisma-client/client.ts').PrismaClient`)
+    lines.push(`      db: import('./types.ts').CustomDB`)
     lines.push(`    }`)
     lines.push(`  }`)
     lines.push('')

@@ -651,6 +651,47 @@ describe('buildAccessScopedInclude — `_count` is scoped like any other relatio
     ).rejects.toThrow(UndeclaredCountKeyError)
   })
 
+  // Issue #1111: a relationship hidden via field-level `read` access must not
+  // leak its true count through `_count`, even though the related list's rows
+  // are otherwise fully readable — the same denial an ordinary `include` of
+  // that field already gets from `filterReadableFields`'s `checkFieldAccess`
+  // call.
+  it('omits a relation whose field-level `read` access denies it, even though the related list is fully readable', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'sqlite' },
+      lists: {
+        User: {
+          fields: {
+            name: { type: 'text' } as FieldConfig,
+            posts: {
+              type: 'relationship',
+              ref: 'Post.author',
+              many: true,
+              access: { read: () => false },
+            } as FieldConfig,
+          },
+          access: { operation: { query: () => true } },
+        },
+        Post: {
+          fields: { title: { type: 'text' } as FieldConfig, author: rel('User.posts') },
+          access: { operation: { query: () => true } },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
+    } as any
+
+    const { include, countDenials } = await buildAccessScopedInclude(
+      { _count: { select: { posts: true } } },
+      config.lists.User.fields,
+      { session: null, context: makeContext() },
+      config,
+      'User',
+    )
+
+    expect(include).toEqual({})
+    expect(countDenials.keys).toEqual(new Set(['posts']))
+  })
+
   it('does not reject a `_count.select` key naming a synthetic back-relation (#1082)', async () => {
     const config = {
       db: { provider: 'sqlite' },

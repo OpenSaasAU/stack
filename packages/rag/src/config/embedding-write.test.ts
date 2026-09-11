@@ -76,7 +76,7 @@ const source: OpenSaasConfig = {
         // The derive-from-input pattern the root CLAUDE.md documents, written
         // exactly as an app would write it — unguarded. Run again over a
         // payload naming only the embedding, it joins two undefineds and
-        // destroys `content` (ADR-0066).
+        // destroys `content` (ADR-0068).
         resolveInput: ({ resolvedData }) => ({
           ...resolvedData,
           content: [resolvedData.title, resolvedData.body].join(' '),
@@ -263,7 +263,7 @@ describe.skipIf(!available)(
     })
 
     test('the generation write leaves the derived source it did not name intact', async () => {
-      // The corruption ADR-0066 closes: a generation write that re-ran this
+      // The corruption ADR-0068 closes: a generation write that re-ran this
       // list's resolveInput would rewrite `content` as the join of two
       // undefineds and embed *that*, silently, in the row the caller just made.
       await database.context(null).db.Derived.create({ data: { title: 'red', body: 'hot' } })

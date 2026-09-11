@@ -143,7 +143,7 @@ field a `resolveInput` hook derives is embedded like any other.
 
 The embedding and its metadata are write-denied to application code: an ordinary create or
 update naming them throws. The plugin writes them itself, past that denial and running no
-hook of the list's (ADR-0066), after the write's transaction settles. Applications that maintain their own vectors opt out explicitly:
+hook of the list's (ADR-0068), after the write's transaction settles. Applications that maintain their own vectors opt out explicitly:
 
 ```typescript
 manualVector: embedding({ dimensions: 1536, allowManualWrites: true })

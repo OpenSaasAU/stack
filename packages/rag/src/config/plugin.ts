@@ -33,7 +33,7 @@ function isEmbeddingField(field: { type?: string }): field is EmbeddingField {
  * the embedding's columns past this field's own denial and past the list's
  * operation access, and only the generation hook below may hold that
  * (ADR-0045). It runs no hook: a write carrying this column alone would lie to
- * every hook it ran (ADR-0066). Application code that maintains its own
+ * every hook it ran (ADR-0068). Application code that maintains its own
  * vectors uses `embedding({ allowManualWrites: true })` and an ordinary
  * `context.db` write, which runs the whole pipeline as usual.
  */
@@ -236,7 +236,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
             hooks: {
               // The embedding is write-denied to application code, so the
               // plugin writes its own columns past that denial and runs no
-              // hook doing it (ADR-0045, ADR-0066) — and after the write's own
+              // hook doing it (ADR-0045, ADR-0068) — and after the write's own
               // transaction settles, because the provider call is a network
               // round trip that has no business holding a connection.
               //

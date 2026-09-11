@@ -3194,7 +3194,7 @@ export type Plugin = {
    * the two differ, and the difference bites. `StackContext` omits
    * `ormHandle`, `_isSudo`'s internal companions and `_config`, so a core
    * surface that needs the engine's own plumbing — `writePluginOwnedField`,
-   * say — takes the first argument, never this one (ADR-0066).
+   * say — takes the first argument, never this one (ADR-0068).
    */
   runtime?: (
     context: import('../access/types.js').AccessContext,

@@ -1,5 +1,89 @@
 # @opensaas/stack-core
 
+## 0.42.3
+
+### Patch Changes
+
+- [#1337](https://github.com/OpenSaasAU/stack/pull/1337) [`1a616c1`](https://github.com/OpenSaasAU/stack/commit/1a616c1e2ff31de1afe970a5fcfcc25ea7cbedb0) Thanks [@borisno2](https://github.com/borisno2)! - Core's `AugmentedFindUnique`/`AugmentedFindFirst`/`AugmentedFindMany` now carry the same trailing non-generic overload the generator's `CustomDB` already emits ([#1287](https://github.com/OpenSaasAU/stack/issues/1287)), and `getContext` takes a third, unconstrained, defaulted `TDb` type parameter so a caller can ask for `StackContext<TPrisma, CustomDB>` directly. The generated `.opensaas/context.ts` factory uses this to drop its `as unknown as Context<TSession>` casts down to a single, honest `as Context<TSession>`.
+
+  Observable side effect: since `Parameters<>`/`ReturnType<>` resolve against an overloaded type's LAST member, `Parameters<AccessControlledDB<P>[K]['findMany' | 'findFirst' | 'findUnique']>[0]` now resolves to the new trailing member's argument type (Prisma's args shape minus `select`/`include`/`query`) instead of the full original Prisma args — anyone introspecting these types directly via `Parameters<>` will see this narrower shape.
+
+## 0.42.2
+
+## 0.42.1
+
+### Patch Changes
+
+- [#1268](https://github.com/OpenSaasAU/stack/pull/1268) [`2976f57`](https://github.com/OpenSaasAU/stack/commit/2976f57a0d80687c3a27e11c3b7ec7fa9830cdb7) Thanks [@borisno2](https://github.com/borisno2)! - Fix a hook's `context.db` under-describing rows: `TypeInfo` now carries a `db` member (the generator points it at the generated `CustomDB`), so a hook reading a virtual or transformed field off `context.db.<list>` type-checks instead of failing with `TS2339`.
+  Run `opensaas generate` after upgrading to pick up the new member on `Lists.<List>.TypeInfo`.
+
+- [#1264](https://github.com/OpenSaasAU/stack/pull/1264) [`2e1ee3d`](https://github.com/OpenSaasAU/stack/commit/2e1ee3de446639f24331c5cebd01aeed37ca3e31) Thanks [@borisno2](https://github.com/borisno2)! - Fix `context.db.<list>.findUnique`/`findFirst`/`findMany` (and singleton `get`) in the generated `CustomDB` silently losing fragment narrowing: passing a `query` fragment compiled but the result stayed typed as the unnarrowed list payload instead of `ResultOf<typeof fragment>`. These methods now carry the same fragment overload as core's `AccessControlledDB`, so an unselected field is a compile error on the result.
+
+## 0.42.0
+
+### Minor Changes
+
+- [#1214](https://github.com/OpenSaasAU/stack/pull/1214) [`11ea14a`](https://github.com/OpenSaasAU/stack/commit/11ea14aee0721f662d8592994e81dbe3cfe22941) Thanks [@borisno2](https://github.com/borisno2)! - Thread the app's Prisma client type through `TypeInfo` into every list/field hook-args type, so a hook's `context` resolves to the consumer's own `StackContext` instead of `StackContext<any>`.
+
+  Before this change, `TypeInfo` carried no client type, so `context.db` inside any hook resolved through `AccessControlledDB<any>` — a mapped type over `keyof any` that declares no named delegate. A hook's `context` was therefore assignable to nothing app-specific, forcing consumers who wanted to pass it into their own typed functions to write `context as unknown as Context`.
+
+  `TypeInfo` now has a `prisma` member (defaulted to the existing `PrismaClientLike`, so this is fully additive), and every hook-args type — `ResolveInputHookArgs`, `ValidateHookArgs`, `BeforeOperationHookArgs`, `AfterOperationHookArgs`, `BeforeTransactionHookArgs`/`AfterTransactionHookArgs`, and their field-level equivalents — types `context` off it:
+
+  ```typescript
+  // A hook authored the documented way now gets a context keyed to your own
+  // generated Prisma client, with no cast needed to use it elsewhere:
+  Post: list<Lists.Post.TypeInfo>({
+    hooks: {
+      validate: async ({ context }) => {
+        await myDomainFn({ context }) // ✅ context.db.post etc. are real, typed delegates
+      },
+    },
+  })
+  ```
+
+  The CLI generator emits the new `prisma` member on each list's `Lists.<List>.TypeInfo`, pointing at your project's own generated `PrismaClient` — no config changes required, and a hook authored without `TypeInfo` is unaffected.
+
+  Because `context.db.<list>` now resolves to a real delegate instead of `any`, a pre-existing type error in a hook that previously compiled silently (e.g. a return value that didn't actually match the list's row type) can now surface as a genuine compile error. `AccessControlledDB`'s catch-all index signature is unchanged by this fix, so a misspelled delegate name (`context.db.typoedListName`) is not yet caught — that's a separate, tracked limitation.
+
+## 0.41.0
+
+### Minor Changes
+
+- [#1179](https://github.com/OpenSaasAU/stack/pull/1179) [`67dce2e`](https://github.com/OpenSaasAU/stack/commit/67dce2e9d96afdc5c69f0a2f1c8b395346d4e942) Thanks [@borisno2](https://github.com/borisno2)! - A list/field `resolveInput` / `validate` / `beforeOperation` / `afterOperation` hook's `context` is now a full secured context — `sudo()`, `withSession()`, `transaction()` and `serverAction` — bound to the write's OWN transaction client, exactly like the `txContext` a `context.transaction()` callback receives.
+
+  ```typescript
+  Order: list({
+    hooks: {
+      beforeOperation: async ({ context }) => {
+        // Elevated AND atomic with this write — rolls back together if it throws.
+        await context.sudo().db.auditLog.create({ data: { action: 'order-write' } })
+      },
+    },
+  })
+  ```
+
+  Previously this `context` had no `sudo()`/`withSession()`/`transaction()` at all, forcing a workaround (`getContext(session).sudo()`) that opened a SEPARATE connection from the write's transaction — its writes could survive a rollback, and it could deadlock on a single-connection adapter. `context.transaction()` called from inside one of these hooks now joins the write's transaction rather than opening a nested one. `beforeTransaction`/`afterTransaction` are unaffected — they keep the plain access-checked context bound to the base client, always. A field's `resolveOutput` keeps the same context type as before; which client it's bound to already depended on how the read arose (a plain read: the base client; a create/update's own Field Visibility pass: that write's transaction client), unchanged by this release.
+
+### Patch Changes
+
+- [#1108](https://github.com/OpenSaasAU/stack/pull/1108) [`2260539`](https://github.com/OpenSaasAU/stack/commit/2260539c5488dae0ee6e7f86ccd913e5c898ccdb) Thanks [@borisno2](https://github.com/borisno2)! - Fix: a relation quantifier (`some`/`every`/`none`/`is`/`isNot`) nested inside an `include` entry's own `where` is now scoped by the deeper related list's `query` access and field-read access too, reusing `buildAccessScopedWhere` ([#916](https://github.com/OpenSaasAU/stack/issues/916)) — closing a residual probing-oracle gap in [#1092](https://github.com/OpenSaasAU/stack/issues/1092)'s fix.
+
+- [#1102](https://github.com/OpenSaasAU/stack/pull/1102) [`aa34cca`](https://github.com/OpenSaasAU/stack/commit/aa34cca65877759b9625da1538c65c53ed54385a) Thanks [@borisno2](https://github.com/borisno2)! - Fix: a `where`/`orderBy` nested inside a caller's `include` entry now validates against the related list's config, closing a probing oracle over undeclared or read-denied fields one hop into a relation ([#1092](https://github.com/OpenSaasAU/stack/issues/1092)).
+
+- [#1041](https://github.com/OpenSaasAU/stack/pull/1041) [`182153c`](https://github.com/OpenSaasAU/stack/commit/182153cb976b14ef67673d0eeef7925d950bfa10) Thanks [@borisno2](https://github.com/borisno2)! - Upgrade Prisma packages to `^7.9.1`, keeping the CLI, client, and driver adapters on the same release. Scaffolded PostgreSQL projects now pin `@prisma/adapter-pg` to `^7.9.1`.
+
+- [#1101](https://github.com/OpenSaasAU/stack/pull/1101) [`682795f`](https://github.com/OpenSaasAU/stack/commit/682795f7c7f0d0194ffd08e993d452c368bcd847) Thanks [@borisno2](https://github.com/borisno2)! - Fix a query fragment read (`{ query: fragment }`) skipping the Access Filter's scoping walk, so a related list's `query` access, row filters, and the read-include depth cap were never enforced. Fragment reads may now return fewer related rows — those rows were never authorised.
+
+- [#1110](https://github.com/OpenSaasAU/stack/pull/1110) [`73d1b6a`](https://github.com/OpenSaasAU/stack/commit/73d1b6aba9a9b789a8111105d56257a1de66a883) Thanks [@borisno2](https://github.com/borisno2)! - A caller-supplied `_count` in `include` is now scoped by each named relation's own `query` access (a row filter is folded into the count, a fully denied relation counts `0`), closing a cardinality leak where counts previously reached the caller unscoped.
+
+- [#1091](https://github.com/OpenSaasAU/stack/pull/1091) [`f1e8792`](https://github.com/OpenSaasAU/stack/commit/f1e8792ce580d92a5874599dfb8a8ccde4d6c8b3) Thanks [@borisno2](https://github.com/borisno2)! - Fix a read naming a list-only ref's synthetic back-relation (`from_<List>_<field>`) in `include`: it now resolves to the declared relationship it stands for and is scoped by that list's `query` access, its field-level `read` gates, and its virtual fields — instead of being returned unscoped. An `include` key that resolves to neither a declared relationship, a synthetic back-relation, nor `_count` is now rejected rather than silently passed through. Responses will shrink for callers relying on either gap — the extra rows and fields they received were never authorised.
+
+- [#1120](https://github.com/OpenSaasAU/stack/pull/1120) [`9eb7c77`](https://github.com/OpenSaasAU/stack/commit/9eb7c7766d212e92b02d53a1ba3aaead4faf1496) Thanks [@borisno2](https://github.com/borisno2)! - Fix `_count` ignoring a relationship's field-level `read` access, letting the true count of a hidden relationship leak through both the admin list view and a caller-supplied `_count`.
+
+- [#1090](https://github.com/OpenSaasAU/stack/pull/1090) [`5b478de`](https://github.com/OpenSaasAU/stack/commit/5b478de64f3564d837d2f9f912972e49008be884) Thanks [@borisno2](https://github.com/borisno2)! - Fix nested update/delete (e.g. `post.update({ data: { author: { update: {...} } } })`) silently treating a Prisma filter returned by the target list's `update`/`delete` access as an unconditional allow. It is now re-checked against the target row in the database, matching top-level write behavior.
+
+- [#1115](https://github.com/OpenSaasAU/stack/pull/1115) [`d335122`](https://github.com/OpenSaasAU/stack/commit/d335122323b3402c0838aa50873fab0c085fbb01) Thanks [@borisno2](https://github.com/borisno2)! - Fix a denied to-many relation coming back `undefined` instead of `[]` on both the caller-`include:` and fragment `query` read paths.
+
 ## 0.40.0
 
 ### Minor Changes

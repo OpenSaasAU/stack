@@ -354,7 +354,7 @@ export function myPlugin(pluginConfig: MyConfig): Plugin {
 }
 ```
 
-A plugin writing a column it owns and the application cannot write — an embedding, say — uses `writePluginOwnedField` from `@opensaas/stack-core/extend` rather than driving the list's own pipeline under `sudo()`. Re-running the pipeline over a payload naming one field recomputes derived fields from input that is not there. See ADR-0066.
+A plugin writing a column it owns and the application cannot write — an embedding, say — uses `writePluginOwnedField` from `@opensaas/stack-core/extend` rather than driving the list's own pipeline under `sudo()`. Re-running the pipeline over a payload naming one field recomputes derived fields from input that is not there. See ADR-0068.
 
 **Runtime Access:**
 

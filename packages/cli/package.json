@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-cli",
-  "version": "0.40.0",
+  "version": "0.42.3",
   "description": "CLI tools for OpenSaas Stack",
   "type": "module",
   "engines": {
@@ -80,7 +80,7 @@
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "vitest": "^4.1.10"
   }
 }

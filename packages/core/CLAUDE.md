@@ -319,6 +319,40 @@ Contention is not observable on the default test harness: PGlite serialises
 every transaction, so a suite that proves a gate admits exactly N runs behind
 the `DATABASE_URL` escape (`packages/core/src/secured/capacity-gate.test.ts`).
 
+#### A hook's context is `BaseContext`, bound to the write's own transaction
+
+A list/field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
+hook's `context` argument is `StackBaseContext<DB, S, PluginServices>` — the
+app's `BaseContext`: the secured `db`, the session, `unsafe`, `storage` and
+`plugins`, and nothing that can start a transaction or change who is asking.
+`sudo()`, `withSession()`, `transaction()` and `serverAction` live on
+`StackContext` (`Context`), which a server action or page component holds. See
+ADR-0050 and ADR-0052.
+
+That `db` IS bound to the write's own transaction client, not the base one
+(ADR-0010): `bindContextToTransaction` in `write-pipeline.ts` rebuilds the
+delegates against `tx`, so a `context.db` write a hook performs is atomic with
+the write and rolls back with it. It carries the write's transaction owner
+(ADR-0028) and the hook's own resolve chain (ADR-0023), and does NOT re-execute
+plugin runtimes.
+
+Because a hook cannot reach `sudo()`, an elevated write that must be atomic with
+this one is a plugin's own column write (`writePluginOwnedField`, ADR-0068) or a
+`context.transaction` the *caller* opened around the write.
+
+- **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) keep
+  the plain `AccessContext`, bound to the BASE client, always — see ADR-0028
+  for why boundary hooks must not run through a client that may already be
+  closed by flush time.
+- **A field's `resolveOutput`** takes the same `BaseContext`, but which client
+  it is bound to depends on how the read that triggered it arose: a plain
+  top-level read resolves against the base client; a `resolveOutput` that runs
+  as part of a create/update's OWN result (the write's Field Visibility pass)
+  resolves against THAT write's transaction client (ADR-0010).
+
+See the hooks concept doc's "In-transaction vs transaction-boundary hooks"
+section.
+
 #### Substituting a session (`context.withSession`, #980)
 
 `context.withSession(session)` sits beside `sudo()` on the other axis:
@@ -726,7 +760,7 @@ orders[0].lineItems // not there — `needs` is private plumbing, not an implici
 
 See `docs/adr/0025-a-computed-field-declares-the-relations-it-needs.md`, `docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md`, and the "Declared dependency" / "Declared dependency set" / "Session-relative value" glossary entries in `CONTEXT.md`.
 
-### A plugin writing its own column (ADR-0066)
+### A plugin writing its own column (ADR-0068)
 
 A plugin writing a field it computes and application code is denied — an
 embedding, say — uses `writePluginOwnedField` from

@@ -336,7 +336,7 @@ Once the write's own transaction has committed, that hook:
 2. Hashes it and compares the hash with the `sourceHash` on the stored
    embedding's metadata. Equal means nothing to do, which is what stops an
    unrelated field change from costing an API call. Re-entry is not what it
-   guards: the plugin's write fires no hook (ADR-0066).
+   guards: the plugin's write fires no hook (ADR-0068).
 3. Otherwise calls the provider and writes the vector and its metadata.
 
 Generation runs after the commit, not on input, because calling a provider is a
@@ -347,7 +347,7 @@ inside a transaction (ADR-0045).
 `context.db.Article.update({ where, data: { contentEmbedding } })` throws
 `Cannot update "contentEmbedding": field-level access denied.` — do not write
 that. The plugin's own output reaches the column through core's
-`writePluginOwnedField` (ADR-0066), held behind a module-private symbol which is
+`writePluginOwnedField` (ADR-0068), held behind a module-private symbol which is
 on neither the package's exported surface nor the generated `PluginServices`
 face. That write carries this field's columns and nothing else, and runs **no**
 hook of the list's: driving it through `sudo().db` would re-run `resolveInput`

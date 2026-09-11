@@ -1,5 +1,5 @@
 import type { ListConfig } from '../config/types.js'
-import type { AccessContext } from '../access/types.js'
+import type { StackContext } from './index.js'
 import {
   executeResolveInput,
   executeValidate,
@@ -25,7 +25,9 @@ export interface HookPipelineArgs {
   listConfig: ListConfig<any>
   inputData: Record<string, unknown>
   item: Record<string, unknown> | undefined
-  context: AccessContext
+  // #1176: the full secured context (sudo/withSession/transaction), bound to
+  // the write's transaction client — see `bindContextToTransaction`.
+  context: StackContext
 }
 
 export interface HookPipelineResult {

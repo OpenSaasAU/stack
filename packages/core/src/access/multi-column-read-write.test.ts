@@ -487,7 +487,7 @@ describe('multi-column write access through context.db', () => {
   })
 })
 
-describe('writePluginOwnedField (ADR-0066)', () => {
+describe('writePluginOwnedField (ADR-0068)', () => {
   const BOOT = 120_000
   let database: TestDatabase
 

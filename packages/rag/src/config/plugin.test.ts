@@ -103,7 +103,7 @@ function stubContext(overrides: Partial<AccessContext>): AccessContext {
 
 /**
  * The `sudo` argument `Plugin.runtime` is handed. It throws rather than
- * answering: the RAG runtime reaches nothing through it (ADR-0066), and a
+ * answering: the RAG runtime reaches nothing through it (ADR-0068), and a
  * stub that answered would let a regression pass by returning a context that
  * happens to work.
  */
@@ -925,7 +925,7 @@ describe('ragPlugin', () => {
     })
 
     it('runs the escalated write on the ORM handle, never through the db surface', async () => {
-      // ADR-0066: the write carries this field's columns alone, so running it
+      // ADR-0068: the write carries this field's columns alone, so running it
       // through `db` would re-run the list's hooks over a payload naming one
       // field. It goes to the handle instead, and `sudo()` is never reached.
       // What lands in the columns is `embedding-write.test.ts`'s job, against

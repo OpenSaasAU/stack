@@ -342,6 +342,42 @@ caller happens to know.
 > **define a `query` rule** that permits the connect (for example a permissive
 > `query: () => true` or a scoped filter). `sudo` bypasses the check entirely.
 
+## Nested relation input is refused, not gated
+
+A write payload holds one list's own scalars and its owned foreign keys. Every
+nested spelling on a relationship field — `create`, `update`, `delete`,
+`connectOrCreate`, `disconnect`, `set`, `updateMany` and `deleteMany` — is
+refused with `NestedRelationInputError`. The generated input types make each a
+compile error; the refusal is the runtime half, for a payload that reached the
+engine untyped (a server action's form data, an MCP tool call, a plugin) or one
+a `resolveInput` hook assembled after the types had their say.
+
+The refusal is **unconditional**: unlike an access denial, `sudo()` does not
+lift it. Each of these was a second write against another list hidden inside
+one call — N hook chains staged against one atomic decision — so there is no
+elevated caller for whom the shape becomes safe.
+
+```typescript
+import { NestedRelationInputError } from '@opensaas/stack-core'
+
+try {
+  await context.db.Post.update({
+    where: { id },
+    data: { tags: { deleteMany: {} } },
+  })
+} catch (err) {
+  if (err instanceof NestedRelationInputError) {
+    // err.listName / err.fieldKey / err.kinds identify the refused write.
+  }
+}
+```
+
+Write the related rows against their own list, wrapped in
+`context.transaction()` when they must land together. To clear an edge, assign
+`null` to the relationship field — the replacement for `disconnect`. That is a
+foreign-key column on the row being written, so it carries the enclosing
+write's own operation and field-level access and names no target row to gate.
+
 ## Access Control Execution Order
 
 For **write operations** (create/update):

@@ -1,5 +1,75 @@
 # @opensaas/stack-cli
 
+## 0.42.3
+
+### Patch Changes
+
+- [#1337](https://github.com/OpenSaasAU/stack/pull/1337) [`1a616c1`](https://github.com/OpenSaasAU/stack/commit/1a616c1e2ff31de1afe970a5fcfcc25ea7cbedb0) Thanks [@borisno2](https://github.com/borisno2)! - Core's `AugmentedFindUnique`/`AugmentedFindFirst`/`AugmentedFindMany` now carry the same trailing non-generic overload the generator's `CustomDB` already emits ([#1287](https://github.com/OpenSaasAU/stack/issues/1287)), and `getContext` takes a third, unconstrained, defaulted `TDb` type parameter so a caller can ask for `StackContext<TPrisma, CustomDB>` directly. The generated `.opensaas/context.ts` factory uses this to drop its `as unknown as Context<TSession>` casts down to a single, honest `as Context<TSession>`.
+
+  Observable side effect: since `Parameters<>`/`ReturnType<>` resolve against an overloaded type's LAST member, `Parameters<AccessControlledDB<P>[K]['findMany' | 'findFirst' | 'findUnique']>[0]` now resolves to the new trailing member's argument type (Prisma's args shape minus `select`/`include`/`query`) instead of the full original Prisma args — anyone introspecting these types directly via `Parameters<>` will see this narrower shape.
+
+- Updated dependencies [[`1a616c1`](https://github.com/OpenSaasAU/stack/commit/1a616c1e2ff31de1afe970a5fcfcc25ea7cbedb0)]:
+  - @opensaas/stack-core@0.42.3
+
+## 0.42.2
+
+### Patch Changes
+
+- [#1289](https://github.com/OpenSaasAU/stack/pull/1289) [`6a66454`](https://github.com/OpenSaasAU/stack/commit/6a664543345aa0e268d21ec1854a52b81a3b4953) Thanks [@borisno2](https://github.com/borisno2)! - Fix a regression from 0.42.1 ([#1264](https://github.com/OpenSaasAU/stack/issues/1264)): the generated `findUnique`/`findFirst`/`findMany` (and singleton `get`) delegates were not assignable to a plain structural seam, and `Parameters<>` over them resolved to `never`. Restores 0.42.0's behavior for both.
+- Updated dependencies []:
+  - @opensaas/stack-core@0.42.2
+
+## 0.42.1
+
+### Patch Changes
+
+- [#1268](https://github.com/OpenSaasAU/stack/pull/1268) [`2976f57`](https://github.com/OpenSaasAU/stack/commit/2976f57a0d80687c3a27e11c3b7ec7fa9830cdb7) Thanks [@borisno2](https://github.com/borisno2)! - Fix a hook's `context.db` under-describing rows: `TypeInfo` now carries a `db` member (the generator points it at the generated `CustomDB`), so a hook reading a virtual or transformed field off `context.db.<list>` type-checks instead of failing with `TS2339`.
+  Run `opensaas generate` after upgrading to pick up the new member on `Lists.<List>.TypeInfo`.
+
+- [#1264](https://github.com/OpenSaasAU/stack/pull/1264) [`2e1ee3d`](https://github.com/OpenSaasAU/stack/commit/2e1ee3de446639f24331c5cebd01aeed37ca3e31) Thanks [@borisno2](https://github.com/borisno2)! - Fix `context.db.<list>.findUnique`/`findFirst`/`findMany` (and singleton `get`) in the generated `CustomDB` silently losing fragment narrowing: passing a `query` fragment compiled but the result stayed typed as the unnarrowed list payload instead of `ResultOf<typeof fragment>`. These methods now carry the same fragment overload as core's `AccessControlledDB`, so an unselected field is a compile error on the result.
+
+- [#1277](https://github.com/OpenSaasAU/stack/pull/1277) [`3501b65`](https://github.com/OpenSaasAU/stack/commit/3501b653c803763801e0f1931e3bf22f9224fc0a) Thanks [@borisno2](https://github.com/borisno2)! - Fix the generated `Context`/`BaseContext` types to derive from core's `StackContext` instead of hand-restating its members, so `context.transaction(...)` now typechecks with no cast and `tx.db.<list>` carries the generated per-list types.
+- Updated dependencies [[`2976f57`](https://github.com/OpenSaasAU/stack/commit/2976f57a0d80687c3a27e11c3b7ec7fa9830cdb7), [`2e1ee3d`](https://github.com/OpenSaasAU/stack/commit/2e1ee3de446639f24331c5cebd01aeed37ca3e31)]:
+  - @opensaas/stack-core@0.42.1
+
+## 0.42.0
+
+### Minor Changes
+
+- [#1214](https://github.com/OpenSaasAU/stack/pull/1214) [`11ea14a`](https://github.com/OpenSaasAU/stack/commit/11ea14aee0721f662d8592994e81dbe3cfe22941) Thanks [@borisno2](https://github.com/borisno2)! - Thread the app's Prisma client type through `TypeInfo` into every list/field hook-args type, so a hook's `context` resolves to the consumer's own `StackContext` instead of `StackContext<any>`.
+
+  Before this change, `TypeInfo` carried no client type, so `context.db` inside any hook resolved through `AccessControlledDB<any>` — a mapped type over `keyof any` that declares no named delegate. A hook's `context` was therefore assignable to nothing app-specific, forcing consumers who wanted to pass it into their own typed functions to write `context as unknown as Context`.
+
+  `TypeInfo` now has a `prisma` member (defaulted to the existing `PrismaClientLike`, so this is fully additive), and every hook-args type — `ResolveInputHookArgs`, `ValidateHookArgs`, `BeforeOperationHookArgs`, `AfterOperationHookArgs`, `BeforeTransactionHookArgs`/`AfterTransactionHookArgs`, and their field-level equivalents — types `context` off it:
+
+  ```typescript
+  // A hook authored the documented way now gets a context keyed to your own
+  // generated Prisma client, with no cast needed to use it elsewhere:
+  Post: list<Lists.Post.TypeInfo>({
+    hooks: {
+      validate: async ({ context }) => {
+        await myDomainFn({ context }) // ✅ context.db.post etc. are real, typed delegates
+      },
+    },
+  })
+  ```
+
+  The CLI generator emits the new `prisma` member on each list's `Lists.<List>.TypeInfo`, pointing at your project's own generated `PrismaClient` — no config changes required, and a hook authored without `TypeInfo` is unaffected.
+
+  Because `context.db.<list>` now resolves to a real delegate instead of `any`, a pre-existing type error in a hook that previously compiled silently (e.g. a return value that didn't actually match the list's row type) can now surface as a genuine compile error. `AccessControlledDB`'s catch-all index signature is unchanged by this fix, so a misspelled delegate name (`context.db.typoedListName`) is not yet caught — that's a separate, tracked limitation.
+
+### Patch Changes
+
+- Updated dependencies [[`11ea14a`](https://github.com/OpenSaasAU/stack/commit/11ea14aee0721f662d8592994e81dbe3cfe22941)]:
+  - @opensaas/stack-core@0.42.0
+
+## 0.41.0
+
+### Patch Changes
+
+- Updated dependencies [[`2260539`](https://github.com/OpenSaasAU/stack/commit/2260539c5488dae0ee6e7f86ccd913e5c898ccdb), [`aa34cca`](https://github.com/OpenSaasAU/stack/commit/aa34cca65877759b9625da1538c65c53ed54385a), [`182153c`](https://github.com/OpenSaasAU/stack/commit/182153cb976b14ef67673d0eeef7925d950bfa10), [`67dce2e`](https://github.com/OpenSaasAU/stack/commit/67dce2e9d96afdc5c69f0a2f1c8b395346d4e942), [`682795f`](https://github.com/OpenSaasAU/stack/commit/682795f7c7f0d0194ffd08e993d452c368bcd847), [`73d1b6a`](https://github.com/OpenSaasAU/stack/commit/73d1b6aba9a9b789a8111105d56257a1de66a883), [`f1e8792`](https://github.com/OpenSaasAU/stack/commit/f1e8792ce580d92a5874599dfb8a8ccde4d6c8b3), [`9eb7c77`](https://github.com/OpenSaasAU/stack/commit/9eb7c7766d212e92b02d53a1ba3aaead4faf1496), [`5b478de`](https://github.com/OpenSaasAU/stack/commit/5b478de64f3564d837d2f9f912972e49008be884), [`d335122`](https://github.com/OpenSaasAU/stack/commit/d335122323b3402c0838aa50873fab0c085fbb01)]:
+  - @opensaas/stack-core@0.41.0
+
 ## 0.40.0
 
 ### Minor Changes

@@ -11,7 +11,7 @@
 export type { Plugin, PluginContext, GeneratedFiles, ExtensionDescriptor } from './config/index.js'
 
 // The escalated write a plugin's own computed column takes, which runs no hook
-// (ADR-0066). A plugin that injects a write-denied field writes it with this
+// (ADR-0068). A plugin that injects a write-denied field writes it with this
 // rather than through `sudo().db`, whose update re-runs the list's hooks over a
 // payload naming only that field.
 export {

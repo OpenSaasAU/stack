@@ -65,7 +65,7 @@ It takes the `AccessContext` `Plugin.runtime` receives as its first argument; th
 `StackContext` `getContext` returns carries no ORM handle and is refused by name. That
 second argument, `sudo`, is now declared as the `StackContext` it always was — a plugin
 reaching `sudo().db` is unaffected, one reaching `ormHandle` off it was already getting
-`undefined` and now fails to compile. See ADR-0066.
+`undefined` and now fails to compile. See ADR-0068.
 
 A write refused by name is a wiring defect that fails identically on every row, so the RAG
 plugin's failure log now reports all three refusals — and `WriteCollectionMissingError`

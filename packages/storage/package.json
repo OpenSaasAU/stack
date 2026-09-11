@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-storage",
-  "version": "0.40.0",
+  "version": "0.42.3",
   "description": "File and image upload field types with pluggable storage providers for OpenSaas Stack",
   "type": "module",
   "engines": {
@@ -35,14 +35,14 @@
   },
   "dependencies": {
     "mime-types": "^3.0.2",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.1.1",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
