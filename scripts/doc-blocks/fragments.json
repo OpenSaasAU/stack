@@ -74,25 +74,25 @@
     "reason": "bare names the prose supplies"
   },
 
-  "packages/rag/CLAUDE.md:143": {
+  "packages/rag/CLAUDE.md:191": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "packages/rag/CLAUDE.md:177": {
+  "packages/rag/CLAUDE.md:225": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "packages/rag/CLAUDE.md:516": {
+  "packages/rag/CLAUDE.md:564": {
     "excuses": ["provider"],
     "reason": "a bare name the prose supplies"
   },
-  "packages/rag/CLAUDE.md:531": {
+  "packages/rag/CLAUDE.md:579": {
     "excuses": ["query"],
     "reason": "the caller's search string, a bare name the prose supplies"
   },
-  "packages/rag/CLAUDE.md:544": {
+  "packages/rag/CLAUDE.md:592": {
     "excuses": ["id"],
     "reason": "a bare name the prose supplies"
   },
-  "packages/rag/CLAUDE.md:560": {
+  "packages/rag/CLAUDE.md:608": {
     "excuses": ["TS2307 './openai.js'"],
     "reason": "a relative import from inside the package's own test tree"
   },
