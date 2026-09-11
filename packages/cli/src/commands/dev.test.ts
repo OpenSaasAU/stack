@@ -96,6 +96,19 @@ describe('devCommand', () => {
   let exitCode: number | undefined
   let originalExit: typeof process.exit
   let originalDatabaseUrl: string | undefined
+  let revision = 0
+
+  /**
+   * Rewrites the watched config so a fired `change` carries bytes the loop has
+   * not already generated from — the loop skips one that does not.
+   */
+  const editConfig = (): void => {
+    revision += 1
+    fs.writeFileSync(
+      path.join(tempDir, 'opensaas.config.ts'),
+      `export default { revision: ${revision} }\n`,
+    )
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -275,10 +288,12 @@ describe('devCommand', () => {
     const change = watcherHandlers.get('change')
     expect(change).toBeDefined()
 
+    editConfig()
     change?.()
     await until(() => stagedGenerations === 1)
     expect(fs.existsSync(staged.contractModule)).toBe(true)
 
+    editConfig()
     change?.()
     await until(() => stagedGenerations === 2)
 
@@ -288,6 +303,125 @@ describe('devCommand', () => {
     expect(ok).toBe(false)
     expect(said.join('\n')).toContain('Nothing was staged')
     expect(fs.existsSync(live.contractModule)).toBe(false)
+
+    child.emit('exit', 0, null)
+    await loop
+  })
+
+  it('stages nothing for a save that reproduces the config it already reconciled', async () => {
+    child.hold = true
+    const said: string[] = []
+    const log = vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+      said.push(parts.map((part) => String(part)).join(' '))
+    })
+
+    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
+    const { paths: live } = resolveOutputPaths(tempDir)
+    const stagingDir = path.join(tempDir, '.opensaas', 'staged')
+    const staged = stageWritePaths(live, stagingDir)
+
+    const { generateCommand } = await import('./generate.js')
+    let stagedGenerations = 0
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+      }
+      stagedGenerations += 1
+      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+    })
+
+    const destructivePlan = JSON.stringify({
+      kind: 'result',
+      envelope: {
+        result: {
+          plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
+        },
+      },
+    })
+    const { runPrismaCli } = await import('../generator/index.js')
+    vi.mocked(runPrismaCli).mockImplementation(async () => ({
+      exitCode: 0,
+      signal: null,
+      output: destructivePlan,
+      stdout: destructivePlan,
+    }))
+
+    const { devCommand } = await import('./dev.js')
+    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    const { CONTROL_FILE } = await import('../dev/control.js')
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    const change = watcherHandlers.get('change')
+    editConfig()
+    change?.()
+    await until(() => said.join('\n').includes('This change would destroy data'))
+    expect(stagedGenerations).toBe(1)
+
+    // The save the race is made of: one more watcher event carrying bytes the
+    // loop has already generated from. Nothing may be staged off it.
+    change?.()
+    await until(() => said.join('\n').includes('Config saved with no change'))
+    expect(stagedGenerations).toBe(1)
+    expect(said.join('\n'), 'the skip names the way out').toContain('still parked')
+    expect(said.join('\n')).toContain('pnpm db:update')
+
+    log.mockRestore()
+    child.emit('exit', 0, null)
+    await loop
+  })
+
+  it('retries an identical re-save after a reconcile that failed', async () => {
+    child.hold = true
+
+    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
+    const { paths: live } = resolveOutputPaths(tempDir)
+    const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+    const { generateCommand } = await import('./generate.js')
+    let stagedGenerations = 0
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+      }
+      stagedGenerations += 1
+      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+    })
+
+    // Call 1 is the boot reconcile; call 2 is the first save's dry run, failed
+    // the way a database briefly out of reach fails it.
+    const { runPrismaCli } = await import('../generator/index.js')
+    let prismaCalls = 0
+    vi.mocked(runPrismaCli).mockImplementation(async () => {
+      prismaCalls += 1
+      if (prismaCalls === 2) {
+        return { exitCode: 1, signal: null, output: 'database is not reachable', stdout: '' }
+      }
+      const plan = JSON.stringify({
+        kind: 'result',
+        envelope: { result: { plan: { operations: [] } } },
+      })
+      return { exitCode: 0, signal: null, output: plan, stdout: plan }
+    })
+
+    const { devCommand } = await import('./dev.js')
+    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+
+    const { CONTROL_FILE } = await import('../dev/control.js')
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    const change = watcherHandlers.get('change')
+    editConfig()
+    change?.()
+    await until(() => prismaCalls === 2)
+    expect(stagedGenerations).toBe(1)
+
+    // The developer fixes the database and saves again without editing. The
+    // config still differs from what the database and the live bundle carry,
+    // so this must reconcile rather than report that nothing changed.
+    change?.()
+    await until(() => stagedGenerations === 2)
+    expect(prismaCalls).toBeGreaterThan(2)
 
     child.emit('exit', 0, null)
     await loop
@@ -323,6 +457,7 @@ describe('devCommand', () => {
     const { CONTROL_FILE } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
+    editConfig()
     watcherHandlers.get('change')?.()
     await until(() => refusals === 1)
     await until(() => !fs.existsSync(path.join(refsDir, 'seeded.json')))
