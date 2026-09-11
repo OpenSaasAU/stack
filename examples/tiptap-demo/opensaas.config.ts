@@ -3,23 +3,32 @@ import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
 import { richText } from '@opensaas/stack-tiptap/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 /**
  * Access control helpers
+ *
+ * This example wires no authentication, so `getSession` below always returns
+ * `null` and these open up. The shape is what a real app writes — a boolean
+ * for "may they do this at all", a `where` filter for "which rows" — with the
+ * session check left in a comment beside each. See `examples/starter-auth`
+ * for the same helpers against a real session.
  */
 
-// Check if user is signed in
-const isSignedIn: AccessControl = ({ session }) => {
-  return !!session
+// Check if user is signed in — `!!session` once auth is wired.
+const isSignedIn: AccessControl = ({ session: _session }): boolean => {
+  return true
 }
 
-// Check if user is the author of an article
-const isAuthor: AccessControl = ({ session }) => {
-  if (!session) return false
-  return {
-    authorId: { equals: session.userId },
-  }
+// Check if user is the author of an article — with a session, this returns the
+// row filter `{ authorId: { equals: session.userId } }` instead.
+const isAuthor: AccessControl = ({ session: _session }): boolean => {
+  return true
+}
+
+// Check if user is the owner of their own user record —
+// `session.userId === item?.id` once auth is wired.
+const isOwner: AccessControl = ({ session: _session, item: _item }): boolean => {
+  return true
 }
 
 /**
@@ -27,11 +36,7 @@ const isAuthor: AccessControl = ({ session }) => {
  */
 export default config({
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
 
   lists: {
@@ -53,8 +58,8 @@ export default config({
         operation: {
           query: () => true,
           create: () => true,
-          update: ({ session, item }) => !!session && session.userId === item?.id,
-          delete: ({ session, item }) => !!session && session.userId === item?.id,
+          update: isOwner,
+          delete: isOwner,
         },
       },
     }),
@@ -107,8 +112,8 @@ export default config({
           let result = { ...resolvedData }
 
           // Auto-generate slug from title if not provided
-          if (operation === 'create' && !result?.slug && result?.title) {
-            const slug = (result.title as string)
+          if (operation === 'create' && !result?.slug && typeof result?.title === 'string') {
+            const slug = result.title
               .toLowerCase()
               .replace(/[^\w\s-]/g, '')
               .replace(/\s+/g, '-')
