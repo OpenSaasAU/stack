@@ -1,0 +1,272 @@
+{
+  "schemaVersion": "1",
+  "targetFamily": "sql",
+  "target": "postgres",
+  "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
+  "roots": {
+    "Article": {
+      "model": "Article",
+      "namespace": "public"
+    },
+    "Product": {
+      "model": "Product",
+      "namespace": "public"
+    }
+  },
+  "domain": {
+    "namespaces": {
+      "public": {
+        "models": {
+          "Article": {
+            "fields": {
+              "content": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "taxonomy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "title": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "content": {
+                  "column": "content"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "taxonomy": {
+                  "column": "taxonomy"
+                },
+                "title": {
+                  "column": "title"
+                }
+              },
+              "namespaceId": "public",
+              "table": "Article"
+            }
+          },
+          "Product": {
+            "fields": {
+              "configuration": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "metadata": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "name": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "settings": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {},
+            "storage": {
+              "fields": {
+                "configuration": {
+                  "column": "configuration"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "metadata": {
+                  "column": "metadata"
+                },
+                "name": {
+                  "column": "name"
+                },
+                "settings": {
+                  "column": "settings"
+                }
+              },
+              "namespaceId": "public",
+              "table": "Product"
+            }
+          }
+        }
+      }
+    }
+  },
+  "storage": {
+    "namespaces": {
+      "public": {
+        "entries": {
+          "table": {
+            "Article": {
+              "columns": {
+                "content": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "taxonomy": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
+                },
+                "title": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            },
+            "Product": {
+              "columns": {
+                "configuration": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "metadata": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
+                },
+                "name": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "settings": {
+                  "codecId": "pg/jsonb@1",
+                  "nativeType": "jsonb",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [],
+              "indexes": [],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": []
+            }
+          }
+        },
+        "id": "public",
+        "kind": "postgres-schema"
+      }
+    },
+    "storageHash": "bc6c4509222142b9dcac123b533f86a70fa3769774d7d21dec19917421889fd1"
+  },
+  "execution": {
+    "executionHash": "4d4b09aa2c7a57c862bff94124762e1e6c6e55584105f635253569e939d1dcee",
+    "mutations": {
+      "defaults": [
+        {
+          "onCreate": {
+            "id": "uuidv7",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "Article"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "uuidv7",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "Product"
+          }
+        }
+      ]
+    }
+  },
+  "capabilities": {
+    "postgres": {
+      "distinctOn": true,
+      "jsonAgg": true,
+      "lateral": true,
+      "limit": true,
+      "orderBy": true,
+      "returning": true
+    },
+    "sql": {
+      "checkConstraint": true,
+      "defaultInInsert": true,
+      "enums": true,
+      "lateral": true,
+      "returning": true,
+      "scalarList": true
+    }
+  },
+  "extensions": {},
+  "meta": {},
+  "_generated": {
+    "warning": "⚠️  GENERATED FILE - DO NOT EDIT",
+    "message": "This file is automatically generated by \"prisma contract emit\".",
+    "regenerate": "To regenerate, run: prisma contract emit"
+  }
+}

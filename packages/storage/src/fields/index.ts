@@ -193,11 +193,18 @@ function fileColumnPartsFor(columns: FileDbConfig['columns']): readonly FileColu
  * guarantee — see ADR-0006).
  */
 function isFileLike(value: unknown): value is File {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<Record<keyof File, unknown>>
+  // Every member the upload path reads, not just `arrayBuffer`: `uploadFile`
+  // and `uploadImage` derive the stored `originalFilename` from `name`, the
+  // MIME type from `type` and validate against `size`. A value carrying only
+  // `arrayBuffer` satisfied the old check and was stored under
+  // `originalFilename: undefined`.
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    'arrayBuffer' in value &&
-    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
+    typeof candidate.arrayBuffer === 'function' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.type === 'string' &&
+    typeof candidate.size === 'number'
   )
 }
 

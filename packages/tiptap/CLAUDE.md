@@ -65,9 +65,28 @@ import { registerFieldComponent } from '@opensaas/stack-ui'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
+```
 
+That module is `'use client'`, so a bare side-effect import of it from the server component
+`page.tsx` never runs in the browser. Carry it in a client component and render that:
+
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
-import '../../../lib/register-fields' // Side-effect import
+import { FieldRegistration } from './FieldRegistration'
+;<>
+  <FieldRegistration />
+  <AdminUI {...props} />
+</>
 ```
 
 ### JSON Storage

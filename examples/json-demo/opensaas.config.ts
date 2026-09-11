@@ -1,17 +1,13 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, json } from '@opensaas/stack-core/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import type { Lists } from '@/.opensaas/lists'
 
 export default config({
   db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-      return new PrismaClient({ adapter })
-    },
+    provider: 'postgresql',
   },
   lists: {
-    Product: list({
+    Product: list<Lists.Product.TypeInfo>({
       fields: {
         // Basic fields
         name: text({
@@ -57,7 +53,7 @@ export default config({
       },
     }),
 
-    Article: list({
+    Article: list<Lists.Article.TypeInfo>({
       fields: {
         title: text({
           validation: { isRequired: true },

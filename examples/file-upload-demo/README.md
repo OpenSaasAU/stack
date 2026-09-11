@@ -57,7 +57,7 @@ pnpm install
 cp .env.example .env
 ```
 
-3. Generate Prisma schema and types:
+3. Generate the Contract module and types:
 
 ```bash
 pnpm generate
@@ -226,7 +226,9 @@ attachment: file({
 })
 ```
 
-For advanced validation (virus scanning, quota checks), add custom logic in field hooks:
+For advanced validation (virus scanning, quota checks), add custom logic in
+field hooks. A field hook reads its own value out of `resolvedData[fieldKey]` —
+there is no `inputValue` argument — and `context.session` is nullable:
 
 ```typescript
 attachment: file({
@@ -254,6 +256,19 @@ attachment: file({
     },
   },
 })
+```
+
+## Testing
+
+`tests/upload-round-trip.test.ts` proves the round-trip: it stands up a real
+Dev database with `createTestContext` from `@opensaas/stack-core/testing`,
+passes it this package's storage surface with `createStorageUtils`, then
+uploads a real PNG and a real PDF through the secured context and reads both
+the stored metadata and the bytes on disk back. No database of your own is
+needed.
+
+```bash
+pnpm test
 ```
 
 ## Learn More

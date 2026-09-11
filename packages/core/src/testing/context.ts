@@ -7,7 +7,7 @@ import { createPostgresControlClient } from '@prisma/orm-postgres/control'
 import postgres from '@prisma/orm-postgres/runtime'
 import type { PostgresClient } from '@prisma/orm-postgres/runtime'
 import type { SqlMiddleware } from '@prisma/orm-postgres/family-runtime'
-import type { AccessControlledDB, Session } from '../access/index.js'
+import type { AccessControlledDB, Session, StorageUtils } from '../access/index.js'
 import type { OrmClient } from '../access/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { buildPrismaContract, toEmittedContract, type PrismaContract } from '../contract/prisma.js'
@@ -63,6 +63,15 @@ export interface TestDatabaseOptions {
    * first and is never omitted.
    */
   middleware?: readonly SqlMiddleware[]
+  /**
+   * The storage surface a `file()`/`image()` field writes through. Core cannot
+   * build one — the providers live in `@opensaas/stack-storage`, which depends
+   * on core rather than the other way round — so the generated context supplies
+   * it in an application, and a test that exercises a storage-backed field
+   * supplies the same thing here. Without it those fields throw "No storage
+   * providers configured", exactly as they do in an app that declares none.
+   */
+  storage?: StorageUtils
 }
 
 /** A stood-up database, its client, and the contexts built over it. */
@@ -447,7 +456,7 @@ export async function createTestDatabase(
       data,
       client,
       context: (session = null) =>
-        getContext(config, orm, session, undefined, false, undefined, undefined, client),
+        getContext(config, orm, session, options.storage, false, undefined, undefined, client),
       truncate: async () => {
         if (tables.length === 0) return
         await onClient(instance.url, `truncate table ${tables.join(', ')} restart identity cascade`)

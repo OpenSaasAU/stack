@@ -44,19 +44,31 @@ import { TiptapField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', TiptapField)
 ```
 
-2. **Import the registration in your admin page**:
+2. **Render the registration from a client component**. A bare side-effect import of the
+   `'use client'` module above from `page.tsx` does **not** register anything — `page.tsx` is a
+   server component, and a `'use client'` module only reaches the browser when the tree renders it:
 
-The registration import is for its side effect only. `config` from the generated
-bundle is a promise — plugins resolve asynchronously — so it is awaited.
-`serverAction` is required: every mutation the admin UI performs goes through
-that wrapper.
+`config` from the generated bundle is a promise — plugins resolve asynchronously — so it is
+awaited. `serverAction` is required: every mutation the admin UI performs goes through that
+wrapper.
 
-```typescript
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
-import '@/lib/register-fields'
+import { FieldRegistration } from './FieldRegistration'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
@@ -66,7 +78,10 @@ async function serverAction(props: ServerActionInput) {
 
 export default async function AdminPage() {
   return (
-    <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    <>
+      <FieldRegistration />
+      <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    </>
   )
 }
 ```

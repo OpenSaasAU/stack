@@ -88,10 +88,13 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # `starter`, `starter-auth` (#1170) and the two RAG examples (#1173) build
-    # on every PR into the integration branch (test.yml); the other eight cannot
-    # build until wave 2 of #1129 converts them, and #1175 lifts this gate once
-    # they have.
+    # `starter` and `starter-auth` (#1170), json-demo, tiptap-demo and
+    # file-upload-demo (#1172), and the two RAG examples (#1173) build on every
+    # PR into the integration branch (test.yml). This job stays `main`-only
+    # because it is the UNFILTERED `pnpm build:examples`, and five examples
+    # still cannot build: blog, custom-field, composable-dashboard, auth-demo
+    # and mcp-demo, until #1171 converts them. #1175 drops this `if:` once the
+    # five have landed.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30

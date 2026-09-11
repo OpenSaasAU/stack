@@ -68,6 +68,15 @@ jobs:
       - name: Check for Prisma error-code literals
         run: pnpm check:prisma-error-codes
 
+      # A `'use client'` module imported for its side effects alone from a
+      # server component never runs in the browser, so the registration it
+      # exists for silently does not happen — generate, build, tsc and the
+      # suites all pass through it (#1172).
+      - name: Check for side-effect-only 'use client' imports
+        run: |
+          pnpm check:client-side-effect-imports
+          pnpm check:client-side-effect-imports --self-test
+
       - name: Lint codebase
         run: pnpm lint
 
@@ -78,9 +87,15 @@ jobs:
       # committed project leaves contract.ts, prisma.config.ts, contract.json,
       # contract.d.ts and the seeded extension contract space under migrations/
       # byte-identical. The contract fixture covers the constructs whose
-      # emission is easiest to make unstable; the converted examples cover what
-      # the scaffolder ships and the two pgvector projects (ADR-0067). The other
-      # eight examples join this gate as each converts (#1129, wave 2).
+      # emission is easiest to make unstable; `starter`/`starter-auth` cover
+      # what the scaffolder ships, the three demos added by #1172 cover the
+      # field packages a scaffold does not reach — json, tiptap's richText, and
+      # storage's file/image — and the two RAG demos added by #1173 cover the
+      # pgvector projects (ADR-0067). Five examples are still outside this gate:
+      # blog, custom-field, composable-dashboard, auth-demo and mcp-demo join as
+      # #1171 converts them. `examples/plain-css-theming` will never appear
+      # here — it is static HTML with no config to generate from. #1175 lifts
+      # the gate to an unfiltered run once the five have landed.
       # `opensaas generate` loads each example's config, so every package that
       # config imports has to be built — turbo's `build` is `dependsOn:
       # ["^build"]`, which reaches a package's own dependencies and not the
@@ -94,6 +109,9 @@ jobs:
           --filter=@opensaas/stack-cli
           --filter=opensaas-starter-example^...
           --filter=opensaas-starter-auth-example^...
+          --filter=opensaas-json-demo-example^...
+          --filter=opensaas-tiptap-example^...
+          --filter=opensaas-file-upload-example^...
           --filter=opensaas-rag-ollama-example^...
           --filter=opensaas-rag-openai-chatbot-example^...
 
@@ -108,6 +126,18 @@ jobs:
       - name: Regenerate examples/starter-auth
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/starter-auth
+
+      - name: Regenerate examples/json-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/json-demo
+
+      - name: Regenerate examples/tiptap-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/tiptap-demo
+
+      - name: Regenerate examples/file-upload-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/file-upload-demo
 
       - name: Regenerate examples/rag-ollama-demo
         run: node ../../packages/cli/bin/opensaas.js generate
@@ -127,8 +157,9 @@ jobs:
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          git add --intent-to-add -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/rag-ollama-demo examples/rag-openai-chatbot
-          git diff --exit-code -- packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/rag-ollama-demo examples/rag-openai-chatbot
+          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/json-demo examples/tiptap-demo examples/file-upload-demo examples/rag-ollama-demo examples/rag-openai-chatbot"
+          git add --intent-to-add -- $PATHS
+          git diff --exit-code -- $PATHS
 
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
@@ -179,12 +210,17 @@ jobs:
           OPENAI_API_KEY: 'sk-testing-key'
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
-      # every examples/* package. On the prisma-8 integration branch `starter`
-      # and `starter-auth` (#1170) and the two RAG examples (#1173) are
-      # converted; the remaining eight — auth-demo, blog, composable-dashboard,
-      # custom-field, file-upload-demo, json-demo, mcp-demo and tiptap-demo —
-      # cannot build until wave 2 of #1129 converts them, and #1175 lifts this
-      # filter to the unfiltered run above once they have.
+      # every examples/* package. On the prisma-8 integration branch the
+      # converted examples are `starter`/`starter-auth` (#1170), the three demos
+      # added by #1172 — each of which also carries a `test` script that stands
+      # up a Dev database and round-trips its own feature — and the two RAG
+      # demos added by #1173. Five examples still cannot build: blog,
+      # custom-field, composable-dashboard, auth-demo and mcp-demo, until #1171
+      # converts them. `plain-css-theming` is absent because it has no scripts
+      # at all — it is static HTML, and the `data-slot` promise it rests on is
+      # covered by
+      # packages/ui/tests/browser/primitives/data-slot.browser.test.tsx in the
+      # browser run below. #1175 lifts this filter to the unfiltered run above.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -192,6 +228,9 @@ jobs:
           --filter='./packages/*'
           --filter=./examples/starter
           --filter=./examples/starter-auth
+          --filter=./examples/json-demo
+          --filter=./examples/tiptap-demo
+          --filter=./examples/file-upload-demo
           --filter=./examples/rag-ollama-demo
           --filter=./examples/rag-openai-chatbot
         env:
