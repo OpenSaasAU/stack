@@ -211,13 +211,19 @@ const canSee: AccessControl = ({ session }) => {
 ### Field-Level Access
 
 ```typescript
-internalNotes: text({
-  access: {
-    read: isAuthor, // Only author can see
-    create: isAuthor, // Only author can set
-    update: isAuthor, // Only author can modify
-  },
-})
+import type { FieldAccess } from '@opensaas/stack-core'
+
+// Field rules return a **boolean** per fetched item. The filter-returning
+// `isAuthor` above is not assignable here: `FieldAccess` types the three slots
+// as boolean-returning, so reusing it is a compile error and, untyped, an
+// `InvalidFieldAccessResultError` at runtime.
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session?.userId && item.authorId === session.userId,
+  create: ({ session }) => !!session?.userId,
+  update: ({ session, item }) => !!session?.userId && item?.authorId === session.userId,
+}
+
+internalNotes: text({ access: authorOnlyField })
 ```
 
 ## Context API

@@ -46,15 +46,28 @@ registerFieldComponent('richText', TiptapField)
 
 2. **Import the registration in your admin page**:
 
+The registration import is for its side effect only. `config` from the generated
+bundle is a promise — plugins resolve asynchronously — so it is awaited.
+`serverAction` is required: every mutation the admin UI performs goes through
+that wrapper.
+
 ```typescript
 // app/admin/[[...admin]]/page.tsx
-import { AdminUI } from "@opensaas/stack-ui";
-import config from "../../../opensaas.config";
-import "../../../lib/register-fields"; // Import to trigger registration
+import { AdminUI } from '@opensaas/stack-ui'
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext, config } from '@/.opensaas/context'
+import '@/lib/register-fields'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return context.serverAction(props)
+}
 
 export default async function AdminPage() {
-  // ... your code
-  return <AdminUI config={config} />;
+  return (
+    <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+  )
 }
 ```
 
@@ -67,10 +80,7 @@ import { text } from '@opensaas/stack-core/fields'
 import { richText } from '@opensaas/stack-tiptap/fields'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
@@ -84,23 +94,17 @@ export default config({
 })
 ```
 
-4. Generate Prisma schema:
+4. Generate the schema contract:
 
 ```bash
 pnpm generate
 ```
 
-This will create a Prisma field with type `Json`:
-
-```prisma
-model Article {
-  id        String   @id @default(cuid())
-  title     String
-  content   Json     // Tiptap JSON content
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
+A `richText()` field emits one `jsonb` column named after the field, holding the
+Tiptap document. `postgresql` is the only provider, and the connection comes
+from `DATABASE_URL` (or the Dev database `opensaas dev` starts) rather than a
+`db.url` key — see the
+[config API reference](https://stack.opensaas.au/docs/reference/config-api).
 
 ### Field Options
 
@@ -131,29 +135,40 @@ content: richText({
 Rich text fields work seamlessly with OpenSaas access control:
 
 ```typescript
+import type { FieldAccess } from '@opensaas/stack-core'
+
+const authorOnlyField: FieldAccess = {
+  read: () => true,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
+}
+
 Article: list({
   fields: {
     content: richText({
       validation: { isRequired: true },
-      access: {
-        read: () => true,
-        create: isSignedIn,
-        update: isAuthor,
-      },
+      access: authorOnlyField,
     }),
   },
 })
 ```
 
+A field rule returns a **boolean** — it decides per fetched item. A
+filter-returning rule, the kind an operation-level `update` or `delete` takes,
+is a type error in these slots rather than a silent allow.
+
 ### Database Operations
 
-Content is stored as JSON and can be queried using Prisma's JSON operations:
+Content is stored as JSON and read and written through the secured surface like
+any other field. `create` returns `null` when the write is denied, so check it
+before using the row:
 
 ```typescript
-import { prisma } from './lib/context'
+import { getContext } from '@/.opensaas/context'
 
-// Create article with rich text
-const article = await prisma.article.create({
+const context = await getContext()
+
+const article = await context.db.Article.create({
   data: {
     title: 'My Article',
     content: {
@@ -168,13 +183,11 @@ const article = await prisma.article.create({
   },
 })
 
-// Query articles
-const articles = await prisma.article.findMany({
-  select: {
-    title: true,
-    content: true,
-  },
-})
+if (article === null) {
+  throw new Error('Not allowed to create an article')
+}
+
+const articles = await context.db.Article.select('title', 'content').all()
 ```
 
 ## Component Features
@@ -209,32 +222,35 @@ The `TiptapField` component includes:
 
 ### Custom Field Component
 
-Create a custom Tiptap component with additional extensions:
+Create a custom Tiptap component with additional extensions. Type it as
+`TiptapFieldProps` so it drops into the registry in place of the built-in field,
+and forward Tiptap's update event to `onChange` whole — `onChange` is
+`UseEditorOptions['onUpdate']`, so a rebuilt `{ editor }` object or the bare JSON
+will not do:
 
 ```typescript
 // components/CustomTiptapField.tsx
-"use client";
+'use client'
 
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
+import type { TiptapFieldProps } from '@opensaas/stack-tiptap'
 
-export function CustomTiptapField(props) {
+export function CustomTiptapField({ value, onChange }: TiptapFieldProps) {
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Link,
-      Image,
-    ],
-    content: props.value,
+    extensions: [StarterKit, Link, Image],
+    content: value,
     immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      props.onChange(editor.getJSON());
+    onUpdate: (props) => {
+      if (onChange) {
+        onChange(props)
+      }
     },
-  });
+  })
 
-  return <EditorContent editor={editor} />;
+  return <EditorContent editor={editor} />
 }
 ```
 
@@ -315,8 +331,8 @@ React component for rendering the Tiptap editor.
 **Props:**
 
 - `name: string` - Field name
-- `value: any` - JSON content value
-- `onChange: (value: any) => void` - Change handler
+- `value: UseEditorOptions['content']` - The Tiptap document, in the shape `useEditor` takes
+- `onChange: UseEditorOptions['onUpdate']` - Change handler, called with Tiptap's whole update event (destructure the `editor` off it if that is all you need)
 - `label: string` - Field label
 - `error?: string` - Validation error message
 - `disabled?: boolean` - Disable editing

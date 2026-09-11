@@ -53,9 +53,9 @@ examples/auth-demo/
 │   ├── forgot-password/page.tsx     # Password reset
 │   └── admin/[[...admin]]/page.tsx  # Admin UI (protected)
 ├── lib/
-│   ├── auth.ts                      # Auth server instance
-│   └── auth-client.ts               # Auth client for React
-├── opensaas.config.ts               # Config with withAuth()
+│   ├── auth.ts                      # Auth server instance and session lookup
+│   └── actions/                     # Auth, post and user server actions
+├── opensaas.config.ts               # Config with authPlugin()
 └── .env                             # Environment variables
 ```
 
@@ -144,10 +144,10 @@ Then sign up at [http://localhost:3003/sign-up](http://localhost:3003/sign-up).
 ## Seeing Access Control Work
 
 Sign up, then sign in, and the rules in `opensaas.config.ts` are visible in the
-admin at [http://localhost:3003/admin](http://localhost:3003/admin):
+admin at [http://localhost:3003/admin](http://localhost:3003/admin). The admin
+page refuses an anonymous visitor outright — it renders "Access Denied" instead
+of the UI — so what it shows you is the signed-in half of the rules:
 
-- **Anonymous**: only published posts are readable; `internalNotes` never is,
-  and nothing is writable.
 - **Signed in, not the author**: the post is readable, `internalNotes` is
   stripped from the row rather than the read failing, and update and delete
   return `null` — denied and not-found are deliberately indistinguishable.
@@ -156,7 +156,9 @@ admin at [http://localhost:3003/admin](http://localhost:3003/admin):
 - **Session, Account and Verification** ship closed (ADR-0013), which is why
   they list as empty in the admin even to a signed-in user.
 
-`examples/blog` carries a runnable suite over the same rules
+The anonymous rules — only published posts readable, `internalNotes` never
+readable, nothing writable — are exercised through the server actions rather
+than the admin. `examples/blog` carries a runnable suite over the same rules
 (`pnpm --filter opensaas-blog-example test`).
 
 ## Example Server Actions
@@ -231,7 +233,7 @@ examples/auth-demo/
 ### 1. Access Control Helpers
 
 ```typescript
-const isSignedIn: AccessControl = ({ session }) => {
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
   return !!session
 }
 
@@ -242,6 +244,9 @@ const isAuthor: AccessControl = ({ session }) => {
   }
 }
 ```
+
+The session shape they read is declared in `types/session.d.ts`, which augments
+`Session` from `@opensaas/stack-core`.
 
 ### 2. Operation-Level Access
 
@@ -263,15 +268,25 @@ access: {
 
 ### 3. Field-Level Access
 
+Field access is a per-field visibility decision, so it cannot honour the row
+filter `isAuthor` returns — the per-field rules compare `item.authorId`
+directly and answer a **boolean** per fetched item:
+
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,
-    create: isAuthor,
-    update: isAuthor,
+    read: ({ session, item }) => !!session && session.userId === item!.authorId,
+    create: isSignedIn,
+    update: ({ session, item }) => !!session && session.userId === item!.authorId,
   },
 })
 ```
+
+The filter-returning `isAuthor` above is not assignable here. `FieldAccess`
+from `@opensaas/stack-core` types the three slots (`read`, `create`, `update`)
+as boolean-returning, so reusing `isAuthor` is a compile error and, untyped, an
+`InvalidFieldAccessResultError` at runtime. `create` is `isSignedIn` because
+there is no `item` yet on create — the author is whoever is creating the post.
 
 ### 4. Silent Failures
 
@@ -291,7 +306,7 @@ if (!post) {
 ## Next Steps
 
 - Add hooks for auto-setting timestamps
-- Integrate with a real authentication system (better-auth, NextAuth, Clerk)
+- Add OAuth providers (the `.env.example` carries commented GitHub and Google slots)
 - Add a Next.js UI to display posts
 - Implement pagination and filtering
 - Add more field types (images, rich text, etc.)

@@ -8,17 +8,22 @@ resolve, because the thing it scopes to doesn't exist yet. The tempting
 workaround is to drop to `sudo()` and re-implement ownership by hand:
 
 ```typescript
-const ctx = getSudoContext(session)
-const project = await ctx.db.project.findUnique({ where: { id: projectId } })
-if (project?.workspace?.id !== derivedWorkspaceId) throw forbidden() // manual, not the access layer
+const project = await context
+  .sudo()
+  .db.Project.where({ id: { equals: projectId } })
+  .first()
+if (project === null || project.workspaceId !== derivedWorkspaceId) {
+  throw forbidden()
+}
 ```
 
-This inverts Stack's usual posture. Filter-based access **fails closed** — a
-session that can't resolve its scope simply sees and writes nothing. A
-`sudo()` + manual-check path **fails open**: it's only safe as long as every
-hand-rolled check is present and correct, and a future edit that drops one
-silently becomes an IDOR, because the manual check is the _only_ thing
-standing between a client-supplied id and a privileged write.
+That `if` is a hand-rolled check, not the access layer, and it inverts Stack's
+usual posture. Filter-based access **fails closed** — a session that can't
+resolve its scope simply sees and writes nothing. A `sudo()` + manual-check path
+**fails open**: it's only safe as long as every hand-rolled check is present and
+correct, and a future edit that drops one silently becomes an IDOR, because the
+manual check is the _only_ thing standing between a client-supplied id and a
+privileged write.
 
 Everything below is already available in Stack today — this page is about
 which pieces to reach for, and in what order, so a pre-account flow keeps the
@@ -44,8 +49,8 @@ The auth `User` list ships with no operation-level access by default (ADR-0013
 default](/docs/how-to/authentication#access-control-closed-by-default)). Every
 `owner: { connect: { id: … } }` below needs self-only `query` access granted
 on `User`, because a nested `connect` is gated by read access on its target
-list (see [Nested `connect` is gated by the owning relationship field's
-access](/docs/concepts/access-control#nested-connect-is-gated-by-the-owning-relationship-fields-access))
+list (see [`connect` is gated by the owning relationship field's
+access](/docs/concepts/access-control#connect-is-gated-by-the-owning-relationship-fields-access))
 — without it, every `Workspace` create in this guide would be denied:
 
 ```typescript
@@ -66,7 +71,7 @@ export default config({
       },
     }),
   ],
-  // ...
+  db: { provider: 'postgresql' },
   lists: {
     Workspace: list({
       fields: {
@@ -97,22 +102,28 @@ export default config({
 Key the filter off the identity the session actually carries — `userId` —
 and traverse the relationship graph to reach the row you care about, rather
 than keying off a field (`session.data.workspaceId`) that's only populated
-once onboarding finishes:
+once onboarding finishes.
+
+`Workspace` owns the edge, so its foreign-key column is directly queryable —
+a to-one `relationship` field named `owner` makes `ownerId` a scalar you can
+filter on without a hop at all:
 
 ```typescript
 Workspace: list({
   // ...
   access: {
     operation: {
-      query: ({ session }) =>
-        session ? { owner: { id: { equals: session.userId } } } : false,
+      query: ({ session }) => (session ? { ownerId: { equals: session.userId } } : false),
     },
   },
 }),
 ```
 
-The same traversal composes across hops. `Project` doesn't carry a `userId`
-column at all — it reaches the session through `Workspace`:
+`Project` doesn't carry a `userId` column at all — it reaches the session
+through `Workspace`, which means crossing a relationship. A relationship key in
+a `where` takes one of exactly three quantifiers, `some`, `every` or `none`, and
+that holds for a to-one edge as much as a to-many one — `some` is the spelling
+for "the related row matches":
 
 ```typescript
 Project: list({
@@ -120,9 +131,7 @@ Project: list({
   access: {
     operation: {
       query: ({ session }) =>
-        session
-          ? { workspace: { owner: { id: { equals: session.userId } } } }
-          : false,
+        session ? { workspace: { some: { ownerId: { equals: session.userId } } } } : false,
     },
   },
 }),
@@ -138,8 +147,8 @@ opened with. It was a session-shape choice, not a limit in the access layer.
 
 `Template` needs the identical treatment — without a `query` rule it denies
 by default, and the `validate` hook a later section adds (a scoped
-`context.db.template.findFirst(...)` lookup) would find nothing for
-_any_ caller, template ownership notwithstanding:
+`context.db.Template` lookup) would find nothing for _any_ caller, template
+ownership notwithstanding:
 
 ```typescript
 Template: list({
@@ -147,9 +156,7 @@ Template: list({
   access: {
     operation: {
       query: ({ session }) =>
-        session
-          ? { workspace: { owner: { id: { equals: session.userId } } } }
-          : false,
+        session ? { workspace: { some: { ownerId: { equals: session.userId } } } } : false,
     },
   },
 }),
@@ -159,18 +166,20 @@ Template: list({
 
 Notice the pattern above is `session ? { ... } : false`, not a filter built
 directly from a possibly-null `session.userId`. Returning a filter
-unconditionally is the mistake to avoid:
+unconditionally is the mistake to avoid.
+
+Nothing evaluates `session.userId` for you and swaps in `false` when it's
+missing. Lowering a predicate is total: a condition that resolved to `undefined`
+is refused with a `ValidationError`, never dropped as a clause — so
+the first rule below fails the read outright rather than widening it to every
+row. The second denies, which is the answer you actually wanted:
 
 ```typescript
-// ❌ Looks equivalent, isn't. Every access rule reasons about the shape of
-// its OWN filter — nothing evaluates `session.userId` for you and swaps in
-// `false` when it's missing. The engine refuses the read rather than running
-// it: lowering a predicate is total, so a condition that resolved to
-// `undefined` is an error, never a dropped clause.
-query: ({ session }) => ({ owner: { id: { equals: session?.userId } } })
+// ❌ Refused for an anonymous caller, not scoped.
+query: ({ session }) => ({ ownerId: { equals: session?.userId } })
 
 // ✅ Deny outright when there's no session to scope to.
-query: ({ session }) => (session ? { owner: { id: { equals: session.userId } } } : false)
+query: ({ session }) => (session ? { ownerId: { equals: session.userId } } : false)
 ```
 
 An access rule returning a filter is scoping rows for an identity — an
@@ -188,33 +197,45 @@ argument on the type either). That means create access can decide **whether**
 a session may create at all, but it cannot express **who owns the result**.
 Ownership on create belongs in a hook that runs after access has approved the
 operation, and it must **overwrite** the owner field from the session rather
-than check a client-supplied one:
+than check a client-supplied one. `create` here returns a plain boolean, which
+is all it may return — a filter result on `create` throws
+`InvalidCreateAccessResultError` rather than being treated as an allow.
+
+Whatever the client sent for `owner` is discarded by the spread below. That is
+the whole point: a client-supplied owner id is irrelevant, not merely rejected,
+because there is nothing left to reject.
 
 ```typescript
 Workspace: list({
   // ...
   access: {
     operation: {
-      create: ({ session }) => !!session, // may create; ownership forced below
+      create: ({ session }) => !!session,
     },
   },
   hooks: {
-    resolveInput: ({ resolvedData, context }) => ({
-      ...resolvedData,
-      // Whatever the client sent for `owner` is discarded — this is the
-      // whole point. A client-supplied owner id is irrelevant, not merely
-      // rejected: there's nothing left to reject.
-      owner: { connect: { id: context.session!.userId } },
-    }),
+    resolveInput: ({ resolvedData, context }) => {
+      const userId = context.session?.userId
+      if (typeof userId !== 'string') throw new Error('Workspace create requires a session')
+      return { ...resolvedData, owner: { connect: { id: userId } } }
+    },
   },
 }),
 ```
+
+`connect` is the only relation input the FK-owning side takes, alongside a bare
+`null` to clear the edge. There is no `disconnect`, and no nested create.
 
 `Project`'s ownership is one hop further — its owner is the caller's
 _workspace_, which by now exists. Look it up through the same access-scoped
 `context.db` read used for querying (never `sudo()` — a scoped read that
 finds nothing is itself the fail-closed signal you want), and force the
-connection the same way:
+connection the same way.
+
+`.first()` returns `null` when the read matched nothing **and** when access
+denied it — one indistinguishable answer, which is exactly the fail-closed
+signal. Returning `resolvedData` unchanged in that case leaves `workspace`
+unset for the `validate` hook below to reject:
 
 ```typescript
 Project: list({
@@ -226,10 +247,12 @@ Project: list({
   },
   hooks: {
     resolveInput: async ({ resolvedData, context }) => {
-      const workspace = await context.db.workspace.findFirst({
-        where: { owner: { id: { equals: context.session!.userId } } },
-      })
-      if (!workspace) return resolvedData // no workspace yet — validate below rejects it
+      const userId = context.session?.userId
+      if (typeof userId !== 'string') throw new Error('Project create requires a session')
+      const workspace = await context.db.Workspace.where({
+        ownerId: { equals: userId },
+      }).first()
+      if (workspace === null) return resolvedData
       return { ...resolvedData, workspace: { connect: { id: workspace.id } } }
     },
   },
@@ -250,35 +273,38 @@ session — sometimes the caller is legitimately choosing among several rows
 they own, and the hook's job is to confirm the choice rather than replace it.
 `Project.template` is that case: the caller picks an existing `Template`, and
 `resolveInput` has no session-derived value to substitute in its place. Reject
-the write in `validate` instead, once the relevant rows are in hand:
+the write in `validate` instead, once the relevant rows are in hand.
+
+`validate`'s arguments are a union over the operation, and the `delete` member
+carries no `resolvedData` — narrow on `args.operation` before reaching for it:
 
 ```typescript
 Project: list({
   // ...
   hooks: {
-    resolveInput: async ({ resolvedData, context }) => {
-      /* ...as above... */
-    },
-    validate: async ({ resolvedData, context, addValidationError }) => {
+    validate: async (args) => {
+      if (args.operation === 'delete') return
+      const { resolvedData, context, addValidationError } = args
       if (!resolvedData.workspace) {
         addValidationError('Complete workspace setup before creating a project')
         return
       }
       const templateId = resolvedData.template?.connect?.id
       if (!templateId) return
-      const template = await context.db.template.findFirst({
-        where: {
-          id: { equals: templateId },
-          workspace: { id: { equals: resolvedData.workspace.connect.id } },
-        },
-      })
-      if (!template) {
+      const template = await context.db.Template.where({
+        id: { equals: templateId },
+        workspace: { some: { id: { equals: resolvedData.workspace.connect.id } } },
+      }).first()
+      if (template === null) {
         addValidationError('Selected template does not belong to your workspace')
       }
     },
   },
 }),
 ```
+
+The `resolveInput` from the previous section stays alongside this `validate`;
+it is elided here only to keep the hook in view.
 
 Two failure modes are covered by the same hook, because `resolveInput` runs
 first (per the [hook execution order](/docs/concepts/hooks#hook-execution-order))
@@ -298,18 +324,20 @@ a derived context's access rules and hooks see, and **access control still
 runs**, against the new session, exactly as if that context had been built
 with that session to begin with.
 
+The job below finishes onboarding after email verification: it holds the
+now-verified session on record, but isn't running inside that user's original
+request. The same `Workspace.resolveInput` shown above still forces `owner` from
+`asOwner.session`, so the job cannot create a `Workspace` owned by anyone but
+`job.ownerSession`. `create` returns `null` if access denies it, which is why the
+caller gets `Workspace | null` back rather than a row:
+
 ```typescript
-// A queued job finishing onboarding after email verification — it has the
-// now-verified session on record, but isn't running inside that user's
-// original request.
 async function finishOnboarding(
   context: StackContext,
   job: { ownerSession: Session; name: string },
 ) {
   const asOwner = context.withSession(job.ownerSession)
-  // Same Workspace.resolveInput as above forces `owner` from asOwner.session —
-  // the job can't create a Workspace owned by anyone but job.ownerSession.
-  return asOwner.db.workspace.create({ data: { name: job.name } })
+  return asOwner.db.Workspace.create({ data: { name: job.name } })
 }
 ```
 
@@ -336,16 +364,22 @@ stripped, not just rows a normal read would have filtered out. It's still the
 correct tool for a check that is legitimately global and never a fact about
 the requesting session's own rows — for example, confirming a `Workspace`
 name is unique platform-wide during signup, when the caller's own `query`
-access would only ever let them see their own workspace:
+access would only ever let them see their own workspace. Only the boolean
+crosses back out of the `sudo()` read — never the row itself:
 
 ```typescript
 async function isWorkspaceNameTaken(context: StackContext, name: string) {
   const existing = await context
     .sudo()
-    .db.workspace.findFirst({ where: { name: { equals: name } } })
-  return !!existing // only the boolean crosses back — never the row itself
+    .db.Workspace.where({ name: { equals: name } })
+    .first()
+  return existing !== null
 }
 ```
+
+`sudo()` skips access control, not validation: the Where vocabulary is still
+checked, so a `startsWith` or a `mode: 'insensitive'` is refused here exactly as
+it would be on an ordinary read.
 
 The reason the patterns above are preferred whenever they apply: every
 ownership check under `sudo()` is hand-rolled, and hand-rolled means

@@ -33,10 +33,26 @@ You'll need:
 
 ### 1. Enable Auth Plugin with MCP
 
-In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin:
+In your `opensaas.config.ts`, configure the auth plugin with the MCP plugin.
+
+Four things about this block come from better-auth rather than from the stack,
+and each is load-bearing:
+
+- **`jwt()` sits beside `mcp()`.** Since better-auth 1.7, `mcp()` is built on the
+  OAuth Provider, which issues JWT-based access tokens and requires better-auth's
+  own `jwt()` plugin registered alongside it.
+- **`mcp` is imported from `@opensaas/stack-auth/plugins`.** better-auth 1.7 split
+  it out of `better-auth/plugins` into the optional `@better-auth/mcp` peer, which
+  the stack re-exports.
+- **`consentPage` is required**, and names the page where a user approves or
+  denies an MCP client's requested scopes.
+- **`resource` is the canonical protected-resource identifier** (RFC 8707/9728).
+  It must match the `mcp.basePath` set in the next step, and `http` is accepted
+  only on loopback hosts.
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
@@ -45,27 +61,23 @@ export default config({
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },
-      // Add MCP plugin to Better Auth
       betterAuthPlugins: [
-        // better-auth 1.7's mcp() is built on the OAuth Provider, which
-        // issues JWT-based access tokens and requires better-auth's own
-        // jwt() plugin registered alongside it.
         jwt(),
         mcp({
           loginPage: '/sign-in',
-          // The page where a user approves/denies an MCP client's requested
-          // scopes — also required since better-auth 1.7's MCP plugin.
           consentPage: '/consent',
-          // Canonical protected-resource identifier (RFC 8707/9728) —
-          // required since better-auth 1.7's MCP plugin, and must match
-          // `mcp.basePath` below. HTTP is only accepted on loopback hosts.
           resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
         }),
       ],
     }),
   ],
-
-  // ... rest of config
+  db: { provider: 'postgresql' },
+  lists: {
+    Post: list({
+      fields: { title: text() },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 
@@ -124,7 +136,10 @@ lists: {
 
 ### 4. Add Custom Tools (Optional)
 
-Create specialized operations for your lists:
+Create specialized operations for your lists. A custom tool's handler reaches the
+database through the same access-controlled `context.db` surface as the rest of
+your app, so a denied write returns `null` rather than throwing — check it and
+answer the client, as below:
 
 ```typescript
 import { z } from 'zod'
@@ -154,7 +169,7 @@ lists: {
             postId: z.string(),
           }),
           handler: async ({ input, context }) => {
-            const post = await context.db.post.update({
+            const post = await context.db.Post.update({
               where: { id: input.postId },
               data: {
                 status: 'published',
@@ -162,7 +177,7 @@ lists: {
               },
             })
 
-            if (!post) {
+            if (post === null) {
               return {
                 error: 'Failed to publish post. Access denied or post not found.',
               }
@@ -287,15 +302,18 @@ The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase for
 
 **Description:** Query records with filters, sorting, and pagination
 
-**Input Schema:**
+**Input Schema:** `where` takes the secured read's own closed vocabulary, not a
+Prisma filter — the same operators [Access Control](/docs/concepts/access-control)
+lists. `fields` is a projection, covered under "Selecting Related Data" below.
+`take` is capped at 100.
 
 ```typescript
 {
-  where?: Record<string, any>,  // Prisma where filters
+  where?: Record<string, unknown>,
   orderBy?: Record<string, 'asc' | 'desc'>,
   take?: number,
   skip?: number,
-  fields?: Record<string, any>, // Projection — see "Selecting Related Data" below
+  fields?: Record<string, unknown>,
 }
 ```
 
@@ -350,9 +368,12 @@ The schema is generated **per session**: a relation whose related list denies th
 
 **Input Schema:**
 
+The tool derives one property per writable field, so `data` is checked against
+the list's own schema rather than accepting anything:
+
 ```typescript
 {
-  data: Record<string, any> // Fields to set
+  data: Record<string, unknown>
 }
 ```
 
@@ -377,10 +398,13 @@ The schema is generated **per session**: a relation whose related list denies th
 
 **Input Schema:**
 
+`where` is identity-only — exactly one key, `id`. A secondary unique column is
+refused before the access gate runs.
+
 ```typescript
 {
   where: { id: string },
-  data: Record<string, any>
+  data: Record<string, unknown>
 }
 ```
 
@@ -455,23 +479,29 @@ fields: {
   title: text({
     access: {
       read: () => true,
-      create: isSignedIn,
-      update: isAuthor,
+      create: ({ session }) => !!session,
+      update: ({ session, item }) => !!session && item?.authorId === session.userId,
     },
   }),
   internalNotes: text({
     access: {
-      read: isAuthor,  // Only author can see
-      create: isAuthor,
-      update: isAuthor,
+      // Only the author can see it
+      read: ({ session, item }) => !!session && item?.authorId === session.userId,
+      create: ({ session }) => !!session,
+      update: ({ session, item }) => !!session && item?.authorId === session.userId,
     },
   }),
 }
 ```
 
+A field rule returns a **boolean**, not a filter: it decides per fetched item.
+The operation-level `isAuthor` above returns a filter and is not reusable here —
+`FieldAccess` types the three slots as boolean-returning, so passing it is a type
+error rather than a silent allow.
+
 ### Silent Failures
 
-When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a successful tool result marked `isError: true` ("Access denied or record not found") that deliberately does not distinguish between a missing record and denied access — this is a recoverable tool failure, not a JSON-RPC protocol error, so the calling model can see it and adjust its request.
+When access is denied, query tools return empty results rather than errors — this prevents information leakage about whether records exist. Create, update, and delete tools return a successful tool result marked `isError: true` that deliberately does not distinguish between a missing record and denied access — this is a recoverable tool failure, not a JSON-RPC protocol error, so the calling model can see it and adjust its request. Update and delete answer "Failed to update/delete record. Access denied or record not found."; create, which has no record to miss, answers "Failed to create record. Access denied or validation failed."
 
 ### Session Fields over MCP
 

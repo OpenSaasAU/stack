@@ -224,7 +224,7 @@ access: {
 
 Field access is a per-field visibility decision, so it cannot honour the row
 filter `isAuthor` returns — the per-field rules compare `item.authorId`
-directly and answer a boolean:
+directly and answer a **boolean** per fetched item:
 
 ```typescript
 internalNotes: text({
@@ -235,6 +235,13 @@ internalNotes: text({
   },
 })
 ```
+
+The filter-returning `isAuthor` above is not assignable here. `FieldAccess`
+from `@opensaas/stack-core` types the three slots (`read`, `create`, `update`)
+as boolean-returning, so reusing `isAuthor` is a compile error and, untyped, an
+`InvalidFieldAccessResultError` at runtime. That is why the example carries
+`isAuthorOfItem` as the per-field counterpart of `isAuthor`, and why `create`
+is `isSignedIn` — there is no `item` yet on create.
 
 ### 4. Silent Failures
 

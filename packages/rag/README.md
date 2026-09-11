@@ -75,12 +75,10 @@ pnpm generate
 pnpm db:update
 ```
 
-`opensaas db update` opens no connection of its own: it hands the request to a
-running `opensaas dev` loop and exits non-zero when none is listening. So keep
-`pnpm dev` running in another terminal — or just save `opensaas.config.ts` with
-the loop up, which reconciles without a second command. In a deployment there is
-no loop; plan and apply the change with `prisma migration plan` and
-`prisma db migrate` instead.
+`pnpm db:update` needs `pnpm dev` running in another terminal — see
+[Migrations and the dev loop](https://stack.opensaas.au/docs/how-to/migrate).
+In a deployment there is no loop; plan and apply the change with
+`prisma migration plan` and `prisma db migrate` instead.
 
 Either route enables pgvector along the way — see
 [Provisioning pgvector](#provisioning-pgvector) for what the server has to
@@ -93,15 +91,20 @@ import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 
-// Embedding is automatically generated from content
-await context.db.Article.create({
+const article = await context.db.Article.create({
   data: {
     title: 'Introduction to AI',
     content: 'Artificial intelligence is...',
-    // No need to manually create embedding - it's automatic!
   },
 })
+
+if (article === null) {
+  throw new Error('Not allowed to create an article')
+}
 ```
+
+You never write the embedding — the plugin derives it from `content` after the
+write commits. `create` returns `null` when access is denied.
 
 ### 4. Perform semantic search
 
@@ -112,15 +115,12 @@ import { getContext } from '@/.opensaas/context'
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate embedding for search query
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // Ranked inside one scoped query — the Access Filter and Field Visibility
-  // apply exactly as they do to any other read.
   return await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
     minScore: 0.25,
@@ -128,13 +128,19 @@ export async function searchArticles(query: string) {
 }
 ```
 
+The ranking happens inside one scoped query, so the Access Filter and Field
+Visibility apply exactly as they do to any other read; a denied search answers
+`[]`.
+
 ## Local Development with Ollama
 
 For local development without API costs:
 
 ```typescript
 import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
+import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
   plugins: [
@@ -149,7 +155,12 @@ export default config({
     }),
   ],
   db: { provider: 'postgresql' },
-  // ... lists
+  lists: {
+    Article: list({
+      fields: { content: searchable(text(), { dimensions: 768 }) },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 
@@ -375,14 +386,14 @@ const chunks = chunkText(longDocument, {
 })
 
 // Sentence-based chunking (preserves sentences)
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
 })
 
 // Token-aware chunking (for token limits)
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'token-aware',
   tokenLimit: 500, // ~500 tokens per chunk
   chunkOverlap: 50,
