@@ -4,23 +4,22 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getContext } from '@/.opensaas/context'
 import type { PostCreateInput, PostUpdateInput } from '@/.opensaas/types'
-
-// For demo purposes, we'll use a hardcoded user ID
-// In a real app, this would come from your auth session
-const DEMO_USER_ID = 'demo-user-1'
+import { demoSession } from './demo-session'
 
 export async function createPost(data: PostCreateInput) {
   try {
-    const context = await getContext() // Use no auth for demo
+    const session = await demoSession()
+    const context = await getContext(session)
 
-    // Filter out relationship fields that require auth
+    // The author is the caller, not something the form supplies
     const { author: _author, ...postData } = data
 
-    const post = await context.db.post.create({
+    const post = await context.db.Post.create({
       data: {
         ...postData,
         status: postData.status || 'draft',
-        publishedAt: postData.publishedAt ? new Date(postData.publishedAt) : undefined,
+        publishedAt: postData.publishedAt ?? undefined,
+        author: session === undefined ? null : { connect: { id: session.userId } },
       },
     })
 
@@ -31,17 +30,17 @@ export async function createPost(data: PostCreateInput) {
     revalidatePath('/')
     revalidatePath('/posts')
     return { success: true, data: post }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create post error:', error)
-    return { success: false, error: error?.message || 'Failed to create post' }
+    const message = error instanceof Error ? error.message : 'Failed to create post'
+    return { success: false, error: message }
   }
 }
 
 export async function updatePost(id: string, data: PostUpdateInput) {
-  const context = await getContext({ userId: DEMO_USER_ID })
+  const context = await getContext(await demoSession())
 
-  const post = await context.db.post.update({
+  const post = await context.db.Post.update({
     where: { id },
     data: {
       title: data.title,
@@ -49,7 +48,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
       content: data.content,
       status: data.status || 'draft',
       internalNotes: data.internalNotes,
-      publishedAt: data.publishedAt ? new Date(data.publishedAt) : undefined,
+      publishedAt: data.publishedAt ?? undefined,
     },
   })
 
@@ -64,9 +63,9 @@ export async function updatePost(id: string, data: PostUpdateInput) {
 }
 
 export async function deletePost(id: string) {
-  const context = await getContext({ userId: DEMO_USER_ID })
+  const context = await getContext(await demoSession())
 
-  const post = await context.db.post.delete({
+  const post = await context.db.Post.delete({
     where: { id },
   })
 

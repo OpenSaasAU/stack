@@ -7,6 +7,7 @@ const testList = list<Lists.User.TypeInfo>({
   fields: {
     displayName: virtual({
       type: 'string', // TypeScript output type
+      needs: ['name', 'email'],
       hooks: {
         resolveOutput: ({ item }) => {
           // This should show the item type as the User model, not 'any'

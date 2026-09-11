@@ -90,12 +90,12 @@ jobs:
       # emission is easiest to make unstable; `starter`/`starter-auth` cover
       # what the scaffolder ships, the three demos added by #1172 cover the
       # field packages a scaffold does not reach — json, tiptap's richText, and
-      # storage's file/image — and the two RAG demos added by #1173 cover the
-      # pgvector projects (ADR-0067). Five examples are still outside this gate:
-      # blog, custom-field, composable-dashboard, auth-demo and mcp-demo join as
-      # #1171 converts them. `examples/plain-css-theming` will never appear
-      # here — it is static HTML with no config to generate from. #1175 lifts
-      # the gate to an unfiltered run once the five have landed.
+      # storage's file/image — the five of #1171 join them here, and the two RAG
+      # demos added by #1173 cover the pgvector projects (ADR-0067). With #1173
+      # landed, every example that has a config to generate from is named here;
+      # `examples/plain-css-theming` is the one that never will be, because it
+      # is static HTML with no config to generate from. #1175 replaces this
+      # enumeration with an unfiltered run.
       # `opensaas generate` loads each example's config, so every package that
       # config imports has to be built — turbo's `build` is `dependsOn:
       # ["^build"]`, which reaches a package's own dependencies and not the
@@ -109,6 +109,11 @@ jobs:
           --filter=@opensaas/stack-cli
           --filter=opensaas-starter-example^...
           --filter=opensaas-starter-auth-example^...
+          --filter=opensaas-custom-field-example^...
+          --filter=opensaas-blog-example^...
+          --filter=opensaas-composable-dashboard-example^...
+          --filter=opensaas-auth-example^...
+          --filter=opensaas-mcp-example^...
           --filter=opensaas-json-demo-example^...
           --filter=opensaas-tiptap-example^...
           --filter=opensaas-file-upload-example^...
@@ -126,6 +131,26 @@ jobs:
       - name: Regenerate examples/starter-auth
         run: node ../../packages/cli/bin/opensaas.js generate
         working-directory: ./examples/starter-auth
+
+      - name: Regenerate examples/custom-field
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/custom-field
+
+      - name: Regenerate examples/blog
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/blog
+
+      - name: Regenerate examples/composable-dashboard
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/composable-dashboard
+
+      - name: Regenerate examples/auth-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/auth-demo
+
+      - name: Regenerate examples/mcp-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/mcp-demo
 
       - name: Regenerate examples/json-demo
         run: node ../../packages/cli/bin/opensaas.js generate
@@ -157,7 +182,7 @@ jobs:
       # Ignored paths (the `.opensaas` bundle) stay ignored.
       - name: Fail on a dirty regeneration
         run: |
-          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/json-demo examples/tiptap-demo examples/file-upload-demo examples/rag-ollama-demo examples/rag-openai-chatbot"
+          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo examples/json-demo examples/tiptap-demo examples/file-upload-demo examples/rag-ollama-demo examples/rag-openai-chatbot"
           git add --intent-to-add -- $PATHS
           git diff --exit-code -- $PATHS
 
@@ -211,16 +236,23 @@ jobs:
 
       # turbo's `test` task depends on `build`, so an unfiltered run also builds
       # every examples/* package. On the prisma-8 integration branch the
-      # converted examples are `starter`/`starter-auth` (#1170), the three demos
-      # added by #1172 — each of which also carries a `test` script that stands
-      # up a Dev database and round-trips its own feature — and the two RAG
-      # demos added by #1173. Five examples still cannot build: blog,
-      # custom-field, composable-dashboard, auth-demo and mcp-demo, until #1171
-      # converts them. `plain-css-theming` is absent because it has no scripts
-      # at all — it is static HTML, and the `data-slot` promise it rests on is
-      # covered by
+      # converted examples are `starter`/`starter-auth` (#1170), the three
+      # demos added by #1172 — each of which also carries a `test` script that
+      # stands up a Dev database and round-trips its own feature — the five of
+      # #1171, and the two RAG demos of #1173. With #1173 landed, no example is
+      # left out of this filter for want of a build. `plain-css-theming` is
+      # absent because it has no scripts at all — it is static HTML, and the
+      # `data-slot` promise it rests on is covered by
       # packages/ui/tests/browser/primitives/data-slot.browser.test.tsx in the
       # browser run below. #1175 lifts this filter to the unfiltered run above.
+      #
+      # Of #1171's five, custom-field, composable-dashboard and auth-demo carry
+      # no `test` script, so for them this is a build gate. The two that DO
+      # carry one — blog and mcp-demo — run in their own steps below, each
+      # against a database of its own. Neither RAG demo carries one either:
+      # rag-openai-chatbot has no suite, and rag-ollama-demo's is `test:rag`,
+      # deliberately off `test` because it needs an Ollama server on
+      # localhost:11434 that CI does not run. Both are build gates here.
       - name: Run package tests and build the converted examples (integration branch)
         if: github.base_ref != 'main'
         run: >
@@ -228,6 +260,9 @@ jobs:
           --filter='./packages/*'
           --filter=./examples/starter
           --filter=./examples/starter-auth
+          --filter=./examples/custom-field
+          --filter=./examples/composable-dashboard
+          --filter=./examples/auth-demo
           --filter=./examples/json-demo
           --filter=./examples/tiptap-demo
           --filter=./examples/file-upload-demo
@@ -235,6 +270,42 @@ jobs:
           --filter=./examples/rag-openai-chatbot
         env:
           OPENAI_API_KEY: 'sk-testing-key'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+      # An example's `test` script is `opensaas dev -- <script>`, which
+      # reconciles the database `DATABASE_URL` names with that example's own
+      # contract. Two examples pointed at one database therefore fight: the
+      # second reconcile sees the first's tables as rows to drop and refuses,
+      # non-interactively, for want of consent. Each suite gets a database of
+      # its own on the same service container instead.
+      #
+      # This step and the two suites below are gated to the integration branch
+      # only because the main leg runs the unfiltered `turbo run test` above,
+      # which would run both suites against one DATABASE_URL. #1175 lifts that
+      # filter — and must move these three onto the main leg at the same time,
+      # or the collision the paragraph above describes lands on main.
+      #
+      # `psql` comes from the ubuntu-latest runner image; nothing in this repo
+      # installs or pins it.
+      - name: Create a database per example suite (integration branch, #1175)
+        if: github.base_ref != 'main'
+        run: |
+          psql "$DATABASE_URL" -c 'create database blog_example'
+          psql "$DATABASE_URL" -c 'create database mcp_demo_example'
+
+      - name: Run the blog access-control suite (integration branch, #1175)
+        if: github.base_ref != 'main'
+        run: turbo run test --filter=./examples/blog
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
+
+      - name: Run the mcp-demo tool suite (integration branch, #1175)
+        if: github.base_ref != 'main'
+        run: turbo run test --filter=./examples/mcp-demo
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'

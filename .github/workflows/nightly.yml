@@ -88,13 +88,16 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
-    # `starter` and `starter-auth` (#1170), json-demo, tiptap-demo and
-    # file-upload-demo (#1172), and the two RAG examples (#1173) build on every
-    # PR into the integration branch (test.yml). This job stays `main`-only
-    # because it is the UNFILTERED `pnpm build:examples`, and five examples
-    # still cannot build: blog, custom-field, composable-dashboard, auth-demo
-    # and mcp-demo, until #1171 converts them. #1175 drops this `if:` once the
-    # five have landed.
+    # All twelve database-backed examples now build on every PR into the
+    # integration branch (test.yml): `starter` and `starter-auth` (#1170),
+    # json-demo, tiptap-demo and file-upload-demo (#1172), blog, custom-field,
+    # composable-dashboard, auth-demo and mcp-demo (#1171), and rag-ollama-demo
+    # and rag-openai-chatbot (#1173). `plain-css-theming` is the only example
+    # absent there, and it is static HTML with nothing to build. So this job is
+    # no longer `main`-only for want of an example that cannot build — that
+    # reason expired with #1173. It stays gated because test.yml's run is a
+    # filtered enumeration and this one is the UNFILTERED `pnpm build:examples`;
+    # #1175 drops this `if:` as part of replacing that enumeration.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30

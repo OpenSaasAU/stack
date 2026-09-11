@@ -7,7 +7,8 @@ import { getSession } from '@/lib/auth'
 async function serverAction(props: ServerActionInput) {
   'use server'
 
-  const context = await getContext({ session: await getSession() })
+  const session = await getSession()
+  const context = await getContext(session ?? undefined)
   return await context.serverAction(props)
 }
 
