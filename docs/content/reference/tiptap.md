@@ -43,19 +43,29 @@ import { TiptapField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', TiptapField)
 ```
 
-### 2. Import in Admin Page
+### 2. Render the Registration from a Client Component
 
-Import the registration file in your admin page to trigger the side-effect:
+A bare side-effect import of the `'use client'` module above from `page.tsx` does **not** register
+anything: `page.tsx` is a server component, and a `'use client'` module only reaches the browser
+when something in the tree renders it. Carry the import in a client component:
 
-The import is for its side effect only — it registers the component and exports
-nothing you use.
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
 
-```typescript
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
-import '@/lib/register-fields'
+import { FieldRegistration } from './FieldRegistration'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
@@ -65,7 +75,10 @@ async function serverAction(props: ServerActionInput) {
 
 export default async function AdminPage() {
   return (
-    <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    <>
+      <FieldRegistration />
+      <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    </>
   )
 }
 ```
@@ -549,12 +562,18 @@ registerFieldComponent('richText', TiptapField)
 
 **Problem:** The rich text field doesn't appear in the admin UI.
 
-**Solution:** Ensure you've registered the component and imported the registration file:
+**Solution:** The registration must actually run in the browser. `lib/register-fields.ts` must carry
+`'use client'`, and `page.tsx` must **render** a client component that imports it — importing the
+module directly from `page.tsx` is the usual cause of this symptom, because a server component's
+side-effect import never reaches the browser:
 
-```typescript
-// lib/register-fields.ts must have 'use client'
-// app/admin/[[...admin]]/page.tsx must import the file
-import '../../../lib/register-fields'
+```tsx
+// app/admin/[[...admin]]/page.tsx
+import { FieldRegistration } from './FieldRegistration'
+;<>
+  <FieldRegistration />
+  <AdminUI {...props} />
+</>
 ```
 
 ### SSR Hydration Errors

@@ -127,23 +127,12 @@ import { ColorPickerField } from '../components/ColorPickerField'
 registerFieldComponent('color', ColorPickerField)
 ```
 
-### Step 3: Import Registration in Admin Page
+### Step 3: Render the Registration from a Client Component
 
-Import the registration file in your admin page to ensure it runs:
-
-```tsx
-// app/admin/[[...admin]]/page.tsx
-import { AdminUI } from '@opensaas/stack-ui'
-import '../../../lib/register-fields' // Side-effect import
-
-export default async function AdminPage(props: AdminPageProps) {
-  return <AdminUI {...await adminProps(props)} />
-}
-```
-
-The registration file must be imported from a module the page pulls in, so the side effect runs before `AdminUI` looks a component up in the registry.
-
-Alternatively, use a dedicated registration component:
+`page.tsx` is a server component, and a `'use client'` module only reaches the browser when
+something in the tree **renders** it. A bare `import '../../../lib/register-fields'` from `page.tsx`
+therefore registers nothing — the field falls back to "Unsupported field type", and nothing in
+`generate`, `next build`, `tsc` or the test suite notices. Carry the import in a client component:
 
 ```tsx
 // app/admin/[[...admin]]/FieldRegistration.tsx
@@ -159,6 +148,10 @@ export function FieldRegistration() {
 Then render it alongside the admin UI:
 
 ```tsx
+// app/admin/[[...admin]]/page.tsx
+import { AdminUI } from '@opensaas/stack-ui'
+import { FieldRegistration } from './FieldRegistration'
+
 export default async function AdminPage(props: AdminPageProps) {
   return (
     <>

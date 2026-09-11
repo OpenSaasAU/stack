@@ -40,9 +40,5 @@ next-env.d.ts
 # OpenSaas generated files
 .opensaas/
 
-# Database
-*.db
-*.db-journal
-
 # Uploads
 public/uploads/

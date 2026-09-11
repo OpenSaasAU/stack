@@ -1,15 +1,15 @@
 'use client'
 
-import { useEditor, EditorContent, UseEditorOptions } from '@tiptap/react'
+import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
   name: string
-  value: UseEditorOptions['content']
-  onChange: UseEditorOptions['onUpdate']
+  value: JSONContent | null
+  onChange: (value: JSONContent) => void
   label: string
   error?: string
   disabled?: boolean
@@ -38,6 +38,10 @@ export function TiptapField({
   maxHeight,
 }: TiptapFieldProps) {
   const isEditable = mode === 'edit' && !disabled
+  // `undefined` is the "nothing emitted yet" sentinel: `value` is
+  // `JSONContent | null`, so it can never collide with a real incoming value
+  // the way an initial `null` would with a form resetting the field to null.
+  const lastEmitted = useRef<JSONContent | undefined>(undefined)
 
   const editor = useEditor({
     extensions: [
@@ -54,10 +58,11 @@ export function TiptapField({
     editable: isEditable,
     // Don't render immediately on the server to avoid SSR issues
     immediatelyRender: false,
-    onUpdate: (props) => {
-      if (isEditable && onChange) {
-        onChange(props)
-      }
+    onUpdate: ({ editor }) => {
+      if (!isEditable || !onChange) return
+      const json = editor.getJSON()
+      lastEmitted.current = json
+      onChange(json)
     },
     editorProps: {
       attributes: {
@@ -67,15 +72,27 @@ export function TiptapField({
   })
 
   useEffect(() => {
-    if (editor && value !== editor.getJSON()) {
-      editor.commands.setContent(value || '')
-    }
+    if (!editor) return
+    // The parent handing back the very object this editor just emitted is not
+    // an external change. Identity settles the keystroke path in O(1).
+    if (value === lastEmitted.current) return
+    // A parent that clones or normalises what it stores defeats that check, so
+    // fall back to comparing serialised forms: `getJSON()` allocates a fresh
+    // object every call, and re-running `setContent` on an unchanged document
+    // resets it and drops the selection mid-typing.
+    if (JSON.stringify(value) === JSON.stringify(editor.getJSON())) return
+    // `emitUpdate` defaults to true in Tiptap v3, which would report this
+    // externally-driven change back as if the user had made it — on mount with
+    // a null value that writes an empty document into an untouched field.
+    editor.commands.setContent(value ?? '', { emitUpdate: false })
   }, [editor, value])
 
   useEffect(() => {
-    if (editor) {
-      editor.setEditable(isEditable)
-    }
+    if (!editor) return
+    // `setEditable`'s second argument is `emitUpdate`, defaulted to true: it
+    // emits an `update` unconditionally, which this component would report as
+    // a user edit. Changing editability is not a content change.
+    editor.setEditable(isEditable, false)
   }, [editor, isEditable])
 
   if (mode === 'read') {

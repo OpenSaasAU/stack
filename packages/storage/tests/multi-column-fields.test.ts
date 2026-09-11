@@ -12,11 +12,16 @@ const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
  * mode, plus the no-re-upload guarantee in BOTH modes. See ADR-0006 / issue #477.
  */
 
-/** A File-like stub with an arrayBuffer() method (triggers an upload). */
+/**
+ * A File-like stub that triggers an upload. It carries every member the upload
+ * path reads — `name`, `type`, `size` and `arrayBuffer()` — because that is
+ * what `isFileLike` establishes before narrowing to `File`.
+ */
 function fakeFile(bytes = [1, 2, 3]): File {
   return {
     name: 'photo.png',
     type: 'image/png',
+    size: bytes.length,
     arrayBuffer: async () => new Uint8Array(bytes).buffer,
   } as unknown as File
 }
@@ -547,6 +552,36 @@ describe('image() / file() multi-column mode', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       expect(uploadFile).toHaveBeenCalledTimes(1)
+    })
+
+    // `isFileLike` narrows to `File`, and the upload path then reads `name`,
+    // `type` and `size` as well as `arrayBuffer()`. A value carrying only
+    // `arrayBuffer` used to satisfy the check and be stored with an
+    // `originalFilename` of `undefined`.
+    it.each([
+      ['name', { type: 'image/png', size: 3, arrayBuffer: async () => new ArrayBuffer(3) }],
+      ['type', { name: 'photo.png', size: 3, arrayBuffer: async () => new ArrayBuffer(3) }],
+      [
+        'size',
+        { name: 'photo.png', type: 'image/png', arrayBuffer: async () => new ArrayBuffer(3) },
+      ],
+      ['arrayBuffer', { name: 'photo.png', type: 'image/png', size: 3 }],
+    ])('file() does not upload a value missing %s', async (_member, partial) => {
+      const { context, uploadFile } = makeContext()
+      const field = file({ storage: 'local', db: { columns: 'keystone' } })
+
+      await field.hooks?.resolveInput?.({
+        listKey: 'Post',
+        fieldKey: 'doc',
+        operation: 'create',
+        inputData: { doc: partial },
+        item: undefined,
+        resolvedData: { doc: partial },
+        context,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      expect(uploadFile).not.toHaveBeenCalled()
     })
   })
 })

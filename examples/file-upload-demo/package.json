@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "opensaas dev",
     "build": "pnpm generate && next build",
+    "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:update": "opensaas db update"
+    "db:update": "opensaas db update",
+    "test": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
@@ -29,6 +31,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^17.4.2",
     "prisma": "8.0.0-rc.12",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10"
   }
 }
