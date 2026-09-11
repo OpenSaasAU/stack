@@ -48,13 +48,19 @@ Because the filter is lowered through the same Where vocabulary a read uses, an
 Access Filter must now name fields the list declares — a rule that scoped by an
 undeclared column is refused rather than silently passed through.
 
-Nested relation input is gone from the write payload (ADR-0050).
+Nested relation input leaves the write payload, `connect` excepted (ADR-0050).
 `create`/`update`/`delete`/`connectOrCreate`/`disconnect`/`set`/`updateMany`/`deleteMany`
 under a relationship key are a compile error against the generated input types
-and a `NestedRelationInputError` at runtime. `disconnect` has a direct
-replacement — assign `null` to the relationship field, which is the same column
-and the same lowering — and the rest have none: write the related rows yourself
-and wrap them in `context.transaction` when they must land together:
+and a `NestedRelationInputError` at runtime; `{ connect: { id } }` survives,
+because it lowers onto a foreign-key column the row being written owns.
+
+`disconnect` has a direct replacement on the side that owns that column — assign
+`null` to the relationship field, which is the same column and the same
+lowering. On a field owning no column, `null` is refused in turn with
+`NonOwningRelationInputError`, so that edge is cleared by an update against the
+target list. The remaining kinds have no replacement in the payload at all:
+write the related rows yourself and wrap them in `context.transaction` when they
+must land together:
 
 ```typescript
 await context.transaction(async (tx) => {
