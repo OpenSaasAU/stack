@@ -26,8 +26,31 @@ destructive. `opensaas_feature_docs`, `opensaas_answer_migration`, the wizard co
 text and the validation checklist carry the same substitutions, and the migration wizard
 offers `postgresql` as the only `db_provider`.
 
-Two emitted-code bugs found by running the generator are fixed with it: the `avatar` and
+Three emitted-code bugs found by running the generator are fixed with it. The `avatar` and
 `featuredImage` field entries carried a trailing `//` comment that swallowed the
-comma-separator and the field after it, so the object literal did not parse. A new suite
-generates every wizard answer path and asserts the result parses as TypeScript and names
-none of the dead surface.
+comma-separator and the field after it, so the object literal did not parse. The blog
+feature emitted `Post.tags` and `Tag.posts` as an implicit many-to-many, which ADR-0048
+deletes and the contract validator refuses by name — both ends now point at a `PostTag`
+junction list carrying a unique `db.indexes` entry over the pair. And the `file-upload`
+feature placed its `image()`/`file()` entries directly in `lists`, where list declarations
+belong; they now sit inside the list that owns them.
+
+```typescript
+// Emitted for a blog with Tags
+Post: list({ fields: { tags: relationship({ ref: 'PostTag.post', many: true }) } }),
+Tag: list({ fields: { posts: relationship({ ref: 'PostTag.tag', many: true }) } }),
+PostTag: list({
+  fields: {
+    post: relationship({ ref: 'Post.tags' }),
+    tag: relationship({ ref: 'Tag.posts' }),
+  },
+  db: { indexes: [{ fields: ['post', 'tag'], unique: true }] },
+}),
+```
+
+A new suite generates all 13 wizard answer paths derived from the catalog. Each asserts the
+result parses as TypeScript and names none of the dead surface; the 12 that declare lists
+also evaluate those declarations and run them through the chain `opensaas generate` runs
+before it writes anything — `validateConfigFields`, `validateNeedsDeclarations`,
+`validateDatabaseConfig`, `validateRelations`, `deriveContract` — so a config the stack
+refuses fails the suite rather than passing because it parsed.

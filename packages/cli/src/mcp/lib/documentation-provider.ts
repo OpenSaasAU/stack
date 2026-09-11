@@ -358,7 +358,7 @@ access: {
       content: text(),
       author: relationship({ ref: 'User.posts' }),
       comments: relationship({ ref: 'Comment.post', many: true }),
-      tags: relationship({ ref: 'Tag.posts', many: true }),
+      tags: relationship({ ref: 'PostTag.post', many: true }),
     },
   }),
 
@@ -373,12 +373,23 @@ access: {
   Tag: list({
     fields: {
       name: text(),
-      posts: relationship({ ref: 'Post.tags', many: true }),
+      posts: relationship({ ref: 'PostTag.tag', many: true }),
+    },
+  }),
+
+  // A many-to-many is its own list: there is no implicit join table (ADR-0048).
+  PostTag: list({
+    fields: {
+      post: relationship({ ref: 'Post.tags' }),
+      tag: relationship({ ref: 'Tag.posts' }),
+    },
+    db: {
+      indexes: [{ fields: ['post', 'tag'], unique: true }],
     },
   }),
 }`,
         notes:
-          'Relationships use `ref: "ListName.fieldName"` format. Set `many: true` for one-to-many or many-to-many.',
+          'Relationships use `ref: "ListName.fieldName"` format. Set `many: true` for the to-many side of a one-to-many. A many-to-many is authored as a junction list with a to-one relationship to each side and a unique index over the pair — both ends then point at the junction with `many: true`.',
         sourcePath: 'examples/blog/opensaas.config.ts',
       },
 
