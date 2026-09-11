@@ -25,8 +25,10 @@ A production-ready demo showcasing **Retrieval-Augmented Generation (RAG)** with
 
 ## Prerequisites
 
-- Node.js 18+ and pnpm
-- PostgreSQL 15+ with pgvector available (the Dev database `pnpm dev` starts carries it)
+- Node.js 22.18+ and pnpm (the workspace's `engines` field is `>=22.18.0`)
+- No database of your own: `pnpm dev` starts a Dev database — an in-process
+  PGlite behind a socket server — and it carries pgvector. Bringing your own
+  Postgres instead needs PostgreSQL 15+ with pgvector available on that server.
 - OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 
 ## Setup Instructions
@@ -63,7 +65,9 @@ docker run -d \
   pgvector/pgvector:pg16
 ```
 
-Then create the database:
+The `docker run` above already creates `rag_chatbot` from `POSTGRES_DB`, so
+there is nothing more to do on that route. On a Postgres you already run, create
+the database yourself instead:
 
 ```bash
 createdb rag_chatbot
@@ -504,19 +508,46 @@ With `index` dropped, the column emits as an unindexed `vector(3072)` — which
 costs nothing here, since that `index` declaration is not yet lowered to a
 `CREATE INDEX` anyway (#1265, the Known limit noted on the field).
 
-The dimension is the column's type, so this retypes the column and no stored
-vector survives it. That makes it a destructive plan the dev loop will not apply
-unasked:
+The dimension is the column's type, so this retypes the column. The dev loop
+will not apply that unasked, and says so:
+
+```
+This change would destroy data, so it was not applied:
+
+  • Alter type of "KnowledgeBase"."contentEmbedding" to vector(3072) (destructive)
+    ALTER TABLE "public"."KnowledgeBase" ALTER COLUMN "contentEmbedding" TYPE vector(3072) USING "contentEmbedding"::vector(3072)
+```
+
+**Clear the stored vectors before you apply it.** That `USING` cast cannot widen
+a stored 1536-dimension vector, so on a seeded database the migration does not
+half-succeed — it aborts, and consent does not get you past it:
+
+```
+MIGRATION.RUNNER_FAILED — Operation alterType.KnowledgeBase.contentEmbedding failed
+  why:      "expected 3072 dimensions, not 1536"
+  sqlState: 22000
+The database is unchanged and nothing was promoted.        # exit 1
+```
+
+So empty the column first. Deleting the articles works — this list allows
+`delete`, so the Admin UI's Delete button is a route in — and so does nulling
+just the vectors if you want to keep the rows:
+
+```bash
+psql "$(node -p "require('./.opensaas/dev-db.json').url")" \
+  -c 'update "KnowledgeBase" set "contentEmbedding" = NULL'
+```
+
+With no vector left to cast, `pnpm db:update --confirm postgres` exits 0 and
+reports `Applied, promoted.`. Re-run `pnpm db:seed` to regenerate the embeddings
+from the article text — it clears both lists first, so it is safe on either
+route. Asked for consent in a non-interactive session, `db update` prints:
 
 ```
 "Apply 1 destructive operation(s) to postgres? Data they remove cannot be recovered:
-  - Alter type of "KnowledgeBase"."contentEmbedding" to vector(3072)"
-requires explicit consent
+  - Alter type of "KnowledgeBase"."contentEmbedding" to vector(3072)" requires explicit
+consent, and the session is not interactive. Grant it by passing --confirm postgres.
 ```
-
-Consent from a second terminal with `pnpm db:update --confirm postgres`, and
-every row is then left with a null embedding. Re-run `pnpm db:seed` to regenerate
-them from the article text.
 
 ### Add Your Own Articles
 
@@ -549,9 +580,9 @@ migration prechecks for it and skips the step.
 
 ### OpenAI Rate Limit Errors
 
-```
-Error: Rate limit exceeded
-```
+The provider wraps every OpenAI failure, so a 429 reaches you as
+`OpenAI embedding generation failed:` followed by the SDK's own message
+(`429 Rate limit reached for ...`).
 
 **Solution:** Wait a moment and try again, or upgrade your OpenAI plan.
 
@@ -561,20 +592,32 @@ Error: Rate limit exceeded
 
 1. `OPENAI_API_KEY` is set correctly
 2. Articles have content (required for embedding generation)
-3. Check server console for error messages
+3. Read the terminal you ran the write from. The plugin embeds in an
+   `afterTransaction` hook, which runs in whichever process made the write — so
+   provider errors from `pnpm db:seed` print in the seed's own terminal, not in
+   the `pnpm dev` console.
 
 ### Database Connection Errors
 
-**Check:**
+On the default path there is no database of your own to check: `pnpm dev` starts
+the Dev database on a loopback port of its own choosing and records it in
+`.opensaas/dev-db.json`. `pg_isready` and `psql -l` with no arguments answer for
+a local PostgreSQL install, which is a different server — they will report
+healthy, or absent, regardless of the Dev database. To reach the Dev database,
+take its URL from that file:
 
-1. PostgreSQL is running
-2. `DATABASE_URL` is correct
-3. Database exists: `psql -l | grep rag_chatbot`
+```bash
+psql "$(node -p "require('./.opensaas/dev-db.json').url")" -c '\dt'
+```
+
+**If you set `DATABASE_URL` to a Postgres of your own**, then the usual checks
+apply: the server is running (`pg_isready`), the URL is correct, and the
+database exists (`psql -l | grep rag_chatbot`).
 
 ## Learn More
 
 - [OpenSaas Stack Documentation](https://stack.opensaas.au/)
-- [RAG Integration Spec](/specs/rag-integration.md)
+- [RAG Integration Spec](../../specs/rag-integration.md)
 - [OpenAI Embeddings Guide](https://platform.openai.com/docs/guides/embeddings)
 - [pgvector Documentation](https://github.com/pgvector/pgvector)
 

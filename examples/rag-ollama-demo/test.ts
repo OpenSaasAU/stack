@@ -266,7 +266,8 @@ async function main() {
     documents: aggregate.count(),
   }))
   console.log(`\n✅ Demo complete — ${total.documents} documents in the scoped set.`)
-  console.log('   Visit http://localhost:3000/admin to manage the content.')
+  console.log('   Visit /admin on the port `pnpm dev` reported to browse, create or delete.')
+  console.log('   Editing a row there fails: the form resubmits the write-denied embedding.')
 }
 
 main()

@@ -5,7 +5,7 @@ Get the RAG OpenAI Chatbot demo running in 5 minutes!
 ## Prerequisites
 
 - OpenAI API key
-- Node.js 18+ and pnpm
+- Node.js 22.18+ and pnpm (the workspace's `engines` field is `>=22.18.0`)
 
 That is all you need: leave `DATABASE_URL` unset and `pnpm dev` starts a Dev
 database that already carries pgvector. To bring your own Postgres, see
@@ -84,8 +84,13 @@ for it and records the step as already satisfied.
 
 **Can't connect to database?**
 
-- Make sure PostgreSQL is running: `pg_isready`
-- Check your DATABASE_URL in `.env`
+- On the default path there is nothing of yours to start: `pnpm dev` runs the
+  Dev database on a port it picks, recorded in `.opensaas/dev-db.json`. A bare
+  `pg_isready` answers for a local PostgreSQL install, not for that — reach the
+  Dev database with
+  `psql "$(node -p "require('./.opensaas/dev-db.json').url")"` instead.
+- If you set `DATABASE_URL` yourself: check it, and that the server is up
+  (`pg_isready`).
 
 **OpenAI errors?**
 
@@ -94,7 +99,9 @@ for it and records the step as already satisfied.
 
 **Embeddings not generating?**
 
-- Check the server console for errors
+- Read the terminal the write came from. The plugin embeds in an
+  `afterTransaction` hook that runs in the writing process, so a `pnpm db:seed`
+  failure prints in the seed's terminal rather than the `pnpm dev` console.
 - Ensure articles have content (required field)
 
 ## Next Steps

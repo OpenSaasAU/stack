@@ -133,10 +133,15 @@ like. It:
 Signed in:
    0.8614  Reinforcement Learning Draft
    0.6159  Introduction to Machine Learning
+   ...
 Anonymous:
    0.6159  Introduction to Machine Learning
    0.5663  Deep Learning Fundamentals
+   ...
 ```
+
+Both of those lists run to five rows — `test.ts` asks for `limit: 5` — and are
+elided here to the rows that make the point.
 
 The unpublished draft is the _closest_ match to that last query and still does
 not reach an anonymous reader: `nearest()` ranks inside the scoped set rather
@@ -396,7 +401,8 @@ provider: ollamaEmbeddings({
 
 ### Ollama not running
 
-**Error**: `Failed to connect to Ollama`
+**Error**: `Ollama embedding generation failed: Failed to connect to Ollama at
+http://localhost:11434. Ensure Ollama is running.`
 
 **Solution**:
 
@@ -410,7 +416,9 @@ ollama serve
 
 ### Model not found
 
-**Error**: `model "nomic-embed-text" not found`
+**Error**: a 404 from Ollama, surfaced as
+`Ollama embedding generation failed: HTTP 404:` followed by Ollama's own JSON
+body, which says the model was not found and to pull it first.
 
 **Solution**:
 
@@ -462,7 +470,9 @@ ollama pull nomic-embed-text
    const vectors = await provider.embedBatch([text1, text2, text3])
    ```
 
-2. **Declare the index on the field** (see `embedding({ index })` in the RAG README —
+2. **Declare the index on the field** (`embedding({ index })` is documented in
+   [RAG: advanced](https://stack.opensaas.au/docs/how-to/rag-advanced), not in the
+   RAG package README —
    under the pgvector pack this example ships against, the declaration derives the
    column type and operator class and does not yet build the index):
 
@@ -479,7 +489,14 @@ ollama pull nomic-embed-text
 ## Next Steps
 
 1. **Try different search queries** - Modify `test.ts` to search for specific topics
-2. **Add more content** - Use the Admin UI to create documents
+2. **Add more content** - Use the Admin UI to create documents. Creating works
+   here and the embedding generates behind it; **editing an existing row does
+   not**. The item form submits every field it rendered, including the
+   plugin-owned `contentEmbedding`, which is write-denied to application code —
+   so Save comes back with
+   `Validation failed: Cannot update "contentEmbedding": field-level access denied.`
+   and the row is unchanged. Browse, create and delete are the working paths;
+   change content by re-running `pnpm test:rag`, which reseeds both lists.
 3. **Experiment with models** - Try `mxbai-embed-large` or `all-minilm`
 4. **Build a search interface** - Create a custom search page
 5. **Add MCP integration** - Enable semantic search via MCP tools

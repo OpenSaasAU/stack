@@ -59,17 +59,17 @@
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
 
-  "examples/rag-ollama-demo/README.md:152": {
+  "examples/rag-ollama-demo/README.md:157": {
     "excuses": ["TS2345 'lists'"],
     "reason": "a `config()` whose `lists` the prose elides"
   },
-  "examples/rag-ollama-demo/README.md:177": {
+  "examples/rag-ollama-demo/README.md:182": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "examples/rag-ollama-demo/README.md:199": {
+  "examples/rag-ollama-demo/README.md:204": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "examples/rag-ollama-demo/README.md:462": {
+  "examples/rag-ollama-demo/README.md:470": {
     "excuses": ["provider", "text1", "text2", "text3"],
     "reason": "bare names the prose supplies"
   },
