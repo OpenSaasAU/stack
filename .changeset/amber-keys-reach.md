@@ -10,7 +10,7 @@ row actually carries. The terminal issues the reachability query first — the
 target list's `query` access ANDed with the identity criterion — then writes
 the scalar foreign key, both inside the terminal's origin. `field: null`
 clears the same column, which is what replaces nested `disconnect`
-(ADR-0050). `RelationInputNotLoweredError`, the placeholder refusal, is gone.
+(ADR-0050).
 
 ```typescript
 await context.db.Post.create({ data: { title: 'Hello', author: { connect: { id: userId } } } })

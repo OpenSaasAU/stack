@@ -69,14 +69,15 @@ await context.transaction(async (tx) => {
 })
 ```
 
-`connect` is the one spelling ADR-0050 keeps, and the engine has no lowering for
-it yet. Until it does, a `connect` — or any other object where a relationship
-key's column value belongs — is refused by name with a
-`RelationInputNotLoweredError` naming the list, the field and the issue that
-brings it back (#1153), rather than reaching the driver as a column value and
-failing as a raw type error that names none of those. The refusal is checked
-against both the caller's payload and the data a `resolveInput` hook produced,
-and it covers a synthetic `from_<List>_<field>` back-relation key as well.
+`connect` is the one spelling ADR-0050 keeps, and the engine lowers it onto the
+column the row carries — see `amber-keys-reach.md` for the reachability query it
+issues first. An owning field carrying neither `{ connect: { id } }` nor `null`
+is refused by name with a `MalformedRelationInputError` naming the list and the
+field, rather than reaching the driver as a column value and failing as a raw
+type error that names neither. Every refusal on this surface is checked against
+both the caller's payload and the data a `resolveInput` hook produced, and each
+recognises a synthetic `from_<List>_<field>` back-relation key rather than
+mistaking it for a column of this list.
 
 `afterTransaction` no longer reports `committed` for a write that persisted
 nothing. A write whose predicate matched no row — the row dropped by a
