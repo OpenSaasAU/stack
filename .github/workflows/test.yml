@@ -247,39 +247,13 @@ jobs:
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
-      # An example's `test` script is `opensaas dev -- <script>`, which
-      # reconciles the database `DATABASE_URL` names with that example's own
-      # contract. Two examples pointed at one database therefore fight: the
-      # second reconcile sees the first's tables as rows to drop and refuses,
-      # non-interactively, for want of consent. Each suite gets a database of
-      # its own on the same service container instead.
-      #
       # This is why the run above is a filtered enumeration that excludes blog
-      # and mcp-demo: an unfiltered `turbo run test` would put both suites on
-      # one DATABASE_URL. #1175 replaces that enumeration, and must keep these
-      # three steps — or reproduce the per-suite databases some other way — or
-      # the collision the paragraph above describes comes back.
+      # and mcp-demo: those two are the example gates (#1407) and run in their
+      # own `example-gates` job below, on a database of their own, so a
+      # failure anywhere in this job's steps — including the known flakes
+      # #1260 and #1404 — cannot skip them. #1175 replaces this enumeration
+      # and must keep that split, or reproduce it some other way.
       #
-      # `psql` comes from the ubuntu-latest runner image; nothing in this repo
-      # installs or pins it.
-      - name: Create a database per example suite
-        run: |
-          psql "$DATABASE_URL" -c 'create database blog_example'
-          psql "$DATABASE_URL" -c 'create database mcp_demo_example'
-
-      - name: Run the blog access-control suite
-        run: turbo run test --filter=./examples/blog
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
-
-      - name: Run the mcp-demo tool suite
-        run: turbo run test --filter=./examples/mcp-demo
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
-          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
-          BETTER_AUTH_URL: 'http://localhost:3000'
-          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
-
       # Coverage is a package property; the examples carry no `test:coverage`.
       - name: Run package tests with coverage
         run: turbo run test:coverage --filter='./packages/*'
@@ -309,6 +283,89 @@ jobs:
           name: browser-test-screenshots
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
+
+  # The blog's access-control script and the mcp-demo's tool checks are the
+  # gates that actually protect those examples. Running them as their own job
+  # — rather than as steps late in `test` — means a failure anywhere in
+  # `test` (including the known flakes #1260 and #1404) cannot silently skip
+  # them: this job runs on its own runner, in parallel with `test`, and its
+  # pass/fail is its own entry on the pull request's check list rather than a
+  # buried, possibly-skipped step (#1407).
+  #
+  # `!cancelled()` on the steps after regeneration means a failure in one
+  # example's setup does not also take down the other's gate — each of the
+  # two suites still runs and reports its own result.
+  example-gates:
+    runs-on: ubuntu-latest
+
+    # `psql` comes from the ubuntu-latest runner image; nothing in this repo
+    # installs or pins it.
+    env:
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    # Pinned by the same digest as the `test` job's; bump both together.
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Build the CLI and the example gates' dependencies
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-cli
+          --filter=opensaas-blog-example^...
+          --filter=opensaas-mcp-example^...
+
+      - name: Regenerate examples/blog
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/blog
+
+      - name: Regenerate examples/mcp-demo
+        if: ${{ !cancelled() }}
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/mcp-demo
+
+      # An example's `test` script is `opensaas dev -- <script>`, which
+      # reconciles the database `DATABASE_URL` names with that example's own
+      # contract. Two examples pointed at one database therefore fight: the
+      # second reconcile sees the first's tables as rows to drop and refuses,
+      # non-interactively, for want of consent. Each suite gets a database of
+      # its own on the same service container instead.
+      - name: Create a database per example suite
+        if: ${{ !cancelled() }}
+        run: |
+          psql "$DATABASE_URL" -c 'create database blog_example'
+          psql "$DATABASE_URL" -c 'create database mcp_demo_example'
+
+      - name: Run the blog access-control suite
+        if: ${{ !cancelled() }}
+        run: turbo run test --filter=./examples/blog
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
+
+      - name: Run the mcp-demo tool suite
+        if: ${{ !cancelled() }}
+        run: turbo run test --filter=./examples/mcp-demo
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
   # Every guard and the Playwright run below stands on `examples/starter-auth`
   # and the scaffold built from `examples/starter`, both on Prisma 8 (#1170).
