@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { redirect } from 'next/navigation.js'
+import { notFound, redirect } from 'next/navigation.js'
 import { Navigation, NavLink } from './Navigation.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
@@ -8,9 +8,11 @@ import { SingletonView } from './SingletonView.js'
 import { DashboardSkeleton, ItemFormSkeleton, ListViewSkeleton } from './SkeletonLoader.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
-  type AccessContext,
+  type AnyStackContext,
+  engineContextOf,
   getUrlKey,
   OpenSaasConfig,
+  parseListId,
   resolveListKeyFromUrl,
   resolveNavCounts,
 } from '@opensaas/stack-core'
@@ -18,7 +20,8 @@ import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
 
 export interface AdminUIProps {
-  context: AccessContext<unknown>
+  /** The app's context — what `getContext()` returned for this request. */
+  context: AnyStackContext
   config: OpenSaasConfig
   params?: string[]
   searchParams?: { [key: string]: string | string[] | undefined }
@@ -98,14 +101,21 @@ export async function AdminUI({
       />
     )
   } else if (action && action !== 'create') {
-    // `action` is the item ID here.
+    // `action` is the item id here, and the id type is per list (ADR-0048), so
+    // the URL segment is parsed through the one boundary coercion. A segment
+    // the list's key type cannot hold names no row that could ever exist — an
+    // integer-keyed list asked for `not-an-int`, say — so it is a 404 rather
+    // than a query built on a `NaN`.
+    const parsedId = parseListId(config, listKey, action)
+    if (!parsedId.ok) notFound()
+
     content = (
       <ItemForm
         context={context}
         config={config}
         listKey={listKey}
         mode="edit"
-        itemId={action}
+        itemId={parsedId.value}
         basePath={basePath}
         serverAction={serverAction}
       />
@@ -186,7 +196,9 @@ export async function AdminUI({
   // no list sets `ui.navCount`; each count goes through the secured
   // `context.db`. Skipped when `navigation` is supplied — see that prop's doc
   // (ADR-0021).
-  const navCounts = navigation ? undefined : await resolveNavCounts(context, config)
+  const navCounts = navigation
+    ? undefined
+    : await resolveNavCounts(engineContextOf(context), config)
 
   const sidebar = navigation ?? (
     <Navigation

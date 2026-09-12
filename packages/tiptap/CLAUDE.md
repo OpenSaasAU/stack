@@ -12,7 +12,7 @@ Demonstrates how to create third-party field packages that extend OpenSaas Stack
 
 - `richText(options?)` - Field builder function
 - Returns `RichTextField` type implementing `BaseFieldConfig`
-- Methods: `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()`
+- Members: `getZodSchema()`, `getContractField()`, `outputType`/`inputType`
 
 ### Component (`src/components/TiptapField.tsx`)
 
@@ -37,8 +37,14 @@ export function richText(options) {
   return {
     type: 'richText',
     ...options,
-    getPrismaType: () => ({ type: 'Json', modifiers: '' }),
-    getTypeScriptType: () => ({ type: 'any', optional: !options?.validation?.isRequired }),
+    outputType: face,
+    inputType: face,
+    getContractField: (fieldName) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: !options?.validation?.isRequired,
+    }),
     getZodSchema: (fieldName, operation) => {
       return operation === 'create' && options?.validation?.isRequired
         ? z.any().refine((val) => val, 'Required')
@@ -59,9 +65,28 @@ import { registerFieldComponent } from '@opensaas/stack-ui'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
+```
 
+That module is `'use client'`, so a bare side-effect import of it from the server component
+`page.tsx` never runs in the browser. Carry it in a client component and render that:
+
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
-import '../../../lib/register-fields' // Side-effect import
+import { FieldRegistration } from './FieldRegistration'
+;<>
+  <FieldRegistration />
+  <AdminUI {...props} />
+</>
 ```
 
 ### JSON Storage
@@ -166,27 +191,45 @@ content: richText({ ui: { fieldType: 'richTextExtended' } })
 
 This package demonstrates all requirements for third-party fields:
 
-### 1. Field Builder with Required Methods
+### 1. Field Builder with Required Members
 
 ```typescript
-export type RichTextField = BaseFieldConfig & {
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
+import { z } from 'zod'
+
+export type RichTextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'richText'
-  // Custom options
+  validation?: { isRequired?: boolean }
 }
 
-export function richText(options?): RichTextField {
+const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
+
+export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
+  const isRequired = options?.validation?.isRequired === true
+  const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
+
   return {
     type: 'richText',
+    outputType: face,
+    inputType: face,
     ...options,
     getZodSchema: (fieldName, operation) => {
-      /* ... */
+      // Tiptap emits a nested JSONContent structure; accept any valid JSON.
+      const base = z.any()
+      if (!isRequired) return base.optional()
+      // A partial update may omit a required field; a create may not.
+      return operation === 'update' ? z.union([base, z.undefined()]) : base
     },
-    getPrismaType: (fieldName) => {
-      /* ... */
-    },
-    getTypeScriptType: () => {
-      /* ... */
-    },
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'jsonb' },
+      nullable: !isRequired,
+    }),
   }
 }
 ```
@@ -249,13 +292,14 @@ packages/tiptap/
 
 ## Exports
 
+The package declares two subpaths, and nothing else resolves:
+
 ```typescript
-// Main export
+// Root: the field builder, the component and their types
 import { richText, TiptapField } from '@opensaas/stack-tiptap'
 
-// Subpath exports
+// The field builder on its own, for a config that never touches the component
 import { richText } from '@opensaas/stack-tiptap/fields'
-import { TiptapField } from '@opensaas/stack-tiptap/components'
 ```
 
 ## Example

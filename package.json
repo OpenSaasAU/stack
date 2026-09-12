@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.29.1",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "description": "A modern stack for building admin-heavy applications with Next.js App Router",
   "scripts": {
     "build": "pnpm turbo build --filter=./packages/* --filter=opensaas-stack-docs",
@@ -14,6 +17,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:adr-duplicates": "node scripts/check-adr-duplicates.mjs",
+    "check:prisma-error-codes": "node scripts/check-prisma-error-codes.mjs",
+    "check:doc-ts-blocks": "node scripts/check-doc-typescript-blocks.mjs",
+    "check:client-side-effect-imports": "node scripts/check-client-side-effect-imports.mjs",
     "release": "pnpm build && changeset publish",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -37,8 +43,13 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^3.0.0",
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
     "@eslint/js": "^9.39.5",
     "@manypkg/cli": "^0.25.1",
+    "@opensaas/stack-cli": "workspace:*",
+    "@opensaas/stack-core": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "@typescript-eslint/eslint-plugin": "^8.63.0",

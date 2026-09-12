@@ -1,1046 +1,597 @@
 # Context API Reference
 
-Complete API reference for the Stack context system. The context provides access-controlled database operations with automatic security, hooks, and validation.
+The context is the runtime interface to your data. It carries two surfaces, and the difference between them is the whole point of the page:
 
-## Overview
+- **`context.db`** — the **secured surface**. Access control, Field Visibility, hooks, validation and error normalisation all apply. This is what application code uses.
+- **`context.unsafe`** — the **Unsafe surface**. None of that applies. It is the documented escape hatch, named so that reaching for it is a visible act.
 
-The context is the runtime interface for all database operations in Stack. It wraps your Prisma client with:
+Everything else on the context (`sudo()`, `withSession()`, `transaction()`, `storage`) derives or supports one of those two.
 
-- **Access control** - Automatic enforcement of access rules
-- **Hooks execution** - Data transformation and side effects
-- **Field validation** - Automatic validation of field rules
-- **Type safety** - Full TypeScript inference from Prisma types
-- **Silent failures** - Returns `null`/`[]` on access denial (prevents information leakage)
-
-## Core Function
-
-### `getContext()`
-
-Creates an access-controlled context for database operations.
-
-```typescript
-import { getContext } from '@opensaas/stack-core/context'
-
-const context = await getContext(config, prisma, session, storage)
-```
-
-**Type Signature:**
-
-```typescript
-function getContext<TConfig extends OpenSaasConfig, TPrisma extends PrismaClientLike>(
-  config: TConfig,
-  prisma: TPrisma,
-  session: Session,
-  storage?: StorageUtils,
-  _isSudo?: boolean,
-): {
-  db: AccessControlledDB<TPrisma>
-  session: Session
-  prisma: TPrisma
-  storage: StorageUtils
-  serverAction: (props: ServerActionProps) => Promise<unknown>
-  sudo: () => Context
-  withSession: (session: Session | null) => Context
-  _isSudo: boolean
-}
-```
-
-#### Parameters
-
-##### `config` (required)
-
-Your OpenSaaS configuration object.
-
-**Type:** `OpenSaasConfig`
-
-**Example:**
-
-```typescript
-import config from './opensaas.config'
-
-const context = await getContext(config, prisma, session)
-```
-
-##### `prisma` (required)
-
-Your Prisma client instance. Pass as generic for type safety.
-
-**Type:** `TPrisma extends PrismaClientLike`
-
-**Example:**
-
-```typescript
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
-const context = await getContext(config, prisma, session)
-```
-
-##### `session` (required)
-
-Current user session or `null` for anonymous access.
-
-**Type:** `Session | null`
-
-**Session Type:**
-
-```typescript
-type Session = {
-  userId?: string
-  [key: string]: unknown
-} | null
-```
-
-**Example:**
-
-```typescript
-// With authentication
-const session = { userId: 'user-123', role: 'admin' }
-const context = await getContext(config, prisma, session)
-
-// Anonymous (no authentication)
-const context = await getContext(config, prisma, null)
-```
-
-##### `storage` (optional)
-
-Storage utilities for file/image uploads.
-
-**Type:** `StorageUtils`
-
-**Default:** Throws error when storage operations are attempted
-
-**Example:**
-
-```typescript
-import { createStorageUtils } from '@opensaas/stack-storage'
-
-const storage = createStorageUtils(config.storage)
-const context = await getContext(config, prisma, session, storage)
-```
-
-##### `_isSudo` (optional, internal)
-
-Internal flag for sudo mode. Do not set manually - use `context.sudo()` instead.
-
-**Type:** `boolean`
-**Default:** `false`
-
-#### Return Value
-
-Returns a context object with the following properties:
-
-##### `db`
-
-Access-controlled database interface with full Prisma type inference.
-
-**Type:** `AccessControlledDB<TPrisma>`
-
-**Available Operations:**
-
-- `findUnique(args)` - Find single record by unique field
-- `findMany(args)` - Find multiple records with filtering
-- `create(args)` - Create new record
-- `update(args)` - Update existing record
-- `delete(args)` - Delete record
-- `count(args)` - Count records
-
-**Example:**
-
-```typescript
-// Query posts (access control enforced)
-const posts = await context.db.post.findMany({
-  where: { status: 'published' },
-})
-
-// Create post (access control + hooks)
-const post = await context.db.post.create({
-  data: {
-    title: 'My Post',
-    content: 'Post content...',
-  },
-})
-```
-
-##### `session`
-
-Current user session (same as input parameter).
-
-**Type:** `Session | null`
-
-**Example:**
-
-```typescript
-if (context.session?.userId) {
-  console.log('User is authenticated:', context.session.userId)
-}
-```
-
-##### `prisma`
-
-Raw Prisma client (bypasses access control - use with caution).
-
-**Type:** `TPrisma`
-
-**Warning:** Using `context.prisma` directly bypasses all access control. Only use when necessary and ensure proper authorization.
-
-**Example:**
-
-```typescript
-// Direct Prisma access (bypasses access control)
-const count = await context.prisma.post.count()
-```
-
-##### `storage`
-
-Storage utilities for file/image operations.
-
-**Type:** `StorageUtils`
-
-**Methods:**
-
-- `uploadFile(provider, file, buffer, options)` - Upload file
-- `uploadImage(provider, file, buffer, options)` - Upload image with transformations
-- `deleteFile(provider, filename)` - Delete file
-- `deleteImage(metadata)` - Delete image and transformations
-
-**Example:**
-
-```typescript
-const metadata = await context.storage.uploadImage('avatars', file, buffer, {
-  transformations: { thumbnail: { width: 150, height: 150 } },
-})
-```
-
-##### `serverAction()`
-
-Generic server action handler for Next.js Server Actions.
-
-**Type:** `(props: ServerActionProps) => Promise<unknown>`
-
-**Props:**
-
-```typescript
-type ServerActionProps =
-  | { listKey: string; action: 'create'; data: Record<string, unknown> }
-  | { listKey: string; action: 'update'; id: string; data: Record<string, unknown> }
-  | { listKey: string; action: 'delete'; id: string }
-```
-
-**Example:**
-
-```typescript
-'use server'
-
-async function handleAction(formData: FormData) {
-  const context = await getContext(config, prisma, session)
-
-  return await context.serverAction({
-    listKey: 'Post',
-    action: 'create',
-    data: {
-      title: formData.get('title'),
-      content: formData.get('content'),
-    },
-  })
-}
-```
-
-##### `sudo()`
-
-Creates a new context with access control bypassed.
-
-**Type:** `() => Context`
-
-**Important:** Sudo mode bypasses access control but still executes hooks and validation.
-
-**Example:**
-
-```typescript
-const adminContext = context.sudo()
-
-// Can access all records regardless of access rules
-const allPosts = await adminContext.db.post.findMany()
-```
-
-##### `withSession()`
-
-Creates a new context carrying a different session, reusing this context's config and client (including a transaction client — a call inside `context.transaction()` stays in that transaction) and storage. Access control and hooks run normally against the new session.
-
-**Type:** `(session: Session | null) => Context`
-
-**Important:** This is not an authorization — it substitutes who hooks and access control see, it does not change what they decide. The derived context can do exactly what any context built with that session directly could do. It's orthogonal to `sudo()`: `context.withSession(s).sudo()` and `context.sudo().withSession(s)` are equivalent, since `withSession()` preserves the receiver's sudo state.
-
-**Example:**
-
-```typescript
-// An unattended job runner that is legitimately authorised but arrives
-// without the session a list's validate hook expects to see.
-const asOwner = context.withSession(job.ownerSession)
-await asOwner.db.task.update({ where: { id: job.taskId }, data: { status: 'done' } })
-
-// Drop to anonymous
-const anonymous = context.withSession(null)
-```
-
-##### Hook `context` is the same secured context (issue #1176)
-
-A list or field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
-hook's `context` argument is a full `Context` — `sudo()`, `withSession()` and
-`transaction()` are all present — bound to the write's OWN transaction client,
-exactly like the `txContext` a `context.transaction()` callback receives.
-
-```typescript
-hooks: {
-  beforeOperation: async ({ context }) => {
-    // Elevated AND atomic with this write — rolls back together if it throws.
-    await context.sudo().db.auditLog.create({ data: { action: 'write' } })
-  },
-}
-```
-
-`context.transaction()` called from inside one of these hooks **joins** the
-write's own transaction rather than opening a nested one. `beforeTransaction` /
-`afterTransaction` are unaffected by this — their `context` stays the plain,
-access-checked context bound to the base client, always.
-
-A field's `resolveOutput` hook's `context` type is likewise unchanged (still
-`AccessContext`, no `sudo`/`withSession`/`transaction`), but WHICH client it's
-bound to already depended on how the read that triggered it arose, before this
-change and after it alike: a plain top-level read (`findMany`/`findUnique`/
-`get`) resolves its fields against the base client; a `resolveOutput` that
-runs as part of a create/update's OWN result (the write's Field Visibility
-pass) resolves against THAT write's transaction client, per ADR-0010 — so a
-`context.db` read/write issued from inside such a hook is atomic with the
-write, same as `beforeOperation`/`afterOperation`.
-
-##### `_isSudo`
-
-Flag indicating if context is in sudo mode.
-
-**Type:** `boolean`
-
-**Example:**
-
-```typescript
-if (context._isSudo) {
-  console.log('Running in sudo mode - access control bypassed')
-}
-```
-
----
-
-## Generated Context Factory
-
-The stack automatically generates a context factory at `.opensaas/context.ts` that simplifies context creation in your application.
-
-### Generated `getContext()`
-
-```typescript
-import { getContext } from '@/.opensaas/context'
-
-// Anonymous access
-const context = await getContext()
-
-// With session
-const context = await getContext({ userId: 'user-123' })
-```
-
-**Generated Implementation:**
-
-```typescript
-import { getContext as coreGetContext } from '@opensaas/stack-core/context'
-import { PrismaClient } from '@prisma/client'
-import config from '../opensaas.config'
-
-// Singleton Prisma client
-const prisma = globalThis.prisma || new PrismaClient()
-if (process.env.NODE_ENV !== 'production') globalThis.prisma = prisma
-
-export async function getContext(session: Session = null) {
-  return coreGetContext(config, prisma, session)
-}
-```
-
----
-
-## Database Operations
-
-All database operations are access-controlled and execute hooks in the correct order.
-
-{% callout type="warning" %}
-A read with no `include` (and no fragment `query`) returns the row's own columns plus its virtual fields — **never relations**, matching Prisma's own semantics for the same call. Name a relation explicitly via `include` (or a fragment `query`, see [Queries & Fragments](/docs/concepts/queries)) to fetch it. Foreign-key columns (e.g. `authorId`) are always returned, so a relation stays reachable by id without an `include`.
+{% callout type="info" %}
+For the ideas behind the read surface — projection, computed fields, what a `resolveOutput` hook sees — read [Queries & projections](/docs/concepts/queries) first. This page describes the API.
 {% /callout %}
 
-### `findUnique()`
+## Getting a context
 
-Find a single record by unique field (typically ID).
-
-**Signature:**
+`opensaas generate` writes `.opensaas/context.ts`. It exports exactly three names, and applications use it rather than constructing a context by hand.
 
 ```typescript
-db[listKey].findUnique(args: {
-  where: { id: string }
-  include?: Record<string, unknown>
-}): Promise<Item | null>
+import { getContext, rawOpensaasContext, config } from '@/.opensaas/context'
 ```
 
-**Parameters:**
-
-- `where` - Unique field filter (e.g., `{ id: '...' }`)
-- `include` - Optional relationships to include
-
-**Returns:** Record or `null` if not found or access denied
-
-**Access Control:**
-
-- Checks `operation.query` access
-- Applies field-level read access
-- Returns `null` on access denial (silent failure)
-
-**Hooks Executed:**
-
-1. Field-level `resolveOutput` (transforms output values)
-2. Field-level `afterOperation` (side effects)
-
-**Example:**
+| Export                           | Type                         | Use                                                                                                                                                                                                                                        |
+| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getContext<TSession>(session?)` | `Promise<Context<TSession>>` | The normal door. `await` it per request.                                                                                                                                                                                                   |
+| `rawOpensaasContext`             | `Promise<Context>`           | For module-init-time consumers that cannot `await`. Pass the promise itself; do not await it at module scope.                                                                                                                              |
+| `config`                         | `Promise<OpenSaasConfig>`    | The resolved config, with the emitted tables attached. The generator emits `export const config = getConfig()` and `getConfig` is `async`, so this is a **promise** — `await` it, or pass `config={await config}` from a server component. |
 
 ```typescript
-const post = await context.db.post.findUnique({
-  where: { id: 'post-123' },
-})
-
-if (!post) {
-  // Either doesn't exist OR user doesn't have access
-  return { error: 'Post not found' }
-}
-```
-
-**With Relationships:**
-
-```typescript
-const post = await context.db.post.findUnique({
-  where: { id: 'post-123' },
-  include: { author: true },
-})
-```
-
----
-
-### `findMany()`
-
-Find multiple records with optional filtering, pagination, and relationships.
-
-**Signature:**
-
-```typescript
-db[listKey].findMany(args?: {
-  where?: Record<string, unknown>
-  take?: number
-  skip?: number
-  include?: Record<string, unknown>
-}): Promise<Item[]>
-```
-
-**Parameters:**
-
-- `where` - Filter conditions (merged with access filters)
-- `take` - Maximum number of records to return
-- `skip` - Number of records to skip (for pagination)
-- `include` - Relationships to include
-
-**Returns:** Array of records (empty array `[]` if none found or access denied)
-
-**Access Control:**
-
-- Checks `operation.query` access
-- Merges access filters with user's `where` clause
-- Applies field-level read access
-- Returns `[]` on access denial (silent failure)
-
-**Hooks Executed:**
-
-1. Field-level `resolveOutput` for each record
-2. Field-level `afterOperation` for each record
-
-**Example:**
-
-```typescript
-// All published posts
-const posts = await context.db.post.findMany({
-  where: { status: 'published' },
-})
-
-// With pagination
-const posts = await context.db.post.findMany({
-  where: { status: 'published' },
-  take: 10,
-  skip: 20,
-})
-
-// With relationships
-const posts = await context.db.post.findMany({
-  where: { status: 'published' },
-  include: { author: true, comments: true },
-})
-```
-
----
-
-### `create()`
-
-Create a new record with full validation, access control, and hooks.
-
-**Signature:**
-
-```typescript
-db[listKey].create(args: {
-  data: Record<string, unknown>
-}): Promise<Item | null>
-```
-
-**Parameters:**
-
-- `data` - Field values for the new record
-
-**Returns:** Created record or `null` if access denied
-
-**Access Control:**
-
-- Checks `operation.create` access
-- Applies field-level create access
-- Returns `null` on access denial (silent failure)
-
-**Hooks Executed (in order):**
-
-1. List-level `resolveInput` - Transform input data
-2. Field-level `resolveInput` - Transform field values (e.g., hash passwords)
-3. List-level `validateInput` - Custom validation
-4. Field validation - Built-in rules (isRequired, length, min/max)
-5. Field-level create access - Filter writable fields
-6. Field-level `beforeOperation` - Side effects before write
-7. List-level `beforeOperation` - Side effects before write
-8. **Database create operation**
-9. List-level `afterOperation` - Side effects after write
-10. Field-level `afterOperation` - Side effects after write
-11. Field-level read access - Filter readable fields
-12. Field-level `resolveOutput` - Transform output values
-
-**Example:**
-
-```typescript
-const post = await context.db.post.create({
-  data: {
-    title: 'My First Post',
-    content: 'This is the content...',
-    status: 'draft',
-  },
-})
-
-if (!post) {
-  return { error: 'Access denied' }
-}
-```
-
-**With Validation Errors:**
-
-```typescript
-try {
-  const post = await context.db.post.create({
-    data: { title: '' }, // Empty title (required field)
-  })
-} catch (error) {
-  if (error instanceof ValidationError) {
-    console.log(error.errors) // [{ field: 'title', message: 'Title is required' }]
-  }
-}
-```
-
----
-
-### `update()`
-
-Update an existing record with full validation, access control, and hooks.
-
-**Signature:**
-
-```typescript
-db[listKey].update(args: {
-  where: { id: string }
-  data: Record<string, unknown>
-}): Promise<Item | null>
-```
-
-**Parameters:**
-
-- `where` - Unique field to identify record
-- `data` - Fields to update (partial update)
-
-**Returns:** Updated record or `null` if not found or access denied
-
-**Access Control:**
-
-- Fetches existing record first
-- Checks `operation.update` access (with access to existing item)
-- Applies field-level update access
-- Returns `null` on access denial (silent failure)
-
-**Hooks Executed (in order):**
-
-1. List-level `resolveInput` - Transform input data
-2. Field-level `resolveInput` - Transform field values
-3. List-level `validateInput` - Custom validation
-4. Field validation - Built-in rules
-5. Field-level update access - Filter writable fields
-6. Field-level `beforeOperation` - Side effects before write
-7. List-level `beforeOperation` - Side effects before write
-8. **Database update operation**
-9. List-level `afterOperation` - Side effects after write
-10. Field-level `afterOperation` - Side effects after write
-11. Field-level read access - Filter readable fields
-12. Field-level `resolveOutput` - Transform output values
-
-**Example:**
-
-```typescript
-const post = await context.db.post.update({
-  where: { id: 'post-123' },
-  data: {
-    status: 'published',
-    publishedAt: new Date(),
-  },
-})
-
-if (!post) {
-  // Either doesn't exist OR user doesn't have access
-  return { error: 'Access denied or not found' }
-}
-```
-
-**Partial Updates:**
-
-```typescript
-// Only update title (other fields unchanged)
-const post = await context.db.post.update({
-  where: { id: 'post-123' },
-  data: { title: 'Updated Title' },
-})
-```
-
----
-
-### `delete()`
-
-Delete an existing record with access control and hooks.
-
-**Signature:**
-
-```typescript
-db[listKey].delete(args: {
-  where: { id: string }
-}): Promise<Item | null>
-```
-
-**Parameters:**
-
-- `where` - Unique field to identify record
-
-**Returns:** Deleted record or `null` if not found or access denied
-
-**Access Control:**
-
-- Fetches existing record first
-- Checks `operation.delete` access (with access to existing item)
-- Returns `null` on access denial (silent failure)
-
-**Hooks Executed (in order):**
-
-1. Field-level `beforeOperation` - Side effects before delete
-2. List-level `beforeOperation` - Side effects before delete
-3. **Database delete operation**
-4. List-level `afterOperation` - Side effects after delete
-5. Field-level `afterOperation` - Side effects after delete (e.g., cleanup files)
-
-**Example:**
-
-```typescript
-const post = await context.db.post.delete({
-  where: { id: 'post-123' },
-})
-
-if (!post) {
-  return { error: 'Access denied or not found' }
-}
-```
-
-**Use Case - Cleanup:**
-
-```typescript
-// Field hook automatically cleans up files
-thumbnail: text({
-  hooks: {
-    afterOperation: async ({ operation, value }) => {
-      if (operation === 'delete' && value) {
-        await deleteFromStorage(value)
-      }
-    },
-  },
-})
-```
-
----
-
-### `count()`
-
-Count records with optional filtering and access control.
-
-**Signature:**
-
-```typescript
-db[listKey].count(args?: {
-  where?: Record<string, unknown>
-}): Promise<number>
-```
-
-**Parameters:**
-
-- `where` - Optional filter conditions (merged with access filters)
-
-**Returns:** Number of matching records (returns `0` if access denied)
-
-**Access Control:**
-
-- Checks `operation.query` access
-- Merges access filters with user's `where` clause
-- Returns `0` on access denial (silent failure)
-
-**Example:**
-
-```typescript
-// Count all published posts
-const count = await context.db.post.count({
-  where: { status: 'published' },
-})
-
-// Count all posts (respects access control)
-const totalCount = await context.db.post.count()
-```
-
----
-
-## Sudo Mode
-
-Sudo mode creates a context that bypasses access control while still executing hooks and validation.
-
-### When to Use Sudo Mode
-
-1. **Admin operations** - System-level operations that need unrestricted access
-2. **Background jobs** - Scheduled tasks that process data regardless of user permissions
-3. **Migrations** - Data migrations that need to access all records
-4. **Internal operations** - Server-side operations that shouldn't be restricted by user permissions
-
-### Creating Sudo Context
-
-```typescript
-const adminContext = context.sudo()
-```
-
-### What Sudo Mode Does
-
-**Bypasses:**
-
-- Operation-level access control (query, create, update, delete)
-- Field-level access control (read, create, update)
-
-**Still Executes:**
-
-- All hooks (resolveInput, validateInput, beforeOperation, afterOperation)
-- Field validation (isRequired, length, min, max)
-- Field transformations (password hashing, etc.)
-
-### Example Usage
-
-```typescript
-// Regular context - restricted by access control
-const userPosts = await context.db.post.findMany()
-// Returns only posts the user can access
-
-// Sudo context - unrestricted access
-const sudoContext = context.sudo()
-const allPosts = await sudoContext.db.post.findMany()
-// Returns ALL posts regardless of access rules
-
-// Still validates and executes hooks
-const post = await sudoContext.db.post.create({
-  data: {
-    title: '', // ValidationError - still validates
-    password: 'plain', // Still hashes password
-  },
-})
-```
-
-### Security Warning
-
-⚠️ **Important:** Sudo mode should only be used in trusted server-side code. Never expose sudo operations to client-facing APIs without proper authorization checks.
-
-```typescript
-// ❌ BAD - Never do this
-export async function deleteAnyPost(id: string) {
-  const context = await getContext()
-  return await context.sudo().db.post.delete({ where: { id } })
-}
-
-// ✅ GOOD - Check permissions first
-export async function deletePostAsAdmin(id: string) {
-  const context = await getContext()
-
-  if (context.session?.role !== 'admin') {
-    throw new Error('Admin access required')
-  }
-
-  // Safe to use sudo after verifying admin role
-  return await context.sudo().db.post.delete({ where: { id } })
-}
-```
-
----
-
-## Silent Failures
-
-Stack uses silent failures to prevent information leakage about the existence of records.
-
-### Why Silent Failures?
-
-When access is denied, returning explicit errors can reveal:
-
-- Whether a record exists
-- What fields it has
-- Information about the data structure
-
-Silent failures prevent this by returning the same result whether:
-
-1. Record doesn't exist
-2. User doesn't have access
-3. Access rule filtered out the record
-
-### Behavior by Operation
-
-| Operation      | Access Denied Returns |
-| -------------- | --------------------- |
-| `findUnique()` | `null`                |
-| `findMany()`   | `[]` (empty array)    |
-| `create()`     | `null`                |
-| `update()`     | `null`                |
-| `delete()`     | `null`                |
-| `count()`      | `0`                   |
-
-### Handling Silent Failures
-
-Always check for `null` or empty results:
-
-```typescript
-const post = await context.db.post.update({
-  where: { id },
-  data: { title: 'New Title' },
-})
-
-if (!post) {
-  // Could be: doesn't exist, access denied, or filtered by access rule
-  return { error: 'Unable to update post' }
-}
-```
-
-### When to Use Explicit Errors
-
-If you need to distinguish between "not found" and "access denied", use sudo mode to check existence:
-
-```typescript
-const post = await context.db.post.findUnique({ where: { id } })
-
-if (!post) {
-  // Check if it exists at all
-  const exists = await context.sudo().db.post.findUnique({ where: { id } })
-
-  if (!exists) {
-    return { error: 'Post not found' }
-  } else {
-    return { error: 'Access denied' }
-  }
-}
-```
-
----
-
-## Type Safety
-
-The context provides full TypeScript type inference from your Prisma schema.
-
-### Inferred Types
-
-```typescript
-// Type: Post | null
-const post = await context.db.post.findUnique({
-  where: { id: 'post-123' },
-})
-
-// Type: Post[]
-const posts = await context.db.post.findMany()
-
-// TypeScript knows available fields
-if (post) {
-  console.log(post.title) // ✅ Type: string
-  console.log(post.invalidField) // ❌ TypeScript error
-}
-```
-
-### Generic Context
-
-Pass Prisma client as generic for full type safety:
-
-```typescript
-import { PrismaClient } from '@prisma/client'
-import { getContext } from '@opensaas/stack-core/context'
-
-const prisma = new PrismaClient()
-
-// Full type inference for all operations
-const context = getContext<typeof config, typeof prisma>(config, prisma, session)
-```
-
----
-
-## Best Practices
-
-### 1. Always Use Context (Not Raw Prisma)
-
-```typescript
-// ✅ Good: Uses context (access control enforced)
-const posts = await context.db.post.findMany()
-
-// ❌ Bad: Bypasses access control
-const posts = await context.prisma.post.findMany()
-```
-
-### 2. Check for Null/Empty Results
-
-```typescript
-// ✅ Good: Handles silent failures
-const post = await context.db.post.update({ where: { id }, data })
-if (!post) {
-  return { error: 'Unable to update post' }
-}
-
-// ❌ Bad: Assumes success
-const post = await context.db.post.update({ where: { id }, data })
-console.log(post.title) // Potential runtime error if null
-```
-
-### 3. Use Sudo Mode Sparingly
-
-```typescript
-// ✅ Good: Sudo only when necessary
-async function adminCleanup() {
-  if (session?.role !== 'admin') {
-    throw new Error('Admin only')
-  }
-
-  const context = await getContext()
-  return await context.sudo().db.post.deleteMany()
-}
-
-// ❌ Bad: Unnecessary sudo usage
-async function getUserPosts(userId: string) {
-  const context = await getContext()
-  return await context.sudo().db.post.findMany() // Should use regular context
-}
-```
-
-### 4. Validate Input Before Operations
-
-```typescript
-// ✅ Good: Validate input
-async function createPost(data: unknown) {
-  const validated = postSchema.parse(data)
-  return await context.db.post.create({ data: validated })
-}
-
-// ❌ Bad: No validation
-async function createPost(data: any) {
-  return await context.db.post.create({ data })
-}
-```
-
-### 5. Use Generated Context Factory
-
-```typescript
-// ✅ Good: Use generated factory
 import { getContext } from '@/.opensaas/context'
-const context = await getContext(session)
 
-// ❌ Bad: Manually create context each time
-import { getContext as coreGetContext } from '@opensaas/stack-core/context'
-import { PrismaClient } from '@prisma/client'
-const prisma = new PrismaClient()
-const context = coreGetContext(config, prisma, session)
+const anonymous = await getContext()
+const authenticated = await getContext({ userId: 'user-123' })
 ```
+
+The ORM client behind it is a process singleton, built once from the committed `prisma/contract.json` artifact. Nothing that merely loads the config opens a connection.
+
+### Module-init-time consumers
+
+A library whose constructor runs at import time — Better-auth's adapter is the standing example — cannot `await`. Pass `rawOpensaasContext` itself to a helper that defers construction behind a lazy proxy:
+
+```typescript
+import { createAuth } from '@opensaas/stack-auth/server'
+import { rawOpensaasContext } from '@/.opensaas/context'
+import config from '../opensaas.config'
+
+export const auth = createAuth(config, rawOpensaasContext)
+```
+
+### Building a second client synchronously
+
+A third-party contract that must be handed a resolved client value at import time cannot use the proxy above. Build one the same way the generated context does — `resolveRuntimeConnection` plus the committed contract artifact — rather than hand-rolling a connection.
+
+The generated `config` is a promise, so it cannot supply `db.client` here. Factor the client config into a plain module that both `opensaas.config.ts` and this consumer import, and there is nothing to await:
+
+```typescript
+// lib/db-client.ts — no config or plugin imports, safe to import synchronously
+import type { DatabaseClientConfig } from '@opensaas/stack-core'
+
+export const dbClient: DatabaseClientConfig = {
+  /* pg: () => new Pool({ connectionString: process.env.DATABASE_URL }) */
+}
+```
+
+```typescript
+// opensaas.config.ts
+import { dbClient } from './lib/db-client'
+
+export default config({
+  db: { client: dbClient },
+  // …
+})
+```
+
+```typescript
+// lib/second-client.ts
+import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+import postgres from '@prisma/orm-postgres/runtime'
+import type { Contract } from '../prisma/contract.d.js'
+import contractJson from '../prisma/contract.json' with { type: 'json' }
+import { dbClient } from './db-client'
+
+export const secondClient = postgres<Contract>({
+  contractJson,
+  ...resolveRuntimeConnection(dbClient),
+})
+```
+
+`resolveRuntimeConnection` is where [`db.client.pg`](/docs/reference/config-api) is consumed: it calls the factory when one is configured and otherwise resolves the connection URL itself. Its argument is optional, so an app that configures no `db.client` can call it with none. Two things about the result are deliberate and must be said wherever this pattern is reused. It is a **second connection**, separate from the framework's singleton. And it is the **raw client** — it carries none of `context.db`'s access control, Field Visibility or hooks.
+
+## The context object
+
+| Property               | Type                | Notes                                                                                     |
+| ---------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| `db`                   | the secured surface | One entry per list, keyed by the **list key** — `context.db.Post`, not `context.db.post`. |
+| `session`              | `S \| null`         | Whatever your app puts there. The stack requires only that it exists.                     |
+| `unsafe`               | `UnsafeSurface`     | [The bypass](#the-unsafe-surface).                                                        |
+| `storage`              | `StorageUtils`      | File and image operations. See [Storage](/docs/reference/storage).                        |
+| `plugins`              | plugin services     | Whatever registered plugins contributed.                                                  |
+| `serverAction(props)`  | `Promise<unknown>`  | Generic create/update/delete entry point for Next.js Server Actions.                      |
+| `sudo()`               | `Context`           | [Bypass access control, keep hooks](#sudo).                                               |
+| `withSession(session)` | `Context`           | [Substitute the session](#withsession).                                                   |
+| `transaction(fn)`      | `Promise<T>`        | [One interactive transaction](#transactions).                                             |
+| `_isSudo`              | `boolean`           | Whether this context is elevated.                                                         |
+
+{% callout type="warning" %}
+List keys on `context.db` are **PascalCase, exactly as written in your config**. `context.db.blogPost` is a compile error; the key is `context.db.BlogPost`. There is no case-conversion helper to call — the generated types name the keys directly.
+{% /callout %}
+
+A hook and a plugin `runtime()` factory are handed an `AccessContext`, which has **no `unsafe` member**. What they reach instead is `context.ormHandle`: the engine's own client, which `db` runs its queries through and which enforces nothing on its own. The Write Pipeline rebinds it wherever it rebinds `db`, so the two are always in the same transaction state, and every write opens a transaction — work a hook does through either handle is rolled back when the write fails.
 
 ---
 
-## Error Handling
+## The read subset
 
-### Validation Errors
+A read is **composed** on `context.db.<List>`, which is an immutable query value, and nothing runs until a terminal is called.
 
 ```typescript
-import { ValidationError } from '@opensaas/stack-core'
+const posts = await context.db.Post.where({ published: { equals: true } })
+  .orderBy({ createdAt: 'desc' })
+  .select('title', 'excerpt')
+  .limit(20)
+  .all()
+```
 
-try {
-  const post = await context.db.post.create({
-    data: { title: '' },
+These are the methods on `context.db.<List>`, and there are no others:
+
+| Composer                 | Effect                                                                | Composition                                                                             |
+| ------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `where(predicate)`       | Narrow the read                                                       | **Accumulates** — repeated calls are ANDed                                              |
+| `orderBy(order)`         | Sort by this list's own scalar columns                                | **Accumulates**                                                                         |
+| `include(name, refine?)` | Reach one hop into a relation                                         | Accumulates, one entry per relation — naming the **same** relation twice is **refused** |
+| `select(...fields)`      | Return exactly these of this list's own fields                        | **Replaces**                                                                            |
+| `limit(count)`           | At most this many rows                                                | **Replaces**                                                                            |
+| `offset(count)`          | Skip this many rows                                                   | **Replaces**                                                                            |
+| `distinct(...fields)`    | Collapse rows agreeing on every named column                          | **Refused** — a second `distinct`/`distinctOn` throws                                   |
+| `distinctOn(...fields)`  | First row per distinct key, in `orderBy`'s order — so it requires one | **Refused** — a second `distinct`/`distinctOn` throws                                   |
+| `cursor(values)`         | Resume from a known position                                          | **Replaces**                                                                            |
+| `forUpdate()`            | [Take a row lock](#the-row-lock) — transaction-bound builder only     | —                                                                                       |
+
+`limit()` shapes `all()` alone: `first()` is bounded by its own terminal and `nearest()` takes its bound from `options.limit`. `offset()` is honoured by **both** `all()` and `first()`, so `.offset(10).first()` is the eleventh row.
+
+The two refusals above are refusals, not replacements. Both distincts **accumulate** into the read's state; the second is rejected at the **terminal** — where every other refusal on this surface is made — with a `ValidationError` reading "Cannot read … through more than one distinct. Name every column in one call instead." `distinct` and `distinctOn` collapse rows by different rules and the variadic form already spells "on both columns" in one call, so there is no sensible last-wins. A repeated `include` is refused the same way.
+
+A [singleton list](/docs/reference/config-api) has `get()` in place of the composed read.
+
+{% callout type="warning" %}
+There is no `findMany()`, no `findUnique()`, no `findFirst()` and no top-level `count()`. A count is `aggregate()`; a lookup by id is `.where({ id }).first()`.
+{% /callout %}
+
+### Terminals and denial values
+
+| Terminal                           | Returns                           | On denial           |
+| ---------------------------------- | --------------------------------- | ------------------- |
+| `all()`                            | `Promise<TRow[]>`                 | `[]`                |
+| `first()`                          | `Promise<TRow \| null>`           | `null`              |
+| `aggregate(build)`                 | `Promise<Record<string, number>>` | `0` under every key |
+| `nearest(field, vector, options?)` | `Promise<NearestMatch<TRow>[]>`   | `[]`                |
+
+Denial is silent and indistinguishable from absence — see [Silent failure](#silent-failure).
+
+### Refusals
+
+Some composers do not apply to some terminals, and are refused rather than quietly answering a different question:
+
+| Terminal      | Refuses                                              |
+| ------------- | ---------------------------------------------------- |
+| `aggregate()` | `limit`, `offset`, `distinct`, `cursor`, `forUpdate` |
+| `nearest()`   | `offset`, `distinct`, `cursor`, `forUpdate`          |
+
+An aggregate returns no primary keys to lock, and a ranking is not a gate — so neither carries `forUpdate()`.
+
+### `select()`
+
+`select()` names **this list's own fields**, computed fields included. Naming a relation throws `RelationSelectError`; relations are reached with `include()`.
+
+```typescript
+const rows = await context.db.Post.select('title', 'excerpt').all()
+```
+
+The result type narrows with the projection, and the list's system fields always survive it. An unselected column is a compile error rather than an absent value.
+
+The engine **widens** the query for what it needs — the declared dependency sets of the computed fields it will return, and any field `read` rule that has to see a row to answer — and then **strips** everything it added back out, at every nesting level.
+
+### `include()`
+
+`include(name, refine?)` takes a **refinement callback**, not a boolean.
+
+```typescript
+const rows = await context.db.Post.select('title')
+  .include('author', (author) => author.select('name'))
+  .all()
+```
+
+A refinement carries `where`, `orderBy`, `limit`, `offset`, `select`, `include`, `count()` and `combine(spec)`. `limit` and `offset` inside a refinement page the related rows **per parent row**. `count()` reduces a to-many relation to how many rows this session may see; `combine(spec)` gives several independently scoped views of the same relation, at most one of which may be the rows themselves.
+
+The related list's `query` access rides in as a refinement `where`, so a scoped-away to-one comes back `null` and a to-many `[]`, with the key present and the parent row kept.
+
+Includes are capped at **five levels** deep.
+
+#### Cost: every to-one read off an included row is a null-check
+
+**Arity decides nullability, not foreign-key nullability.** A to-one relation types as `Row | null` and a to-many as `Row[]`, whatever the column's `NOT NULL` says — because access control can scope a row away that the schema guarantees exists.
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function authorName(context: Context, postId: string) {
+  const post = await context.db.Post.where({ id: postId })
+    .include('author', (author) => author.select('name'))
+    .first()
+
+  if (!post) return null
+  if (!post.author) return null
+
+  return post.author.name
+}
+```
+
+This is a real cost of putting access control under the read rather than beside it, taken knowingly ([ADR-0058](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0058-a-to-one-relation-reads-as-nullable-by-arity-not-by-column.md)). Budget for the branch at every to-one hop.
+
+### `aggregate()`
+
+`aggregate(build)` reduces the read to named aggregates over the rows this session may see. The callback is handed an accessor; `count()` is the reduction it offers.
+
+```typescript
+const { published } = await context.db.Post.where({ published: { equals: true } }).aggregate(
+  (a) => ({ published: a.count() }),
+)
+```
+
+A count is a session-relative value, not a property of the table: it is the same scoped read `all()` runs, counted in the database instead of materialised, so it always equals that `all()`'s length. A denied read answers `0` under every key.
+
+#### Cost: `aggregate`'s count throws beyond ±(2^53 − 1)
+
+The result is a JavaScript `number`. Rather than round silently past the safe-integer boundary, `count()` throws ([ADR-0041](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0041-the-secured-surface-is-an-opaque-wrapper-over-a-prisma-8-collection.md)). A table large enough to reach it needs a different reduction, not a wider float.
+
+### `nearest()`
+
+`nearest(field, vector, options?)` ranks rows by an [embedding field](/docs/reference/rag)'s own distance function. It returns `NearestMatch<TRow>[]` — a wrapper, so `item` still matches your selection exactly and the score sits beside it rather than arriving as a field the list does not have.
+
+The ranking, the `limit` and the `minScore` bound are all inside one query, alongside the Access Filter, so the top-K is computed over the rows this session may see rather than filtered down afterwards. Searching requires read access to `field`: ordering by a vector measures its contents.
+
+### Materialisation
+
+#### Cost: a secured read holds its whole result
+
+`all()` returns an array, not a stream. The engine materialises every row it is about to hand back so that Field Visibility, `resolveOutput` and computed fields can be applied to each one — none of which can be expressed as a cursor over the driver's own result.
+
+So **a large read is bounded by the caller**, with `limit()` and `cursor()`, and nothing bounds it if the caller does not ([ADR-0046](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0046-a-secured-read-materialises-and-does-not-stream.md)). A genuinely unbounded scan — an export, a backfill — belongs on [the Unsafe surface](#the-unsafe-surface), whose `query()` streams.
+
+---
+
+## The Where vocabulary
+
+The vocabulary is a **closed set**. It is the same grammar for a caller's `where()` and for an access rule's returned filter, so a rule can never express something a caller could not.
+
+**Scalar operators:** `equals`, `not`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `contains`.
+
+**Relation quantifiers:** `some`, `every`, `none` — the same three for a to-one relation as for a to-many.
+
+**Logical keys:** `AND` and `NOT` each take one predicate object or an array of them. `OR` takes an **array only** on the generated types — the runtime accepts a bare object, but writing one is a compile error.
+
+```typescript
+const rows = await context.db.Post.where({
+  OR: [{ published: { equals: true } }, { authorId: { equals: 'user-123' } }],
+  title: { contains: 'release' },
+  comments: { some: { flagged: { equals: false } } },
+}).all()
+```
+
+The rules that decide what compiles and what throws:
+
+- **A bare value is equality.** `{ published: true }` and `{ published: { equals: true } }` are the same predicate. A value is `string | number | boolean | bigint | Date | null`.
+- **`null` is `IS NULL`.** Bare `null` and `equals: null` both compile to `IS NULL`; `not: null` compiles to `IS NOT NULL`.
+- **`undefined` is refused, never dropped.** A `ValidationError`, not an open read. This is the fail-closed rule that makes `({ session }) => ({ authorId: { equals: session?.userId } })` an error rather than a filter that silently matches everything. Decide the anonymous case explicitly — return `false` from the rule.
+- **`contains` is case-insensitive.** It lowers to `ilike` and matches its value literally, per-cent signs and underscores included.
+- **`orderBy` takes this list's own scalar columns only.** A relationship throws.
+- **An unknown key and a read-denied field give the identical message.** Deliberately: the refusal must not be an existence oracle ([ADR-0031](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0031-a-predicate-cannot-name-a-field-the-session-cannot-read.md)).
+
+There is **no `startsWith`, no `endsWith`, no `mode`, and no `is`/`isNot`**. `contains` covers substring matching; the rest were dropped rather than carried across from Prisma's own filter grammar.
+
+An access filter may nest ten levels deep.
+
+`sudo()` still validates the vocabulary — only the access decision is skipped, never the grammar.
+
+---
+
+## The write subset
+
+`create`, `update` and `delete` each take a single **args object**.
+
+```typescript
+const post = await context.db.Post.create({ data: { title: 'My Post' } })
+const updated = await context.db.Post.update({ where: { id }, data: { title: 'Renamed' } })
+const removed = await context.db.Post.delete({ where: { id } })
+```
+
+Each returns `Row | null`, and `null` is denial-or-absence. The composed read's `where()` never feeds a write: there is no `.where({ id }).update(data)` form.
+
+### `where` is identity-only
+
+A write's `where` must be **exactly one key, `id`, holding a `string` or a `number`**. Anything else is a `ValidationError` raised _before_ the access gate, and on the generated types a secondary unique column — `where: { email }` — is a compile error.
+
+That is not a limitation of the query planner: an update reached by a column other than the primary key cannot name the row it is about to gate, so the access decision would have to be taken against a set.
+
+### Relation input
+
+On the **foreign-key-owning side**, a relationship field takes `{ connect: { id } }` or `null`.
+
+```typescript
+await context.db.Post.update({
+  where: { id: postId },
+  data: { author: { connect: { id: authorId } } },
+})
+
+// `null` clears the edge
+await context.db.Post.update({ where: { id: postId }, data: { author: null } })
+```
+
+`null` is how an edge is cleared — **there is no `disconnect`**.
+
+Refused, at runtime and as compile errors on the generated input types:
+
+| Input                                                                                                          | Error                           |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Nested `create` / `update` / `delete` / `connectOrCreate` / `disconnect` / `set` / `updateMany` / `deleteMany` | `NestedRelationInputError`      |
+| Relation input on a field that does not own the foreign key                                                    | `NonOwningRelationInputError`   |
+| Spelling one edge both ways (`author` _and_ `authorId`)                                                        | `ConflictingRelationInputError` |
+
+A `connect` target the caller cannot read makes the whole write return `null` — one indistinguishable answer, the same one denial gives.
+
+---
+
+## Transactions
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function publish(context: Context, title: string) {
+  return context.transaction(async (tx) => {
+    const post = await tx.db.Post.create({ data: { title } })
+    if (!post) return null
+    await tx.db.AuditEntry.create({ data: { subject: post.id } })
+    return post
   })
-} catch (error) {
-  if (error instanceof ValidationError) {
-    console.log('Validation failed:', error.errors)
-    // [{ field: 'title', message: 'Title is required' }]
+}
+```
 
-    console.log('Field errors:', error.fieldErrors)
-    // { title: ['Title is required'] }
+`transaction(fn)` takes the callback and **nothing else**. There is no options argument and no isolation level to select: it runs at the connection's default, Read Committed on PostgreSQL. A throw anywhere rolls the whole transaction back.
+
+`tx` is a full context — access-checked and hook-firing exactly as the outer one is, but bound to the transaction client. It carries `tx.db`, `tx.unsafe`, `tx.sudo()`, `tx.withSession()`, `tx.session`, plus `tx.advisoryLock(key)`. A nested `transaction()` joins the enclosing one rather than opening a second.
+
+{% callout type="warning" %}
+The transaction holds **one pooled connection** for the whole callback. Work reached through `tx` runs on it; work reached through the **outer** context inside the callback asks the pool for a second connection — and on a single-connection pool, such as the Dev database's, waits for one that will not come.
+{% /callout %}
+
+### The row lock
+
+Because there is no isolation level to raise, an invariant that a stricter level would have closed is expressed as a **lock on the contended row**. `forUpdate()` lives on the transaction-bound builder and nowhere else, so taking one outside a transaction is a compile error rather than a throw.
+
+The shape is always the same: lock the parent **before** you read anything the gate depends on, so neither side of the comparison can go stale under a concurrent racer.
+
+Both reads of `Slot` below are deliberate. The first takes the lock and answers only "may I proceed on this row"; the second fetches `capacity` in a statement that runs after the lock is held, because a locked read's own columns come from the snapshot taken before the lock. The count follows for the same reason.
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function book(context: Context, slotId: string) {
+  return context.transaction(async (tx) => {
+    const locked = await tx.db.Slot.where({ id: slotId }).forUpdate().first()
+    if (!locked) return null
+
+    const slot = await tx.db.Slot.where({ id: slotId }).first()
+    if (!slot) return null
+
+    const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate((a) => ({
+      taken: a.count(),
+    }))
+    if (taken >= slot.capacity) return null
+
+    return tx.db.Booking.create({ data: { slot: { connect: { id: slotId } } } })
+  })
+}
+```
+
+`first()` returning `null` under `forUpdate()` means denied-or-vanished, extending the conflation silent failure already makes deliberately.
+
+`advisoryLock(key)` takes PostgreSQL's transaction-scoped advisory lock, waiting until it is free and releasing when the transaction ends however it ends. It locks a number rather than rows, which is why it sits on the transaction context and not on `db`.
+
+#### Cost: a row lock is two round trips
+
+`forUpdate()` is **two statements**, not one. The scoped read resolves operation access, the Access Filter and Field Visibility exactly as any read does; the engine then locks the identity rows it returned. That is what makes the locked set provably a subset of the readable set — and it costs a second round trip.
+
+Two consequences follow, and both are taken knowingly ([ADR-0047](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0047-a-row-lock-is-an-engine-owned-two-statement-terminal.md), [ADR-0062](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0062-the-row-lock-statement-is-composed-by-the-engine-over-the-orms-raw-lane.md)):
+
+- **The row's columns are as of before the lock.** Each statement takes its own snapshot under Read Committed, so a column another transaction committed in between arrives stale. Only the identity is post-lock — the lock is a mutex token on the row, not protection for the row's own data. Read a gate's threshold in its own statement _after_ the lock, which is why the sample above re-reads `Slot` for `capacity` rather than taking it off the locked row.
+- **`all().forUpdate()` is bounded** at 1000 keys in one terminal — a fail-closed cost limit, raised rather than silently truncated.
+
+`advisoryLock` hashes its key with `hashtext()`, which is 32-bit, so two distinct keys can collide. A collision costs **spurious serialisation, never a missed lock**.
+
+---
+
+## Silent failure
+
+Access denial returns the empty value of the operation's type rather than throwing. There is no `AccessDeniedError`.
+
+| Operation                            | Denied returns      |
+| ------------------------------------ | ------------------- |
+| `all()`                              | `[]`                |
+| `first()`                            | `null`              |
+| `aggregate()`                        | `0` under every key |
+| `nearest()`                          | `[]`                |
+| `create()` / `update()` / `delete()` | `null`              |
+
+The point is that the answer is **identical** whether the row does not exist, the session may not see it, or an access filter scoped it away. An error that distinguished them would be an existence oracle.
+
+So every one of those results is checked before it is used:
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function rename(context: Context, id: string, title: string) {
+  const post = await context.db.Post.update({ where: { id }, data: { title } })
+  if (!post) {
+    return { error: 'Unable to update post' }
+  }
+  return { title: post.title }
+}
+```
+
+If you genuinely need to distinguish "absent" from "denied" — for an admin diagnostic, say — re-run the read under [`sudo()`](#sudo) and compare. Do that deliberately, and never in a response a non-privileged caller sees.
+
+---
+
+## Errors
+
+The stack owns its error classes, all exported from `@opensaas/stack-core`. A secured write normalises the driver's failure into one of them; there are no database error codes to switch on.
+
+| Class                                                 | Carries                             |
+| ----------------------------------------------------- | ----------------------------------- |
+| `ValidationError`                                     | `errors`, `fieldErrors`             |
+| `DatabaseError`                                       | `fieldErrors`                       |
+| `SerializationFailure` (extends `DatabaseError`)      | SQLSTATE 40001, surfaced as a class |
+| `UniqueConstraintViolation` (extends `DatabaseError`) | `constraintName`, `list`, `fields`  |
+
+Two predicates narrow without an `instanceof` chain: `isSerializationFailure(error)` and `isUniqueConstraintViolation(error)`.
+
+```typescript
+import { isSerializationFailure, isUniqueConstraintViolation } from '@opensaas/stack-core'
+import type { Context } from '@/.opensaas/types'
+
+export async function register(context: Context, email: string) {
+  try {
+    const user = await context.db.User.create({ data: { email } })
+    if (!user) return { error: 'Access denied' }
+    return { id: user.id }
+  } catch (error) {
+    if (isUniqueConstraintViolation(error)) {
+      return { fieldErrors: error.fieldErrors }
+    }
+    if (isSerializationFailure(error)) {
+      return { error: 'Please retry' }
+    }
+    throw error
   }
 }
 ```
 
-### Access Denial (Silent)
+Retrying a `SerializationFailure` is **the caller's own loop** — the stack ships no retry helper, because the right number of attempts and the right backoff are properties of the operation, not of the engine.
+
+A secured write resolves the constraint name to OpenSaaS field names through the generated constraint map. A hand-made constraint the generator did not emit is not in that map, so it keeps a generic message and an empty `fields` — see [`db.indexes`](/docs/reference/config-api).
+
+The **Unsafe surface performs no normalisation at all**: a failure there arrives as the raw driver error.
+
+---
+
+## `sudo()`
+
+`sudo()` returns a context with the **access decision** bypassed. Everything else still runs.
+
+| Bypassed                                                       | Still runs                                          |
+| -------------------------------------------------------------- | --------------------------------------------------- |
+| Operation-level access (`query`, `create`, `update`, `delete`) | Every hook                                          |
+| Field-level access (`read`, `create`, `update`)                | Field validation                                    |
+|                                                                | Field transformations (password hashing, and so on) |
+|                                                                | Where-vocabulary validation                         |
 
 ```typescript
-const post = await context.db.post.update({
-  where: { id },
-  data: { title: 'New Title' },
-})
+import type { Context } from '@/.opensaas/types'
 
-if (!post) {
-  // Silent failure - could be access denied or not found
-  return { error: 'Unable to update post' }
+export async function purgeExpiredSessions(context: Context) {
+  const elevated = context.sudo()
+  const expired = await elevated.db.Session.where({ expiresAt: { lt: new Date() } }).all()
+
+  for (const session of expired) {
+    await elevated.db.Session.delete({ where: { id: session.id } })
+  }
+  return expired.length
 }
 ```
 
-### Database Errors
+Sudo is not an authorisation — it is you taking the decision instead of the engine. Check the caller's right to elevate _before_ you elevate, in code the caller cannot reach.
+
+## `withSession()`
+
+`withSession(session)` returns a context carrying a different session, reusing this one's config, client (including a transaction client — a call inside `context.transaction()` stays in that transaction) and storage. Access control and hooks run normally against the new session.
+
+It substitutes **who** hooks and access control see; it does not change **what** they decide. The derived context can do exactly what a context built with that session directly could do. It is orthogonal to `sudo()` and preserves the receiver's sudo state, so `context.withSession(s).sudo()` and `context.sudo().withSession(s)` are equivalent.
 
 ```typescript
-try {
-  const post = await context.db.post.create({
-    data: {/* ... */},
+import type { Session } from '@opensaas/stack-core'
+import type { Context } from '@/.opensaas/types'
+
+async function completeAsOwner(context: Context, job: { ownerSession: Session; taskId: string }) {
+  const asOwner = context.withSession(job.ownerSession)
+  const task = await asOwner.db.Task.update({
+    where: { id: job.taskId },
+    data: { status: 'done' },
   })
-} catch (error) {
-  // Prisma errors (unique constraint, foreign key, etc.)
-  console.error('Database error:', error)
+  if (!task) {
+    return { error: 'Task not updatable as its owner' }
+  }
+  return { id: task.id }
 }
 ```
+
+---
+
+## The Unsafe surface
+
+`context.unsafe` is the deliberately unsecured lane. Everything the secured surface does, it skips:
+
+- no Access Filter
+- no Field Visibility
+- no `resolveOutput` and no computed fields
+- no hooks
+- **no error normalisation** — a failure arrives as the raw driver error, with a SQLSTATE rather than a `DatabaseError`
+
+Scoping a query here is yours alone. Say why at the call site.
+
+What it does give you: codec-decoded values, the ORM's streaming result, and the full builder.
+
+| Member                 | What it is                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `unsafe.sql`           | The typed SQL builder, untouched                                                    |
+| `unsafe.raw`           | The raw tag, untouched — `unsafe.raw.sql\`…\``                                      |
+| `unsafe.orm`           | The ORM's collections behind a transparent, marking proxy: `unsafe.orm.public.Post` |
+| `unsafe.query(plan)`   | Runs a plan for rows, lazily                                                        |
+| `unsafe.execute(plan)` | Runs a plan for statistics                                                          |
+
+`query()` returns a `LazyQueryResult<Row>` — an `AsyncIterable<Row>` that is also a `PromiseLike<Row[]>`, with `toArray()` and `first()`. That streaming is the reason the surface exists for bulk work: it is the one lane a genuinely unbounded read can take.
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function archiveEveryPost(context: Context) {
+  const rows = context.unsafe.query<{ id: string }>(
+    context.unsafe.sql.public.Post.select({ id: true }).build(),
+  )
+  for await (const row of rows) {
+    await archive(row.id)
+  }
+
+  return context.unsafe.execute(
+    context.unsafe.raw.sql`UPDATE "public"."Post" SET "archived" = true`.affectedCount().build(),
+  )
+}
+```
+
+Inside `context.transaction(...)`, the transaction context's `unsafe` runs through the transaction's own executor, so a script need not close over the outer client.
+
+Neither the bare client nor `prepare()`/`runtime()` is reachable through it, in the type or in the runtime value: a prepared statement runs `beforeCompile` once at `prepare()` and never per execution, and an already-compiled plan handed to `runtime()` bypasses the middleware chain — either would execute unobserved.
+
+### Known limits
+
+- That is a statement about the surface's own members, not a claim that nothing reachable through the ORM lane can prepare. The lane is the ORM's collections, whole; a `prepare`-shaped member on one of them is proxied like any other call, which marks the preparation and not the executions that follow.
+- The ORM's raw guardrails (`lints()`, `budgets()`) are opt-in middleware and the stack installs none. A statement this surface runs meets whatever your application armed, and nothing else.
+
+### When to reach for it
+
+| Reason                                         | Better answer                                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| "I need a filter the vocabulary does not have" | Usually a modelling problem. Add the column.                                 |
+| "I need a join"                                | `include()` with a refinement                                                |
+| "I need a count"                               | `aggregate()`                                                                |
+| "I need an unbounded export or backfill"       | **This is the case.** `unsafe.query()` streams; a secured read materialises. |
+| "I need a DDL statement or an extension call"  | **This is the case.**                                                        |
 
 ---
 
 ## Next Steps
 
-- **[Config API](/docs/reference/config-api)** - Configuration options
-- **[Field Types API](/docs/reference/fields-api)** - Field configuration
-- **[Access Control](/docs/concepts/access-control)** - Security patterns
-- **[Hooks](/docs/concepts/hooks)** - Data transformation
-- **[Generators](/docs/concepts/generators)** - Code generation
+- **[Queries & projections](/docs/concepts/queries)** — the ideas behind the read surface
+- **[Access Control](/docs/concepts/access-control)** — writing the rules the surface enforces
+- **[Config API](/docs/reference/config-api)** — `db` keys, indexes, referential actions
+- **[Hooks](/docs/concepts/hooks)** — what runs, and in what order
+- **[Field Types API](/docs/reference/fields-api)** — the field builder contract

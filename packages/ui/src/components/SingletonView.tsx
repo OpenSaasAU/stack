@@ -3,12 +3,17 @@ import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
 import type { ServerActionInput } from '../server/types.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AnyStackContext,
+  engineContextOf,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
 
 export interface SingletonViewProps {
-  context: AccessContext<unknown>
+  context: AnyStackContext
   config: OpenSaasConfig
   listKey: string
   basePath?: string
@@ -21,13 +26,15 @@ export interface SingletonViewProps {
  * with `isSingleton: true`.
  *
  * Resolves the record via the singleton `get()` operation (which auto-creates
- * the row with field defaults when absent, unless `autoCreate: false`), then
+ * the row with field defaults when absent, unless `autoCreate: false` or the
+ * list's `query` rule answers anything but a strict `true`), then
  * reuses the same `ItemFormClient` + serialization path as `ItemForm` so the
  * existing field rendering, validation, and `serverAction` save flow apply.
  *
  * A `null` from `get()` is ambiguous at the boundary — it means EITHER an
- * `autoCreate: false` singleton with no row yet, OR that `query` access is
- * denied (access-controlled reads return null/[] silently). We disambiguate
+ * `autoCreate: false` or filter-scoped singleton with no row yet, OR that
+ * `query` access is denied (access-controlled reads return null/[] silently).
+ * We disambiguate
  * using the list's operation-level access:
  *
  * - `query` denied  → friendly "no access" message (never an editable form).
@@ -41,12 +48,13 @@ export interface SingletonViewProps {
  * a denied envelope, which `ItemFormClient` surfaces as an error.
  */
 export async function SingletonView({
-  context,
+  context: appContext,
   config,
   listKey,
   basePath = '/admin',
   serverAction,
 }: SingletonViewProps) {
+  const context = engineContextOf(appContext)
   const listConfig = config.lists[listKey]
   const urlKey = getUrlKey(listKey)
 
@@ -65,7 +73,7 @@ export async function SingletonView({
   // `get()` means and how the branches below disambiguate it.
   let record: Record<string, unknown> | null = null
   try {
-    const delegate = context.db[getDbKey(listKey)]
+    const delegate = context.db[listKey]
     if (delegate?.get) {
       record = await delegate.get()
     }
@@ -121,7 +129,7 @@ export async function SingletonView({
       serializableFields: createFields,
       initialData: createInitialData,
       relationshipData: createRelationshipData,
-    } = await prepareItemForm(context, config, listConfig, {})
+    } = await prepareItemForm(context, config, listKey, listConfig, {})
 
     return (
       <div className="p-8 max-w-4xl">
@@ -154,6 +162,7 @@ export async function SingletonView({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     listConfig,
     record,
   )

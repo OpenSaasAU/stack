@@ -1,7 +1,25 @@
 import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
-import { serializeFieldConfigs, type SerializableFieldConfig } from './serializeFieldConfig.js'
+import {
+  markToManyEdgeWrites,
+  markUnwritableRelationships,
+  serializeFieldConfigs,
+  type SerializableFieldConfig,
+} from './serializeFieldConfig.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
+import { applyClientValueTransforms } from './clientValueTransforms.js'
+
+/**
+ * One record's id as the string the client form carries. An `int autoincrement`
+ * list's id arrives as a number (ADR-0048); the server action's id boundary
+ * parses each string back to its own list's key type.
+ */
+function readId(record: unknown): string | null {
+  if (!record || typeof record !== 'object' || !('id' in record)) return null
+  const id: unknown = record.id
+  if (typeof id === 'string') return id
+  return typeof id === 'number' ? String(id) : null
+}
 
 /**
  * Extract the currently-selected id(s) from a hydrated relationship value so
@@ -10,13 +28,10 @@ import { jsonSafeClone } from './jsonSafeClone.js'
  */
 function extractSelectedIds(value: unknown, many: boolean | undefined): string[] {
   if (many) {
-    return Array.isArray(value)
-      ? value
-          .map((item) => (item as { id?: string })?.id)
-          .filter((id): id is string => typeof id === 'string')
-      : []
+    return Array.isArray(value) ? value.map(readId).filter((id): id is string => id !== null) : []
   }
-  return value && typeof value === 'object' && 'id' in value ? [(value as { id: string }).id] : []
+  const id = readId(value)
+  return id === null ? [] : [id]
 }
 
 /**
@@ -34,30 +49,28 @@ export interface PreparedItemForm {
   relationshipData: Record<string, Array<{ id: string; label: string }>>
 }
 
+/** The relation names an item form's own read reaches, one hop each. */
 export function buildRelationshipInclude(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
-): Record<string, boolean> {
-  const includeRelationships: Record<string, boolean> = {}
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if ((fieldConfig as { type: string }).type === 'relationship') {
-      includeRelationships[fieldName] = true
-    }
-  }
-  return includeRelationships
+): string[] {
+  return Object.entries(listConfig.fields)
+    .filter(([, fieldConfig]) => (fieldConfig as { type: string }).type === 'relationship')
+    .map(([fieldName]) => fieldName)
 }
 
 /**
  * Prepare the serializable props for `ItemFormClient` from an already-fetched
  * record (or an empty object for create).
  *
- * This is shared by `ItemForm` (which fetches via `findUnique`) and
+ * This is shared by `ItemForm` (which fetches through the composed read) and
  * `SingletonView` (which resolves via the singleton `get()`), so the
  * relationship/serialization logic lives in exactly one place.
  */
 export async function prepareItemForm(
-  context: AccessContext<unknown>,
+  context: AccessContext,
   config: OpenSaasConfig,
+  listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
@@ -93,35 +106,27 @@ export async function prepareItemForm(
   }
 
   const serializableFields = serializeFieldConfigs(listConfig.fields)
+  markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
+  markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, readId(itemData))
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     const fieldConfigAny = fieldConfig as {
       type: string
       many?: boolean
-      ui?: Record<string, unknown>
     }
     if (fieldConfigAny.type === 'relationship' && formData[fieldName]) {
       const value = formData[fieldName]
       if (fieldConfigAny.many && Array.isArray(value)) {
-        formData[fieldName] = value.map((item: Record<string, unknown>) => item.id as string)
-      } else if (value && typeof value === 'object' && 'id' in value) {
-        formData[fieldName] = (value as Record<string, unknown>).id as string
+        formData[fieldName] = value.map(readId).filter((id): id is string => id !== null)
+      } else {
+        const id = readId(value)
+        if (id !== null) formData[fieldName] = id
       }
-    }
-
-    if (
-      fieldConfigAny.ui?.valueForClientSerialization &&
-      typeof fieldConfigAny.ui.valueForClientSerialization === 'function'
-    ) {
-      const transformer = fieldConfigAny.ui.valueForClientSerialization as (args: {
-        value: unknown
-      }) => unknown
-      formData[fieldName] = transformer({ value: formData[fieldName] })
     }
   }
 
-  const initialData = jsonSafeClone(formData)
+  const initialData = jsonSafeClone(applyClientValueTransforms(listConfig.fields, formData))
 
   return { serializableFields, initialData, relationshipData }
 }

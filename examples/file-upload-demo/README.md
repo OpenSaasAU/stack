@@ -51,31 +51,25 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 pnpm install
 ```
 
-2. Set up environment (SQLite by default):
+2. Set up environment:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Generate Prisma schema and types:
+3. Generate the Contract module and types:
 
 ```bash
 pnpm generate
 ```
 
-4. Create the database:
-
-```bash
-pnpm db:push
-```
-
-5. Start the development server:
+4. Start the development server:
 
 ```bash
 pnpm dev
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000)
+5. Open [http://localhost:3000](http://localhost:3000)
 
 ## Pages
 
@@ -232,30 +226,49 @@ attachment: file({
 })
 ```
 
-For advanced validation (virus scanning, quota checks), add custom logic in field hooks:
+For advanced validation (virus scanning, quota checks), add custom logic in
+field hooks. A field hook reads its own value out of `resolvedData[fieldKey]` —
+there is no `inputValue` argument — and `context.session` is nullable:
 
 ```typescript
 attachment: file({
   storage: 'documents',
   hooks: {
-    resolveInput: async ({ inputValue, context }) => {
-      if (inputValue instanceof File) {
+    // A field `resolveInput` receives the whole resolved payload and reads its
+    // own value out of it under `fieldKey` — there is no `inputValue` argument.
+    resolveInput: async ({ resolvedData, fieldKey, context }) => {
+      const incoming = resolvedData[fieldKey]
+
+      if (incoming instanceof File) {
         // Custom validation
-        const userQuota = await checkUserQuota(context.session.userId)
+        const userQuota = await checkUserQuota(context.session?.userId)
         if (userQuota.exceeded) {
           throw new Error('Storage quota exceeded')
         }
 
         // Virus scanning
-        const buffer = await inputValue.arrayBuffer()
+        const buffer = await incoming.arrayBuffer()
         await scanFileForViruses(Buffer.from(buffer))
       }
 
       // Continue with default upload behavior
-      return inputValue
+      return incoming
     },
   },
 })
+```
+
+## Testing
+
+`tests/upload-round-trip.test.ts` proves the round-trip: it stands up a real
+Dev database with `createTestContext` from `@opensaas/stack-core/testing`,
+passes it this package's storage surface with `createStorageUtils`, then
+uploads a real PNG and a real PDF through the secured context and reads both
+the stored metadata and the bytes on disk back. No database of your own is
+needed.
+
+```bash
+pnpm test
 ```
 
 ## Learn More

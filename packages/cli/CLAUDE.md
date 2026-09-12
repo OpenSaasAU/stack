@@ -1,63 +1,82 @@
 # @opensaas/stack-cli
 
-Command-line tools for OpenSaas Stack providing code generation and development utilities.
+Command-line tools for OpenSaas Stack: code generation, the dev loop, and migration utilities.
 
 ## Purpose
 
-Converts `opensaas.config.ts` into Prisma schema and TypeScript types. Provides watch mode for automatic regeneration during development.
+Turns `opensaas.config.ts` into the database contract and the generated bundle, and runs the development loop that keeps a project's database reconciled with it.
 
 ## Key Files & Commands
 
 ### Binary (`bin/opensaas.js`)
 
-Entry point exposing `opensaas` CLI command
+Entry point exposing the `opensaas` CLI command
 
 ### Commands (`src/commands/`)
 
 - `generate.ts` - One-time generation
-- `dev.ts` - Watch mode with automatic regeneration
+- `dev.ts` - The dev loop: dev database, staged generation, reconcile, app spawn
+- `db.ts` - `opensaas db update`, the promoting wrapper the loop's `pnpm db:update` points at
 - `init.ts` - Project scaffolding (delegates to `create-opensaas-app`)
-- `mcp.ts` - MCP server management (`mcp install`/`uninstall`/`start`)
+- `mcp.ts` - Dev-assistant MCP server management (`mcp install`/`uninstall`/`start`)
 - `migrate.ts` - Migration from Prisma/KeystoneJS/Next.js projects
 
 ### Generators (`src/generator/`)
 
-- `prisma.ts` - Generates `prisma/schema.prisma` from config
-- `prisma-config.ts` - Generates `prisma.config.ts` (Prisma CLI configuration)
-- `types.ts` - Generates `.opensaas/types.ts` TypeScript types
-- `context.ts` - Generates `.opensaas/context.ts` context factory
-- `lists.ts` - Generates the `.opensaas/lists` type namespace
-- Supporting modules: `extension.ts`, `node-build.ts`, `output-paths.ts`, `plugin-types.ts`
+- `contract-module.ts` - Renders `prisma/contract.ts`, the **Contract module**
+- `prisma-config.ts` - Renders `prisma.config.ts` (Prisma's own CLI configuration)
+- `extension-spaces.ts` - Seeds each declared extension pack's contract space under `migrations/`
+- `contract-emit.ts` - Shells to `prisma contract emit` for `contract.json` and `contract.d.ts`
+- `types.ts` - Renders `.opensaas/types.ts`
+- `lists.ts` - Renders `.opensaas/lists.ts`, the `Lists` type namespace
+- `context.ts` - Renders `.opensaas/context.ts`, the context factory
+- `tables.ts` - Renders `.opensaas/tables.ts`, the dependency-set table and constraint map
+- `plugin-types.ts` - Renders `.opensaas/plugin-types.ts`
+- Supporting modules: `output-paths.ts`, `config-load.ts`, `extension.ts`, `prisma-cli.ts`
+
+**No schema language is produced at any point.** Core derives the contract (`deriveContract` in `@opensaas/stack-core/contract`); this package renders it as TypeScript and hands it to Prisma's own emitter (ADR-0040).
 
 ## Architecture
 
 ### Config Loading
 
-Uses `jiti` to execute TypeScript config:
+Uses `jiti` to execute the TypeScript config:
 
 ```typescript
 const jiti = createJiti(import.meta.url)
 const config = jiti('./opensaas.config.ts').default
 ```
 
+The config's default export may be a `Promise` when plugins are present, so every consumer resolves it rather than reading it directly.
+
 ### Generator Pipeline
 
 1. Load config from `opensaas.config.ts`
-2. Generate Prisma schema → `prisma/schema.prisma`
-3. Generate Prisma CLI config → `prisma.config.ts`
-4. Generate TypeScript types → `.opensaas/types.ts`
-5. Generate context factory → `.opensaas/context.ts`
+2. Run every plugin's `beforeGenerate` hook
+3. Validate — field configs, `needs` declarations, relations, the database config and its extension packs — refusing by name before anything is written
+4. Derive the contract in core, and render the **Contract module** to `prisma/contract.ts`
+5. Render `prisma.config.ts`
+6. Render the `.opensaas/` bundle: `types.ts`, `lists.ts`, `tables.ts`, `context.ts`, `plugin-types.ts`
+7. Run every plugin's `afterGenerate` hook, so a plugin's rewrite is what the artifacts describe
+8. Seed each declared pack's **extension contract space** under `migrations/`
+9. Shell to `prisma contract emit` for `prisma/contract.json` and `prisma/contract.d.ts`
+10. Check the emitted relation graph against the config-derived one, and fail when they disagree
 
 (No MCP files are generated — MCP tools are derived at request time by `@opensaas/stack-core/mcp`.)
 
-### Watch Mode
+### The dev loop (`src/commands/dev.ts`)
 
-Uses `chokidar` to watch `opensaas.config.ts`:
+`opensaas dev` is a foreground sidecar: no daemon, no registry, no reset command.
 
-```typescript
-const watcher = chokidar.watch('opensaas.config.ts')
-watcher.on('change', () => runGenerator())
-```
+1. Start the **Dev database** — core's `startDevDatabase`, an in-process PGlite behind a socket on a free loopback port, with its state file under the bundle directory
+2. Generate
+3. Run Prisma's reconcile against the database
+4. Spawn the app (`next dev` by default, `opensaas dev -- <command>` otherwise) with **no `DATABASE_URL` injected**, stdin closed
+5. Watch `opensaas.config.ts`
+
+On a config change, generation is **staged behind reconciliation**: it emits to a staging directory, plans the update, and promotes the contract and bundle only once the plan applies. A destructive plan stops at Prisma's consent prompt on boot; mid-session it leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving. The loop restarts the app child after a destructive promote, because a cached client survives HMR.
+
+Reset the Dev database by deleting `.opensaas/dev-db/`. Setting `DATABASE_URL` is the **Database escape**: no Dev database starts (ADR-0063).
 
 ## CLI Usage
 
@@ -67,122 +86,144 @@ watcher.on('change', () => runGenerator())
 opensaas generate
 ```
 
-Outputs:
-
-- `✅ Prisma schema generated`
-- `✅ TypeScript types generated`
-- Next steps (run `prisma generate` and `db push`)
+Outputs, in order: the Contract module, `prisma.config.ts`, the TypeScript types, the `Lists` namespace, the dependency-set table and constraint map, the context factory, the plugin types, each declared pack's migration space, and finally the two emitted contract artifacts.
 
 ### Dev Command
 
 ```bash
+# Start the dev database, generate, reconcile and run `next dev`
 opensaas dev
+
+# Run something else in place of `next dev`
+opensaas dev -- tsx seed.ts
 ```
 
-Outputs:
+### Db Update Command
 
-- Initial generation
-- `👀 Watching opensaas.config.ts for changes...`
-- Auto-regenerates on file changes
+```bash
+opensaas db update
+opensaas db update --confirm postgres   # consent for a destructive change
+```
+
+Runs **through the loop** rather than beside it: the loop holds the database, the staged generation and the app child, so this command opens no connection of its own and errors when nothing is listening. Prisma asks for the database name as its consent token; the Dev database's is `postgres`.
 
 ## Generated Files
 
-### Prisma Schema (`prisma/schema.prisma`)
+### Contract Module (`prisma/contract.ts`)
 
-```prisma
-datasource db {
-  provider = "sqlite"
-}
+The single declared source of truth for the database's shape. It is **standalone and fully literal** — it imports nothing from `opensaas.config.ts` — so the contract builder's purity rules hold by construction rather than by discipline.
 
-generator client {
-  provider = "prisma-client"
-}
+### Contract Artifacts (`prisma/contract.json`, `prisma/contract.d.ts`)
 
-model Post {
-  id String @id @default(cuid())
-  title String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
-
-**Note:** Prisma 7 no longer includes `url` in the schema. The database URL is passed to PrismaClient via adapters in the `prismaClientConstructor` function.
+Written by `prisma contract emit` from the module. Both are committed, diffable and byte-deterministic. The `.d.ts` carries the read and write field shapes, per-field nullability and codec, the domain-to-column mapping and the relation graph with cardinality, so nothing downstream re-derives them. CI re-runs generation and fails on a dirty tree covering both, plus each pack's migration space.
 
 ### Prisma CLI Config (`prisma.config.ts`)
 
 ```typescript
-import 'dotenv/config'
-import { defineConfig } from 'prisma/config'
+// ⚠️  GENERATED FILE - DO NOT EDIT
+// Generated by 'opensaas generate' from opensaas.config.ts.
 
-// Read an environment variable, returning undefined when unset so the
-// `??` fallback below can take effect. (The `env` helper from
-// 'prisma/config' throws on missing variables, which would break the
-// fallback.)
-const env = (name: string): string | undefined => process.env[name]
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { definePrismaConfig } from 'prisma/config'
+import { defineConfig } from '@prisma/orm-postgres/config'
+import { findDatabaseUrl } from '@opensaas/stack-core'
+import pgvector from '@prisma/orm-extension-pgvector/control'
 
-export default defineConfig({
-  schema: 'prisma',
-  datasource: {
-    url: env('DIRECT_DATABASE_URL') ?? env('DATABASE_URL'),
-  },
+// The Prisma CLI evaluates this file without loading a .env of its own, and
+// `process.loadEnvFile` throws when the file is absent.
+const envFile = join(import.meta.dirname, '.env')
+if (existsSync(envFile)) process.loadEnvFile(envFile)
+
+export default definePrismaConfig({
+  orm: defineConfig({
+    contract: './prisma/contract.ts',
+    output: './prisma',
+    extensions: [pgvector],
+    db: { connection: findDatabaseUrl() },
+  }),
 })
 ```
 
-**Purpose:** Prisma 7 requires this file at the project root for CLI commands like `prisma db push`, `prisma migrate dev`, and `prisma migrate deploy` to work. This is separate from the runtime configuration.
-
 **Key points:**
 
-- Generated automatically by `opensaas generate`
-- Requires `dotenv` package to load `.env` files
-- Datasource URL prefers `DIRECT_DATABASE_URL`, falling back to `DATABASE_URL`. On serverless Postgres the app connects through a pooled `DATABASE_URL` while migrations use a direct connection via `DIRECT_DATABASE_URL`; local SQLite is untouched because the fallback resolves to `DATABASE_URL` (see ADR-0003).
-- Only used by Prisma CLI commands, not by application runtime
+- Generated automatically by `opensaas generate`, at the project root, never relocated
+- It imports each declared pack's `/control` descriptor and **never the app config**: a config import would drag the app's plugins, hooks and environment reads into every CLI invocation
+- `findDatabaseUrl()` is core's one discovery rule — `DATABASE_URL` if set, else the running Dev database's state file
+- Used by Prisma's CLI, not by the application runtime
 
 ### Types (`.opensaas/types.ts`)
 
+The file declares the **contract remainder** — the per-list facts the emitted Contract artifacts cannot carry — and instantiates the generics `@opensaas/stack-core` exports, keyed by the emitted `Contract`. Scalar types, nullability, relation arity, foreign-key ownership and column defaults are read from the contract and are never written here (ADR-0052).
+
 ```typescript
-export type Post = {
-  id: string
-  title: string
-  createdAt: Date
-  updatedAt: Date
+import type { Contract } from '../prisma/contract.d.js'
+import type { CreateInput, Row, SecuredList, UpdateInput } from '@opensaas/stack-core'
+
+export type Remainder = {
+  Post: {
+    computed: { excerpt: string }
+    output: Record<never, never>
+    input: Record<never, never>
+    needs: { excerpt: 'content' }
+  }
 }
 
-export type PostCreateInput = {
-  title: string
-}
-
-export type PostUpdateInput = {
-  title?: string
-}
+export interface Post extends Row<Contract, Remainder, 'Post'> {}
+export interface PostCreateInput extends CreateInput<Contract, Remainder, 'Post'> {}
+export interface PostUpdateInput extends UpdateInput<Contract, Remainder, 'Post'> {}
+export interface PostList extends SecuredList<Contract, Remainder, 'Post'> {}
+export interface PostTxList extends SecuredList<Contract, Remainder, 'Post', true> {}
 ```
+
+`PostTxList` is the transaction-bound face — the one difference is that it carries `forUpdate()` — which is what makes a row lock taken outside a transaction a compile error.
+
+The type-only import of the emitted declarations is spelled `contract.d.js`,
+not `contract.d.ts`: the Contract module (`prisma/contract.ts`) sits in the same
+directory and TypeScript resolves `./contract.d.ts` to **it**. The import is
+erased, so no loader ever sees the specifier.
 
 ### Context Factory (`.opensaas/context.ts`)
 
+One ORM client per process, constructed from the committed `contract.json` rather than from a generated client tree:
+
 ```typescript
-import { createContext } from '@opensaas/stack-core'
-import { PrismaClient } from '@prisma/client'
-import config from '../opensaas.config'
+import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
+import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+import { originTripwire } from '@opensaas/stack-core/origin'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import postgres from '@prisma/orm-postgres/runtime'
+import type { Contract } from '../prisma/contract.d.js'
+import contractJson from '../prisma/contract.json' with { type: 'json' }
 
-// Prisma 7 requires adapters - PrismaClient created via prismaClientConstructor
-const prisma = config.db.prismaClientConstructor(PrismaClient)
-
-export function getContext(session?: any) {
-  return createContext(config, prisma, session)
+function createClient(config: OpenSaasConfig) {
+  return postgres<Contract>({
+    contractJson,
+    extensions: [],
+    middleware: [originTripwire],
+    ...resolveRuntimeConnection(config.db.client),
+  })
 }
 ```
 
-**Note:** The actual generated context is more sophisticated with async config resolution and singleton management, but this shows the core pattern.
+The tripwire goes in unconditionally, never as a configured option: a statement executed by neither surface is refused before it compiles (ADR-0059). `resolveRuntimeConnection` calls `db.client.pg` and reads the URL lookup, so it runs once per process under the client singleton and never on a config load — nothing that only reads the config opens a connection.
+
+The real file additionally carries the config-promise resolution, the `globalThis` singleton, the emitted tables, `getContext(session?)` and `rawOpensaasContext`.
+
+### The Generated Bundle
+
+Every file in `.opensaas/` is **erasable TypeScript by contract**, checked under `erasableSyntaxOnly` and `verbatimModuleSyntax` in this package's tests: relative imports carry explicit `.ts` extensions, value imports never go through the host's path aliases, and plain Node loads the bundle by type-stripping with no compiled twin (ADR-0054).
 
 ## Integration Points
 
 ### With @opensaas/stack-core
 
-- Imports generator functions from core
-- Delegates Prisma/TS generation to field methods via core
+- Core derives the contract and owns the validation refusals; this package renders and writes
+- Field builders describe their own contract contribution, so no generator switches on a field type
 
 ### With @opensaas/stack-auth
 
-- Context factory supports custom `prismaClientConstructor` for Better-auth session provider
+- The auth plugin's `beforeGenerate` contributes its derived lists and any namespaces they need, and generation picks them up like any other config content
 
 ### With MCP (Model Context Protocol)
 
@@ -191,24 +232,18 @@ export function getContext(session?: any) {
 
 ### With Prisma
 
-Workflow:
-
-1. `opensaas generate` → creates `prisma/schema.prisma` and `prisma.config.ts`
-2. `npx prisma generate` → creates Prisma Client
-3. `npx prisma db push` → pushes schema to database (uses `prisma.config.ts` for datasource URL)
+The CLI shells to Prisma for two things and nothing else: `contract emit`, for the committed artifacts, and the reconcile and migrate commands the dev loop and a deployment run.
 
 ## Common Patterns
 
 ### Development Workflow
 
 ```bash
-# Terminal 1: Watch and regenerate
+# One terminal. The loop starts the database, generates, reconciles and runs the app.
 opensaas dev
 
-# Terminal 2: Run Next.js
-pnpm next dev
-
-# Edit opensaas.config.ts - auto regenerates!
+# Edit opensaas.config.ts — generation is staged behind reconciliation and
+# promoted when the plan applies.
 ```
 
 ### Package.json Scripts
@@ -216,10 +251,10 @@ pnpm next dev
 ```json
 {
   "scripts": {
+    "dev": "opensaas dev",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio",
-    "dev": "opensaas dev"
+    "db:update": "opensaas db update",
+    "build": "pnpm generate && next build"
   }
 }
 ```
@@ -229,69 +264,18 @@ pnpm next dev
 ```yaml
 - run: pnpm install
 - run: opensaas generate
-- run: npx prisma generate
+- run: git diff --exit-code # the contract artifacts and migration spaces are committed
 - run: pnpm test
 ```
-
-### Custom Prisma Client (Required in Prisma 7)
-
-**All configs must provide `prismaClientConstructor`** with a database adapter:
-
-```typescript
-// SQLite example
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
-config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
-})
-```
-
-```typescript
-// PostgreSQL example
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
-
-config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
-  },
-})
-```
-
-Generated context always uses the constructor:
-
-```typescript
-// .opensaas/context.ts
-const prisma = config.db.prismaClientConstructor(PrismaClient)
-```
-
-## Type Patching
-
-CLI patches Prisma types for relationship fields to handle access control:
-
-- Relationships can be `null` when access denied
-- Adds `| null` to relationship field types in generated types
 
 ## Error Handling
 
 Common errors:
 
-- Config not found → check file exists in CWD
-- TypeScript errors in config → fix syntax in `opensaas.config.ts`
-- Permission denied → ensure write access to `prisma/` and `.opensaas/`
+- Config not found → check the file exists in the working directory
+- TypeScript errors in the config → fix the syntax in `opensaas.config.ts`
+- Permission denied → ensure write access to `prisma/`, `migrations/` and `.opensaas/`
+- A generate-time refusal → the message names the list, the entry and the fix; it is a config error, not a CLI bug
 
 ## Output Styling
 
@@ -660,14 +644,13 @@ try {
 1. User runs `opensaas migrate --with-ai`
 2. Claude generates `opensaas.config.ts`
 3. User runs `opensaas generate` (existing command)
-4. User runs `npx prisma db push` (Prisma)
-5. User runs `pnpm dev` (Next.js)
+4. User runs `pnpm dev`, which starts the database, reconciles it and runs the app
 
 **Generated files work with existing commands:**
 
 - `opensaas.config.ts` → Input for `generate` command
+- `prisma/contract.ts` and its emitted artifacts → Generated by `generate`
 - `.opensaas/context.ts` → Generated by `generate`
-- `prisma/schema.prisma` → Generated by `generate`
 
 ### Development Notes
 

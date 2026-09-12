@@ -39,7 +39,7 @@ const context = {
   plugins: {},
   _isSudo: false,
   _resolveOutputChain: [],
-} as unknown as AccessContext<unknown>
+} as unknown as AccessContext
 
 describe('Navigation active state', () => {
   it('marks the current list link active with aria-current="page"', () => {

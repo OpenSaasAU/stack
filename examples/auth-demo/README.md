@@ -32,18 +32,13 @@ Generate a secret key and add it to `.env`:
 openssl rand -base64 32
 ```
 
-### 3. Generate Schema and Create Database
-
-```bash
-pnpm generate  # Generates Prisma schema with auth tables
-pnpm db:push   # Creates SQLite database
-```
-
-### 4. Run Development Server
+### 3. Run Development Server
 
 ```bash
 pnpm dev
 ```
+
+`opensaas dev` starts the Dev database for this project, generates the schema and types (including the auth tables), reconciles the database with them, and then runs `next dev`.
 
 Open [http://localhost:3003/sign-up](http://localhost:3003/sign-up) to create an account!
 
@@ -58,9 +53,9 @@ examples/auth-demo/
 │   ├── forgot-password/page.tsx     # Password reset
 │   └── admin/[[...admin]]/page.tsx  # Admin UI (protected)
 ├── lib/
-│   ├── auth.ts                      # Auth server instance
-│   └── auth-client.ts               # Auth client for React
-├── opensaas.config.ts               # Config with withAuth()
+│   ├── auth.ts                      # Auth server instance and session lookup
+│   └── actions/                     # Auth, post and user server actions
+├── opensaas.config.ts               # Config with authPlugin()
 └── .env                             # Environment variables
 ```
 
@@ -87,10 +82,12 @@ examples/auth-demo/
 The `internalNotes` field on Post:
 
 - **Read**: Only the author can see
-- **Create**: Only the author can set
+- **Create**: Must be signed in — there is no `item` yet on create, and the
+  author is whoever is creating the post
 - **Update**: Only the author can modify
 
-This demonstrates field-level access control - the field will be filtered out for non-authors.
+This demonstrates field-level access control - the field is stripped from the
+row a non-author reads, rather than the read failing.
 
 ## Setup
 
@@ -113,13 +110,15 @@ cd ../..
 ### 2. Configure Environment
 
 ```bash
-cd examples/blog
+cd examples/auth-demo
 cp .env.example .env
 ```
 
-The example uses SQLite by default for simplicity. The database file will be created at `dev.db`.
+Set `BETTER_AUTH_SECRET` to something of your own (`openssl rand -base64 32`).
 
-### 3. Generate Schema and Types
+`DATABASE_URL` is left unset, so `pnpm dev` runs the Dev database for this project.
+
+### 3. Generate the Contract and Types
 
 ```bash
 pnpm generate
@@ -127,96 +126,40 @@ pnpm generate
 
 This reads `opensaas.config.ts` and generates:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
+- `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types for your models and context
 
-### 4. Create Database
+`pnpm dev` runs this for you, and reconciles the database with what it emits.
+Commit everything but `.opensaas/`, which is regenerated.
+
+### 4. Run the Development Server
 
 ```bash
-pnpm db:push
+pnpm dev
 ```
 
-This creates the SQLite database and tables.
+Then sign up at [http://localhost:3003/sign-up](http://localhost:3003/sign-up).
 
-### 5. Generate Prisma Client
+## Seeing Access Control Work
 
-```bash
-npx prisma generate
-```
+Sign up, then sign in, and the rules in `opensaas.config.ts` are visible in the
+admin at [http://localhost:3003/admin](http://localhost:3003/admin). The admin
+page refuses an anonymous visitor outright — it renders "Access Denied" instead
+of the UI — so what it shows you is the signed-in half of the rules:
 
-## Testing Access Control
+- **Signed in, not the author**: the post is readable, `internalNotes` is
+  stripped from the row rather than the read failing, and update and delete
+  return `null` — denied and not-found are deliberately indistinguishable.
+- **The author**: reads and writes everything on their own posts, including
+  `internalNotes`.
+- **Session, Account and Verification** ship closed (ADR-0013), which is why
+  they list as empty in the admin even to a signed-in user.
 
-Create a test file to see access control in action:
-
-```typescript
-// test.ts
-import { getContext, getContextWithUser } from './lib/context'
-import { prisma } from './lib/context'
-
-async function test() {
-  // Create a user directly (bypassing access control for setup)
-  const user = await prisma.user.create({
-    data: {
-      name: 'Alice',
-      email: 'alice@example.com',
-      password: 'hashed_password',
-    },
-  })
-
-  // Get context as Alice
-  const contextAlice = await getContextWithUser(user.id)
-
-  // Create a post as Alice
-  const post = await contextAlice.db.post.create({
-    data: {
-      title: 'My First Post',
-      slug: 'my-first-post',
-      content: 'Hello world!',
-      internalNotes: 'TODO: Add images',
-      author: { connect: { id: user.id } },
-    },
-  })
-
-  console.log('Post created:', post)
-  console.log('Internal notes visible to author:', post?.internalNotes)
-
-  // Try to read as anonymous user
-  const contextAnon = await getContext()
-  const postAnon = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (draft):', postAnon) // null
-
-  // Publish the post
-  await contextAlice.db.post.update({
-    where: { id: post!.id },
-    data: { status: 'published' },
-  })
-
-  // Now it's visible to anonymous users
-  const postAnonPublished = await contextAnon.db.post.findUnique({
-    where: { id: post!.id },
-  })
-
-  console.log('Post visible to anon (published):', postAnonPublished?.title)
-  console.log('Internal notes hidden from anon:', postAnonPublished?.internalNotes) // undefined
-
-  // Cleanup
-  await prisma.post.deleteMany()
-  await prisma.user.deleteMany()
-}
-
-test()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect())
-```
-
-Run with:
-
-```bash
-npx tsx test.ts
-```
+The anonymous rules — only published posts readable, `internalNotes` never
+readable, nothing writable — are exercised through the server actions rather
+than the admin. `examples/blog` carries a runnable suite over the same rules
+(`pnpm --filter opensaas-blog-example test`).
 
 ## Example Server Actions
 
@@ -243,7 +186,7 @@ const result = await updatePost(userId, postId, {
   title: 'Updated Title',
 })
 
-// Returns null if user is not the author (silent failure)
+// `success: false` if the user is not the author (silent failure)
 ```
 
 ### Publish a Post
@@ -267,15 +210,19 @@ const posts = await getPublishedPosts()
 ## File Structure
 
 ```
-examples/blog/
+examples/auth-demo/
 ├── opensaas.config.ts      # Schema definition with access control
 ├── lib/
-│   ├── context.ts          # Context creation helper
+│   ├── auth.ts             # Better-auth server instance and session lookup
 │   └── actions/
+│       ├── auth.ts         # Sign-in/sign-up/password-reset server actions
 │       ├── posts.ts        # Post CRUD operations
 │       └── users.ts        # User CRUD operations
+├── types/session.d.ts      # Session shape the access rules read
 ├── prisma/
-│   └── schema.prisma       # Generated Prisma schema
+│   ├── contract.ts         # Generated Contract module
+│   ├── contract.json       # Emitted contract artifact
+│   └── contract.d.ts       # Emitted contract types
 ├── .opensaas/
 │   └── types.ts            # Generated TypeScript types
 └── package.json
@@ -286,7 +233,7 @@ examples/blog/
 ### 1. Access Control Helpers
 
 ```typescript
-const isSignedIn: AccessControl = ({ session }) => {
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
   return !!session
 }
 
@@ -297,6 +244,9 @@ const isAuthor: AccessControl = ({ session }) => {
   }
 }
 ```
+
+The session shape they read is declared in `types/session.d.ts`, which augments
+`Session` from `@opensaas/stack-core`.
 
 ### 2. Operation-Level Access
 
@@ -318,20 +268,30 @@ access: {
 
 ### 3. Field-Level Access
 
+Field access is a per-field visibility decision, so it cannot honour the row
+filter `isAuthor` returns — the per-field rules compare `item.authorId`
+directly and answer a **boolean** per fetched item:
+
 ```typescript
 internalNotes: text({
   access: {
-    read: isAuthor,
-    create: isAuthor,
-    update: isAuthor,
+    read: ({ session, item }) => !!session && session.userId === item!.authorId,
+    create: isSignedIn,
+    update: ({ session, item }) => !!session && session.userId === item!.authorId,
   },
 })
 ```
 
+The filter-returning `isAuthor` above is not assignable here. `FieldAccess`
+from `@opensaas/stack-core` types the three slots (`read`, `create`, `update`)
+as boolean-returning, so reusing `isAuthor` is a compile error and, untyped, an
+`InvalidFieldAccessResultError` at runtime. `create` is `isSignedIn` because
+there is no `item` yet on create — the author is whoever is creating the post.
+
 ### 4. Silent Failures
 
 ```typescript
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
@@ -346,22 +306,23 @@ if (!post) {
 ## Next Steps
 
 - Add hooks for auto-setting timestamps
-- Integrate with a real authentication system (better-auth, NextAuth, Clerk)
+- Add OAuth providers (the `.env.example` carries commented GitHub and Google slots)
 - Add a Next.js UI to display posts
 - Implement pagination and filtering
 - Add more field types (images, rich text, etc.)
 
 ## Database Management
 
-View your data with Prisma Studio:
+Prisma 8 ships no Studio, so browse the data with any Postgres client
+pointed at the connection string `pnpm dev` prints on startup (or at your
+own `DATABASE_URL`):
 
 ```bash
-pnpm db:studio
+psql "$DATABASE_URL"
 ```
 
-Reset the database:
+Reset the database (stop `pnpm dev` first — the data directory is open while it runs):
 
 ```bash
-rm dev.db
-pnpm db:push
+rm -rf .opensaas/dev-db
 ```

@@ -10,8 +10,12 @@ function mockTextField(): BaseFieldConfig<any> {
     type: 'text',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getZodSchema: () => null as any,
-    getPrismaType: () => ({ type: 'String', modifiers: '' }),
-    getTypeScriptType: () => ({ type: 'string', optional: false }),
+    getContractField: (fieldName: string) => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: false,
+    }),
   }
 }
 
@@ -22,8 +26,7 @@ describe('searchable() field wrapper', () => {
 
     expect(wrapped.type).toBe('text')
     expect(wrapped.getZodSchema).toBe(field.getZodSchema)
-    expect(wrapped.getPrismaType).toBe(field.getPrismaType)
-    expect(wrapped.getTypeScriptType).toBe(field.getTypeScriptType)
+    expect(wrapped.getContractField).toBe(field.getContractField)
   })
 
   it('should attach _searchable metadata', () => {

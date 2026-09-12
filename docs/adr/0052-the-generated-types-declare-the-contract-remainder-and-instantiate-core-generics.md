@@ -151,16 +151,21 @@ function has no expressible spelling and must write
 This record's own keying is what closes it. `TypeInfo` is the config-facing
 seam, so it carries the app's `DB` alongside `item`, `output`, `inputs` and
 `fields`, and core's generic hook types read `context` off it — a hook's
-`context` is the same `StackContext<DB, S, PluginServices>` the generated
-`Context` instantiates, not a widened one. The consequence "Core gains the
-generics and loses `any`" already deletes `PrismaClientLike` and
-`AccessControlledDB`'s structural probing; this says the hook args must be
-keyed at the same time rather than left reading a deleted default.
+`context` is keyed to the same `DB` the generated `Context` instantiates, not
+widened. The consequence "Core gains the generics and loses `any`" already
+deletes `PrismaClientLike` and `AccessControlledDB`'s structural probing; this
+says the hook args must be keyed at the same time rather than left reading a
+deleted default.
 
-Two facts about the boundary hold. `beforeTransaction` / `afterTransaction`
-keep the plain base-client-bound context of ADR-0028, and a field
-`resolveOutput` keeps the plain context type of ADR-0066 — both are keyed to
-the same `DB`, and neither gains `sudo`/`withSession`/`transaction` here.
+What a hook's context is keyed to is settled here; what it _carries_ is not.
+Under this record every hook — `resolveInput`, `validate`,
+`beforeOperation`, `afterOperation` and a field `resolveOutput` — receives
+`StackBaseContext<DB, S, PluginServices>`, emitted per app as `BaseContext`:
+the secured `db`, the session and the ambient plumbing, and nothing that can
+start a transaction or change who is asking. `sudo()`, `withSession()` and
+`transaction()` live on `StackContext` (`Context`), which a server action or
+page component holds. `beforeTransaction` / `afterTransaction` keep the plain
+base-client-bound context of ADR-0028, keyed to the same `DB`.
 
 `main` closes this ahead of the build, threading the client type through
 `TypeInfo` under the pre-contract keying (#1211). That work is not wasted and

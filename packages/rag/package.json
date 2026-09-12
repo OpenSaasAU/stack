@@ -3,6 +3,9 @@
   "version": "0.43.0",
   "description": "RAG and AI embeddings integration for OpenSaas Stack",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -14,13 +17,17 @@
       "types": "./dist/fields/index.d.ts",
       "default": "./dist/fields/index.js"
     },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "default": "./dist/components/index.js"
+    },
+    "./components/register": {
+      "types": "./dist/components/register.d.ts",
+      "default": "./dist/components/register.js"
+    },
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "default": "./dist/providers/index.js"
-    },
-    "./storage": {
-      "types": "./dist/storage/index.d.ts",
-      "default": "./dist/storage/index.js"
     },
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",
@@ -60,10 +67,23 @@
   },
   "peerDependencies": {
     "@opensaas/stack-core": "^0",
-    "openai": "^6.8.0"
+    "@opensaas/stack-ui": "^0",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
+    "openai": "^6.8.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "peerDependenciesMeta": {
+    "@opensaas/stack-ui": {
+      "optional": true
+    },
     "openai": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
@@ -73,12 +93,20 @@
   },
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
+    "@opensaas/stack-ui": "workspace:*",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@vitest/ui": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/ui": "^4.1.11",
     "openai": "^6.32.0",
+    "pg": "^8.22.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

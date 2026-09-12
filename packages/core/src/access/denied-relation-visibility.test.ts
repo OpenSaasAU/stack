@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
-import { emptyDeclaredOnlyTree } from './declared-dependencies.js'
+import { noDependencyAdditions } from './declared-dependencies.js'
 import type { ToOneAccessVisibilityTree } from './access-filter.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
@@ -94,7 +94,7 @@ describe('filterReadableFields — denied relations forced present (issues #974 
       cfg,
       0,
       'Author',
-      emptyDeclaredOnlyTree(),
+      noDependencyAdditions(),
       undefined,
       toOneVisibility,
     )
@@ -117,7 +117,7 @@ describe('filterReadableFields — denied relations forced present (issues #974 
       cfg,
       0,
       'Author',
-      emptyDeclaredOnlyTree(),
+      noDependencyAdditions(),
       undefined,
       toOneVisibility,
     )
@@ -140,7 +140,7 @@ describe('filterReadableFields — denied relations forced present (issues #974 
       cfg,
       0,
       'Term',
-      emptyDeclaredOnlyTree(),
+      noDependencyAdditions(),
       undefined,
       toOneVisibility,
     )
@@ -163,7 +163,7 @@ describe('filterReadableFields — denied relations forced present (issues #974 
       cfg,
       0,
       'Author',
-      emptyDeclaredOnlyTree(),
+      noDependencyAdditions(),
       undefined,
       toOneVisibility,
     )

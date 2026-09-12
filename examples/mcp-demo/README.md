@@ -25,7 +25,7 @@ pnpm install
 cp .env.example .env
 ```
 
-### 3. Generate Schema
+### 3. Generate the Contract and Types
 
 ```bash
 pnpm generate
@@ -33,20 +33,17 @@ pnpm generate
 
 This generates:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the Contract module, with `prisma/contract.json` and `prisma/contract.d.ts` emitted beside it
 - `prisma.config.ts` - Prisma CLI configuration
 - `.opensaas/types.ts` - TypeScript types
 - `.opensaas/context.ts` - Context factory
 
+Commit everything but `.opensaas/`, which is regenerated. `pnpm dev` runs this
+for you, and reconciles the database with what it emits.
+
 (MCP tools are not generated to disk — they are derived from the config at request time by `createMcpHandlers`.)
 
-### 4. Push Schema to Database
-
-```bash
-pnpm db:push
-```
-
-### 5. Start Development Server
+### 4. Start Development Server
 
 ```bash
 pnpm dev
@@ -284,7 +281,7 @@ curl -X POST http://localhost:3000/api/mcp \
          │
          ↓
 ┌─────────────────┐
-│   Prisma DB     │ ← Your Data
+│   Postgres      │ ← Your Data
 └─────────────────┘
 ```
 
@@ -310,10 +307,27 @@ examples/mcp-demo/
     └── context.ts
 ```
 
+## Exercising the Tools
+
+`test-mcp-tools.ts` drives the derived CRUD tools and both custom tools, and
+`pnpm test` runs it:
+
+```bash
+pnpm test
+```
+
+That is `opensaas dev -- tsx test-mcp-tools.ts`, so the Dev database is up and
+reconciled before the script starts and stopped again when it exits. It builds
+the same `createMcpHandlers` this project's route does and posts real JSON-RPC
+at it — tool derivation, argument validation, access control and the writes are
+the real ones. The one substitution is the session provider: over HTTP that is
+better-auth's OAuth, and an access token needs a browser to authorise.
+
 ## Next Steps
 
 1. **Customize Access Control** - Add more granular rules (a sign-in page ships at `app/sign-in/`)
-2. **Seed a Test User** - Run `npx tsx create-user.ts`
+2. **Seed a Test User** - `pnpm seed`, which brings the database up around
+   `create-user.ts` and stops it again
 3. **Add More Custom Tools** - Extend MCP capabilities
 4. **Deploy** - Deploy to production with proper OAuth setup
 

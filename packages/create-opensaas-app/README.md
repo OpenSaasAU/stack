@@ -14,7 +14,11 @@ You'll be prompted for:
 
 - Project name
 - Whether to include authentication (Better-auth)
-- Which database (SQLite by default, or PostgreSQL)
+- Whether to enable AI development tools (MCP server + Claude Code plugin)
+
+There is no database prompt. `postgresql` is the only provider, and `pnpm dev`
+starts a Dev database for you — no connection string to supply before the first
+run.
 
 ### With Project Name
 
@@ -25,25 +29,17 @@ npm create opensaas-app@latest my-app
 ### With Flags
 
 ```bash
-# Basic starter (SQLite — zero setup)
+# Basic starter
 npm create opensaas-app@latest my-app
 
 # With authentication
 npm create opensaas-app@latest my-app --with-auth
-
-# PostgreSQL-ready (pg driver adapter, Postgres .env, migrate scripts)
-npm create opensaas-app@latest my-app --db postgres
-
-# Force SQLite and skip the database prompt
-npm create opensaas-app@latest my-app --db sqlite
 ```
 
-The `--db postgres` flag scaffolds a production-ready PostgreSQL project from the
-start: it emits the `PrismaPg` driver adapter in `opensaas.config.ts`, writes a
-`.env` / `.env.example` with `DATABASE_URL` (pooled) and `DIRECT_DATABASE_URL`
-(direct) placeholders, and keeps the `migrate` / `migrate:deploy` scripts. Set
-your real connection strings in `.env`, then run `pnpm migrate`. Without the
-flag, SQLite remains the zero-setup default.
+The scaffolded project runs on Postgres: `pnpm dev` starts the Dev database for
+it, and `DATABASE_URL` set in `.env` points it at a Postgres of your own instead.
+The generated `db` block in `opensaas.config.ts` carries no connection of its
+own.
 
 ### Using npx
 
@@ -60,7 +56,7 @@ A minimal starter with:
 
 - User + Post models
 - Admin UI at `/admin`
-- SQLite database
+- Postgres, on the Dev database `pnpm dev` runs
 - Access control examples
 - TypeScript + Next.js 16
 
@@ -89,13 +85,14 @@ A fully configured Next.js application with:
 
 ## After Creating
 
+The CLI has already installed dependencies and generated, so:
+
 ```bash
 cd my-app
-pnpm install        # Install dependencies
-pnpm generate       # Generate Prisma schema and types
-pnpm db:push        # Create database
-pnpm dev            # Start development server
+pnpm dev            # Start the Dev database, generate, reconcile, run the app
 ```
+
+With `--no-install`, run `pnpm install` and `pnpm generate` first.
 
 Visit:
 

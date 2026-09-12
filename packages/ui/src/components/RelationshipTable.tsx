@@ -1,7 +1,11 @@
 import {
   getItemLabel,
+  getRelationshipOptions,
   getUrlKey,
+  resolveJunctionEdge,
+  engineContextOf,
   type AccessContext,
+  type AnyStackContext,
   type OpenSaasConfig,
   type FieldConfig,
   type ListConfig,
@@ -15,6 +19,7 @@ import {
 } from '../lib/operationAccess.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
+import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
 import type { ServerActionInput } from '../server/types.js'
 import { RelationshipTableClient, type RemoveMode } from './RelationshipTableClient.js'
 
@@ -42,10 +47,10 @@ export interface RelationshipTableProps {
    * The access-scoped context, used to evaluate the related list's own access
    * (removal, create, and inline-edit gating) — never the parent's.
    */
-  context: AccessContext<unknown>
+  context: AnyStackContext
   /** The list being edited (the parent record's list). */
   parentListKey: string
-  /** The parent record's id — the disconnect target for many-to-many rows. */
+  /** The parent record's id — the link the pre-linked create drawer presets. */
   parentId: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
@@ -60,7 +65,7 @@ export interface RelationshipTableProps {
 async function resolveRemoveMode(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<RemoveMode> {
   if (section.removeAction === 'none' || !relatedListConfig) return null
 
@@ -102,7 +107,7 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
 export async function resolveEditableColumns(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<string[]> {
   if (!relatedListConfig) return []
 
@@ -154,7 +159,7 @@ async function resolveCreateForm(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
   config: OpenSaasConfig,
-  context: AccessContext<unknown>,
+  context: AccessContext,
 ): Promise<CreateFormData | null> {
   if (!section.backReferenceField || !relatedListConfig) return null
 
@@ -175,10 +180,101 @@ async function resolveCreateForm(
   const { serializableFields, relationshipData } = await prepareItemForm(
     context,
     config,
+    section.relatedListKey,
     formListConfig,
     {},
   )
   return { fields: serializableFields, relationshipData }
+}
+
+/**
+ * The serialisable props the "Link existing" control needs, or `null` to hide
+ * it. The two shapes are the two ways an edge is stored, and each names the
+ * list its write is evaluated against (ADR-0050):
+ * - `junction`: a row of an explicit junction list, created under that list's
+ *   create access (#1329);
+ * - `foreignKey`: the related row's own back-reference column, set under the
+ *   related list's update access.
+ */
+export type LinkEdgeData =
+  | {
+      mode: 'junction'
+      junctionListKey: string
+      targetField: string
+      targetListKey: string
+      options: Array<{ id: string; label: string }>
+    }
+  | {
+      mode: 'foreignKey'
+      relatedListKey: string
+      backReferenceField: string
+      targetListKey: string
+      options: Array<{ id: string; label: string }>
+    }
+
+/**
+ * Prepare the add-an-edge control for this table, or `null` when it should not
+ * be offered (#1329).
+ *
+ * The gate is over the list the write is actually evaluated against — the
+ * junction list's `create` for an edge across one, the related list's `update`
+ * for an edge held in its own foreign key — never the parent's. A row-dependent
+ * rule that denies still denies at commit, silently, so the control is a
+ * ceiling and never a promise.
+ *
+ * A to-many whose edges cannot be written at all
+ * ({@link resolveToManyEdgePlan} returning `null` — a list-only `ref`, a
+ * required back-reference) gets no control.
+ *
+ * The far endpoint's options come through the same bounded, access-scoped fetch
+ * the pickers use, so a row the session cannot read is never offered — and
+ * picking one anyway is refused by the create's own reachability query.
+ */
+export async function resolveLinkEdge(
+  section: RelationshipTableSection,
+  config: OpenSaasConfig,
+  parentListKey: string,
+  context: AccessContext,
+): Promise<LinkEdgeData | null> {
+  const edge = resolveJunctionEdge(config, parentListKey, section.fieldName)
+  if (edge) {
+    const junctionListConfig = config.lists[edge.junctionListKey]
+    const allowed = await isOperationPotentiallyAllowed(
+      junctionListConfig?.access?.operation,
+      'create',
+      { session: context.session, context },
+    )
+    if (!allowed) return null
+
+    const options = await getRelationshipOptions(context, config, edge.targetListKey, {})
+    return {
+      mode: 'junction',
+      junctionListKey: edge.junctionListKey,
+      targetField: edge.targetField,
+      targetListKey: edge.targetListKey,
+      options: [...options],
+    }
+  }
+
+  const plan = resolveToManyEdgePlan(config, parentListKey, section.fieldName)
+  if (!plan) return null
+
+  const relatedListConfig = config.lists[plan.relatedListKey]
+  const allowed = await isOperationPotentiallyAllowed(
+    relatedListConfig?.access?.operation,
+    'update',
+    { session: context.session, context },
+  )
+  if (!allowed) return null
+
+  const options = await getRelationshipOptions(context, config, plan.relatedListKey, {})
+  return {
+    mode: 'foreignKey',
+    relatedListKey: plan.relatedListKey,
+    backReferenceField: plan.backReferenceField,
+    targetListKey: plan.relatedListKey,
+    options: [...options],
+  }
 }
 
 /**
@@ -245,16 +341,18 @@ export async function RelationshipTable({
   rows,
   total,
   basePath,
-  context,
+  context: appContext,
   parentListKey,
   parentId,
   serverAction,
 }: RelationshipTableProps) {
+  const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
 
   const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
   const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
+  const linkEdge = await resolveLinkEdge(section, config, parentListKey, context)
   const editableColumns = await resolveEditableColumns(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so
@@ -317,6 +415,8 @@ export async function RelationshipTable({
       parentId={parentId}
       parentListKey={parentListKey}
       serverAction={serverAction}
+      fieldName={section.fieldName}
+      linkEdge={linkEdge ?? undefined}
       canCreate={createForm !== null}
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}

@@ -24,7 +24,13 @@ import {
 import { getAuthTables } from 'better-auth/db'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import type { DBFieldAttribute } from 'better-auth/db'
-import type { ListConfig, FieldConfig, ListIndex, FieldAccess } from '@opensaas/stack-core'
+import type {
+  ListConfig,
+  FieldConfig,
+  ListIndex,
+  FieldAccess,
+  ReferentialAction,
+} from '@opensaas/stack-core'
 import type { RelationshipField } from '@opensaas/stack-core/fields'
 import type { ExtendUserListConfig } from '../lists/index.js'
 import type { AuthAccessConfig, NormalizedAuthModelConfig, NormalizedAuthModels } from './types.js'
@@ -50,6 +56,12 @@ export type DerivedAuthLists = {
   /** The derived list configs, keyed by their derived list keys — base models and plugin tables alike. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   lists: Record<string, ListConfig<any>>
+  /**
+   * Every better-auth model key — base models and plugin tables alike — mapped
+   * to the list key it was derived under. The Auth adapter resolves a model
+   * through this rather than re-deriving the naming rules (ADR-0060).
+   */
+  registry: Record<string, string>
 }
 
 /** better-auth's own fixed base model keys — independent of the stack's list-key overrides (`modelName`). Every other key `getAuthTables` returns is a plugin table. */
@@ -258,16 +270,16 @@ function relationshipFieldName(upstreamFieldKey: string): string {
   return upstreamFieldKey.endsWith('Id') ? upstreamFieldKey.slice(0, -2) : upstreamFieldKey
 }
 
-const ON_DELETE_ACTIONS: Record<string, string> = {
-  cascade: 'Cascade',
-  restrict: 'Restrict',
-  'set null': 'SetNull',
-  'set default': 'SetDefault',
-  'no action': 'NoAction',
+const ON_DELETE_ACTIONS: Record<string, ReferentialAction> = {
+  cascade: 'cascade',
+  restrict: 'restrict',
+  'set null': 'setNull',
+  'set default': 'setDefault',
+  'no action': 'noAction',
 }
 
-function mapOnDelete(action: string): string {
-  return ON_DELETE_ACTIONS[action] ?? 'Cascade'
+function mapOnDelete(action: string): ReferentialAction {
+  return ON_DELETE_ACTIONS[action] ?? 'cascade'
 }
 
 /**
@@ -446,10 +458,7 @@ function buildForeignKeyField(
     db: {
       isNullable: !isRequired,
       foreignKey: { map: columnName },
-      extendPrismaSchema: ({ fkLine, relationLine }) => ({
-        fkLine,
-        relationLine: relationLine.replace('@relation(', `@relation(onDelete: ${onDelete}, `),
-      }),
+      onDelete,
     },
   })
 }
@@ -786,5 +795,5 @@ export function deriveAuthLists(
     })
   }
 
-  return { keys, lists }
+  return { keys, lists, registry: Object.fromEntries(registry) }
 }

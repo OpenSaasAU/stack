@@ -5,14 +5,26 @@ import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
-import type { FieldConfig } from '@opensaas/stack-core'
-import { serializeFieldConfigs } from '../../lib/serializeFieldConfig.js'
+import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  markUnwritableRelationships,
+  serializeFieldConfigs,
+} from '../../lib/serializeFieldConfig.js'
 import { useItemForm, transformInitialData } from '../../lib/useItemForm.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
   fields: Record<string, FieldConfig>
+  /**
+   * The list these `fields` belong to, and the config it lives in. Supply both
+   * to have the non-owning end of a one-to-one rendered read-only with an
+   * explanation, the way the admin item form does — it is not answerable from
+   * a field config alone (ADR-0064). Without them that field renders as a
+   * picker whose selection the engine refuses at save.
+   */
+  listKey?: string
+  config?: OpenSaasConfig
   initialData: TData
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
@@ -41,6 +53,8 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
  */
 export function ItemEditForm<TData = Record<string, unknown>>({
   fields,
+  listKey,
+  config,
   initialData,
   onSubmit,
   onCancel,
@@ -51,7 +65,11 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   classNames,
   basePath = '/admin',
 }: ItemEditFormProps<TData>) {
-  const serializedFields = useMemo(() => serializeFieldConfigs(fields), [fields])
+  const serializedFields = useMemo(() => {
+    const serialized = serializeFieldConfigs(fields)
+    if (listKey && config) markUnwritableRelationships(serialized, listKey, fields, config)
+    return serialized
+  }, [fields, listKey, config])
 
   // Apply valueForClientSerialization transformations to initial data
   const transformedInitialData = useMemo(

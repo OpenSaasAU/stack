@@ -14,6 +14,20 @@ describe('Zod Schema Generation', () => {
       expect(schema).toBeDefined()
     })
 
+    // A third-party field type that ships no `getZodSchema` still has to reach
+    // the write path rather than being dropped from the shape, so its value is
+    // carried through unvalidated instead of silently discarded.
+    it('accepts any value for a field type that declares no schema of its own', () => {
+      const fields: Record<string, FieldConfig> = {
+        exotic: { type: 'exotic' } as FieldConfig,
+      }
+
+      const schema = generateZodSchema(fields, 'create')
+
+      expect(schema.safeParse({ exotic: { anything: true } }).success).toBe(true)
+      expect(schema.safeParse({}).success).toBe(true)
+    })
+
     it('should generate schema for text field with length validation', () => {
       const fields: Record<string, FieldConfig> = {
         title: text({

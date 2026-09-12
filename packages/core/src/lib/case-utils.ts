@@ -29,10 +29,6 @@ export function kebabToCamel(str: string): string {
   return str.replace(/-([a-z])/g, (match, p1) => p1.toUpperCase())
 }
 
-export function getDbKey(listKey: string): string {
-  return pascalToCamel(listKey)
-}
-
 export function getUrlKey(listKey: string): string {
   return pascalToKebab(listKey)
 }

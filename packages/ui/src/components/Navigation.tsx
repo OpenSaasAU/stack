@@ -2,13 +2,13 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { LayoutDashboard, List, Settings } from 'lucide-react'
 import { cn, formatListName } from '../lib/utils.js'
-import { type AccessContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import { type AnyStackContext, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
 import { Badge } from '../primitives/badge.js'
 import { UserMenu } from './UserMenu.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 export interface NavigationProps {
-  context: AccessContext<unknown>
+  context: AnyStackContext
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string

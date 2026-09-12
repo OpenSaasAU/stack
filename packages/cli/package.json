@@ -3,6 +3,9 @@
   "version": "0.43.0",
   "description": "CLI tools for OpenSaas Stack",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -13,10 +16,6 @@
     "./generator": {
       "types": "./dist/generator/index.d.ts",
       "default": "./dist/generator/index.js"
-    },
-    "./generator/prisma": {
-      "types": "./dist/generator/prisma.d.ts",
-      "default": "./dist/generator/prisma.js"
     }
   },
   "bin": {
@@ -52,9 +51,13 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opensaas/stack-core": "workspace:*",
-    "@typescript/native": "npm:typescript@^7.0.2",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8",
     "chalk": "^6.0.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
@@ -62,15 +65,22 @@
     "glob": "^13.0.6",
     "jiti": "^2.7.0",
     "ora": "^9.4.1",
+    "prisma": "8.0.0-rc.12",
     "prompts": "^2.4.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@opensaas/stack-rag": "workspace:*",
+    "@opensaas/stack-storage": "workspace:*",
+    "@opensaas/stack-tiptap": "workspace:*",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.1.1",
     "@types/prompts": "^2.4.9",
-    "@vitest/coverage-v8": "^4.1.10",
-    "vitest": "^4.1.10"
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vitest/coverage-v8": "^4.1.11",
+    "pg": "^8.22.0",
+    "vitest": "^4.1.11"
   }
 }

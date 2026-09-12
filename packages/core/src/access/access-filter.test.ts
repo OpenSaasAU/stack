@@ -1180,7 +1180,7 @@ describe('resolveToOneAccessVisibility (issue #974)', () => {
       session: null,
       _isSudo: false,
       _resolveOutputChain: [],
-      prisma: { owner: { findMany } },
+      ormHandle: { Owner: { findMany } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
     } as any
   }
@@ -1262,7 +1262,7 @@ describe('resolveToOneAccessVisibility (issue #974)', () => {
       session: null,
       _isSudo: false,
       _resolveOutputChain: [],
-      prisma: { owner: { findMany: ownerFindMany } },
+      ormHandle: { Owner: { findMany: ownerFindMany } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
     } as any
     const tree = {

@@ -24,10 +24,12 @@ function rel(ref: string, many = false): FieldConfig {
 // A virtual field computed via resolveOutput.
 function virtualField(
   resolveOutput: (args: { item: Record<string, unknown> }) => unknown,
+  needs: string[] = [],
 ): FieldConfig {
   return {
     type: 'virtual',
     virtual: true,
+    needs,
     hooks: { resolveOutput },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
   } as any as FieldConfig
@@ -61,7 +63,7 @@ function syntheticConfig(): OpenSaasConfig {
             access: { read: () => false },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
           } as any as FieldConfig,
-          label: virtualField(({ item }) => `Bill #${item.amount}`),
+          label: virtualField(({ item }) => `Bill #${item.amount}`, ['amount']),
         },
         access: { operation: { query: () => true } },
       },

@@ -1,14 +1,15 @@
 # Generators
 
-Generators transform your `opensaas.config.ts` into Prisma schemas and TypeScript types.
+Generators transform your `opensaas.config.ts` into the Contract module Prisma builds from, and the TypeScript types and context your app imports.
 
 ## Overview
 
 The generator system reads your declarative config and creates:
 
-1. **Prisma Schema** (`prisma/schema.prisma`)
-2. **TypeScript Types** (`.opensaas/types.ts`)
-3. **Context Factory** (`.opensaas/context.ts`)
+1. **Contract module** (`prisma/contract.ts`), with the artifacts Prisma emits beside it (`prisma/contract.json`, `prisma/contract.d.ts`)
+2. **Prisma CLI configuration** (`prisma.config.ts`)
+3. **TypeScript Types** (`.opensaas/types.ts`)
+4. **Context Factory** (`.opensaas/context.ts`)
 
 ## Running the Generator
 
@@ -25,7 +26,7 @@ pnpm generate
 
 ## What Gets Generated
 
-### 1. Prisma Schema
+### 1. Contract module
 
 From your config:
 
@@ -38,18 +39,12 @@ Post: list({
 })
 ```
 
-The generator creates:
-
-```prisma
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-```
+The generator derives a contract — the `Post` model with a `uuid7` id, a
+non-null `title` column, an `authorId` foreign key with its relation to `User`,
+and `createdAt`/`updatedAt` — renders it as `prisma/contract.ts`, and has
+Prisma emit `prisma/contract.json` and `prisma/contract.d.ts` from it. The
+runtime executes the emitted contract; `pnpm dev` applies it to the Dev
+database and `prisma db migrate` applies committed migrations in production.
 
 ### 2. TypeScript Types
 
@@ -79,124 +74,37 @@ const context = await getContext({ userId: '123' })
 
 ## Generator Architecture
 
-Generators delegate to field builder methods rather than using switch statements. Each field type provides its own generation logic:
+Generators delegate to the field builder rather than using switch statements. Each field type describes what it contributes to the contract, and the generator reads that:
 
 ```typescript
 text({
-  getPrismaType: (fieldName) => {
-    return { type: 'String', modifiers: '?' }
-  },
-  getTypeScriptType: () => {
-    return { type: 'string', optional: true }
-  },
+  getContractField: (fieldName) => ({
+    kind: 'column',
+    name: fieldName,
+    type: { pack: 'pg', type: 'text' },
+    nullable: true,
+  }),
 })
 ```
+
+The column's codec then types the field on both faces, so a field only declares `outputType` when it needs a different one — which a virtual or multi-column field always does, since it has no single column to be typed from.
 
 This allows field types to be fully self-contained and extensible.
 
-## Custom Prisma Client Constructor
+## The database block
 
-To use custom database drivers (e.g., Neon, Turso, PlanetScale), provide a `prismaClientConstructor`:
-
-```typescript
-export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaNeon({
-        connectionString: process.env.DATABASE_URL,
-      })
-      return new PrismaClient({ adapter })
-    },
-  },
-  // ... rest of config
-})
-```
-
-## Extending the Generated Prisma Schema
-
-The `extendPrismaSchema` function allows you to modify the generated Prisma schema before it's written to disk. This is useful for advanced Prisma features not directly supported by the config API.
-
-```typescript
-export default config({
-  db: {
-    provider: 'postgresql',
-    prismaClientConstructor: (PrismaClient) => {
-      // ... adapter setup
-    },
-    extendPrismaSchema: (schema) => {
-      // Modify the schema as needed
-      let modifiedSchema = schema
-
-      // Example: Add multi-schema support for PostgreSQL
-      modifiedSchema = modifiedSchema.replace(
-        /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
-        '$1\n  schemas = ["public", "auth"]',
-      )
-
-      // Example: Add @@schema attribute to all models
-      modifiedSchema = modifiedSchema.replace(
-        /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
-        (match, modelContent) => {
-          if (!modelContent.includes('@@schema')) {
-            return `${modelContent}\n  @@schema("public")\n}`
-          }
-          return match
-        },
-      )
-
-      return modifiedSchema
-    },
-  },
-  // ... rest of config
-})
-```
-
-### Common Use Cases
-
-- **Multi-schema support**: Add Prisma's multi-schema support for PostgreSQL
-- **Custom attributes**: Add model-level or field-level attributes not exposed in the config API
-- **Preview features**: Enable Prisma preview features via datasource or generator configuration
-- **Output path modifications**: Adjust the Prisma Client output path
-
-### Field-Level Schema Extension
-
-For more granular control, relationship fields support `extendPrismaSchema` in their `db` config. This is useful for self-referential relationships that need custom `onDelete` or `onUpdate` actions:
-
-```typescript
-fields: {
-  parent: relationship({
-    ref: 'Category.children',
-    db: {
-      foreignKey: true,
-      extendPrismaSchema: ({ fkLine, relationLine }) => ({
-        fkLine,
-        relationLine: relationLine.replace(
-          '@relation(',
-          '@relation(onDelete: SetNull, onUpdate: Cascade, '
-        ),
-      }),
-    },
-  }),
-  children: relationship({ ref: 'Category.parent', many: true }),
-}
-```
-
-The function receives:
-
-- `fkLine`: The foreign key field line (only present for single relationships that own the FK)
-- `relationLine`: The relation field line
-
-Field-level `extendPrismaSchema` is applied before the global `db.extendPrismaSchema`, allowing both granular and broad modifications.
+`db: { provider: 'postgresql' }` is the whole database block: there is no
+connection string, adapter or client constructor in the config. The connection
+is chosen at run time by one lookup that the generated `prisma.config.ts` and
+`.opensaas/context.ts` share — `DATABASE_URL` when it is set, otherwise the Dev
+database `pnpm dev` runs. Referential actions, namespaces and extension packs
+are first-class options on the config (a relationship's `db.onDelete`,
+`db.extensions`), not edits to emitted output.
 
 ## Generator Limitations
 
-Current generators are basic:
-
-- ✅ Migration support: the generated `prisma.config.ts` supports `prisma migrate dev` / `prisma migrate deploy`. Local SQLite dev still uses `prisma db push` for a zero-setup loop; production uses `prisma migrate` (see ADR-0003).
+- ✅ Migration support: `pnpm dev` reconciles the Dev database directly; production migrates from the committed `migrations/` directory with `prisma db migrate` (see ADR-0003 and ADR-0063).
 - ❌ No introspection support
-- ❌ Limited Prisma features (no raw queries, advanced transactions)
 
 ## Best Practices
 
@@ -210,24 +118,18 @@ pnpm generate
 
 ### 2. Commit Generated Files
 
-Commit the generated files to version control for consistency:
-
-```bash
-git add prisma/schema.prisma
-git add .opensaas/
-git commit -m "Regenerate schema"
-```
+Commit the contract, its emitted artifacts, `prisma.config.ts` and `migrations/`
+alongside the config change that produced them; `.opensaas/` is regenerated and
+stays ignored.
 
 ### 3. Use Type-Safe Operations
 
 Use the generated types for type safety:
 
 ```typescript
-import type { Lists } from '@/.opensaas/types'
+import type { Post } from '@/.opensaas/types'
 
-const post: Lists['Post'] = await context.db.post.findUnique({
-  where: { id: '123' },
-})
+const post: Post | null = await context.db.Post.where({ id: { equals: '123' } }).first()
 ```
 
 ## Next Steps

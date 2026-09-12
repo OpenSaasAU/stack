@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generateListsNamespace } from './lists.js'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { deriveDependencyTable, type OpenSaasConfig } from '@opensaas/stack-core'
 import {
   text,
   integer,
@@ -30,7 +30,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain('export declare namespace Lists {')
       expect(lists).toContain('export type Post')
@@ -40,8 +40,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain("key: 'Post'")
       expect(lists).toContain('item: Item')
       expect(lists).toContain('inputs: {')
-      expect(lists).toContain("create: import('./prisma-client/client.ts').Prisma.PostCreateInput")
-      expect(lists).toContain("update: import('./prisma-client/client.ts').Prisma.PostUpdateInput")
+      expect(lists).toContain("create: import('./types.ts').PostCreateInput")
+      expect(lists).toContain("update: import('./types.ts').PostUpdateInput")
     })
 
     it('should generate Lists namespace for multiple lists', () => {
@@ -69,7 +69,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check all three lists are present
       expect(lists).toContain('export type User')
@@ -101,7 +101,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain('/**')
       expect(lists).toContain('Generated Lists namespace from OpenSaas configuration')
@@ -126,7 +126,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check ListConfig import
       expect(lists).toContain("import('@opensaas/stack-core').ListConfig")
@@ -135,8 +135,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain("import('./types.ts').User")
 
       // Check Prisma imports (explicit `.ts` extension — ADR-0008)
-      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserCreateInput")
-      expect(lists).toContain("import('./prisma-client/client.ts').Prisma.UserUpdateInput")
+      expect(lists).toContain("import('./types.ts').UserCreateInput")
+      expect(lists).toContain("import('./types.ts').UserUpdateInput")
     })
 
     it('should generate TypeInfo structure correctly', () => {
@@ -153,7 +153,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Verify TypeInfo structure
       expect(lists).toContain('export type TypeInfo = {')
@@ -162,25 +162,6 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('inputs: {')
       expect(lists).toContain('create:')
       expect(lists).toContain('update:')
-    })
-
-    it("keys TypeInfo's `prisma` member to the app's own generated PrismaClient (#1211)", () => {
-      const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-        },
-        lists: {
-          Post: {
-            fields: {
-              title: text(),
-            },
-          },
-        },
-      }
-
-      const lists = generateListsNamespace(config)
-
-      expect(lists).toContain("prisma: import('./prisma-client/client.ts').PrismaClient")
     })
 
     it('should handle lists with relationships', () => {
@@ -204,17 +185,17 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Both lists should be generated
       expect(lists).toContain('export type User')
       expect(lists).toContain('export type Post')
 
       // Prisma input types should still reference correct types
-      expect(lists).toContain('Prisma.UserCreateInput')
-      expect(lists).toContain('Prisma.PostCreateInput')
-      expect(lists).toContain('Prisma.UserUpdateInput')
-      expect(lists).toContain('Prisma.PostUpdateInput')
+      expect(lists).toContain("import('./types.ts').UserCreateInput")
+      expect(lists).toContain("import('./types.ts').PostCreateInput")
+      expect(lists).toContain("import('./types.ts').UserUpdateInput")
+      expect(lists).toContain("import('./types.ts').PostUpdateInput")
     })
 
     it('should handle lists with various field types', () => {
@@ -233,14 +214,14 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // TypeInfo should be generated regardless of field types
       expect(lists).toContain('export type Product')
       expect(lists).toContain('namespace Product {')
       expect(lists).toContain('export type TypeInfo')
-      expect(lists).toContain('Prisma.ProductCreateInput')
-      expect(lists).toContain('Prisma.ProductUpdateInput')
+      expect(lists).toContain("import('./types.ts').ProductCreateInput")
+      expect(lists).toContain("import('./types.ts').ProductUpdateInput")
     })
 
     it('should close namespace properly', () => {
@@ -257,7 +238,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should have closing brace for namespace
       expect(lists).toMatch(/}\s*$/)
@@ -271,7 +252,7 @@ describe('Lists Namespace Generator', () => {
         lists: {},
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should still have namespace declaration
       expect(lists).toContain('export declare namespace Lists {')
@@ -293,7 +274,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Check indentation consistency
       expect(lists).toContain('  export type Post')
@@ -326,7 +307,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Should preserve exact casing from config
       expect(lists).toContain('export type BlogPost')
@@ -335,8 +316,8 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain('namespace APIKey {')
       expect(lists).toContain("key: 'BlogPost'")
       expect(lists).toContain("key: 'APIKey'")
-      expect(lists).toContain('Prisma.BlogPostCreateInput')
-      expect(lists).toContain('Prisma.APIKeyCreateInput')
+      expect(lists).toContain("import('./types.ts').BlogPostCreateInput")
+      expect(lists).toContain("import('./types.ts').APIKeyCreateInput")
     })
 
     it('should connect List type to TypeInfo via ListConfig generic', () => {
@@ -353,7 +334,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Verify the List type uses ListConfig with TypeInfo
       expect(lists).toContain(
@@ -381,7 +362,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       // Each built-in field type resolves from /fields (not the root barrel),
       // including decimal/calendarDay which were previously missing from the map.
@@ -417,7 +398,7 @@ describe('Lists Namespace Generator', () => {
         },
       }
 
-      const lists = generateListsNamespace(config)
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain(
         "embedding: import('@opensaas/stack-core/extend').BaseFieldConfig<Lists.Doc.TypeInfo>",

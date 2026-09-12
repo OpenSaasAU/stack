@@ -329,19 +329,22 @@ describe('authPlugin', () => {
   })
 
   it('should preserve database config', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mockConstructor = (() => null) as any
+    const pg = () => {
+      throw new Error('never opened by config resolution')
+    }
     const result = await config({
       db: {
         provider: 'postgresql',
-        prismaClientConstructor: mockConstructor,
+        idField: 'cuid2',
+        client: { pg },
       },
       plugins: [authPlugin({})],
       lists: {},
     })
 
     expect(result.db.provider).toBe('postgresql')
-    expect(result.db.prismaClientConstructor).toBe(mockConstructor)
+    expect(result.db.idField).toBe('cuid2')
+    expect(result.db.client?.pg).toBe(pg)
   })
 
   it('should store normalized auth config in _pluginData', async () => {

@@ -1,9 +1,10 @@
 import { betterAuth } from 'better-auth'
-import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
-import type { DatabaseConfig } from '@opensaas/stack-core/internal'
+import type { OpenSaasConfig, AnyStackContext, Session } from '@opensaas/stack-core'
+import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
+import { opensaasAuthAdapter } from '../adapter/index.js'
+import { getAuthListRegistry } from '../lists/index.js'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 
 /**
@@ -49,12 +50,74 @@ function assertPluginTupleMatchesResolved(
   }
 }
 
+/**
+ * Thrown when the context handed to `createAuth` carries no Unsafe surface, or
+ * cannot open the transaction `consumeOne` runs in.
+ *
+ * `AccessContext` deliberately does not name `unsafe` — the engine's own
+ * handle and the application's deliberate bypass are different things under
+ * different names (ADR-0038) — so the surface is read off the running request
+ * context and checked here rather than typed into the signature.
+ */
+export class AuthUnsafeSurfaceMissingError extends Error {
+  constructor() {
+    super(
+      '[@opensaas/stack-auth] The context passed to `createAuth()` / `buildBetterAuthOptions()` ' +
+        "carries no Unsafe surface. The Auth adapter runs on Prisma 8's own query lanes, so " +
+        'pass the generated `rawOpensaasContext` (or a context from `getContext()`), not a ' +
+        'hand-built double.',
+    )
+    this.name = 'AuthUnsafeSurfaceMissingError'
+  }
+}
+
+function isUnsafeSurface(value: unknown): value is UnsafeSurface {
+  if (typeof value !== 'object' || value === null) return false
+  return (
+    typeof Reflect.get(value, 'query') === 'function' &&
+    typeof Reflect.get(value, 'execute') === 'function' &&
+    Reflect.get(value, 'orm') !== undefined &&
+    Reflect.get(value, 'sql') !== undefined
+  )
+}
+
+/**
+ * The context's own interactive transaction, read structurally for the same
+ * reason `unsafe` is: `AccessContext` names neither (ADR-0038), and widening
+ * the public signature to reach them is what this check exists to avoid. The
+ * callback's context carries the transaction-bound Unsafe surface (ADR-0056).
+ */
+interface TransactionCapableContext {
+  transaction<R>(body: (txContext: { readonly unsafe: unknown }) => Promise<R>): Promise<R>
+}
+
+function isTransactionCapable(value: unknown): value is TransactionCapableContext {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'transaction') === 'function'
+  )
+}
+
 function getDatabaseConfig(
-  dbConfig: DatabaseConfig,
-  context: AccessContext,
+  opensaasConfig: OpenSaasConfig,
+  authConfig: NormalizedAuthConfig,
+  context: AnyStackContext,
 ): BetterAuthOptions['database'] {
-  return prismaAdapter(context.prisma, {
-    provider: dbConfig.provider,
+  const unsafe = Reflect.get(context, 'unsafe')
+  if (!isUnsafeSurface(unsafe) || !isTransactionCapable(context)) {
+    throw new AuthUnsafeSurfaceMissingError()
+  }
+
+  return opensaasAuthAdapter({
+    config: opensaasConfig,
+    unsafe,
+    registry: getAuthListRegistry(authConfig.models, authConfig.betterAuthPlugins),
+    transaction: (body) =>
+      context.transaction(async (txContext) => {
+        if (!isUnsafeSurface(txContext.unsafe)) throw new AuthUnsafeSurfaceMissingError()
+        return await body(txContext.unsafe)
+      }),
   })
 }
 
@@ -100,6 +163,36 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
         'plugins are added through `authPlugin({ betterAuthPlugins: [...] })`, which the stack ' +
         'appends `nextCookies()` after. Use `betterAuthPlugins` instead.',
     )
+  }
+
+  const advanced = betterAuthOptions.advanced
+  const advancedDatabase =
+    advanced && typeof advanced === 'object' && !Array.isArray(advanced)
+      ? Reflect.get(advanced, 'database')
+      : undefined
+  if (
+    advancedDatabase &&
+    typeof advancedDatabase === 'object' &&
+    !Array.isArray(advancedDatabase)
+  ) {
+    const generateId = Reflect.get(advancedDatabase, 'generateId')
+    if (typeof generateId === 'function' || generateId === 'serial') {
+      throw new Error(
+        '[@opensaas/stack-auth] `betterAuthOptions.advanced.database.generateId` does not ' +
+          "support a custom function or `'serial'` — the database mints auth ids " +
+          "(`db.idField: 'uuid7'`, pinned on every list the auth plugin injects), so either " +
+          "would write an id the schema does not expect. `false`, `'uuid'`, and `undefined` " +
+          'are accepted. Change the strategy through `db.idField` in `opensaas.config.ts` ' +
+          'instead.',
+      )
+    }
+    if ('joins' in advancedDatabase) {
+      throw new Error(
+        '[@opensaas/stack-auth] `betterAuthOptions.advanced.database.joins` is not supported — ' +
+          'the Auth adapter implements no joins, and better-auth falls back to separate queries ' +
+          'silently, so the flag would claim a capability nothing provides.',
+      )
+    }
   }
 
   const rateLimitOptions = betterAuthOptions.rateLimit
@@ -208,16 +301,16 @@ function mergeBetterAuthOptions(
  */
 export async function buildBetterAuthOptions(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
 ): Promise<BetterAuthOptions>
 export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins: TPlugins,
 ): Promise<ResolvedBetterAuthOptions<TPlugins>>
 export async function buildBetterAuthOptions<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins?: TPlugins,
 ): Promise<BetterAuthOptions | ResolvedBetterAuthOptions<TPlugins>> {
   const resolvedConfig = await Promise.resolve(opensaasConfig)
@@ -264,7 +357,7 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
   }
 
   const betterAuthConfig: BetterAuthOptions = {
-    database: getDatabaseConfig(resolvedConfig.db, resolvedContext),
+    database: getDatabaseConfig(resolvedConfig, authConfig, resolvedContext),
 
     user: toBetterAuthModelOptions(authConfig.models.user),
     session: {
@@ -387,16 +480,16 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
  */
 export function createAuth(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
 ): Auth<BetterAuthOptions>
 export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins: TPlugins,
 ): Auth<ResolvedBetterAuthOptions<TPlugins>>
 export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   opensaasConfig: OpenSaasConfig | Promise<OpenSaasConfig>,
-  context: AccessContext | Promise<AccessContext>,
+  context: AnyStackContext | Promise<AnyStackContext>,
   plugins?: TPlugins,
 ): Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>> {
   const configPromise = Promise.resolve(opensaasConfig)

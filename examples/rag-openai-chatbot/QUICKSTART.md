@@ -4,9 +4,12 @@ Get the RAG OpenAI Chatbot demo running in 5 minutes!
 
 ## Prerequisites
 
-- PostgreSQL with pgvector extension installed and running
 - OpenAI API key
-- Node.js 18+ and pnpm
+- Node.js 22.18+ and pnpm (the workspace's `engines` field is `>=22.18.0`)
+
+That is all you need: leave `DATABASE_URL` unset and `pnpm dev` starts a Dev
+database that already carries pgvector. To bring your own Postgres, see
+[Using your own PostgreSQL](#using-your-own-postgresql) below.
 
 ## Quick Setup
 
@@ -16,17 +19,17 @@ pnpm install
 
 # 2. Setup environment
 cp .env.example .env
-# Edit .env and add your DATABASE_URL and OPENAI_API_KEY
+# Edit .env and add your OPENAI_API_KEY
 
-# 3. Generate schema and create database
-pnpm generate
-pnpm db:push
-
-# 4. Seed the knowledge base
-pnpm db:seed
-
-# 5. Start the development server
+# 3. Start the development server — it brings the database up, generates
+#    and reconciles before running the app
 pnpm dev
+```
+
+`pnpm dev` keeps running. In a second terminal, seed the knowledge base:
+
+```bash
+pnpm db:seed
 ```
 
 ## Visit the App
@@ -36,9 +39,10 @@ pnpm dev
 - **Search:** http://localhost:3000/search
 - **Admin:** http://localhost:3000/admin
 
-## Try These Commands
+## Using your own PostgreSQL
 
-### Using Docker for PostgreSQL (easiest)
+The server needs pgvector **available**; enabling it is the migration's job, not
+yours. Docker is the shortest route:
 
 ```bash
 docker run -d \
@@ -46,34 +50,47 @@ docker run -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=rag_chatbot \
   -p 5432:5432 \
-  ankane/pgvector
+  pgvector/pgvector:pg16
 ```
 
-Then use this in `.env`:
+Then point `.env` at it:
 
 ```
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/rag_chatbot?schema=public"
 ```
 
-### Create Database Manually
+On an existing server, create the database and let `pnpm dev` do the rest:
 
 ```bash
 createdb rag_chatbot
-psql rag_chatbot -c "CREATE EXTENSION vector;"
 ```
+
+pgvector is not a trusted extension, so the role in your `DATABASE_URL` needs
+superuser or a provider grant to enable it. If it has neither, have someone who
+does pre-create the extension in that database once — the migration prechecks
+for it and records the step as already satisfied.
 
 ## Test the Features
 
 1. **Chat:** Ask "What is OpenSaas Stack?" in the chatbot
 2. **Search:** Search for "access control" to see semantic matching
-3. **Admin:** Create a new article and watch embeddings generate automatically
+3. **Admin:** Browse the seeded articles and delete one. Creating and editing are
+   both refused here on purpose — the list sets `create: () => false` so the seed
+   can demonstrate `sudo()` bypassing it, and the embedding column is write-denied
+   while the item form still submits it. New and changed articles come from
+   `pnpm db:seed`.
 
 ## Troubleshooting
 
 **Can't connect to database?**
 
-- Make sure PostgreSQL is running: `pg_isready`
-- Check your DATABASE_URL in `.env`
+- On the default path there is nothing of yours to start: `pnpm dev` runs the
+  Dev database on a port it picks, recorded in `.opensaas/dev-db.json`. A bare
+  `pg_isready` answers for a local PostgreSQL install, not for that — reach the
+  Dev database with
+  `psql "$(node -p "require('./.opensaas/dev-db.json').url")"` instead.
+- If you set `DATABASE_URL` yourself: check it, and that the server is up
+  (`pg_isready`).
 
 **OpenAI errors?**
 
@@ -82,7 +99,9 @@ psql rag_chatbot -c "CREATE EXTENSION vector;"
 
 **Embeddings not generating?**
 
-- Check the server console for errors
+- Read the terminal the write came from. The plugin embeds in an
+  `afterTransaction` hook that runs in the writing process, so a `pnpm db:seed`
+  failure prints in the seed's terminal rather than the `pnpm dev` console.
 - Ensure articles have content (required field)
 
 ## Next Steps

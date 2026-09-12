@@ -1,17 +1,27 @@
 import { describe, it, expect, vi } from 'vitest'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { image, file } from '../src/fields/index.js'
+import { FILE_COLUMN_PARTS } from '../src/utils/multi-column.js'
 import type { ImageMetadata, FileMetadata } from '../src/config/types.js'
+
+/** `getContractField`'s third argument. Neither field builder reads it. */
+const CONFIG: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
 
 /**
  * Field-level behaviour of image()/file() in multi-column (Keystone-parity)
  * mode, plus the no-re-upload guarantee in BOTH modes. See ADR-0006 / issue #477.
  */
 
-/** A File-like stub with an arrayBuffer() method (triggers an upload). */
+/**
+ * A File-like stub that triggers an upload. It carries every member the upload
+ * path reads — `name`, `type`, `size` and `arrayBuffer()` — because that is
+ * what `isFileLike` establishes before narrowing to `File`.
+ */
 function fakeFile(bytes = [1, 2, 3]): File {
   return {
     name: 'photo.png',
     type: 'image/png',
+    size: bytes.length,
     arrayBuffer: async () => new Uint8Array(bytes).buffer,
   } as unknown as File
 }
@@ -46,30 +56,185 @@ function makeContext() {
 }
 
 describe('image() / file() multi-column mode', () => {
-  describe('single-Json? default is unchanged', () => {
-    it('image() default has no multi-column methods and emits Json?', () => {
+  describe('single-column default is unchanged', () => {
+    it('image() default has no multi-column methods', () => {
       const field = image({ storage: 'images' })
-      expect(field.getPrismaColumns).toBeUndefined()
       expect(field.getColumnNames).toBeUndefined()
       expect(field.assembleColumns).toBeUndefined()
       expect(field.splitColumns).toBeUndefined()
-      expect(field.getPrismaType?.('image')).toEqual({ type: 'Json', modifiers: '?' })
     })
 
-    it('file() default has no multi-column methods and emits Json?', () => {
+    it('file() default has no multi-column methods', () => {
       const field = file({ storage: 'documents' })
-      expect(field.getPrismaColumns).toBeUndefined()
-      expect(field.getPrismaType?.('doc')).toEqual({ type: 'Json', modifiers: '?' })
+      expect(field.getColumnNames).toBeUndefined()
+      expect(field.assembleColumns).toBeUndefined()
+      expect(field.splitColumns).toBeUndefined()
+    })
+  })
+
+  describe('the contract descriptor', () => {
+    it('image() describes one nullable jsonb column under the field key', () => {
+      expect(image({ storage: 'images' }).getContractField?.('image', 'Post', CONFIG)).toEqual({
+        kind: 'column',
+        name: 'image',
+        type: { pack: 'pg', type: 'jsonb' },
+        nullable: true,
+      })
+    })
+
+    it('file() carries the db overrides its config documents', () => {
+      const field = file({
+        storage: 'documents',
+        db: { map: 'doc_blob', isNullable: false, nativeType: 'Json' },
+      })
+      expect(field.getContractField?.('doc', 'Post', CONFIG)).toEqual({
+        kind: 'column',
+        name: 'doc',
+        type: { pack: 'pg', type: 'jsonb' },
+        nativeType: 'Json',
+        map: 'doc_blob',
+        nullable: false,
+      })
+    })
+
+    it('image() in keystone mode describes its seven physical columns instead', () => {
+      const field = image({ storage: 'images', db: { columns: 'keystone' } })
+      const descriptor = field.getContractField?.('image', 'Post', CONFIG)
+      expect(descriptor).toEqual({
+        kind: 'columns',
+        columns: [
+          { name: 'image_url', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'image_width', type: { pack: 'pg', type: 'int' }, nullable: true },
+          { name: 'image_height', type: { pack: 'pg', type: 'int' }, nullable: true },
+          { name: 'image_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+          { name: 'image_contentType', type: { pack: 'pg', type: 'text' }, nullable: true },
+          {
+            name: 'image_contentDisposition',
+            type: { pack: 'pg', type: 'text' },
+            nullable: true,
+          },
+          { name: 'image_pathname', type: { pack: 'pg', type: 'text' }, nullable: true },
+        ],
+      })
+    })
+
+    it('file() in keystone mode describes exactly the parts it opted into, renames included', () => {
+      const field = file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', map: { url: 'doc_href' } } },
+      })
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      expect(descriptor).toEqual({
+        kind: 'columns',
+        columns: [
+          { name: 'doc_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'doc_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+          { name: 'doc_href', type: { pack: 'pg', type: 'text' }, nullable: true },
+        ],
+      })
+    })
+
+    it('declares its TypeScript face on the field, in both backings', () => {
+      for (const field of [
+        image({ storage: 'images' }),
+        image({ storage: 'images', db: { columns: 'keystone' } }),
+      ]) {
+        expect(field.outputType).toBe("import('@opensaas/stack-storage').ImageMetadata | null")
+        expect(field.inputType).toBe(
+          "File | import('@opensaas/stack-storage').ImageMetadata | null",
+        )
+      }
+      expect(file({ storage: 'documents' }).outputType).toBe(
+        "import('@opensaas/stack-storage').FileMetadata | null",
+      )
+      expect(file({ storage: 'documents' }).inputType).toBe(
+        "File | import('@opensaas/stack-storage').FileMetadata | null",
+      )
+    })
+
+    it('the described columns are the ones the read path strips and the write path fills', () => {
+      const field = file({ storage: 'documents', db: { columns: 'keystone' } })
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      const described = descriptor && 'columns' in descriptor ? descriptor.columns : []
+      expect(described.map((column) => column.name)).toEqual(field.getColumnNames?.('doc'))
+      expect(Object.keys(field.splitColumns?.('doc', null) ?? {})).toEqual(
+        field.getColumnNames?.('doc'),
+      )
+    })
+
+    // The descriptor and getColumnNames() are two computations over the same
+    // opted-in `parts`; a subset that is NOT the default is the only case where
+    // one can ignore `parts` while the other honours it.
+    it.each([
+      ['all five parts', FILE_COLUMN_PARTS],
+      ['a custom subset', ['url', 'contentType'] as const],
+      ['a single part', ['url'] as const],
+    ])('file() describes exactly the opted-in parts: %s', (_label, parts) => {
+      const field = file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', parts } },
+      })
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      const described = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
+      expect(described.map((column) => column.name)).toEqual(parts.map((part) => `doc_${part}`))
+      expect(described.map((column) => column.name)).toEqual(field.getColumnNames?.('doc'))
+      expect(Object.keys(field.splitColumns?.('doc', null) ?? {})).toEqual(
+        field.getColumnNames?.('doc'),
+      )
+    })
+
+    it('file() types an opted-in subset the same way the default set does', () => {
+      const field = file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', parts: FILE_COLUMN_PARTS } },
+      })
+      expect(field.getContractField?.('doc', 'Post', CONFIG)).toEqual({
+        kind: 'columns',
+        columns: [
+          { name: 'doc_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'doc_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+          { name: 'doc_url', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'doc_pathname', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'doc_contentType', type: { pack: 'pg', type: 'text' }, nullable: true },
+        ],
+      })
+    })
+
+    it('file() applies per-part @map overrides on an opted-in subset', () => {
+      const field = file({
+        storage: 'documents',
+        db: {
+          columns: {
+            mode: 'keystone',
+            parts: ['url', 'pathname', 'contentType'],
+            map: { url: 'doc_href', contentType: 'doc_mime' },
+          },
+        },
+      })
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      const described = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
+      expect(described.map((column) => column.name)).toEqual([
+        'doc_href',
+        'doc_pathname',
+        'doc_mime',
+      ])
+      expect(described.map((column) => column.name)).toEqual(field.getColumnNames?.('doc'))
+      // A part left out of `parts` contributes no column even when renamed.
+      expect(described.map((column) => column.name)).not.toContain('doc_filename')
     })
   })
 
   describe('multi-column emission', () => {
-    it('image() in keystone mode emits seven @map-ped nullable columns', () => {
+    it('image() in keystone mode describes seven nullable columns', () => {
       const field = image({ storage: 'images', db: { columns: 'keystone' } })
-      const columns = field.getPrismaColumns?.('image')
+      const descriptor = field.getContractField?.('image', 'Post', CONFIG)
+      const columns = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
       expect(columns).toHaveLength(7)
-      expect(columns?.every((c) => c.modifiers === '?')).toBe(true)
-      expect(columns?.map((c) => c.map)).toEqual([
+      expect(columns.every((c) => c.nullable)).toBe(true)
+      expect(columns.map((c) => c.name)).toEqual([
         'image_url',
         'image_width',
         'image_height',
@@ -81,45 +246,44 @@ describe('image() / file() multi-column mode', () => {
       expect(field.getColumnNames?.('image')).toHaveLength(7)
     })
 
-    it('file() in keystone mode emits three @map-ped nullable columns', () => {
+    it('file() in keystone mode describes three nullable columns', () => {
       const field = file({ storage: 'documents', db: { columns: 'keystone' } })
-      const columns = field.getPrismaColumns?.('doc')
+      const descriptor = field.getContractField?.('doc', 'Post', CONFIG)
+      const columns = descriptor && 'columns' in descriptor ? descriptor.columns : []
+
       expect(columns).toHaveLength(3)
-      expect(columns?.every((c) => c.modifiers === '?')).toBe(true)
-      expect(columns?.map((c) => c.map)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
-      // filesize is Int; filename/url are String.
-      const byMap = Object.fromEntries((columns ?? []).map((c) => [c.map, c.type]))
-      expect(byMap.doc_filesize).toBe('Int')
-      expect(byMap.doc_filename).toBe('String')
-      expect(byMap.doc_url).toBe('String')
+      expect(columns.every((c) => c.nullable)).toBe(true)
+      expect(columns.map((c) => c.name)).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
+      // filesize is an int column; filename/url are text.
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c.type]))
+      expect(byName.doc_filesize).toEqual({ pack: 'pg', type: 'int' })
+      expect(byName.doc_filename).toEqual({ pack: 'pg', type: 'text' })
+      expect(byName.doc_url).toEqual({ pack: 'pg', type: 'text' })
       expect(field.getColumnNames?.('doc')).toEqual(['doc_filename', 'doc_filesize', 'doc_url'])
     })
 
-    it('file() per-part @map names are configurable', () => {
+    it('file() per-part column names are configurable', () => {
       const field = file({
         storage: 'documents',
         db: { columns: { mode: 'keystone', map: { url: 'doc_href' } } },
       })
-      const maps = field.getPrismaColumns?.('doc')?.map((c) => c.map)
-      expect(maps).toContain('doc_href')
+      const names = field.getColumnNames?.('doc')
+      expect(names).toContain('doc_href')
       // Un-overridden parts keep Keystone defaults.
-      expect(maps).toContain('doc_filename')
-      expect(maps).not.toContain('doc_url')
-      expect(field.getColumnNames?.('doc')).toContain('doc_href')
+      expect(names).toContain('doc_filename')
+      expect(names).not.toContain('doc_url')
     })
 
-    it('per-part @map names are configurable', () => {
+    it('per-part column names are configurable', () => {
       const field = image({
         storage: 'images',
         db: { columns: { mode: 'keystone', map: { url: 'image_link', pathname: 'image_key' } } },
       })
-      const columns = field.getPrismaColumns?.('image')
-      const maps = columns?.map((c) => c.map)
-      expect(maps).toContain('image_link')
-      expect(maps).toContain('image_key')
+      const names = field.getColumnNames?.('image')
+      expect(names).toContain('image_link')
+      expect(names).toContain('image_key')
       // Un-overridden parts keep Keystone defaults.
-      expect(maps).toContain('image_width')
-      expect(field.getColumnNames?.('image')).toContain('image_link')
+      expect(names).toContain('image_width')
     })
   })
 
@@ -388,6 +552,36 @@ describe('image() / file() multi-column mode', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       expect(uploadFile).toHaveBeenCalledTimes(1)
+    })
+
+    // `isFileLike` narrows to `File`, and the upload path then reads `name`,
+    // `type` and `size` as well as `arrayBuffer()`. A value carrying only
+    // `arrayBuffer` used to satisfy the check and be stored with an
+    // `originalFilename` of `undefined`.
+    it.each([
+      ['name', { type: 'image/png', size: 3, arrayBuffer: async () => new ArrayBuffer(3) }],
+      ['type', { name: 'photo.png', size: 3, arrayBuffer: async () => new ArrayBuffer(3) }],
+      [
+        'size',
+        { name: 'photo.png', type: 'image/png', arrayBuffer: async () => new ArrayBuffer(3) },
+      ],
+      ['arrayBuffer', { name: 'photo.png', type: 'image/png', size: 3 }],
+    ])('file() does not upload a value missing %s', async (_member, partial) => {
+      const { context, uploadFile } = makeContext()
+      const field = file({ storage: 'local', db: { columns: 'keystone' } })
+
+      await field.hooks?.resolveInput?.({
+        listKey: 'Post',
+        fieldKey: 'doc',
+        operation: 'create',
+        inputData: { doc: partial },
+        item: undefined,
+        resolvedData: { doc: partial },
+        context,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      expect(uploadFile).not.toHaveBeenCalled()
     })
   })
 })

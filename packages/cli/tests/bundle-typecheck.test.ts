@@ -1,0 +1,248 @@
+import { spawnSync } from 'child_process'
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { createJiti } from 'jiti'
+import { deriveContract, deriveGeneratedTables } from '../../core/src/contract/index.js'
+import type { OpenSaasConfig } from '../../core/src/config/types.js'
+import { resolveOutputPaths } from '../src/generator/output-paths.js'
+import { writeContext } from '../src/generator/context.js'
+import { writeContractModule } from '../src/generator/contract-module.js'
+import { writeLists } from '../src/generator/lists.js'
+import { writePluginTypes } from '../src/generator/plugin-types.js'
+import { writePrismaConfig } from '../src/generator/prisma-config.js'
+import { writeTables } from '../src/generator/tables.js'
+import { writeTypes } from '../src/generator/types.js'
+
+/**
+ * The whole generated bundle has to compile, not just the Contract module.
+ *
+ * The equivalence suite type-checks `prisma/contract.ts` alone, which is why a
+ * `.opensaas/types.ts` importing a Prisma client tree the pipeline no longer
+ * writes could sit on green CI (#1134 review). This runs `tsc --noEmit` over
+ * every one of the seven files `opensaas generate` writes for the contract
+ * fixture — `prisma/contract.ts`, `prisma.config.ts`, and the bundle's
+ * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts`, `tables.ts` —
+ * against the committed `prisma/contract.d.ts` and `contract.json` they
+ * resolve into.
+ *
+ * The scratch tree lives inside this package so node resolution reaches its
+ * `node_modules` for `@opensaas/stack-core` and `@prisma/orm-postgres`.
+ */
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'contract-project')
+const tscBinary = path.join(packageRoot, 'node_modules', '.bin', 'tsc')
+const scratchRoot = fs.mkdtempSync(path.join(packageRoot, 'tests', 'tmp-bundle-'))
+
+afterAll(() => {
+  fs.rmSync(scratchRoot, { recursive: true, force: true })
+})
+
+/**
+ * The project's own compiler settings (the root `tsconfig.json`), plus the two
+ * ADR-0054 gates the bundle has to hold: it loads natively under Node, so
+ * nothing in it may need a transform beyond stripping types.
+ */
+const TSCONFIG = {
+  compilerOptions: {
+    target: 'ES2022',
+    module: 'ESNext',
+    lib: ['ES2022'],
+    moduleResolution: 'bundler',
+    strict: true,
+    esModuleInterop: true,
+    forceConsistentCasingInFileNames: true,
+    resolveJsonModule: true,
+    noImplicitAny: true,
+    skipLibCheck: true,
+    noEmit: true,
+    allowImportingTsExtensions: true,
+    erasableSyntaxOnly: true,
+    verbatimModuleSyntax: true,
+    types: ['node'],
+  },
+  include: ['opensaas.config.ts', 'prisma.config.ts', '.opensaas/**/*.ts', 'prisma/**/*.ts'],
+}
+
+describe('the generated bundle type-checks', () => {
+  let projectDir: string
+
+  beforeAll(async () => {
+    projectDir = path.join(scratchRoot, 'contract-project')
+    fs.mkdirSync(path.join(projectDir, 'prisma'), { recursive: true })
+
+    fs.copyFileSync(
+      path.join(fixtureRoot, 'opensaas.config.ts'),
+      path.join(projectDir, 'opensaas.config.ts'),
+    )
+    // `prisma contract emit` writes these two, they are committed, and CI
+    // proves they are current — so this reuses them rather than paying for
+    // another emit. Everything else in the tree is written by the generator
+    // below, so the scratch project is what `opensaas generate` produces.
+    for (const artifact of ['contract.json', 'contract.d.ts']) {
+      fs.copyFileSync(
+        path.join(fixtureRoot, 'prisma', artifact),
+        path.join(projectDir, 'prisma', artifact),
+      )
+    }
+
+    const jiti = createJiti(projectDir, { interopDefault: true })
+    const module = await jiti.import<{ default: OpenSaasConfig | Promise<OpenSaasConfig> }>(
+      path.join(projectDir, 'opensaas.config.ts'),
+    )
+    const config = await Promise.resolve(module.default)
+    const contractData = deriveContract(config)
+
+    const { paths, crossReferences } = resolveOutputPaths(projectDir, config.output)
+    // The Contract MODULE lands beside the emitted declarations deliberately:
+    // it does so in a real project, and `./contract.d.ts` resolves to IT rather
+    // than to `contract.d.ts`, so a scratch tree missing it would let that
+    // import land on the wrong file and still pass (#1136).
+    writeContractModule(contractData, paths.contractModule)
+    writePrismaConfig(contractData, paths.prismaConfig, {
+      contractModule: crossReferences.prismaConfigContract,
+      outputDir: crossReferences.prismaConfigOutput,
+    })
+    const generatedTables = deriveGeneratedTables(config, contractData)
+    writeTypes(config, paths.types, generatedTables.dependencies)
+    writeLists(config, paths.lists, generatedTables.dependencies)
+    writeContext(config, contractData, paths.context, {
+      configImport: crossReferences.configImport,
+      contractJsonImport: crossReferences.contractJsonImport,
+    })
+    writePluginTypes(config, paths.pluginTypes)
+    writeTables(generatedTables, paths.tables)
+  }, 120_000)
+
+  test('writes every file generate writes', () => {
+    expect(fs.readdirSync(path.join(projectDir, '.opensaas')).sort()).toEqual([
+      'context.ts',
+      'lists.ts',
+      'plugin-types.ts',
+      'tables.ts',
+      'types.ts',
+    ])
+    expect(fs.existsSync(path.join(projectDir, 'prisma.config.ts'))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, 'prisma', 'contract.ts'))).toBe(true)
+  })
+
+  /**
+   * The tsconfig above has to reach all six. `prisma.config.ts` sits at the
+   * project root rather than under `.opensaas/` or `prisma/`, and went
+   * unchecked for exactly that reason (#1190 review).
+   */
+  test('the tsconfig include covers all six', () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'tsconfig.json'),
+      JSON.stringify(TSCONFIG, null, 2),
+      'utf-8',
+    )
+
+    const result = spawnSync(tscBinary, ['--project', projectDir, '--listFiles'], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const listed = `${result.stdout ?? ''}`.split('\n')
+
+    for (const generated of [
+      path.join(projectDir, 'prisma.config.ts'),
+      path.join(projectDir, 'prisma', 'contract.ts'),
+      path.join(projectDir, '.opensaas', 'types.ts'),
+      path.join(projectDir, '.opensaas', 'lists.ts'),
+      path.join(projectDir, '.opensaas', 'context.ts'),
+      path.join(projectDir, '.opensaas', 'plugin-types.ts'),
+    ]) {
+      expect(listed, generated).toContain(generated)
+    }
+  }, 180_000)
+
+  /**
+   * The `tsc` pass below is only worth what the bundle puts in front of it. The
+   * third-party field faces are the ones that resolve outside the generated
+   * tree — into `@opensaas/stack-storage` and `@opensaas/stack-tiptap` — so a
+   * fixture that quietly lost them would leave the compile green and the faces
+   * unchecked (#1167 review).
+   */
+  test('the remainder carries the third-party field faces the tsc pass has to resolve', () => {
+    const types = fs.readFileSync(path.join(projectDir, '.opensaas', 'types.ts'), 'utf-8')
+    for (const face of [
+      "import('@opensaas/stack-storage').ImageMetadata",
+      "import('@opensaas/stack-storage').FileMetadata",
+      "import('@opensaas/stack-tiptap').JSONContent",
+      "File | import('@opensaas/stack-storage').ImageMetadata",
+    ]) {
+      expect(types, face).toContain(face)
+    }
+  })
+
+  test('references no Prisma client tree the pipeline never writes', () => {
+    for (const file of ['types.ts', 'lists.ts', 'context.ts']) {
+      const source = fs.readFileSync(path.join(projectDir, '.opensaas', file), 'utf-8')
+      expect(source).not.toContain('prisma-client')
+    }
+  })
+
+  test('tsc --noEmit reports nothing for the bundle and the emitted contract', () => {
+    fs.writeFileSync(
+      path.join(projectDir, 'tsconfig.json'),
+      JSON.stringify(TSCONFIG, null, 2),
+      'utf-8',
+    )
+
+    const result = spawnSync(tscBinary, ['--project', projectDir], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    expect(`${result.stdout ?? ''}${result.stderr ?? ''}`.trim()).toBe('')
+    expect(result.status).toBe(0)
+  }, 180_000)
+
+  /**
+   * The check above only proves the bundle is clean today; these prove the
+   * check would catch it if it stopped being. Each construct is one plain Node
+   * refuses to strip, injected into a throwaway copy of the same bundle.
+   */
+  describe.each([
+    ['an enum', 'export enum Sentinel {\n  A,\n}\n', /TS1294/],
+    ['a runtime namespace', 'export namespace Sentinel {\n  export const a = 1\n}\n', /TS1294/],
+    [
+      'a parameter property',
+      'export class Sentinel {\n  constructor(public readonly a: string) {}\n}\n',
+      /TS1294/,
+    ],
+    [
+      'a non-type re-export of a type',
+      "import { Post } from './types.ts'\nexport { Post }\n",
+      /TS1484/,
+    ],
+  ])('%s in generator output', (_label, construct, diagnostic) => {
+    // The diagnostic is asserted, not just a non-zero status: the last case
+    // would otherwise keep passing as TS2305 if the generator renamed `Post`,
+    // and stop guarding `verbatimModuleSyntax` without going red.
+    test('fails the same check', () => {
+      const injectedDir = fs.mkdtempSync(path.join(scratchRoot, 'injected-'))
+      fs.cpSync(projectDir, injectedDir, { recursive: true })
+      fs.writeFileSync(path.join(injectedDir, '.opensaas', 'sentinel.ts'), construct, 'utf-8')
+      fs.writeFileSync(
+        path.join(injectedDir, 'tsconfig.json'),
+        JSON.stringify(TSCONFIG, null, 2),
+        'utf-8',
+      )
+
+      const result = spawnSync(tscBinary, ['--project', injectedDir], {
+        cwd: injectedDir,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+      expect(output, output).toMatch(/sentinel\.ts/)
+      expect(output, output).toMatch(diagnostic)
+      expect(result.status, output).not.toBe(0)
+    }, 180_000)
+  })
+})

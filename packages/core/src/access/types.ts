@@ -1,4 +1,6 @@
-import type { Fragment, FieldSelection, ResultOf } from '../query/index.js'
+import type { RowLockLane } from '../secured/lock.js'
+import type { SecuredQuery } from '../secured/read.js'
+import type { UnsafeTransactionScope } from '../unsafe.js'
 import type { TransactionRegistry } from './transaction-registry.js'
 
 /**
@@ -48,188 +50,148 @@ export type PrismaModelDelegate = {
   count: (args?: unknown) => Promise<number>
 }
 
-// Uses `any` because Prisma generates highly complex client types that are difficult
-// to constrain here; actual type safety comes from the TPrisma generic parameter.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type PrismaClientLike = any
-
-// ─────────────────────────────────────────────────────────────
-// Augmented find operation types — add `query` overload to findMany / findUnique
-// ─────────────────────────────────────────────────────────────
-
 /**
- * Extra query arguments accepted when a `query` Fragment is provided alongside
- * `context.db.<list>.findMany({ query: myFragment, ... })`.
+ * The ORM client the engine drives, structurally. Model keys are resolved at
+ * runtime from the config's list names, so the client is reached through an
+ * index signature and narrowed to {@link OrmModelDelegate} at the point of
+ * use rather than typed per model here — the per-model types belong to the
+ * generated bundle, which instantiates them from the emitted contract
+ * (ADR-0052).
+ *
+ * This is the engine's internal handle, not the application's escape hatch:
+ * unsecured, and honest about how little the engine assumes of it. An
+ * application reaches Prisma through `context.unsafe`.
+ *
+ * The index signature's `unknown` is deliberate, and is the one place the
+ * repo's "never expose `unknown` externally" rule is relaxed. It replaced
+ * `PrismaClientLike = any`: `unknown` forces every consumer to narrow before
+ * calling — which is what `ormModel()` does, once — where `any` let a
+ * mistyped call compile. What would replace it is a per-model type, and that
+ * cannot live here: model keys come from the config's list names, so the
+ * typed surface is the generated bundle's `DB`, instantiated from the emitted
+ * contract (ADR-0052). Reach for `context.db` when you want types; this is
+ * the escape hatch beneath it.
  */
-export type FindManyQueryArgs = {
-  where?: Record<string, unknown>
-  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-  take?: number
-  skip?: number
+export interface OrmClient {
+  /**
+   * Prisma 7's interactive-transaction opener, which `context.transaction()`
+   * still accepts because it is the only shape that carries the transaction
+   * options. No Prisma 8 client has it — theirs is `transaction` on the
+   * client, reached through {@link TransactionOpener} — so on `prisma-8` this
+   * member is only ever populated by a double.
+   */
+  $transaction?: unknown
+  [modelKey: string]: unknown
 }
 
 /**
- * Overloaded `findMany` that accepts an optional `query` Fragment.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns records shaped to `ResultOf<fragment>[]`.
- * - **Without `query`**: behaves exactly like the original Prisma `findMany`.
- *
- * TypeScript resolves the return type from the presence (or absence) of `query`
- * in the argument object — no explicit type annotation is needed.
- *
- * @example
- * ```ts
- * // Narrowed return type from fragment
- * const posts = await context.db.post.findMany({
- *   query:   postFragment,
- *   where:   { published: true },
- *   orderBy: { createdAt: 'desc' },
- *   take:    10,
- * })
- * // posts: ResultOf<typeof postFragment>[]
- *
- * // Original Prisma behaviour (no fragment)
- * const posts = await context.db.post.findMany({ where: { published: true } })
- * // posts: Post[]
- * ```
+ * A transaction the stack opened, as the engine consumes it: the ORM handle
+ * rebound to the transaction's own collections, and the scope the Unsafe
+ * surface binds its executors to.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindMany<TOriginal extends (...args: any[]) => any> {
-  <TItem, TFields extends FieldSelection<TItem>>(
-    args: FindManyQueryArgs & { query: Fragment<TItem, TFields> },
-  ): Promise<ResultOf<Fragment<TItem, TFields>>[]>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
-  // Trailing, non-generic member mirroring the generated `{List}Crud['findMany']`'s
-  // own third member (#1287) — see that member's doc comment in
-  // `packages/cli/src/generator/types.ts` (`generateListCrudInterface`) for why it
-  // exists (closing assignability to a plain structural seam, and giving
-  // `Parameters<>` something concrete to resolve to) and why it must stay last
-  // and omit `select`/`include`/`query`. Without this, `AccessControlledDB` and
-  // the generated `CustomDB` carry different overload arities (#1328).
-  (args?: Omit<Parameters<TOriginal>[0], 'select' | 'include' | 'query'>): ReturnType<TOriginal>
+export interface OpenedTransaction {
+  readonly ormHandle: OrmClient
+  readonly unsafe: UnsafeTransactionScope
 }
 
 /**
- * Extra query arguments accepted when a `query` Fragment is provided alongside
- * `context.db.<list>.findFirst({ query: myFragment, ... })`.
+ * Opens one transaction and runs `run` inside it, resolving with `run`'s value
+ * and rolling back if it throws.
+ *
+ * Present on a context built over a Prisma 8 client that is not already inside
+ * a transaction, and absent otherwise — so a handle bound to an enclosing
+ * transaction, or a hand-built double, joins rather than nesting (ADR-0028).
+ * That absence is the signal, not a probe for a method name.
  */
-export type FindFirstQueryArgs = {
-  where?: Record<string, unknown>
-  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-  skip?: number
+export type TransactionOpener = <T>(run: (opened: OpenedTransaction) => Promise<T>) => Promise<T>
+
+/**
+ * The arguments an ORM operation takes, before the engine lowers them.
+ * Untyped for the same reason as {@link OrmClient}: the shape depends on the
+ * list, which is a config value. `Record<string, unknown>` still rejects a
+ * non-object and forces a narrow at each use.
+ */
+export type OrmOperationArgs = Record<string, unknown>
+
+/**
+ * One row as the ORM returns it, before Field Visibility runs over it. The
+ * typed row is the generated bundle's `Row`; this is what the engine handles
+ * on the way there, where the columns are not statically known.
+ */
+export type OrmRow = Record<string, unknown>
+
+/**
+ * One model's operations on {@link OrmClient}. Reached through `ormModel()`,
+ * which narrows the key rather than assuming it is present.
+ */
+export interface OrmModelDelegate {
+  findUnique: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  findFirst: (args?: OrmOperationArgs) => Promise<OrmRow | null>
+  findMany: (args?: OrmOperationArgs) => Promise<OrmRow[]>
+  create: (args: OrmOperationArgs) => Promise<OrmRow>
+  update: (args: OrmOperationArgs) => Promise<OrmRow>
+  delete: (args: OrmOperationArgs) => Promise<OrmRow>
+  count: (args?: OrmOperationArgs) => Promise<number>
 }
 
 /**
- * Overloaded `findFirst` that accepts an optional `query` Fragment.
+ * One list's access-controlled delegate. Every operation runs the list's
+ * access rules and hooks, and denial is silent rather than thrown: a
+ * single-record terminal returns `null` and a read of many returns `[]`
+ * (Silent failure).
  *
- * `findFirst` is sugar over the access-controlled `findMany` (`take: 1`), so it
- * applies the exact same query-access checks and access-controlled include
- * building, then returns the first matching record or `null`.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
- *   or `null`.
- * - **Without `query`**: behaves exactly like the original Prisma `findFirst`.
- *
- * @example
- * ```ts
- * const post = await context.db.post.findFirst({
- *   where:   { published: true },
- *   orderBy: { createdAt: 'desc' },
- *   query:   postFragment,
- * })
- * // post: ResultOf<typeof postFragment> | null
- * ```
+ * Rows are untyped here on purpose: the per-list shapes live in the generated
+ * bundle, which instantiates `SecuredList` from the emitted contract
+ * (ADR-0052). This is the engine's own view of its output.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindFirst<TOriginal extends (...args: any[]) => any> {
-  <TItem, TFields extends FieldSelection<TItem>>(
-    args: FindFirstQueryArgs & { query: Fragment<TItem, TFields> },
-  ): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
-  // Trailing, non-generic member — see the identical comment on
-  // `AugmentedFindMany` above (#1287, #1328).
-  (args?: Omit<Parameters<TOriginal>[0], 'select' | 'include' | 'query'>): ReturnType<TOriginal>
+export interface AccessControlledDelegate extends SecuredQuery {
+  create: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  update: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  delete: (args: OrmOperationArgs) => Promise<OrmRow | null>
+  /** Present only on a list declared `isSingleton` (ADR-0039). */
+  get?: (args?: OrmOperationArgs) => Promise<OrmRow | null>
+}
+
+/** The keys that mark an ORM client rather than a secured `db` surface. */
+type OrmClientMarker =
+  | '$connect'
+  | '$disconnect'
+  | '$transaction'
+  | '$extends'
+  | '$queryRaw'
+  | '$queryRawUnsafe'
+  | '$executeRaw'
+  | '$executeRawUnsafe'
+
+/**
+ * Reported in place of a bare `never` when an ORM client is passed where a
+ * secured `db` surface belongs, so the constraint failure names its own cause.
+ */
+export interface OrmClientIsNotADbSurface {
+  readonly 'StackContext takes the generated `db` surface, not the ORM client': never
 }
 
 /**
- * Overloaded `findUnique` that accepts an optional `query` Fragment.
- *
- * - **With `query`**: builds the Prisma `include` from the fragment, executes the
- *   query, applies access control, and returns a record shaped to `ResultOf<fragment>`
- *   or `null`.
- * - **Without `query`**: behaves exactly like the original Prisma `findUnique`.
- *
- * @example
- * ```ts
- * const post = await context.db.post.findUnique({
- *   where: { id: postId },
- *   query: postFragment,
- * })
- * // post: ResultOf<typeof postFragment> | null
- * ```
+ * The bound on a generated `db` surface. The generated `DB` is an `interface`
+ * (ADR-0032), which has no implicit index signature, so this cannot demand a
+ * per-member shape. What it can do is refuse what the parameter used to hold:
+ * before ADR-0052 `StackContext`'s first argument was the Prisma client, and
+ * `StackContext<MyPrismaClient>` would otherwise still compile and silently
+ * mean `db: MyPrismaClient`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface AugmentedFindUnique<TOriginal extends (...args: any[]) => any> {
-  <TItem, TFields extends FieldSelection<TItem>>(args: {
-    where: Record<string, unknown>
-    query: Fragment<TItem, TFields>
-  }): Promise<ResultOf<Fragment<TItem, TFields>> | null>
-  (...args: Parameters<TOriginal>): ReturnType<TOriginal>
-  // Trailing, non-generic member — see the identical comment on
-  // `AugmentedFindMany` above (#1287, #1328). `findUnique`'s `where` is
-  // required (not optional), so this member keeps it required via `Pick`
-  // rather than `Omit` + optional `args`.
-  (args: Pick<Parameters<TOriginal>[0], 'where'>): ReturnType<TOriginal>
-}
+export type StackDb<DB = object> = [Extract<keyof DB, OrmClientMarker>] extends [never]
+  ? object
+  : OrmClientIsNotADbSurface
 
-export type AccessControlledDB<TPrisma extends PrismaClientLike> = {
-  [K in keyof TPrisma]: TPrisma[K] extends {
-    // Uses `any` here to check the property exists with any signature, a standard
-    // TypeScript pattern for verifying Prisma model shape in a conditional type.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findUnique: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findFirst: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    findMany: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    create: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    update: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    count: any
-  }
-    ? {
-        findUnique: AugmentedFindUnique<TPrisma[K]['findUnique']>
-        findFirst: AugmentedFindFirst<TPrisma[K]['findFirst']>
-        findMany: AugmentedFindMany<TPrisma[K]['findMany']>
-        create: TPrisma[K]['create']
-        update: TPrisma[K]['update']
-        delete: TPrisma[K]['delete']
-        count: TPrisma[K]['count']
-        // Batch operations - run individual operations in a loop to ensure hooks and access control
-        createMany: Parameters<TPrisma[K]['create']>[0] extends { data: infer TData }
-          ? (args: { data: TData[] }) => Promise<Awaited<ReturnType<TPrisma[K]['create']>>[]>
-          : never
-        updateMany: Parameters<TPrisma[K]['update']>[0] extends { data: infer TData }
-          ? Parameters<TPrisma[K]['findMany']>[0] extends { where?: infer TWhere }
-            ? (args: {
-                where?: TWhere
-                data: TData
-              }) => Promise<Awaited<ReturnType<TPrisma[K]['update']>>[]>
-            : never
-          : never
-      }
-    : never
-} & {
-  // Add index signature for runtime string access (e.g., db[getDbKey(listName)])
-  // Uses `any` because models can have any shape from Prisma schema
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any
+/**
+ * The secured `db` surface, keyed by the PascalCase list name — the same
+ * spelling the config uses (ADR-0041). List names come from the config at
+ * runtime, so this is an index signature; the generated bundle names each
+ * member and gives it its contract-derived type, which is where a misspelt
+ * key becomes a compile error.
+ */
+export interface AccessControlledDB {
+  [listKey: string]: AccessControlledDelegate
 }
 
 export type StorageUtils = {
@@ -253,14 +215,22 @@ export type StorageUtils = {
 }
 
 // Uses `interface` rather than `type` so consumers can extend it via module augmentation.
-export interface AccessContext<
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  // See the identical `TDb` doc on `StackContext` (context/index.ts) — #1232.
-  TDb = AccessControlledDB<TPrisma>,
-> {
+export interface AccessContext {
   session: Session | null
-  prisma: TPrisma
-  db: TDb
+  /**
+   * The engine's own ORM handle: the client `db`'s terminals, the Write
+   * Pipeline and the access filter run their queries through, narrowed to one
+   * model by `ormModel()`. It is engine plumbing, not an application seam —
+   * the engine applies the Access Filter, Field Visibility and hooks *around*
+   * it, so the handle itself enforces none of them.
+   *
+   * The application's deliberate bypass is a different thing under a different
+   * name: `unsafe` on the request context (`StackBaseContext.unsafe`), which
+   * is Prisma's own query lanes with every execution marked intentionally
+   * unscoped, and is not a member of this type.
+   */
+  ormHandle: OrmClient
+  db: AccessControlledDB
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean
@@ -289,6 +259,38 @@ export interface AccessContext<
    * @internal
    */
   _transactionOwner?: TransactionRegistry
+  /**
+   * Opens the transaction a write brackets itself with (ADR-0010), when this
+   * context is over a client that can open one and is not already inside one.
+   * Absent on a context rebound to a transaction, on a joined write, and on a
+   * context over a hand-built double — each of which runs directly against the
+   * handle it was given.
+   * @internal
+   */
+  _transactionOpener?: TransactionOpener
+  /**
+   * The lane `forUpdate()` and `advisoryLock()` compose their statements
+   * through, present only on a context bound to a transaction (ADR-0047).
+   *
+   * Carried on the context rather than passed at construction alone because
+   * `db`'s terminals capture their lane the way they capture their handle, so
+   * every path that REBUILDS the delegate — the Write Pipeline rebinding a
+   * hook's `db` to the transaction, `deriveResolveOutputContext` extending the
+   * resolve chain — has to hand the lane back or a hook inside
+   * `context.transaction()` loses a lock the enclosing context has.
+   * @internal
+   */
+  _rowLock?: RowLockLane
+  /**
+   * The resolved config this context was built from, so a core surface reached
+   * with nothing but a context can resolve a list and a field against the
+   * authority rather than against what its caller asserted — see
+   * `writePluginOwnedField`. Optional because `AccessContext` is a public type
+   * a test double may build; a context core built always carries it, and a
+   * surface that needs it refuses a context that does not.
+   * @internal
+   */
+  _config?: import('../config/types.js').OpenSaasConfig
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

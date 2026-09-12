@@ -3,6 +3,7 @@ import type { Session, AccessContext } from './types.js'
 import { getRelatedListConfig } from './engine.js'
 import { isFieldReadableForPredicate } from './field-access.js'
 import { ValidationError } from '../hooks/index.js'
+import { SCALAR_OPERATORS, SCALAR_OPERATOR_SET } from '../secured/operators.js'
 
 /**
  * #912 — read-path key validation.
@@ -150,6 +151,22 @@ export function resolveQueryField(
   return undefined
 }
 
+/**
+ * Refuse an operator the Where vocabulary does not contain. A scalar
+ * condition is either a bare value or an object whose keys are all operators,
+ * so anything else is a caller error rather than a nested field name.
+ */
+function rejectUnknownOperators(listName: string, key: string, condition: unknown): void {
+  if (condition === null || typeof condition !== 'object' || Array.isArray(condition)) return
+  for (const operator of Object.keys(condition)) {
+    if (SCALAR_OPERATOR_SET.has(operator)) continue
+    throw new ValidationError([
+      `Cannot query "${listName}" — "${key}" was given "${operator}", which is not part of the ` +
+        `Where vocabulary (${SCALAR_OPERATORS.join(', ')}).`,
+    ])
+  }
+}
+
 function rejectUndeclaredKey(listName: string, key: string, kind: 'where' | 'orderBy'): never {
   throw new ValidationError([
     `Cannot query "${listName}" — "${key}" is not a field of this list. ` +
@@ -223,16 +240,17 @@ function walkWhere(
       rejectUndeclaredKey(listName, key, 'where')
     }
 
-    // Scalar field filters use Prisma's own operator vocabulary (`equals`,
-    // `contains`, `in`, …) and never nest another field name — trusted as-is,
-    // no further walk needed. Only a relationship field's filter nests a
-    // WHERE clause for another list.
-    if (
-      resolved.isRelationship &&
-      value !== null &&
-      typeof value === 'object' &&
-      !Array.isArray(value)
-    ) {
+    // A scalar field's filter never nests another field name, but it does
+    // name operators, and the Where vocabulary is closed (ADR-0055): an
+    // operator outside it is refused rather than passed to the ORM, where an
+    // unhandled one would widen the clause. Only a relationship field's
+    // filter nests a WHERE clause for another list.
+    if (!resolved.isRelationship) {
+      rejectUnknownOperators(listName, key, value)
+      continue
+    }
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       const related = getRelatedListConfig(resolved.fieldConfig.ref, config)
       if (!related) continue
 

@@ -8,10 +8,11 @@ import { Card } from '../primitives/card.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AccessContext,
+  type AnyStackContext,
   type FieldConfig,
   type ListConfig,
-  buildRelationshipCountSelect,
-  getDbKey,
+  type SecuredQuery,
+  engineContextOf,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -19,11 +20,12 @@ import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemFor
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
 export interface ItemFormProps {
-  context: AccessContext<unknown>
+  context: AnyStackContext
   config: OpenSaasConfig
   listKey: string
   mode: 'create' | 'edit'
-  itemId?: string
+  /** The record's id at its list's own key type (ADR-0048) — a number on an integer-keyed list. */
+  itemId?: string | number
   basePath?: string
   // See AdminUIProps.serverAction for why this is Promise<unknown>.
   serverAction: (input: ServerActionInput) => Promise<unknown>
@@ -32,85 +34,82 @@ export interface ItemFormProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
 type AnyListConfig = ListConfig<any>
 
-/** A single relation entry in the item-view include (bounded to-many, or bare). */
-type ItemViewIncludeEntry = boolean | { take?: number; include?: Record<string, boolean> }
-
 /**
- * Build the `include` object for an item-view fetch that derives Relationship
- * tables. To-one / details relationships are included one level deep; each
- * to-many Relationship table is included with a nested include of its own
- * relationship columns (so their Cells can resolve labels) AND a `take` that
- * BOUNDS the related-row fetch (issue #752) to the section's cap — all through
- * the secured context, so only access-visible rows and fields come back. The
- * bound is per-relationship (`ui.itemView.take`, default `DEFAULT_ITEM_VIEW_TAKE`);
- * the full access-scoped total for the footer is fetched separately via `_count`
- * (see {@link ItemViewLayoutView}), never by fetching every row.
+ * Compose the item-view read that derives Relationship tables.
+ *
+ * To-one / details relationships are reached one hop. Each to-many
+ * Relationship table is reached as a `combine` of two independently scoped
+ * branches: the bounded page of rows the table renders (`ui.itemView.take`,
+ * default `DEFAULT_ITEM_VIEW_TAKE`, issue #752) and the access-scoped total its
+ * footer shows. The engine ANDs the related list's own `query` access into
+ * both, so the total can never count a row the rows branch may not show, and
+ * neither is a rule this component re-derives.
+ *
+ * **Known limit.** A relationship column ON a table's rows is not reached: a
+ * to-one whose foreign key is mapped onto the relation's own name — the
+ * contract's default — cannot be included one hop down
+ * (`NestedToOneIncludeError`, https://github.com/OpenSaasAU/stack/issues/1236).
+ * Those Cells render from the row without the related record until that lands.
  */
-export function buildItemViewInclude(
+export function composeItemViewRead(
+  read: SecuredQuery,
   listConfig: AnyListConfig,
-  config: OpenSaasConfig,
   layout: ItemViewLayout,
-): Record<string, ItemViewIncludeEntry> {
-  const include: Record<string, ItemViewIncludeEntry> = {}
+): SecuredQuery {
+  const withDetails = layout.detailsFields.reduce(
+    (query, fieldName) =>
+      listConfig.fields[fieldName]?.type === 'relationship' ? query.include(fieldName) : query,
+    read,
+  )
 
-  for (const fieldName of layout.detailsFields) {
-    if (listConfig.fields[fieldName]?.type === 'relationship') {
-      include[fieldName] = true
-    }
-  }
-
-  for (const section of layout.sections) {
-    const relatedListConfig = config.lists[section.relatedListKey]
-    const relationshipColumns = section.columns.filter(
-      (column) => relatedListConfig?.fields[column]?.type === 'relationship',
-    )
-    // Always carry the row bound; add a nested include only when the table has
-    // relationship columns whose Cells need the related record to label.
-    const entry: { take: number; include?: Record<string, boolean> } = { take: section.take }
-    if (relationshipColumns.length > 0) {
-      entry.include = Object.fromEntries(relationshipColumns.map((column) => [column, true]))
-    }
-    include[section.fieldName] = entry
-  }
-
-  return include
+  return layout.sections.reduce(
+    (query, section) =>
+      query.include(section.fieldName, (rows) =>
+        rows.combine({
+          [SECTION_ROWS]: rows.limit(section.take),
+          [SECTION_TOTAL]: rows.count(),
+        }),
+      ),
+    withDetails,
+  )
 }
 
-/** The related rows for a section, or `[]` when absent/denied. */
-function sectionRows(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
+/** The keys {@link composeItemViewRead}'s `combine` puts the two branches under. */
+const SECTION_ROWS = 'items'
+const SECTION_TOTAL = 'total'
+
+function combinedSection(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+/** The bounded related rows for a section, or `[]` when absent/denied. */
+export function sectionRows(value: unknown): Array<Record<string, unknown>> {
+  const rows = combinedSection(value)?.[SECTION_ROWS]
+  return Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []
 }
 
 /**
- * Read the access-scoped total (M) for a Relationship-table section off the
- * parent record's filtered `_count` payload (issue #752). The `_count` is built
- * by {@link buildRelationshipCountSelect}, which folds each related list's own
- * `query` access into the count's `where` and OMITS a fully-denied related list
- * entirely — so a denied list has no key here and reads as `fallback` (the
- * bounded rows length, which is itself 0 for a denied list), never leaking a
- * true total. When the value is present it is the authoritative access-scoped
- * total (always ≥ the bounded row count).
+ * The access-scoped total (M) for a Relationship-table section's "showing N of
+ * M" footer, off the count branch {@link composeItemViewRead} composed.
+ *
+ * A relation this session may not read counts 0 rather than its true size, so
+ * the total the footer shows is always one the session was allowed to learn.
+ * The fallback covers only a value that carries no numeric total at all — a
+ * shape the count branch did not produce.
  */
-export function readAccessScopedTotal(
-  countPayload: unknown,
-  fieldName: string,
-  fallback: number,
-): number {
-  if (countPayload && typeof countPayload === 'object') {
-    const value = (countPayload as Record<string, unknown>)[fieldName]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-  }
-  return fallback
+export function readAccessScopedTotal(value: unknown, fallback: number): number {
+  const total = combinedSection(value)?.[SECTION_TOTAL]
+  return typeof total === 'number' && Number.isFinite(total) ? total : fallback
 }
 
 /**
  * Strip a fetched item-view record down to the details-card fields (issue
- * #797): every Relationship-table section's field (rendered separately as a
- * read-only table) AND the synthetic `_count` payload the fetch adds
- * alongside the real fields (for {@link readAccessScopedTotal}'s "showing N of
- * M" footer). Neither belongs in the details form's data — `_count` in
- * particular is not a field of the list, so if it survived into the submit
- * payload the server would reject the whole update.
+ * #797): every Relationship-table section's field is rendered separately as a
+ * read-only table, and its value carries the synthetic branch keys the footer
+ * reads. Neither is a field of the list, so a value that survived into the
+ * submit payload would make the server reject the whole update.
  */
 export function buildDetailsItemData(
   itemData: Record<string, unknown>,
@@ -118,7 +117,7 @@ export function buildDetailsItemData(
 ): Record<string, unknown> {
   const detailsItemData: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(itemData)) {
-    if (key !== '_count' && !layout.sections.some((section) => section.fieldName === key)) {
+    if (!layout.sections.some((section) => section.fieldName === key)) {
       detailsItemData[key] = value
     }
   }
@@ -141,36 +140,27 @@ async function ItemViewLayoutView({
   serverAction,
   layout,
 }: {
-  context: AccessContext<unknown>
+  context: AccessContext
   config: OpenSaasConfig
   listConfig: AnyListConfig
   listKey: string
-  itemId: string
+  itemId: string | number
   basePath: string
   serverAction: (input: ServerActionInput) => Promise<unknown>
   layout: ItemViewLayout
 }) {
   const urlKey = getUrlKey(listKey)
 
-  // One secured read: {@link buildItemViewInclude} bounds each table's nested
-  // include, and the filtered `_count` below is fetched in the SAME call so
-  // {@link readAccessScopedTotal} never leaks a denied list's true total
-  // (mirrors the list view's #732 count columns).
-  const include: Record<string, unknown> = { ...buildItemViewInclude(listConfig, config, layout) }
-  const countSelect = await buildRelationshipCountSelect(
-    listConfig,
-    { session: context.session, context },
-    config,
-  )
-  if (countSelect) {
-    include._count = { select: countSelect }
-  }
+  // One secured read: the bounded rows each table renders and the total its
+  // footer shows come back from the SAME call, both scoped by the related
+  // list's own `query` access (mirrors the list view's #732 count columns).
   let itemData: Record<string, unknown> | null = null
   try {
-    const delegate = context.db[getDbKey(listKey)]
-    if (delegate?.findUnique) {
-      itemData = await delegate.findUnique({ where: { id: itemId }, include })
-    }
+    itemData = await composeItemViewRead(
+      context.db[listKey].where({ id: itemId }),
+      listConfig,
+      layout,
+    ).first()
   } catch (error) {
     console.error(`Failed to fetch item ${itemId}:`, error)
   }
@@ -214,6 +204,7 @@ async function ItemViewLayoutView({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     detailsListConfig,
     detailsItemData,
   )
@@ -226,7 +217,7 @@ async function ItemViewLayoutView({
         mode="edit"
         fields={serializableFields}
         initialData={initialData}
-        itemId={itemId}
+        itemId={String(itemId)}
         basePath={basePath}
         serverAction={serverAction}
         relationshipData={relationshipData}
@@ -234,9 +225,9 @@ async function ItemViewLayoutView({
     </Card>
   )
 
-  const countPayload = itemData?._count
   const tables = layout.sections.map((section) => {
-    const rows = sectionRows(itemData?.[section.fieldName])
+    const sectionValue = itemData?.[section.fieldName]
+    const rows = sectionRows(sectionValue)
     return (
       <RelationshipTable
         key={section.fieldName}
@@ -244,11 +235,11 @@ async function ItemViewLayoutView({
         section={section}
         rows={rows}
         // M for "showing N of M" — see {@link readAccessScopedTotal}.
-        total={readAccessScopedTotal(countPayload, section.fieldName, rows.length)}
+        total={readAccessScopedTotal(sectionValue, rows.length)}
         basePath={basePath}
         context={context}
         parentListKey={listKey}
-        parentId={itemId}
+        parentId={String(itemId)}
         serverAction={serverAction}
       />
     )
@@ -283,7 +274,7 @@ async function ItemViewLayoutView({
 }
 
 export async function ItemForm({
-  context,
+  context: appContext,
   config,
   listKey,
   mode,
@@ -291,6 +282,7 @@ export async function ItemForm({
   basePath = '/admin',
   serverAction,
 }: ItemFormProps) {
+  const context = engineContextOf(appContext)
   const listConfig = config.lists[listKey]
   const urlKey = getUrlKey(listKey)
 
@@ -327,17 +319,15 @@ export async function ItemForm({
     }
   }
 
-  let itemData: Record<string, unknown> = {}
+  let itemData: Record<string, unknown> | null = {}
   if (mode === 'edit' && itemId) {
     try {
-      const includeRelationships = buildRelationshipInclude(listConfig)
-      const delegate = context.db[getDbKey(listKey)]
-      if (delegate?.findUnique) {
-        itemData = await delegate.findUnique({
-          where: { id: itemId },
-          ...(Object.keys(includeRelationships).length > 0 && { include: includeRelationships }),
-        })
-      }
+      itemData = await buildRelationshipInclude(listConfig)
+        .reduce(
+          (read, fieldName) => read.include(fieldName),
+          context.db[listKey].where({ id: itemId }),
+        )
+        .first()
     } catch (error) {
       console.error(`Failed to fetch item ${itemId}:`, error)
     }
@@ -367,6 +357,7 @@ export async function ItemForm({
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
     config,
+    listKey,
     listConfig,
     itemData,
   )
@@ -386,7 +377,7 @@ export async function ItemForm({
           mode={mode}
           fields={serializableFields}
           initialData={initialData}
-          itemId={itemId}
+          itemId={itemId === undefined ? undefined : String(itemId)}
           basePath={basePath}
           serverAction={serverAction}
           relationshipData={relationshipData}

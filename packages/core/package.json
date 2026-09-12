@@ -3,6 +3,10 @@
   "version": "0.43.0",
   "description": "Core stack for OpenSaas - schema definition, access control, and runtime utilities",
   "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -26,9 +30,33 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
+    "./client": {
+      "types": "./dist/db/client.d.ts",
+      "default": "./dist/db/client.js"
+    },
+    "./dev-database": {
+      "types": "./dist/db/dev-database.d.ts",
+      "default": "./dist/db/dev-database.js"
+    },
+    "./contract": {
+      "types": "./dist/contract/index.d.ts",
+      "default": "./dist/contract/index.js"
+    },
+    "./origin": {
+      "types": "./dist/origin.d.ts",
+      "default": "./dist/origin.js"
+    },
+    "./unsafe": {
+      "types": "./dist/unsafe.d.ts",
+      "default": "./dist/unsafe.js"
+    },
     "./config/plugin-engine": {
       "types": "./dist/config/plugin-engine.d.ts",
       "default": "./dist/config/plugin-engine.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     }
   },
   "scripts": {
@@ -57,18 +85,43 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@prisma/client": "^6.17.0 || ^7.0.0"
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@electric-sql/pglite-pgvector": {
+      "optional": true
+    },
+    "@electric-sql/pglite-socket": {
+      "optional": true
+    },
+    "@prisma/orm-toolchain": {
+      "optional": true
+    }
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "pg": "^8.22.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@prisma/client": "^7.9.1",
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

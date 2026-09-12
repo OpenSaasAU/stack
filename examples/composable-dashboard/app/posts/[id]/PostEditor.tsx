@@ -8,9 +8,22 @@ import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
 import { PostStatusBadge } from '../../../components/PostStatusBadge'
 import type { Post, PostUpdateInput } from '@/.opensaas/types'
-import { FieldConfig } from '@opensaas/stack-core'
+import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
 
-export function PostEditor({ post, fields }: { post: Post; fields: Record<string, FieldConfig> }) {
+/**
+ * What the editor is handed: the post's own columns, and the author narrowed
+ * to the one column it renders. A whole `User` row would carry `password`,
+ * which reads as a `HashedPassword` and cannot cross into a Client Component.
+ */
+type EditablePost = Omit<Post, 'author'> & { author: { name: string } | null }
+
+export function PostEditor({
+  post,
+  fields,
+}: {
+  post: EditablePost
+  fields: Record<string, SerializableFieldConfig>
+}) {
   const [editing, setEditing] = useState(false)
   const router = useRouter()
 
@@ -23,7 +36,13 @@ export function PostEditor({ post, fields }: { post: Post; fields: Record<string
         <CardContent>
           <ItemEditForm<PostUpdateInput>
             fields={fields}
-            initialData={post as unknown as PostUpdateInput}
+            initialData={{
+              title: post.title,
+              slug: post.slug,
+              content: post.content,
+              internalNotes: post.internalNotes,
+              status: post.status,
+            }}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data)
 
@@ -54,7 +73,7 @@ export function PostEditor({ post, fields }: { post: Post; fields: Record<string
             <div className="flex-1">
               <CardTitle className="text-3xl">{post.title}</CardTitle>
               <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                <span>by {post.author?.name || 'Unknown'}</span>
+                <span>by {post.author?.name ?? 'Unknown'}</span>
                 <span>•</span>
                 <span>{new Date(post.createdAt).toLocaleDateString()}</span>
                 <span>•</span>

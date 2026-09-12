@@ -3,6 +3,9 @@
   "version": "0.3.5",
   "description": "Create a new OpenSaas Stack application",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "bin": {
     "create-opensaas-app": "./dist/index.js"
   },
@@ -28,9 +31,9 @@
     "@types/node": "^26.1.1",
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "repository": {
     "type": "git",

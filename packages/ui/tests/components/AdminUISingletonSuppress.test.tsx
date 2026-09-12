@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect, vi, beforeEach } from 'vitest'
 import * as React from 'react'
 import { render, screen } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { ItemForm } from '../../src/components/ItemForm.js'
 import { SingletonView } from '../../src/components/SingletonView.js'
@@ -17,6 +18,9 @@ const mockRedirect = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: mockPush, refresh: mockRefresh }),
   redirect: (url: string) => mockRedirect(url),
+  notFound: () => {
+    throw new Error('notFound')
+  },
 }))
 
 // next/link renders an anchor; happy-dom can render it directly.
@@ -31,48 +35,44 @@ vi.mock('next/link.js', () => ({
  * Built with the real `list()` + field builders so the components see the same
  * field shapes they would in a real app.
  */
+const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
+
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql', timestamps: true },
   lists: {
     Settings: list({
       isSingleton: true,
       fields: {
         siteName: text(),
       },
+      access: { operation: OPEN },
     }),
     Post: list({
       fields: {
         title: text(),
       },
+      access: { operation: OPEN },
     }),
   },
 }
 
-interface DelegateStub {
-  get?: () => Promise<Record<string, unknown> | null>
-  findUnique?: (args: unknown) => Promise<Record<string, unknown> | null>
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args?: unknown) => Promise<number>
-}
-
-/**
- * Build a minimal AccessContext whose db delegates return canned data. Only the
- * methods the views call are implemented.
- */
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unknown> {
-  const context = {
-    db: delegates,
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  // Cast: this is a stub for rendering tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext<unknown>
-}
-
 const noopServerAction = vi.fn(async () => ({ success: true }))
+
+let harness: TestContext
+let context: AccessContext
+let postId: string
+
+beforeAll(async () => {
+  harness = await createTestContext(config, null)
+  context = harness.context as unknown as AccessContext
+  const post = await harness.context.db.Post.create({ data: { title: 'First Post' } })
+  postId = String(post?.id)
+  await harness.context.db.Settings.create({ data: { siteName: 'My Site' } })
+}, 120_000)
+
+afterAll(async () => {
+  await harness?.close()
+})
 
 beforeEach(() => {
   mockRedirect.mockClear()
@@ -82,10 +82,6 @@ beforeEach(() => {
 
 describe('AdminUI singleton sub-route redirects', () => {
   it('redirects a singleton [list, "create"] to the bare editor route', async () => {
-    const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
-
     await AdminUI({
       context,
       config,
@@ -99,10 +95,6 @@ describe('AdminUI singleton sub-route redirects', () => {
   })
 
   it('redirects a singleton [list, id] to the bare editor route', async () => {
-    const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
-
     await AdminUI({
       context,
       config,
@@ -116,10 +108,6 @@ describe('AdminUI singleton sub-route redirects', () => {
   })
 
   it('honours a custom basePath in the redirect target', async () => {
-    const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
-
     await AdminUI({
       context,
       config,
@@ -132,10 +120,6 @@ describe('AdminUI singleton sub-route redirects', () => {
   })
 
   it('does NOT redirect a singleton bare [list] route (renders the editor)', async () => {
-    const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
-
     await AdminUI({
       context,
       config,
@@ -148,14 +132,6 @@ describe('AdminUI singleton sub-route redirects', () => {
   })
 
   it('does NOT redirect non-singleton create/edit routes (routing unchanged)', async () => {
-    const context = makeContext({
-      post: {
-        findMany: vi.fn(async () => []),
-        count: vi.fn(async () => 0),
-        findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })),
-      },
-    })
-
     // Non-singleton create
     await AdminUI({
       context,
@@ -170,7 +146,7 @@ describe('AdminUI singleton sub-route redirects', () => {
     await AdminUI({
       context,
       config,
-      params: ['post', '1'],
+      params: ['post', postId],
       basePath: '/admin',
       serverAction: noopServerAction,
     })
@@ -180,11 +156,6 @@ describe('AdminUI singleton sub-route redirects', () => {
 
 describe('Dashboard create suppression for singletons', () => {
   it('does not render a "Create {singleton}" quick-action but does for a non-singleton', async () => {
-    const context = makeContext({
-      settings: { count: vi.fn(async () => 1) },
-      post: { count: vi.fn(async () => 2) },
-    })
-
     const element = await Dashboard({ context, config, basePath: '/admin' })
     render(element)
 
@@ -206,7 +177,6 @@ describe('Dashboard create suppression for singletons', () => {
         Settings: list({ isSingleton: true, fields: { siteName: text() } }),
       },
     }
-    const context = makeContext({ settings: { count: vi.fn(async () => 1) } })
 
     const element = await Dashboard({ context, config: singletonOnly, basePath: '/admin' })
     render(element)
@@ -218,10 +188,6 @@ describe('Dashboard create suppression for singletons', () => {
 
 describe('Delete suppression in the singleton editor', () => {
   it('renders no delete control in the singleton editor (SingletonView)', async () => {
-    const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
-
     const element = await SingletonView({
       context,
       config,
@@ -237,16 +203,12 @@ describe('Delete suppression in the singleton editor', () => {
   })
 
   it('still renders the delete control for a non-singleton edit form (ItemForm)', async () => {
-    const context = makeContext({
-      post: { findUnique: vi.fn(async () => ({ id: '1', title: 'First Post' })) },
-    })
-
     const element = await ItemForm({
       context,
       config,
       listKey: 'Post',
       mode: 'edit',
-      itemId: '1',
+      itemId: postId,
       basePath: '/admin',
       serverAction: noopServerAction,
     })

@@ -10,7 +10,7 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'OpenSaas Stack Access Control System',
-    content: `The access control system is OpenSaas Stack's primary innovation. It automatically secures all database operations through a context wrapper that intercepts Prisma queries. Access control has three levels: operation-level (controls query/create/update/delete), field-level (controls which fields are readable/writable), and filter-based (scopes which records are accessible). Users define access rules in opensaas.config.ts using AccessControl functions. Operations return null or empty arrays on denial rather than throwing errors, preventing information leakage. All operations must go through context.db instead of direct Prisma access to ensure security. The access control engine automatically merges filters with Prisma where clauses.`,
+    content: `The access control system is OpenSaas Stack's primary innovation. It automatically secures every database operation: context.db is a secured surface over the ORM rather than the ORM itself. Access control has three levels: operation-level (controls query/create/update/delete), field-level (controls which fields are readable/writable), and filter-based (scopes which records are accessible). Users define access rules in opensaas.config.ts using AccessControl functions. Operations return null or empty arrays on denial rather than throwing errors, preventing information leakage. The engine ANDs a filter-returning rule into the read's own predicate in the same query, so a terminal like nearest() ranks inside the scoped set rather than filtering a ranked one. The deliberate bypass is context.unsafe, which skips the access filter, field visibility, hooks and error normalisation alike — reaching for it is a visible act, and the call site should say why.`,
     category: 'ai-ml',
     published: true,
   },
@@ -22,137 +22,146 @@ const sampleArticles: KnowledgeBaseCreateInput[] = [
   },
   {
     title: 'Building Lists in OpenSaas Stack',
-    content: `Lists are the fundamental building blocks in OpenSaas Stack, representing database tables with fields, access control, and hooks. Each list is defined in opensaas.config.ts with PascalCase names (e.g., BlogPost, User). Lists contain fields (like text, integer, relationship), access control rules at operation and field levels, and hooks for data transformation and side effects. The stack automatically generates Prisma schemas, TypeScript types, and Zod validation schemas from list definitions. System fields (id, createdAt, updatedAt) are added automatically. Lists support relationships using the ref format (e.g., 'Post.author'). The generated context provides type-safe database access with automatic access control enforcement.`,
+    content: `Lists are the fundamental building blocks in OpenSaas Stack, representing database tables with fields, access control, and hooks. Each list is defined in opensaas.config.ts with PascalCase names (e.g., BlogPost, User). Lists contain fields (like text, integer, relationship), access control rules at operation and field levels, and hooks for data transformation and side effects. The stack automatically generates the database contract, TypeScript types, and Zod validation schemas from list definitions; there is no Prisma schema file. The one column added for you is id; createdAt and updatedAt are not, because auto-timestamps are off by default (ADR-0004) — a list opts in by declaring the two fields itself or by setting db: { timestamps: true }, per list or on db for every list at once. Lists support relationships using the ref format (e.g., 'Post.author'). The generated context provides type-safe database access with automatic access control enforcement.`,
     category: 'web-dev',
     published: true,
   },
   {
     title: 'OpenSaas Stack Field Types',
-    content: `OpenSaas Stack provides core field types including text, integer, checkbox, timestamp, password, select, and relationship. Each field type is fully self-contained with methods for generating Zod schemas (validation), Prisma types (database), and TypeScript types. Fields support validation rules like isRequired, length constraints, and min/max values. The architecture uses builder pattern methods (getZodSchema, getPrismaType, getTypeScriptType) to delegate generation logic to fields rather than using switch statements. Third-party packages can add custom field types by implementing the BaseFieldConfig interface. Fields can specify UI options that are automatically passed to admin components. The searchable() wrapper from @opensaas/stack-rag automatically adds embedding fields for semantic search.`,
+    content: `OpenSaas Stack provides core field types including text, integer, checkbox, timestamp, password, select, and relationship. Each field type is fully self-contained. A field builder describes itself through getZodSchema (validation) and getContractField, which returns a ContractFieldDescriptor: the stored column as a pack-qualified type constructor such as { pack: 'pg', type: 'text' } with its nullability and column mapping, or a kind: 'columns' descriptor when one logical field owns several columns, a kind: 'relation' descriptor for a relationship, or kind: 'computed' for a field that stores nothing, such as a virtual field. Where the TypeScript face differs from what the column's codec already gives it, the builder declares it as the outputType and inputType values rather than as a method; a field with no single column to be typed from — kind: 'computed' or kind: 'columns' — must declare outputType, while inputType stays optional everywhere. Fields support validation rules like isRequired, length constraints, and min/max values. Delegating to these members keeps generation logic in the fields, so nothing in the generator switches on field type. Third-party packages can add custom field types by implementing the BaseFieldConfig interface. Fields can specify UI options that are automatically passed to admin components. The searchable() wrapper from @opensaas/stack-rag/fields automatically adds embedding fields for semantic search.`,
     category: 'web-dev',
     published: true,
   },
   {
     title: 'OpenSaas Stack Hooks System',
-    content: `The hooks system in OpenSaas Stack provides data transformation and side effects during database operations. Hooks are available at list and field levels. Data transformation hooks include resolveInput (transform data going in) and resolveOutput (transform data coming out). Side effect hooks include beforeOperation and afterOperation for actions without modifying data. There's also validateInput for custom validation logic. Hook execution order for writes: list resolveInput, field resolveInput, validateInput, field validation, access control, beforeOperation hooks, database operation, then afterOperation hooks. For reads: database operation, access control, field resolveOutput, afterOperation. Common use cases include hashing passwords, auto-setting timestamps, sending notifications, and cache invalidation.`,
+    content: `The hooks system in OpenSaas Stack provides data transformation and side effects during database operations. Hooks are available at list and field levels, though not every hook exists at both: resolveInput is a data transformation hook at either level, while resolveOutput (transform data coming out) is field-level only — the list-level hooks type has no such key. Side effect hooks include beforeOperation and afterOperation for actions without modifying data. There's also validate for custom validation logic, which validateInput remains a deprecated alias of. Hook execution order for writes: list resolveInput, field resolveInput, list validate, field validate, field validation, beforeOperation hooks, database operation, then afterOperation hooks — all inside the write's own transaction. The operation-level access check runs before that transaction opens, so a denied write fires no boundary hook at all. afterTransaction runs when that transaction settles — committed or rolled back — and carries a status saying which, so a hook that must only act on a successful write checks it: the RAG plugin returns early unless status is 'committed'. It is where work that must not hold a database connection belongs, because calling an embedding provider is a network round trip. For reads the order is the other way around from writes: the operation-level query rule and the filter it returns resolve into the query before it runs, so the database returns only permitted rows; then field-level access strips what the session cannot read and field resolveOutput runs on the rows that came back (ADR-0001 calls these the pre-query Access Filter and the post-query Field Visibility phases). There is no afterOperation on the read path, only on create, update and delete. Common use cases include hashing passwords, auto-setting timestamps, sending notifications, and cache invalidation.`,
     category: 'web-dev',
     published: true,
   },
   {
     title: 'OpenSaas Stack Code Generation',
-    content: `OpenSaas Stack uses code generators to convert opensaas.config.ts into Prisma schemas and TypeScript types. Running 'pnpm generate' creates prisma/schema.prisma with all models and .opensaas/types.ts with TypeScript types. Generators delegate to field builder methods rather than using switch statements, making the system fully extensible. The generated context factory (.opensaas/context.ts) abstracts Prisma client management and provides getContext() for creating access-controlled database contexts. Plugins can hook into generation with beforeGenerate and afterGenerate lifecycle methods. The system supports custom Prisma client constructors for specialized database drivers like Neon, Turso, or PlanetScale.`,
+    content: `OpenSaas Stack uses code generators to convert opensaas.config.ts into a database contract and TypeScript types. Running 'pnpm generate' emits the Contract module and its artifacts, .opensaas/types.ts with TypeScript types, and a contract space under migrations/ for each extension pack the config declares; it writes no app migration of its own, which is what 'prisma migration plan' does. Generators delegate to field builder methods rather than switching on field type, which is what makes a third-party field type work with no core change; the switches that remain in the generation path are over things core owns anyway — a contract descriptor's kind, a pack-qualified column type, an id strategy — never over the set of field types. The generated context factory (.opensaas/context.ts) abstracts Prisma client management and provides getContext() for creating access-controlled database contexts. Plugins can hook into generation with beforeGenerate and afterGenerate lifecycle methods. The datasource is PostgreSQL only, and a config declares extension packs rather than a client constructor.`,
     category: 'software-eng',
     published: true,
   },
   {
     title: 'OpenSaas Stack Authentication with Better-auth',
-    content: `OpenSaas Stack provides optional Better-auth integration through @opensaas/stack-auth. The authPlugin automatically injects auth lists (User, Session, Account, Verification) and configures Better-auth with email/password and OAuth support. The config wrapper merges auth lists with user-defined lists and manages session fields. Better-auth handles OAuth flows and session management, while the context automatically includes session data in all access control functions. The stack provides pre-built UI components (SignInForm, SignUpForm) and client-side hooks (useSession). Session fields are configurable to include userId, email, name, role, and custom fields. Auth setup requires minimal configuration - just add authPlugin to your config.`,
+    content: `OpenSaas Stack provides optional Better-auth integration through @opensaas/stack-auth. The authPlugin automatically injects auth lists (User, Session, Account, Verification) and configures Better-auth with email/password and OAuth support. There is no config wrapper: the plugin's init merges those lists into the config through addList, or through extendList where the app already declares the key, and manages session fields. Better-auth handles OAuth flows and session management; the app is what supplies the session to the context — getContext(session) — and from there the engine forwards it to every access control function without the caller passing it again. The stack provides pre-built UI components (SignInForm, SignUpForm) from @opensaas/stack-auth/ui. Client-side hooks are not stack exports: @opensaas/stack-auth/client exports createClient, and useSession comes off the better-auth client instance it returns. Session fields are configurable to include userId, email, name, role, and custom fields. Adding authPlugin to your config is most of the setup, alongside createAuth, a route handler and a secret.`,
     category: 'software-eng',
     published: true,
   },
   {
     title: 'OpenSaas Stack RAG Integration',
-    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. The searchable() field wrapper automatically creates embedding fields and hooks for regeneration on content changes. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings. Storage backends include pgvector for PostgreSQL, sqlite-vss for SQLite, and JSON storage for development. The package provides runtime utilities like semanticSearch(), generateEmbedding(), and chunkText(). Embeddings are stored as JSON with metadata including model, provider, dimensions, and source hash for change detection.`,
+    content: `The RAG (Retrieval-Augmented Generation) package (@opensaas/stack-rag) adds vector embeddings and semantic search to OpenSaas Stack applications. It uses a plugin-based architecture with ragPlugin for configuration. There are two equivalent ways to declare a vector: the searchable() wrapper, which adds the companion embedding field for you, and embedding() written out, which is what lets the column declare its own distanceFunction and index; dimensions belongs to either. Supported embedding providers include OpenAI (text-embedding-3-small, text-embedding-3-large) and Ollama for local embeddings; ollamaEmbeddings requires dimensions, because Ollama reports its output size only from a live embed call and the value is a column's type. Embeddings are stored in a native pgvector column, with their metadata in a jsonb column beside it, and search runs through nearest() on the secured read surface so the ranking and the access filter live in the same query. The column is a plugin output and is write-denied to application code by default: a create or update naming it throws unless the field sets allowManualWrites. ragPlugin declares the pgvector extension pack itself, so applying the contract enables the extension and there is no CREATE EXTENSION step and no install script. Runtime utilities like semanticSearch(), generateEmbedding() and chunkText() live on the @opensaas/stack-rag/runtime subpath, not on the package root — the root entry exports openaiEmbeddings, ollamaEmbeddings, ragPlugin and types. The stored metadata records model, provider, dimensions and generatedAt, all four required by the field's own schema, plus an optional source hash for change detection, which is what stops an unrelated field change from costing an API call.`,
     category: 'database',
     published: true,
   },
   {
     title: 'OpenSaas Stack MCP Server Integration',
-    content: `OpenSaas Stack integrates with Model Context Protocol (MCP) servers through @opensaas/stack-core/mcp and @opensaas/stack-auth/mcp. Enable MCP in config with mcp.enabled and auth configuration. The core runtime automatically generates CRUD tools for each list (query, create, update, delete) that respect existing access control rules. The auth adapter provides session management from Better-auth OAuth flow with AI assistants. Custom tools can be added per-list for specialized operations. MCP enables AI assistants like Claude to interact with your application's data securely. The integration is auth-agnostic but works seamlessly with Better-auth. All MCP operations go through the same access control as regular app operations.`,
+    content: `OpenSaas Stack integrates with Model Context Protocol (MCP) servers through @opensaas/stack-core/mcp and @opensaas/stack-auth/mcp. Enable MCP in config with mcp.enabled and auth configuration. The core runtime derives CRUD tools for each list, named list_<camelCaseListKey>_<op> — list_blogPost_query, list_blogPost_create, list_blogPost_update, list_blogPost_delete. They are not unconditional: a list can opt out with mcp.enabled false, each operation is gated by that list's mcp.tools and the config's mcp.defaultTools, and a list whose operation-level query rule denies the calling session outright contributes no tools at all. The tools that are derived respect the same access control rules as any other read or write. The auth adapter provides session management from Better-auth OAuth flow with AI assistants. Custom tools can be added per-list for specialized operations. MCP enables AI assistants like Claude to interact with your application's data securely. The integration is auth-agnostic but works seamlessly with Better-auth. All MCP operations go through the same access control as regular app operations.`,
     category: 'database',
     published: true,
   },
   {
     title: 'OpenSaas Stack Admin UI Components',
-    content: `The UI package (@opensaas/stack-ui) provides multiple abstraction levels through specialized exports. The full AdminUI component offers a complete admin interface with routing. Standalone components like ItemCreateForm, ItemEditForm, and ListTable can be dropped into custom pages. Primitives based on shadcn/ui (Button, Input, Dialog, Card, Table) enable building custom UIs. Composable field components (TextField, SelectField, RelationshipField) handle individual field rendering. The UI layer uses a component registry pattern to avoid switch statements. Custom field components can be registered globally or overridden per-field. Server utilities like getAdminContext handle authentication. The UI respects access control and automatically shows/hides fields based on permissions.`,
+    content: `The UI package (@opensaas/stack-ui) provides multiple abstraction levels through specialized exports. The full AdminUI component offers a complete admin interface with routing. Standalone components like ItemCreateForm, ItemEditForm, and ListTable can be dropped into custom pages. Primitives based on shadcn/ui (Button, Input, Dialog, Card, Table) enable building custom UIs. Composable field components (TextField, SelectField, RelationshipField) handle individual field rendering. The UI layer uses a component registry pattern to avoid switch statements. Custom field components can be registered globally or overridden per-field. There is no getAdminContext: the host app builds a context with getContext from .opensaas/context and passes it to AdminUI. Affordance gating is per-surface rather than uniform: singleton views and relationship tables evaluate the list's operation rule for the current session through isOperationPotentiallyAllowed, treating a returned filter as potentially allowed and a throw as denied, while a list view's Create button carries no access check at all and its Delete gate and nav counts key on a literal boolean, so a function-valued rule leaves those affordances offered and the denial surfaces when the write is attempted. A field the reader cannot see reads back with its value stripped by core after the query rather than with its input hidden.`,
     category: 'devops',
     published: true,
   },
   {
     title: 'Creating Custom Field Types in OpenSaas Stack',
-    content: `Custom field types in OpenSaas Stack are fully self-contained and don't require modifying core code. Define the field type in config/types.ts extending BaseFieldConfig, create a builder function implementing getZodSchema (validation), getPrismaType (database), and getTypeScriptType (TypeScript types). For admin UI support, create a React component accepting standard field props (name, value, onChange, label, error) and register it with registerFieldComponent(). Third-party field packages like @opensaas/stack-tiptap demonstrate this pattern. Due to Next.js server/client boundaries, field components must be registered client-side with a 'use client' file imported in your admin page. The FieldConfig union includes BaseFieldConfig to allow custom types without core modifications.`,
+    content: `Custom field types in OpenSaas Stack are fully self-contained and don't require modifying core code. Define the field type as an intersection with BaseFieldConfig<TypeInfo>, then create a builder function implementing getZodSchema for validation and getContractField for the columns the field stores. getContractField returns a ContractFieldDescriptor and is what 'opensaas generate' reads to derive the contract. Declare outputType and inputType only where the field's TypeScript face differs from the column's own codec type. Of the two, only outputType is ever required: a field whose descriptor is kind: 'computed' (a virtual field) or kind: 'columns' has no single column to be typed from, so 'opensaas generate' refuses it without one. inputType is never required by the generator — on a single-column field its absence means the column's own input type — though a multi-column field should declare it alongside outputType for the same reason. For admin UI support, create a React component accepting standard field props (name, value, onChange, label, error) and register it with registerFieldComponent(). Third-party field packages like @opensaas/stack-tiptap demonstrate this pattern. Due to Next.js server/client boundaries, the registration must run in the browser, and a bare side-effect import of the 'use client' module from the server page.tsx does not achieve that — a 'use client' module is only evaluated where something renders it. Carry the import in a small client component that returns null and render it alongside AdminUI; 'pnpm check:client-side-effect-imports' fails on the bare-import shape. FieldConfig is BaseFieldConfig itself rather than a closed union, so a field a third-party package builds is already a FieldConfig with no core modification.`,
     category: 'devops',
     published: true,
   },
   {
     title: 'OpenSaas Stack Context and Database Access',
-    content: `The context is the primary interface for database operations in OpenSaas Stack. Generated automatically in .opensaas/context.ts, it provides getContext() for creating access-controlled database wrappers. Context must be used instead of direct Prisma access to ensure access control enforcement. Usage: 'const context = await getContext()' for anonymous access or 'await getContext({ userId: 'user-123' })' for authenticated access. The context wraps Prisma Client with interceptors that check access rules before every operation. Operations return null or empty arrays on denial (silent failures to prevent info leakage). Context supports custom Prisma client constructors for specialized database adapters. All hooks, access control functions, and MCP tools receive context for database access.`,
+    content: `The context is the primary interface for database operations in OpenSaas Stack. Generated automatically in .opensaas/context.ts, it provides getContext() for creating access-controlled database wrappers. Context must be used instead of the unsecured surface to ensure access control enforcement. Usage: 'const context = await getContext()' for anonymous access or 'await getContext({ userId: 'user-123' })' for authenticated access. Reads compose — context.db.Post.where({ ... }).orderBy(...).limit(10).all(), with .first() for one row, .aggregate() for a count and .nearest() for a vector ranking — and writes are create({ data }), update({ where: { id }, data }) and delete({ where: { id } }), relating records with connect: { id } on the side that owns the foreign key. Access rules are resolved into the query the engine builds rather than applied after it. Operations return null or empty arrays on denial (silent failures to prevent info leakage). The context builds its own client from the emitted contract; a config declares extension packs and a pool binding rather than a client constructor. All hooks, access control functions, and MCP tools receive context for database access.`,
     category: 'software-eng',
     published: true,
   },
   {
     title: 'OpenSaas Stack Naming Conventions',
-    content: `OpenSaas Stack uses consistent case conventions across contexts. List names in config must be PascalCase (e.g., User, BlogPost, AuthUser). The stack automatically converts these: Prisma models use PascalCase, Prisma Client properties use camelCase (prisma.blogPost), context DB properties use camelCase (context.db.blogPost), and admin UI URLs use kebab-case (/admin/blog-post). Utility functions help with conversion: getDbKey('BlogPost') returns 'blogPost' for database access, getUrlKey('BlogPost') returns 'blog-post' for URLs, and getListKeyFromUrl('blog-post') returns 'BlogPost' for parsing. Following these conventions ensures the code generation and admin UI work correctly. Never use lowercase or snake_case for list names.`,
+    content: `OpenSaas Stack uses consistent case conventions across contexts. List names in config are PascalCase by convention (e.g., User, BlogPost, AuthUser) — nothing validates the shape, so this is a convention the tooling assumes rather than a rule it enforces. The stack automatically converts these: contract tables and the ORM collections beneath them keep the list name (BlogPost), context DB properties use the list name (context.db.BlogPost), and admin UI URLs use kebab-case (/admin/blog-post). Utility functions help with conversion: getUrlKey('BlogPost') returns 'blog-post' for URLs, and getListKeyFromUrl('blog-post') returns 'BlogPost' for parsing. Following these conventions keeps code generation and the admin UI predictable; a key that is not strict PascalCase still generates, but URL round-tripping through getListKeyFromUrl becomes lossy for it.`,
     category: 'web-dev',
     published: true,
   },
   {
     title: 'OpenSaas Stack Development Workflow',
-    content: `The typical development workflow in OpenSaas Stack: 1) Define lists in opensaas.config.ts with fields, access control, and hooks. 2) Run 'pnpm generate' to create Prisma schema and TypeScript types. 3) Run 'pnpm db:push' to update the database (or 'prisma migrate dev' for migrations). 4) Use context.db in server actions and API routes for database access. 5) Build custom UIs with standalone components or use the full AdminUI. 6) Test access control with different session objects. The monorepo structure has packages/core for the framework, packages/cli for generators, packages/ui for components, and examples/ for reference implementations. Changes to core require rebuilding with 'pnpm build'. Hot reload works for application code but not generated files - regenerate when config changes.`,
+    content: `The typical development workflow in OpenSaas Stack: 1) Define lists in opensaas.config.ts with fields, access control, and hooks. 2) Run 'pnpm generate' to emit the contract and TypeScript types. 3) Reconcile the database with them by running 'pnpm dev', which generates and reconciles on boot and on every save of opensaas.config.ts; 'pnpm db:update' asks that running loop to apply a staged change and exits non-zero when no loop is listening, and a deployment has no loop at all, so it migrates with 'prisma migration plan' and 'prisma db migrate'. 4) Use context.db in server actions and API routes for database access. 5) Build custom UIs with standalone components or use the full AdminUI. 6) Test access control with different session objects. The monorepo structure has packages/core for the framework, packages/cli for generators, packages/ui for components, and examples/ for reference implementations. Changes to core require rebuilding with 'pnpm build'. There is no separate regenerate step for a config change: the same 'pnpm dev' loop watches opensaas.config.ts and regenerates and reconciles on every save.`,
     category: 'software-eng',
     published: true,
   },
   {
     title: 'OpenSaas Stack Type Safety and TypeScript',
-    content: `OpenSaas Stack is built with TypeScript and provides end-to-end type safety. The config system uses discriminated unions and generic types to ensure type-safe field definitions. Generated TypeScript types (.opensaas/types.ts) include list types, field types, and operation types. The context uses generic typing to preserve Prisma Client types: 'const context = await getContext<typeof prisma>(...)'. Field builders return typed objects with getZodSchema, getPrismaType, and getTypeScriptType methods. Access control functions receive typed session objects. The project uses ESM with 'type: module' in package.json, requiring .js extensions on imports. TypeScript config uses moduleResolution: bundler and module: ESNext. Strict mode is enabled to catch errors early.`,
+    content: `OpenSaas Stack is built with TypeScript and provides end-to-end type safety. FieldConfig is BaseFieldConfig itself rather than a discriminated union, so the config system reaches type-safe field definitions through generics and the builder's own declared types instead. Generated TypeScript types (.opensaas/types.ts) include list types, field types, and operation types. The generated getContext is generic in the session type — 'await getContext<MySession>(session)' — and every list's surface is keyed by the emitted contract, so a read's row type follows the columns it selected. Field builders return typed objects carrying getZodSchema and getContractField, plus outputType and inputType values for the TypeScript face — both optional on the builder type, though a field with no single column to be typed from (kind: 'computed' or kind: 'columns') must declare outputType. Access control functions receive typed session objects. Every package under packages/ sets 'type: module' in package.json, so imports of its own source carry .js extensions; the examples vary, and most are not ESM because a Next.js app resolves either way through its bundler. The generated bundle under .opensaas is the exception: it imports with explicit .ts extensions, which is why an app's tsconfig sets allowImportingTsExtensions (ADR-0008, carried forward by ADR-0054). TypeScript config uses moduleResolution: bundler and module: ESNext. Strict mode is enabled to catch errors early.`,
     category: 'web-dev',
     published: true,
   },
   {
     title: 'OpenSaas Stack Relationships and Foreign Keys',
-    content: `Relationships in OpenSaas Stack use a ref format to connect lists. The ref specifies 'ListName.fieldName' to establish bidirectional relationships. For one-to-many relationships: 'posts: relationship({ ref: "Post.author", many: true })' on User and 'author: relationship({ ref: "User.posts" })' on Post. Prisma automatically generates foreign keys and handles cascading. The relationship field type supports many-to-one, one-to-many, and one-to-one patterns. Access control applies to relationships - users must have access to both the source and target records. The admin UI provides relationship pickers for selecting related items. Generated types include the full relationship types from Prisma. Circular references are supported. Relationships respect the same PascalCase naming conventions as lists.`,
+    content: `Relationships in OpenSaas Stack use a ref format to connect lists. The ref specifies 'ListName.fieldName' to establish bidirectional relationships. For one-to-many relationships: 'posts: relationship({ ref: "Post.author", many: true })' on User and 'author: relationship({ ref: "User.posts" })' on Post. The emitted contract declares the foreign keys and their onDelete/onUpdate actions. The relationship field type supports many-to-one, one-to-many, and one-to-one patterns. Access control applies to relationships - users must have access to both the source and target records, and a related record the reader cannot see reads back as null for a to-one and an empty array for a to-many rather than removing the parent row. Every to-one relationship reads as possibly null for that reason, so guard before dereferencing. Relate records with connect: { id } on the side that owns the foreign key; there are no nested writes and no disconnect - clearing a to-one is writing null. The admin UI provides relationship pickers for selecting related items. Circular references are supported. Relationships respect the same PascalCase naming conventions as lists.`,
     category: 'database',
     published: true,
   },
   {
     title: 'OpenSaas Stack Error Handling and Silent Failures',
-    content: `OpenSaas Stack implements silent failures for security. Access-controlled operations return null for single records or empty arrays for multiple records when access is denied, rather than throwing errors. This prevents information leakage about whether records exist. Applications must check for null: 'if (!post) { return { error: "Access denied" } }'. The distinction between "doesn't exist" and "no access" is intentionally blurred. Validation errors and database errors still throw normally. This pattern applies to all context.db operations. Tests should verify both successful access and denial scenarios. The admin UI handles null results gracefully by showing "Access denied" messages. Hooks can throw errors for validation failures, which are surfaced to users.`,
+    content: `OpenSaas Stack implements silent failures for security. Access-controlled operations return null for single records or empty arrays for multiple records when access is denied, rather than throwing errors. This prevents information leakage about whether records exist. Applications must check for null: 'if (!post) { return { error: "Access denied" } }'. The distinction between "doesn't exist" and "no access" is intentionally blurred. Validation errors and database errors still throw normally. The pattern is not uniform across the surface, and the two exceptions matter. A denied aggregate() does not answer null: it answers 0 under every key it was asked for, because a count of no visible rows is a truthful answer rather than a refusal (ADR-0041). And field-level write denial throws rather than returning null — naming a write-denied field in a create or update raises 'Validation failed: Cannot update "<field>": field-level access denied.', which is how the plugin-owned embedding column refuses application writes. Read denial is the silent kind; write denial is loud. Tests should verify both successful access and denial scenarios. The admin UI handles null results gracefully by showing "Access denied" messages. Hooks can throw errors for validation failures, which are surfaced to users.`,
     category: 'software-eng',
     published: true,
   },
 ]
 
 async function seed() {
-  console.log('🌱 Starting database seed...\n')
+  console.log('🌱 Seeding the knowledge base...\n')
 
-  // Use sudo() to bypass access control while still executing all hooks
-  // This ensures embeddings are generated even if access control denies creation
+  // sudo() bypasses access control and still runs every hook, which is what
+  // gets past this list's `create: () => false` while leaving the RAG plugin's
+  // embedding generation in place.
   const context = (await getContext()).sudo()
 
   try {
-    // Check if articles already exist
-    const existing = await context.db.knowledgeBase.count()
-
-    if (existing > 0) {
-      console.log(`⚠️  Database already contains ${existing} article(s). Skipping seed.`)
-      console.log('   To re-seed, delete all articles first or drop the database.\n')
-      return
+    // Clear first, so the seed re-runs from empty rather than refusing on a
+    // populated database. An embedding is derived data: it is regenerated from
+    // the article text below, never carried over.
+    const existing = await context.db.KnowledgeBase.all()
+    for (const article of existing) {
+      await context.db.KnowledgeBase.delete({ where: { id: article.id } })
+    }
+    if (existing.length > 0) {
+      console.log(`🗑️  Removed ${existing.length} existing article(s)\n`)
     }
 
     console.log(`📝 Creating ${sampleArticles.length} articles...\n`)
 
-    let created = 0
     for (const article of sampleArticles) {
-      try {
-        await context.db.knowledgeBase.create({
-          data: article,
-        })
-        created++
-        console.log(`✅ Created: "${article.title}" (${article.category})`)
-      } catch (error) {
-        console.error(`❌ Failed to create "${article.title}":`, error)
-      }
+      await context.db.KnowledgeBase.create({ data: article })
+      console.log(`✅ Created: "${article.title}" (${article.category})`)
     }
 
-    console.log(`\n✨ Successfully created ${created}/${sampleArticles.length} articles!`)
+    console.log(`\n✨ Created ${sampleArticles.length} articles.`)
+
+    // The plugin embeds after each write's own transaction commits (ADR-0045),
+    // so the columns fill in behind this loop rather than during it.
+    console.log('\n⏳ Waiting for embeddings...')
+    const deadline = Date.now() + 180_000
+    let embedded = 0
+    while (embedded < sampleArticles.length && Date.now() < deadline) {
+      const rows = await context.db.KnowledgeBase.all()
+      embedded = rows.filter((row) => row.contentEmbedding !== null).length
+      if (embedded < sampleArticles.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+    }
+    console.log(`✅ ${embedded}/${sampleArticles.length} articles embedded`)
+
+    if (embedded < sampleArticles.length) {
+      throw new Error(
+        'Some articles have no embedding. Check the dev server console for provider errors.'
+      )
+    }
 
     console.log('\n🎉 Seeding complete!')
-    console.log(
-      '\n💡 Note: Embeddings are automatically generated via the RAG plugin hooks.'
-    )
-    console.log(
-      '   This may take a moment after creation. Check the contentEmbedding field.'
-    )
   } catch (error) {
     console.error('\n❌ Seeding failed:', error)
     process.exit(1)

@@ -106,7 +106,7 @@ Build-time script that:
 
 - User + Post models with relationships
 - Admin UI at `/admin`
-- SQLite database (easy local setup)
+- Postgres, on the Dev database `pnpm dev` runs (ADR-0063)
 - Access control examples
 - TypeScript + Next.js 16
 
@@ -131,7 +131,7 @@ npm create opensaas-app@latest
 # Prompts for:
 # - Project name
 # - Include authentication? (y/n)
-# - Which database? (SQLite / PostgreSQL)
+# - Enable AI development tools? (MCP server + Claude Code plugin)
 ```
 
 ### With Flags
@@ -140,28 +140,32 @@ npm create opensaas-app@latest
 npm create opensaas-app@latest my-app                # Basic template
 npm create opensaas-app@latest my-app --with-auth    # Auth template
 npm create opensaas-app@latest my-app --no-auth      # Basic template, skip the auth prompt
-npm create opensaas-app@latest my-app --db postgres  # PostgreSQL-ready (pg adapter + Postgres .env)
-npm create opensaas-app@latest my-app --db sqlite    # Force SQLite, skip the database prompt
 npm create opensaas-app@latest my-app --with-ai      # Install AI dev tools (MCP)
 npm create opensaas-app@latest my-app --no-ai        # Skip the AI-tooling prompt (and its MCP install)
-npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate/db:push
+npm create opensaas-app@latest my-app --no-install   # Skip auto install/generate
 ```
 
-Passing `--no-auth`/`--with-auth`, `--no-ai`/`--with-ai`, and `--db <provider>`
-(plus `--no-install`) makes the CLI fully non-interactive — useful in CI and for
-the isolated first-run guard (`tests/scaffold-first-run-guard.test.ts`). `--db`
-accepts `sqlite`, `postgres`, or `postgresql`.
+Passing `--no-auth`/`--with-auth` and `--no-ai`/`--with-ai` (plus `--no-install`)
+makes the CLI fully non-interactive — useful in CI and for the isolated first-run
+guard (`tests/scaffold-first-run-guard.test.ts`).
+
+`--db` is **removed**, not ignored: `removedDbFlagMessage` (`src/lib/args.ts`)
+matches `--db`, `--db=<value>` and a bare `--db` before positional parsing, and
+the CLI prints the refusal and exits 1. A silent ignore would scaffold a project
+literally named `postgres` from `--db postgres my-app`. There is one provider:
+the scaffolded project runs on Postgres, on the Dev database `pnpm dev` starts
+for it, or on the server `DATABASE_URL` names.
 
 ### Auto-run setup (three-step flow)
 
-After scaffolding, the CLI runs `install` → `generate` → `db:push` for the user
-(see `runSetup` / `planSetupSteps`), so the documented flow collapses to three
-steps: **scaffold → `pnpm dev` → build with Claude Code**. For PostgreSQL the
-auto-run omits `db:push` (it needs a live database the user configures first):
-the project lists `pnpm migrate` as the next step instead. If a step fails the
-CLI stops and prints a recoverable message naming the failed step and its retry
-command (`formatStepFailure`). Pass `--no-install` to skip the auto-run and get
-the full manual command list instead (`nextStepCommands`).
+After scaffolding, the CLI runs `install` → `generate` for the user (see
+`runSetup` / `planSetupSteps`), so the documented flow collapses to three steps:
+**scaffold → `pnpm dev` → build with Claude Code**. There is no schema-apply
+step: scaffolding reaches no database, and the first `pnpm dev` starts the Dev
+database and reconciles it (ADR-0063). If a step fails the CLI stops and prints
+a recoverable message naming the failed step and its retry command
+(`formatStepFailure`). Pass `--no-install` to skip the auto-run and get the full
+manual command list instead (`nextStepCommands`).
 
 ## Template Customization
 
@@ -169,28 +173,24 @@ After copying the template, the CLI customizes:
 
 1. **package.json**: Updates `name` field to project name (`applyProjectName`)
 2. **README.md**: Replaces first h1 with project name (`rewriteReadmeHeading`)
-3. **`.env`**: Writes a **runnable** environment file so `pnpm generate` /
-   `pnpm db:push` work with no manual setup. The basic (SQLite) template gets a
-   canonical `.env` + `.env.example` from `generateEnvFiles` (default
-   `DATABASE_URL="file:./dev.db"`); the with-auth template seeds `.env` from its
-   own `.env.example` so the Better-auth variables are preserved.
-4. **PostgreSQL transform** (`--db postgres` only): the templates are
-   SQLite-based, so a Postgres project is the SQLite template rewritten
-   deterministically. `toPostgresConfig` swaps the `opensaas.config.ts` `db`
-   block to the `PrismaPg` driver adapter; `toPostgresPackageJson` removes
-   `better-sqlite3` + `@prisma/adapter-better-sqlite3` and adds
-   `@prisma/adapter-pg` + `pg` (+ `@types/pg` dev); and `generateEnvFiles`
-   emits a Postgres `.env` with `DATABASE_URL` (pooled) + `DIRECT_DATABASE_URL`
-   (direct) placeholders. The `migrate` / `migrate:deploy` scripts already ship
-   in the template and are preserved.
+3. **`.env`**: Writes a **runnable** environment file so `pnpm generate` works
+   with no manual setup. It sets no `DATABASE_URL` — the first `pnpm dev` starts
+   the Dev database, and a variable set here would be the Database escape
+   instead. The basic template gets `.env` + `.env.example` from
+   `generateEnvFiles`; the with-auth template seeds `.env` from its own
+   `.env.example` so the Better-auth variables are preserved.
+
+There is no database transform: the template's `db: { provider: 'postgresql' }`
+is the whole database block, and the connection is chosen at run time by the
+lookup `pnpm dev` and the generated bundle share (ADR-0063).
 
 These transforms live in `src/lib/` (`project-name.ts`, `env.ts`,
-`package-json.ts`, `postgres.ts`) as pure, unit-tested functions; `src/index.ts`
-is a thin orchestrator over them.
+`package-json.ts`, `args.ts`, `setup.ts`, `ai-tooling.ts`) as pure, unit-tested
+functions; `src/index.ts` is a thin orchestrator over them.
 
-**Files NOT customized for SQLite** (kept as-is from template):
+**Files NOT customized** (kept as-is from template):
 
-- `opensaas.config.ts` - User will customize themselves (rewritten only for `--db postgres`)
+- `opensaas.config.ts` - User will customize themselves
 - All other files
 
 ## Excluded Files
@@ -201,8 +201,10 @@ When copying templates, these are excluded:
 - `.next/` - Build artifact
 - `.turbo/` - Build artifact
 - `.opensaas/` - Generated by `pnpm generate`
-- `prisma/schema.prisma` - Generated by `pnpm generate`
-- `dev.db` - SQLite file (will be created by user)
+- `prisma.config.ts`, `prisma/contract.*` - Generated by `pnpm generate` (the
+  examples commit them, ADR-0067; the post-scaffold `generate` recreates them)
+- `migrations/` - Written by the first `pnpm dev`; a copied `db` ref would
+  describe a database the new project does not have (ADR-0067)
 - `tsconfig.tsbuildinfo` - Build artifact
 - `next-env.d.ts` - Generated by Next.js
 - `pnpm-lock.yaml` - User will generate their own

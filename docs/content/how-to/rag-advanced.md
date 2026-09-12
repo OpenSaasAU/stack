@@ -12,109 +12,154 @@ The RAG plugin uses the Stack hooks system to automatically generate embeddings 
 
 When you add `ragPlugin()` to your config, it:
 
-1. **Scans field definitions** for `searchable()` wrappers or `embedding()` fields with `sourceField`
-2. **Injects `resolveInput` hooks** into embedding fields
-3. **Stores provider configuration** in plugin data
-4. **Registers MCP tools** (if enabled)
+1. **Declares the pgvector extension pack**, so no app config names it
+2. **Scans field definitions** for `searchable()` wrappers or `embedding()` fields with `sourceField`
+3. **Resolves each field's dimension** from its provider, where the field declared none
+4. **Injects an `afterTransaction` hook** into the lists that own those fields
+5. **Registers MCP tools** (if enabled)
+
+Concretely: given this plugin and this field,
 
 ```typescript
-// What happens internally
 ragPlugin({
   provider: openaiEmbeddings({ apiKey: '...' }),
-  storage: pgvectorStorage(),
 })
 
-// Plugin scans config and finds:
 content: searchable(text(), { provider: 'openai', dimensions: 1536 })
+```
 
-// Plugin automatically injects:
+the plugin injects a companion field beside `content` equivalent to:
+
+```typescript
 contentEmbedding: embedding({
   sourceField: 'content',
   provider: 'openai',
   dimensions: 1536,
-  // Hook added by plugin:
-  hooks: {
-    resolveInput: async ({ resolvedData, operation, context }) => {
-      // Generate embedding if content changed
-    },
-  },
+  autoGenerate: true,
 })
 ```
 
 #### Embedding Generation Flow
 
-**On Create:**
+The embedding is written **after** the write's transaction commits, not on input.
+Two things drive that:
 
-1. User creates item with content
-2. `resolveInput` hook intercepts
-3. Checks if source field has value
-4. Generates embedding via provider
-5. Calculates source hash (SHA-256)
-6. Returns embedding with metadata
+- Calling the provider is a network round trip, and a round trip has no business
+  holding a database connection open inside a transaction.
+- The column is write-denied to application code, so the plugin writes its own
+  columns past that denial, through core's `writePluginOwnedField` reached by way
+  of a module-private symbol — not through anything on the package's exported
+  surface (ADR-0045). That write runs **no** hook of the list's: it carries the
+  embedding column alone, so re-running `resolveInput` over it would recompute a
+  derived field from input that is not there (ADR-0068).
 
-**On Update:**
+**On create and on update:**
 
-1. User updates item
-2. `resolveInput` hook intercepts
-3. Fetches current embedding from database
-4. Compares source hash with current content
-5. If changed: regenerate embedding
-6. If unchanged: skip (avoid unnecessary API calls)
+1. The write commits.
+2. The hook reads the **persisted** source text, so a value a `resolveInput`
+   hook derived is embedded like any other.
+3. It hashes that text and compares it with the `sourceHash` stored on the
+   existing embedding's metadata. Equal means nothing to do, which is what stops
+   an unrelated field change from costing an API call. (Re-entry is not what it
+   guards: the plugin's write fires no hook, so there is nothing to re-enter.)
+4. Otherwise it calls the provider and writes the vector and its metadata to the
+   columns.
+
+Simplified, that is: the writer closes over the context `runtime` is handed and
+is published on `context.plugins`, and the hook looks it up rather than writing
+with its own context.
 
 ```typescript
-// Simplified hook implementation
-hooks: {
-  resolveInput: async ({ resolvedData, operation, item, context }) => {
-    // Get source text
-    const sourceText = resolvedData[sourceField] || item?.[sourceField]
-    if (!sourceText) return null
+runtime: (context) => ({
+  [WRITE_EMBEDDING]: async (listName, id, fieldName, value) =>
+    await writePluginOwnedField({ context, listName, id, fieldName, value }),
+}),
 
-    // Check if regeneration needed
-    const currentEmbedding = item?.[fieldName]
-    const newHash = hashText(sourceText)
+afterTransaction: async (args) => {
+  // `item` is on the committed create/update members only — the rolled-back
+  // and delete members do not carry it — so narrow before destructuring. Even
+  // there it is `undefined` for a nested list, which is the second check.
+  if (args.status !== 'committed') return
+  if (args.operation !== 'create' && args.operation !== 'update') return
 
-    if (currentEmbedding?.metadata?.sourceHash === newHash) {
-      // Content unchanged, skip regeneration
-      return currentEmbedding
-    }
+  const { item, context } = args
+  if (item === undefined) return
 
-    // Generate new embedding
-    const provider = getEmbeddingProvider(context)
-    const vector = await provider.embed(sourceText)
+  const sourceText = item[sourceField]
+  if (typeof sourceText !== 'string' || sourceText.length === 0) return
 
-    return {
-      vector,
-      metadata: {
-        model: provider.model,
-        provider: provider.type,
-        dimensions: vector.length,
-        generatedAt: new Date().toISOString(),
-        sourceHash: newHash,
-      },
-    }
-  },
+  const sourceHash = hashText(sourceText)
+  if (item[fieldName]?.metadata?.sourceHash === sourceHash) return
+
+  const vector = await provider.embed(sourceText)
+
+  const write = embeddingWriter(context)
+
+  await write(listName, item.id, fieldName, {
+    vector,
+    metadata: {
+      model: provider.model,
+      provider: provider.type,
+      dimensions: provider.dimensions,
+      generatedAt: new Date().toISOString(),
+      sourceHash,
+    },
+  })
 }
 ```
+
+The hook's own context is used to _find_ the writer, never to write with. That
+indirection is load-bearing, and a plugin that collapses it breaks under
+`context.transaction()`. The `context` the write itself uses is the `AccessContext`
+`Plugin.runtime` receives as its **first** argument — not the `StackContext`
+`getContext` returns, and not `sudo()`, both of which carry no ORM handle and are
+refused by name. The `context` the hook is handed is a different object: inside
+`context.transaction(...)` its ORM handle is bound to the transaction client, and
+`afterTransaction` drains **after** that transaction settles — so passing it
+straight to `writePluginOwnedField` issues the escalated `UPDATE` on a handle
+that is already closed. Plugin runtimes are not re-run for a transaction-bound
+context, so the writer found on it is still the one holding the runtime-time
+context, which is why the lookup is safe where the direct pass is not.
+
+The field's column layout is read off the config the runtime-time context was
+built from, so the write reaches `listName.fieldName`'s own columns and nothing
+else; a field the config does not declare, and an `undefined` value, are refused
+rather than resolved.
+
+Known limits, because the row is already committed by the time this runs:
+
+- A **nested** record is never embedded — the hook carries a persisted item for
+  the top-level record only ([#1271](https://github.com/OpenSaasAU/stack/issues/1271)).
+- A provider failure is **logged, not thrown**. The caller's write did succeed,
+  and reporting it as a failure would invite a retry that duplicates the row. The
+  row keeps a null embedding, and there is no regeneration path yet.
 
 ### Provider Registry Pattern
 
 The RAG package uses a registry pattern for embedding providers, making it easy to add custom providers.
 
+A factory is keyed by `type` and receives the whole config union, which is what
+makes the narrowing below necessary:
+
 ```typescript
-// Internal provider registry
-const providerFactories = new Map<string, Factory>()
+import type { EmbeddingProviderConfig } from '@opensaas/stack-rag'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 
-providerFactories.set('openai', (config) => new OpenAIEmbeddingProvider(config))
-providerFactories.set('ollama', (config) => new OllamaEmbeddingProvider(config))
+type ProviderFactory = (config: EmbeddingProviderConfig) => EmbeddingProvider
 
-export function createEmbeddingProvider(config: EmbeddingProviderConfig) {
-  const factory = providerFactories.get(config.type)
-  if (!factory) {
-    throw new Error(`Unknown provider type: ${config.type}`)
-  }
-  return factory(config)
-}
+const providerFactories = new Map<string, ProviderFactory>()
 ```
+
+`EmbeddingProviderConfig`'s third member is `CustomEmbeddingConfig`, an open
+`{ type: string; [key: string]: unknown }`, so a factory cannot assume it was
+handed the config shape matching its own key — `config.type === 'openai'` does
+not narrow the union past that open member. Read a member off the union and you
+get `TS2345`; the examples below narrow with `in` first.
+
+`createEmbeddingProvider()` closes the same gap at the call site by intersecting
+its argument (`<TConfig extends EmbeddingProviderConfig>(config: TConfig &
+BuiltInConfigFor<TConfig>)`), so a literal naming a built-in provider must
+satisfy that provider's own config even though the union alone would accept it.
 
 Users can register custom providers:
 
@@ -122,74 +167,57 @@ Users can register custom providers:
 import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
+  const model = typeof config.model === 'string' ? config.model : 'custom-embed'
+  const dimensions =
+    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+
   return {
     type: 'custom',
-    model: config.model,
-    dimensions: config.dimensions,
+    model,
+    dimensions,
     async embed(text) {
       // Your implementation
-      return vector
+      return [/* vector */]
     },
     async embedBatch(texts) {
       // Batch implementation
-      return vectors
+      return [[/* vectors */]]
     },
   }
 })
 ```
 
-### Storage Registry Pattern
-
-Similar to providers, storage backends use a registry pattern:
-
-```typescript
-const storageFactories = new Map<string, Factory>()
-
-storageFactories.set('json', () => new JsonVectorStorage())
-storageFactories.set('pgvector', (config) => new PgVectorStorage(config))
-storageFactories.set('sqlite-vss', (config) => new SqliteVssStorage(config))
-
-export function createVectorStorage(config: VectorStorageConfig) {
-  const factory = storageFactories.get(config.type)
-  if (!factory) {
-    throw new Error(`Unknown storage type: ${config.type}`)
-  }
-  return factory(config)
-}
-```
-
 ### Access Control Enforcement
 
-All searches go through the access-controlled context, ensuring users only see content they have permission to view.
+Search is not a separate code path with its own scoping. `nearest()` is a
+terminal on the same secured read surface as `all()` and `first()`, so the
+Access Filter, Field Visibility and the list's `query` rule apply to it
+unchanged:
 
 ```typescript
-async search(listKey, fieldName, queryVector, options) {
-  const { context, where = {}, limit, minScore } = options
-  const dbKey = getDbKey(listKey)
-  const model = context.db[dbKey] // Uses access-controlled context
+import { getContext } from '@/.opensaas/context'
 
-  // Fetch items (access control applied automatically)
-  const items = await model.findMany({
-    where, // User-provided filters
-    // Access control filters merged automatically by context
-  })
+const context = await getContext({ userId: 'user-123' })
 
-  // Calculate similarity and filter by minScore
-  const results = items
-    .map((item) => {
-      const embedding = item[fieldName]
-      if (!embedding?.vector) return null
-
-      const score = cosineSimilarity(queryVector, embedding.vector)
-      return { item, score, distance: 1 - score }
-    })
-    .filter((r) => r && r.score >= (minScore || 0))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-
-  return results
-}
+const matches = await context.db.Article.where({
+  published: { equals: true }, // the caller's own filter
+}).nearest('contentEmbedding', queryVector, { limit: 10, minScore: 0.2 })
 ```
+
+Two properties follow from that, and both matter for correctness rather than
+tidiness:
+
+- **The top-K is computed over the rows the session may see.** The ranking, the
+  `limit` and the `minScore` bound are all lowered into one query alongside the
+  Access Filter. Nothing is fetched wide and trimmed afterwards, so there is no
+  over-fetch multiplier to tune and no way for a denied row to displace a
+  visible one out of the result window.
+- **`minScore` is a distance bound, not a post-filter.** It is inverted into the
+  column's own distance function before the query runs.
+
+Searching a field requires read access to that field: ordering by a vector
+measures its contents, so a session that cannot read the column is refused
+exactly as it would be for a field the list does not declare.
 
 ## Custom Embedding Providers
 
@@ -199,15 +227,15 @@ Creating custom embedding providers allows you to use any embedding model or ser
 
 ```typescript
 interface EmbeddingProvider {
-  type: string // Provider identifier
-  model: string // Model name
-  dimensions: number // Vector dimensions
+  readonly type: string // Provider identifier
+  readonly model: string // Model name
+  readonly dimensions: number // Vector dimensions
 
   // Generate single embedding
   embed(text: string): Promise<number[]>
 
-  // Generate batch embeddings (optional, but recommended)
-  embedBatch?(texts: string[]): Promise<number[][]>
+  // Generate batch embeddings. Required — chunked fields call it directly.
+  embedBatch(texts: string[]): Promise<number[][]>
 }
 ```
 
@@ -255,10 +283,17 @@ class CohereEmbeddingProvider {
   }
 }
 
-// Register the provider
-registerEmbeddingProvider('cohere', (config) => new CohereEmbeddingProvider(config))
+registerEmbeddingProvider('cohere', (config) => {
+  if (!('apiKey' in config) || typeof config.apiKey !== 'string') {
+    throw new Error('cohere embeddings require an apiKey')
+  }
+  return new CohereEmbeddingProvider({
+    type: 'cohere',
+    apiKey: config.apiKey,
+    model: typeof config.model === 'string' ? config.model : undefined,
+  })
+})
 
-// Export helper
 export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConfig {
   return { type: 'cohere', ...config }
 }
@@ -267,7 +302,10 @@ export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConf
 **Usage:**
 
 ```typescript
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { ragPlugin } from '@opensaas/stack-rag'
+import { searchable } from '@opensaas/stack-rag/fields'
 import { cohereEmbeddings } from '@/lib/providers/cohere'
 
 export default config({
@@ -279,10 +317,21 @@ export default config({
       }),
     }),
   ],
+  db: { provider: 'postgresql' },
+  lists: {
+    Article: list({
+      fields: { content: searchable(text(), { dimensions: 1024 }) },
+      access: { operation: { query: () => true } },
+    }),
+  },
 })
 ```
 
 ### Example: HuggingFace Provider
+
+HuggingFace's inference API has no batch endpoint for feature extraction, so
+`embedBatch` fans out over `embed`. `featureExtraction` also returns a nested
+shape for some models, so the vector is narrowed rather than cast:
 
 ```typescript
 // lib/providers/huggingface.ts
@@ -309,153 +358,41 @@ class HuggingFaceEmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
-    const response = await this.client.featureExtraction({
+    const response: unknown = await this.client.featureExtraction({
       model: this.model,
       inputs: text,
     })
-    return Array.from(response as number[])
+    if (!Array.isArray(response) || !response.every((n) => typeof n === 'number')) {
+      throw new Error(`${this.model} did not return a flat embedding vector`)
+    }
+    return response
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    // HuggingFace doesn't have batch API, so we process individually
-    const embeddings = await Promise.all(texts.map((text) => this.embed(text)))
-    return embeddings
+    return await Promise.all(texts.map((text) => this.embed(text)))
   }
 }
 
-registerEmbeddingProvider('huggingface', (config) => new HuggingFaceEmbeddingProvider(config))
+registerEmbeddingProvider('huggingface', (config) => {
+  if (
+    !('apiKey' in config) ||
+    typeof config.apiKey !== 'string' ||
+    !('dimensions' in config) ||
+    typeof config.dimensions !== 'number'
+  ) {
+    throw new Error('huggingface embeddings require an apiKey and dimensions')
+  }
+  return new HuggingFaceEmbeddingProvider({
+    type: 'huggingface',
+    apiKey: config.apiKey,
+    dimensions: config.dimensions,
+    model: typeof config.model === 'string' ? config.model : undefined,
+  })
+})
 
 export function huggingfaceEmbeddings(config: Omit<HuggingFaceConfig, 'type'>): HuggingFaceConfig {
   return { type: 'huggingface', ...config }
 }
-```
-
-## Custom Storage Backends
-
-Creating custom storage backends allows you to use any vector database or search service.
-
-### Storage Interface
-
-```typescript
-interface VectorStorage {
-  type: string // Storage identifier
-
-  // Search for similar vectors
-  search<T>(
-    listKey: string,
-    fieldName: string,
-    queryVector: number[],
-    options: SearchOptions,
-  ): Promise<SearchResult<T>[]>
-}
-
-interface SearchOptions {
-  context: Context // Access-controlled context
-  limit?: number // Max results
-  minScore?: number // Minimum similarity score
-  where?: any // Additional Prisma filters
-}
-
-interface SearchResult<T> {
-  item: T // The matching record
-  score: number // Similarity score (0-1)
-  distance: number // Distance metric
-}
-```
-
-### Example: Pinecone Storage
-
-```typescript
-// lib/storage/pinecone.ts
-import { Pinecone } from '@pinecone-database/pinecone'
-import { registerVectorStorage } from '@opensaas/stack-rag/storage'
-import { getDbKey } from '@opensaas/stack-core'
-
-interface PineconeConfig {
-  type: 'pinecone'
-  apiKey: string
-  environment: string
-  indexName: string
-}
-
-class PineconeVectorStorage {
-  type = 'pinecone'
-  private client: Pinecone
-  private indexName: string
-
-  constructor(config: PineconeConfig) {
-    this.client = new Pinecone({
-      apiKey: config.apiKey,
-      environment: config.environment,
-    })
-    this.indexName = config.indexName
-  }
-
-  async search(listKey, fieldName, queryVector, options) {
-    const { context, limit = 10, minScore = 0, where = {} } = options
-    const dbKey = getDbKey(listKey)
-
-    // Query Pinecone
-    const index = this.client.index(this.indexName)
-    const queryResponse = await index.query({
-      vector: queryVector,
-      topK: limit * 2, // Get extra results for filtering
-      includeMetadata: true,
-      filter: { listKey }, // Namespace by list
-    })
-
-    // Fetch actual items from database with access control
-    const ids = queryResponse.matches.map((m) => m.id)
-    const items = await context.db[dbKey].findMany({
-      where: {
-        id: { in: ids },
-        ...where,
-      },
-    })
-
-    // Map back to results with scores
-    const itemMap = new Map(items.map((item) => [item.id, item]))
-    const results = queryResponse.matches
-      .map((match) => {
-        const item = itemMap.get(match.id)
-        if (!item || match.score < minScore) return null
-        return {
-          item,
-          score: match.score,
-          distance: 1 - match.score,
-        }
-      })
-      .filter((r) => r !== null)
-      .slice(0, limit)
-
-    return results
-  }
-}
-
-registerVectorStorage('pinecone', (config) => new PineconeVectorStorage(config))
-
-export function pineconeStorage(config: Omit<PineconeConfig, 'type'>): PineconeConfig {
-  return { type: 'pinecone', ...config }
-}
-```
-
-**Usage:**
-
-```typescript
-import { ragPlugin } from '@opensaas/stack-rag'
-import { pineconeStorage } from '@/lib/storage/pinecone'
-
-export default config({
-  plugins: [
-    ragPlugin({
-      storage: pineconeStorage({
-        apiKey: process.env.PINECONE_API_KEY!,
-        environment: 'us-east-1-aws',
-        indexName: 'my-index',
-      }),
-    }),
-  ],
-})
 ```
 
 ## Text Chunking Strategies
@@ -475,10 +412,12 @@ import { chunkText } from '@opensaas/stack-rag/runtime'
 
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
-  chunkSize: 1000, // Max characters per chunk
-  chunkOverlap: 200, // Overlap between chunks
+  chunkSize: 1000,
+  chunkOverlap: 200,
 })
 ```
+
+`chunkSize` and `chunkOverlap` are in characters here.
 
 **How it works:**
 
@@ -499,7 +438,7 @@ const chunks = chunkText(longDocument, {
 Preserves sentence boundaries. Best for maintaining semantic coherence.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
@@ -523,7 +462,7 @@ const chunks = chunkText(document, {
 Fixed-size windows that slide across text. Best for uniform processing.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'sliding-window',
   chunkSize: 800,
   chunkOverlap: 200,
@@ -544,13 +483,15 @@ const chunks = chunkText(document, {
 
 #### 4. Token-Aware Chunking
 
-Respects token limits for embedding models. Best for API cost optimization.
+Respects token limits for embedding models. Best for API cost optimization. This
+is the one strategy where `chunkOverlap` counts tokens rather than characters,
+and the only one that reads `tokenLimit`.
 
 ```typescript
-const chunks = chunkText(document, {
+const chunks = chunkText(longDocument, {
   strategy: 'token-aware',
-  tokenLimit: 512, // Max tokens per chunk (not characters)
-  chunkOverlap: 50, // Overlap in tokens
+  tokenLimit: 512,
+  chunkOverlap: 50,
 })
 ```
 
@@ -576,11 +517,19 @@ content: searchable(text(), {
   dimensions: 1536,
   chunking: {
     strategy: 'recursive',
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    maxTokens: 250,
+    overlap: 50,
   },
 })
 ```
+
+A field's `chunking` is a `ChunkingConfig`, measured in **tokens** — not the
+`ChunkingOptions` that `chunkText()` above takes. They are separate types, and
+`ChunkingOptions` does not have one unit: `chunkSize` and `chunkOverlap` are
+characters under `recursive`, `sentence` and `sliding-window`, and tokens under
+`token-aware`, which scales them by the same ~4 characters per token. At that
+ratio, `maxTokens: 250` is about the same span of text as a recursive
+`chunkSize: 1000`.
 
 **How it works:**
 
@@ -591,23 +540,38 @@ content: searchable(text(), {
 
 #### Manual Chunking for Custom Workflows
 
+A chunk row's vector is written by your code rather than by the plugin, so the
+field has to say so. Without `allowManualWrites`, `embedding()` denies writes and
+the create below throws `Cannot create "embedding": field-level access denied.`:
+
 ```typescript
-import { chunkText, generateEmbedding } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+DocumentChunk: list({
+  fields: {
+    document: relationship({ ref: 'Document' }),
+    chunkIndex: integer(),
+    content: text(),
+    embedding: embedding({ dimensions: 1536, allowManualWrites: true }),
+    startOffset: integer(),
+    endOffset: integer(),
+  },
+}),
+```
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const provider = createEmbeddingProvider({
   type: 'openai',
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Chunk long document
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',
   chunkSize: 1000,
   chunkOverlap: 200,
 })
 
-// Generate embeddings for each chunk
 const chunkEmbeddings = await Promise.all(
   chunks.map(async (chunk, index) => {
     const embedding = await provider.embed(chunk.text)
@@ -621,56 +585,72 @@ const chunkEmbeddings = await Promise.all(
   }),
 )
 
-// Store chunks in database
-await context.db.documentChunk.createMany({
-  data: chunkEmbeddings.map((ce) => ({
-    documentId: documentId,
-    chunkIndex: ce.chunkIndex,
-    content: ce.chunkText,
-    embedding: {
-      vector: ce.embedding,
-      metadata: {
-        model: provider.model,
-        provider: provider.type,
-        dimensions: provider.dimensions,
-        generatedAt: new Date().toISOString(),
+await context.transaction(async (tx) => {
+  for (const ce of chunkEmbeddings) {
+    const row = await tx.db.DocumentChunk.create({
+      data: {
+        document: { connect: { id: documentId } },
+        chunkIndex: ce.chunkIndex,
+        content: ce.chunkText,
+        embedding: {
+          vector: ce.embedding,
+          metadata: {
+            model: provider.model,
+            provider: provider.type,
+            dimensions: provider.dimensions,
+            generatedAt: new Date().toISOString(),
+          },
+        },
+        startOffset: ce.startOffset,
+        endOffset: ce.endOffset,
       },
-    },
-    startOffset: ce.startOffset,
-    endOffset: ce.endOffset,
-  })),
+    })
+    if (row === null) {
+      throw new Error('Not allowed to write a document chunk')
+    }
+  }
 })
 ```
 
+Every row goes in under one `context.transaction`, so a failure part-way leaves
+no half-chunked document behind. `create` returns `null` when the write is
+denied — throwing inside the callback rolls the whole transaction back. The
+`document` edge is written as `{ connect: { id } }`; writing the `documentId`
+column directly is equally valid, but spelling both in one payload is refused.
+
 ## Performance Optimization
 
-### 1. Database Indexing
+### 1. Vector Indexing
 
-Create indexes on embedding fields for fast similarity search.
+A vector index is declared on the field that owns the column, not written as
+SQL. The column type and the operator class are derived from the same place the
+dimension and the distance function are declared, so the two cannot drift apart:
 
-#### pgvector Indexes
-
-**IVFFlat Index** (faster to build, good for 10k-1M vectors):
-
-```sql
-CREATE INDEX article_embedding_ivfflat_idx
-ON "Article" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (lists = 100);
+```typescript
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
+})
 ```
 
-**HNSW Index** (better quality, good for 100k+ vectors):
+**Index guidelines:**
 
-```sql
-CREATE INDEX article_embedding_hnsw_idx
-ON "Article" USING hnsw ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (m = 16, ef_construction = 64);
-```
+- **`ivfflat`** — faster to build, good for 10k–1M vectors. Set `lists` to about
+  `sqrt(total_rows)`.
+- **`hnsw`** — better search quality, good for 100k+ vectors. A higher `m` buys
+  quality with memory (default 16); a higher `efConstruction` buys index quality
+  with build time (default 64).
+- Declaring an index caps the dimension: over 2,000 the column becomes
+  `halfvec`, and over 4,000 generation fails, because no pgvector index can be
+  built there. An **unindexed** column stays `vector` at any dimension.
+- Declaring an `opclass` that disagrees with the field's `distanceFunction`
+  fails `pnpm generate` rather than building an index the search cannot use.
 
-**Index Guidelines:**
-
-- **lists**: Set to `sqrt(total_rows)` for IVFFlat
-- **m**: Higher = better quality but more memory (default: 16)
-- **ef_construction**: Higher = better index quality (default: 64)
+No index is actually built today, so every search is an exact scan — correct,
+but unindexed. [Search exactness](/docs/reference/rag) has the pack limit behind
+that, and what a built index would change about how many rows come back.
 
 ### 2. Batch Embedding Generation
 
@@ -678,7 +658,7 @@ Generate embeddings in batches to reduce API overhead and respect rate limits.
 
 ```typescript
 import { batchProcess } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const provider = createEmbeddingProvider({
   type: 'openai',
@@ -733,23 +713,29 @@ export function clearEmbeddingCache() {
 Optimize search queries with filters and limits:
 
 ```typescript
-// ❌ Bad: No filters, large limit
-const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+// ❌ Bad: no filters, large limit
+const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
   limit: 100, // Too many results
-  context,
 })
 
-// ✅ Good: Filters, reasonable limit
-const results = await storage.search('Article', 'contentEmbedding', queryVector, {
-  limit: 10, // Reasonable limit
-  minScore: 0.7, // Only high-quality matches
-  where: {
-    published: { equals: true },
-    createdAt: { gte: oneMonthAgo },
-  },
-  context,
+// ✅ Good: filters, reasonable limit, a bound on the score
+const matches = await context.db.Article.where({
+  published: { equals: true },
+  createdAt: { gte: oneMonthAgo },
+}).nearest('contentEmbedding', queryVector, {
+  limit: 10,
+  minScore: 0.25, // Only high-quality matches, on a cosine column
 })
 ```
+
+Both the `where` and the `minScore` are lowered into the same query as the
+ranking, so narrowing the search genuinely narrows the work the database does.
+Filtering on `createdAt` assumes the list has it: auto-timestamps are off by
+default (ADR-0004), so `Article` here either declares the field or sets
+`db: { timestamps: true }`.
+Pick `minScore` on the column's own scale — a `cosine` column scores the raw
+cosine on `[-1, 1]`, so `0.7` is tight and `0` is merely "more alike than
+opposite".
 
 ### 5. Pre-compute Embeddings
 
@@ -758,7 +744,7 @@ For frequently searched content, pre-compute embeddings at build time or during 
 ```typescript
 // scripts/precompute-embeddings.ts
 import { getContext } from '@/.opensaas/context'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const commonQueries = [
   'How do I get started?',
@@ -789,47 +775,47 @@ async function precomputeQueryEmbeddings() {
 
 ### Hybrid Search (Keyword + Semantic)
 
-Combine traditional keyword search with semantic search for best results.
+Combine traditional keyword search with semantic search for best results. Four
+steps: a `contains` read for keywords, a `nearest()` ranking for meaning, a merge
+keyed on id, then a weighted sort where `alpha` is the semantic weight on `[0, 1]`.
+
+`contains` is case-insensitive — it lowers to `ilike` — and the vocabulary has no
+`startsWith` or `mode`, so a keyword pass is `contains` or nothing.
 
 ```typescript
 // lib/hybrid-search.ts
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
-export async function hybridSearch(query: string, options = {}) {
-  const { limit = 10, alpha = 0.7 } = options // alpha: semantic weight (0-1)
+type Scored<TRow> = { item: TRow; keywordScore: number; semanticScore: number }
+
+export async function hybridSearch(
+  query: string,
+  options: { limit?: number; alpha?: number } = {},
+) {
+  const { limit = 10, alpha = 0.7 } = options
   const context = await getContext()
 
-  // 1. Keyword search
-  const keywordResults = await context.db.article.findMany({
-    where: {
-      OR: [{ title: { contains: query } }, { content: { contains: query } }],
-    },
-    take: limit * 2,
+  const keywordResults = await context.db.Article.where({
+    OR: [{ title: { contains: query } }, { content: { contains: query } }],
   })
+    .limit(limit * 2)
+    .all()
 
-  // 2. Semantic search
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const semanticResults = await storage.search('Article', 'contentEmbedding', queryVector, {
+  const semanticResults = await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: limit * 2,
-    context,
   })
 
-  // 3. Merge results with weighted scoring
-  const scoreMap = new Map()
+  const scoreMap = new Map<string, Scored<(typeof keywordResults)[number]>>()
 
   keywordResults.forEach((item) => {
-    scoreMap.set(item.id, {
-      item,
-      keywordScore: 1.0, // Present in keyword results
-      semanticScore: 0,
-    })
+    scoreMap.set(item.id, { item, keywordScore: 1, semanticScore: 0 })
   })
 
   semanticResults.forEach((result) => {
@@ -845,7 +831,6 @@ export async function hybridSearch(query: string, options = {}) {
     }
   })
 
-  // 4. Calculate hybrid scores and sort
   const hybridResults = Array.from(scoreMap.values())
     .map((entry) => ({
       item: entry.item,
@@ -867,10 +852,15 @@ Improve search quality by re-ranking results with a cross-encoder model.
 ```typescript
 // lib/rerank.ts
 import { HfInference } from '@huggingface/inference'
+import type { SearchResult } from '@opensaas/stack-rag'
 
 const hf = new HfInference(process.env.HUGGINGFACE_API_KEY!)
 
-export async function rerankResults(query: string, results: SearchResult[], topK = 5) {
+export async function rerankResults<T extends { id: string; content: string }>(
+  query: string,
+  results: SearchResult<T>[],
+  topK = 5,
+) {
   // Generate pairs of (query, document)
   const pairs = results.map((result) => ({
     id: result.item.id,
@@ -944,27 +934,33 @@ lists: {
 
 **Querying multiple embeddings:**
 
+Every field above names the same provider, so one query vector fits all three
+columns. A field on a different provider needs its own vector — the provider
+fixes the column's width, and a vector of the wrong length is refused.
+
 ```typescript
+import type { NearestMatch } from '@opensaas/stack-core'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
+import { getContext } from '@/.opensaas/context'
+
 async function multiVectorSearch(query: string) {
+  const context = await getContext()
+
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  const storage = createVectorStorage({ type: 'pgvector' })
-
-  // Search each embedding field
   const [titleResults, summaryResults, contentResults] = await Promise.all([
-    storage.search('Article', 'titleEmbedding', queryVector, { limit: 10, context }),
-    storage.search('Article', 'summaryEmbedding', queryVector, { limit: 10, context }),
-    storage.search('Article', 'contentEmbedding', queryVector, { limit: 10, context }),
+    context.db.Article.nearest('titleEmbedding', queryVector, { limit: 10 }),
+    context.db.Article.nearest('summaryEmbedding', queryVector, { limit: 10 }),
+    context.db.Article.nearest('contentEmbedding', queryVector, { limit: 10 }),
   ])
 
-  // Combine and deduplicate
-  const scoreMap = new Map()
+  const scoreMap = new Map<string, { item: { id: string }; score: number }>()
 
-  const addResults = (results: SearchResult[], weight: number) => {
+  const addResults = (results: NearestMatch<{ id: string }>[], weight: number) => {
     results.forEach((r) => {
       const existing = scoreMap.get(r.item.id)
       const score = r.score * weight
@@ -976,7 +972,7 @@ async function multiVectorSearch(query: string) {
     })
   }
 
-  addResults(titleResults, 1.5) // Higher weight for title matches
+  addResults(titleResults, 1.5)
   addResults(summaryResults, 1.2)
   addResults(contentResults, 1.0)
 
@@ -986,37 +982,41 @@ async function multiVectorSearch(query: string) {
 }
 ```
 
+The weights above bias towards title matches, then summary, then body.
+
 ## Production Best Practices
 
 ### 1. Error Handling
 
-Handle embedding generation failures gracefully:
+Handle embedding generation failures gracefully. The helper below retries with
+exponential backoff, reports the exhausted case to your monitoring service, and
+then returns `null` rather than throwing — so a provider outage degrades the
+embedding instead of failing the write that triggered it.
 
 ```typescript
 // hooks/embedding-error-handling.ts
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
 async function generateEmbeddingWithRetry(text: string, provider: EmbeddingProvider) {
   const maxRetries = 3
-  let lastError: Error
+  let lastError: Error | undefined
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await provider.embed(text)
     } catch (error) {
-      lastError = error as Error
+      lastError = error instanceof Error ? error : new Error(String(error))
       console.error(`Embedding generation failed (attempt ${i + 1}/${maxRetries}):`, error)
 
-      // Wait before retry (exponential backoff)
       await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, i)))
     }
   }
 
-  // Log to monitoring service
   await logToSentry('Embedding generation failed after retries', {
     text: text.substring(0, 100),
     error: lastError,
   })
 
-  // Return null instead of throwing (allows item creation to succeed)
   return null
 }
 ```
@@ -1027,6 +1027,8 @@ Track embedding generation and search performance:
 
 ```typescript
 // lib/rag-monitoring.ts
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
 export async function monitoredEmbedGeneration(text: string, provider: EmbeddingProvider) {
   const startTime = Date.now()
 
@@ -1051,7 +1053,7 @@ export async function monitoredEmbedGeneration(text: string, provider: Embedding
       model: provider.model,
       textLength: text.length,
       duration,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     })
 
     throw error
@@ -1061,49 +1063,18 @@ export async function monitoredEmbedGeneration(text: string, provider: Embedding
 
 ### 3. Rate Limiting
 
-Implement rate limiting to avoid API limits:
+`RateLimiter` is a shipped export of `@opensaas/stack-rag/runtime`, so there is
+nothing to write. It admits `requestsPerMinute` requests in any rolling minute
+and `waitForSlot()` resolves when the next one is free:
 
 ```typescript
-// lib/rate-limiter.ts
-export class RateLimiter {
-  private tokens: number
-  private lastRefill: number
-  private maxTokens: number
-  private refillRate: number
+import { RateLimiter } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
 
-  constructor(maxTokens: number, refillRate: number) {
-    this.maxTokens = maxTokens
-    this.refillRate = refillRate
-    this.tokens = maxTokens
-    this.lastRefill = Date.now()
-  }
-
-  async acquire() {
-    this.refill()
-
-    while (this.tokens < 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      this.refill()
-    }
-
-    this.tokens -= 1
-  }
-
-  private refill() {
-    const now = Date.now()
-    const elapsed = (now - this.lastRefill) / 1000 // seconds
-    const tokensToAdd = elapsed * this.refillRate
-
-    this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd)
-    this.lastRefill = now
-  }
-}
-
-// Usage
-const limiter = new RateLimiter(100, 100 / 60) // 100 tokens, refill 100/min
+const limiter = new RateLimiter(100)
 
 export async function rateLimitedEmbed(text: string, provider: EmbeddingProvider) {
-  await limiter.acquire()
+  await limiter.waitForSlot()
   return provider.embed(text)
 }
 ```
@@ -1114,7 +1085,9 @@ Track and optimize API costs:
 
 ```typescript
 // lib/cost-tracking.ts
-const COST_PER_1K_TOKENS = {
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
+const COST_PER_1K_TOKENS: Record<string, number> = {
   'text-embedding-3-small': 0.00002,
   'text-embedding-3-large': 0.00013,
 }
@@ -1150,13 +1123,7 @@ import { writeFile } from 'fs/promises'
 export async function backupEmbeddings() {
   const context = await getContext()
 
-  const articles = await context.db.article.findMany({
-    select: {
-      id: true,
-      title: true,
-      contentEmbedding: true,
-    },
-  })
+  const articles = await context.db.Article.select('id', 'title', 'contentEmbedding').all()
 
   const backup = {
     timestamp: new Date().toISOString(),
@@ -1181,7 +1148,7 @@ export async function backupEmbeddings() {
 ```typescript
 // __tests__/providers/openai.test.ts
 import { describe, it, expect } from 'vitest'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 describe('OpenAI Provider', () => {
   it('should generate embeddings', async () => {
@@ -1214,26 +1181,26 @@ describe('OpenAI Provider', () => {
 
 ### Integration Testing Search
 
+The seed runs through `sudo()`, so it does not depend on the fixture's session.
+The score assertion is on a cosine column, where the score is the raw cosine —
+`0.7` is a genuinely tight bound there:
+
 ```typescript
 // __tests__/integration/search.test.ts
 import { describe, it, expect, beforeAll } from 'vitest'
 import { getContext } from '@/.opensaas/context'
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
-import { sudo } from '@opensaas/stack-core/context'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 describe('Semantic Search', () => {
   beforeAll(async () => {
-    const context = await getContext()
+    const context = (await getContext()).sudo()
 
-    // Seed test data
-    await sudo(
-      context.db.article.create({
-        data: {
-          title: 'Machine Learning Basics',
-          content: 'Machine learning is a subset of artificial intelligence...',
-        },
-      }),
-    )
+    await context.db.Article.create({
+      data: {
+        title: 'Machine Learning Basics',
+        content: 'Machine learning is a subset of artificial intelligence...',
+      },
+    })
   })
 
   it('should find relevant articles', async () => {
@@ -1246,15 +1213,13 @@ describe('Semantic Search', () => {
     })
     const queryVector = await provider.embed(query)
 
-    const storage = createVectorStorage({ type: 'json' })
-    const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+    const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
       limit: 5,
-      context,
     })
 
-    expect(results.length).toBeGreaterThan(0)
-    expect(results[0].item.title).toContain('Machine Learning')
-    expect(results[0].score).toBeGreaterThan(0.7)
+    expect(matches.length).toBeGreaterThan(0)
+    expect(matches[0].item.title).toContain('Machine Learning')
+    expect(matches[0].score).toBeGreaterThan(0.7)
   })
 })
 ```
@@ -1289,9 +1254,9 @@ See [Performance Optimization](#performance-optimization) section above.
 
 **Solutions:**
 
-1. **Stream results** instead of loading all at once
-2. **Use database-level vector search** (pgvector, not JSON)
-3. **Implement pagination** in search results
+1. **Bound every search** with `limit` and `minScore` — both are lowered into the query
+2. **Declare an index** on the embedding field
+3. **Select only the fields you need** with `.select()` so vectors are not materialised
 4. **Limit embedding dimensions** (use smaller models)
 
 ### Inconsistent Search Results
@@ -1305,7 +1270,7 @@ See [Performance Optimization](#performance-optimization) section above.
 
 1. **Verify embedding dimensions match** across provider and field
 2. **Check for partial embeddings** (failed generation)
-3. **Adjust minScore threshold**
+3. **Adjust the `minScore` threshold** — it is read on the column's own distance function, not a normalised 0–1 scale
 4. **Consider hybrid search** (keyword + semantic)
 5. **Try re-ranking** with cross-encoder
 

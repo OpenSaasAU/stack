@@ -22,6 +22,20 @@ export default [
       // Research spikes under specs/ are throwaway scripts run against pre-release
       // APIs and deliberately reach @internal surfaces; they are evidence, not shipped code.
       'specs/**/spikes/**',
+      // Generator output committed as a CI determinism fixture, plus the scratch
+      // projects the contract tests evaluate a rendered module in.
+      'packages/cli/tests/fixtures/contract-project/prisma/**',
+      'packages/cli/tests/fixtures/contract-project/prisma.config.ts',
+      'packages/cli/tests/fixtures/contract-project/migrations/**',
+      'packages/cli/tests/tmp-*/**',
+      // The same generator output, committed by every example (ADR-0067).
+      'examples/*/prisma/**',
+      'examples/*/prisma.config.ts',
+      'examples/*/migrations/**',
+      // The nightly cold-clone scaffold, when one has been run locally.
+      '.cold-clone/**',
+      // Doc-block compile check scratch (ESLint 9 flat config does not read .gitignore)
+      'packages/rag/.doc-blocks-check-*/**',
     ],
   },
   js.configs.recommended,

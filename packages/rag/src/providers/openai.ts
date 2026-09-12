@@ -1,11 +1,16 @@
 import type { EmbeddingProvider } from './types.js'
 import type { OpenAIEmbeddingConfig, OpenAIEmbeddingModel } from '../config/types.js'
 
-const MODEL_DIMENSIONS: Record<OpenAIEmbeddingModel, number> = {
-  'text-embedding-3-small': 1536,
-  'text-embedding-3-large': 3072,
-  'text-embedding-ada-002': 1536,
-}
+/**
+ * Each built-in OpenAI model's fixed output dimension. Statically known, so
+ * `ragPlugin`'s `beforeGenerate` can refuse a field that declares a different
+ * one without calling the API (ADR-0045).
+ */
+export const OPENAI_MODEL_DIMENSIONS: ReadonlyMap<OpenAIEmbeddingModel | string, number> = new Map([
+  ['text-embedding-3-small', 1536],
+  ['text-embedding-3-large', 3072],
+  ['text-embedding-ada-002', 1536],
+])
 
 // `openai` is an optional peer dependency (see package.json) — a static import
 // would break apps that don't install it.
@@ -48,7 +53,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   constructor(config: OpenAIEmbeddingConfig) {
     this.config = config
     this.model = config.model || 'text-embedding-3-small'
-    this.dimensions = MODEL_DIMENSIONS[this.model as OpenAIEmbeddingModel] || 1536
+    this.dimensions = OPENAI_MODEL_DIMENSIONS.get(this.model) ?? 1536
   }
 
   private async ensureClient(): Promise<OpenAIClient> {

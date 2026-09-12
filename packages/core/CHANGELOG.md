@@ -257,6 +257,8 @@
 
 - [#1000](https://github.com/OpenSaasAU/stack/pull/1000) [`0b5b51e`](https://github.com/OpenSaasAU/stack/commit/0b5b51e52787ea9e945206a109a7a56dc38e78e5) Thanks [@borisno2](https://github.com/borisno2)! - Fix `P2002` unique-constraint errors losing per-field detail under Prisma 7 driver adapters (`@prisma/adapter-pg`, PGlite), where `meta.target` is left empty. The error handler now recovers the violated columns and constraint name from the adapter's error shape, and a new `uniqueConstraintOf(error)` helper exposes this to callers of `context.db.*` directly. Unique-violation messages under driver adapters change from the generic fallback back to field-specific text.
 
+  > **Superseded.** The code literal above is dead — the ORM raises no `P`-prefixed codes (ADR-0042). A unique violation now arrives as a stack-owned `UniqueConstraintViolation` carrying the same per-field detail, tested with `isUniqueConstraintViolation(error)`.
+
 - [#1001](https://github.com/OpenSaasAU/stack/pull/1001) [`52dfdd2`](https://github.com/OpenSaasAU/stack/commit/52dfdd2c051aa2f4b4cbd96a459213c34c3bf85c) Thanks [@borisno2](https://github.com/borisno2)! - Fix `include` on a to-one relationship throwing `PrismaClientValidationError` when the related list's `query` access resolves to a filter (Prisma only accepts a nested `where` on a to-many include). The relation is now fetched and access-scoped via a batched existence check instead, returning `null` for an excluded related row rather than throwing — a caller relying on the previous exception, or whose types assumed a non-null relation, should re-check nullability.
 
 ## 0.39.2
@@ -350,6 +352,7 @@
 
   Three behavior changes to be aware of when upgrading:
 
+  > **Superseded in part.** The precedence rule below still holds, but the error it names does not: the ORM raises no `P`-prefixed codes, so a retry loop written against the code literal quoted below matches nothing (ADR-0042). A serialization failure is now a stack-owned error, tested with `isSerializationFailure(error)`.
   - A `context.transaction()` call can now **reject** with `AfterTransactionError` even after its underlying transaction already committed, if a deferred `afterTransaction` hook throws. A transaction/serialization error (e.g. `P2034`) still takes precedence and propagates unwrapped, so an existing `P2034` retry loop is unaffected.
   - The deferred `item` a joined write's `afterTransaction` receives on commit is the row **as that write persisted it**, captured at write time — not re-read at flush — so it can be stale if a later write in the same transaction touches the same record.
   - Transaction-boundary hooks (`beforeTransaction`/`afterTransaction`) on a joined write now always receive a context bound to the base client, never the transaction client — matching what top-level writes already did.
@@ -1216,6 +1219,8 @@
 - [#616](https://github.com/OpenSaasAU/stack/pull/616) [`322d5b6`](https://github.com/OpenSaasAU/stack/commit/322d5b64d11c3e3401493511e0c0e3a1fa20e210) Thanks [@borisno2](https://github.com/borisno2)! - Add `context.transaction()` — an interactive, hook-firing transaction
 
   You can now run multiple access-checked `context.db.*` operations atomically in one transaction while preserving the access/hook boundary (unlike raw `prisma.$transaction`, which bypasses both). The callback receives a full context whose `db.*` operations enforce access control and run list/field hooks, but persist against a single interactive transaction — so a throw anywhere rolls the whole transaction back.
+
+  > **Superseded — do not copy the example below.** This entry records 0.26.0 as it was released; the API it describes is gone. `context.transaction` now takes no options, so the `isolationLevel` argument does not exist (ADR-0042), and the ORM raises no `P`-prefixed error codes, so the `code` comparison in the retry loop below matches nothing — a caller who copies it gets a loop that silently never retries and rethrows every failure on the first pass. Today a serialization failure arrives as a stack-owned error, tested with `isSerializationFailure(error)`, and a capacity gate is written by taking a row lock on the contended parent with `.forUpdate()` before counting, rather than by retrying (ADR-0047). The transaction itself, and the access/hook boundary this entry is really about, still work as described.
 
   Options (notably `isolationLevel`, plus `maxWait`/`timeout`) pass through to Prisma, and serialization failures (Prisma `P2034`) propagate to the caller so you own the retry loop. This makes concurrency-sensitive invariants such as a capacity gate enforceable:
 

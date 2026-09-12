@@ -11,16 +11,14 @@
 // Runtime context internals consumed by generated `.opensaas/` code
 export type { ServerActionProps } from './context/index.js'
 export type {
-  PrismaClientLike,
+  OrmClient,
+  OrmModelDelegate,
+  OrmOperationArgs,
+  OrmRow,
   AccessControlledDB,
+  AccessControlledDelegate,
   StorageUtils,
-  AugmentedFindMany,
-  AugmentedFindUnique,
-  FindManyQueryArgs,
 } from './access/types.js'
-
-// Typed-query internals (Fragment/FieldSelection/ResultOf appear in generated types)
-export type { Fragment, FieldSelection, ResultOf } from './query/index.js'
 
 // Password hashing internals (the password field emits HashedPassword into generated types)
 export {
@@ -59,3 +57,20 @@ export type {
   ImageMetadata,
   ImageTransformationResult,
 } from './config/index.js'
+
+// The engine's LIKE-pattern escaping, shared with the packages that lower a
+// substring predicate to `like`/`ilike` (ADR-0055, ADR-0060). One escaper.
+export {
+  LIKE_ESCAPE_CHARACTER,
+  escapeLikeLiteral,
+  likeEqualsPattern,
+  likeContainsPattern,
+  likeStartsWithPattern,
+  likeEndsWithPattern,
+} from './where/like.js'
+
+// The lookup's provenance, which `opensaas dev` reads to tell the Database
+// escape (a URL in the environment) from a Dev database it should start for
+// the project itself (ADR-0063). The public accessor, `findDatabaseUrl`,
+// reports the URL alone.
+export { findDatabaseConnection } from './db/url.js'

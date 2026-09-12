@@ -2,7 +2,7 @@ import { describe, it, expect, expectTypeOf, vi } from 'vitest'
 import { calendarDay } from './index.js'
 import { generateZodSchema, validateWithZod } from '../validation/schema.js'
 import { getContext } from '../context/index.js'
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, TypeDescriptor } from '../config/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 /**
@@ -11,48 +11,52 @@ import type { OpenSaasConfig } from '../config/types.js'
  * See issue #571.
  */
 describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
-  describe('getTypeScriptType', () => {
-    it('returns string (not Date), driving the entity + input types', () => {
+  describe('the TypeScript face', () => {
+    it('reads and writes as string (not Date), driving the row and input types', () => {
       const field = calendarDay()
-      expect(field.getTypeScriptType?.()).toEqual({ type: 'string', optional: true })
+      expect(field.outputType).toBe('string')
+      expect(field.inputType).toBe('string')
     })
 
-    it('is non-optional when required and not nullable', () => {
+    it('declares the same face when required', () => {
       const field = calendarDay({ validation: { isRequired: true } })
-      expect(field.getTypeScriptType?.()).toEqual({ type: 'string', optional: false })
+      expect(field.outputType).toBe('string')
+      expect(field.inputType).toBe('string')
     })
 
-    it('type-level: the declared type is the literal "string"', () => {
+    it('type-level: the declared face is a plain type string, never a Date', () => {
       const field = calendarDay()
-      const tsType = field.getTypeScriptType?.()
-      // The entity/read type and the standalone generated CreateInput/UpdateInput
-      // types are emitted from this literal, so asserting it is exactly 'string'
-      // pins those types to `string`. (At the context.db write path a Date is
-      // rejected at runtime by validation, not at compile time — tracked in #599.)
-      expectTypeOf(tsType).toEqualTypeOf<{ type: string; optional: boolean } | undefined>()
-      if (tsType) {
-        expectTypeOf(tsType.type).toEqualTypeOf<string>()
-        expect(tsType.type).toBe('string')
-        // @ts-expect-error - the runtime type is 'string', never 'Date'
-        const _notDate: 'Date' = tsType.type
-        void _notDate
-      }
+      // The remainder's `output`/`input` entries are rendered from these, so
+      // pinning them to 'string' pins the emitted row and input types. (At the
+      // context.db write path a Date is rejected at runtime by validation, not
+      // at compile time — tracked in #599.)
+      expectTypeOf(field.outputType).toEqualTypeOf<TypeDescriptor | undefined>()
+      expect(field.outputType).toBe('string')
+      // @ts-expect-error - the declared face is 'string', never 'Date'
+      const _notDate: 'Date' = field.outputType
+      void _notDate
     })
   })
 
-  describe('getPrismaType (unchanged — stays DateTime @db.Date)', () => {
-    it('keeps DateTime storage with @db.Date on non-sqlite providers', () => {
+  describe('the stored column (a date column under a string face)', () => {
+    const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+    it('stores a dateTime column with a native date type', () => {
       const field = calendarDay({ validation: { isRequired: true } })
-      const prisma = field.getPrismaType?.('startsOn', 'postgresql')
-      expect(prisma?.type).toBe('DateTime')
-      expect(prisma?.modifiers).toContain('@db.Date')
+      expect(field.getContractField?.('startsOn', 'Event', config)).toEqual({
+        kind: 'column',
+        name: 'startsOn',
+        type: { pack: 'pg', type: 'dateTime' },
+        nativeType: 'date',
+        nullable: false,
+      })
     })
 
-    it('omits @db.Date on sqlite (TEXT fallback)', () => {
-      const field = calendarDay({ validation: { isRequired: true } })
-      const prisma = field.getPrismaType?.('startsOn', 'sqlite')
-      expect(prisma?.type).toBe('DateTime')
-      expect(prisma?.modifiers ?? '').not.toContain('@db.Date')
+    it('is nullable when not required', () => {
+      const field = calendarDay()
+      expect(field.getContractField?.('startsOn', 'Event', config)).toMatchObject({
+        nullable: true,
+      })
     })
   })
 
@@ -200,29 +204,22 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
   })
 
   describe('end-to-end via context.db.*.create/update (#621 repro)', () => {
-    // Prisma 7's client validator rejects a bare YYYY-MM-DD string for a
-    // `@db.Date` column. Assert the value actually forwarded to the Prisma
-    // client is a Date, not the string the caller passed in.
+    // Prisma's column codec rejects a bare YYYY-MM-DD string for a date
+    // column. Assert the value actually forwarded to the ORM is a Date, not
+    // the string the caller passed in.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock Prisma client
     let mockPrisma: any
 
     function buildConfig(): OpenSaasConfig {
-      mockPrisma = {
-        event: {
-          findFirst: vi.fn(),
-          findUnique: vi.fn(),
-          findMany: vi.fn(),
-          create: vi.fn(),
-          update: vi.fn(),
-          delete: vi.fn(),
-          count: vi.fn(),
-        },
+      const event: Record<string, unknown> = {
+        where: vi.fn(() => event),
+        first: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
       }
+      mockPrisma = { Event: event }
       return {
-        db: {
-          provider: 'postgresql',
-          prismaClientConstructor: (PrismaClient) => new PrismaClient(),
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Event: {
             fields: {
@@ -243,47 +240,47 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
 
     it('create: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
       const config = buildConfig()
-      mockPrisma.event.create.mockResolvedValue({
+      mockPrisma.Event.create.mockResolvedValue({
         id: '1',
         startsOn: new Date('2025-01-15T00:00:00.000Z'),
       })
       const context = await getContext(config, mockPrisma, null)
 
-      await context.db.event.create({ data: { startsOn: '2025-01-15' } })
+      await context.db.Event.create({ data: { startsOn: '2025-01-15' } })
 
-      expect(mockPrisma.event.create).toHaveBeenCalledTimes(1)
-      const callArgs = mockPrisma.event.create.mock.calls[0][0]
-      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
-      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
+      expect(mockPrisma.Event.create).toHaveBeenCalledTimes(1)
+      const written = mockPrisma.Event.create.mock.calls[0][0]
+      expect(written.startsOn).toBeInstanceOf(Date)
+      expect((written.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
     })
 
     it('update: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
       const config = buildConfig()
       const existing = { id: '1', startsOn: new Date('2025-01-15T00:00:00.000Z') }
-      mockPrisma.event.findUnique.mockResolvedValue(existing)
-      mockPrisma.event.update.mockResolvedValue({
+      mockPrisma.Event.first.mockResolvedValue(existing)
+      mockPrisma.Event.update.mockResolvedValue({
         ...existing,
         startsOn: new Date('2025-02-20T00:00:00.000Z'),
       })
       const context = await getContext(config, mockPrisma, null)
 
-      await context.db.event.update({ where: { id: '1' }, data: { startsOn: '2025-02-20' } })
+      await context.db.Event.update({ where: { id: '1' }, data: { startsOn: '2025-02-20' } })
 
-      expect(mockPrisma.event.update).toHaveBeenCalledTimes(1)
-      const callArgs = mockPrisma.event.update.mock.calls[0][0]
-      expect(callArgs.data.startsOn).toBeInstanceOf(Date)
-      expect((callArgs.data.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
+      expect(mockPrisma.Event.update).toHaveBeenCalledTimes(1)
+      const written = mockPrisma.Event.update.mock.calls[0][0]
+      expect(written.startsOn).toBeInstanceOf(Date)
+      expect((written.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
     })
 
     it('the read result is still normalised back to a YYYY-MM-DD string', async () => {
       const config = buildConfig()
-      mockPrisma.event.create.mockResolvedValue({
+      mockPrisma.Event.create.mockResolvedValue({
         id: '1',
         startsOn: new Date('2025-01-15T00:00:00.000Z'),
       })
       const context = await getContext(config, mockPrisma, null)
 
-      const result = await context.db.event.create({ data: { startsOn: '2025-01-15' } })
+      const result = await context.db.Event.create({ data: { startsOn: '2025-01-15' } })
 
       expect(result?.startsOn).toBe('2025-01-15')
     })

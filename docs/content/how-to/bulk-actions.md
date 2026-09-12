@@ -17,7 +17,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text, select } from '@opensaas/stack-core/fields'
 
 export default config({
-  // ...
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -39,11 +39,10 @@ export default config({
               handler: async ({ ids, context }) => {
                 let published = 0
                 for (const id of ids) {
-                  const updated = await context.db.post.update({
+                  const updated = await context.db.Post.update({
                     where: { id },
                     data: { status: 'published' },
                   })
-                  // Access-denied rows return null (Silent failure) — not counted.
                   if (updated) published++
                 }
                 return { message: `Published ${published} of ${ids.length}` }
@@ -57,6 +56,10 @@ export default config({
 })
 ```
 
+Each `update` returns the row or `null`, so the counter above only advances for
+rows the session was actually allowed to write — a denied row is indistinguishable
+from a missing one, which is the point.
+
 The action's button appears in the selection bar, in declaration order,
 alongside the built-in Delete. When it completes, its returned `message` shows in
 the selection bar's status line, the selection clears, and the table refreshes.
@@ -66,7 +69,7 @@ the selection bar's status line, the selection clears, and the table refreshes.
 Two rules keep custom actions safe:
 
 1. **The `handler` runs entirely server-side and must do all its work through
-   `context.db`** — never a raw Prisma client. Each id therefore goes through the
+   `context.db`** — never `context.unsafe`. Each id therefore goes through the
    list's access control and hooks, exactly like any other write. A row the
    session may not touch returns `null` (Silent failure); count it out of your
    result rather than surfacing which ids were denied. Never leak _which_ rows
@@ -89,6 +92,10 @@ Two rules keep custom actions safe:
   UX affordance — the real boundary is your `handler` running through the secured
   context.
 
+In the action below `hasAccess` keeps the button off non-admin screens, and the
+`where` on each write is identity-only — a Bulk action addresses rows by the ids
+the selection handed it, never by a secondary column:
+
 ```typescript
 bulkActions: [
   {
@@ -96,12 +103,11 @@ bulkActions: [
     label: 'Suspend',
     variant: 'destructive',
     destructive: true,
-    // Only show to admins.
     hasAccess: ({ session }) => session?.role === 'admin',
     handler: async ({ ids, context }) => {
       let n = 0
       for (const id of ids) {
-        const updated = await context.db.user.update({
+        const updated = await context.db.User.update({
           where: { id },
           data: { suspended: true },
         })
@@ -120,7 +126,12 @@ rows through the secured context (so an admin only ever exports rows they may
 see), build the CSV, and hand the result back. Because the action reports a
 status message rather than streaming a file, persist the CSV somewhere the admin
 can retrieve it (for example your storage provider) and return the location in
-the message:
+the message.
+
+The read below is the composed form: `.where({ id: { in: ids } })` narrows to the
+selection, `.select()` names the columns the CSV needs, and `.all()` is the
+terminal that runs it. `all()` returns `[]` when access denies everything, so
+`rows.length` is already the count of rows this admin may legitimately export:
 
 ```typescript
 bulkActions: [
@@ -128,12 +139,10 @@ bulkActions: [
     key: 'export-csv',
     label: 'Export CSV',
     handler: async ({ ids, context }) => {
-      // Read only the selected rows, access-scoped.
-      const rows = await context.db.post.findMany({
-        where: { id: { in: ids } },
-      })
+      const rows = await context.db.Post.where({ id: { in: ids } })
+        .select('id', 'title', 'status')
+        .all()
 
-      // Build CSV (escape values as needed for your data).
       const header = ['id', 'title', 'status']
       const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
       const csv = [
@@ -141,16 +150,15 @@ bulkActions: [
         ...rows.map((r) => [r.id, r.title, r.status].map(escape).join(',')),
       ].join('\n')
 
-      // Persist it and return a retrievable location. For example, upload to
-      // your configured storage provider and return the URL:
-      //   const { url } = await uploadExport(context, csv)
-      //   return { message: `Exported ${rows.length} rows — ${url}` }
-
       return { message: `Exported ${rows.length} rows` }
     },
   },
 ]
 ```
+
+To hand the file back rather than just a count, persist the CSV through your
+configured storage provider inside the handler and put the resulting URL in the
+`message` — the action reports a status line, it does not stream a response.
 
 The same pattern generalises to any batch operation — re-index, send a
 notification, enqueue a job — as long as the work runs through `context.db` (or

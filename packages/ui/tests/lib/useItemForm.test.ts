@@ -1,14 +1,26 @@
 import { describe, it, expect } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import {
+  diffEdgeSelections,
   transformItemFormData,
   transformInitialData,
   getEditableFields,
+  PARTIAL_SAVE_PREFIX,
+  UnwritableRelationshipError,
+  useItemForm,
 } from '../../src/lib/useItemForm.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
 
 const text = (): SerializableFieldConfig => ({ type: 'text' })
 const singleRel = (): SerializableFieldConfig => ({ type: 'relationship', many: false })
 const manyRel = (): SerializableFieldConfig => ({ type: 'relationship', many: true })
+/** A to-many as `prepareItemForm` hands it to the form: rendered read-only. */
+const readOnlyManyRel = (): SerializableFieldConfig => ({
+  type: 'relationship',
+  many: true,
+  readOnly: true,
+  readOnlyReason: 'Not editable here — the related record holds this link.',
+})
 const password = (): SerializableFieldConfig => ({ type: 'password' })
 const virtual = (): SerializableFieldConfig => ({ type: 'virtual', virtual: true })
 
@@ -32,11 +44,24 @@ describe('transformItemFormData', () => {
     expect(transformItemFormData(fields, { author: null })).toEqual({})
   })
 
-  it('converts a many relationship to connect-array shape', () => {
-    const fields = { tags: manyRel() }
-    expect(transformItemFormData(fields, { tags: ['a', 'b'] })).toEqual({
-      tags: { connect: [{ id: 'a' }, { id: 'b' }] },
-    })
+  it('sends nothing for a relationship the form rendered read-only', () => {
+    // ADR-0050: an edge is a foreign-key assignment, and a to-many's key lives
+    // on the related list. The value here is the one the server sent — a
+    // read-only control never calls `onChange` — so nothing of the user's is
+    // lost by omitting it.
+    const fields = { tags: readOnlyManyRel() }
+    expect(transformItemFormData(fields, { tags: ['a', 'b'] })).toEqual({})
+  })
+
+  it('refuses a to-many selection rather than discarding it when no control marked it read-only', () => {
+    // The regression this guards: the field rendered as an editable, populated
+    // multi-select, the selection vanished from the payload, and the save
+    // reported success. Whatever else happens, the user must be told.
+    const fields = { title: text(), tags: manyRel() }
+    expect(() => transformItemFormData(fields, { title: 'Hi', tags: ['a', 'b'] })).toThrow(
+      UnwritableRelationshipError,
+    )
+    expect(() => transformItemFormData(fields, { title: 'Hi', tags: ['a', 'b'] })).toThrow(/"tags"/)
   })
 
   it('omits an empty many relationship', () => {
@@ -72,7 +97,7 @@ describe('transformItemFormData', () => {
     const fields = {
       title: text(),
       author: singleRel(),
-      tags: manyRel(),
+      tags: readOnlyManyRel(),
       password: password(),
     }
     const out = transformItemFormData(fields, {
@@ -84,7 +109,6 @@ describe('transformItemFormData', () => {
     expect(out).toEqual({
       title: 'Post',
       author: { connect: { id: 'u1' } },
-      tags: { connect: [{ id: 't1' }] },
     })
   })
 })
@@ -133,5 +157,173 @@ describe('getEditableFields', () => {
   it('drops virtual fields for create mode — there is no item yet to compute a value from', () => {
     const fields = { title: text(), fullName: virtual() }
     expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title'])
+  })
+
+  it('keeps a read-only field in both modes, so the form can show why it is not editable', () => {
+    // Dropping it would leave the user with no field and no explanation for
+    // where it went. `FieldRenderer` renders it read-only with its reason.
+    const fields = { title: text(), tags: readOnlyManyRel() }
+    expect(getEditableFields(fields, 'create').map(([k]) => k)).toEqual(['title', 'tags'])
+    expect(getEditableFields(fields, 'update').map(([k]) => k)).toEqual(['title', 'tags'])
+  })
+})
+
+/**
+ * The framework hands a read-only field's control `mode="read"`, but nothing
+ * makes a third-party component honour it (`ui.component`,
+ * `registerFieldComponent`). One that calls `onChange` anyway must not be able
+ * to put a value into `formData` that the submit transform then drops: that is
+ * a selection shown as accepted and discarded at save, reported as success —
+ * the exact failure the read-only marking exists to stop.
+ */
+describe('useItemForm handleFieldChange', () => {
+  const submitted: Array<Record<string, unknown>> = []
+  const onSubmit = async (data: Record<string, unknown>) => {
+    submitted.push(data)
+    return { success: true } as const
+  }
+
+  it('ignores a change for a read-only field, so a rogue control cannot stage a lost value', async () => {
+    submitted.length = 0
+    const fields = { title: text(), tags: readOnlyManyRel() }
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData: { tags: ['stored'] }, mode: 'update', onSubmit }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+      result.current.handleFieldChange('tags', ['a', 'b'])
+    })
+
+    // The control still shows what the server sent — the selection was refused
+    // on screen, not accepted and dropped later.
+    expect(result.current.formData).toEqual({ title: 'Hi', tags: ['stored'] })
+
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(submitted).toEqual([{ title: 'Hi' }])
+  })
+
+  it('ignores a change for a virtual field', () => {
+    const fields = { title: text(), fullName: virtual() }
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData: { fullName: 'Ada Lovelace' }, mode: 'update', onSubmit }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('fullName', 'Grace Hopper')
+    })
+
+    expect(result.current.formData).toEqual({ fullName: 'Ada Lovelace' })
+  })
+
+  it('accepts a change for a writable field', () => {
+    const fields = { title: text(), author: singleRel() }
+    const { result } = renderHook(() => useItemForm({ fields, mode: 'create', onSubmit }))
+
+    act(() => {
+      result.current.handleFieldChange('author', 'u1')
+    })
+
+    expect(result.current.formData).toEqual({ author: 'u1' })
+  })
+})
+
+describe('diffEdgeSelections', () => {
+  const fields = {
+    posts: {
+      type: 'relationship',
+      many: true,
+      edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+    } satisfies SerializableFieldConfig,
+  }
+
+  it('keeps a still-selected row a custom control hands back as a number', () => {
+    // `prepareItemForm` serialises the baseline to strings, but a control
+    // registered for the field may carry an `int autoincrement` id as the
+    // number it is.
+    const changes = diffEdgeSelections(fields, { posts: ['1'] }, { posts: [1, 2] })
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0].removed).toEqual([])
+    expect(changes[0].added).toEqual(['2'])
+  })
+})
+
+describe('a record update that fails after its edges landed', () => {
+  const edgeWriting = (): SerializableFieldConfig => ({
+    type: 'relationship',
+    many: true,
+    edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+  })
+
+  const fields = { title: text(), posts: edgeWriting() }
+
+  it('says the save was partial rather than reporting a plain failure', async () => {
+    const onEdgeWrites = async () => ({ persisted: { posts: ['p1'] }, errors: [] })
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites,
+        onSubmit: async () => ({ success: false, error: 'Access denied' }) as const,
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('posts', ['p1'])
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Access denied`)
+  })
+
+  it('reports a plain failure when there were no edges to commit', async () => {
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites: async () => ({ persisted: {}, errors: [] }),
+        onSubmit: async () => ({ success: false, error: 'Access denied' }) as const,
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe('Access denied')
+  })
+
+  it('says the same when the update throws', async () => {
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields,
+        initialData: { posts: [] },
+        mode: 'update',
+        onEdgeWrites: async () => ({ persisted: { posts: ['p1'] }, errors: [] }),
+        onSubmit: async () => {
+          throw new Error('Network down')
+        },
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('posts', ['p1'])
+    })
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+    expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Network down`)
   })
 })

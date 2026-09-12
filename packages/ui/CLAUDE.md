@@ -189,9 +189,29 @@ Third-party fields register components on client side:
 import { registerFieldComponent } from '@opensaas/stack-ui'
 import { RichTextField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', RichTextField)
+```
 
+A bare side-effect import of that module from `page.tsx` does nothing: `page.tsx` is a server
+component, and a `'use client'` module only reaches the browser when the tree renders it. Carry it
+in a client component and render that:
+
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+```tsx
 // app/admin/[[...admin]]/page.tsx
-import '../../../lib/register-fields' // Side-effect import
+import { FieldRegistration } from './FieldRegistration'
+;<>
+  <FieldRegistration />
+  <AdminUI {...props} />
+</>
 ```
 
 ## Common Patterns

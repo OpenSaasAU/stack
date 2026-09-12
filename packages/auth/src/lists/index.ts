@@ -109,3 +109,18 @@ export function getAuthLists(
     credentialFieldsConfig || {},
   ).lists
 }
+
+/**
+ * The better-auth model key → derived list key registry for a resolved auth
+ * config. The Auth adapter resolves the model better-auth hands it through
+ * this, so the naming rules live in one place (ADR-0060).
+ *
+ * @param models - Resolved better-auth model config; defaults to the better-auth defaults
+ * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`), whose own tables are registered too
+ */
+export function getAuthListRegistry(
+  models: NormalizedAuthModels = DEFAULT_MODELS,
+  plugins?: BetterAuthPlugin[],
+): Record<string, string> {
+  return deriveAuthLists(models, {}, {}, plugins || []).registry
+}

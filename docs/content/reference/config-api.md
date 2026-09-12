@@ -6,15 +6,17 @@ Complete API reference for the Stack configuration system. For basic usage and e
 
 ### `config()`
 
-Creates and validates an Stack configuration. Executes plugins if provided.
+Creates and validates a Stack configuration. Executes plugins if provided.
 
 ```typescript
-import { config } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 
 export default config({
-  db: {/* ... */},
-  lists: {/* ... */},
-  // ... other options
+  db: { provider: 'postgresql' },
+  lists: {
+    Post: list({ fields: { title: text() } }),
+  },
 })
 ```
 
@@ -147,29 +149,29 @@ Array of plugins to extend stack functionality.
 
 ### `OutputConfig`
 
-Configures where `opensaas generate` writes its output. All paths are resolved relative to the project root (the directory the CLI runs in). When omitted, defaults are unchanged: the schema is written to `prisma/schema.prisma` and the bundle to `.opensaas/`.
+Configures where `opensaas generate` writes its output. All paths are resolved relative to the project root (the directory the CLI runs in). When omitted, the Contract module goes to `prisma/contract.ts` and the bundle to `.opensaas/`.
 
-The generated files' cross-references follow these locations automatically — `context.ts` imports the project's `opensaas.config` from the resolved bundle directory, and the top-level `prisma.config.ts` points the Prisma CLI at the configured schema directory.
+The generated files' cross-references follow these locations automatically — `context.ts` imports the project's `opensaas.config` and the emitted contract artifacts from the resolved directories, and the top-level `prisma.config.ts` points the Prisma CLI at the configured Contract module.
 
 ```typescript
 output: {
-  prismaSchema?: string,
+  contractModule?: string,
   opensaasDir?: string,
 }
 ```
 
 #### Properties
 
-##### `prismaSchema`
+##### `contractModule`
 
-Path to the generated Prisma schema file.
+Path to the generated Contract module. `contract.json` and `contract.d.ts` are emitted into its directory.
 
 **Type:** `string`
-**Default:** `"prisma/schema.prisma"`
+**Default:** `"prisma/contract.ts"`
 
 ##### `opensaasDir`
 
-Directory for the generated `.opensaas` bundle (types, lists, context, plugin types, prisma extensions, and the patched Prisma client).
+Directory for the generated `.opensaas` bundle: `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts` and `tables.ts`. Those file names are not configurable — only the directory holding them moves.
 
 **Type:** `string`
 **Default:** `".opensaas"`
@@ -179,12 +181,15 @@ Directory for the generated `.opensaas` bundle (types, lists, context, plugin ty
 **Example:**
 
 ```typescript
+import { config } from '@opensaas/stack-core'
+
 export default config({
+  db: { provider: 'postgresql' },
+  lists: {},
   output: {
-    prismaSchema: 'prisma-opensaas/schema.prisma',
+    contractModule: 'prisma-opensaas/contract.ts',
     opensaasDir: 'generated/opensaas',
   },
-  // ...
 })
 ```
 
@@ -192,112 +197,304 @@ export default config({
 
 ### `DatabaseConfig`
 
-Database connection and adapter configuration.
+Everything the stack needs to know about the database. There is **no connection URL here**: the runtime resolves it from the environment (see [Resolving the connection](#resolving-the-connection)), and nothing that merely loads the config opens a connection.
 
 ```typescript
-db: {
-  provider: 'postgresql' | 'mysql' | 'sqlite',
-  prismaClientConstructor: (PrismaClientClass: any) => any,
+type DatabaseConfig = {
+  provider: 'postgresql'
+  idField?: IdFieldStrategy
+  extensions?: ExtensionDescriptor[]
+  client?: DatabaseClientConfig
+  schemas?: string[]
+  timestamps?: boolean
+  keystoneCompat?: boolean
+  prismaGeneratorOptions?: {
+    importFileExtension?: 'ts' | 'js'
+    moduleFormat?: 'esm' | 'commonjs'
+  }
 }
 ```
+
+That is the complete key list. A minimal config is one line:
+
+```typescript
+import { config } from '@opensaas/stack-core'
+
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {},
+})
+```
+
+{% callout type="warning" %}
+There is no `prismaClientConstructor`, no `db.url`, no `extendPrismaSchema`, no `joinTableNaming`, no `shadowDatabaseUrl` and no `useMigrations`. The client is built by the generated `.opensaas/context.ts` from the committed contract artifact; the schema is the contract, not a string to post-process.
+{% /callout %}
 
 #### Properties
 
 ##### `provider` (required)
 
-Database type.
+**Type:** `'postgresql'`
 
-**Type:** `'postgresql' | 'mysql' | 'sqlite'`
+A single literal, not a union. PostgreSQL is the only target: the secured surface's row lock, advisory locks, `ilike`-lowered `contains` and native vector columns all depend on it, and a portable subset of those is not the same feature.
 
-##### `prismaClientConstructor` (required)
+##### `idField`
 
-Factory function that creates a Prisma client instance with a database adapter. **Required in Prisma 7** - all database connections must use adapters.
+The id strategy every list gets unless it declares its own list-level `db.idField`.
 
-The database connection URL is passed directly to the adapter, not to the OpenSaas config.
-
-**Type:** `(PrismaClientClass: any) => any`
-
-**Example - SQLite:**
+**Type:** `'uuid7' | 'cuid2' | 'int autoincrement'`
+**Default:** `'uuid7'`
 
 ```typescript
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 db: {
-  provider: 'sqlite',
-  prismaClientConstructor: (PrismaClient) => {
-    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || './dev.db' })
-    return new PrismaClient({ adapter })
-  }
+  provider: 'postgresql',
+  idField: 'int autoincrement',
 }
 ```
 
-**Example - PostgreSQL (Neon):**
+A [singleton list](#issingleton) derives its id from `isSingleton` and refuses this option.
+
+##### `extensions`
+
+Extension packs the contract declares. Each descriptor names a package; one declaration drives the contract module, `prisma.config.ts`, the runtime client, and the pack's own extension contract space under `migrations/`.
+
+**Type:** `{ name: string; from: string }[]`
 
 ```typescript
-import { PrismaNeon } from '@prisma/adapter-neon'
-import { neonConfig } from '@neondatabase/serverless'
+db: {
+  provider: 'postgresql',
+  extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+}
+```
+
+`name` is the binding that spells the pack's types on a field (`type.pgvector.Vector(n)`) and the identity two declarations merge on: the same `name` declared twice with a different `from` is a config error. A plugin adds its own through `PluginContext.addExtension`.
+
+A declared pack must publish `/pack`, `/control` and `/runtime` subpaths, or `ExtensionSubpathError` names the one that is missing. Installing the extension in the database is part of [deployment](/docs/how-to/deploy).
+
+##### `client`
+
+Per-deployment pool binding for the generated runtime client. Nothing here reaches the contract — it is read only by `.opensaas/context.ts` when it constructs the client.
+
+**Type:**
+
+```typescript
+type DatabaseClientConfig = {
+  poolOptions?: PostgresOptionsBase['poolOptions']
+  pg?: () => Pool
+}
+```
+
+`pg` is a **factory, not an instance**. The config is loaded by the CLI and by tooling that never issues a query, and none of it should open a connection; the factory is called at most once, after the config promise resolves, under the runtime's client singleton.
+
+```typescript
+import { Pool, neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 
 db: {
   provider: 'postgresql',
-  prismaClientConstructor: (PrismaClient) => {
-    neonConfig.webSocketConstructor = ws
-    const adapter = new PrismaNeon({
-      connectionString: process.env.DATABASE_URL
-    })
-    return new PrismaClient({ adapter })
-  }
+  client: {
+    pg: () => {
+      neonConfig.webSocketConstructor = ws
+      return new Pool({ connectionString: process.env.DATABASE_URL })
+    },
+  },
 }
 ```
 
-##### `extendPrismaSchema`
+Omit `client` entirely to let the runtime open its own pool from the resolved database URL. `resolveRuntimeConnection` from `@opensaas/stack-core/client` is what reads this key — see [building a second client synchronously](/docs/reference/context-api).
 
-Optional function to extend or modify the generated Prisma schema before it's written to disk. Receives the generated schema as a string and should return the modified schema.
+##### `schemas`
 
-This is useful for advanced Prisma features not directly supported by the config API.
+PostgreSQL multi-schema support: the schemas the datasource spans.
 
-**Type:** `(schema: string) => string`
-
-**Example - Multi-schema support for PostgreSQL:**
+**Type:** `string[]`
 
 ```typescript
 db: {
   provider: 'postgresql',
-  prismaClientConstructor: (PrismaClient) => {
-    // ... adapter setup
-  },
-  extendPrismaSchema: (schema) => {
-    let modifiedSchema = schema
-
-    // Add schemas array to datasource
-    modifiedSchema = modifiedSchema.replace(
-      /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
-      '$1\n  schemas = ["public", "auth"]',
-    )
-
-    // Add @@schema("public") to all models
-    modifiedSchema = modifiedSchema.replace(
-      /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
-      (match, modelContent) => {
-        if (!modelContent.includes('@@schema')) {
-          return `${modelContent}\n  @@schema("public")\n}`
-        }
-        return match
-      },
-    )
-
-    return modifiedSchema
-  },
+  schemas: ['public', 'auth'],
 }
 ```
 
-**Common use cases:**
+Combine with a per-list `db.schema` to place a model in a specific schema. When unset, everything lives in `public`.
 
-- Multi-schema support for PostgreSQL
-- Custom model or field attributes
-- Prisma preview features
-- Output path modifications
+##### `timestamps`
 
+Auto-inject `createdAt` and `updatedAt` into every list.
+
+**Type:** `boolean`
+**Default:** `false`
+
+```typescript
+db: {
+  provider: 'postgresql',
+  timestamps: true,
+}
+```
+
+Off by default, and deliberately: Keystone 6 never adds timestamps automatically either, which is what keeps a Keystone → stack migration non-destructive. A list opts in either by enabling this flag or by declaring the fields itself.
+
+A per-list `db.timestamps` overrides the global setting. When timestamps are enabled but a list already declares its own `createdAt` or `updatedAt` field, the auto column is skipped for that field, so the contract never carries a duplicate column.
+
+Both columns are then **system fields**: always readable, never writable through the secured surface, and always present in a projection.
+
+###### Cost: `updatedAt` is application-side
+
+`createdAt` takes a database `now()` default. `updatedAt` does not have a database backstop — it is maintained by the write pipeline, in the application ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)).
+
+Two consequences, both taken knowingly:
+
+- **A write that bypasses the ORM leaves it stale.** `psql`, `opensaas db update`, and [the Unsafe surface](/docs/reference/context-api#the-unsafe-surface) all write the row without touching `updatedAt`.
+- **`update({})` no longer moves it.** An update carrying no changed columns is not a write, so the timestamp does not advance. Code that used an empty update as a "touch" needs to set a column.
+
+If you need a database-enforced modification time, add it yourself as a trigger in a migration and treat the column as read-only from the config's side.
+
+##### `keystoneCompat`
+
+Mirror Keystone 6's implicit empty-string default on non-null text columns, so a migrating project reaches schema parity without hand-setting `defaultValue: ''` across dozens of columns.
+
+**Type:** `boolean`
+**Default:** `false`
+
+```typescript
+db: {
+  provider: 'postgresql',
+  keystoneCompat: true,
+}
+```
+
+It never affects nullable text, a field with an explicit `defaultValue`, or any non-text field.
+
+**Known limit:** the flag is inert for `validation: { isRequired: true }` and for `validation: { length: { min: N } }` with `N > 0` — and `isRequired` is Keystone's commonest text column. Keystone renders both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own validator refuses, so carrying the default would write a row the config forbids. A migrating project sees `DROP DEFAULT` in `migrate diff` for those columns and has to relax the validation alongside setting the default. A column made non-null through `db: { isNullable: false }` alone still gets the default, as does one declaring `length: { min: 0 }` or a `length.max`.
+
+##### `prismaGeneratorOptions`
+
+Override the generator options the CLI emits for the `.opensaas` client subtree.
+
+**Type:** `{ importFileExtension?: 'ts' | 'js'; moduleFormat?: 'esm' | 'commonjs' }`
+**Default:** `{ importFileExtension: 'ts', moduleFormat: 'esm' }`
+
+The defaults make the whole generated bundle statically resolvable and match the explicit `.ts` import-extension style the rest of `.opensaas` uses. Supply this only when a consumer needs a different module story. Any value you provide wins; omitted keys keep their default.
+
+#### Resolving the connection
+
+The connection URL is resolved at runtime, in this order:
+
+1. `DIRECT_DATABASE_URL`
+2. `DATABASE_URL`
+3. the Dev database's state file, written by a running `opensaas dev`
+4. otherwise `DatabaseUrlUnresolvedError`
+
+`DIRECT_DATABASE_URL` wins so that a schema command reaches a direct connection rather than a pooler that cannot run DDL.
+
+Two root exports read that order: `resolveDatabaseUrl()`, which throws when nothing resolves, and `findDatabaseUrl()`, which does not — the generated `prisma.config.ts` calls the second.
+
+Provenance is load-bearing, not just a value: only when the URL came from the Dev database's state file does the generated context bind a single connection and skip the contract-marker read.
+
+---
+
+#### Referential actions
+
+A relationship's `db` block carries the foreign key's shape. The actions are a typed union, in the ORM's own spelling, so the generated contract re-emits the value verbatim:
+
+```typescript
+type ReferentialAction = 'cascade' | 'restrict' | 'noAction' | 'setNull' | 'setDefault'
+```
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
+
+export const lists = {
+  Post: list({
+    fields: {
+      title: text(),
+      author: relationship({
+        ref: 'User.posts',
+        db: { foreignKey: true, isNullable: false, onDelete: 'cascade' },
+      }),
+    },
+  }),
+}
+```
+
+| Key          | Type                         | Meaning                                                     |
+| ------------ | ---------------------------- | ----------------------------------------------------------- |
+| `foreignKey` | `boolean \| { map: string }` | Which side owns the foreign-key column, or what to call it  |
+| `isNullable` | `boolean`                    | Whether the column may be `NULL`                            |
+| `onDelete`   | `ReferentialAction`          | What happens to this row when the referenced row is deleted |
+| `onUpdate`   | `ReferentialAction`          | What happens when the referenced key changes                |
+
+`foreignKey` carries two senses in one key. The **boolean** form answers "which side owns it", and is meaningful only on a bidirectional `ref: 'List.field'` — a list-only `ref: 'List'` always owns the foreign key, so a boolean there is rejected. The **`{ map }`** form renames the column without changing ownership, and works on both. That is the form an adopted table needs:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { relationship } from '@opensaas/stack-core/fields'
+
+export const Post = list({
+  fields: {
+    author: relationship({ ref: 'User.posts', db: { foreignKey: { map: 'author_id' } } }),
+  },
+})
+```
+
+The action is a value in the config, not a string spliced into a schema file. There is no `extendPrismaSchema` on a field.
+
+##### Cost: a required-foreign-key cycle is unwritable
+
+Two lists that each hold a **non-nullable** foreign key to the other cannot be created through the secured surface at all. The first `create` has no id to `connect` to, and there is no nested-write form that would let both rows come into existence in one statement — nested `create` left the secured write surface deliberately ([ADR-0050](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0050-nested-relation-input-leaves-the-secured-write-surface.md)), because a nested write cannot be gated per row.
+
+The fix is a modelling one: make one side nullable, create both rows, then connect. If the cycle is genuinely required at the database level, the pair has to be written on [the Unsafe surface](/docs/reference/context-api#the-unsafe-surface) inside a transaction with the constraint deferred — and every access rule you would have relied on is yours to apply by hand there.
+
+#### Many-to-many is a junction list
+
+There is no implicit join table. A many-to-many relationship is **authored as its own list**: a to-one relationship to each side, its own id, and a unique `db.indexes` entry over the pair.
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { relationship, timestamp } from '@opensaas/stack-core/fields'
+
+export const lists = {
+  Lesson: list({
+    fields: { enrolments: relationship({ ref: 'Enrolment.lesson', many: true }) },
+  }),
+  Teacher: list({
+    fields: { enrolments: relationship({ ref: 'Enrolment.teacher', many: true }) },
+  }),
+  Enrolment: list({
+    fields: {
+      lesson: relationship({ ref: 'Lesson.enrolments', db: { foreignKey: true } }),
+      teacher: relationship({ ref: 'Teacher.enrolments', db: { foreignKey: true } }),
+      assignedAt: timestamp(),
+    },
+    db: {
+      indexes: [{ fields: ['lesson', 'teacher'], unique: true }],
+    },
+  }),
+}
+```
+
+An implicit join table is a row the application cannot see, gate or hook — which is exactly the thing this stack exists to prevent. Naming it costs one extra list and buys access control on the edge, hooks on the edge, and somewhere to put the column (`assignedAt` above) that every real join table eventually grows.
+
+Reading across it is one hop further:
+
+```typescript
+import type { Context } from '@/.opensaas/types'
+
+async function teacherNames(context: Context, lessonId: string) {
+  const lesson = await context.db.Lesson.where({ id: lessonId })
+    .include('enrolments', (enrolment) => enrolment.include('teacher', (t) => t.select('name')))
+    .first()
+
+  if (!lesson) return []
+
+  return lesson.enrolments.flatMap((enrolment) =>
+    enrolment.teacher ? [enrolment.teacher.name] : [],
+  )
+}
+```
+
+Each to-one hop off an included row is a null check — see [arity decides nullability](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 ---
 
 ### `ListConfig`
@@ -312,8 +509,20 @@ list({
   },
   hooks?: Hooks,
   mcp?: ListMcpConfig,
+  isSingleton?: boolean,
+  db?: {
+    map?: string
+    schema?: string
+    timestamps?: boolean
+    idField?: IdFieldStrategy
+    indexes?: ListIndex[]
+  },
 })
 ```
+
+{% callout type="warning" %}
+`access` carries `operation` and nothing else. There is no `access: { filter }` and no `access: { fields }` — a rule scopes a read by **returning** a filter from an `operation` function, and field-level rules live on the field. See [Access Control](/docs/concepts/access-control).
+{% /callout %}
 
 #### Properties
 
@@ -347,6 +556,38 @@ Model Context Protocol configuration for this list.
 
 **Type:** [`ListMcpConfig`](#listmcpconfig)
 
+##### `isSingleton`
+
+Marks a list that holds exactly one row — application settings, a feature-flag record.
+
+**Type:** `boolean`
+
+A singleton derives its id from `isSingleton` and refuses `db.idField`. On the secured surface it carries **`get()`** in place of the composed read: there is nothing to filter, order or page.
+
+##### `db.map`
+
+The database table name, when it differs from the list key.
+
+**Type:** `string`
+
+##### `db.schema`
+
+Which of the datasource's [`schemas`](#schemas) this list's table lives in.
+
+**Type:** `string`
+
+##### `db.timestamps`
+
+Per-list override of the global [`db.timestamps`](#timestamps).
+
+**Type:** `boolean`
+
+##### `db.idField`
+
+Per-list override of the global [`db.idField`](#idfield). Refused on a singleton.
+
+**Type:** `IdFieldStrategy`
+
 ##### `db.indexes`
 
 Model-level `@@unique`/`@@index` constraints, spanning one or more of this list's own fields.
@@ -354,21 +595,28 @@ Model-level `@@unique`/`@@index` constraints, spanning one or more of this list'
 **Type:** `ListIndex[]`
 
 ```typescript
-type ListIndexFieldRef = string | { field: string; sort?: 'asc' | 'desc' }
+type ListIndexFieldRef = string | { field: string }
 
 type ListIndex = {
   fields: ListIndexFieldRef[]
   unique?: boolean // default: false
-  name?: string // emitted as Prisma's `map:`
+  name?: string // the constraint's own name
 }
 ```
 
-Field-level [`isIndexed`](/docs/reference/fields-api#isindexed) is the sugar for the unnamed single-column case. `db.indexes` is the full form — reach for it when a constraint needs a `name` (for adopting an existing live constraint under a name Prisma wouldn't derive), a `sort` direction, or spans more than one column. Arity is incidental: an entry names **one or more** of the list's own OpenSaaS field names (not raw database column names). The generator resolves each to its Prisma column — a scalar field's own name (unaffected by `db.map`), or a relationship field's foreign key column (`<field>Id`) when this side owns it.
+Field-level [`isIndexed`](/docs/reference/fields-api#isindexed) is the sugar for the unnamed single-column case. `db.indexes` is the full form — reach for it when a constraint needs a `name` (for adopting an existing live constraint under a name the generator would not derive) or spans more than one column. Arity is incidental: an entry names **one or more** of the list's own OpenSaaS field names (not raw database column names). The generator resolves each to its column — a scalar field's own name (unaffected by `db.map`), or a relationship field's foreign key column (`<field>Id`) when this side owns it.
+
+{% callout type="warning" %}
+An index column carries **no sort direction**. `ListIndexFieldRef` has no `sort` key, so `{ field, sort }` is an excess-property error in TypeScript — not a `pnpm generate` refusal. The generator never inspects `sort`; the index keeps its column order.
+{% /callout %}
 
 **Example — composite unique (a database-level backstop a hook's existence check can't close on its own):**
 
 ```typescript
-Audition: list({
+import { list } from '@opensaas/stack-core'
+import { relationship } from '@opensaas/stack-core/fields'
+
+export const Audition = list({
   fields: {
     student: relationship({ ref: 'Student.auditions' }),
     production: relationship({ ref: 'Production.auditions' }),
@@ -377,25 +625,33 @@ Audition: list({
     indexes: [{ fields: ['student', 'production'], unique: true }],
   },
 })
-// Generates: @@unique([studentId, productionId])
 ```
+
+The two relationship fields resolve to their foreign-key columns, so the constraint spans `studentId` and `productionId`.
 
 **Example — single-field entry, naming an adopted constraint:**
 
 ```typescript
-RateLimit: list({
-  fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+export const RateLimit = list({
+  fields: { key: text() },
   db: {
     indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
   },
 })
-// Generates: @@unique([key], map: "RateLimit_key_key")
 ```
 
-**Example — sort direction and an adopted constraint name:**
+`key` carries no field-level `isIndexed` here: `db.indexes` owns that column instead, which is what lets the constraint keep the name a live database already gave it.
+
+**Example — a composite index under an adopted name:**
 
 ```typescript
-AuthVerification: list({
+import { list } from '@opensaas/stack-core'
+import { text, timestamp } from '@opensaas/stack-core/fields'
+
+export const AuthVerification = list({
   fields: {
     identifier: text(),
     createdAt: timestamp(),
@@ -403,37 +659,51 @@ AuthVerification: list({
   db: {
     indexes: [
       {
-        fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+        fields: ['identifier', { field: 'createdAt' }],
         name: 'AuthVerification_identifier_createdAt_idx',
       },
     ],
   },
 })
-// Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
 ```
 
-**`createdAt`/`updatedAt` are valid even with no declared field.** An entry may name either as long as the list's auto-timestamps (`db.timestamps`, global or per-list) are enabled for that column — the auto-injected column has no `@map` of its own, so the field name and column name coincide:
+The bare string and the wrapped `{ field }` form are interchangeable.
+
+**`createdAt`/`updatedAt` are valid even with no declared field.** An entry may name either as long as the list's auto-timestamps (`db.timestamps`, global or per-list) are enabled for that column — the auto-injected column has no table-name mapping of its own, so the field name and column name coincide:
 
 ```typescript
-Verification: list({
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+export const Verification = list({
   fields: { identifier: text() },
   db: {
-    timestamps: true, // no explicit createdAt field
-    indexes: [{ fields: ['identifier', { field: 'createdAt', sort: 'desc' }] }],
+    timestamps: true,
+    indexes: [{ fields: ['identifier', 'createdAt'] }],
   },
 })
-// Generates: @@index([identifier, createdAt(sort: Desc)])
 ```
+
+The second list declares no `createdAt` field; `db.timestamps` is what makes the name resolvable.
 
 **Errors at `pnpm generate` time** (each names the list and the entry):
 
 - An entry naming a field the list doesn't have (unless it's `createdAt`/`updatedAt` and auto-timestamps are enabled for that column — see above), a virtual field, a to-many relationship, or the non-FK side of a one-to-one relationship.
 - An entry whose `fields` array is empty.
+- An entry naming a field that maps to more than one database column, which has no single column to index.
 - A single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes — the error names both the field/`isIndexed` and the entry, since either one should be removed rather than both left producing the same constraint.
 
-No entry is ever silently dropped or emitted as invalid Prisma.
+No entry is ever silently dropped or emitted as an invalid constraint.
 
-**Deliberately not validated:** duplicate names across entries, and two entries covering the same column set — Prisma catches both with messages naming the columns, and all `db.indexes` entries live in one place.
+**Deliberately not validated:** duplicate names across entries, and two entries covering the same column set — the database catches both with messages naming the columns, and all `db.indexes` entries live in one place.
+
+##### Cost: a hand-managed index gets no per-field violation messages
+
+A unique violation raised by a constraint **the generator emitted** is resolved through the generated constraint map: `UniqueConstraintViolation` arrives carrying `list`, `fields` and a per-field `fieldErrors` a form can render directly.
+
+A constraint you added by hand — in a migration, or adopted from a live database and never declared here — is not in that map. The violation still surfaces as a `UniqueConstraintViolation`, but with a generic message and an **empty `fields`** ([ADR-0042](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0042-transactions-lose-isolation-levels-and-errors-become-stack-owned.md)).
+
+Declaring the constraint here is what buys the message. That is the reason `db.indexes` accepts a `name`: an existing live constraint can be adopted under the name it already has, and from then on it resolves like any other.
 
 ---
 
@@ -458,7 +728,7 @@ access: {
 
 - `true` - Allow access
 - `false` - Deny access
-- `PrismaFilter` - Prisma where clause to filter accessible records
+- a **filter** — a predicate in the [Where vocabulary](/docs/reference/context-api#the-where-vocabulary), ANDed into the read
 
 **`create` accepts a `boolean` result only** — `true` or `false`. It shares
 `AccessControl`'s type (so a filter still type-checks), but there is no
@@ -495,19 +765,26 @@ hooks: {
 
 **Examples:**
 
+A rule that returns a boolean allows or denies the whole operation. A rule that
+returns a filter scopes it, so a caller who owns nothing matches nothing rather
+than receiving an error — that is how "only the author may update" is written,
+without reaching for `item`.
+
+Each filter-returning rule denies outright when there is no session to scope to.
+That branch is not defensive style: the engine refuses a predicate that resolved
+to `undefined` rather than dropping it, so `{ authorId: session?.userId }` is an
+error for an anonymous caller, not a match-everything read.
+
+`create` is the exception — it accepts a boolean result only, because there are
+no existing rows to scope. Returning a filter from it throws.
+
 ```typescript
-// Boolean: Allow all authenticated users to query
 query: ({ session }) => !!session
 
-// Filter: Users can only update their own posts
-update: ({ session, item }) => session?.userId === item.authorId
+update: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
 
-// Filter object: Scope access to specific records
-query: ({ session }) => ({
-  authorId: { equals: session?.userId },
-})
+query: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
 
-// Boolean only — create cannot be scoped by a filter
 create: ({ session }) => !!session
 ```
 
@@ -559,8 +836,12 @@ Custom validation logic beyond field-level validation rules.
 **Example:**
 
 ```typescript
-validateInput: async ({ operation, resolvedData, addValidationError }) => {
-  if (operation === 'delete') return
+validateInput: async (args) => {
+  // `ValidateHookArgs` is a union whose `delete` member has no `resolvedData`,
+  // so narrow on `operation` before destructuring — a guard inside the body
+  // runs after the destructure the compiler has already rejected.
+  if (args.operation === 'delete') return
+  const { resolvedData, addValidationError } = args
   if (resolvedData.endDate < resolvedData.startDate) {
     addValidationError('End date must be after start date')
   }
@@ -578,11 +859,12 @@ Side effects before database operation. Does NOT modify data.
 **Example:**
 
 ```typescript
-beforeOperation: async ({ operation, item, context }) => {
+beforeOperation: async (args) => {
+  // `item` is on the update and delete members only — `create` has no row yet.
   await auditLog.record({
-    operation,
-    userId: context.session?.userId,
-    itemId: item?.id,
+    operation: args.operation,
+    userId: args.context.session?.userId,
+    itemId: args.operation === 'create' ? undefined : args.item.id,
   })
 }
 ```
@@ -598,19 +880,29 @@ Side effects after database operation. Does NOT modify data.
 **Parameters:**
 
 - `operation` - The operation that was performed
-- `item` - The item after the operation
-- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create`)
+- `item` - The item after the operation (`create` and `update` only — the `delete` member does not carry it)
+- `originalItem` - The item before the operation (`update` and `delete` only — the `create` member does not carry it)
 - `context` - Access context with session and database access
+
+Because those two members sit on different branches of the union, narrow on
+`operation` before destructuring:
 
 **Example:**
 
 ```typescript
-afterOperation: async ({ operation, item, originalItem, context }) => {
+afterOperation: async (args) => {
+  if (args.operation === 'delete') {
+    await invalidateCache(`post:${args.originalItem.id}`)
+    return
+  }
+
+  const { item } = args
   await invalidateCache(`post:${item.id}`)
-  await sendWebhook({ event: `post.${operation}`, data: item })
+  await sendWebhook({ event: `post.${args.operation}`, data: item })
 
   // Compare previous and new values for update operations
-  if (operation === 'update' && originalItem) {
+  if (args.operation === 'update') {
+    const { originalItem } = args
     if (originalItem.status !== item.status) {
       await notifyStatusChange(originalItem.status, item.status)
     }
@@ -643,7 +935,7 @@ type BaseFieldConfig = {
   access?: FieldAccess
   defaultValue?: unknown
   hooks?: FieldHooks
-  typePatch?: TypePatchConfig
+  needs?: string[]
   ui?: object
 }
 ```
@@ -685,12 +977,6 @@ Default value when creating new items.
 Field-level hooks for data transformation.
 
 **Type:** [`FieldHooks`](#fieldhooks)
-
-##### `typePatch`
-
-Configuration for patching Prisma-generated TypeScript types (advanced).
-
-**Type:** [`TypePatchConfig`](#typepatchconfig)
 
 ##### `ui`
 
@@ -767,11 +1053,14 @@ Transform field value before database write.
 ```typescript
 password: password({
   hooks: {
-    resolveInput: async ({ inputValue }) => {
-      if (typeof inputValue === 'string' && inputValue.length > 0) {
-        return await bcrypt.hash(inputValue, 10)
+    // A field `resolveInput` receives the whole resolved payload and reads its
+    // own value out of it under `fieldKey` — there is no `inputValue` argument.
+    resolveInput: async ({ resolvedData, fieldKey }) => {
+      const incoming = resolvedData[fieldKey]
+      if (typeof incoming === 'string' && incoming.length > 0) {
+        return await bcrypt.hash(incoming, 10)
       }
-      return inputValue
+      return incoming
     },
   },
 })
@@ -808,8 +1097,11 @@ Side effects before database operation. Does NOT modify data.
 ```typescript
 profileImage: text({
   hooks: {
-    beforeOperation: async ({ operation, resolvedValue }) => {
-      console.log(`About to ${operation} profile image:`, resolvedValue)
+    // No `resolvedValue` argument: read the field out of `resolvedData`, which
+    // the `delete` member of the union does not carry — hence the early return.
+    beforeOperation: async (args) => {
+      if (args.operation === 'delete') return
+      console.log(`About to ${args.operation} profile image:`, args.resolvedData[args.fieldKey])
     },
   },
 })
@@ -825,27 +1117,36 @@ Side effects after database operation. Does NOT modify data.
 
 - `operation` - The operation that was performed
 - `value` - The field value after the operation
-- `item` - The item after the operation
-- `originalItem` - The item before the operation (for `update` and `delete` only, `undefined` for `create` and `query`)
-- `fieldName` - The name of the field
+- `item` - The item after the operation (`create` and `update` only)
+- `originalItem` - The item before the operation (`update` and `delete` only)
+- `resolvedData` - The resolved write payload (`create` and `update` only)
+- `fieldKey` - The name of the field
 - `listKey` - The name of the list
 - `context` - Access context with session and database access
+
+There is **no `value` argument** on a field `afterOperation` — `value` belongs
+to `resolveOutput`. Read the field off `item` or `originalItem` instead, after
+narrowing on `operation`, since those two sit on different branches of the
+union:
 
 **Example:**
 
 ```typescript
 thumbnail: text({
   hooks: {
-    afterOperation: async ({ operation, value, item, originalItem }) => {
-      if (operation === 'delete') {
-        await deleteFromCDN(value) // Cleanup on delete
+    afterOperation: async (args) => {
+      if (args.operation === 'delete') {
+        await deleteFromCDN(args.originalItem.thumbnail) // Cleanup on delete
+        return
       }
 
+      const newValue = args.item.thumbnail
+
       // For updates, check if the value changed
-      if (operation === 'update' && originalItem) {
-        const oldValue = originalItem.thumbnail
-        if (oldValue !== value) {
-          console.log(`Thumbnail changed from ${oldValue} to ${value}`)
+      if (args.operation === 'update') {
+        const oldValue = args.originalItem.thumbnail
+        if (oldValue !== newValue) {
+          console.log(`Thumbnail changed from ${oldValue} to ${newValue}`)
           // Clean up old thumbnail
           if (oldValue) await deleteFromCDN(oldValue)
         }
@@ -1207,10 +1508,14 @@ customTools: [
       notifySubscribers: z.boolean().optional(),
     }),
     handler: async ({ input, context }) => {
-      const post = await context.db.post.update({
+      const post = await context.db.Post.update({
         where: { id: input.postId },
         data: { status: 'published', publishedAt: new Date() },
       })
+
+      if (!post) {
+        return { error: 'Post not found, or not publishable by this session' }
+      }
 
       if (input.notifySubscribers) {
         await notifySubscribers(post)
@@ -1237,7 +1542,8 @@ Maps provider names to their configurations.
 **Example:**
 
 ```typescript
-import { s3Storage, localStorage } from '@opensaas/stack-storage'
+import { localStorage } from '@opensaas/stack-storage'
+import { s3Storage } from '@opensaas/stack-storage-s3'
 
 storage: {
   avatars: s3Storage({
@@ -1249,47 +1555,6 @@ storage: {
     serveUrl: '/api/files',
   }),
 }
-```
-
----
-
-### `TypePatchConfig`
-
-Configuration for patching Prisma-generated TypeScript types (advanced use).
-
-```typescript
-typePatch: {
-  resultType: string,
-  patchScope?: 'scalars-only' | 'all',
-}
-```
-
-#### Properties
-
-##### `resultType` (required)
-
-TypeScript import statement for the type to use in Prisma result types.
-
-**Type:** `string`
-
-**Format:** `"import('@package/name').TypeName"`
-
-##### `patchScope`
-
-Where to apply the type patch.
-
-**Type:** `'scalars-only' | 'all'`
-**Default:** `'scalars-only'`
-
-**Example:**
-
-```typescript
-password: password({
-  typePatch: {
-    resultType: "import('@opensaas/stack-core').HashedPassword",
-    patchScope: 'scalars-only',
-  },
-})
 ```
 
 ---
@@ -1368,7 +1633,7 @@ init: async (context) => {
 
 ##### `beforeGenerate`
 
-Hook called before Prisma schema generation. Allows config transformation.
+Hook called before the Contract module is generated. Allows config transformation.
 
 **Type:** `(config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>`
 
@@ -1487,14 +1752,18 @@ Context object passed to access control functions, hooks, and custom tools.
 
 ```typescript
 type AccessContext = {
-  session: Session
-  prisma: PrismaClient
+  session: Session | null
+  ormHandle: OrmClient
   db: AccessControlledDB
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean
 }
 ```
+
+{% callout type="warning" %}
+`AccessContext` has **no `unsafe` member**. The application's deliberate bypass — [the Unsafe surface](/docs/reference/context-api#the-unsafe-surface) — lives on the request context, not here, so a hook or a plugin cannot reach it by accident.
+{% /callout %}
 
 #### Properties
 
@@ -1504,15 +1773,17 @@ Current user session (user-defined structure).
 
 **Type:** `Session | null`
 
-##### `prisma`
+##### `ormHandle`
 
-Raw Prisma client (bypasses access control - use with caution).
+The engine's own ORM handle: the client `db`'s terminals, the Write Pipeline and the access filter run their queries through.
 
-**Type:** `PrismaClient`
+**Type:** `OrmClient`
+
+It is engine plumbing, not an application seam. The engine applies the Access Filter, Field Visibility and hooks _around_ it — the handle itself enforces none of them. It is rebound wherever `db` is rebound, so the two are always in the same transaction state.
 
 ##### `db`
 
-Access-controlled database interface (enforces access rules).
+Access-controlled database interface (enforces access rules). Keyed by list key: `context.db.Post`.
 
 **Type:** `AccessControlledDB`
 

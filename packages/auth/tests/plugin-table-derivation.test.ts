@@ -61,13 +61,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [
       mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: 'https://example.com/mcp' }),
     ])
-    const userField = lists.OauthClient.fields.user
-    const extend = userField.db?.extendPrismaSchema
-    const relationLine = extend
-      ? extend({ relationLine: '@relation(fields: [x], references: [id])' }).relationLine
-      : ''
-
-    expect(relationLine).toContain('onDelete: Cascade')
+    expect(lists.OauthClient.fields.user.db?.onDelete).toBe('cascade')
   })
 
   it('maps every declared referential action, not just cascade', () => {
@@ -87,12 +81,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
       },
     }
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
-    const extend = lists.Widget.fields.owner.db?.extendPrismaSchema
-    const relationLine = extend
-      ? extend({ relationLine: '@relation(fields: [x], references: [id])' }).relationLine
-      : ''
-
-    expect(relationLine).toContain('onDelete: Restrict')
+    expect(lists.Widget.fields.owner.db?.onDelete).toBe('restrict')
   })
 
   it('leaves a non-PK-targeting reference as a plain scalar column (clientId -> oauthClient.clientId)', () => {

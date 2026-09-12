@@ -1,18 +1,24 @@
 import Link from 'next/link.js'
 import { ArrowRight, LayoutDashboard, Package, Plus, Settings, Table2, Zap } from 'lucide-react'
 import { formatListName } from '../lib/utils.js'
-import { type AccessContext, getDbKey, getUrlKey, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AnyStackContext,
+  engineContextOf,
+  getUrlKey,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
 
 export interface DashboardProps {
-  context: AccessContext<unknown>
+  context: AnyStackContext
   config: OpenSaasConfig
   basePath?: string
 }
 
 export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
+  const { db } = engineContextOf(context)
   const lists = Object.keys(config.lists || {})
 
   // Split lists into standard lists (shown in the counted grid) and singletons
@@ -24,9 +30,10 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
       try {
-        const delegate = context.db[getDbKey(listKey)]
-        const count = delegate?.count ? await delegate.count() : 0
-        return { listKey, count }
+        const reduced = await db[listKey].aggregate((aggregate) => ({
+          total: aggregate.count(),
+        }))
+        return { listKey, count: reduced.total }
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error)
         return { listKey, count: 0 }

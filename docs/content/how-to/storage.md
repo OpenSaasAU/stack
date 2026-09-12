@@ -70,6 +70,7 @@ import { localStorage } from '@opensaas/stack-storage'
 import { image, file } from '@opensaas/stack-storage/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   storage: {
     uploads: localStorage({
       uploadDir: './public/uploads',
@@ -115,6 +116,10 @@ mkdir -p public/uploads
 
 ### 4. Create Upload API Route
 
+The transformation set is chosen on the server rather than taken from the
+request: transformations cost CPU and storage, so letting a client name them is
+an amplification hole.
+
 ```typescript
 // app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server.js'
@@ -124,20 +129,19 @@ import { uploadFile, uploadImage, parseFileFromFormData } from '@opensaas/stack-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const storageProvider = formData.get('storage') as string
-    const fieldType = formData.get('fieldType') as 'file' | 'image'
+    const storageProvider = String(formData.get('storage') ?? '')
+    const fieldType = formData.get('fieldType') === 'image' ? 'image' : 'file'
 
-    // Parse file from FormData
     const fileData = await parseFileFromFormData(formData, 'file')
     if (!fileData) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    // Upload based on field type
     if (fieldType === 'image') {
-      const transformations = JSON.parse((formData.get('transformations') as string) || '{}')
       const metadata = await uploadImage(config, storageProvider, fileData, {
-        transformations,
+        transformations: {
+          thumbnail: { width: 100, height: 100, fit: 'cover' },
+        },
         validation: {
           maxFileSize: 5 * 1024 * 1024,
           acceptedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
@@ -235,6 +239,7 @@ import { s3Storage } from '@opensaas/stack-storage-s3'
 import { image } from '@opensaas/stack-storage/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   storage: {
     avatars: s3Storage({
       bucket: process.env.AWS_BUCKET!,
@@ -344,12 +349,13 @@ import { vercelBlobStorage } from '@opensaas/stack-storage-vercel'
 import { image } from '@opensaas/stack-storage/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   storage: {
     uploads: vercelBlobStorage({
       token: process.env.BLOB_READ_WRITE_TOKEN,
       pathPrefix: 'uploads',
       public: true,
-      cacheControl: 'public, max-age=31536000, immutable',
+      cacheControlMaxAge: 31536000,
     }),
   },
   lists: {
@@ -516,9 +522,15 @@ export async function register() {
 ```
 
 ```typescript
+import { config, list } from '@opensaas/stack-core'
+import { localStorage } from '@opensaas/stack-storage'
+import { image, file } from '@opensaas/stack-storage/fields'
+import { s3Storage } from '@opensaas/stack-storage-s3'
+import { vercelBlobStorage } from '@opensaas/stack-storage-vercel'
+
 export default config({
+  db: { provider: 'postgresql' },
   storage: {
-    // Public avatars on S3 with CloudFront
     avatars: s3Storage({
       bucket: 'public-avatars',
       region: 'us-east-1',
@@ -561,10 +573,13 @@ Use local storage in development, cloud storage in production. Register only the
 ```typescript
 // instrumentation.ts
 import { registerStorageProvider } from '@opensaas/stack-storage/runtime'
+// The type is erased at build time, so a static `import type` does not pull the
+// provider into the development bundle — only the dynamic import below loads it.
+import type { S3StorageConfig } from '@opensaas/stack-storage-s3'
 
 export async function register() {
   if (process.env.NODE_ENV === 'production') {
-    const { S3StorageProvider, type S3StorageConfig } = await import('@opensaas/stack-storage-s3')
+    const { S3StorageProvider } = await import('@opensaas/stack-storage-s3')
     registerStorageProvider<S3StorageConfig>('s3', (config) => new S3StorageProvider(config))
   }
   // 'local' is built in — no registration needed for development
@@ -602,7 +617,13 @@ export default config({
 
 ### Private File Access
 
-For private files, serve them through an authenticated API route:
+For private files, serve them through an authenticated API route. Two details of
+the route below are worth copying. The session check is the whole point — the
+provider itself enforces nothing, so an unauthenticated caller must be turned
+away before `download()` runs. And the downloaded `Buffer` is wrapped in a
+`Uint8Array` before it becomes the response body, because Node's `Buffer` is not
+a `BodyInit`. Add whatever per-file ownership check your app needs beside the
+session check.
 
 ```typescript
 // app/api/files/[filename]/route.ts
@@ -618,14 +639,11 @@ export async function GET(request: NextRequest, { params }: { params: { filename
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Optional: Check if user has access to this file
-  // e.g., verify file belongs to user or user has permission
-
   try {
     const provider = createStorageProvider(config, 'documents')
     const buffer = await provider.download(params.filename)
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename="${params.filename}"`,
@@ -652,17 +670,21 @@ storage: {
 
 ### Signed URLs for Private S3 Files
 
-Generate temporary signed URLs for private S3 files:
+Generate temporary signed URLs for private S3 files. `getSignedUrl` is **optional
+on `StorageProvider`** — local storage has no such concept — so the compiler
+requires the guard below before the call; the expiry is in seconds.
 
 ```typescript
 import { createStorageProvider } from '@opensaas/stack-storage/runtime'
 
 const provider = createStorageProvider(config, 'documents')
 
-// Generate URL valid for 1 hour
+if (!provider.getSignedUrl) {
+  throw new Error('This storage provider does not issue signed URLs')
+}
+
 const signedUrl = await provider.getSignedUrl('filename.pdf', 3600)
 
-// Use in your app
 return { downloadUrl: signedUrl }
 ```
 
@@ -685,7 +707,10 @@ import { createStorageProvider } from '@opensaas/stack-storage/runtime'
 
 const provider = createStorageProvider(config, 'documents')
 
-// Generate URL valid for 1 hour
+if (!provider.getSignedUrl) {
+  throw new Error('This storage provider does not issue signed URLs')
+}
+
 const signedUrl = await provider.getSignedUrl('filename.pdf', 3600)
 
 return { downloadUrl: signedUrl }

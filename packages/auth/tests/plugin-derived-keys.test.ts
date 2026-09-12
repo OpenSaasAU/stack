@@ -270,7 +270,7 @@ describe('authPlugin - runtime user-key resolution', () => {
       {
         get(_target, key: string) {
           accessedKeys.push(key)
-          return { findUnique: async () => null }
+          return { where: () => ({ first: async () => null }) }
         },
       },
     )
@@ -280,9 +280,8 @@ describe('authPlugin - runtime user-key resolution', () => {
         get(_target, key: string) {
           sudoAccessedKeys.push(key)
           return {
-            findUnique: async ({ where }: { where: { id: string } }) => ({
-              id: where.id,
-              __model: key,
+            where: ({ id }: { id: string }) => ({
+              first: async () => ({ id, __model: key }),
             }),
           }
         },
@@ -300,31 +299,31 @@ describe('authPlugin - runtime user-key resolution', () => {
     const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     const user = (await services.getUser('u1')) as { __model: string }
-    expect(sudoAccessedKeys).toContain('user')
-    expect(accessedKeys).not.toContain('user')
-    expect(user.__model).toBe('user')
+    expect(sudoAccessedKeys).toContain('User')
+    expect(accessedKeys).not.toContain('User')
+    expect(user.__model).toBe('User')
   })
 
-  it('getUser uses the configured user model db key (AuthUser -> authUser)', async () => {
+  it('getUser uses the configured user model list key (AuthUser)', async () => {
     const plugin = authPlugin({ user: { modelName: 'AuthUser' } })
     const { context, sudo, sudoAccessedKeys } = makeFakeContext({ userId: 'u1' })
     const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     const user = (await services.getUser('u1')) as { __model: string }
-    expect(sudoAccessedKeys).toContain('authUser')
-    expect(sudoAccessedKeys).not.toContain('user')
-    expect(user.__model).toBe('authUser')
+    expect(sudoAccessedKeys).toContain('AuthUser')
+    expect(sudoAccessedKeys).not.toContain('User')
+    expect(user.__model).toBe('AuthUser')
   })
 
-  it('getCurrentUser uses the configured user model db key via sudo()', async () => {
+  it('getCurrentUser uses the configured user model list key via sudo()', async () => {
     const plugin = authPlugin({ user: { modelName: 'AuthUser' } })
     const { context, sudo, accessedKeys, sudoAccessedKeys } = makeFakeContext({ userId: 'u1' })
     const services = plugin.runtime?.(context, sudo) as AuthRuntimeServices
 
     const user = (await services.getCurrentUser()) as { __model: string }
-    expect(sudoAccessedKeys).toContain('authUser')
-    expect(accessedKeys).not.toContain('authUser')
-    expect(user.__model).toBe('authUser')
+    expect(sudoAccessedKeys).toContain('AuthUser')
+    expect(accessedKeys).not.toContain('AuthUser')
+    expect(user.__model).toBe('AuthUser')
   })
 
   it('getCurrentUser returns null when there is no session', async () => {

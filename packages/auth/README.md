@@ -31,10 +31,7 @@ import { config } from '@opensaas/stack-core'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-  },
+  db: { provider: 'postgresql' },
   lists: {
     // Your custom lists here
   },
@@ -49,23 +46,38 @@ export default config({
 })
 ```
 
-### 2. Generate Schema and Push to Database
+`postgresql` is the only provider, and the connection comes from
+`DIRECT_DATABASE_URL` / `DATABASE_URL` or the Dev database `opensaas dev`
+starts — not from a `db.url` key.
+
+### 2. Generate and Apply the Schema
+
+`pnpm generate` writes the schema contract, including the auth tables. Locally,
+`pnpm dev` runs the Dev database and applies it; when the loop reports a staged
+change, accept it from a second terminal with `pnpm db:update` (which talks to
+that loop and does nothing without it). In a deployment the same change is a
+committed migration applied by `prisma db migrate`.
 
 ```bash
-pnpm generate  # Generates Prisma schema with auth tables
-pnpm db:push   # Push schema to database
+pnpm generate
+pnpm db:update
 ```
 
 ### 3. Create Auth Server Instance
+
+`createAuth` takes the config and the generated `rawOpensaasContext` — a promise
+it resolves lazily, so this module is safe to import at module scope. Both are
+required; better-auth's adapter reaches the database through that context rather
+than opening a connection of its own.
 
 ```typescript
 // lib/auth.ts
 import { createAuth } from '@opensaas/stack-auth/server'
 import config from '../opensaas.config'
+import { rawOpensaasContext } from '@/.opensaas/context'
 
-export const auth = createAuth(config)
+export const auth = createAuth(config, rawOpensaasContext)
 
-// Export auth API for route handlers
 export const GET = auth.handler
 export const POST = auth.handler
 ```
@@ -125,16 +137,17 @@ Sessions are now automatically available in your access control functions:
 
 ```typescript
 // opensaas.config.ts
-import { config } from '@opensaas/stack-core'
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: { title: text(), content: text() },
       access: {
         operation: {
-          // Session is automatically populated from better-auth
           create: ({ session }) => !!session,
           update: ({ session, item }) => {
             if (!session) return false
@@ -369,7 +382,8 @@ The following lists are automatically created when you use `authPlugin()`:
   id: string
   userId: string
   accountId: string
-  providerId: string ('github', 'google', 'credentials', etc.)
+  providerId: string ('github', 'google', 'credential' for email/password)
+  issuer: string
   accessToken?: string
   refreshToken?: string
   accessTokenExpiresAt?: Date
@@ -493,19 +507,21 @@ async function myServerAction() {
     throw new Error('Not authenticated')
   }
 
-  // Session contains fields you specified in sessionFields
-  console.log(context.session) // { userId, email, name }
+  console.log(context.session)
 
-  // Use context.db with access control
-  const posts = await context.db.post.findMany()
+  const posts = await context.db.Post.all()
 }
 ```
+
+`context.session` carries exactly the fields named in `sessionFields` — here
+`{ userId, email, name }`. Reads through `context.db` are access-controlled, so
+`all()` answers `[]` rather than throwing when the session may not read the list.
 
 ## Environment Variables
 
 ```bash
 # .env
-DATABASE_URL=file:./dev.db
+DATABASE_URL=postgresql://user:password@localhost:5432/my_app
 
 # OAuth providers (optional)
 GITHUB_CLIENT_ID=your_github_client_id

@@ -4,7 +4,6 @@ import {
   pascalToKebab,
   kebabToPascal,
   kebabToCamel,
-  getDbKey,
   getUrlKey,
   getListKeyFromUrl,
   resolveListKeyFromUrl,
@@ -74,14 +73,6 @@ describe('Case Conversion Utilities', () => {
     })
   })
 
-  describe('getDbKey', () => {
-    it('should convert list key to database key format', () => {
-      expect(getDbKey('User')).toBe('user')
-      expect(getDbKey('AuthUser')).toBe('authUser')
-      expect(getDbKey('BlogPost')).toBe('blogPost')
-    })
-  })
-
   describe('getUrlKey', () => {
     it('should convert list key to URL key format', () => {
       expect(getUrlKey('User')).toBe('user')
@@ -137,22 +128,14 @@ describe('Case Conversion Utilities', () => {
       expect(backToPascal).toBe(original)
     })
 
-    it('should maintain consistency: PascalCase -> camelCase -> operations', () => {
-      const original = 'AuthUser'
-      const camel = getDbKey(original)
-      expect(camel).toBe('authUser')
-    })
-
     it('should handle multi-word conversions correctly', () => {
       const testCases = ['User', 'AuthUser', 'BlogPost', 'UserProfile']
 
       testCases.forEach((original) => {
         const url = getUrlKey(original)
-        const db = getDbKey(original)
         const fromUrl = getListKeyFromUrl(url)
 
         expect(fromUrl).toBe(original)
-        expect(db.charAt(0)).toBe(original.charAt(0).toLowerCase())
       })
     })
   })

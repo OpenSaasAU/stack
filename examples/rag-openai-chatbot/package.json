@@ -4,13 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "opensaas dev",
     "build": "pnpm generate && next build",
     "start": "next start",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:update": "opensaas db update",
+    "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.16",
@@ -18,12 +17,11 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/adapter-pg": "^7.9.1",
-    "@prisma/client": "^7.9.1",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
     "ai": "^7.0.32",
     "next": "^16.2.10",
     "openai": "^6.32.0",
-    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.5.4"
@@ -32,7 +30,6 @@
     "@opensaas/stack-cli": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
-    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
@@ -40,7 +37,7 @@
     "dotenv": "^17.4.2",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
-    "prisma": "^7.9.1",
+    "prisma": "8.0.0-rc.12",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2"

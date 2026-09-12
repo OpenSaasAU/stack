@@ -17,11 +17,14 @@ concurrency:
 jobs:
   # (a) The PUBLISHED `npm create opensaas-app` end-to-end: a real networked
   # install of the package from npm, then the documented first-run flow
-  # (generate → db:push → build) in a clean temp dir. This is the true e2e the
+  # (generate → build) in a clean temp dir. This is the true e2e the
   # PR-gate scaffold guard only proxies (the guard borrows the workspace
   # toolchain offline; this exercises the actual published artifact). See ADR-0002.
   published-create-e2e:
     name: Published npm create e2e
+    # The published package is `main`'s Prisma 7 scaffold. The integration
+    # branch's cold start is the `cold-clone` job below instead.
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -49,7 +52,7 @@ jobs:
       # Scaffold the published basic (SQLite, no-auth) template fully
       # non-interactively into an OS temp dir — never the runner's workspace —
       # so a mid-run failure can't dirty anything. `--no-ai` skips the networked
-      # MCP install; we let the CLI run its own install → generate → db:push.
+      # MCP install; we let the CLI run its own post-scaffold setup.
       - name: Scaffold published create-opensaas-app into a temp dir
         run: |
           set -euo pipefail
@@ -61,19 +64,19 @@ jobs:
         env:
           DATABASE_URL: 'file:./dev.db'
 
-      # The CLI auto-runs install → generate → db:push; re-run them explicitly so
-      # the job fails loudly (and points at the failed step) if any regress, then
-      # exercise a full production build of the scaffolded app.
-      - name: Generate, db:push and build the scaffolded app
+      # The CLI auto-runs the scaffolded project's own setup; re-run generate and
+      # build explicitly so the job fails loudly (and points at the failed step)
+      # if either regresses. The database step is not re-run here: `db:push` and
+      # the SQLite file it created are Prisma 7's, and the `cold-clone` job below
+      # is where a scaffolded project's database is proved under Prisma 8.
+      - name: Generate and build the scaffolded app
         run: |
           set -euo pipefail
           cd "$WORKDIR/myapp"
           pnpm install
           pnpm generate
-          pnpm db:push
           pnpm build
           test -f .opensaas/context.ts
-          test -f dev.db
         env:
           DATABASE_URL: 'file:./dev.db'
 
@@ -85,6 +88,17 @@ jobs:
   # provider (#462), so no per-example overrides are needed here.
   examples-build:
     name: Full examples build
+    # All twelve database-backed examples now build on every PR into the
+    # integration branch (test.yml): `starter` and `starter-auth` (#1170),
+    # json-demo, tiptap-demo and file-upload-demo (#1172), blog, custom-field,
+    # composable-dashboard, auth-demo and mcp-demo (#1171), and rag-ollama-demo
+    # and rag-openai-chatbot (#1173). `plain-css-theming` is the only example
+    # absent there, and it is static HTML with nothing to build. So this job is
+    # no longer `main`-only for want of an example that cannot build — that
+    # reason expired with #1173. It stays gated because test.yml's run is a
+    # filtered enumeration and this one is the UNFILTERED `pnpm build:examples`;
+    # #1175 drops this `if:` as part of replacing that enumeration.
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -100,10 +114,11 @@ jobs:
         run: pnpm build
 
       # Create a runnable `.env` for every example by copying its committed
-      # `.env.example`. Each `.env.example` defaults DATABASE_URL to a value that
-      # matches its config's Prisma provider (#462), so no per-example overrides
-      # are needed. Other DB/secret placeholders come from the .env.example values
-      # plus the job-level env below.
+      # `.env.example`. A converted example's `.env.example` no longer defaults
+      # DATABASE_URL — leaving it unset is what makes `opensaas dev` start the
+      # Dev database — so the job-level DATABASE_URL below is what its
+      # generate/build resolves. DB/secret placeholders come from the
+      # .env.example values plus that job-level env.
       - name: Create .env for every example
         run: |
           set -euo pipefail
@@ -118,11 +133,94 @@ jobs:
       - name: Build all examples
         run: pnpm build:examples
         env:
-          # SQLite by default; the postgres-provider example (rag-openai-chatbot)
-          # keeps its own placeholder URL and never connects during generate/build.
+          # SQLite by default, for the examples wave 2 of #1129 has yet to
+          # convert. No example connects during generate or build, so a
+          # converted Postgres example is unaffected by the value: generation
+          # reads the config and `next build` renders no database-backed page.
+          # #1175 replaces this with a Postgres URL when the last one converts.
           DATABASE_URL: 'file:./dev.db'
           # Placeholder secrets so generate/build don't fail on missing vars.
           OPENAI_API_KEY: 'sk-testing-key'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+  # (c) The COLD CLONE: `create` then `dev` on a runner with no database
+  # installed. This is the one place CI exercises the Dev database sidecar, and
+  # that is its whole purpose (ADR-0063) — so this job deliberately sets no
+  # `DATABASE_URL`. Setting one is the Database escape and no Dev database
+  # would start, which is precisely the property under test.
+  #
+  # The scaffolded project borrows `examples/starter`'s installed
+  # `node_modules` rather than installing from the registry, the same trick the
+  # PR-gate scaffold guard uses: the integration branch's packages are not
+  # published, so the workspace is the only source of the toolchain.
+  # `examples/starter` is on Prisma 8 (#1170), so this job is expected to pass;
+  # a red run is a real cold-start regression. Do not disable it or add
+  # continue-on-error. It carries no `if:`: a scheduled run always fires on the
+  # default branch, so any gate on `github.ref_name` would skip it on every cron.
+  cold-clone:
+    name: Cold clone — create then dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Build packages
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-core
+          --filter=@opensaas/stack-auth
+          --filter=@opensaas/stack-ui
+          --filter=@opensaas/stack-cli
+          --filter=create-opensaas-app
+
+      # `.cold-clone/` is gitignored and sits inside the workspace on purpose:
+      # Turbopack takes the nearest lockfile directory as its filesystem root
+      # and refuses a `node_modules` symlink that points outside it, which a
+      # scaffold under `mktemp -d` with a link back into the workspace does.
+      - name: Scaffold a project into the ignored cold-clone directory
+        run: |
+          set -euo pipefail
+          WORKDIR="$GITHUB_WORKSPACE/.cold-clone"
+          rm -rf "$WORKDIR"
+          mkdir -p "$WORKDIR"
+          echo "COLD_CLONE_DIR=$WORKDIR" >> "$GITHUB_ENV"
+          cd "$WORKDIR"
+          node "$GITHUB_WORKSPACE/packages/create-opensaas-app/dist/index.js" \
+            myapp --no-auth --no-ai --no-install
+          ln -s "$GITHUB_WORKSPACE/examples/starter/node_modules" "$WORKDIR/myapp/node_modules"
+
+      - name: Run the dev loop and serve the app
+        run: |
+          set -euo pipefail
+          cd "$COLD_CLONE_DIR/myapp"
+          node "$GITHUB_WORKSPACE/packages/cli/bin/opensaas.js" dev > dev.log 2>&1 &
+          DEV_PID=$!
+          # The basic template ships the admin and no root page, so `/admin`
+          # is the route that proves the app serves — `/` is a 404 by design.
+          for _ in $(seq 1 120); do
+            if curl -sf http://localhost:3000/admin > /dev/null; then break; fi
+            if ! kill -0 "$DEV_PID" 2> /dev/null; then
+              echo '`opensaas dev` exited before the app answered:'
+              cat dev.log
+              exit 1
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:3000/admin > /dev/null
+          test -f .opensaas/dev-db.json
+          kill "$DEV_PID"
+
+      - name: Upload the dev loop's output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cold-clone-dev-log
+          path: ${{ env.COLD_CLONE_DIR }}/myapp/dev.log
+          retention-days: 7
+          if-no-files-found: ignore

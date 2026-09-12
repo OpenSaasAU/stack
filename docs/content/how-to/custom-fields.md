@@ -127,22 +127,12 @@ import { ColorPickerField } from '../components/ColorPickerField'
 registerFieldComponent('color', ColorPickerField)
 ```
 
-### Step 3: Import Registration in Admin Page
+### Step 3: Render the Registration from a Client Component
 
-Import the registration file in your admin page to ensure it runs:
-
-```tsx
-// app/admin/[[...admin]]/page.tsx
-import { AdminUI } from '@opensaas/stack-ui'
-import '../../../lib/register-fields' // Side-effect import
-
-export default async function AdminPage({ params, searchParams }) {
-  // ... your admin setup
-  return <AdminUI {...props} />
-}
-```
-
-Alternatively, use a dedicated registration component:
+`page.tsx` is a server component, and a `'use client'` module only reaches the browser when
+something in the tree **renders** it. A bare `import '../../../lib/register-fields'` from `page.tsx`
+therefore registers nothing — the field falls back to "Unsupported field type", and nothing in
+`generate`, `next build`, `tsc` or the test suite notices. Carry the import in a client component:
 
 ```tsx
 // app/admin/[[...admin]]/FieldRegistration.tsx
@@ -151,15 +141,22 @@ Alternatively, use a dedicated registration component:
 import '../../../lib/register-fields'
 
 export function FieldRegistration() {
-  return null // Component doesn't render anything
+  return null
 }
+```
 
-// Then in your page:
-export default async function AdminPage({ params, searchParams }) {
+Then render it alongside the admin UI:
+
+```tsx
+// app/admin/[[...admin]]/page.tsx
+import { AdminUI } from '@opensaas/stack-ui'
+import { FieldRegistration } from './FieldRegistration'
+
+export default async function AdminPage(props: AdminPageProps) {
   return (
     <>
       <FieldRegistration />
-      <AdminUI {...props} />
+      <AdminUI {...await adminProps(props)} />
     </>
   )
 }
@@ -175,6 +172,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 
 export default config({
+  db: { provider: 'postgresql' },
   lists: {
     User: list({
       fields: {
@@ -328,28 +326,24 @@ export default config({
 
 ## Field Component Interface
 
-All custom field components must implement this interface:
+Every custom field component receives these props. `FieldComponentProps` is exported from `@opensaas/stack-ui`:
 
 ```typescript
-interface FieldComponentProps {
-  // Core props
-  name: string // Field name (for input id, etc.)
-  value: any // Current field value
-  onChange: (value: any) => void // Value change handler
-  label: string // Display label
-
-  // Validation & state
-  error?: string // Validation error message
-  disabled?: boolean // Disabled state
-  required?: boolean // Required field indicator
-
-  // Display mode
-  mode?: 'read' | 'edit' // Display vs. edit mode
-
-  // Custom UI options (from field config)
-  [key: string]: any // Any additional props from ui config
+type FieldComponentProps = {
+  name: string
+  value: unknown
+  onChange: (value: unknown) => void
+  label: string
+  error?: string
+  disabled?: boolean
+  required?: boolean
+  mode?: 'read' | 'edit'
 }
 ```
+
+`value` and `onChange` are `unknown` because the registry holds components for every field type at once. Narrow them in your own props type rather than casting at each use — a `ColorPickerField` declares `value: string` and `onChange: (value: string) => void` and is still registrable, because `FieldComponent` widens to accept any component satisfying the base shape plus extra props.
+
+Anything else in a field's `ui` config is passed through to the component as an additional prop, so declare the options your component reads alongside these.
 
 ### Key Requirements
 
@@ -458,23 +452,68 @@ See the [packages/tiptap](https://github.com/OpenSaasAU/stack/tree/main/packages
 Key requirements:
 
 1. Implement `BaseFieldConfig` interface
-2. Provide `getZodSchema()`, `getPrismaType()`, `getTypeScriptType()` methods
+2. Provide `getZodSchema()` and `getContractField()`, plus `outputType` when the field has no single column to be typed from — a virtual field, or one spanning several columns
 3. Export field builder function and React component
 4. Document client-side registration requirements
+
+See the [Fields API reference](/docs/reference/fields-api) for each member's exact signature.
+
+## Declaring What a Field's Output Hook Reads
+
+A `resolveOutput` hook only sees what the read actually fetched. If yours reads a sibling column or a relation, declare it in `needs` — otherwise the field will work in the admin UI (which reads whole rows) and come back empty from a narrowed read.
+
+Add `needs` to the field config your builder returns, or accept it from the caller and pass it through:
+
+```typescript
+import { z } from 'zod'
+import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+
+export type DisplayNameField = BaseFieldConfig<TypeInfo> & {
+  type: 'displayName'
+}
+
+export function displayName(options?: Omit<DisplayNameField, 'type'>): DisplayNameField {
+  return {
+    type: 'displayName',
+    needs: ['firstName', 'lastName'],
+    ...options,
+    outputType: 'string',
+    getContractField: () => ({ kind: 'computed' }),
+    // A computed field accepts no input, so its input schema admits nothing.
+    getZodSchema: () => z.never(),
+    hooks: {
+      resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
+    },
+  }
+}
+```
+
+The rules `opensaas generate` enforces:
+
+- Entries are **column keys on the same list** — stored columns and immediate relationship fields. No dotted paths, and never another computed field.
+- A `needs` on a field with **no `resolveOutput` hook** is refused: nothing could consume it.
+- Dependencies are **one hop and non-transitive**, and are **stripped from the result** unless the caller named them too — so declaring one never changes the shape of every read of the list.
+- A relation dependency is **scoped by the Access Filter** like any other read, so write the hook to tolerate a session that cannot see it.
+
+Because `needs` is typed as a plain `string[]` on `BaseFieldConfig` — third-party field builders are not generic over the list's `TypeInfo` — a misspelled entry is caught at `opensaas generate` rather than by the compiler. Test the field against a real config before publishing it. The full rules are in the [Fields API reference](/docs/reference/fields-api).
 
 ## Best Practices
 
 ### 1. Type Safety
 
-Use TypeScript interfaces for your component props:
+Narrow the base props to the value type your component actually handles, and add the `ui` options it reads:
 
 ```typescript
 import type { FieldComponentProps } from '@opensaas/stack-ui'
 
-export interface MyFieldProps extends FieldComponentProps {
-  // Add custom props here
+export interface MyFieldProps extends Omit<FieldComponentProps, 'value' | 'onChange'> {
+  value: string
+  onChange: (value: string) => void
+  palette?: readonly string[]
 }
 ```
+
+Narrowing in the props type is what keeps the component free of casts: the registry hands it an `unknown`, and the declaration is where that becomes a `string` once, in a place a reader can check.
 
 ### 2. Styling Consistency
 
@@ -518,8 +557,9 @@ return <EditableInput value={value} onChange={onChange} />
 
 Pass custom options through the field config:
 
+In the config:
+
 ```typescript
-// In config
 richText({
   ui: {
     minHeight: 300,
@@ -527,10 +567,33 @@ richText({
     enableMarkdown: true,
   },
 })
+```
 
-// In component - these are automatically passed as props
-function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps }) {
-  // Use custom options
+`FieldRenderer` extracts `component` and `fieldType` from `ui` and passes everything else straight through, so the component declares them as ordinary props:
+
+```tsx
+interface RichTextFieldProps extends Omit<FieldComponentProps, 'value' | 'onChange'> {
+  value: string
+  onChange: (value: string) => void
+  minHeight?: number
+  placeholder?: string
+  enableMarkdown?: boolean
+}
+
+function RichTextField({
+  minHeight,
+  placeholder,
+  enableMarkdown,
+  ...baseProps
+}: RichTextFieldProps) {
+  return (
+    <Editor
+      {...baseProps}
+      minHeight={minHeight}
+      placeholder={placeholder}
+      markdown={enableMarkdown}
+    />
+  )
 }
 ```
 
@@ -555,6 +618,7 @@ function RichTextField({ minHeight, placeholder, enableMarkdown, ...baseProps })
 - Explore [composability patterns](/docs/how-to/composability) for building custom dashboards
 - Check out the [@opensaas/stack-tiptap](https://github.com/OpenSaasAU/stack/tree/main/packages/tiptap) package for a real-world example
 - Read about [field types and validation](/docs/concepts/field-types) in the core documentation
+- See the [Fields API reference](/docs/reference/fields-api) for every member of the field builder contract
 
 ## Troubleshooting
 

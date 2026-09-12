@@ -19,6 +19,13 @@ test.describe('Filter builder input UI', () => {
     await signUp(page, testUser)
   })
 
+  /**
+   * Post.slug is unique across the whole database the specs share, and
+   * 05-filter.spec.ts creates the same fruit before this file runs, so every
+   * slug here is suffixed with the per-attempt user (unique across retries too).
+   */
+  const slug = (base: string) => `${base}-${testUser.email.split('@')[0]}`
+
   async function createPost(
     page: Page,
     { title, slug, status }: { title: string; slug: string; status: 'draft' | 'published' },
@@ -35,17 +42,26 @@ test.describe('Filter builder input UI', () => {
       await page.getByRole('option', { name: 'published' }).click()
     }
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
-  /** A table cell whose exact text is the given title (the title column). */
+  /**
+   * The table cells whose exact text is the given title (the title column).
+   * 05-filter.spec.ts creates the same titles against the database these specs
+   * share, so a visibility assertion takes `.first()` and a count assertion
+   * expects zero.
+   */
   function titleCell(page: Page, title: string) {
     return page.getByRole('cell', { name: title, exact: true })
   }
 
   test('free-text box narrows the table and writes ?search=', async ({ page }) => {
-    await createPost(page, { title: 'Apples are red', slug: 'apples', status: 'published' })
-    await createPost(page, { title: 'Bananas are yellow', slug: 'bananas', status: 'published' })
+    await createPost(page, { title: 'Apples are red', slug: slug('apples'), status: 'published' })
+    await createPost(page, {
+      title: 'Bananas are yellow',
+      slug: slug('bananas'),
+      status: 'published',
+    })
 
     await page.goto('/admin/post')
     await page.waitForLoadState('networkidle')
@@ -57,13 +73,17 @@ test.describe('Filter builder input UI', () => {
     await page.waitForURL(/search=Apples/, { timeout: 10000 })
     await page.waitForLoadState('networkidle')
 
-    await expect(titleCell(page, 'Apples are red')).toBeVisible()
+    await expect(titleCell(page, 'Apples are red').first()).toBeVisible()
     await expect(titleCell(page, 'Bananas are yellow')).toHaveCount(0)
   })
 
   test('a structured status filter produces a field:value query', async ({ page }) => {
-    await createPost(page, { title: 'Draft One', slug: 'draft-one', status: 'draft' })
-    await createPost(page, { title: 'Published One', slug: 'published-one', status: 'published' })
+    await createPost(page, { title: 'Draft One', slug: slug('draft-one'), status: 'draft' })
+    await createPost(page, {
+      title: 'Published One',
+      slug: slug('published-one'),
+      status: 'published',
+    })
 
     await page.goto('/admin/post')
     await page.waitForLoadState('networkidle')
@@ -78,18 +98,18 @@ test.describe('Filter builder input UI', () => {
     await page.waitForURL(/search=status(%3A|:)published/, { timeout: 10000 })
     await page.waitForLoadState('networkidle')
 
-    await expect(titleCell(page, 'Published One')).toBeVisible()
+    await expect(titleCell(page, 'Published One').first()).toBeVisible()
     await expect(titleCell(page, 'Draft One')).toHaveCount(0)
   })
 
   test('Clear removes the filter and restores every row', async ({ page }) => {
-    await createPost(page, { title: 'Keep Me', slug: 'keep-me', status: 'published' })
-    await createPost(page, { title: 'Also Me', slug: 'also-me', status: 'published' })
+    await createPost(page, { title: 'Keep Me', slug: slug('keep-me'), status: 'published' })
+    await createPost(page, { title: 'Also Me', slug: slug('also-me'), status: 'published' })
 
     // Land on an already-filtered view (the builder hydrates from the URL).
     await page.goto('/admin/post?search=Keep')
     await page.waitForLoadState('networkidle')
-    await expect(titleCell(page, 'Keep Me')).toBeVisible()
+    await expect(titleCell(page, 'Keep Me').first()).toBeVisible()
     await expect(titleCell(page, 'Also Me')).toHaveCount(0)
 
     // Clearing drops the `?search=` filter and both rows return. `exact` avoids
@@ -97,7 +117,7 @@ test.describe('Filter builder input UI', () => {
     await page.getByRole('button', { name: 'Clear', exact: true }).click()
     await page.waitForLoadState('networkidle')
 
-    await expect(titleCell(page, 'Keep Me')).toBeVisible()
-    await expect(titleCell(page, 'Also Me')).toBeVisible()
+    await expect(titleCell(page, 'Keep Me').first()).toBeVisible()
+    await expect(titleCell(page, 'Also Me').first()).toBeVisible()
   })
 })

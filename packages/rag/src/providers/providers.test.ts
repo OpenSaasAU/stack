@@ -110,17 +110,19 @@ describe('Embedding Providers', () => {
       it('should initialize with default settings', () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
+          dimensions: 768,
         })
 
         expect(provider.type).toBe('ollama')
         expect(provider.model).toBe('nomic-embed-text')
-        expect(provider.dimensions).toBe(0) // Not initialized until first embedding
+        expect(provider.dimensions).toBe(768)
       })
 
       it('should initialize with custom model', () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
           model: 'llama2',
+          dimensions: 768,
         })
 
         expect(provider.model).toBe('llama2')
@@ -130,6 +132,7 @@ describe('Embedding Providers', () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
           baseURL: 'http://custom-host:8080',
+          dimensions: 768,
         })
 
         expect(provider['baseURL']).toBe('http://custom-host:8080')
@@ -139,6 +142,7 @@ describe('Embedding Providers', () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
           baseURL: 'http://localhost:11434/',
+          dimensions: 768,
         })
 
         expect(provider['baseURL']).toBe('http://localhost:11434')
@@ -149,6 +153,7 @@ describe('Embedding Providers', () => {
       it('should reject empty text', async () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
+          dimensions: 768,
         })
 
         await expect(provider.embed('')).rejects.toThrow('Cannot generate embedding for empty text')
@@ -161,6 +166,7 @@ describe('Embedding Providers', () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
           baseURL: 'http://localhost:99999', // Invalid port
+          dimensions: 768,
         })
 
         // The error message will vary depending on the environment
@@ -173,6 +179,7 @@ describe('Embedding Providers', () => {
       it('should return empty array for empty input', async () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
+          dimensions: 768,
         })
 
         const result = await provider.embedBatch([])
@@ -182,6 +189,7 @@ describe('Embedding Providers', () => {
       it('should reject all empty texts', async () => {
         const provider = new OllamaEmbeddingProvider({
           type: 'ollama',
+          dimensions: 768,
         })
 
         // This test will fail if Ollama is not running, which is expected
@@ -205,6 +213,7 @@ describe('Embedding Providers', () => {
     it('should create Ollama provider', () => {
       const provider = createEmbeddingProvider({
         type: 'ollama',
+        dimensions: 768,
       })
 
       expect(provider).toBeInstanceOf(OllamaEmbeddingProvider)
@@ -214,11 +223,25 @@ describe('Embedding Providers', () => {
     it('should throw error for unknown provider type', () => {
       expect(() => {
         createEmbeddingProvider({
-          type: 'unknown' as 'openai',
+          type: 'unknown',
         })
       }).toThrow(/Unknown embedding provider type/)
     })
   })
+
+  /**
+   * `pnpm build` type-checks this file, and an `@ts-expect-error` that does not
+   * fire is itself an error — so `tsc` is the assertion here and nothing needs
+   * to run. Before the funnel was tightened, both of these compiled, because
+   * `CustomEmbeddingConfig`'s open `{ type: string }` absorbed them.
+   */
+  function _refusesABuiltInConfigMissingARequiredMember(): void {
+    // @ts-expect-error `dimensions` is required on OllamaEmbeddingConfig
+    createEmbeddingProvider({ type: 'ollama', model: 'nomic-embed-text' })
+    // @ts-expect-error `apiKey` is required on OpenAIEmbeddingConfig
+    createEmbeddingProvider({ type: 'openai' })
+  }
+  void _refusesABuiltInConfigMissingARequiredMember
 
   describe('Provider interface compliance', () => {
     it('OpenAI provider should implement EmbeddingProvider interface', () => {
@@ -239,6 +262,7 @@ describe('Embedding Providers', () => {
     it('Ollama provider should implement EmbeddingProvider interface', () => {
       const provider = new OllamaEmbeddingProvider({
         type: 'ollama',
+        dimensions: 768,
       })
 
       expect(provider).toHaveProperty('type')
@@ -267,6 +291,7 @@ describe('Embedding Providers', () => {
       const provider = new OllamaEmbeddingProvider({
         type: 'ollama',
         baseURL: 'http://nonexistent-host:11434',
+        dimensions: 768,
       })
 
       await expect(provider.embed('test')).rejects.toThrow()

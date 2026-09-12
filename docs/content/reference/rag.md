@@ -4,12 +4,12 @@ RAG (Retrieval-Augmented Generation) and AI embeddings integration for Stack. Tu
 
 ## Overview
 
-The `@opensaas/stack-rag` package adds powerful semantic search and RAG capabilities to your Stack application with minimal configuration. It supports multiple embedding providers (OpenAI, Ollama), flexible storage backends (pgvector, SQLite VSS, JSON), and integrates seamlessly with the stack's access control system.
+The `@opensaas/stack-rag` package adds semantic search and RAG capabilities to your Stack application with minimal configuration. It supports multiple embedding providers (OpenAI, Ollama), stores embeddings in a native pgvector column, and integrates with the stack's access control system.
 
 **Key Features:**
 
 - 🤖 **Multiple Embedding Providers** - OpenAI, Ollama (local), or bring your own custom provider
-- 🗄️ **Flexible Storage Backends** - pgvector (PostgreSQL), SQLite VSS, or JSON-based (for development)
+- 🗄️ **Native Vector Column** - a pgvector `vector(n)` column with its dimension, distance function and index declared on the field
 - 🔍 **Semantic Search** - Natural language queries with relevance scoring
 - 🔐 **Access Control Integration** - All searches respect your existing access control rules
 - ⚡ **Automatic Embeddings** - Auto-generate embeddings when content changes with intelligent caching
@@ -36,7 +36,7 @@ Here's the fastest way to add semantic search to your Stack app:
 // opensaas.config.ts
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'
+import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 export default config({
@@ -46,18 +46,13 @@ export default config({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
       }),
-      storage: pgvectorStorage(),
     }),
   ],
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL!,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Article: list({
       fields: {
         title: text({ validation: { isRequired: true } }),
-        // Use searchable() wrapper for automatic embedding generation
         content: searchable(text({ validation: { isRequired: true } }), {
           provider: 'openai',
           dimensions: 1536,
@@ -70,59 +65,59 @@ export default config({
 
 **What's happening:**
 
-1. The `ragPlugin()` configures embedding provider and storage backend
+1. The `ragPlugin()` configures the embedding provider and declares the pgvector extension pack
 2. The `searchable()` wrapper automatically creates a `contentEmbedding` field
 3. Embeddings are auto-generated whenever `content` changes
 4. All searches respect your existing access control rules
 
-Generate schema and push to database:
+Generate the schema contract:
 
 ```bash
 pnpm generate
-pnpm db:push
 ```
 
-Now create content (embeddings generated automatically):
+`pnpm dev` applies it to the database.
+
+Now create content. You never write the embedding — the plugin derives it from
+`content` on the way in, and `create` returns `null` when access is denied:
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
 
 const context = await getContext()
 
-// Embedding is automatically generated from content
-await context.db.article.create({
+const article = await context.db.Article.create({
   data: {
     title: 'Introduction to AI',
     content: 'Artificial intelligence is...',
-    // No need to manually create embedding - it's automatic!
   },
 })
+
+if (article === null) {
+  throw new Error('Not allowed to create an article')
+}
 ```
 
-Perform semantic search:
+Perform semantic search. The ranking, the `minScore` bound, the Access Filter and
+Field Visibility all live inside the one `nearest()` query:
 
 ```typescript
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
+import { getContext } from '@/.opensaas/context'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate embedding for search query
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // Search for similar articles
-  const storage = createVectorStorage({ type: 'json' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+  return await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
-    minScore: 0.7,
-    context, // Access control enforced
+    minScore: 0.25,
   })
-
-  return results
 }
 ```
 
@@ -137,6 +132,7 @@ Embedding fields store vector embeddings (arrays of numbers) that represent the 
 The easiest way to add semantic search to any text field:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -170,6 +166,7 @@ type SearchableOptions = {
 For advanced use cases where you need more control:
 
 ```typescript
+import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
 
 fields: {
@@ -203,7 +200,6 @@ ragPlugin({
   provider: openaiEmbeddings({
     apiKey: process.env.OPENAI_API_KEY!,
     model: 'text-embedding-3-small', // or 'text-embedding-3-large'
-    dimensions: 1536, // 1536 for small, 3072 for large
   }),
 })
 ```
@@ -222,9 +218,15 @@ ragPlugin({
   provider: ollamaEmbeddings({
     baseURL: 'http://localhost:11434',
     model: 'nomic-embed-text',
+    dimensions: 768,
   }),
 })
 ```
+
+`dimensions` is **required** for Ollama. The dimension is a column's type, so
+generation has to know it — and Ollama reports its model's output size only from
+a live embed call, which `pnpm generate` must not depend on. Omitting it fails
+generation with a message naming the provider.
 
 **Setup:**
 
@@ -233,6 +235,28 @@ ragPlugin({
 ollama pull nomic-embed-text
 ollama serve
 ```
+
+### Environment Variables
+
+`createProviderFromEnv()` and `getProviderConfigFromEnv()` in
+`@opensaas/stack-rag/runtime` build a provider from the environment, for scripts
+and build steps that have no config to read:
+
+| Variable                      | Applies to | Default                  | Notes                                                                                  |
+| ----------------------------- | ---------- | ------------------------ | -------------------------------------------------------------------------------------- |
+| `EMBEDDING_PROVIDER`          | both       | `openai`                 | `openai` or `ollama`                                                                   |
+| `OPENAI_API_KEY`              | OpenAI     | —                        | Required when the provider is `openai`                                                 |
+| `OLLAMA_BASE_URL`             | Ollama     | `http://localhost:11434` |                                                                                        |
+| `OLLAMA_EMBEDDING_DIMENSIONS` | Ollama     | `768`                    | The model's output size. The default is `nomic-embed-text`'s; set it for another model |
+
+`OLLAMA_EMBEDDING_DIMENSIONS` is read rather than discovered for the same reason
+`ollamaEmbeddings({ dimensions })` is required: it is a schema fact, and Ollama
+only reports it from a live embed call. A value that is not a positive integer
+throws rather than silently falling back — the wrong width produces a column
+that no query vector fits.
+
+`ragPlugin` itself takes its provider from your config, not from these; these
+are for standalone scripts.
 
 #### Multiple Providers
 
@@ -247,9 +271,9 @@ ragPlugin({
     }),
     ollama: ollamaEmbeddings({
       model: 'nomic-embed-text',
+      dimensions: 768,
     }),
   },
-  storage: pgvectorStorage(),
 })
 
 // In fields
@@ -265,76 +289,66 @@ fields: {
 }
 ```
 
-### Storage Backends
+### The Vector Column
 
-The RAG package supports multiple vector storage backends:
-
-#### JSON Storage (Development)
-
-Good for development and small datasets. No database extensions needed.
+There is no storage backend to choose. `embedding()` emits a native pgvector
+`vector(n)` column with its metadata in a `jsonb` column beside it, and the
+field owns the dimension, the distance function and the index:
 
 ```typescript
-ragPlugin({
-  storage: jsonStorage(),
+contentEmbedding: embedding({
+  sourceField: 'content',
+  dimensions: 1536,
+  distanceFunction: 'cosine', // 'cosine', 'l2', or 'inner_product'
+  index: { method: 'hnsw', m: 16, efConstruction: 64 },
 })
 ```
 
-**Characteristics:**
+Because every column the plugin emits is a pgvector column, `postgresql` is the
+only datasource RAG runs on — `pnpm generate` refuses any other one.
 
-- No setup required
-- Works with any database
-- Similarity computed in JavaScript
-- Good for development and <10k documents
-- O(n) search complexity
+#### Provisioning pgvector
 
-#### pgvector (Production PostgreSQL)
+`ragPlugin` declares the pgvector extension pack, so nothing in your config
+names it and no SQL is yours to run. The declaration is a generator emission
+(ADR-0065): `pnpm generate` writes the extension's own migration under
+`migrations/pgvector/`, and applying the contract enables the extension ahead of
+your tables. Locally that is `pnpm db:update` with `pnpm dev` up in another
+terminal; [Migrations and the dev loop](/docs/how-to/migrate) covers why the
+command needs that loop and what `--confirm` asks for. In a deployment there is
+no loop, so it is `prisma migration plan` once, committed, then
+`prisma db migrate`. There is no `opensaas db migrate` — `opensaas db` carries
+only `update`.
 
-Best for production applications using PostgreSQL. Requires pgvector extension.
+What the deployment owns is provisioning:
 
-```typescript
-ragPlugin({
-  storage: pgvectorStorage({
-    distanceFunction: 'cosine', // 'cosine', 'l2', or 'innerProduct'
-  }),
-})
-```
+- **Availability.** pgvector has to be present on the Postgres server. The Dev
+  database carries it, as do Neon, Supabase and RDS; a server you run yourself
+  needs the extension installed (`pgvector/pgvector` Docker images,
+  `brew install pgvector`, `postgresql-16-pgvector`).
+- **Privilege.** pgvector is not a trusted extension, so the role your migration
+  connects as needs superuser, a provider grant, or a one-off pre-create — see
+  [Cost: pgvector needs a privilege you may not have](/docs/how-to/deploy#cost-pgvector-needs-a-privilege-you-may-not-have),
+  which also covers what a server with no pgvector at all does.
 
-**Setup:**
+#### Search exactness
 
-```sql
--- Enable pgvector extension
-CREATE EXTENSION vector;
+Two separate statements, both about how many rows a search returns.
 
--- Optional: Create index for faster search
-CREATE INDEX article_embedding_idx
-ON "Article" USING ivfflat ((("contentEmbedding"->>'vector')::vector(1536)))
-WITH (lists = 100);
-```
+**A cost of ranking inside the access filter.** An approximate HNSW scan under a
+selective access filter can return fewer than `limit` rows: the index walks a
+bounded candidate list, and rows the session may not see are discarded from it
+rather than replaced. Under an **exact** scan the result is exact — `limit` rows
+whenever `limit` rows qualify. Under an approximate scan it is bounded by
+pgvector's iterative-scan budget instead (ADR-0045).
 
-**Characteristics:**
-
-- Sub-second search for millions of vectors
-- Efficient binary storage
-- Index support for fast search
-- Production-ready
-
-#### SQLite VSS (SQLite)
-
-Good for SQLite-based applications. Requires sqlite-vss extension.
-
-```typescript
-ragPlugin({
-  storage: sqliteVssStorage({
-    distanceFunction: 'cosine',
-  }),
-})
-```
-
-**Characteristics:**
-
-- Good for SQLite apps
-- Efficient vector search
-- Requires VSS extension
+**A known limit of the pack this ships against.**
+`@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index types, so an
+`index` declaration derives the column type and the operator class and nothing
+else — no `CREATE INDEX` is emitted. Every search today is therefore an exact
+scan, and the paragraph above describes what changes when the pack gains index
+support. Tracked as
+[#1265](https://github.com/OpenSaasAU/stack/issues/1265).
 
 ### Automatic Embedding Generation
 
@@ -360,50 +374,58 @@ The plugin stores a SHA-256 hash of the source text in the embedding metadata. T
 
 All semantic searches automatically respect your existing access control rules. This ensures users can only search content they have permission to view.
 
+A `where` predicate composes with the search; the session's own filter is ANDed
+onto it, so a user only ever ranks over articles they may read:
+
 ```typescript
-// Search respects access control
+import { getContext } from '@/.opensaas/context'
+
 const context = await getContext({ userId: 'user-123' })
 
-const results = await storage.search('Article', 'contentEmbedding', queryVector, {
-  context, // Access control applied automatically
-  where: { published: true }, // Additional filters
-})
-
-// Users only see articles they have access to
+const matches = await context.db.Article.where({
+  published: { equals: true },
+}).nearest('contentEmbedding', queryVector)
 ```
 
-The search operates through the access-controlled context, so all operation-level, filter-level, and field-level access controls are enforced.
+A denied read answers `[]`, the same value an empty scoped set gives.
+
+`nearest()` is a terminal on the secured read surface, so operation-level,
+filter-level and field-level access control are enforced exactly as they are for
+`all()` or `first()`. The top-K is computed over the rows the session may see —
+the ranking and the `minScore` bound are inside the same scoped query, not
+applied to a wider result afterwards (ADR-0045).
+
+Searching a field also requires read access to it: ordering by a vector measures
+its contents, so a session that cannot read the column is refused.
 
 ## Configuration Options
 
 ### RAG Plugin Configuration
 
-The `ragPlugin()` function accepts comprehensive configuration options:
+| Option           | Type                         | Default   | Description                                                      |
+| ---------------- | ---------------------------- | --------- | ---------------------------------------------------------------- |
+| `provider`       | `EmbeddingProviderConfig`    | —         | The single default provider                                      |
+| `providers`      | `Record<string, …Config>`    | `{}`      | Named providers, when fields choose between them                 |
+| `chunking`       | `ChunkingConfig`             | recursive | Project-wide chunking defaults                                   |
+| `enableMcpTools` | `boolean`                    | `true`    | Register a `semantic_search_<list>` MCP tool per searchable list |
+| `batchSize`      | `number`                     | `10`      | Texts per provider call during batch generation                  |
+| `rateLimit`      | `number`                     | `100`     | Provider requests per minute                                     |
+| `buildTime`      | `{ enabled, outputPath, … }` | off       | Build-step embedding generation into a JSON index                |
+
+Name either `provider` or `providers`; with `providers`, a field selects one by
+key.
 
 ```typescript
 ragPlugin({
-  // Single provider
-  provider: openaiEmbeddings({
-    apiKey: process.env.OPENAI_API_KEY!,
-    model: 'text-embedding-3-small',
-  }),
-
-  // OR multiple providers
   providers: {
-    openai: openaiEmbeddings({/* ... */}),
-    ollama: ollamaEmbeddings({/* ... */}),
+    openai: openaiEmbeddings({
+      apiKey: process.env.OPENAI_API_KEY!,
+      model: 'text-embedding-3-small',
+    }),
+    ollama: ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 }),
   },
-
-  // Storage backend
-  storage: pgvectorStorage({
-    distanceFunction: 'cosine',
-  }),
-
-  // Enable MCP semantic search tools
   enableMcpTools: true,
-
-  // Default rate limiting
-  rateLimit: 100, // Requests per minute
+  rateLimit: 100,
 })
 ```
 
@@ -411,32 +433,59 @@ ragPlugin({
 
 #### searchable() Wrapper
 
+`searchable(baseField, options)` keeps the base field as authored and adds the
+companion embedding column beside it.
+
+| Option               | Type             | Default                           |
+| -------------------- | ---------------- | --------------------------------- |
+| `provider`           | `string`         | the plugin's default              |
+| `dimensions`         | `number`         | the provider's, else `1536`       |
+| `chunking`           | `ChunkingConfig` | the plugin's                      |
+| `embeddingFieldName` | `string`         | the field's name plus `Embedding` |
+
 ```typescript
 content: searchable(text(), {
-  provider: 'openai', // Provider to use
-  dimensions: 1536, // Vector dimensions
-  embeddingFieldName: 'customEmbedding', // Custom field name
+  provider: 'openai',
+  dimensions: 1536,
+  embeddingFieldName: 'customEmbedding',
   chunking: {
-    // Text chunking for long content
     strategy: 'recursive',
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    maxTokens: 250,
+    overlap: 50,
   },
 })
 ```
 
 #### embedding() Field
 
+| Option              | Type                                                | Default                          |
+| ------------------- | --------------------------------------------------- | -------------------------------- |
+| `sourceField`       | `string`                                            | —                                |
+| `provider`          | `string`                                            | the plugin's default             |
+| `dimensions`        | `number`                                            | the provider's, else `1536`      |
+| `distanceFunction`  | `'cosine' \| 'l2' \| 'inner_product'`               | `'cosine'`                       |
+| `index`             | `{ method, opclass?, m?, efConstruction?, lists? }` | none                             |
+| `allowManualWrites` | `boolean`                                           | `false`                          |
+| `chunking`          | `ChunkingConfig`                                    | the plugin's                     |
+| `autoGenerate`      | `boolean`                                           | `true` when `sourceField` is set |
+| `ui`                | `{ showVector?, showMetadata? }`                    | `false` / `true`                 |
+
+`dimensions` is a schema fact: changing it is a migration, and a declared value
+that disagrees with a statically known provider dimension fails `pnpm generate`.
+`allowManualWrites` defaults to `false`, which makes the builder attach
+`access: { create: () => false, update: () => false }` to the field — the
+embedding is a plugin output, so an ordinary write naming it is refused.
+
 ```typescript
 contentEmbedding: embedding({
-  sourceField: 'content', // Field to generate embeddings from
-  provider: 'openai', // Provider to use
-  dimensions: 1536, // Vector dimensions
-  autoGenerate: true, // Auto-generate on changes
+  sourceField: 'content',
+  provider: 'openai',
+  dimensions: 1536,
+  distanceFunction: 'cosine',
+  autoGenerate: true,
   chunking: {
-    // Text chunking configuration
     strategy: 'sentence',
-    chunkSize: 500,
+    maxTokens: 125,
   },
 })
 ```
@@ -449,10 +498,7 @@ contentEmbedding: embedding({
 
 - `ragPlugin(config)` - RAG plugin for Stack
 - `openaiEmbeddings(config)` - OpenAI embedding provider helper
-- `ollamaEmbeddings(config)` - Ollama embedding provider helper
-- `pgvectorStorage(config)` - pgvector storage helper
-- `sqliteVssStorage(config)` - SQLite VSS storage helper
-- `jsonStorage()` - JSON-based storage helper
+- `ollamaEmbeddings(config)` - Ollama embedding provider helper (`dimensions` is required)
 
 ### Field Types (`@opensaas/stack-rag/fields`)
 
@@ -465,19 +511,13 @@ contentEmbedding: embedding({
 - `registerEmbeddingProvider(type, factory)` - Register custom providers
 - `EmbeddingProvider` - TypeScript interface for custom providers
 
-### Storage (`@opensaas/stack-rag/storage`)
-
-- `createVectorStorage(config)` - Factory for creating storage backends
-- `registerVectorStorage(type, factory)` - Register custom storage backends
-- `VectorStorage` - TypeScript interface for custom storage
-- `cosineSimilarity()`, `dotProduct()`, `l2Distance()` - Similarity utilities
-
 ### Runtime Utilities (`@opensaas/stack-rag/runtime`)
 
 **High-level utilities:**
 
-- `semanticSearch(options)` - Simplified semantic search API
-- `findSimilar(options)` - Find similar items by ID
+- `semanticSearch({ list, fieldName, query, provider, ... })` - Embed a query and rank it through `nearest()`
+- `findSimilar({ list, fieldName, itemId, ... })` - Rank by an item's own embedding
+- `createProviderFromEnv(overrides?)` - Build a provider from `EMBEDDING_PROVIDER` and friends
 - `generateEmbedding(options)` - Generate embeddings with chunking support
 - `generateEmbeddings(options)` - Batch embedding generation
 - `chunkText(text, options)` - Text chunking utilities
@@ -506,6 +546,7 @@ export default config({
       enableMcpTools: true, // Enable semantic_search_article tool
     }),
   ],
+  db: { provider: 'postgresql' },
   mcp: {
     enabled: true,
     auth: { type: 'better-auth', loginPage: '/sign-in' },
@@ -547,7 +588,9 @@ The MCP tools automatically:
 
 ### StoredEmbedding Type
 
-Embeddings are stored as JSON with metadata:
+An embedding reads back as its vector plus its metadata. The two live in
+separate columns — a pgvector `vector(n)` and a `jsonb` beside it — and the
+field reassembles them into one value:
 
 ```typescript
 type StoredEmbedding = {
@@ -562,57 +605,65 @@ type StoredEmbedding = {
 }
 ```
 
-**Prisma schema:**
+**Emitted columns:**
 
-```prisma
-model Article {
-  id                String  @id @default(cuid())
-  content           String
-  contentEmbedding  Json?   // Stores StoredEmbedding
-}
-```
+| Column                     | Type           |
+| -------------------------- | -------------- |
+| `contentEmbedding`         | `vector(1536)` |
+| `contentEmbeddingMetadata` | `jsonb`        |
+
+An embedding is a plugin output, so an ordinary create or update naming it
+throws. Pass `embedding({ allowManualWrites: true })` to maintain vectors
+yourself.
 
 ### SearchResult Type
 
-Search results include the item and similarity metrics:
+Search results pair the row with its score:
 
 ```typescript
-type SearchResult<T> = {
-  item: T // The matching record
-  score: number // Similarity score (0-1, higher is more similar)
-  distance: number // Distance metric (depends on backend)
+type SearchResult<T = unknown> = {
+  item: T // The matching record, through Field Visibility like any other read
+  score: number // Higher is more similar; the range is the column's own
 }
 ```
+
+The score's range is the column's `distanceFunction`, not a normalised 0–1:
+
+| `distanceFunction` | `score`         | Range     |
+| ------------------ | --------------- | --------- |
+| `cosine` (default) | the raw cosine  | `[-1, 1]` |
+| `l2`               | `1 / (1 + d)`   | `(0, 1]`  |
+| `inner_product`    | the dot product | unbounded |
+
+`minScore` is read on the same scale, and is lowered into the query as a
+distance bound rather than applied to the results afterwards. The raw distance
+is not exposed.
 
 ## Examples
 
 ### Basic Semantic Search
 
 ```typescript
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
 export async function searchArticles(query: string) {
   const context = await getContext()
 
-  // Generate query embedding
   const provider = createEmbeddingProvider({
     type: 'openai',
     apiKey: process.env.OPENAI_API_KEY!,
   })
   const queryVector = await provider.embed(query)
 
-  // Search
-  const storage = createVectorStorage({ type: 'pgvector' })
-  const results = await storage.search('Article', 'contentEmbedding', queryVector, {
+  const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
     limit: 10,
-    minScore: 0.7,
-    context,
+    minScore: 0.25,
   })
 
-  return results.map((r) => ({
-    article: r.item,
-    similarity: r.score,
+  return matches.map((match) => ({
+    article: match.item,
+    similarity: match.score,
   }))
 }
 ```
@@ -621,18 +672,18 @@ export async function searchArticles(query: string) {
 
 ```typescript
 import { semanticSearch } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider, createVectorStorage } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 import { getContext } from '@/.opensaas/context'
 
+const context = await getContext()
+
 const results = await semanticSearch({
-  listKey: 'Article',
+  list: context.db.Article,
   fieldName: 'contentEmbedding',
   query: 'articles about machine learning',
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),
-  storage: createVectorStorage({ type: 'pgvector' }),
-  context: await getContext(),
   limit: 10,
-  minScore: 0.7,
+  minScore: 0.25,
 })
 ```
 
@@ -640,41 +691,57 @@ const results = await semanticSearch({
 
 ```typescript
 import { findSimilar } from '@opensaas/stack-rag/runtime'
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext()
 
 const similar = await findSimilar({
-  listKey: 'Article',
+  list: context.db.Article,
   fieldName: 'contentEmbedding',
   itemId: 'article-123',
-  storage: createVectorStorage({ type: 'pgvector' }),
-  context: await getContext(),
   limit: 5,
-  excludeSelf: true, // Don't include the source article
+  excludeSelf: true,
 })
 ```
 
 ### Text Chunking
 
+`chunkText` sizes in **characters** (`chunkSize`, `chunkOverlap`); only
+`'token-aware'` reads `tokenLimit`. This is the standalone runtime helper — the
+`chunking` option on a field is `ChunkingConfig`, which sizes in tokens.
+
+Recursive chunking respects paragraph and sentence boundaries:
+
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'
 
-// Recursive chunking (respects paragraph/sentence boundaries)
-const chunks = chunkText(longDocument, {
+const recursive = chunkText(longDocument, {
   strategy: 'recursive',
   chunkSize: 1000,
   chunkOverlap: 200,
 })
+```
 
-// Sentence-based chunking (preserves sentences)
-const chunks = chunkText(document, {
+Sentence chunking keeps sentences whole:
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
+
+const bySentence = chunkText(longDocument, {
   strategy: 'sentence',
   chunkSize: 500,
   chunkOverlap: 100,
 })
+```
 
-// Token-aware chunking (for token limits)
-const chunks = chunkText(document, {
+Token-aware chunking bounds each chunk by an estimated token count instead:
+
+```typescript
+import { chunkText } from '@opensaas/stack-rag/runtime'
+
+const byToken = chunkText(longDocument, {
   strategy: 'token-aware',
-  tokenLimit: 500, // ~500 tokens per chunk
+  tokenLimit: 500,
   chunkOverlap: 50,
 })
 ```
@@ -683,7 +750,7 @@ const chunks = chunkText(document, {
 
 ```typescript
 import { batchProcess } from '@opensaas/stack-rag/runtime'
-import { createEmbeddingProvider } from '@opensaas/stack-rag'
+import { createEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 const result = await batchProcess({
   provider: createEmbeddingProvider({ type: 'openai', apiKey: process.env.OPENAI_API_KEY! }),
@@ -702,7 +769,7 @@ console.log(`Failed: ${result.stats.failed}`)
 ## Working Examples
 
 - **[RAG OpenAI Chatbot](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-openai-chatbot)** - Production-ready chatbot with knowledge base, streaming responses, and source citations
-- **[RAG Ollama Demo](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-ollama-demo)** - Local development with Ollama embeddings and SQLite VSS
+- **[RAG Ollama Demo](https://github.com/OpenSaasAU/stack/tree/main/examples/rag-ollama-demo)** - Local development with Ollama embeddings over a native pgvector column
 
 ## Next Steps
 

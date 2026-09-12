@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
+import { createTestDatabase } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { SingletonView } from '../../src/components/SingletonView.js'
 import { ListView } from '../../src/components/ListView.js'
@@ -47,26 +48,24 @@ const config: OpenSaasConfig = {
 
 interface DelegateStub {
   get?: () => Promise<Record<string, unknown> | null>
-  findUnique?: (args: unknown) => Promise<Record<string, unknown> | null>
-  findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>>
-  count?: (args: unknown) => Promise<number>
 }
 
 /**
  * Build a minimal AccessContext whose db delegates return canned data.
  * Only the methods the views call are implemented.
  */
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext<unknown> {
+function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
   const context = {
     db: delegates,
     session: null,
+    ormHandle: {},
     storage: {},
     plugins: {},
     _isSudo: false,
     _resolveOutputChain: [],
   }
   // Cast: this is a stub for rendering tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext<unknown>
+  return context as unknown as AccessContext
 }
 
 const noopServerAction = vi.fn(async () => ({ success: true }))
@@ -101,8 +100,7 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
 describe('AdminUI singleton routing', () => {
   it('routes a singleton bare [list] to SingletonView, a non-singleton to ListView', async () => {
     const context = makeContext({
-      settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-      post: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
     })
 
     const singletonTree = await AdminUI({
@@ -126,7 +124,7 @@ describe('AdminUI singleton routing', () => {
 
   it('renders a single-record editor for a singleton list (SingletonView)', async () => {
     const singletonGet = vi.fn(async () => ({ id: '1', siteName: 'My Site' }))
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -137,7 +135,7 @@ describe('AdminUI singleton routing', () => {
     })
     render(element)
 
-    // Resolved via the singleton get() (auto-create path), not findMany.
+    // Resolved via the singleton get() (auto-create path).
     expect(singletonGet).toHaveBeenCalledTimes(1)
 
     // Editor header + the record's value rendered in a field input.
@@ -171,7 +169,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -215,7 +213,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -256,7 +254,7 @@ describe('AdminUI singleton routing', () => {
     }
 
     const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ settings: { get: singletonGet } })
+    const context = makeContext({ Settings: { get: singletonGet } })
 
     const element = await SingletonView({
       context,
@@ -273,24 +271,31 @@ describe('AdminUI singleton routing', () => {
   })
 
   it('renders the list table for a non-singleton list (ListView)', async () => {
-    const findMany = vi.fn(async () => [
-      { id: '1', title: 'First Post' },
-      { id: '2', title: 'Second Post' },
-    ])
-    const count = vi.fn(async () => 2)
-    const context = makeContext({ post: { findMany, count } })
+    const postConfig: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: {
+        Post: list({
+          fields: { title: text({ validation: { isRequired: true } }) },
+          access: { operation: { query: () => true } },
+        }),
+      },
+    }
+    const database = await createTestDatabase(postConfig)
+    try {
+      const seeding = database.context(null).sudo().db.Post
+      await seeding.create({ data: { title: 'First Post' } })
+      await seeding.create({ data: { title: 'Second Post' } })
 
-    const element = await ListView({
-      context,
-      config,
-      listKey: 'Post',
-      basePath: '/admin',
-    })
-    render(element)
-
-    // List view fetches via findMany/count (the singleton get() is never called).
-    expect(findMany).toHaveBeenCalledTimes(1)
-    expect(count).toHaveBeenCalledTimes(1)
+      const element = await ListView({
+        context: database.context(null) as unknown as AccessContext,
+        config: postConfig,
+        listKey: 'Post',
+        basePath: '/admin',
+      })
+      render(element)
+    } finally {
+      await database.close()
+    }
 
     // The list table renders rows + the "Create" affordance.
     expect(screen.getByText('First Post')).toBeInTheDocument()
@@ -299,5 +304,5 @@ describe('AdminUI singleton routing', () => {
 
     // It is NOT the singleton editor.
     expect(screen.queryByText('Edit Post')).not.toBeInTheDocument()
-  })
+  }, 120_000)
 })

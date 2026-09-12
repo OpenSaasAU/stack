@@ -8,15 +8,78 @@
 // ───────────────────────────────────────────────────────────────
 
 // Plugin authoring (see the Plugin System docs)
-export type { Plugin, PluginContext, GeneratedFiles } from './config/index.js'
+export type { Plugin, PluginContext, GeneratedFiles, ExtensionDescriptor } from './config/index.js'
+
+// The escalated write a plugin's own computed column takes, which runs no hook
+// (ADR-0068). A plugin that injects a write-denied field writes it with this
+// rather than through `sudo().db`, whose update re-runs the list's hooks over a
+// payload naming only that field.
+export {
+  writePluginOwnedField,
+  HandlelessPluginFieldWriteError,
+  UnknownPluginFieldWriteError,
+  UndefinedPluginFieldWriteError,
+} from './context/plugin-field-write.js'
+export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
   BaseFieldConfig,
   TypeInfo,
   TypeDescriptor,
-  MultiColumnPrismaResult,
+  ContractLiteral,
+  ColumnTypeDescriptor,
+  ColumnDefaultDescriptor,
+  ContractColumnDescriptor,
+  ContractForeignKeyDescriptor,
+  ContractRelationDescriptor,
+  ContractFieldDescriptor,
+  VectorColumnDescriptor,
+  VectorDistanceFunction,
 } from './config/index.js'
+
+// Resolves a `TypeDescriptor` to the TypeScript type expression the generated
+// bundle writes. An import descriptor becomes an inline `import('mod').Name`,
+// so the emitted file needs no import statement of its own for it.
+export { typeDescriptorToTypeString, formatFieldName } from './fields/index.js'
+
+// Contract derivation (ADR-0057) — the data a config derives to, which the
+// generator renders and `@opensaas/stack-core/contract` feeds into Prisma.
+export { deriveContract } from './contract/derive.js'
+export {
+  assertRelationGraphAgrees,
+  RelationGraphDivergenceError,
+  type EmittedContract,
+} from './contract/relation-graph.js'
+export type {
+  ContractColumn,
+  ContractData,
+  ContractEnum,
+  ContractForeignKey,
+  ContractIdColumn,
+  ContractIdStrategy,
+  ContractIndex,
+  ContractModel,
+  ContractRelation,
+  ContractRelationKind,
+  ContractTimestamps,
+} from './contract/types.js'
+
+// The dependency-set table and the unique-constraint map the generator emits
+// (ADR-0051, ADR-0042).
+export {
+  deriveConstraintMap,
+  deriveDependencyTable,
+  deriveGeneratedTables,
+} from './contract/dependencies.js'
+export type {
+  ConstraintMap,
+  DependencyTable,
+  FieldDependencySet,
+  GeneratedTables,
+  ListDependencies,
+  UniqueConstraint,
+} from './contract/dependencies.js'
 
 // Filter spec authoring — a field's optional `getFilterSpec` returns these
 // (ADR-0017). Additive: a field without one is simply not filterable.

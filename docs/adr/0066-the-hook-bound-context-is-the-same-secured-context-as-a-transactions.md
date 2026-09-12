@@ -1,6 +1,26 @@
 # The hook-bound context is the same secured context as a transaction's
 
-Status: accepted
+Status: superseded by [ADR-0050](0050-nested-relation-input-leaves-the-secured-write-surface.md) and [ADR-0052](0052-the-generated-types-declare-the-contract-remainder-and-instantiate-core-generics.md)
+
+> **Superseded on the Prisma 8 line.** This record's decision — that a hook's
+> `context` carries `sudo()`, `withSession()`, `transaction()` and
+> `serverAction` — is reversed by ADR-0052's context split. A hook now receives
+> `StackBaseContext` (emitted per app as `BaseContext`): the secured `db`, the
+> session and the ambient plumbing, and nothing that can start a transaction or
+> change who is asking. Those four operations live on `StackContext`
+> (`Context`), which a server action or page component holds.
+>
+> What survives unchanged is this record's other half, and the reason it was
+> written: a hook's `db` is bound to the **write's own transaction client**
+> (ADR-0010), carrying the write's transaction owner (ADR-0028) and the hook's
+> resolve chain (ADR-0023), so a `context.db` write a hook performs is atomic
+> with the write. Only the derive-a-new-context operations are withdrawn.
+>
+> The `_resolveOutputChain` threading this record added through `sudo()` /
+> `withSession()` is moot under the split rather than dropped: the only
+> contexts that expose those operations are request contexts, whose chain is
+> empty by construction, and the contexts that carry a non-empty chain (hook
+> contexts) do not expose them.
 
 A list or field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
 hook's `context` is a full `StackContext` — `sudo()`, `withSession()`,

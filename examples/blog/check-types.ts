@@ -12,6 +12,7 @@ const testUser = list<Lists.User.TypeInfo>({
   fields: {
     displayName: virtual({
       type: 'string', // TypeScript output type
+      needs: ['name', 'email'],
       hooks: {
         resolveOutput: ({ item }) => {
           // Hover over 'item' here - it should show type User (with name, email, etc.)

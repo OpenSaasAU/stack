@@ -6,22 +6,19 @@
 
 import type { Feature, FeatureImplementation, GeneratedFile } from '../types.js'
 
-const SQLITE_DB_BLOCK = `db: {
-    provider: 'sqlite',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
+const DB_BLOCK = `db: {
+    provider: 'postgresql',
   }`
 
-const POSTGRES_DB_BLOCK = `db: {
-    provider: 'postgresql',
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
-  }`
+/**
+ * The dev loop reconciles the database on every config edit; only a change it
+ * holds back as destructive needs the second step. See examples/starter's
+ * README for the contract these steps have to match.
+ */
+const DB_STEPS = [
+  'Run `pnpm dev` — `opensaas dev` starts the Dev database, regenerates, and reconciles it with the new schema',
+  'If the change is held back as destructive, review the printed plan and apply it with `pnpm db:update`',
+]
 
 export class FeatureGenerator {
   constructor(
@@ -80,7 +77,10 @@ export class FeatureGenerator {
       )
     }
     if (userFields.includes('Avatar')) {
-      extendFields.push(`avatar: text() // or an image() field — see the file-upload feature`)
+      // The comment goes above, not after: these entries are comma-joined, and
+      // a trailing `//` would swallow the separator and the next field.
+      extendFields.push(`// An image() field works here too — see the file-upload feature
+          avatar: text()`)
     }
     if (userFields.includes('Bio')) {
       extendFields.push(`bio: text({ ui: { displayMode: 'textarea' } })`)
@@ -98,11 +98,23 @@ export class FeatureGenerator {
     const fieldImports = ['text']
     if (hasRoles) fieldImports.push('select')
 
+    const socialProviderEntries: string[] = []
+    if (hasGoogle) {
+      socialProviderEntries.push(`google: {
+          clientId: process.env.GOOGLE_CLIENT_ID!,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        },`)
+    }
+    if (hasGithub) {
+      socialProviderEntries.push(`github: {
+          clientId: process.env.GITHUB_CLIENT_ID!,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        },`)
+    }
     const socialProvidersBlock = hasOAuth
       ? `
       socialProviders: {
-        ${hasGoogle ? `google: {\n          clientId: process.env.GOOGLE_CLIENT_ID!,\n          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,\n        },` : ''}
-        ${hasGithub ? `github: {\n          clientId: process.env.GITHUB_CLIENT_ID!,\n          clientSecret: process.env.GITHUB_CLIENT_SECRET!,\n        },` : ''}
+        ${socialProviderEntries.join('\n        ')}
       },`
       : ''
 
@@ -110,7 +122,6 @@ export class FeatureGenerator {
 import type { AccessControl } from '@opensaas/stack-core'
 import { ${fieldImports.join(', ')} } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 // Access control helpers (see lib/access-control.ts for the full set)
 const isSignedIn: AccessControl = ({ session }) => !!session
@@ -144,9 +155,7 @@ export default config({
       },
     }),
   ],
-  ${SQLITE_DB_BLOCK},
-  // For PostgreSQL use @prisma/adapter-pg instead:
-  // ${POSTGRES_DB_BLOCK.replace(/\n/g, '\n  // ')}
+  ${DB_BLOCK},
   lists: {
     // Your app lists go here. User, Session, Account, and Verification are
     // added automatically by authPlugin.
@@ -430,7 +439,6 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
     })
 
     const envVars: Record<string, string> = {
-      DATABASE_URL: 'file:./dev.db',
       BETTER_AUTH_SECRET: '<generate-with-openssl-rand-base64-32>',
       BETTER_AUTH_URL: 'http://localhost:3000',
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
@@ -447,14 +455,12 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
     }
 
     const nextSteps = [
-      'Install dependencies: `pnpm add @opensaas/stack-auth @prisma/adapter-better-sqlite3`',
+      'Install dependencies: `pnpm add @opensaas/stack-auth`',
       'Merge the config updates into your `opensaas.config.ts`',
       'Create the files shown above in your project',
       'Add environment variables to your `.env` file',
       hasOAuth ? 'Set up OAuth applications in Google/GitHub developer consoles' : null,
-      'Run `pnpm generate` to update the Prisma schema and generated context',
-      'Run `pnpm db:push` to update your database',
-      'Start your dev server: `pnpm dev`',
+      ...DB_STEPS,
       `Visit http://localhost:3000/${hasPassword ? 'sign-up' : 'sign-in'} to test authentication`,
     ].filter(Boolean) as string[]
 
@@ -512,7 +518,7 @@ import { getContext } from '@/.opensaas/context'
 const session = await getSession()
 const context = await getContext(session)
 const currentUser = session
-  ? await context.db.user.findUnique({ where: { id: session.userId } })
+  ? await context.db.User.where({ id: session.userId }).first()
   : null
 \`\`\``
 
@@ -562,11 +568,17 @@ const currentUser = session
       fields.push("category: relationship({ ref: 'Category.posts' })")
     }
     if (hasTags) {
-      fields.push("tags: relationship({ ref: 'Tag.posts', many: true })")
+      // The Post end of the Post↔Tag many-to-many. There is no implicit
+      // many-to-many (ADR-0048): the edge is a row of `PostTag`, so both ends
+      // point at the junction list rather than at each other.
+      fields.push("tags: relationship({ ref: 'PostTag.post', many: true })")
     }
 
     if (postFields.includes('Featured image')) {
-      fields.push('featuredImage: text() // URL — or an image() field, see the file-upload feature')
+      // The comment goes above, not after: these entries are comma-joined, and
+      // a trailing `//` would swallow the separator and the next field.
+      fields.push(`// A URL — an image() field works here too, see the file-upload feature
+        featuredImage: text()`)
     }
     if (postFields.includes('Excerpt/summary')) {
       fields.push("excerpt: text({ ui: { displayMode: 'textarea' } })")
@@ -651,7 +663,7 @@ ${useTiptap ? "import { richText } from '@opensaas/stack-tiptap/fields'" : ''}
         ? `Tag: list({
       fields: {
         name: text({ validation: { isRequired: true } }),
-        posts: relationship({ ref: 'Post.tags', many: true }),
+        posts: relationship({ ref: 'PostTag.tag', many: true }),
       },
       access: {
         operation: {
@@ -659,6 +671,28 @@ ${useTiptap ? "import { richText } from '@opensaas/stack-tiptap/fields'" : ''}
           create: ({ session }) => !!session,
           update: ({ session }) => session?.role === 'admin',
           delete: ({ session }) => session?.role === 'admin',
+        },
+      },
+    }),
+
+    // One edge of the Post↔Tag many-to-many. Adding a tag is a create of this
+    // row under THIS list's create access, and removing one is a delete of it.
+    PostTag: list({
+      fields: {
+        post: relationship({ ref: 'Post.tags' }),
+        tag: relationship({ ref: 'Tag.posts' }),
+      },
+      db: {
+        // A database-level backstop for "one tag per post": two concurrent adds
+        // both pass an application-level existence check and both insert.
+        indexes: [{ fields: ['post', 'tag'], unique: true }],
+      },
+      access: {
+        operation: {
+          query: () => true,
+          create: ({ session }) => !!session,
+          update: ({ session }) => session?.role === 'admin',
+          delete: ({ session }) => !!session,
         },
       },
     }),`
@@ -689,11 +723,10 @@ import Link from 'next/link'
 export default async function BlogPage() {
   const context = await getContext()
 
-  const posts = await context.db.post.findMany({
-    ${hasStatus ? "where: { status: { equals: 'published' } }," : ''}
-    orderBy: { ${hasStatus ? 'publishedAt' : 'createdAt'}: 'desc' },
-    include: { author: true },
-  })
+  const posts = await context.db.Post${hasStatus ? ".where({ status: { equals: 'published' } })" : ''}
+    .orderBy({ ${hasStatus ? 'publishedAt' : 'createdAt'}: 'desc' })
+    .include('author')
+    .all()
 
   return (
     <div className="container mx-auto py-8">
@@ -731,13 +764,12 @@ export default async function BlogPostPage({
   const { slug } = await params
   const context = await getContext()
 
-  const post = await context.db.post.findFirst({
-    where: {
-      slug: { equals: slug },
-      ${hasStatus ? "status: { equals: 'published' }," : ''}
-    },
-    include: { author: true },
+  const post = await context.db.Post.where({
+    slug: { equals: slug },
+    ${hasStatus ? "status: { equals: 'published' }," : ''}
   })
+    .include('author')
+    .first()
 
   if (!post) {
     notFound()
@@ -770,8 +802,7 @@ export default async function BlogPostPage({
         ? 'For public rendering of rich text, add `@tiptap/html` and `@tiptap/starter-kit`'
         : null,
       'Create the blog pages in your `app/` directory',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       'Create your first blog post in the admin UI at /admin',
     ].filter(Boolean) as string[]
 
@@ -782,6 +813,7 @@ This project includes a blog system with:
 - ${contentEditor} for writing posts
 ${hasStatus ? '- Draft/publish workflow (publishedAt is set automatically by a resolveInput hook)' : ''}
 ${taxonomy.length > 0 ? `- ${taxonomy.join(' and ')} for organization` : ''}
+${hasTags ? '- Post↔Tag edges are rows of the `PostTag` junction list — there is no implicit many-to-many (ADR-0048), so every edge write is a create or delete under `PostTag`’s own access' : ''}
 
 ### Access Control
 
@@ -895,8 +927,7 @@ ${targetLists
         (target) => `Add the \`comments\` relationship field to your ${target} list`,
       ),
       'Add the `comments` relationship to the User list (via authPlugin `extendUserList`)',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       requiresApproval
         ? 'Moderate comments in the admin UI at /admin/comment (flip status to approved)'
         : 'View comments in the admin UI at /admin/comment',
@@ -995,41 +1026,69 @@ Threaded comments on: ${targetLists.join(', ')}
           },
         })`
 
-    const fieldExamples: string[] = []
-    if (associations.includes('User avatars')) {
-      fieldExamples.push(`// On the User list (via authPlugin extendUserList):
-        avatar: ${imageFieldExample},`)
-    }
-    if (associations.includes('Post featured images') || associations.includes('Product images')) {
-      const listName = associations.includes('Post featured images') ? 'Post' : 'Product'
-      fieldExamples.push(`// On the ${listName} list:
-        ${associations.includes('Post featured images') ? 'featuredImage' : 'images'}: ${imageFieldExample},`)
-    }
-    if (associations.includes('General attachments') || !imagesOnly) {
-      fieldExamples.push(`// General attachments on any list:
-        attachment: ${fileFieldExample},`)
+    // Field entries grouped by the list that owns them: a file field is a
+    // field on a list, so the emitted snippet has to be list declarations the
+    // user can paste, not bare entries sitting in `lists`.
+    const listFields = new Map<string, string[]>()
+    const addField = (listName: string, entry: string) => {
+      const entries = listFields.get(listName) ?? []
+      entries.push(entry)
+      listFields.set(listName, entries)
     }
 
+    if (associations.includes('Post featured images')) {
+      addField('Post', `featuredImage: ${imageFieldExample},`)
+    }
+    if (associations.includes('Product images')) {
+      addField('Product', `images: ${imageFieldExample},`)
+    }
+    if (associations.includes('General attachments') || !imagesOnly) {
+      const owner = [...listFields.keys()][0] ?? 'Document'
+      addField(owner, `attachment: ${fileFieldExample},`)
+    }
+
+    const listDeclarations = [...listFields.entries()].map(
+      ([listName, entries]) => `${listName}: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        ${entries.join('\n        ')}
+      },
+    }),`,
+    )
+
+    const avatarNote = associations.includes('User avatars')
+      ? `
+
+// The User list is auto-generated by authPlugin, so its avatar field goes on
+// extendUserList rather than in \`lists\`:
+//
+//   authPlugin({
+//     ...,
+//     extendUserList: { fields: { avatar: image({ storage: 'uploads' }) } },
+//   })`
+      : ''
+
     const configUpdates = `// Add these imports to your opensaas.config.ts
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 ${storageImport}
 import { file, image } from '@opensaas/stack-storage/fields'
 
 // Add a top-level storage config alongside db and lists:
 export default config({
   ${storageBlock}
-  // ...
+  ${DB_BLOCK},
   lists: {
     // Use file()/image() fields, referencing the storage key by name:
-        ${fieldExamples.join('\n        ')}
+    ${listDeclarations.join('\n    ')}
   },
-})`
+})${avatarNote}`
 
     const nextSteps = [
       `Install dependencies: \`pnpm add @opensaas/stack-storage${extraDependency ? ` ${extraDependency}` : ''}\``,
       'Merge the storage config and fields into your `opensaas.config.ts`',
       Object.keys(envVars).length > 0 ? 'Add environment variables to your `.env` file' : null,
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       'Upload files through the admin UI — the image/file fields render an upload widget automatically',
     ].filter(Boolean) as string[]
 
@@ -1064,23 +1123,16 @@ Storage provider: ${provider}
       ? `provider: ollamaEmbeddings({
         baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
         model: 'nomic-embed-text',
-      }),
-      storage: sqliteVssStorage({
-        distanceFunction: 'cosine',
+        dimensions: 768,
       }),`
       : `provider: openaiEmbeddings({
         apiKey: process.env.OPENAI_API_KEY!,
         model: 'text-embedding-3-small',
-      }),
-      // pgvectorStorage requires the postgresql db provider.
-      // On SQLite, use sqliteVssStorage from '@opensaas/stack-rag' instead.
-      storage: pgvectorStorage({
-        distanceFunction: 'cosine',
       }),`
 
     const ragImports = useOllama
-      ? "import { ragPlugin, ollamaEmbeddings, sqliteVssStorage } from '@opensaas/stack-rag'"
-      : "import { ragPlugin, openaiEmbeddings, pgvectorStorage } from '@opensaas/stack-rag'"
+      ? "import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'"
+      : "import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'"
 
     const targetList = searchableContent[0]?.endsWith('s')
       ? searchableContent[0].slice(0, -1)
@@ -1091,6 +1143,8 @@ Storage provider: ${provider}
       : { OPENAI_API_KEY: '<your-openai-api-key>' }
 
     const configUpdates = `// Add these imports to your opensaas.config.ts
+import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
 ${ragImports}
 import { searchable } from '@opensaas/stack-rag/fields'
 
@@ -1102,7 +1156,7 @@ export default config({
     }),
     // ...your other plugins
   ],
-  // ...
+  ${DB_BLOCK},
   lists: {
     ${targetList}: list({
       fields: {
@@ -1126,10 +1180,9 @@ export default config({
       'Install the RAG package: `pnpm add @opensaas/stack-rag`',
       useOllama
         ? 'Install and start Ollama, then pull the embedding model: `ollama pull nomic-embed-text`'
-        : 'Set OPENAI_API_KEY in your `.env` file (pgvector storage requires PostgreSQL)',
+        : 'Set OPENAI_API_KEY in your `.env` file',
       'Merge the plugin and searchable() fields into your `opensaas.config.ts`',
-      'Run `pnpm generate` to update the Prisma schema',
-      'Run `pnpm db:push` to update the database',
+      ...DB_STEPS,
       `Query with the RAG runtime — see the ${useOllama ? 'rag-ollama-demo' : 'rag-openai-chatbot'} example for a full search API route`,
     ]
 

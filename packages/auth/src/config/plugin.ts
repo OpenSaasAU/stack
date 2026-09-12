@@ -1,5 +1,4 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
-import { getDbKey } from '@opensaas/stack-core'
 import type { AuthConfig, NormalizedAuthConfig } from './types.js'
 import { normalizeAuthConfig } from './index.js'
 import { getAuthLists } from '../lists/index.js'
@@ -61,7 +60,11 @@ export function authPlugin(config: AuthConfig): Plugin {
       // suffices for both: a list already declared by the app (or added by
       // an earlier iteration of this same loop) merges via `extendList`;
       // everything else registers via `addList`.
-      for (const [listName, listConfig] of Object.entries(authLists)) {
+      for (const [listName, derived] of Object.entries(authLists)) {
+        // ADR-0048's per-list pin, named for the Auth lists: every id the
+        // adapter hands better-auth is minted by the database, and it is the
+        // same strategy every other list gets.
+        const listConfig = { ...derived, db: { ...derived.db, idField: 'uuid7' as const } }
         if (context.config.lists[listName]) {
           // A list already exists under this derived key — merge auth fields
           // in only. Access control belongs to whoever owns the list (the
@@ -119,7 +122,7 @@ export function authPlugin(config: AuthConfig): Plugin {
     },
 
     runtime: (context, sudo) => {
-      const userDbKey = getDbKey(normalized.models.user.modelName)
+      const userDbKey = normalized.models.user.modelName
 
       return {
         /**
@@ -128,9 +131,7 @@ export function authPlugin(config: AuthConfig): Plugin {
          * the application's User access policy.
          */
         getUser: async (userId: string) => {
-          return await sudo().db[userDbKey].findUnique({
-            where: { id: userId },
-          })
+          return await sudo().db[userDbKey].where({ id: userId }).first()
         },
 
         /** See {@link getUser} — same `sudo()` rationale (ADR-0013), keyed off `context.session.userId`. */
@@ -138,9 +139,7 @@ export function authPlugin(config: AuthConfig): Plugin {
           if (!context.session?.userId) {
             return null
           }
-          return await sudo().db[userDbKey].findUnique({
-            where: { id: context.session.userId },
-          })
+          return await sudo().db[userDbKey].where({ id: context.session.userId }).first()
         },
       }
     },

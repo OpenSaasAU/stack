@@ -1,30 +1,26 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
-import {
-  checkAccess,
-  mergeFilters,
-  filterReadableFields,
-  buildAccessScopedInclude,
-  buildAccessScopedWhere,
-  stripVirtualFieldsFromInclude,
-  foldDeclaredDependencies,
-  validateQueryKeys,
-  validateQueryFieldReadAccess,
-  resolveToOneAccessVisibility,
-  emptyToOneAccessFilterTree,
-  emptyCountAccessDenialTree,
-} from '../access/index.js'
-import type {
-  DeclaredOnlyTree,
-  ToOneAccessFilterTree,
-  CountAccessDenialTree,
-} from '../access/index.js'
+import { checkAccess } from '../access/index.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
-import { getDbKey } from '../lib/case-utils.js'
-import { uniqueConstraintOf } from '../lib/prisma-errors.js'
-import type { PrismaClientLike } from '../access/types.js'
-import { buildInclude, pickFields, isFragment, buildFieldSelectionScope } from '../query/index.js'
-import type { FieldSelection, FieldSelectionScope } from '../query/index.js'
+import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
+import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
+import {
+  createRowLockLane,
+  RowLockUnavailableError,
+  unusableRowLockLane,
+  type RowLockLane,
+} from '../secured/lock.js'
+import {
+  createUnsafeSurface,
+  createUnsafeTransactionSurface,
+  unavailableUnsafeSurface,
+  type UnsafeCapableClient,
+  type UnsafeSurface,
+  type UnsafeTransactionScope,
+} from '../unsafe.js'
+import { ENGINE_FACE, type EngineFaced } from './engine-context.js'
+import type { StackContext, StackTransactionContext } from '../types/context.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -32,6 +28,9 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
+import { resolveJunctionEdge } from './junction.js'
+import { isRelationshipField } from '../fields/index.js'
+import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
@@ -51,19 +50,17 @@ export type ServerActionProps =
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control and hooks apply —
   // never the parent's. The other relationship-table actions below share this
-  // boundary. `mode: 'disconnect'` unlinks the row by disconnecting its
-  // back-reference (`field`; `parentId` is needed only when that back-reference
-  // is to-many, e.g. a many-to-many join) without deleting it; `mode: 'delete'`
-  // truly deletes the row. Returns a distinct `{ removed }` shape, never
-  // `success`, so a UI wrapper that redirects on `success` does not hijack an
-  // in-place row removal.
+  // boundary. `mode: 'disconnect'` unlinks the row by assigning `null` to its
+  // back-reference (`field`) without deleting it; `mode: 'delete'` truly
+  // deletes the row. Returns a distinct `{ removed }` shape, never `success`,
+  // so a UI wrapper that redirects on `success` does not hijack an in-place row
+  // removal.
   | {
       listKey: string
       action: 'removeRelated'
       mode: 'disconnect' | 'delete'
       id: string
       field?: string
-      parentId?: string
     }
   // Relationship-table inline cell edit (issue #737); same ADR-0018 boundary
   // as `removeRelated` — `listKey`/`id` target the RELATED row. Returns a
@@ -88,6 +85,36 @@ export type ServerActionProps =
       data: Record<string, unknown>
       field?: string
       parentId?: string
+    }
+  // Adding an edge across an explicit junction list (ADR-0050, ADR-0018 as
+  // amended). Unlike every other relationship-table action, `listKey` names the
+  // PARENT list and `field` its to-many field: the junction list, its
+  // back-reference and its far-endpoint field are all resolved from the config
+  // on the SERVER, so a client can neither name a junction list of its own
+  // choosing nor set a column of the edge row beyond the two endpoints. The
+  // create runs under the JUNCTION list's own create access, and the far
+  // endpoint goes through `connect`, so an endpoint the caller cannot read is
+  // the same answer as one that is not there. Returns a distinct `{ added }`
+  // shape, never `success`, so a UI wrapper that redirects on `success` does
+  // not hijack an in-place link.
+  | {
+      listKey: string
+      action: 'addRelated'
+      field: string
+      parentId: string
+      targetId: string
+    }
+  // `listKey`/`id` target the RELATED row, as `removeRelated` does; `field` is
+  // the to-one back-reference owning the column, and `parentId` is composed
+  // into a `connect` on the SERVER, so the payload carries no relation input of
+  // the client's choosing. Returns a distinct `{ linked }` shape, never
+  // `success`, so a UI wrapper that redirects on `success` does not hijack it.
+  | {
+      listKey: string
+      action: 'linkRelated'
+      id: string
+      field: string
+      parentId: string
     }
   | {
       listKey: string
@@ -116,9 +143,9 @@ function warnIfSelectIgnored(
   selectWarnings.add(key)
 
   console.warn(
-    `[@opensaas/stack-core] \`select\` is ignored by context.db.${getDbKey(listName)}.${operation}() ` +
+    `[@opensaas/stack-core] \`select\` is ignored by context.db.${listName}.${operation}() ` +
       `and the full (access-filtered) record is returned. ` +
-      `Narrow a read with \`include\` or a fragment \`query\` instead. ` +
+      `Narrow a read with \`include\`, or with \`.select()\` on the secured surface, instead. ` +
       `See https://stack.opensaas.au/docs/concepts/queries`,
   )
 }
@@ -129,61 +156,41 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 /**
- * Compute the set of single-field unique selectors a `findUnique` `where` may be
- * keyed by, derived from what the list config exposes at runtime: `id`, plus any
- * field declared `isIndexed: 'unique'` — for a `relationship` field, this is the
- * foreign-key column name (`<field>Id`), since that's the column Prisma marks
- * `@unique`, not the relation field itself.
+ * `update` and `delete` target a row by its identity: the engine lowers `id`
+ * alone into the write's predicate, so a `where` naming anything else — a
+ * secondary unique column included — selects nothing. That is a caller-shape
+ * error, not an access denial, so it THROWS rather than returning the
+ * denied-or-gone `null`.
  *
- * The config exposes no list-level compound (`@@unique`) declaration, so this
- * cannot validate a compound `<Model>_<a>_<b>` selector — `where` must contain
- * exactly one recognised single-field unique key and no others. This rejects
- * non-unique filters (#567) without ever rejecting a valid single-field unique
- * lookup; a compound-unique or otherwise non-unique lookup should use
- * `findFirst` instead (see #565).
+ * `ListIdentityWhere` makes it a compile error for a typed caller; this is the
+ * runtime half, for a payload that reached the engine untyped.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getUniqueWhereKeys(listConfig: ListConfig<any>): Set<string> {
-  const keys = new Set<string>(['id'])
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!fieldConfig || typeof fieldConfig !== 'object') continue
-    if (!('isIndexed' in fieldConfig) || fieldConfig.isIndexed !== 'unique') continue
-
-    if (fieldConfig.type === 'relationship') {
-      // A unique relationship's `@unique` lives on the FK column `<field>Id`.
-      keys.add(`${fieldKey}Id`)
-    } else {
-      keys.add(fieldKey)
-    }
-  }
-
-  return keys
-}
-
-/**
- * Enforce Keystone `findOne` semantics for `findUnique`: the caller-supplied
- * `where` must be a valid unique selector. A non-unique `where` is a caller-shape
- * error (not an access denial), so this THROWS rather than silently returning
- * `null` — consistent with the fail-loud-on-misuse stance of PRD #581. A
- * non-unique single-row lookup should use `findFirst` instead (see #565).
- */
-function assertUniqueWhere(
+function assertIdentityWhere(
   where: Record<string, unknown> | undefined,
-  uniqueKeys: Set<string>,
   listName: string,
-): void {
+  terminal: 'update' | 'delete',
+): asserts where is { id: string | number } {
   const keys = where ? Object.keys(where) : []
-
-  const message =
-    `findUnique on "${listName}" requires a unique \`where\` (a single unique key such as ` +
-    `${Array.from(uniqueKeys).join(', ')}). ` +
-    `Received: ${keys.length === 0 ? '{}' : `{ ${keys.join(', ')} }`}. ` +
-    `Use \`findFirst\` for a non-unique single-row lookup.`
-
-  if (keys.length !== 1 || !uniqueKeys.has(keys[0])) {
-    throw new ValidationError([message], {})
+  const id = where?.id
+  if (keys.length === 1 && keys[0] === 'id' && (typeof id === 'string' || typeof id === 'number')) {
+    return
   }
+
+  const received =
+    keys.length === 0
+      ? '{}'
+      : keys.length === 1 && keys[0] === 'id'
+        ? `{ id: ${id === null ? 'null' : typeof id} }`
+        : `{ ${keys.join(', ')} }`
+
+  throw new ValidationError(
+    [
+      `${terminal} on "${listName}" requires \`where: { id }\` — a row is written by its ` +
+        `identity, and no other column selects one. Received: ${received}. Find the row first ` +
+        `(\`where(…).first()\`) and write it by its \`id\`.`,
+    ],
+    {},
+  )
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -210,181 +217,177 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   return data
 }
 
-// A camelCase field name (e.g. a relationship's `tenantId` foreign key) needs
-// its word boundary split before title-casing, or it reads as one run-together
-// word ("Tenantid") in a user-facing unique-constraint message.
-function humanizeFieldName(fieldName: string): string {
-  const spaced = fieldName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function parsePrismaError(error: unknown, listConfig: ListConfig<any>): Error {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'code' in error &&
-    'meta' in error &&
-    typeof error.code === 'string'
-  ) {
-    const prismaError = error as { code: string; meta?: { target?: string[] }; message?: string }
-
-    // P2002 is Prisma's unique constraint violation code.
-    if (prismaError.code === 'P2002') {
-      const target = uniqueConstraintOf(prismaError)?.fields
-      const fieldErrors: Record<string, string> = {}
-
-      if (target && target.length > 0) {
-        for (const fieldName of target) {
-          const fieldConfig = listConfig.fields[fieldName]
-
-          if (fieldConfig) {
-            fieldErrors[fieldName] =
-              `This ${humanizeFieldName(fieldName).toLowerCase()} is already in use`
-          } else {
-            fieldErrors[fieldName] = `This value is already in use`
-          }
-        }
-
-        const fieldLabels = target.map(humanizeFieldName).join(', ')
-        return new DatabaseError(
-          `${fieldLabels} must be unique. The value you entered is already in use.`,
-          fieldErrors,
-          prismaError.code,
-        )
-      }
-
-      return new DatabaseError('A record with this value already exists', {}, prismaError.code)
-    }
-
-    return new DatabaseError(
-      prismaError.message || 'A database error occurred',
-      {},
-      prismaError.code,
-    )
-  }
-
-  if (error instanceof Error) {
-    return error
-  }
-
-  return new Error('An unknown error occurred')
-}
-
 /**
- * Mirrors Prisma's `TransactionIsolationLevel`. Provider support varies —
- * e.g. `Serializable` requires PostgreSQL.
- */
-export type TransactionIsolationLevel =
-  'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable' | 'Snapshot'
-
-/**
- * Options for {@link StackContext.transaction}, forwarded verbatim to the
- * underlying Prisma interactive transaction.
- */
-export interface TransactionOptions {
-  /** Max ms to wait to acquire a transaction from the pool. */
-  maxWait?: number
-  /** Max ms the interactive transaction may run before timing out. */
-  timeout?: number
-  /** Isolation level for the transaction (e.g. `'Serializable'`). */
-  isolationLevel?: TransactionIsolationLevel
-}
-
-/**
- * Minimal shape of a Prisma client that can open an interactive transaction.
- * A Prisma transaction client (the `tx` handed to the callback) intentionally
- * does NOT expose `$transaction`, which is how nested writes detect they are
- * already inside a transaction and join it rather than opening another.
- */
-interface TransactionCapable<TPrisma> {
-  $transaction?: (
-    fn: (tx: TPrisma) => Promise<unknown>,
-    options?: TransactionOptions,
-  ) => Promise<unknown>
-}
-
-/**
- * The access-controlled context returned by {@link getContext}.
+ * Minimal shape of a client that can open an interactive transaction by
+ * exposing `$transaction`. A transaction client (the `tx` handed to the
+ * callback) does NOT expose it, which is how a nested `transaction()` detects
+ * it is already inside one and joins it rather than opening another.
  *
- * Exposes the secured `db` delegate plus the session, raw `prisma`, storage,
- * plugin services, the generic `serverAction` handler, `sudo()` (bypasses access
- * control but still runs hooks), `withSession()` (substitutes the session but
- * still runs access control), and `transaction()` (interactive, hook-firing
- * transaction). All access-checked operations run their list/field hooks.
+ * It is tried before {@link TransactionOpener}; on a Prisma 8 client this
+ * member is absent and the opener runs instead.
  */
-export interface StackContext<
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  // Defaults to the plain Prisma-shaped view (#1232). The generator points a
-  // list's `TypeInfo['db']` at its own generated `CustomDB` — the same
-  // virtual/transformed-field-augmented description `context.db` already
-  // resolves to outside a hook — so a hook's `context: StackContext<TPrisma,
-  // TDb>` (keyed via `TTypeInfo['db']`) describes the same rows. Left
-  // unconstrained (no `extends AccessControlledDB<TPrisma>`) — `CustomDB`'s
-  // per-list payload requires strictly more keys than the raw Prisma payload,
-  // so constraining this parameter would reintroduce the assignability gap
-  // #1233 already worked around for the fragment overload, one level higher.
-  TDb = AccessControlledDB<TPrisma>,
-> {
-  db: TDb
-  session: Session | null
-  prisma: TPrisma
-  storage: StorageUtils
-  plugins: Record<string, unknown>
-  serverAction: (props: ServerActionProps) => Promise<unknown>
-  /**
-   * Run `fn` inside ONE interactive transaction. The `txContext` handed to `fn`
-   * is a full {@link StackContext} whose `db.*` operations are access-checked and
-   * hook-firing (identical to this context) but persist against the transaction
-   * client, so every write in the callback is atomic — a throw anywhere rolls the
-   * whole transaction back.
-   *
-   * `options` (notably `isolationLevel`) is forwarded to the underlying Prisma
-   * transaction. Serialization failures (e.g. Prisma `P2034`) propagate to the
-   * caller rather than being swallowed, so the caller can own a retry loop. If
-   * the client cannot open an interactive transaction (e.g. a plain mock, or we
-   * are already inside a transaction), `fn` runs directly against the current
-   * client with identical hook/access semantics.
-   *
-   * Caveat: plugin runtime services (`txContext.plugins`) stay bound to the
-   * top-level (non-transaction) client — they are shared services initialised
-   * once per request. Reads through a plugin service therefore won't see this
-   * transaction's uncommitted writes, and a plugin service that WRITES would
-   * escape the transaction and survive a rollback. Use `txContext.db` (not a
-   * plugin service) for writes that must be atomic with the transaction.
-   */
-  transaction: <T>(
-    fn: (txContext: StackContext<TPrisma, TDb>) => Promise<T>,
-    options?: TransactionOptions,
-  ) => Promise<T>
-  sudo: () => StackContext<TPrisma, TDb>
-  /**
-   * Derive a context identical to this one except for its session, reusing
-   * the already-resolved config and this context's own client (including a
-   * transaction client — a call inside `context.transaction()` stays in that
-   * transaction) and storage.
-   *
-   * **This is not an authorisation.** It substitutes who hooks and access
-   * control see; it does not change what they decide. The derived context
-   * can do exactly what any context built with `session` directly could
-   * do — access rules still evaluate against the new session. The caller is
-   * responsible for deciding who may invoke this.
-   *
-   * Orthogonal to `sudo()`: `withSession(s)` preserves the receiver's sudo
-   * state (elevated stays elevated), so `context.withSession(s).sudo()` and
-   * `context.sudo().withSession(s)` are equivalent.
-   */
-  withSession: (session: Session | null) => StackContext<TPrisma, TDb>
-  _isSudo: boolean
-  /**
-   * @internal Present so a hook-bound `StackContext` (issue #1176) satisfies
-   * {@link AccessContext} and can be threaded through the same internal
-   * write-pipeline/access plumbing that a plain `AccessContext` is — see
-   * `_resolveOutputChain` on `AccessContext` for what this tracks.
-   */
-  _resolveOutputChain: readonly { listKey: string; fieldKey: string }[]
-  /** @internal See `_transactionOwner` on `AccessContext`. */
-  _transactionOwner?: TransactionRegistry
+interface TransactionCapable {
+  $transaction?: (fn: (tx: OrmClient) => Promise<unknown>) => Promise<unknown>
+}
+
+/**
+ * Thrown when `context.transaction()` can neither open a transaction nor join
+ * one.
+ *
+ * The call's whole contract is that its callback's writes commit or roll back
+ * together, so running the callback anyway would hand back that guarantee
+ * without holding it. A context reaches this only when it was assembled
+ * without the Prisma 8 client the opener is derived from — a hand-built ORM
+ * double, or `getContext` called without its `client` argument.
+ */
+export class TransactionUnavailableError extends Error {
+  constructor() {
+    super(
+      `context.transaction() has no client to open a transaction on and no enclosing ` +
+        `transaction to join, so its callback's writes would commit one by one with no ` +
+        `rollback between them. Build the context over the Prisma 8 client — \`getContext\`'s ` +
+        `\`client\` argument, which the generated context passes — rather than over an ORM ` +
+        `handle alone.`,
+    )
+    this.name = 'TransactionUnavailableError'
+  }
+}
+
+/**
+ * Thrown when the transaction's own collections cannot be resolved for every
+ * list the config declares, after the client's could be.
+ *
+ * The two roots have the same shape, so this is an ORM surprise rather than a
+ * wiring fault — and the alternative to reporting it is binding `db` to a
+ * half-built handle whose writes land outside the open transaction.
+ */
+export class TransactionOrmHandleError extends Error {
+  constructor() {
+    super(
+      `The stack opened a transaction whose ORM collections could not be resolved, though the ` +
+        `client's could. The engine's handle must be bound to the transaction or its writes ` +
+        `would commit outside it, so the transaction is rolled back rather than run unbound.`,
+    )
+    this.name = 'TransactionOrmHandleError'
+  }
+}
+
+const DEFAULT_NAMESPACE = 'public'
+
+/**
+ * A Prisma 8 client's `orm` root — the namespace-keyed collection tree the
+ * engine's handle is resolved from. Structural rather than the generated
+ * client's own type, so a caller holding only the `orm` lane (a transaction
+ * scope, the test harness) fits it too.
+ */
+export type OrmRoot = UnsafeCapableClient['orm']
+
+function reachable(container: unknown, key: string): unknown {
+  if (container === null || (typeof container !== 'object' && typeof container !== 'function')) {
+    return undefined
+  }
+  return Reflect.get(container, key)
+}
+
+type OrmHandleResolution =
+  | { readonly handle: OrmClient; readonly unresolved?: undefined }
+  | { readonly handle?: undefined; readonly unresolved: { list: string; namespace: string } }
+
+/**
+ * The engine's ORM handle, resolved off a Prisma 8 `orm` root.
+ *
+ * A Prisma 8 client exposes its collections at `orm.<namespace>.<Model>` while
+ * the engine reaches a model by db key, so a handle bound to a transaction has
+ * to be rebuilt rather than reused — the same reconciliation the test harness
+ * performs, over the config's lists rather than the derived contract's models
+ * (both spell the model name as the list key and the namespace as `db.schema`).
+ *
+ * Reports the first list it cannot reach rather than a bare failure, so a
+ * caller can name the collection that is missing instead of every list the
+ * config declares.
+ *
+ * Reads go through `Reflect.get`: `orm` and its namespaces are Proxies with a
+ * `get` trap and no `has` trap, so `key in namespace` reports false for a
+ * collection that is right there.
+ */
+function ormHandleFor(config: OpenSaasConfig, orm: OrmRoot): OrmHandleResolution {
+  const models: Record<string, unknown> = {}
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const namespaceName = listConfig.db?.schema ?? DEFAULT_NAMESPACE
+    const namespace = reachable(orm, namespaceName)
+    const collection = reachable(namespace, listKey)
+    if (
+      collection === null ||
+      (typeof collection !== 'object' && typeof collection !== 'function')
+    ) {
+      return { unresolved: { list: listKey, namespace: namespaceName } }
+    }
+    models[listKey] = collection
+  }
+  return { handle: models }
+}
+
+/**
+ * Thrown when a client's collections cannot be resolved for every list the
+ * config declares. The engine reaches every model through the handle, so a
+ * context built over a partial one refuses each unresolved list's operations
+ * with `OrmModelMissingError` at its own call site instead of here.
+ */
+export class OrmHandleUnresolvableError extends Error {
+  constructor(
+    readonly list: string,
+    readonly namespace: string,
+  ) {
+    super(
+      `The ORM client exposes no collection "${list}" in namespace "${namespace}", which this ` +
+        `config declares as a list. Re-run \`opensaas generate\` so the emitted contract matches ` +
+        `the config.`,
+    )
+    this.name = 'OrmHandleUnresolvableError'
+  }
+}
+
+/**
+ * The engine's ORM handle for a Prisma 8 client's `orm` root — what
+ * {@link getContext} takes as its `ormHandle`. A caller that has a client
+ * rather than a handle resolves it here, so the generated context, the test
+ * harness and `context.transaction()` all hand the engine the same shape.
+ *
+ * @throws {OrmHandleUnresolvableError} when any declared list is unreachable.
+ */
+export function requireOrmHandle(config: OpenSaasConfig, orm: OrmRoot): OrmClient {
+  const { handle, unresolved } = ormHandleFor(config, orm)
+  if (handle === undefined) {
+    throw new OrmHandleUnresolvableError(unresolved.list, unresolved.namespace)
+  }
+  return handle
+}
+
+/**
+ * The transaction opener for a context over `client`, or `undefined` when this
+ * context cannot open one: no Prisma 8 client, or a context already bound to an
+ * enclosing transaction (`unsafeTransaction`). A write reached through a
+ * context with no opener runs directly against the handle it was given, joining
+ * whatever transaction is already open around it (ADR-0028).
+ *
+ * A client whose collections do not cover the config throws here rather than
+ * yielding no opener: an unresolvable handle downgrades every write to
+ * non-transactional, which is the loss of the rollback guarantee this opener
+ * exists to provide.
+ */
+function transactionOpenerFor(
+  config: OpenSaasConfig,
+  client: UnsafeCapableClient | undefined,
+  unsafeTransaction: UnsafeTransactionScope | undefined,
+): TransactionOpener | undefined {
+  if (client === undefined || unsafeTransaction !== undefined) return undefined
+  requireOrmHandle(config, client.orm)
+  return <T>(run: (opened: OpenedTransaction) => Promise<T>): Promise<T> =>
+    client.transaction(async (tx) => {
+      const { handle } = ormHandleFor(config, tx.orm)
+      if (handle === undefined) throw new TransactionOrmHandleError()
+      return await run({ ormHandle: handle, unsafe: tx })
+    })
 }
 
 /**
@@ -395,16 +398,25 @@ export interface StackContext<
  * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
  * errors reject with {@link AfterTransactionError} even though the callback
  * succeeded and the transaction committed.
+ *
+ * The settle is the second normalisation site (ADR-0042). PostgreSQL raises
+ * some failures at `COMMIT`, after every terminal in the callback has already
+ * returned — a `23505` on a `DEFERRABLE INITIALLY DEFERRED` constraint, by
+ * design — so the error the owner observes is normalised here, BEFORE the
+ * deferred-hook flush, which keeps ADR-0028's precedence rule operating on a
+ * normalised value.
  */
 async function settleTransactionOwner<T>(
   settled: Promise<T>,
   registry: TransactionRegistry,
+  config: OpenSaasConfig,
 ): Promise<T> {
   const errors: unknown[] = []
   let result: T
   try {
     result = await settled
-  } catch (err) {
+  } catch (raised) {
+    const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
     await registry.drain(outcome, errors)
     throw err
@@ -416,21 +428,69 @@ async function settleTransactionOwner<T>(
   return result
 }
 
-export function getContext<
-  TConfig extends OpenSaasConfig,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  // See the identical `TDb` doc on `StackContext` (#1232) — left unconstrained
-  // for the same reason. Defaults to the plain access-controlled view so every
-  // existing two-argument call site is unaffected; a caller that wants the
-  // generated `Context`'s `db` description asks for it explicitly:
-  // `getContext<typeof config, PrismaClient, CustomDB>(...)`. This is the type
-  // parameter that lets the generated context factory return a `StackContext`
-  // already shaped as `CustomDB` instead of `as unknown as`-ing its way there
-  // (#1328).
-  TDb = AccessControlledDB<TPrisma>,
->(
+/**
+ * The transaction-bound face of a context: everything it already carries, plus
+ * `advisoryLock`, and with `sudo()`, `withSession()` and `transaction()`
+ * answering in the same face rather than dropping back to the plain one
+ * (ADR-0047).
+ *
+ * A wrapper rather than a second `getContext` branch, because the difference
+ * between the two shapes is exactly these four members — `db` is the same
+ * object, already built over the transaction's own collections and its lock
+ * lane. The nested `transaction()` runs the callback directly, which is what
+ * the wrapped context's own `transaction` does inside an owned transaction
+ * (ADR-0028); it is spelled here so the callback is handed this face.
+ */
+function transactionFace(
+  base: StackContext<AccessControlledDB>,
+  lock: RowLockLane | undefined,
+): StackTransactionContext<AccessControlledDB> {
+  const face: StackTransactionContext<AccessControlledDB> = {
+    ...base,
+    advisoryLock: async (key: string): Promise<void> => {
+      if (lock === undefined) throw new RowLockUnavailableError('advisoryLock()')
+      await lock.advisory(key)
+    },
+    sudo: () => transactionFace(base.sudo(), lock),
+    withSession: (session) => transactionFace(base.withSession(session), lock),
+    transaction: <T>(
+      fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
+    ): Promise<T> => fn(face),
+  }
+  return face
+}
+
+// A database failure reaches the client as the stack's own message (ADR-0042),
+// so the driver's diagnostic text — carried on `cause` — reaches no channel at
+// all unless it is logged here. Deleting this closes the operator's only view
+// of a production database failure.
+function logDatabaseFailure(error: unknown, listKey: string, action: string): void {
+  if (!(error instanceof DatabaseError)) return
+  console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
+}
+
+/**
+ * The lock lane a context carries, present only inside a transaction — which
+ * is what makes `forUpdate()` answerable there and a refusal everywhere else.
+ * The raw tag comes from the client because Prisma's transaction context
+ * carries none, and the executor from the transaction because the lock has to
+ * be the transaction's (ADR-0047, ADR-0062).
+ *
+ * Inside a transaction whose client cannot compose the statement the seat is
+ * filled by a refusing lane rather than left empty, so `undefined` keeps
+ * meaning exactly one thing: there is no transaction.
+ */
+function rowLockSeat(
+  client: UnsafeCapableClient | undefined,
+  transaction: UnsafeTransactionScope | undefined,
+): RowLockLane | undefined {
+  if (client === undefined || transaction === undefined) return undefined
+  return createRowLockLane(client.raw, client.contract, transaction) ?? unusableRowLockLane()
+}
+
+export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
-  prisma: TPrisma,
+  ormHandle: OrmClient,
   session: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
@@ -441,19 +501,32 @@ export function getContext<
   // owner's callback body, carry the deferral registry so writes reached
   // through this context join it instead of firing afterTransaction eagerly.
   _transactionOwner?: TransactionRegistry,
-  // Internal (ADR-0023, issue #1176): when rebuilding the context for a
-  // hook-bound write (or a derived `sudo()`/`withSession()` of one), carry the
-  // resolve chain forward so a write issued from inside a `resolveOutput` hook
-  // keeps that hook's cycle-guard chain instead of resetting to empty.
-  _resolveOutputChain?: readonly { listKey: string; fieldKey: string }[],
-): StackContext<TPrisma, TDb> {
+  // The Prisma 8 client the Unsafe surface is built over. Omitted by a caller
+  // that assembles a context from a hand-built ORM double, whose
+  // `context.unsafe` then refuses rather than being typed as absent.
+  client?: UnsafeCapableClient,
+  // Internal: the transaction the Unsafe surface binds its executors to, set
+  // when rebuilding the context inside `transaction()` (ADR-0056).
+  _unsafeTransaction?: UnsafeTransactionScope,
+): StackContext<AccessControlledDB> {
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 
-  const context: AccessContext<TPrisma> = {
+  const openTransaction = transactionOpenerFor(config, client, _unsafeTransaction)
+
+  const lock = rowLockSeat(client, _unsafeTransaction)
+
+  const unsafe: UnsafeSurface =
+    client === undefined
+      ? unavailableUnsafeSurface()
+      : _unsafeTransaction === undefined
+        ? createUnsafeSurface(client)
+        : createUnsafeTransactionSurface(client, _unsafeTransaction)
+
+  const context: AccessContext = {
     session,
-    prisma: prisma as TPrisma,
-    db: db as AccessControlledDB<TPrisma>,
+    ormHandle,
+    db: db as AccessControlledDB,
     storage: storage ?? {
       uploadFile: async () => {
         throw new Error(
@@ -480,11 +553,14 @@ export function getContext<
     // client, otherwise start empty and populate via plugin runtimes below.
     plugins: _sharedPlugins ?? {},
     _isSudo,
-    _resolveOutputChain: _resolveOutputChain ?? [],
+    _resolveOutputChain: [],
     _transactionOwner,
+    _transactionOpener: openTransaction,
+    _rowLock: lock,
+    _config: config,
   }
 
-  populateDbDelegate(db, config, prisma, context)
+  populateDbDelegate(db, config, ormHandle, context, lock)
 
   // Skipped when reusing shared plugins (transaction rebind) so runtimes — and
   // any side effects they carry — run exactly once per top-level context.
@@ -495,10 +571,7 @@ export function getContext<
         try {
           // Passed as a plain second argument rather than a method on
           // `context` itself — see the `sudo` param doc on `Plugin['runtime']`.
-          context.plugins[plugin.name] = plugin.runtime(
-            context,
-            () => sudo() as unknown as AccessContext<TPrisma>,
-          )
+          context.plugins[plugin.name] = plugin.runtime(context, sudo)
         } catch (error) {
           console.error(`Error executing runtime for plugin "${plugin.name}":`, error)
         }
@@ -520,21 +593,34 @@ export function getContext<
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
+    | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
   > {
-    const dbKey = getDbKey(props.listKey)
-    const listConfig = config.lists[props.listKey]
-
-    if (!listConfig) {
+    if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
         success: false,
         error: `List "${props.listKey}" not found in configuration`,
       }
     }
+    const listConfig = config.lists[props.listKey]
 
-    const model = db[dbKey] as {
+    const model = db[props.listKey] as {
       create: (args: { data: Record<string, unknown> }) => Promise<unknown>
-      update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>
-      delete: (args: { where: { id: string } }) => Promise<unknown>
+      update: (args: {
+        where: { id: ListIdValue }
+        data: Record<string, unknown>
+      }) => Promise<unknown>
+      delete: (args: { where: { id: ListIdValue } }) => Promise<unknown>
+    }
+
+    // Every id here arrived as a string on the wire, and the id type is per
+    // list (ADR-0048), so each one is parsed through the one boundary coercion
+    // before it reaches the ORM. `null` is an id the list's key type cannot
+    // hold — refused here rather than sent on as a `NaN` or a Postgres type
+    // error.
+    const parseId = (listKey: string, raw: unknown): ListIdValue | null => {
+      const parsed = parseListId(config, listKey, raw)
+      return parsed.ok ? parsed.value : null
     }
 
     // Bulk delete: remove each id row-by-row through the secured context,
@@ -544,7 +630,9 @@ export function getContext<
     // rest.
     if (props.action === 'bulkDelete') {
       let deleted = 0
-      for (const id of props.ids) {
+      for (const raw of props.ids) {
+        const id = parseId(props.listKey, raw)
+        if (id === null) continue
         try {
           const result = await model.delete({ where: { id } })
           if (result !== null && result !== undefined) deleted++
@@ -590,11 +678,13 @@ export function getContext<
         return { bulkAction: true, message: result?.message }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { bulkAction: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
-        // A recognised Prisma error carries a user-safe, translated message.
+        const dbError = databaseErrorMessage(error, config)
+        // A normalised database error carries a user-safe, translated message.
         if (dbError instanceof DatabaseError) {
+          logDatabaseFailure(dbError, props.listKey, props.action)
           return { bulkAction: false, error: dbError.message }
         }
         // Anything else is an unexpected handler bug whose raw `.message` could
@@ -610,27 +700,35 @@ export function getContext<
     // becomes `{ removed: false }` with a generic reason — never leaking whether
     // the row was denied or absent.
     if (props.action === 'removeRelated') {
+      const relatedId = parseId(props.listKey, props.id)
+      if (relatedId === null) return { removed: false, error: 'Access denied or operation failed' }
       try {
         let result: unknown = null
         if (props.mode === 'delete') {
-          result = await model.delete({ where: { id: props.id } })
+          result = await model.delete({ where: { id: relatedId } })
         } else {
           // Disconnect: an UPDATE on the related list nulling its back-reference,
-          // never a delete — the row itself survives. A to-one back-reference
-          // disconnects with `true`; a to-many back-reference (many-to-many)
-          // disconnects the specific parent by id.
+          // never a delete — the row itself survives. A to-many back-reference
+          // owns no foreign key to null, so removing that edge is deleting the
+          // junction row under its own delete access (`mode: 'delete'`), not an
+          // update here (ADR-0050, ADR-0018 as amended).
           if (!props.field) {
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
           const backRefField = listConfig.fields[props.field]
           const backRefIsMany =
             !!backRefField && 'many' in backRefField && backRefField.many === true
-          const disconnectValue = backRefIsMany
-            ? { disconnect: { id: props.parentId } }
-            : { disconnect: true }
+          if (backRefIsMany) {
+            return {
+              removed: false,
+              error:
+                `Cannot unlink through "${props.field}": a to-many back-reference owns no ` +
+                `foreign key to clear. Remove the row itself instead.`,
+            }
+          }
           result = await model.update({
-            where: { id: props.id },
-            data: { [props.field]: disconnectValue },
+            where: { id: relatedId },
+            data: { [props.field]: null },
           })
         }
         if (result === null || result === undefined) {
@@ -639,20 +737,21 @@ export function getContext<
         return { removed: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { removed: false, error: error.message }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return { removed: false, error: dbError.message }
       }
     }
 
     // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
-    // The back-reference to the parent is set here from `field`/`parentId` (a
-    // to-one back-ref connects a single parent; a to-many back-ref, e.g.
-    // many-to-many, connects the parent by id), so the client can never
-    // re-target the link. Honours Silent failure: an access-denied create
-    // returns `null`, surfaced as `{ created: false }` with a generic reason
-    // (no denied-vs-absent leak).
+    // The back-reference to the parent is set here from `field`/`parentId`, so
+    // the client can never re-target the link. Only a to-one back-reference
+    // owns a column to hold it; a to-many one is refused below. Honours Silent
+    // failure: an access-denied create returns `null`, surfaced as
+    // `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
         // Defensive guard (hardening; unreachable from the drawer, which always
@@ -673,20 +772,30 @@ export function getContext<
           // non-relationship field would otherwise receive a nonsensical
           // { connect } value. Also hardening — the drawer only ever passes a
           // real relationship back-reference here.
-          if (!backRefField || backRefField.type !== 'relationship') {
+          if (!isRelationshipField(backRefField)) {
             return {
               created: false,
               error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
             }
           }
-          const backRefIsMany = 'many' in backRefField && backRefField.many === true
+          // A to-many back-reference owns no foreign key, so there is no column
+          // on the row being created for the parent to go in (ADR-0050).
+          if ('many' in backRefField && backRefField.many === true) {
+            return {
+              created: false,
+              error:
+                `Cannot preset "${props.field}": a to-many back-reference owns no foreign key. ` +
+                `Link the parent from the side that holds the column.`,
+            }
+          }
+          const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+          if (parentId === null) {
+            return { created: false, error: 'Access denied or operation failed' }
+          }
           // The back-reference is set on the SERVER from the trusted parentId,
           // OVERWRITING any client-supplied data[field] spread in above, so a
-          // hostile client can never re-target the link (a to-many back-ref
-          // connects the parent by id).
-          data[props.field] = backRefIsMany
-            ? { connect: [{ id: props.parentId }] }
-            : { connect: { id: props.parentId } }
+          // hostile client can never re-target the link.
+          data[props.field] = { connect: { id: parentId } }
         }
         const result = await model.create({ data })
         if (result === null || result === undefined) {
@@ -699,11 +808,119 @@ export function getContext<
         return { created: true, id }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { created: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           created: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
+    // Adds one edge across an explicit junction list by creating the junction
+    // row (ADR-0050). Both foreign keys are `connect`s the SERVER composes from
+    // the resolved edge, so the payload carries no column of the client's
+    // choosing, and the reachability query behind each `connect` keeps an
+    // endpoint the caller cannot read indistinguishable from one that is not
+    // there. Honours Silent failure: a denied create on the junction list — the
+    // list this write is evaluated against, never the parent's — returns
+    // `null`, surfaced as `{ added: false }` with the same generic reason an
+    // unreachable endpoint gets.
+    if (props.action === 'addRelated') {
+      const edge = resolveJunctionEdge(config, props.listKey, props.field)
+      if (!edge) {
+        return {
+          added: false,
+          error:
+            `Cannot link through "${props.listKey}.${props.field}": it is not an edge across an ` +
+            `explicit junction list. Write the related row against its own list instead.`,
+        }
+      }
+      const parentId = parseId(props.listKey, props.parentId)
+      const targetId = parseId(edge.targetListKey, props.targetId)
+      if (parentId === null || targetId === null) {
+        return { added: false, error: 'Access denied or operation failed' }
+      }
+      const junction = db[edge.junctionListKey] as {
+        create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+      }
+      try {
+        const result = await junction.create({
+          data: {
+            [edge.backReferenceField]: { connect: { id: parentId } },
+            [edge.targetField]: { connect: { id: targetId } },
+          },
+        })
+        if (result === null || result === undefined) {
+          return { added: false, error: 'Access denied or operation failed' }
+        }
+        const id =
+          typeof result === 'object' && result !== null && 'id' in result
+            ? String((result as { id: unknown }).id)
+            : undefined
+        return { added: true, id }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, edge.junctionListKey, props.action)
+          return { added: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, edge.junctionListKey, props.action)
+        return {
+          added: false,
+          error: dbError.message,
+          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+        }
+      }
+    }
+
+    // The write runs on the RELATED list, so that list's own update access and
+    // hooks decide it, never the parent's. Only a to-one back-reference owns a
+    // column to hold the link. Honours Silent failure: an access-denied update
+    // returns `null`, surfaced as `{ linked: false }` with a generic reason.
+    if (props.action === 'linkRelated') {
+      const backRefField = listConfig.fields[props.field]
+      if (!isRelationshipField(backRefField)) {
+        return {
+          linked: false,
+          error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+        }
+      }
+      if ('many' in backRefField && backRefField.many === true) {
+        return {
+          linked: false,
+          error:
+            `Cannot link through "${props.field}": a to-many back-reference owns no foreign key. ` +
+            `Link the parent from the side that holds the column.`,
+        }
+      }
+      const relatedId = parseId(props.listKey, props.id)
+      const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+      if (relatedId === null || parentId === null) {
+        return { linked: false, error: 'Access denied or operation failed' }
+      }
+      try {
+        const result = await model.update({
+          where: { id: relatedId },
+          data: { [props.field]: { connect: { id: parentId } } },
+        })
+        if (result === null || result === undefined) {
+          return { linked: false, error: 'Access denied or operation failed' }
+        }
+        return { linked: true }
+      } catch (error) {
+        if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
+          return { linked: false, error: error.message, fieldErrors: error.fieldErrors }
+        }
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
+        return {
+          linked: false,
           error: dbError.message,
           fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
         }
@@ -716,9 +933,11 @@ export function getContext<
     // denied-vs-absent leak); a validation/db error surfaces its message and
     // fieldErrors so the cell can revert with a reason and show an inline error.
     if (props.action === 'updateRelated') {
+      const relatedId = parseId(props.listKey, props.id)
+      if (relatedId === null) return { updated: false, error: 'Access denied or operation failed' }
       try {
         const result = await model.update({
-          where: { id: props.id },
+          where: { id: relatedId },
           data: { [props.field]: props.value },
         })
         if (result === null || result === undefined) {
@@ -727,9 +946,11 @@ export function getContext<
         return { updated: true }
       } catch (error) {
         if (error instanceof ValidationError || error instanceof DatabaseError) {
+          logDatabaseFailure(error, props.listKey, props.action)
           return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
         }
-        const dbError = parsePrismaError(error, listConfig)
+        const dbError = databaseErrorMessage(error, config)
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           updated: false,
           error: dbError.message,
@@ -763,15 +984,15 @@ export function getContext<
 
       if (props.action === 'create') {
         result = await model.create({ data: props.data })
-      } else if (props.action === 'update') {
-        result = await model.update({
-          where: { id: props.id },
-          data: props.data,
-        })
-      } else if (props.action === 'delete') {
-        result = await model.delete({
-          where: { id: props.id },
-        })
+      } else if (props.action === 'update' || props.action === 'delete') {
+        const id = parseId(props.listKey, props.id)
+        if (id === null) {
+          return { success: false, error: 'Access denied or operation failed' }
+        }
+        result =
+          props.action === 'update'
+            ? await model.update({ where: { id }, data: props.data })
+            : await model.delete({ where: { id } })
       }
 
       // Check for access denial (null return from access-controlled operations)
@@ -796,6 +1017,7 @@ export function getContext<
       }
 
       if (error instanceof DatabaseError) {
+        logDatabaseFailure(error, props.listKey, props.action)
         return {
           success: false,
           error: error.message,
@@ -803,8 +1025,9 @@ export function getContext<
         }
       }
 
-      const dbError = parsePrismaError(error, listConfig)
+      const dbError = databaseErrorMessage(error, config)
       if (dbError instanceof DatabaseError) {
+        logDatabaseFailure(dbError, props.listKey, props.action)
         return {
           success: false,
           error: dbError.message,
@@ -820,10 +1043,10 @@ export function getContext<
   }
 
   // Bypasses access control; hooks and validation still run.
-  function sudo(): StackContext<TPrisma, TDb> {
-    return getContext<TConfig, TPrisma, TDb>(
+  function sudo(): StackContext<AccessControlledDB> {
+    return getContext(
       config,
-      prisma,
+      ormHandle,
       session,
       context.storage,
       true,
@@ -831,19 +1054,17 @@ export function getContext<
       // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
       // `tx.sudo().db.x.create()`) must still defer to that owner.
       context._transactionOwner,
-      // #1176: carry the resolve chain forward so a `context.sudo()` called
-      // from inside a `resolveOutput` hook keeps that hook's cycle-guard
-      // chain (ADR-0023) rather than resetting to empty.
-      context._resolveOutputChain,
+      client,
+      _unsafeTransaction,
     )
   }
 
   // Substitutes the session; access control and hooks still run against it
   // (orthogonal to `sudo`, so the receiver's sudo state is preserved).
-  function withSession(newSession: Session | null): StackContext<TPrisma, TDb> {
-    return getContext<TConfig, TPrisma, TDb>(
+  function withSession(newSession: Session | null): StackContext<AccessControlledDB> {
+    return getContext(
       config,
-      prisma,
+      ormHandle,
       newSession,
       context.storage,
       _isSudo,
@@ -851,8 +1072,8 @@ export function getContext<
       // ADR-0028: a write issued from inside an owned transaction (e.g.
       // `tx.withSession(s).db.x.create()`) must still defer to that owner.
       context._transactionOwner,
-      // #1176: see the identical comment in `sudo()` above.
-      context._resolveOutputChain,
+      client,
+      _unsafeTransaction,
     )
   }
 
@@ -868,65 +1089,78 @@ export function getContext<
   // `transaction()` nested inside another joins the outer owner's queue
   // rather than creating a second one.
   function transaction<T>(
-    fn: (txContext: StackContext<TPrisma, TDb>) => Promise<T>,
-    options?: TransactionOptions,
+    fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
   ): Promise<T> {
     if (context._transactionOwner) {
-      return fn(returned)
+      return fn(transactionFace(returned, lock))
     }
 
     const registry = new TransactionRegistry()
-    const client = prisma as unknown as TransactionCapable<TPrisma>
+    const ormClient = ormHandle as unknown as TransactionCapable
 
-    const settled =
-      typeof client.$transaction !== 'function'
-        ? // No interactive transaction available (plain client/mock, or already
-          // inside one — see `TransactionCapable` above). Run directly: hook/
-          // access semantics are identical, atomicity comes from the enclosing
-          // transaction.
-          fn(
-            getContext<TConfig, TPrisma, TDb>(
-              config,
-              prisma,
-              session,
-              context.storage,
-              _isSudo,
-              context.plugins,
-              registry,
-              context._resolveOutputChain,
-            ),
-          )
-        : (client.$transaction(
-            (tx) =>
-              fn(
-                getContext<TConfig, TPrisma, TDb>(
-                  config,
-                  tx,
-                  session,
-                  context.storage,
-                  _isSudo,
-                  context.plugins,
-                  registry,
-                  context._resolveOutputChain,
-                ),
-              ),
-            options,
-          ) as Promise<T>)
+    const settled = runTransactionBody(fn, registry, ormClient)
 
-    return settleTransactionOwner(settled, registry)
+    return settleTransactionOwner(settled, registry, config)
   }
 
-  const returned: StackContext<TPrisma, TDb> = {
-    // The one place that legitimately knows `db` is shaped as the caller's
-    // `TDb` says: `populateDbDelegate` above always builds the plain
-    // `AccessControlledDB<TPrisma>` runtime shape, and a caller asking for a
-    // richer description (e.g. the generated `CustomDB`) is asserting that
-    // description is compatible with what actually comes back at runtime.
-    // This is the single internal cast `TDb` exists to replace every
-    // consumer-side `as unknown as` with (#1328).
-    db: db as unknown as TDb,
+  function runTransactionBody<T>(
+    fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
+    registry: TransactionRegistry,
+    ormClient: TransactionCapable,
+  ): Promise<T> {
+    const child = (
+      ormHandle: OrmClient,
+      unsafeTransaction?: UnsafeTransactionScope,
+    ): StackTransactionContext<AccessControlledDB> =>
+      transactionFace(
+        getContext(
+          config,
+          ormHandle,
+          session,
+          context.storage,
+          _isSudo,
+          context.plugins,
+          registry,
+          client,
+          unsafeTransaction,
+        ),
+        rowLockSeat(client, unsafeTransaction),
+      )
+
+    // Known limits: this branch hands `fn` a context whose `unsafe` is built
+    // over the outer client, because a Prisma 7 transaction client carries no
+    // `sql`/`orm` lanes to derive an `UnsafeTransactionScope` from. It is
+    // unreachable while `$transaction` is a name no Prisma 8 object carries;
+    // the moment the engine's handle becomes transaction-capable and takes
+    // this branch, the scope has to be derived here too or `tx.unsafe` starts
+    // executing outside the transaction it opened.
+    if (typeof ormClient.$transaction === 'function') {
+      return ormClient.$transaction((tx) => fn(child(tx))) as Promise<T>
+    }
+
+    // Prisma 8's transaction holds a pooled connection for the whole callback,
+    // so the engine's handle is rebound to the transaction's own collections:
+    // a `db` left on the outer handle would auto-commit outside the open
+    // transaction, or wait forever for a second connection the dev database's
+    // single-connection pool never frees (ADR-0056, ADR-0063).
+    if (openTransaction !== undefined) {
+      return openTransaction(async (opened) => fn(child(opened.ormHandle, opened.unsafe)))
+    }
+
+    // Already inside a transaction someone else opened: run directly, because
+    // hook and access semantics are identical and the atomicity comes from
+    // that enclosing transaction (ADR-0028).
+    if (_unsafeTransaction !== undefined) {
+      return fn(child(ormHandle, _unsafeTransaction))
+    }
+
+    return Promise.reject(new TransactionUnavailableError())
+  }
+
+  const returned: StackContext<AccessControlledDB> & EngineFaced = {
+    db: db as AccessControlledDB,
     session,
-    prisma,
+    unsafe,
     storage: context.storage,
     plugins: context.plugins,
     serverAction,
@@ -934,511 +1168,127 @@ export function getContext<
     withSession,
     transaction,
     _isSudo,
-    // #1176: carried so a `StackContext` structurally satisfies `AccessContext`
-    // and can be handed, unchanged, to the internal write-pipeline/hook
-    // plumbing that a plain `AccessContext` was built for — see
-    // `bindContextToTransaction` in `write-pipeline.ts`.
-    _resolveOutputChain: context._resolveOutputChain,
-    _transactionOwner: context._transactionOwner,
+    [ENGINE_FACE]: context,
   }
   return returned
 }
 
 /**
+ * Complete the normalisation the engine terminal started, for a write.
+ *
+ * A terminal classifies by SQLSTATE alone — it holds no config, so a `23505`
+ * leaves it as a `UniqueConstraintViolation` carrying the constraint
+ * name and the generic message. Resolving that name to the OpenSaas fields it
+ * covers needs the generated constraint map, which is reached through the
+ * config, so the write operations close the gap here (ADR-0042).
+ *
+ * Reads are not wrapped: no read raises a unique violation, and every other
+ * driver failure is already final at the terminal.
+ */
+function resolvingConstraints<Args extends unknown[], Result>(
+  operation: (...args: Args) => Promise<Result>,
+  config: OpenSaasConfig,
+): (...args: Args) => Promise<Result> {
+  return async (...args: Args): Promise<Result> => {
+    try {
+      return await operation(...args)
+    } catch (error) {
+      throw normalizeDatabaseError(error, config)
+    }
+  }
+}
+
+/**
  * Populate `target` with the access-controlled CRUD operations for every list,
- * each bound to `prisma` and `context`. Used both by {@link getContext} (at
+ * each bound to `ormHandle` and `context`. Used both by {@link getContext} (at
  * request setup) and by the Write Pipeline to rebuild a `db` delegate against a
  * transaction client (ADR-0010), so a hook's `context.db` write participates in
  * the same transaction.
  *
- * The operations capture `prisma` at construction, so rebinding to a different
+ * The operations capture `ormHandle` at construction, so rebinding to a different
  * client (e.g. a transaction `tx`) requires rebuilding the delegate — which is
  * exactly what this function enables.
  */
-export function populateDbDelegate<TPrisma extends PrismaClientLike>(
+export function populateDbDelegate(
   target: Record<string, unknown>,
   config: OpenSaasConfig,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  ormHandle: OrmClient,
+  context: AccessContext,
+  /** The row-lock lane, on a transaction-bound context alone (ADR-0047). */
+  lock?: RowLockLane,
 ): void {
   for (const [listName, listConfig] of Object.entries(config.lists)) {
-    const dbKey = getDbKey(listName)
-
-    const createOp = createCreate(listName, listConfig, prisma, context, config)
-    const findManyOp = createFindMany(listName, listConfig, prisma, context, config)
-    const updateOp = createUpdate(listName, listConfig, prisma, context, config)
+    const createOp = resolvingConstraints(
+      createCreate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
+    const updateOp = resolvingConstraints(
+      createUpdate(listName, listConfig, ormHandle, context, config),
+      config,
+    )
     const operations: Record<string, unknown> = {
-      findUnique: createFindUnique(listName, listConfig, prisma, context, config),
-      findMany: findManyOp,
-      findFirst: createFindFirst(findManyOp),
       create: createOp,
       update: updateOp,
-      delete: createDelete(listName, listConfig, prisma, context, config),
-      count: createCount(listName, listConfig, prisma, context, config),
-      createMany: createCreateMany(listName, listConfig, prisma, context, config, createOp),
-      updateMany: createUpdateMany(
-        listName,
-        listConfig,
-        prisma,
-        context,
+      delete: resolvingConstraints(
+        createDelete(listName, listConfig, ormHandle, context, config),
         config,
-        findManyOp,
-        updateOp,
       ),
     }
 
+    const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
+
     if (isSingletonList(listConfig)) {
-      operations.get = createGet(listName, listConfig, prisma, context, config, createOp)
+      operations.get = resolvingConstraints(
+        createGet(listName, listConfig, read, context, createOp),
+        config,
+      )
+    } else {
+      operations.where = read.where
+      operations.orderBy = read.orderBy
+      operations.include = read.include
+      operations.select = read.select
+      operations.limit = read.limit
+      operations.offset = read.offset
+      operations.distinct = read.distinct
+      operations.distinctOn = read.distinctOn
+      operations.cursor = read.cursor
+      operations.forUpdate = read.forUpdate
+      operations.all = read.all
+      operations.first = read.first
+      operations.nearest = read.nearest
+      operations.aggregate = read.aggregate
     }
 
-    target[dbKey] = operations
+    target[listName] = operations
   }
 }
 
 /**
- * Build a fresh access-controlled `db` delegate bound to `prisma` and `context`.
+ * Build a fresh access-controlled `db` delegate bound to `ormHandle` and `context`.
  * Convenience wrapper over {@link populateDbDelegate} returning a new object,
  * used by the Write Pipeline to rebind `db` to a transaction client.
+ *
+ * The lock lane comes off `context._rowLock`, so a delegate rebuilt inside a
+ * transaction keeps the `forUpdate()` its context already had (ADR-0047) — a
+ * hook is a caller like any other. Its absence is the caller's statement that
+ * this context is not the transaction's.
  */
-export function buildDbDelegate<TPrisma extends PrismaClientLike>(
+export function buildDbDelegate(
   config: OpenSaasConfig,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-): AccessControlledDB<TPrisma> {
+  ormHandle: OrmClient,
+  context: AccessContext,
+): AccessControlledDB {
   const db: Record<string, unknown> = {}
-  populateDbDelegate(db, config, prisma, context)
-  return db as AccessControlledDB<TPrisma>
+  populateDbDelegate(db, config, ormHandle, context, context._rowLock)
+  return db as AccessControlledDB
 }
 
-/**
- * Resolve the `include` (and declared-dependency provenance) a read should
- * use, preserving each existing path's exact shape — fragment / sudo /
- * caller include / bare (ADR-0024) — while folding declared dependencies
- * (`needs`, ADR-0025) into whichever of those the read is already using.
- *
- * A non-sudo fragment's own `include` and a non-sudo caller's `include` are
- * both folded and then scoped by `buildAccessScopedInclude` (ADR-0026) —
- * caller-directed, so a relation named nowhere in the folded tree never has
- * its list's `query` access evaluated at all (issue #1088: a fragment read
- * used to skip this walk entirely). A sudo caller's `include` (fragment or
- * not) is folded and used as-is, unscoped — sudo is unaffected. A bare read
- * stays on the exact ADR-0024 path — `include: undefined`, no related
- * `query` access evaluated — unless folding actually added something, which
- * only happens when a field on this list declares `needs`.
- *
- * Also returns the `FieldSelectionScope` a fragment's own field selection
- * produces (ADR-0027), so the caller can pass it to `filterReadableFields`
- * and make computation itself projection-aware, not only the fold above.
- * `undefined` for every non-fragment path: a caller `include` (sudo or not)
- * and a bare read both mean "compute every field," matching what they
- * already fetch.
- *
- * Also returns `toOneAccessFilters` — the to-one relations `buildAccessScopedInclude`
- * flagged as needing a post-query existence check rather than a Prisma-side
- * `where` (issue #974). Only a non-sudo fragment or caller-include read can
- * produce a non-empty tree: those are the only paths that evaluate a related
- * list's `query` access at all. A sudo read and a bare read always return an
- * empty tree.
- */
-async function resolveReadInclude(
-  callerInclude: Record<string, unknown> | undefined,
-  fragmentFields: FieldSelection<unknown> | undefined,
+function createCreate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  context: AccessContext & { _isSudo?: boolean },
-  config: OpenSaasConfig,
-): Promise<{
-  include: Record<string, unknown> | undefined
-  declaredOnly: DeclaredOnlyTree
-  selection: FieldSelectionScope | undefined
-  toOneAccessFilters: ToOneAccessFilterTree
-  countDenials: CountAccessDenialTree
-}> {
-  if (fragmentFields !== undefined) {
-    const fragmentInclude = buildInclude(fragmentFields) ?? undefined
-    const selection = buildFieldSelectionScope(fragmentFields)
-    const folded = foldDeclaredDependencies(
-      fragmentInclude,
-      listConfig.fields,
-      config,
-      listName,
-      [listName],
-      selection,
-    )
-
-    if (context._isSudo || !folded.include) {
-      return {
-        ...folded,
-        selection,
-        toOneAccessFilters: emptyToOneAccessFilterTree(),
-        countDenials: emptyCountAccessDenialTree(),
-      }
-    }
-
-    const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-      folded.include,
-      listConfig.fields,
-      { session: context.session, context },
-      config,
-      listName,
-    )
-    return {
-      include,
-      declaredOnly: folded.declaredOnly,
-      selection,
-      toOneAccessFilters,
-      countDenials,
-    }
-  }
-
-  if (context._isSudo) {
-    const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
-    return {
-      ...folded,
-      selection: undefined,
-      toOneAccessFilters: emptyToOneAccessFilterTree(),
-      countDenials: emptyCountAccessDenialTree(),
-    }
-  }
-
-  const folded = foldDeclaredDependencies(callerInclude, listConfig.fields, config, listName)
-  if (!folded.include) {
-    return {
-      ...folded,
-      selection: undefined,
-      toOneAccessFilters: emptyToOneAccessFilterTree(),
-      countDenials: emptyCountAccessDenialTree(),
-    }
-  }
-
-  const { include, toOneAccessFilters, countDenials } = await buildAccessScopedInclude(
-    folded.include,
-    listConfig.fields,
-    { session: context.session, context },
-    config,
-    listName,
-  )
-  return {
-    include,
-    declaredOnly: folded.declaredOnly,
-    selection: undefined,
-    toOneAccessFilters,
-    countDenials,
-  }
-}
-
-function createFindUnique<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-) {
-  return async (args: {
-    // Accepts any unique selector at the delegate level (the generated
-    // `<List>FindUniqueArgs` type narrows `where` to Prisma's `WhereUniqueInput`).
-    // The runtime guard below rejects non-unique shapes.
-    where: Record<string, unknown>
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    warnIfSelectIgnored(args, listName, 'findUnique')
-
-    // Runs first, before the access check below — a non-unique `where` is a
-    // caller-shape error (see `assertUniqueWhere`), not an access denial. The
-    // generated `<List>FindUniqueArgs` only Omits `select`/`include` from
-    // Prisma's own type, so `where` stays `<List>WhereUniqueInput` — this
-    // runtime guard backstops untyped callers.
-    assertUniqueWhere(args.where, getUniqueWhereKeys(listConfig), listName)
-
-    let where: Record<string, unknown> = args.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      const mergedWhere = mergeFilters(args.where, accessResult)
-      if (mergedWhere === null) {
-        return null
-      }
-      where = mergedWhere
-    }
-
-    // Access control still runs via filterReadableFields even though a
-    // fragment drives `include`; the fragment only narrows which fields come back.
-    const fragment = isFragment(args.query) ? args.query : null
-
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
-
-    // Virtual fields have no database column. Whichever path produced
-    // `include` (fragment, access-controlled merge, or sudo passthrough), a
-    // virtual key must never reach Prisma — it would throw "Unknown field"
-    // (#628). Below, `filterReadableFields` computes a virtual field's value
-    // exactly when `selection` says the read is going to return it (ADR-0027)
-    // — every one of them for a bare/`include`-based read (`selection` is
-    // `undefined`), only the ones a fragment named otherwise.
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    const item = await model.findFirst({
-      where,
-      include,
-    })
-
-    if (!item) {
-      return null
-    }
-
-    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-    // actually survive their related list's `query` access (issue #974) —
-    // one batched existence check per relation, before field visibility runs.
-    const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
-      session: context.session,
-      context,
-    })
-
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await filterReadableFields(
-      item,
-      listConfig.fields,
-      {
-        session: context.session,
-        context: { ...context, _isSudo: context._isSudo },
-      },
-      config,
-      0,
-      listName,
-      declaredOnly,
-      selection,
-      toOneVisibility,
-      countDenials,
-    )
-
-    if (fragment) {
-      return pickFields(filtered, fragment._fields)
-    }
-
-    return filtered
-  }
-}
-
-function createFindMany<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-) {
-  return async (args?: {
-    where?: Record<string, unknown>
-    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-    take?: number
-    skip?: number
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    warnIfSelectIgnored(args, listName, 'findMany')
-
-    // Singleton misuse throws rather than silently returning `[]` — unlike an
-    // access denial, this is a caller-shape error.
-    if (isSingletonList(listConfig)) {
-      throw new ValidationError(
-        [`Cannot use findMany: ${listName} is a singleton list. Use get() instead.`],
-        {},
-      )
-    }
-
-    // Check query access first (skip if sudo mode) — this MUST run before the
-    // #912/#915 where/orderBy validation below. See the comment there for why.
-    let where: Record<string, unknown> | undefined = args?.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return []
-      }
-
-      // #912 — reject a `where`/`orderBy` key the list config doesn't declare
-      // (e.g. a Prisma-generated back-relation), and #915 — reject one naming
-      // a field this session cannot READ (closing a probe via a `count()`
-      // that varies with the withheld value, or an `orderBy` that leaks
-      // relative ordering). Both run only now that the caller is known to
-      // have SOME access to the list (`accessResult !== false`): the thrown
-      // errors name the offending key, and running them before the access
-      // check above would let a caller with ZERO access to the list learn a
-      // field's name and read-gating status from the error message alone —
-      // turning the validation itself into the kind of oracle #915 closes.
-      // `sudo` bypasses this whole branch, matching the write path.
-      validateQueryKeys({
-        where: args?.where,
-        orderBy: args?.orderBy,
-        listConfig,
-        listName,
-        config,
-        isSudo: false,
-      })
-      await validateQueryFieldReadAccess({
-        where: args?.where,
-        orderBy: args?.orderBy,
-        listConfig,
-        listName,
-        session: context.session,
-        context,
-        isSudo: false,
-      })
-
-      // #916 — scope every relation filter nested in `where`
-      // (`some`/`every`/`none`/`is`/`isNot`) by the RELATED list's own `query`
-      // access, recursing through every hop of a chain — the `where`
-      // counterpart to how `include` is already scoped below via
-      // `buildAccessScopedInclude`. Runs after the checks above for the same
-      // ordering reason: only once the caller is known to have SOME access to
-      // THIS list.
-      const scopedWhere = args?.where
-        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
-            session: context.session,
-            context,
-          })) as Record<string, unknown>)
-        : args?.where
-
-      const mergedWhere = mergeFilters(scopedWhere, accessResult)
-      if (mergedWhere === null) {
-        return []
-      }
-      where = mergedWhere
-    }
-
-    const fragment = isFragment(args?.query) ? args.query : null
-
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args?.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
-
-    // Strips virtual keys from `include` before the Prisma call — see the
-    // `createFindUnique` comment above for why (#628, ADR-0027).
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    const items = await model.findMany({
-      where,
-      orderBy: args?.orderBy,
-      take: args?.take,
-      skip: args?.skip,
-      include,
-    })
-
-    // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-    // actually survive their related list's `query` access (issue #974) —
-    // ONE batched existence check per relation across every row in `items`,
-    // before field visibility runs on any of them.
-    const toOneVisibility = await resolveToOneAccessVisibility(items, toOneAccessFilters, {
-      session: context.session,
-      context,
-    })
-
-    // Pass sudo flag through context to skip field-level access checks
-    const filtered = await Promise.all(
-      items.map((item: Record<string, unknown>) =>
-        filterReadableFields(
-          item,
-          listConfig.fields,
-          {
-            session: context.session,
-            context: { ...context, _isSudo: context._isSudo },
-          },
-          config,
-          0,
-          listName,
-          declaredOnly,
-          selection,
-          toOneVisibility,
-          countDenials,
-        ),
-      ),
-    )
-
-    if (fragment) {
-      return filtered.map((item: Record<string, unknown>) => pickFields(item, fragment._fields))
-    }
-
-    return filtered
-  }
-}
-
-/**
- * Create findFirst operation with access control.
- *
- * findFirst is sugar over the access-controlled findMany: it runs the exact same
- * query-access checks and access-controlled include building as findMany, then
- * returns the first matching row (or null when nothing matches). This introduces
- * no new access surface — it inherits findMany's silent-failure contract (an
- * access-denied query yields `[]`, which becomes `null` here).
- */
-function createFindFirst(findManyOp: ReturnType<typeof createFindMany>) {
-  return async (args?: {
-    where?: Record<string, unknown>
-    orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>
-    skip?: number
-    include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
-    // `select` is not honoured — accepted only so the no-op can be made visible.
-    select?: Record<string, unknown>
-  }) => {
-    const result = await findManyOp({ ...args, take: 1 })
-    return result[0] ?? null
-  }
-}
-
-function createCreate<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  ormHandle: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
@@ -1447,7 +1297,7 @@ function createCreate<TPrisma extends PrismaClientLike>(
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: args.data,
@@ -1456,282 +1306,116 @@ function createCreate<TPrisma extends PrismaClientLike>(
   }
 }
 
-// Runs create in a loop (not Prisma's native createMany) so every item still
-// gets its own hooks and access control.
-function createCreateMany<TPrisma extends PrismaClientLike>(
+function createUpdate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createFn: any,
-) {
-  return async (args: { data: Record<string, unknown>[] }) => {
-    const results = []
-
-    for (const item of args.data) {
-      const result = await createFn({ data: item })
-      results.push(result)
-    }
-
-    return results
-  }
-}
-
-function createUpdate<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  ormHandle: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the update strategy, run the
   // canonical secured write sequence, return its result.
-  return async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+  return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+    // Runs before the pipeline's access gate — a `where` the engine cannot
+    // lower is the caller's own shape error, not a denial.
+    assertIdentityWhere(args.where, listName, 'update')
+
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: args.data,
-      strategy: updateWriteStrategy(listConfig, context, args.where),
+      strategy: updateWriteStrategy(listName, listConfig, config, context, args.where),
     })
   }
 }
 
-// Finds matching records, then updates each individually (not Prisma's native
-// updateMany) so every item still gets its own hooks and access control.
-function createUpdateMany<TPrisma extends PrismaClientLike>(
+function createDelete(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  findManyFn: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  updateFn: any,
-) {
-  return async (args: { where?: Record<string, unknown>; data: Record<string, unknown> }) => {
-    const items = await findManyFn({ where: args.where })
-
-    const results = []
-    for (const item of items) {
-      const result = await updateFn({ where: { id: item.id }, data: args.data })
-      results.push(result)
-    }
-
-    return results
-  }
-}
-
-function createDelete<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
+  ormHandle: OrmClient,
+  context: AccessContext,
   config: OpenSaasConfig,
 ) {
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
-  return async (args: { where: { id: string } }) => {
+  return async (args: { where: Record<string, unknown> }) => {
+    assertIdentityWhere(args.where, listName, 'delete')
+
     return runWritePipeline({
       listName,
       listConfig,
-      prisma,
+      ormHandle,
       context,
       config,
       inputData: undefined,
-      strategy: deleteWriteStrategy(listName, listConfig, context, args.where),
+      strategy: deleteWriteStrategy(listName, listConfig, config, context, args.where),
     })
   }
 }
 
-function createCount<TPrisma extends PrismaClientLike>(
+/**
+ * A singleton's read. The composed read is not offered on a singleton
+ * (`populateDbDelegate` wires it in the other branch), but the engine drives it
+ * here: `get()` resolves the one row through the same secured path an ordinary
+ * list reads through, so operation access, the Access Filter, Field Visibility
+ * and the related lists' own `query` access are the composed read's and not a
+ * second copy of them.
+ *
+ * `null` from the read is denied-or-absent, so the auto-create below runs only
+ * once the read has answered nothing — a denied session gets `null`, not a row.
+ *
+ * Known limits: auto-create fires only for a `query` rule that answered a
+ * strict `true`, or under `sudo`. A rule that answered a filter scopes the read
+ * rather than opening it, and there is no row yet to test that filter against,
+ * so the create is refused and `get()` answers `null` — the same `null` a
+ * denied or an absent row answers with.
+ */
+function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-) {
-  return async (args?: { where?: Record<string, unknown> }) => {
-    // Check query access first (skip if sudo mode) — this MUST run before the
-    // #912/#915 where validation below. See the comment there for why.
-    let where: Record<string, unknown> | undefined = args?.where
-    if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
-        session: context.session,
-        context,
-      })
-
-      if (accessResult === false) {
-        return 0
-      }
-
-      // #912 — reject a `where` key the list config doesn't declare (e.g. a
-      // Prisma-generated back-relation), and #915 — reject one naming a field
-      // this session cannot READ. `count` leaks the most cleanly of any read
-      // op — a bare count answers a predicate with no rows returned at all —
-      // so it gets the same reject, not a lesser one. Both run only now that
-      // the caller is known to have SOME access to the list (`accessResult
-      // !== false`) — see the identical comment in `createFindMany` for why
-      // that ordering matters: running them before the access check would
-      // let a fully-denied caller learn a field's name and read-gating
-      // status from the thrown error alone. `sudo` bypasses this whole
-      // branch, matching the write path.
-      validateQueryKeys({
-        where: args?.where,
-        listConfig,
-        listName,
-        config,
-        isSudo: false,
-      })
-      await validateQueryFieldReadAccess({
-        where: args?.where,
-        listConfig,
-        listName,
-        session: context.session,
-        context,
-        isSudo: false,
-      })
-
-      // #916 — scope every relation filter nested in `where` by the RELATED
-      // list's own `query` access. See the identical comment in
-      // `createFindMany` for why this runs here, in this order.
-      const scopedWhere = args?.where
-        ? ((await buildAccessScopedWhere(args.where, listConfig, listName, config, {
-            session: context.session,
-            context,
-          })) as Record<string, unknown>)
-        : args?.where
-
-      const mergedWhere = mergeFilters(scopedWhere, accessResult)
-      if (mergedWhere === null) {
-        return 0
-      }
-      where = mergedWhere
-    }
-
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
-    const count = await model.count({
-      where,
-    })
-
-    return count
-  }
-}
-
-function createGet<TPrisma extends PrismaClientLike>(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  prisma: TPrisma,
-  context: AccessContext<TPrisma>,
-  config: OpenSaasConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createFn: any,
+  read: SecuredQuery,
+  context: AccessContext,
+  createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
 ) {
   return async (args?: {
     include?: Record<string, unknown>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query?: any
     // `select` is not honoured — accepted only so the no-op can be made visible.
     select?: Record<string, unknown>
   }) => {
     warnIfSelectIgnored(args, listName, 'get')
 
-    // Access Prisma model dynamically - required because model names are generated at runtime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (prisma as any)[getDbKey(listName)]
+    const scoped = Object.entries(args?.include ?? {}).reduce(
+      (query, [name, requested]) => (requested ? query.include(name) : query),
+      read,
+    )
 
-    let where: Record<string, unknown> = {}
+    const item = await scoped.first()
+    if (item) return item
+
+    if (!shouldAutoCreate(listConfig)) return null
+
+    // `first()` conflates denied with absent, and auto-create must fire only on
+    // absent — a denied session that provoked a create would both write a row it
+    // may not read and turn the read's silence into an observable side effect.
+    // Only a strict `true` clears the create: a filter scopes rather than opens,
+    // and `false`, a missing rule and anything else are denials. This is the one
+    // place the query rule is consulted directly; the read above owns every
+    // other use of it.
     if (!context._isSudo) {
-      const queryAccess = listConfig.access?.operation?.query
-      const accessResult = await checkAccess(queryAccess, {
+      const readable = await checkAccess(listConfig.access?.operation?.query, {
         session: context.session,
         context,
       })
-
-      if (accessResult === false) {
-        return null
-      }
-
-      // A singleton has no per-record `where`, so the access filter (if any) is
-      // the whole `where`.
-      if (accessResult && typeof accessResult === 'object') {
-        where = accessResult
-      }
+      if (readable !== true) return null
     }
 
-    // Access control still runs via filterReadableFields even though a
-    // fragment drives `include`; the fragment only narrows which fields come back.
-    const fragment = isFragment(args?.query) ? args.query : null
-
-    // Resolve `include`, folding any declared dependencies (`needs`,
-    // ADR-0025) in alongside whatever the fragment/caller/sudo/bare path
-    // already produces — see `resolveReadInclude`'s doc comment.
-    let { include, declaredOnly, selection, toOneAccessFilters, countDenials } =
-      await resolveReadInclude(
-        args?.include,
-        fragment ? fragment._fields : undefined,
-        listName,
-        listConfig,
-        context,
-        config,
-      )
-
-    // Virtual fields have no database column and must never reach Prisma (#628).
-    include = stripVirtualFieldsFromInclude(include, listConfig.fields, config)
-
-    const item = await model.findFirst({
-      where,
-      include,
-    })
-
-    if (item) {
-      // Resolve which of the to-one relations flagged by `toOneAccessFilters`
-      // actually survive their related list's `query` access (issue #974).
-      const toOneVisibility = await resolveToOneAccessVisibility([item], toOneAccessFilters, {
-        session: context.session,
-        context,
-      })
-
-      const filtered = await filterReadableFields(
-        item,
-        listConfig.fields,
-        {
-          session: context.session,
-          context: { ...context, _isSudo: context._isSudo },
-        },
-        config,
-        0,
-        listName,
-        declaredOnly,
-        selection,
-        toOneVisibility,
-        countDenials,
-      )
-      if (fragment) {
-        return pickFields(filtered, fragment._fields)
-      }
-      return filtered
-    }
-
-    if (shouldAutoCreate(listConfig)) {
-      const defaultData = getDefaultData(listConfig)
-      return await createFn({ data: defaultData })
-    }
-
-    return null
+    await createFn({ data: getDefaultData(listConfig) })
+    return await scoped.first()
   }
 }

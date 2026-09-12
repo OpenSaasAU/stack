@@ -7,8 +7,7 @@ import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types
 
 /**
  * The session/context a field's `read` access is evaluated against — the same
- * shape every other access-scoped admin-UI helper takes (e.g.
- * `resolveRelationshipCountFilters`, `resolveRelationshipLabelFilters`).
+ * shape every other access-scoped admin-UI helper takes.
  */
 export type FilterAccessArgs = {
   session: Session | null
@@ -22,7 +21,7 @@ export type FilterAccessArgs = {
  * degrades gracefully so third-party fields keep working.
  *
  * A field the session cannot READ is excluded here too (#915), evaluated the
- * same predicate-time way `context.db.*`'s `findMany`/`count` now enforce
+ * same predicate-time way the secured read's own predicates enforce
  * (`isFieldReadableForPredicate` — no fetched row exists yet, so a
  * row-dependent `read` rule resolves to "not filterable"). This is what keeps
  * the admin UI from ever suggesting, autocompleting, or submitting a filter
@@ -66,7 +65,7 @@ export async function collectFilterSpecs(
 /**
  * End-to-end helper for the list view: parse a raw URL query, collect the
  * list's Filter specs, and build the merged Prisma `where` fragment. The
- * fragment is meant to be handed to `context.db.<list>.findMany`/`count`, where
+ * fragment is meant to be handed to `context.db.<list>.where(…)`, where
  * the secured context ANDs it with the access filter — so the filter can only
  * ever narrow, never widen, what a session may see.
  *

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation.js'
-import { cn, formatFieldName, isNumericField } from '../lib/utils.js'
+import { cn, formatFieldName, formatListName, isNumericField } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -18,6 +18,8 @@ import { ConfirmDialog } from './ConfirmDialog.js'
 import { CellRenderer } from './cells/CellRenderer.js'
 import { RelationshipTableCell } from './RelationshipTableCell.js'
 import { RelationshipCreateDrawer } from './RelationshipCreateDrawer.js'
+import { RelationshipLinkControl } from './RelationshipLinkControl.js'
+import type { LinkEdgeData } from './RelationshipTable.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
 
@@ -67,10 +69,18 @@ export interface RelationshipTableClientProps {
   relatedListKey: string
   /** The back-reference field on the related list (present when disconnectable). */
   backReferenceField?: string
-  /** The parent record id — the disconnect target for many-to-many rows. */
+  /** The parent record id — the link the pre-linked create drawer presets. */
   parentId: string
   /** The list being edited (used for accessible labelling). */
   parentListKey: string
+  /** The to-many field on the parent list this section renders (#1329). */
+  fieldName?: string
+  /**
+   * The add-an-edge control's data, present only when the session may write
+   * this section's edges on the list that holds them. Absent hides the control
+   * entirely.
+   */
+  linkEdge?: LinkEdgeData
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /**
@@ -145,7 +155,9 @@ function readRemoveOutcome(result: unknown): { ok: boolean; error?: string } {
  * Named Slots (the reviewed extension seams for the follow-up tickets):
  * - `relationship-table` — the section container.
  * - `relationship-table-toolbar` — header actions region; the pre-linked create
- *   drawer's "+ Add" (#738) mounts here.
+ *   drawer's "+ Add" (#738) and the edge control's "Link" (#1329) mount here.
+ * - `relationship-table-link` — the add-an-edge control (#1329), present only
+ *   for a section that is an edge across an explicit junction list.
  * - `relationship-table-row` — a related row; the removal ✕ (#739) is its
  *   trailing affordance.
  * - `relationship-table-remove` — the row-removal control (#739).
@@ -168,6 +180,9 @@ export function RelationshipTableClient({
   relatedListKey,
   backReferenceField,
   parentId,
+  parentListKey,
+  fieldName,
+  linkEdge,
   serverAction,
   canCreate = false,
   createFields,
@@ -212,7 +227,6 @@ export function RelationshipTableClient({
           mode: 'disconnect',
           id: rowId,
           field: backReferenceField,
-          parentId,
         }
       } else {
         return
@@ -255,6 +269,29 @@ export function RelationshipTableClient({
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <h2 className="font-heading text-lg font-semibold">{title}</h2>
         <div data-slot="relationship-table-toolbar" className="flex items-center gap-2">
+          {linkEdge && fieldName && (
+            <RelationshipLinkControl
+              parentListKey={parentListKey}
+              fieldName={fieldName}
+              parentId={parentId}
+              edge={
+                linkEdge.mode === 'junction'
+                  ? {
+                      mode: 'junction',
+                      junctionListKey: linkEdge.junctionListKey,
+                      targetField: linkEdge.targetField,
+                    }
+                  : {
+                      mode: 'foreignKey',
+                      relatedListKey: linkEdge.relatedListKey,
+                      backReferenceField: linkEdge.backReferenceField,
+                    }
+              }
+              targetListTitle={formatListName(linkEdge.targetListKey)}
+              options={linkEdge.options}
+              serverAction={serverAction}
+            />
+          )}
           {canCreate && createFields && (
             <RelationshipCreateDrawer
               relatedListKey={relatedListKey}

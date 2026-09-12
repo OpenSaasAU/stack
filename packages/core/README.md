@@ -26,7 +26,7 @@ Create `opensaas.config.ts`:
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, integer, select, relationship } from '@opensaas/stack-core/fields'
-import type { AccessControl } from '@opensaas/stack-core'
+import type { AccessControl, FieldAccess } from '@opensaas/stack-core'
 
 const isSignedIn: AccessControl = ({ session }) => !!session
 
@@ -35,11 +35,14 @@ const isAuthor: AccessControl = ({ session }) => {
   return { authorId: { equals: session.userId } }
 }
 
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session && item?.authorId === session.userId,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
+}
+
 export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-  },
+  db: { provider: 'postgresql' },
   lists: {
     User: list({
       fields: {
@@ -61,13 +64,7 @@ export default config({
           defaultValue: 'draft',
         }),
         author: relationship({ ref: 'User.posts' }),
-        internalNotes: text({
-          access: {
-            read: isAuthor,
-            create: isAuthor,
-            update: isAuthor,
-          },
-        }),
+        internalNotes: text({ access: authorOnlyField }),
       },
       access: {
         operation: {
@@ -85,54 +82,57 @@ export default config({
 })
 ```
 
+`isAuthor` and `authorOnlyField` are not interchangeable, and the compiler
+enforces it. An **operation** rule may return a filter, which is how `update` and
+`delete` scope themselves to rows the caller owns. A **field** rule decides per
+fetched item and must return a boolean — a filter is meaningless there, so
+`FieldAccess` types the three slots as boolean-returning and reusing `isAuthor`
+on a field is a type error rather than a silent "allow".
+
 ### 2. Generate Schema and Types
 
 ```bash
 opensaas generate
 ```
 
-This creates:
+This writes the generated bundle:
 
-- `prisma/schema.prisma` - Prisma schema
+- `prisma/contract.ts` - the contract module the ORM executes against
 - `.opensaas/types.ts` - TypeScript types
+- `.opensaas/context.ts` - the context factory
+- `.opensaas/lists.ts`, `.opensaas/tables.ts`, `.opensaas/plugin-types.ts`
+- `prisma.config.ts` at the project root
 
-### 3. Create Context
+The connection is resolved from `DIRECT_DATABASE_URL`, then `DATABASE_URL`, then
+the Dev database `opensaas dev` starts. There is no `db.url` key and no
+`prismaClientConstructor`.
 
-```typescript
-// lib/context.ts
-import { getContext } from '@opensaas/stack-core'
-import { PrismaClient } from '@prisma/client'
-import config from '../opensaas.config'
+### 3. Use the Generated Context
 
-export const prisma = new PrismaClient()
-
-export async function getContextWithUser(userId: string) {
-  return getContext(config, prisma, { userId })
-}
-
-export async function getContext() {
-  return getContext(config, prisma, null)
-}
-```
-
-### 4. Use in Your App
+`.opensaas/context.ts` exports `getContext`. You do not construct a Prisma
+client — the factory owns it.
 
 ```typescript
-import { getContextWithUser } from './lib/context'
+// lib/posts.ts
+import { getContext } from '@/.opensaas/context'
+import type { PostCreateInput } from '@/.opensaas/types'
 
-export async function createPost(userId: string, data: any) {
-  const context = await getContextWithUser(userId)
+export async function createPost(userId: string, data: PostCreateInput) {
+  const context = await getContext({ userId })
 
-  // Access control automatically enforced
-  const post = await context.db.post.create({ data })
+  const post = await context.db.Post.create({ data })
 
-  if (!post) {
+  if (post === null) {
     return { error: 'Access denied' }
   }
 
   return { post }
 }
 ```
+
+List keys on `context.db` are **PascalCase**, matching the config —
+`context.db.Post`, not `context.db.post`. A denied write returns `null`, so every
+`create`, `update` and `delete` result is checked before use.
 
 ## Field Types
 
@@ -142,7 +142,7 @@ export async function createPost(userId: string, data: any) {
 - **integer()** - Number field
 - **checkbox()** - Boolean field
 - **timestamp()** - Date/time field
-- **password()** - Password field (excluded from reads)
+- **password()** - Password field, read back as a `HashedPassword` wrapper and hidden from the admin list view's default columns
 - **select()** - Enum field with options
 - **relationship()** - Foreign key relationship
 - **json()** - JSON field for arbitrary data
@@ -166,9 +166,12 @@ text({
     update: ({ session }) => !!session,
   },
   hooks: {
-    resolveInput: async ({ resolvedData }) => resolvedData,
-    validateInput: async ({ operation, resolvedData }) => {
-      if (operation === 'delete') return
+    resolveInput: async ({ resolvedData, fieldKey }) => resolvedData[fieldKey],
+    // The delete branch of every hook-args union omits `resolvedData`, so the
+    // guard has to come before the destructure, not inside the body.
+    validateInput: async (args) => {
+      if (args.operation === 'delete') return
+      const { resolvedData } = args
       /* validate */
     },
   },
@@ -184,10 +187,14 @@ text({
 Field types are fully self-contained:
 
 ```typescript
-import type { BaseFieldConfig } from '@opensaas/stack-core'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type MyCustomField = BaseFieldConfig & {
+export type MyCustomField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'myCustom'
   customOption?: string
 }
@@ -196,15 +203,13 @@ export function myCustom(options?: Omit<MyCustomField, 'type'>): MyCustomField {
   return {
     type: 'myCustom',
     ...options,
-    getZodSchema: (fieldName, operation) => {
-      return z.string().optional()
-    },
-    getPrismaType: (fieldName) => {
-      return { type: 'String', modifiers: '?' }
-    },
-    getTypeScriptType: () => {
-      return { type: 'string', optional: true }
-    },
+    getZodSchema: (fieldName, operation) => z.string().optional(),
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+    }),
   }
 }
 ```
@@ -218,7 +223,7 @@ Control who can query, create, update, or delete:
 ```typescript
 access: {
   operation: {
-    query: true,  // Everyone can read
+    query: () => true,  // Everyone can read
     create: isSignedIn,  // Must be signed in
     update: isAuthor,  // Only author
     delete: isAuthor,  // Only author
@@ -243,29 +248,40 @@ const isAuthor: AccessControl = ({ session }) => {
 
 Control access to individual fields:
 
+A field rule decides per fetched item and returns a **boolean**. The
+filter-returning `isAuthor` above is not interchangeable here — the three slots
+are typed `FieldAccessControl`, so a returned filter object is a compile error
+and, untyped, an `InvalidFieldAccessResultError` at runtime:
+
 ```typescript
-internalNotes: text({
-  access: {
-    read: isAuthor, // Only author can see
-    create: isAuthor, // Only author can set on create
-    update: isAuthor, // Only author can modify
-  },
-})
+import type { FieldAccess } from '@opensaas/stack-core'
+
+const authorOnlyField: FieldAccess = {
+  read: ({ session, item }) => !!session && item.authorId === session.userId,
+  create: ({ session }) => !!session,
+  update: ({ session, item }) => !!session && item?.authorId === session.userId,
+}
+
+internalNotes: text({ access: authorOnlyField })
 ```
+
+`read`'s `item` is always present; `create`'s is absent, which is why it cannot
+be consulted there.
 
 ### Silent Failures
 
 Access-denied operations return `null` or `[]` instead of throwing:
 
+`null` here means denied **or** absent — the two are deliberately
+indistinguishable, so nothing leaks about which:
+
 ```typescript
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
 
-if (!post) {
-  // Either doesn't exist OR user lacks access
-  // No information leaked about which
+if (post === null) {
   return { error: 'Not found' }
 }
 ```
@@ -276,31 +292,36 @@ Transform and validate data during operations:
 
 ```typescript
 hooks: {
-  // Transform input before validation
-  resolveInput: async ({ resolvedData, operation, session }) => {
+  // Transform input before validation. The session lives on `context`, not on
+  // the hook args.
+  resolveInput: async ({ resolvedData, operation, context }) => {
     if (operation === 'create') {
-      return { ...resolvedData, createdBy: session.userId }
+      return { ...resolvedData, createdBy: context.session?.userId }
     }
     return resolvedData
   },
 
-  // Custom validation
-  validateInput: async ({ operation, resolvedData, fieldPath }) => {
-    if (operation === 'delete') return
-    if (resolvedData.title?.includes('spam')) {
-      throw new Error('Title contains prohibited content')
+  // Custom validation. Every hook-args union has a `delete` member that omits
+  // what the create/update members carry, so narrow on `operation` first and
+  // destructure after — a guard in the body runs too late to help.
+  validateInput: async (args) => {
+    if (args.operation === 'delete') return
+    const { title } = args.resolvedData
+    if (typeof title === 'string' && title.includes('spam')) {
+      args.addValidationError('Title contains prohibited content')
     }
   },
 
   // Before database operation
-  beforeOperation: async ({ operation, resolvedData }) => {
-    console.log(`About to ${operation}`, resolvedData)
+  beforeOperation: async (args) => {
+    if (args.operation === 'delete') return
+    console.log(`About to ${args.operation}`, args.resolvedData)
   },
 
   // After database operation
-  afterOperation: async ({ operation, item }) => {
-    if (operation === 'create') {
-      await sendNotification(item)
+  afterOperation: async (args) => {
+    if (args.operation === 'create') {
+      await sendNotification(args.item)
     }
   },
 }
@@ -320,54 +341,97 @@ hooks: {
 
 ### Creating Context
 
+`getContext` comes from the generated bundle and takes the session alone — the
+config and the ORM client are already bound.
+
 ```typescript
-import { getContext } from '@opensaas/stack-core'
+import { getContext } from '@/.opensaas/context'
 
-// With session
-const context = await getContext(config, prisma, { userId: '123' })
-
-// Anonymous
-const context = await getContext(config, prisma, null)
+const authenticated = await getContext({ userId: '123' })
+const anonymous = await getContext()
 ```
 
-### Using Context
+### Reading
+
+A read is composed and then run by a terminal. `where` and `orderBy` accumulate;
+`select`, `limit`, `offset` and `cursor` replace.
 
 ```typescript
-// All Prisma operations supported
-const post = await context.db.post.create({ data })
-const posts = await context.db.post.findMany()
-const post = await context.db.post.findUnique({ where: { id } })
-const post = await context.db.post.update({ where: { id }, data })
-const post = await context.db.post.delete({ where: { id } })
+const published = await context.db.Post.where({ status: { equals: 'published' } })
+  .orderBy({ title: 'asc' })
+  .limit(20)
+  .all()
 
-// Access control is automatic
-// Returns null/[] if access denied
+const one = await context.db.Post.where({ id: postId }).first()
+
+const { total } = await context.db.Post.aggregate((a) => ({ total: a.count() }))
+```
+
+`all()` answers `[]` when the read is denied, `first()` answers `null`, and
+`aggregate()` answers `0` under every key. There is no `findMany`, `findUnique`,
+`findFirst` or `count()`.
+
+The `where` vocabulary is a closed set: `equals`, `not`, `in`, `notIn`, `lt`,
+`lte`, `gt`, `gte`, `contains` for scalars, and `some`, `every`, `none` for
+relations, combined with `AND` / `OR` / `NOT`. A bare value means equality,
+`contains` is case-insensitive, and `undefined` is refused rather than dropped —
+so `{ authorId: session?.userId }` on a missing session is an error, not an open
+read.
+
+### Writing
+
+```typescript
+const created = await context.db.Post.create({ data: { title: 'Hello' } })
+const updated = await context.db.Post.update({ where: { id }, data: { title: 'Hi' } })
+const deleted = await context.db.Post.delete({ where: { id } })
+```
+
+`where` on a write is identity-only: exactly one key, `id`. Each of the three
+returns `null` when the operation is denied.
+
+An edge on the foreign-key-owning side is written as `{ connect: { id } }`, or
+`null` to clear it. Nested creates and updates are refused.
+
+```typescript
+await context.db.Post.update({
+  where: { id },
+  data: { author: { connect: { id: userId } } },
+})
 ```
 
 ## Generators
 
-### Prisma Schema
+### Contract module
 
 ```typescript
-import { writePrismaSchema } from '@opensaas/stack-core'
+import { deriveContract } from '@opensaas/stack-core'
+import { writeContractModule } from '@opensaas/stack-cli/generator'
 
-writePrismaSchema(config, './prisma/schema.prisma')
+writeContractModule(deriveContract(config), './prisma/contract.ts')
 ```
+
+`prisma contract emit` then reads that module and writes `prisma/contract.json`
+and `prisma/contract.d.ts` — the artifacts the runtime executes. `opensaas
+generate` runs both steps.
 
 ### TypeScript Types
 
-```typescript
-import { writeTypes } from '@opensaas/stack-core'
+`writeTypes` takes the declared-dependency table alongside the config, because
+the emitted `Lists.<List>.TypeInfo` narrows each `resolveOutput` hook's `item` to
+exactly what its field declared in `needs`. Derive the table from the same config:
 
-writeTypes(config, './.opensaas/types.ts')
+```typescript
+import { deriveDependencyTable } from '@opensaas/stack-core'
+import { writeTypes } from '@opensaas/stack-cli/generator'
+
+writeTypes(config, './.opensaas/types.ts', deriveDependencyTable(config))
 ```
 
 ### Utility Functions
 
 ```typescript
-import { getDbKey, getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
+import { getUrlKey, getListKeyFromUrl } from '@opensaas/stack-core'
 
-getDbKey('BlogPost') // 'blogPost' - for context.db access
 getUrlKey('BlogPost') // 'blog-post' - for URLs
 getListKeyFromUrl('blog-post') // 'BlogPost' - parse from URLs
 ```
@@ -397,11 +461,13 @@ Custom validation in hooks:
 
 ```typescript
 hooks: {
-  validateInput: async ({ operation, resolvedData }) => {
-    if (operation === 'delete') return
-    const { title } = resolvedData
-    if (title && !isValidSlug(slugify(title))) {
-      throw new ValidationError('Title contains invalid characters')
+  validateInput: async (args) => {
+    if (args.operation === 'delete') return
+    const { title } = args.resolvedData
+    if (typeof title === 'string' && !isValidSlug(slugify(title))) {
+      // `ValidationError`'s constructor takes an array of messages, not one
+      // string: `(errors: string[], fieldErrors?: Record<string, string>)`.
+      throw new ValidationError(['Title contains invalid characters'])
     }
   }
 }
@@ -411,30 +477,31 @@ hooks: {
 
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { getContext } from '@opensaas/stack-core'
-import config from './opensaas.config'
+import { getContext } from '@/.opensaas/context'
 
 describe('Post access control', () => {
   it('allows author to update their post', async () => {
-    const context = await getContext(config, prisma, { userId: authorId })
-    const updated = await context.db.post.update({
+    const context = await getContext({ userId: authorId })
+    const updated = await context.db.Post.update({
       where: { id: postId },
       data: { title: 'New Title' },
     })
-    expect(updated).toBeTruthy()
     expect(updated?.title).toBe('New Title')
   })
 
   it('denies non-author from updating post', async () => {
-    const context = await getContext(config, prisma, { userId: otherUserId })
-    const updated = await context.db.post.update({
+    const context = await getContext({ userId: otherUserId })
+    const updated = await context.db.Post.update({
       where: { id: postId },
       data: { title: 'Hacked!' },
     })
-    expect(updated).toBeNull() // Silent failure
+    expect(updated).toBeNull()
   })
 })
 ```
+
+The denied case returns `null` rather than throwing — that is the silent-failure
+rule, and it is what the second test asserts.
 
 ## Examples
 
@@ -443,9 +510,9 @@ describe('Post access control', () => {
 
 ## Learn More
 
-- [API Reference](../../docs/API.md) - Complete API documentation
+- [Context API reference](https://stack.opensaas.au/docs/reference/context-api) - The full `context.db` surface
+- [Config API reference](https://stack.opensaas.au/docs/reference/config-api) - Every config and field option
 - [OpenSaas Stack](../../README.md) - Stack overview
-- [CLAUDE.md](../../CLAUDE.md) - Development guide
 
 ## License
 

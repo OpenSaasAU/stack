@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
     "lib": ["dom", "dom.iterable", "esnext"],
     "types": ["node"],
     "allowJs": true,
@@ -7,6 +8,8 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
@@ -21,8 +24,7 @@
     ],
     "paths": {
       "@/*": ["./*"]
-    },
-    "target": "ES2017"
+    }
   },
   "include": [
     "next-env.d.ts",

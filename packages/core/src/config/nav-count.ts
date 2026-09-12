@@ -1,14 +1,14 @@
 import type { AccessContext } from '../access/types.js'
-import { getDbKey } from '../lib/case-utils.js'
+import type { AggregateBuild } from '../secured/aggregate.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
 /**
  * The minimal shape a `context.db[list]` delegate needs for a nav count. The
  * access-controlled DB carries an `any` index signature, so this narrows the
- * lookup to just the access-scoped `count` we call.
+ * lookup to just the access-scoped reducer we call.
  */
 type CountDelegate = {
-  count?: (args?: { where?: unknown }) => Promise<number>
+  aggregate?: (build: AggregateBuild) => Promise<Record<string, number>>
 }
 
 /**
@@ -59,14 +59,15 @@ export async function resolveNavCounts(
 
   await Promise.all(
     optedIn.map(async (listKey) => {
-      const delegate: CountDelegate | undefined = context.db?.[getDbKey(listKey)]
-      if (!delegate?.count) return
+      const delegate: CountDelegate | undefined = context.db?.[listKey]
+      if (!delegate?.aggregate) return
       // A single list's count failing (a DB hiccup, a throwing access filter or
       // hook) must not blank the whole admin chrome — `AdminUI` awaits this
       // before rendering the shell. Degrade like the sibling `ListView`: log and
       // omit just that badge. Other lists' counts are unaffected.
       try {
-        counts[listKey] = await delegate.count()
+        const reduced = await delegate.aggregate((aggregate) => ({ total: aggregate.count() }))
+        counts[listKey] = reduced.total
       } catch (error) {
         console.error(`Failed to resolve nav count for ${listKey}:`, error)
       }

@@ -36,7 +36,7 @@ const context = {
   plugins: {},
   _isSudo: false,
   _resolveOutputChain: [],
-} as unknown as AccessContext<unknown>
+} as unknown as AccessContext
 
 /**
  * Nav counts (issue #735) are pre-resolved upstream and passed as `navCounts`;

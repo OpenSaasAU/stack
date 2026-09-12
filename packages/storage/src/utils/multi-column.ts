@@ -392,34 +392,16 @@ export function splitFileMetadata(
   map: FileColumnMap,
   parts: readonly FileColumnPart[] = DEFAULT_FILE_COLUMN_PARTS,
 ): Record<string, string | number | null> {
-  const columns: Record<string, string | number | null> = {
-    [map.filename]: null,
-    [map.filesize]: null,
-    [map.url]: null,
-  }
-  if (parts.includes('pathname')) columns[map.pathname] = null
-  if (parts.includes('contentType')) columns[map.contentType] = null
-
-  if (metadata === null || metadata === undefined) {
-    return columns
+  const extra = metadata?.metadata
+  const values: Record<FileColumnPart, string | number | null> = {
+    filename: metadata?.filename ?? null,
+    filesize: metadata?.size ?? null,
+    url: metadata?.url ?? null,
+    pathname: typeof extra?.pathname === 'string' ? extra.pathname : null,
+    contentType: typeof extra?.contentType === 'string' ? extra.contentType : null,
   }
 
-  columns[map.filename] = metadata.filename ?? null
-  columns[map.filesize] = metadata.size ?? null
-  columns[map.url] = metadata.url ?? null
-
-  if (parts.includes('pathname')) {
-    columns[map.pathname] =
-      metadata.metadata && typeof metadata.metadata.pathname === 'string'
-        ? metadata.metadata.pathname
-        : null
-  }
-  if (parts.includes('contentType')) {
-    columns[map.contentType] =
-      metadata.metadata && typeof metadata.metadata.contentType === 'string'
-        ? metadata.metadata.contentType
-        : null
-  }
-
-  return columns
+  // Only the opted-in parts have columns; writing a part outside `parts` would
+  // name a column the generated schema does not carry.
+  return Object.fromEntries(parts.map((part) => [map[part], values[part]]))
 }

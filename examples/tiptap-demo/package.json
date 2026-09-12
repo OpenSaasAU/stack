@@ -3,21 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3002",
+    "dev": "opensaas dev -- next dev -p 3002",
     "build": "pnpm generate && next build",
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start -p 3002",
     "generate": "opensaas generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:update": "opensaas db update",
+    "test": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-tiptap": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/adapter-better-sqlite3": "^7.9.1",
-    "@prisma/client": "^7.9.1",
-    "@prisma/client-runtime-utils": "^7.9.1",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
     "next": "^16.2.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -29,8 +27,9 @@
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^17.4.2",
-    "prisma": "^7.9.1",
+    "prisma": "8.0.0-rc.12",
     "tsx": "^4.23.11",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.11"
   }
 }

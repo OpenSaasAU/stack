@@ -1,13 +1,6 @@
 import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
-// #1176: resolveInput/validate/beforeOperation/afterOperation (list AND field
-// level) receive the full secured `StackContext` — sudo()/withSession()/
-// transaction() bound to the write's own transaction client — not the plain
-// `AccessContext`. Transaction-boundary hooks (beforeTransaction/
-// afterTransaction) are unaffected: they stay on `AccessContext`/the base
-// client by ADR-0028 design.
-import type { StackContext } from '../context/index.js'
 import { validateWithZod } from '../validation/schema.js'
 import { checkFieldAccess } from '../access/field-access.js'
 
@@ -23,18 +16,7 @@ export class ValidationError extends Error {
   }
 }
 
-/** Used for Prisma errors like unique constraint violations. */
-export class DatabaseError extends Error {
-  public fieldErrors: Record<string, string>
-  public code?: string
-
-  constructor(message: string, fieldErrors: Record<string, string> = {}, code?: string) {
-    super(message)
-    this.name = 'DatabaseError'
-    this.fieldErrors = fieldErrors
-    this.code = code
-  }
-}
+export { DatabaseError } from '../lib/database-errors.js'
 
 export async function executeResolveInput<
   TOutput = Record<string, unknown>,
@@ -49,7 +31,7 @@ export async function executeResolveInput<
         inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
@@ -57,7 +39,7 @@ export async function executeResolveInput<
         inputData: TUpdateInput
         resolvedData: TUpdateInput
         item: TOutput
-        context: StackContext
+        context: AccessContext
       },
 ): Promise<TCreateInput | TUpdateInput> {
   if (!hooks?.resolveInput) {
@@ -82,7 +64,7 @@ export async function executeValidate<
         inputData: TCreateInput
         resolvedData: TCreateInput
         item: undefined
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
@@ -90,13 +72,13 @@ export async function executeValidate<
         inputData: TUpdateInput
         resolvedData: TUpdateInput
         item: TOutput
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
         operation: 'delete'
         item: TOutput
-        context: StackContext
+        context: AccessContext
       },
 ): Promise<void> {
   const validateHook = hooks?.validate || hooks?.validateInput
@@ -138,7 +120,7 @@ export async function executeBeforeOperation<
         operation: 'create'
         inputData: TCreateInput
         resolvedData: TCreateInput
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
@@ -146,13 +128,13 @@ export async function executeBeforeOperation<
         inputData: TUpdateInput
         item: TOutput
         resolvedData: TUpdateInput
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
         operation: 'delete'
         item: TOutput
-        context: StackContext
+        context: AccessContext
       },
 ): Promise<void> {
   if (!hooks?.beforeOperation) {
@@ -175,7 +157,7 @@ export async function executeAfterOperation<
         inputData: TCreateInput
         item: TOutput
         resolvedData: TCreateInput
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
@@ -184,13 +166,13 @@ export async function executeAfterOperation<
         originalItem: TOutput
         item: TOutput
         resolvedData: TUpdateInput
-        context: StackContext
+        context: AccessContext
       }
     | {
         listKey: string
         operation: 'delete'
         originalItem: TOutput
-        context: StackContext
+        context: AccessContext
       },
 ): Promise<void> {
   if (!hooks?.afterOperation) {
@@ -379,12 +361,9 @@ export type TransactionOutcome =
  *
  * Runs each field's `afterTransaction` (side effects only) with the settled
  * transaction outcome. On commit the field receives the persisted `item`/
- * `originalItem` — but ONLY for the top-level list (`isTopLevel`); for nested
- * lists they are `undefined`, since `outcome.item` is the top-level persisted
- * row and handing it to a nested field's hook would be unsound. On rollback the
- * field receives the `error` and NO `item`. Unlike the field `afterOperation`
- * gate, EVERY field with the hook runs (compensation must not depend on the
- * field appearing in the payload).
+ * `originalItem`; on rollback the `error` and NO `item`. Unlike the field
+ * `afterOperation` gate, EVERY field with the hook runs (compensation must not
+ * depend on the field appearing in the payload).
  */
 export async function executeFieldAfterTransactionHooks(
   outcome: TransactionOutcome,
@@ -393,11 +372,10 @@ export async function executeFieldAfterTransactionHooks(
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
-  isTopLevel: boolean,
   originalItem?: Record<string, unknown>,
 ): Promise<void> {
-  const committedItem = outcome.status === 'committed' && isTopLevel ? outcome.item : undefined
-  const committedOriginalItem = isTopLevel ? originalItem : undefined
+  const committedItem = outcome.status === 'committed' ? outcome.item : undefined
+  const committedOriginalItem = originalItem
 
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.afterTransaction) continue
@@ -479,7 +457,7 @@ export async function executeFieldResolveInputHooks(
   resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update',
-  context: StackContext,
+  context: AccessContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -526,8 +504,8 @@ export async function executeFieldResolveInputHooks(
  * `filterWritableFields`'s undeclared-key reject cannot enforce this field's
  * own write access — enforce it HERE, using the canonical field-access
  * evaluator with the same arguments the write pipeline uses. A denied field
- * drops its logical key and contributes NONE of its per-part columns (sudo
- * bypasses via `checkFieldAccess`).
+ * throws the same `ValidationError` a denied single-column field throws in
+ * `filterWritableFields` (#568); sudo bypasses via `checkFieldAccess`.
  */
 export async function splitMultiColumnFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -555,17 +533,14 @@ export async function splitMultiColumnFields(
       inputData,
     })
 
-    // Drop the logical key (it is not a real column) regardless of outcome —
-    // a denied field must not leave its logical key behind either.
+    if (!canWrite) {
+      throw new ValidationError([`Cannot ${operation} "${fieldKey}": field-level access denied.`])
+    }
+
+    // Drop the logical key — it is not a real column.
     const next = { ...result }
     delete next[fieldKey]
     result = next
-
-    if (!canWrite) {
-      // Denied: write none of its per-part columns — exactly as
-      // filterWritableFields drops a denied single-column field.
-      continue
-    }
 
     const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
     result = { ...result, ...columns }
@@ -582,7 +557,7 @@ export async function executeFieldValidateHooks(
   resolvedData: Record<string, any> | undefined,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: StackContext,
+  context: AccessContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -647,7 +622,7 @@ export async function executeFieldBeforeOperationHooks(
   resolvedData: Record<string, any>,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: StackContext,
+  context: AccessContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
@@ -694,7 +669,7 @@ export async function executeFieldAfterOperationHooks(
   resolvedData: Record<string, unknown> | undefined,
   fields: Record<string, FieldConfig>,
   operation: 'create' | 'update' | 'delete',
-  context: StackContext,
+  context: AccessContext,
   listKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   originalItem?: any,

@@ -125,3 +125,67 @@ describe('FieldRenderer virtual fields', () => {
     expect(screen.getByTestId('custom-virtual')).toHaveTextContent('custom: Ada Lovelace')
   })
 })
+
+/**
+ * A relationship whose foreign key lives on the related row cannot be written
+ * through this form (ADR-0050). Before this, the control still rendered as an
+ * editable, populated multi-select whose contents were dropped from the submit
+ * payload — the save reported success and changed nothing. The control must not
+ * offer the edit, and must say why.
+ */
+describe('FieldRenderer read-only fields', () => {
+  const reason = 'Not editable here — the related record holds this link.'
+  const tags: SerializableFieldConfig = {
+    type: 'relationship',
+    label: 'Tags',
+    ref: 'Tag.posts',
+    many: true,
+    readOnly: true,
+    readOnlyReason: reason,
+  }
+
+  it('offers no control to change the selection, and states the reason, even in edit mode', () => {
+    const { container } = render(
+      <FieldRenderer
+        fieldName="tags"
+        fieldConfig={tags}
+        value={['t1']}
+        onChange={vi.fn()}
+        mode="edit"
+        relationshipItems={[
+          { id: 't1', label: 'engineering' },
+          { id: 't2', label: 'design' },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('engineering')).toBeInTheDocument()
+    expect(screen.queryByText('Connect Existing')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(findHelp(container)).toHaveTextContent(reason)
+  })
+
+  it('renders the editable control when the same field is not marked read-only', () => {
+    // The negative half: without the flag this is a full multi-select, which is
+    // exactly the state the regression left every to-many in.
+    const editable: SerializableFieldConfig = {
+      ...tags,
+      readOnly: undefined,
+      readOnlyReason: undefined,
+    }
+
+    render(
+      <FieldRenderer
+        fieldName="tags"
+        fieldConfig={editable}
+        value={['t1']}
+        onChange={vi.fn()}
+        mode="edit"
+        relationshipItems={[{ id: 't1', label: 'engineering' }]}
+      />,
+    )
+
+    expect(screen.getByText('Connect Existing')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+  })
+})

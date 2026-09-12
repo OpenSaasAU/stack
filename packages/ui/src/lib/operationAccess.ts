@@ -25,7 +25,7 @@ export type OperationAccessName = 'query' | 'create' | 'update' | 'delete'
 export async function isOperationPotentiallyAllowed(
   access: OperationAccess | undefined,
   operation: OperationAccessName,
-  args: { session: Session | null; context: AccessContext<unknown> },
+  args: { session: Session | null; context: AccessContext },
 ): Promise<boolean> {
   const accessControl = access?.[operation]
   // Deny by default — no rule means no access (matches the core engine).
@@ -63,7 +63,7 @@ export async function isOperationPotentiallyAllowed(
  */
 export async function isFieldPotentiallyWritable(
   fieldAccess: FieldAccess | undefined,
-  args: { session: Session | null; context: AccessContext<unknown> },
+  args: { session: Session | null; context: AccessContext },
 ): Promise<boolean> {
   try {
     return await checkFieldAccess(fieldAccess, 'update', {

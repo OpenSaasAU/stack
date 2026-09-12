@@ -3,6 +3,9 @@
   "version": "0.43.0",
   "description": "Composable React UI components for OpenSaas Stack",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -87,21 +90,27 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
     "@opensaas/stack-core": "workspace:*",
+    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-toolchain": "8.0.0-rc.8",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^5.1.4",
     "@vitest/browser": "^4.1.11",
-    "@vitest/browser-playwright": "^4.1.10",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.11",
     "happy-dom": "^20.11.2",
     "next": "^16.2.10",
+    "pg": "^8.22.0",
     "playwright": "^1.61.1",
     "postcss": "^8.5.26",
     "postcss-cli": "^11.0.1",
@@ -109,6 +118,6 @@
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

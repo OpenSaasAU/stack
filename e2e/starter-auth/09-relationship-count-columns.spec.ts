@@ -10,8 +10,10 @@ import { signUp, generateTestUser } from '../utils/auth.js'
  * renders as an access-visible COUNT column. These specs drive the real admin UI
  * to prove:
  *  • the count cell shows the number of related rows the session may see,
- *  • the column header sorts by relation count,
- *  • a count comparison (`posts:>N`) filters via the builder and a shared URL.
+ *  • the column header is not a sort control — a to-many count is not a column
+ *    the engine can order by (ADR-0055),
+ *  • a presence filter (`posts:>0`, `posts:0`) filters via the builder and a
+ *    shared URL; any other count comparison degrades to free text (ADR-0055).
  *
  * Posts are auto-authored to the signed-in user (the Post `resolveInput` hook),
  * so a fresh user's `posts` count equals the number of posts it creates.
@@ -33,7 +35,7 @@ test.describe('To-many relationship count columns', () => {
     await page.fill('input[name="slug"]', slug)
     await page.fill('textarea[name="content"]', 'Body content for the post.')
     await page.click('button[type="submit"]')
-    await page.waitForURL(/admin\/post/, { timeout: 10000 })
+    await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
   }
 
   async function createPosts(page: Page, count: number, prefix: string) {
@@ -76,76 +78,56 @@ test.describe('To-many relationship count columns', () => {
     await expect(postsCell.locator('[data-slot="cell-relationship-count"]')).toHaveText('3')
   })
 
-  test('sorts the list by relation count when the Posts header is clicked', async ({ page }) => {
-    // Give this user a distinctive number of posts so the ordering is observable.
-    await createPosts(page, 4, 'count-sort')
+  test('the Posts header is not a sort control', async ({ page }) => {
+    await createPosts(page, 2, 'count-sort')
 
-    await page.goto('/admin/user')
+    // Scoped to this user's row by its unique email, as the count test above
+    // is: the shared database holds more users than one page shows.
+    await page.goto(`/admin/user?search=${encodeURIComponent(user.email)}`)
     await page.waitForLoadState('networkidle')
 
     const postsIdx = await columnIndex(page, 'Posts')
-    // Not `exact`: after a sort the header's accessible name gains the sort-arrow
-    // indicator ("Posts ↑"/"Posts ↓"), so match by substring.
-    const header = page.getByRole('columnheader', { name: 'Posts' })
-    const postsColumn = () => page.locator('tbody tr').locator(`td:nth-child(${postsIdx + 1})`)
+    const header = page.locator('table thead th').nth(postsIdx)
+    await expect(header).not.toHaveClass(/cursor-pointer/)
 
-    const columnCounts = async (): Promise<number[]> => {
-      const texts = await postsColumn().allInnerTexts()
-      return texts.map((t) => Number(t.trim())).filter((n) => Number.isFinite(n))
-    }
-
-    // First click → ascending count sort: the column is non-decreasing.
+    // Clicking it neither writes a sort into the URL nor disturbs the rows.
     await header.click()
-    await page.waitForURL(/sort=posts(%3A|:)asc/, { timeout: 10000 })
     await page.waitForLoadState('networkidle')
-    const asc = await columnCounts()
-    for (let i = 1; i < asc.length; i++) {
-      expect(asc[i]).toBeGreaterThanOrEqual(asc[i - 1])
-    }
-
-    // Second click → descending count sort: the column is non-increasing, and
-    // the top row has the highest count on the page (at least this user's 4).
-    await header.click()
-    await page.waitForURL(/sort=posts(%3A|:)desc/, { timeout: 10000 })
-    await page.waitForLoadState('networkidle')
-    const desc = await columnCounts()
-    for (let i = 1; i < desc.length; i++) {
-      expect(desc[i]).toBeLessThanOrEqual(desc[i - 1])
-    }
-    expect(desc[0]).toBeGreaterThanOrEqual(4)
+    expect(page.url()).not.toMatch(/sort=posts/)
+    await expect(page.locator('tbody tr', { hasText: user.email })).toHaveCount(1)
   })
 
-  test('filters by a count comparison via a shared URL (posts:>N)', async ({ page }) => {
-    await createPosts(page, 4, 'count-url')
+  test('filters by presence via a shared URL (posts:>0 and posts:0)', async ({ page }) => {
+    await createPosts(page, 2, 'count-url')
 
-    // `posts:>3` keeps this user (4 > 3)…
-    await page.goto('/admin/user?search=posts:%3E3')
+    // `posts:>0` keeps this user (it has posts)…
+    await page.goto('/admin/user?search=posts:%3E0')
     await page.waitForLoadState('networkidle')
     await expect(page.locator('tbody tr', { hasText: user.email })).toHaveCount(1)
 
-    // …and `posts:>4` excludes it (4 is not > 4). This is self-contained: it
-    // asserts only about this user's own row, independent of other users.
-    await page.goto('/admin/user?search=posts:%3E4')
+    // …and `posts:0` excludes it. This is self-contained: it asserts only
+    // about this user's own row, independent of other users.
+    await page.goto('/admin/user?search=posts:0')
     await page.waitForLoadState('networkidle')
     await expect(page.locator('tbody tr', { hasText: user.email })).toHaveCount(0)
   })
 
-  test('filters by a count comparison built in the Filter builder', async ({ page }) => {
-    await createPosts(page, 4, 'count-builder')
+  test('filters by presence built in the Filter builder', async ({ page }) => {
+    await createPosts(page, 2, 'count-builder')
 
     await page.goto('/admin/user')
     await page.waitForLoadState('networkidle')
 
-    // Build `posts > 3` with the structured row: field Posts, operator greater
-    // than, value 3.
+    // Build `posts > 0` with the structured row: field Posts, operator greater
+    // than, value 0 — the one comparison the engine lowers to `some`.
     await page.getByRole('button', { name: /add filter/i }).click()
     await page.getByLabel('Filter field').selectOption('posts')
     await page.getByLabel('Filter operator').selectOption('gt')
-    await page.getByLabel('Filter value').fill('3')
+    await page.getByLabel('Filter value').fill('0')
     await page.getByRole('button', { name: 'Apply' }).click()
 
-    // The builder writes the engine's grammar (`posts:>3`) into ?search=.
-    await page.waitForURL(/search=posts(%3A|:)(%3E|>)3/, { timeout: 10000 })
+    // The builder writes the engine's grammar (`posts:>0`) into ?search=.
+    await page.waitForURL(/search=posts(%3A|:)(%3E|>)0/, { timeout: 10000 })
     await page.waitForLoadState('networkidle')
 
     await expect(page.locator('tbody tr', { hasText: user.email })).toHaveCount(1)

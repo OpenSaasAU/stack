@@ -1,0 +1,112 @@
+{
+  ".changeset/swift-pandas-listen.md:14": {
+    "excuses": ["provider"],
+    "reason": "a bare name the prose supplies"
+  },
+
+  "docs/content/how-to/rag-advanced.md:73": {
+    "whole": "the body of an object literal: `runtime:` and `afterTransaction:` are bare properties, not statements, and the hook's parameters are typed by the list it is injected into"
+  },
+  "docs/content/how-to/rag-advanced.md:245": {
+    "excuses": ["TS2307 'cohere-ai'"],
+    "reason": "a third-party SDK this repo does not install"
+  },
+  "docs/content/how-to/rag-advanced.md:305": {
+    "excuses": ["TS2307 '@/lib/providers/cohere'"],
+    "reason": "imports the file the reader wrote in the block above"
+  },
+  "docs/content/how-to/rag-advanced.md:337": {
+    "excuses": ["TS2307 '@huggingface/inference'"],
+    "reason": "a third-party SDK this repo does not install"
+  },
+  "docs/content/how-to/rag-advanced.md:548": {
+    "whole": "a bare `DocumentChunk:` object-literal property — one entry of a `lists:` object — not a statement"
+  },
+  "docs/content/how-to/rag-advanced.md:716": {
+    "excuses": ["TS2451 'matches'"],
+    "reason": "a bad/good pair shares one fence and both snippets bind `matches`"
+  },
+  "docs/content/how-to/rag-advanced.md:853": {
+    "excuses": ["TS2307 '@huggingface/inference'"],
+    "reason": "a third-party SDK this repo does not install"
+  },
+  "docs/content/how-to/rag-advanced.md:908": {
+    "whole": "a bare `lists:` object-literal property, not a statement"
+  },
+
+  "docs/content/how-to/deploy.md:143": {
+    "excuses": ["TS2307 '@neondatabase/serverless'", "TS2307 'ws'"],
+    "reason": "third-party packages this repo does not install"
+  },
+  "docs/content/how-to/deploy.md:184": {
+    "excuses": ["TS2307 'prisma/config'", "TS2307 '@prisma/orm-postgres/config'"],
+    "reason": "Prisma's own CLI config entry points, which this repo does not depend on"
+  },
+  "docs/content/how-to/deploy.md:531": {
+    "excuses": ["TS2307 './.opensaas/context'"],
+    "reason": "the block is the `webpackIgnore` anti-pattern the prose tells the reader to avoid, and the relative specifier is the point of it"
+  },
+
+  "docs/content/reference/core.md:140": {
+    "excuses": ["session", "TS2339 'Post'"],
+    "reason": "`session` is a bare name the prose supplies, and `Post` is not one of the three lists the prelude models"
+  },
+
+  "docs/content/reference/rag.md:169": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "docs/content/reference/rag.md:266": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+
+  "examples/rag-ollama-demo/README.md:157": {
+    "excuses": ["TS2345 'lists'"],
+    "reason": "a `config()` whose `lists` the prose elides"
+  },
+  "examples/rag-ollama-demo/README.md:182": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "examples/rag-ollama-demo/README.md:204": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "examples/rag-ollama-demo/README.md:470": {
+    "excuses": ["provider", "text1", "text2", "text3"],
+    "reason": "bare names the prose supplies"
+  },
+
+  "packages/rag/CLAUDE.md:191": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "packages/rag/CLAUDE.md:225": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "packages/rag/CLAUDE.md:564": {
+    "excuses": ["provider"],
+    "reason": "a bare name the prose supplies"
+  },
+  "packages/rag/CLAUDE.md:579": {
+    "excuses": ["query"],
+    "reason": "the caller's search string, a bare name the prose supplies"
+  },
+  "packages/rag/CLAUDE.md:592": {
+    "excuses": ["id"],
+    "reason": "a bare name the prose supplies"
+  },
+  "packages/rag/CLAUDE.md:608": {
+    "excuses": ["TS2307 './openai.js'"],
+    "reason": "a relative import from inside the package's own test tree"
+  },
+
+  "packages/rag/README.md:266": {
+    "whole": "a bare `fields:` object-literal property, not a statement"
+  },
+  "packages/rag/README.md:379": {
+    "excuses": ["TS2451 'chunks'"],
+    "reason": "three alternative snippets share one fence and each binds `chunks`"
+  },
+
+  "packages/ui/README.md:23": {
+    "excuses": ["TS2882 '@opensaas/stack-ui/styles'"],
+    "reason": "the package does export the subpath, as the stylesheet itself — a CSS side-effect import carries no declarations for the compiler to find"
+  }
+}

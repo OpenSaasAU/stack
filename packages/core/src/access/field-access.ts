@@ -1,12 +1,45 @@
 import type { Session, AccessContext } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import type { OpenSaasConfig } from '../config/types.js'
+import type { OpenSaasConfig, RelationshipField } from '../config/types.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { resolveSyntheticReverseRelation } from './engine.js'
+import { shouldHaveForeignKey } from '../fields/index.js'
+
+/**
+ * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
+ * column at all — false on the non-owning side of a one-to-one (ADR-0064),
+ * where the column lives on the OTHER list's model instead. Without config
+ * context (a direct unit test of this function, which passes a bare
+ * `{ type: 'relationship', many: false }`) there is nothing to resolve
+ * ownership against, so this assumes FK-owning — the heuristic
+ * `filterWritableFields` used before it could ask the field itself (#1326).
+ */
+function ownsForeignKeyColumn(
+  fieldName: string,
+  fieldConfig: { many?: boolean; ref?: string },
+  listName: string | undefined,
+  config: OpenSaasConfig | undefined,
+): boolean {
+  if (fieldConfig.many) return false
+  if (!listName || !config || typeof fieldConfig.ref !== 'string') return true
+  try {
+    // `filterWritableFields`'s fieldConfigs type is deliberately looser than
+    // RelationshipField (see its own doc); a field actually built by
+    // relationship() satisfies the real shape.
+    return shouldHaveForeignKey(
+      listName,
+      fieldName,
+      fieldConfig as unknown as RelationshipField,
+      config,
+    )
+  } catch {
+    return true
+  }
+}
 
 /**
  * Marks a throw caused by touching {@link createPoisonedItem}'s `item`, as
@@ -166,18 +199,80 @@ export async function isFieldReadableForPredicate(
     context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<boolean> {
+  return (await classifyRowIndependentRead(fieldAccess, args)) === 'allow'
+}
+
+/**
+ * What a field's `read` rule answers when it is asked with no row: `'allow'`
+ * or `'deny'` for a rule that never touched `item`, and `'row-dependent'` for
+ * one that did and therefore cannot be answered until a row exists.
+ *
+ * This is the one interpretation of that question (ADR-0044's "one
+ * classifier"), and its consumers differ deliberately in what they do with
+ * the answer. `isFieldReadableForPredicate` folds `'row-dependent'` into a
+ * denial, because a predicate that cannot be answered must refuse (ADR-0031).
+ * The include path keeps the three apart: `'deny'` omits the relation before
+ * the query, and `'row-dependent'` fetches it and leaves Field Visibility to
+ * decide (ADR-0044). Neither is to be harmonised into the other.
+ *
+ * A rule that returns a non-boolean is a distinct, louder failure (#913,
+ * ADR-0030) — `InvalidFieldAccessResultError` — and propagates rather than
+ * being folded into `'deny'`.
+ */
+export async function classifyRowIndependentRead(
+  fieldAccess: FieldAccess | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
   try {
-    return await checkFieldAccess(fieldAccess, 'read', {
+    const readable = await checkFieldAccess(fieldAccess, 'read', {
       session: args.session,
       context: args.context,
       item: createPoisonedItem(),
     })
+    return readable ? 'allow' : 'deny'
   } catch (err) {
-    // Only the poisoned-item signal means "row-dependent, deny". Anything
-    // else — including `InvalidFieldAccessResultError` and a genuine bug in
-    // the rule itself — propagates unchanged rather than being silently
-    // folded into an ordinary denial (found in review of #925).
-    if (err instanceof PredicateTimeItemAccessError) return false
+    // Only the poisoned-item signal means "row-dependent". Anything else —
+    // including `InvalidFieldAccessResultError` and a genuine bug in the rule
+    // itself — propagates unchanged rather than being silently folded into an
+    // ordinary denial (found in review of #925).
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
+    throw err
+  }
+}
+
+/**
+ * The write-side counterpart of {@link classifyRowIndependentRead}: what a
+ * field's `create`/`update` rule answers when it is asked with neither a row
+ * nor a payload.
+ *
+ * Both `item` and `inputData` are poisoned, because either one makes the rule
+ * unanswerable ahead of a request — a rule reading the payload is as
+ * row-dependent, for this purpose, as one reading the row.
+ *
+ * A rule that returns a non-boolean raises `InvalidFieldAccessResultError`
+ * (ADR-0030), which propagates rather than being folded into `'deny'`.
+ */
+export async function classifyRowIndependentWrite(
+  fieldAccess: FieldAccess | undefined,
+  operation: 'create' | 'update',
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  try {
+    const writable = await checkFieldAccess(fieldAccess, operation, {
+      session: args.session,
+      context: args.context,
+      item: createPoisonedItem(),
+      inputData: createPoisonedItem(),
+    })
+    return writable ? 'allow' : 'deny'
+  } catch (err) {
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
     throw err
   }
 }
@@ -201,9 +296,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     /**
      * The list being written and the full config — used ONLY to recognise a
      * synthetic reverse-relation key (`from_<List>_<field>`, #978) among the
-     * undeclared keys sudo would otherwise pass through unchecked. Both
-     * production call sites (the write pipeline, nested-operations) supply
-     * these; a direct unit test that omits them keeps the pre-#978 sudo
+     * undeclared keys sudo would otherwise pass through unchecked. The write
+     * pipeline supplies these; a direct unit test that omits them keeps the
+     * pre-#978 sudo
      * behaviour of passing any undeclared key through, since it has no config
      * to resolve a synthetic key against.
      */
@@ -213,8 +308,15 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
-  // Foreign keys must not appear in `data` when using Prisma's relation syntax.
-  const foreignKeyFields = new Set<string>()
+  // A to-one relationship's foreign-key column (`<field>Id`) is not its own
+  // declared field, but writing it directly is a legitimate spelling of the
+  // same edge `connect` lowers to (ADR-0050) — gated below by the OWNING
+  // relationship field's write access, exactly like `connect` is (#1326).
+  //
+  // That is one of the two access components ADR-0050 pairs. The other —
+  // reachability, `query` access on the TARGET row — is applied to both
+  // spellings by `lowerRelationInput`, which runs after this filter (#1331).
+  const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   // Map each raw per-part column name contributed by a multi-column field
   // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
   // declared field. These columns are injected into the write payload by the
@@ -234,10 +336,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
-      // For non-many relationships, Prisma creates a foreign key field named `${fieldName}Id`
-      const relConfig = fieldConfig as { many?: boolean }
-      if (!relConfig.many) {
-        foreignKeyFields.add(`${fieldName}Id`)
+      // A to-one relationship owns a `<field>Id` column UNLESS it is the
+      // non-owning side of a one-to-one (ADR-0064) — `ownsForeignKeyColumn`
+      // asks the field itself rather than assuming every to-one does (#1326).
+      const relConfig = fieldConfig as { many?: boolean; ref?: string }
+      if (ownsForeignKeyColumn(fieldName, relConfig, args.listName, args.config)) {
+        foreignKeyOwners.set(`${fieldName}Id`, { fieldName, access: fieldConfig.access })
       }
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
@@ -262,9 +366,24 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Prevents conflicts with Prisma's relation syntax (e.g.,
-    // `author: { connect: { id } }`).
-    if (foreignKeyFields.has(fieldName)) {
+    // A directly-written foreign-key column (`authorId`) — gated by the OWNING
+    // relationship field's write access, same as `connect` (#1326). Denied
+    // (non-sudo) throws rather than being silently dropped; allowed (or sudo)
+    // passes through unchanged, so the column is not a way around the
+    // relationship field's write gate.
+    const foreignKeyOwner = foreignKeyOwners.get(fieldName)
+    if (foreignKeyOwner) {
+      const canWrite = await checkFieldAccess(foreignKeyOwner.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      })
+      if (!canWrite) {
+        throw new ValidationError([
+          `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
+            `field-level access denied.`,
+        ])
+      }
+      filtered[fieldName] = value
       continue
     }
 
@@ -297,16 +416,15 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // A key with no entry in `fieldConfigs` is not a field the list config
     // exposes. The generated Prisma model has MORE fields than the config
     // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
-    // an undeclared key to pass through lets a non-sudo caller drive ungated
-    // nested writes on undeclared back-relations. Mirror Keystone's
-    // GraphQL-schema behaviour and reject it.
+    // an undeclared key to pass through lets a non-sudo caller reach a column
+    // the config never exposed. Mirror Keystone's GraphQL-schema behaviour and
+    // reject it.
     if (!fieldConfig) {
       if (isSudo) {
         // #978 — sudo bypasses ACCESS CONTROL, not the hooks/validation a
         // recognised relation is entitled to. A synthetic reverse-relation key
-        // (a list-only ref's back-relation) is handed to the caller unchanged
-        // so processNestedOperations can run its target list's full pipeline,
-        // exactly as it would for a declared relationship field. Any other
+        // (a list-only ref's back-relation) is handed to the caller unchanged,
+        // exactly as a declared relationship field is. Any other
         // undeclared key has no such route to hooks — passing it straight to
         // Prisma is the same silent-bypass shape this issue closed for
         // relations, so it is refused even under sudo. `listName`/`config`

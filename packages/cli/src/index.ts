@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { generateCommand } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
 import { devCommand } from './commands/dev.js'
+import { createDbCommand } from './commands/db.js'
 import { createMCPCommand } from './commands/mcp.js'
 import { createMigrateCommand } from './commands/migrate.js'
 
@@ -32,10 +33,13 @@ program
 
 program
   .command('dev')
-  .description('Watch opensaas.config.ts and regenerate on changes')
-  .action(async () => {
-    await devCommand()
+  .description('Start the dev database, generate, reconcile the schema and run the app')
+  .argument('[command...]', 'App command to run instead of `next dev`, after `--`')
+  .action(async (command: string[]) => {
+    await devCommand({ appCommand: command })
   })
+
+program.addCommand(createDbCommand())
 
 // Add MCP command group
 program.addCommand(createMCPCommand())

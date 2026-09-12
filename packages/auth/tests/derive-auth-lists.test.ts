@@ -106,23 +106,11 @@ describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679/#937)'
     expect(lists.Session.fields.token.isIndexed).toBe('unique')
   })
 
-  it('adds onDelete: Cascade to the user relation line via extendPrismaSchema', () => {
+  it('declares onDelete: cascade on the user relation', () => {
     const { lists } = deriveAuthLists(defaultModels)
 
     for (const field of [lists.Session.fields.user, lists.Account.fields.user]) {
-      const extend = field.db?.extendPrismaSchema
-      expect(extend).toBeTypeOf('function')
-
-      const result = extend!({
-        fkLine: '  userId       String?',
-        relationLine: '  user         User?  @relation(fields: [userId], references: [id])',
-      })
-
-      expect(result.relationLine).toBe(
-        '  user         User?  @relation(onDelete: Cascade, fields: [userId], references: [id])',
-      )
-      // The FK line itself is untouched by the cascade rewrite.
-      expect(result.fkLine).toBe('  userId       String?')
+      expect(field.db?.onDelete).toBe('cascade')
     }
   })
 
@@ -133,7 +121,7 @@ describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679/#937)'
     expect(lists.Account.fields.user.db?.isNullable).toBe(false)
   })
 
-  it('keeps the cascade extendPrismaSchema alongside a userId column override', () => {
+  it('keeps the cascade onDelete alongside a userId column override', () => {
     const models: NormalizedAuthModels = {
       user: { modelName: 'User', fields: {} },
       session: { modelName: 'Session', fields: { userId: 'user_id' } },
@@ -144,9 +132,9 @@ describe('deriveAuthLists - user FK shape mirrors better-auth (issue #679/#937)'
     const { lists } = deriveAuthLists(models)
 
     expect(lists.Session.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
-    expect(lists.Session.fields.user.db?.extendPrismaSchema).toBeTypeOf('function')
+    expect(lists.Session.fields.user.db?.onDelete).toBe('cascade')
     expect(lists.Account.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
-    expect(lists.Account.fields.user.db?.extendPrismaSchema).toBeTypeOf('function')
+    expect(lists.Account.fields.user.db?.onDelete).toBe('cascade')
   })
 })
 

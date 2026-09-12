@@ -5,11 +5,12 @@ export type {
   AccessContext,
   PrismaFilter,
   AccessControlledDB,
-  PrismaClientLike,
+  AccessControlledDelegate,
+  OrmClient,
+  OrmModelDelegate,
+  OrmOperationArgs,
+  OrmRow,
   StorageUtils,
-  AugmentedFindMany,
-  AugmentedFindUnique,
-  FindManyQueryArgs,
 } from './types.js'
 // Operation-level access primitives and shared ref-parsing helper.
 export {
@@ -29,7 +30,7 @@ export {
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
-// Read-path key validation — the `findMany`/`count` counterpart to the write
+// Read-path key validation — the read counterpart to the write
 // path's #564 undeclared-key reject.
 export { validateQueryKeys } from './query-validation.js'
 // Read-path field-level access on `where`/`orderBy` keys — a field the
@@ -58,14 +59,16 @@ export { isToManyRelationshipField, resolveCountAccessEntryForList } from './rel
 export type { CountAccessEntry } from './relationship-count.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
-// Declared Dependencies — folding `needs` into an include without widening
-// the result (ADR-0025).
+// Declared Dependencies — widening a read for the emitted `needs` sets
+// without widening the result (ADR-0025, ADR-0051).
 export {
-  foldDeclaredDependencies,
-  getDeclaredRelationNames,
-  emptyDeclaredOnlyTree,
+  widenIncludeForDependencies,
+  resolveDeclaredDependencies,
+  getDependencyTable,
+  getListDependencies,
+  noDependencyAdditions,
 } from './declared-dependencies.js'
-export type { DeclaredOnlyTree } from './declared-dependencies.js'
+export type { DependencyAdditions, FieldSelectionScope } from './declared-dependencies.js'
 // Thrown when a caller include reaches past the depth the Access Filter can scope.
 export { AccessScopeDepthExceededError } from './errors.js'
 // Thrown when a resolveOutput hook's own resolve chain cycles back into itself.
@@ -74,6 +77,8 @@ export { ResolveOutputCycleError } from './errors.js'
 export { InvalidFieldAccessResultError } from './errors.js'
 // Thrown when operation-level `create` access control returns a non-boolean result (#1009).
 export { InvalidCreateAccessResultError } from './errors.js'
+// Thrown when an access rule returns a filter carrying an `undefined` condition (#1147).
+export { UndefinedAccessFilterError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
 export { RelationFilterAccessDeniedError } from './errors.js'
 // Thrown when a caller `include` names a key that is neither declared, synthetic, nor `_count` (#1082).

@@ -1,11 +1,11 @@
-import type {
-  AccessControl,
-  AccessControlledDB,
-  FieldAccess,
-  PrismaClientLike,
-} from '../access/types.js'
+import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { GeneratedTables } from '../contract/dependencies.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
+import type {
+  PostgresOptionsBase,
+  PostgresOptionsWithContractJson,
+} from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
@@ -26,7 +26,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -35,7 +35,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
 
 /** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
@@ -50,7 +50,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -60,7 +60,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -68,7 +68,7 @@ export type FieldValidateHookArgs<
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
 
@@ -83,7 +83,7 @@ export type FieldBeforeOperationHookArgs<
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -92,14 +92,14 @@ export type FieldBeforeOperationHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
 
 /** Arguments for {@link FieldHooks.afterOperation}. */
@@ -114,7 +114,7 @@ export type FieldAfterOperationHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -124,14 +124,14 @@ export type FieldAfterOperationHookArgs<
       originalItem: TTypeInfo['item']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       originalItem: TTypeInfo['item']
-      context: import('../context/index.js').StackContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -155,7 +155,7 @@ export type FieldBeforeTransactionHookArgs<
       fieldKey: TFieldKey
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -163,14 +163,14 @@ export type FieldBeforeTransactionHookArgs<
       operation: 'update'
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -201,7 +201,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['create']
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -210,7 +210,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TTypeInfo['inputs']['create']
       error: unknown
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -222,7 +222,7 @@ export type FieldAfterTransactionHookArgs<
       originalItem: TTypeInfo['item'] | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -232,7 +232,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['update']
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -241,7 +241,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -250,7 +250,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+      context: import('../access/types.js').AccessContext
     }
 
 /** Arguments for {@link FieldHooks.resolveOutput}. */
@@ -259,11 +259,16 @@ export type FieldResolveOutputHookArgs<
   TFieldKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 > = {
   operation: 'query'
-  value: GetFieldValueType<TTypeInfo['fields'], TFieldKey>
-  item: TTypeInfo['item']
+  value: GetFieldValueType<TTypeInfo, TFieldKey>
+  /**
+   * Exactly the field's declared dependency set plus the list's system
+   * fields — what the runtime fetches for it (ADR-0051). Reading a column
+   * this field did not declare in `needs` is a compile error.
+   */
+  item: FieldNeedsItem<TTypeInfo, TFieldKey>
   listKey: string
   fieldName: TFieldKey
-  context: import('../access/types.js').AccessContext<TTypeInfo['prisma'], TTypeInfo['db']>
+  context: import('../access/types.js').AccessContext
 }
 
 /**
@@ -309,8 +314,8 @@ export type FieldHooks<
   resolveInput?: (
     args: FieldResolveInputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
 
   /**
@@ -445,7 +450,7 @@ export type FieldHooks<
    *
    * // Async example (e.g., for virtual fields that query the database)
    * resolveOutput: async ({ item, context }) => {
-   *   const related = await context.db.otherList.findUnique({ where: { id: item.relatedId } })
+   *   const related = await context.db.OtherList.where({ id: item.relatedId }).first()
    *   return related?.name
    * }
    * ```
@@ -453,35 +458,9 @@ export type FieldHooks<
   resolveOutput?: (
     args: FieldResolveOutputHookArgs<TTypeInfo, TFieldKey>,
   ) =>
-    | GetFieldValueType<TTypeInfo['fields'], TFieldKey>
+    | GetFieldValueType<TTypeInfo, TFieldKey>
     | undefined
-    | Promise<GetFieldValueType<TTypeInfo['fields'], TFieldKey> | undefined>
-}
-
-/**
- * Configuration for Prisma result extensions
- * Allows fields to transform their runtime values and types in query results
- *
- * Runtime transformation is delegated to the field's resolveOutput hook.
- * This config only specifies the TypeScript output type for generated types.
- */
-export type ResultExtensionConfig = {
-  /**
-   * The TypeScript type to use in query result types
-   * This is a type expression like: "import('@opensaas/stack-core').HashedPassword"
-   *
-   * The actual runtime transformation is performed by the field's resolveOutput hook.
-   * The Prisma extension will automatically call the hook if it exists.
-   *
-   * @example "import('@opensaas/stack-core').HashedPassword"
-   * @example "import('./types').MyCustomType"
-   */
-  outputType: string
-  /**
-   * @deprecated No longer used. Runtime transformations are handled by resolveOutput hooks.
-   * This field is kept for backwards compatibility but should not be used in new code.
-   */
-  compute?: string
+    | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
 }
 
 export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
@@ -500,11 +479,6 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * it (ADR-0027) — not gated behind an explicit `include`/selection.
    */
   virtual?: boolean
-  /**
-   * Prisma result extension configuration
-   * Transforms field values and types in query results using Prisma's native extension system
-   */
-  resultExtension?: ResultExtensionConfig
   /**
    * Database configuration
    */
@@ -646,67 +620,14 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    */
   getZodSchema?: (fieldName: string, operation: 'create' | 'update') => z.ZodTypeAny
   /**
-   * Get Prisma type and modifiers for schema generation
-   * @param fieldName - The name of the field (for generating modifiers)
-   * @param provider - Optional database provider ('sqlite', 'postgresql', 'mysql', etc.)
-   * @param listName - Optional list name (used for generating enum type names)
-   * @param keystoneCompat - Whether Keystone-compat mode is enabled (db.keystoneCompat).
-   *   When true, non-null text columns without an explicit defaultValue emit
-   *   `@default("")` to match Keystone 6's implicit empty-string text default.
-   * @returns Prisma type string, optional modifiers, optional enum values, and
-   *   an optional block-level index request
-   */
-  getPrismaType?: (
-    fieldName: string,
-    provider?: string,
-    listName?: string,
-    keystoneCompat?: boolean,
-  ) => {
-    type: string
-    modifiers?: string
-    /**
-     * If set, this field requires a Prisma enum definition with these values.
-     * The enum name is the value of `type`.
-     */
-    enumValues?: string[]
-    /**
-     * If set, this field requires a block-level index on the owning model:
-     * `@@index([fieldName])` for `true`, `@@unique([fieldName])` for
-     * `'unique'`. `false` and `undefined` both mean "no index".
-     *
-     * Prisma has no field-level `@index` attribute — a non-unique index can
-     * ONLY be expressed as the model-level `@@index([...])` — so a field that
-     * wants one has to ask for it out-of-line rather than appending to
-     * {@link modifiers}. (A unique index has both forms available; the
-     * built-in scalars keep emitting the inline `@unique` modifier for that
-     * case, so this channel carries only what cannot be written inline.)
-     *
-     * Same shape as {@link PrismaRelationResult.foreignKeyIndex}, which is how
-     * relationship fields have always emitted their foreign-key indexes. The
-     * generator handles both through one emit pass, so the field stays the
-     * authority on whether it can be indexed by name at all — a multi-column
-     * field (see {@link getPrismaColumns}) has no single column matching its
-     * field name and can decline, or name a real column of its own.
-     */
-    index?: boolean | 'unique'
-  }
-  /**
-   * Get TypeScript type information for type generation
-   * @returns TypeScript type string and optionality
-   */
-  getTypeScriptType?: () => {
-    type: string
-    optional: boolean
-  }
-  /**
    * Declare this field's filtering capability — its {@link FilterSpec} — for the
    * admin UI's Filter builder (ADR-0017). Optional and additive: a field that
    * omits it (like `password`, `json`, `virtual`, or a third-party field that
    * hasn't adopted filtering) is simply not filterable and never suggested, so
    * absence degrades gracefully everywhere.
    *
-   * Self-contained, like {@link getPrismaType} and friends — the filter engine
-   * delegates to each field's spec rather than switching on field type. The
+   * Self-contained, like {@link getContractField} and friends — the filter
+   * engine delegates to each field's spec rather than switching on field type. The
    * returned `toCondition` mapper must stay pure (no DB/Prisma imports); its
    * output is ANDed with the access filter through the secured context.
    *
@@ -722,49 +643,11 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     config: OpenSaasConfig,
   ) => FilterSpec | undefined
   /**
-   * Get TypeScript imports needed for this field's type
-   * @returns Array of import statements needed for the generated types file
-   */
-  getTypeScriptImports?: () => Array<{
-    /**
-     * The type/value names to import
-     * e.g., ['StoredEmbedding', 'EmbeddingMetadata']
-     */
-    names: string[]
-    /**
-     * The module to import from
-     * e.g., '@opensaas/stack-rag'
-     */
-    from: string
-    /**
-     * Whether this is a type-only import
-     * @default true
-     */
-    typeOnly?: boolean
-  }>
-  /**
-   * Multi-column Prisma emission.
-   *
-   * Most scalar fields back a single Prisma column via {@link getPrismaType}.
-   * A field that maps onto SEVERAL physical columns (e.g. the storage
-   * `image()`/`file()` fields in multi-column / Keystone-parity mode — see
-   * ADR-0006) implements this instead: it returns one descriptor per column,
-   * each becoming its own line in the generated model. When present, the
-   * generator emits these lines and skips the single-column `getPrismaType`
-   * path. The field itself owns the column layout — the generator stays a
-   * neutral coordinator (no field-type switches), mirroring how relationship
-   * fields emit FK + relation lines through `getPrismaRelation`.
-   *
-   * @param fieldName - The field's config key (used to derive default column names)
-   * @returns One descriptor per physical column, or `undefined` to fall back to
-   *   the single-column `getPrismaType` path.
-   */
-  getPrismaColumns?: (fieldName: string) => MultiColumnPrismaResult[] | undefined
-  /**
-   * The physical Prisma column names this field owns when it spans multiple
-   * columns (see {@link getPrismaColumns}). The read path uses this to strip the
-   * raw per-part columns from query results so only the assembled logical value
-   * (produced by {@link assembleColumns}) is exposed.
+   * The physical column names this field owns when its
+   * {@link getContractField} descriptor is a multi-column one (`kind:
+   * 'columns'`). The read path uses this to strip the raw per-part columns
+   * from query results so only the assembled logical value (produced by
+   * {@link assembleColumns}) is exposed.
    *
    * @param fieldName - The field's config key
    */
@@ -790,22 +673,87 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    */
   splitColumns?: (fieldName: string, value: unknown) => Record<string, unknown>
   /**
-   * Declares the immediate sibling relations this field's `resolveOutput`
-   * hook cannot compute without (ADR-0025 — the "Declared dependency" glossary
-   * entry in `CONTEXT.md`). The read fetches each declared relation wherever
-   * this field is computed — at the root of a read and at every nested level
-   * alike — and scopes it through the Access Filter exactly like a
-   * caller-named relation: a dependency a session cannot query is not
-   * fetched, and the hook sees nothing in its place.
+   * Describe what this field contributes to the contract (ADR-0040,
+   * ADR-0049): its stored column(s) as a pack-qualified type constructor with
+   * native type, nullability and column mapping; for a relationship, the
+   * relation and the foreign-key column this side owns; for a virtual field,
+   * nothing.
+   *
+   * @param fieldName - The field's config key
+   * @param listKey - The owning list's key
+   * @param config - The full config (a relationship resolves its target and
+   *   foreign-key ownership from it)
+   *
+   * @example
+   * ```typescript
+   * getContractField: (fieldName) => ({
+   *   kind: 'column',
+   *   name: fieldName,
+   *   type: { pack: 'pgvector', type: 'Vector', args: [1536] },
+   *   nullable: true,
+   * })
+   * ```
+   */
+  getContractField?: (
+    fieldName: string,
+    listKey: string,
+    config: OpenSaasConfig,
+  ) => ContractFieldDescriptor
+  /**
+   * Describe this field's stored vector column, when it has one: the column
+   * `nearest()` measures against and the distance function that measurement
+   * is made with (ADR-0045). A field that does not answer this is not
+   * searchable, which is what makes `nearest('title', …)` a refusal rather
+   * than a query the database rejects.
+   *
+   * @param fieldName - The field's config key
+   *
+   * @example
+   * ```typescript
+   * getVectorColumn: (fieldName) => ({
+   *   column: fieldName,
+   *   dimensions: 1536,
+   *   distanceFunction: 'cosine',
+   * })
+   * ```
+   */
+  getVectorColumn?: (fieldName: string) => VectorColumnDescriptor
+  /**
+   * The TypeScript type a read returns for this field, when it differs from
+   * the column's codec type (ADR-0052). Required on a virtual field, where it
+   * is the contract remainder's computed entry; on a stored field it is an
+   * override — `password` reads as `HashedPassword` over a text column —
+   * and absence means the codec's own type.
+   *
+   * @example "import('@opensaas/stack-core/internal').HashedPassword"
+   * @example { value: Decimal, from: 'decimal.js' }
+   */
+  outputType?: TypeDescriptor
+  /**
+   * The TypeScript type a write accepts for this field, when it differs from
+   * the column's codec input type (ADR-0052) — `calendarDay` accepts a
+   * `YYYY-MM-DD` string where the codec would take more. Absence means the
+   * codec's own input type.
+   */
+  inputType?: TypeDescriptor
+  /**
+   * Declares the immediate sibling columns and relations this field's
+   * `resolveOutput` hook cannot compute without (ADR-0025, widened to columns
+   * by ADR-0051 — the "Declared dependency" glossary entry in `CONTEXT.md`).
+   * The read fetches each declared dependency wherever this field is
+   * computed — at the root of a read and at every nested level alike — and
+   * scopes a relation through the Access Filter exactly like a caller-named
+   * one: a dependency a session cannot query is not fetched, and the hook
+   * sees nothing in its place.
    *
    * A declared dependency is private plumbing, not an implicit `include`: it
    * is stripped from the result unless the caller named it too, so declaring
    * or removing one changes this field's implementation, never the shape of
    * every read of the list.
    *
-   * Names immediate relations only — no dotted paths. Reach beyond one hop
-   * comes from the recursive fold: a dependency's own list declares its own
-   * dependencies.
+   * Names stored columns and immediate relations on the same list only — no
+   * dotted paths, and never a computed field. A declaration on a field with
+   * no `resolveOutput` hook is dead config and fails `pnpm generate`.
    *
    * Typed as a plain `string[]`, not narrowed to this list's own relation
    * keys: `BaseFieldConfig` is the contextual type EVERY field builder's
@@ -835,22 +783,148 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
 }
 
 /**
- * A single physical column contributed by a multi-column field
- * (see {@link BaseFieldConfig.getPrismaColumns}).
+ * A JSON-serialisable literal. What a column default can hold, and the
+ * argument vocabulary of a {@link ColumnTypeDescriptor} — the Contract module
+ * is fully literal (ADR-0040), so nothing that cannot be re-emitted as source
+ * belongs here.
  */
-export type MultiColumnPrismaResult = {
-  /** The Prisma model field name (the property the column is declared as). */
-  name: string
-  /** The Prisma scalar type, e.g. `'String'` or `'Int'`. */
+export type ContractLiteral =
+  string | number | boolean | null | ContractLiteral[] | { [key: string]: ContractLiteral }
+
+/**
+ * A column's type as a pack-qualified type constructor —
+ * `type.<pack>.<type>(...args)` in the Contract module (ADR-0049). Core's
+ * scalars live in the `pg` pack (`{ pack: 'pg', type: 'text' }`,
+ * `{ pack: 'pg', type: 'decimal', args: [18, 4] }`); a field over an extension
+ * pack names it (`{ pack: 'pgvector', type: 'Vector', args: [1536] }`), and the
+ * generator refuses a config that uses a pack `db.extensions` does not declare.
+ */
+export type ColumnTypeDescriptor = {
+  /** The pack that owns the type constructor — `'pg'` for core's scalars, else an extension pack's `name`. */
+  pack: string
+  /** The type constructor's name within the pack. */
   type: string
-  /**
-   * Field modifiers, e.g. `'?'` for nullable. A leading `'?'` attaches to the
-   * type; anything after it is treated as trailing attributes (matching the
-   * single-column `getPrismaType` modifier convention).
-   */
-  modifiers?: string
-  /** Physical column name for the `@map` attribute, when it differs from `name`. */
+  /** Positional arguments to the constructor (a length, a precision/scale pair, a dimension). */
+  args?: ContractLiteral[]
+}
+
+/**
+ * A column's default. `'literal'` carries a value the Contract module emits as
+ * source; `'now'` is the database clock at insert. A `bigint` column's default
+ * is carried as its decimal string — `42n`, `42` and `'42'` all become `'42'`,
+ * the form the generator writes into `@default`. A default that is not a
+ * JSON literal (a `Date`, a `Decimal`, a `Map`) is refused by the builder.
+ */
+export type ColumnDefaultDescriptor = { kind: 'literal'; value: ContractLiteral } | { kind: 'now' }
+
+/**
+ * One stored column a field contributes to the contract.
+ */
+export type ContractColumnDescriptor = {
+  /** The model field name — the property the column is declared as. Equals the field key for a single-column field. */
+  name: string
+  /** The column's type constructor. */
+  type: ColumnTypeDescriptor
+  /** A native-type override for the column (`db.nativeType`), when the constructor's default is not wanted. */
+  nativeType?: string
+  /** Whether the column accepts NULL. */
+  nullable: boolean
+  /** The physical column name, when it differs from {@link name} (`db.map`). */
   map?: string
+  /** Whether the column carries a unique constraint (`isIndexed: 'unique'`). */
+  unique?: boolean
+  /** Whether the column carries a non-unique index (`isIndexed: true`). */
+  index?: boolean
+  /** The column's default, when it has one. */
+  default?: ColumnDefaultDescriptor
+  /**
+   * The native enum this column is typed by, when {@link type} is an enum
+   * constructor — the contract declares the enum entity once and the column
+   * references it.
+   */
+  enum?: { name: string; values: string[] }
+}
+
+/**
+ * The foreign-key column a relationship's owning side contributes. The
+ * column's type is the referenced list's id type, resolved from that list's
+ * `db.idField`.
+ */
+export type ContractForeignKeyDescriptor = {
+  /** The model field name of the foreign-key column (`<field>Id`). */
+  name: string
+  /** The physical column name, when it differs from {@link name}. */
+  map?: string
+  /** Whether the column accepts NULL (`db.isNullable`, default `true`). */
+  nullable: boolean
+  /** Whether the column carries a unique constraint — the owning side of a one-to-one. */
+  unique: boolean
+  /** Whether the column carries a non-unique index (`isIndexed`, default `true`). */
+  index: boolean
+  /** The list and field the column references. */
+  references: { list: string; field: 'id' }
+}
+
+/**
+ * A relationship field's contract contribution: the relation itself and, on
+ * the owning side of a to-one, its foreign-key column.
+ */
+export type ContractRelationDescriptor = {
+  kind: 'relation'
+  /** The list this field points at. */
+  target: string
+  /**
+   * The field on {@link target} that is this relation's other side. Declared
+   * (`ref: 'List.field'`) or, for a list-only `ref: 'List'`, synthesised as
+   * `from_<List>_<field>` on the target.
+   */
+  inverse: { field: string; synthetic: boolean }
+  /** Whether this side holds many rows. */
+  many: boolean
+  /**
+   * The foreign-key column this side owns. Absent on a to-many side and on
+   * the non-owning side of a one-to-one, which have no column.
+   */
+  foreignKey?: ContractForeignKeyDescriptor
+}
+
+/**
+ * What a field contributes to the contract (ADR-0040, ADR-0049):
+ *
+ * - `'column'` — one stored column; the common scalar case.
+ * - `'columns'` — several stored columns owned by one field (the multi-column
+ *   path ADR-0006 gave storage fields; each entry is its own column).
+ * - `'relation'` — a relation and, when this side owns it, a foreign key.
+ * - `'computed'` — no storage at all; a virtual field. Its TypeScript face is
+ *   {@link BaseFieldConfig.outputType}, the contract remainder's computed entry.
+ */
+export type ContractFieldDescriptor =
+  | ({ kind: 'column' } & ContractColumnDescriptor)
+  | { kind: 'columns'; columns: ContractColumnDescriptor[] }
+  | ContractRelationDescriptor
+  | { kind: 'computed' }
+
+/**
+ * How similarity is measured over a vector column. The three pgvector
+ * supports, in the spelling the RAG field builder already used: `cosine`
+ * (`<=>`), `l2` (`<->`) and `inner_product` (`<#>`, which yields the
+ * *negative* inner product — the direction `distanceToScore` hides).
+ */
+export type VectorDistanceFunction = 'cosine' | 'l2' | 'inner_product'
+
+/**
+ * A field's stored vector column, as `nearest()` needs to see it
+ * (ADR-0045). The field owns the column, its dimension and the distance
+ * function together, because the index's operator class must agree with all
+ * three.
+ */
+export type VectorColumnDescriptor = {
+  /** The model field name of the vector column. */
+  column: string
+  /** The column's declared dimension. A query vector of another length is refused. */
+  dimensions: number
+  /** How a distance over this column is measured. */
+  distanceFunction: VectorDistanceFunction
 }
 
 export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
@@ -1219,64 +1293,23 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       foreignKey?: boolean | { map?: string }
       /**
-       * Custom relation name for many-to-many relationships
-       * Overrides the global joinTableNaming setting
-       * Prisma will create an implicit join table named _relationName
-       * Only needs to be set on one side of a bidirectional relationship
+       * What the database does to this row when the referenced row is
+       * deleted. Only meaningful on the foreign-key-owning side.
        *
-       * @example KeystoneJS-style naming for migration
-       * ```typescript
-       * Lesson: list({
-       *   fields: {
-       *     teachers: relationship({
-       *       ref: 'Teacher.lessons',
-       *       many: true,
-       *       db: { relationName: 'Lesson_teachers' }
-       *       // Prisma creates join table _Lesson_teachers
-       *     })
-       *   }
-       * })
-       *
-       * Teacher: list({
-       *   fields: {
-       *     lessons: relationship({ ref: 'Lesson.teachers', many: true })
-       *     // Automatically uses same relationName from other side
-       *   }
-       * })
-       * ```
-       */
-      relationName?: string
-      /**
-       * Extend or modify the generated Prisma schema lines for this relationship field
-       * Receives the generated FK line (if applicable) and relation line
-       * Returns the modified lines
-       *
-       * @example Add onDelete cascade for self-referential relationship
+       * @example Detach children when a parent category goes
        * ```typescript
        * parent: relationship({
        *   ref: 'Category.children',
-       *   db: {
-       *     foreignKey: true,
-       *     extendPrismaSchema: ({ fkLine, relationLine }) => ({
-       *       fkLine,
-       *       relationLine: relationLine.replace(
-       *         '@relation(',
-       *         '@relation(onDelete: SetNull, '
-       *       )
-       *     })
-       *   }
+       *   db: { foreignKey: true, onDelete: 'setNull' },
        * })
        * ```
        */
-      extendPrismaSchema?: (lines: {
-        /** The foreign key field line (e.g., "parentId String?"), only present for single relationships that own the FK */
-        fkLine?: string
-        /** The relation field line (e.g., "parent Category? @relation(...)") */
-        relationLine: string
-      }) => {
-        fkLine?: string
-        relationLine: string
-      }
+      onDelete?: ReferentialAction
+      /**
+       * What the database does to this row's foreign key when the referenced
+       * row's id changes. Only meaningful on the foreign-key-owning side.
+       */
+      onUpdate?: ReferentialAction
     }
     ui?: {
       displayMode?: 'select' | 'cards'
@@ -1288,66 +1321,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        */
       itemView?: RelationshipItemViewConfig
     }
-    /**
-     * Get the complete Prisma schema contribution for this relationship field.
-     *
-     * Relationships are special: unlike scalar fields (which return a single
-     * type via `getPrismaType`), a relationship can contribute a foreign key
-     * line, a relation line on the owning model, and a synthetic back-relation
-     * line on the target model. This method encapsulates all of that logic so
-     * the generator can remain a neutral coordinator.
-     *
-     * @param fieldName - The name of this relationship field
-     * @param allFields - All fields on the list this relationship belongs to
-     * @param listKey - The name of the list this relationship belongs to
-     * @param config - The full OpenSaas config (used to resolve the target list/field)
-     */
-    getPrismaRelation?: (
-      fieldName: string,
-      allFields: Record<string, FieldConfig>,
-      listKey: string,
-      config: OpenSaasConfig,
-    ) => PrismaRelationResult
   }
-
-/**
- * The complete Prisma schema contribution of a relationship field.
- */
-export type PrismaRelationResult = {
-  /**
-   * Lines to add to the owning model.
-   * For an FK-owning single relationship this is `[fkLine, relationLine]`;
-   * for the many side or the non-FK side it is `[relationLine]`.
-   */
-  modelLines: string[]
-  /**
-   * The Prisma-level foreign key field name this side owns (e.g. `authorId`),
-   * regardless of whether it is indexed. `undefined` when this side doesn't
-   * own a foreign key column at all (the many side, or the non-FK side of a
-   * one-to-one). Lets other generator passes resolve a relationship field
-   * name to its physical column — e.g. a model-level composite index
-   * ({@link ListIndex}) naming a relationship field — without duplicating
-   * {@link foreignKeyIndex}'s narrower, indexing-conditional presence.
-   */
-  foreignKeyField?: string
-  /**
-   * Foreign key index to add to the owning model, if this side owns an
-   * indexed foreign key.
-   */
-  foreignKeyIndex?: {
-    foreignKeyField: string
-    indexType: boolean | 'unique'
-  }
-  /**
-   * Synthetic back-relation field to add to the target model. Only present
-   * for list-only refs (e.g., `ref: 'Category'`), where the target model
-   * needs an opposite relation field for Prisma to validate the relation.
-   */
-  backRelation?: {
-    targetList: string
-    line: string
-  }
-}
 
 export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'json'
@@ -1395,11 +1369,6 @@ export type TypeDescriptor =
 export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
   type: 'virtual'
   virtual: true
-  /**
-   * TypeScript type string for the virtual field output
-   * e.g., 'string', 'number', 'boolean', 'string[]', etc.
-   */
-  outputType: string
 }
 
 /**
@@ -1445,27 +1414,6 @@ type ParseTypeString<T extends string> = T extends 'string'
                 : unknown // Fallback
 
 /**
- * Extract field value type from a field config
- * Uses the field's getTypeScriptType() method result
- * If resultExtension is present, uses its outputType instead
- *
- * @example
- * ExtractFieldValueType<TextField> => string | null | undefined (if optional)
- * ExtractFieldValueType<IntegerField> => number
- * ExtractFieldValueType<PasswordField> => HashedPassword (from resultExtension)
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any BaseFieldConfig
-type ExtractFieldValueType<TField extends BaseFieldConfig<any>> = TField extends {
-  resultExtension: { outputType: infer O }
-}
-  ? ParseTypeString<O & string>
-  : TField extends { getTypeScriptType(): { type: infer T; optional: infer Opt } }
-    ? Opt extends true
-      ? ParseTypeString<T & string> | null | undefined
-      : ParseTypeString<T & string>
-    : unknown
-
-/**
  * Extract field names as union of string literals
  *
  * @example
@@ -1486,16 +1434,74 @@ export type GetFieldConfig<
   TFieldKey extends FieldKeys<TFields>,
 > = TFields[TFieldKey]
 
+/** Whether `T` is `any`, which `keyof` would otherwise widen a lookup through. */
+type IsAny<T> = 0 extends 1 & T ? true : false
+
 /**
- * Get value type for a specific field
+ * A stored field's value type: the property the generated `Lists.<List>.Item`
+ * carries for it (ADR-0052 — the contract column types the field, and `item`
+ * is where that lands). `unknown` only for a hand-authored `TypeInfo`, whose
+ * `item` carries no per-field facts to read.
+ */
+type StoredFieldValueType<TTypeInfo extends TypeInfo, TFieldKey extends PropertyKey> =
+  IsAny<TTypeInfo['item']> extends true
+    ? unknown
+    : TFieldKey extends keyof TTypeInfo['item']
+      ? TTypeInfo['item'][TFieldKey]
+      : unknown
+
+/**
+ * Whether `TKey` names more than one field. Every branch below is written
+ * non-distributively over a single key, so a union has to be turned away
+ * before it reaches them.
+ */
+type IsSeveralKeys<TKey, TAll = TKey> = TKey extends unknown
+  ? [TAll] extends [TKey]
+    ? false
+    : true
+  : never
+
+/**
+ * One field's value type: its declared `outputType` when its static type
+ * declares one, and otherwise the stored row's property — so a stored field is
+ * typed by its contract column rather than left open.
+ *
+ * `unknown` when `TFieldKey` names several fields. {@link BaseFieldConfig}'s
+ * `hooks` cannot pin a field key — a builder is written before it knows where
+ * it is mounted — so `FieldHooks<TTypeInfo>` instantiates this with every key
+ * on the list. Resolving that union would type each field's hook by the whole
+ * row: a `text()` hook would accept a `Date` and reject its own `string`.
+ * Narrowing it needs the field key threaded into `BaseFieldConfig`, tracked in
+ * issue #1306.
  *
  * @example
- * GetFieldValueType<{ title: TextField }, 'title'> => string
+ * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string
  */
 export type GetFieldValueType<
-  TFields extends Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- Generic utility type needs to accept any field record
-  TFieldKey extends FieldKeys<TFields>,
-> = ExtractFieldValueType<GetFieldConfig<TFields, TFieldKey>>
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> =
+  IsSeveralKeys<TFieldKey> extends false ? DeclaredOrStoredValueType<TTypeInfo, TFieldKey> : unknown
+
+/**
+ * The resolution for a single field key: `outputType` in either spelling,
+ * falling through to the stored row. Written as tuple comparisons so nothing
+ * distributes and no marker type is needed to spell "declared none" — a
+ * sentinel here would surface verbatim in a consumer's error message.
+ */
+type DeclaredOrStoredValueType<
+  TTypeInfo extends TypeInfo,
+  TFieldKey extends FieldKeys<TTypeInfo['fields']>,
+> = [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+  { outputType: infer O extends string },
+]
+  ? ParseTypeString<O>
+  : [GetFieldConfig<TTypeInfo['fields'], TFieldKey>] extends [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mirrors TypeDescriptor's constructor signature
+        { outputType: { value: new (...args: any[]) => infer I } },
+      ]
+    ? I
+    : StoredFieldValueType<TTypeInfo, TFieldKey>
 
 /**
  * TypeInfo interface for list type information
@@ -1504,17 +1510,9 @@ export type GetFieldValueType<
  *
  * @template TKey - The list key/name (e.g., 'Post', 'User')
  * @template TFields - The fields configuration for the list
- * @template TPrisma - The consuming app's own Prisma client type. Defaults to
- *   {@link PrismaClientLike} so a `TypeInfo` written (or defaulted) without it
- *   keeps today's behaviour — a hook's `context` resolves to `StackContext`
- *   over an unnamed client, same as before this member existed.
  * @template TItem - The output type (Prisma model type)
  * @template TCreateInput - The Prisma create input type
  * @template TUpdateInput - The Prisma update input type
- * @template TDb - The app's own generated `db` surface (the CLI's `CustomDB`),
- *   with virtual and transformed fields folded into every list's payload.
- *   Defaults to `AccessControlledDB<TPrisma>` — the plain Prisma-shaped view —
- *   so a `TypeInfo` written (or defaulted) without it keeps today's behaviour.
  *
  * @example
  * ```typescript
@@ -1526,16 +1524,12 @@ export type GetFieldValueType<
  *     create: Prisma.PostCreateInput
  *     update: Prisma.PostUpdateInput
  *   }
- *   prisma: PrismaClient
- *   db: CustomDB
  * }
  * ```
  */
 export interface TypeInfo<
   TKey extends string = string,
   TFields extends Record<string, any> = Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- TypeInfo must accept any field record
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > {
   key: TKey
   fields: TFields
@@ -1545,18 +1539,38 @@ export interface TypeInfo<
     update: any // eslint-disable-line @typescript-eslint/no-explicit-any -- Prisma input types are generated and vary per list
   }
   /**
-   * The consuming app's own Prisma client type, so a hook's `context` can be
-   * keyed as `StackContext<TPrisma>`/`AccessContext<TPrisma>` instead of
-   * resolving through the unparameterised {@link PrismaClientLike} default.
+   * What a caller receives from a read of this list — the stored row plus its
+   * computed fields. `item` is the narrower stored row a hook sees, which
+   * never carries a computed value (ADR-0027).
    */
-  prisma: TPrisma
+  output?: unknown
   /**
-   * The app's own generated `db` surface (see {@link TDb}), so a hook's
-   * `context.db` describes the same virtual/transformed-field-augmented rows
-   * the app's own generated `db` surface produces for the same read (#1232).
+   * Per-field declared-dependency facts (ADR-0051). `needs` is the field's
+   * declared set as a union of column and relation keys; `item` is that set
+   * resolved against the contract — exactly what the runtime hands the
+   * field's `resolveOutput` hook, which is what makes reading an undeclared
+   * column a compile error.
+   *
+   * Written by `pnpm generate`; absent on a hand-authored `TypeInfo`, where
+   * a hook's `item` falls back to the whole stored row.
    */
-  db: TDb
+  needs?: Record<string, { needs?: string; item?: unknown }>
 }
+
+/**
+ * The `item` a field's `resolveOutput` hook is handed: its declared
+ * dependency set plus the list's system fields, resolved by `pnpm generate`
+ * and read back off {@link TypeInfo.needs}. Falls back to the whole stored
+ * row for a `TypeInfo` that carries no declared-dependency facts.
+ */
+export type FieldNeedsItem<TTypeInfo extends TypeInfo, TFieldKey extends PropertyKey> =
+  NonNullable<TTypeInfo['needs']> extends infer TNeeds
+    ? TFieldKey extends keyof TNeeds
+      ? TNeeds[TFieldKey] extends { item: infer TItem }
+        ? TItem
+        : TTypeInfo['item']
+      : TTypeInfo['item']
+    : TTypeInfo['item']
 
 // Generic `any` default allows OperationAccess to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
@@ -1568,7 +1582,7 @@ export type OperationAccess<T = any> = {
    * but at runtime `create` accepts a `boolean` result only. There is no
    * existing row to scope with a filter, and — unlike `update`/`delete`,
    * which re-check a returned filter against the target row via
-   * `findFirst` — no equivalent re-check exists for a row that doesn't exist
+   * a read of the target — no equivalent re-check exists for a row that doesn't exist
    * in the database yet. A rule that returns a filter (or any other
    * non-boolean) throws `InvalidCreateAccessResultError` rather than being
    * treated as an allow (see #1009, ADR-0022, ADR-0030). To scope create by
@@ -1631,8 +1645,6 @@ export type ResolveInputHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
@@ -1640,7 +1652,7 @@ export type ResolveInputHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1648,7 +1660,7 @@ export type ResolveInputHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -1661,8 +1673,6 @@ export type ValidateHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
@@ -1670,7 +1680,7 @@ export type ValidateHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
   | {
@@ -1679,14 +1689,14 @@ export type ValidateHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
       addValidationError: (msg: string) => void
     }
 
@@ -1700,15 +1710,13 @@ export type BeforeOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
       resolvedData: TCreateInput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1716,13 +1724,13 @@ export type BeforeOperationHookArgs<
       inputData: TUpdateInput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -1735,8 +1743,6 @@ export type AfterOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
@@ -1744,7 +1750,7 @@ export type AfterOperationHookArgs<
       inputData: TCreateInput
       item: TOutput
       resolvedData: TCreateInput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1753,13 +1759,13 @@ export type AfterOperationHookArgs<
       originalItem: TOutput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       operation: 'delete'
       originalItem: TOutput
-      context: import('../context/index.js').StackContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -1775,27 +1781,25 @@ export type BeforeTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       operation: 'update'
       inputData: TUpdateInput
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
 
 /**
@@ -1820,8 +1824,6 @@ export type AfterTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > =
   | {
       listKey: string
@@ -1830,7 +1832,7 @@ export type AfterTransactionHookArgs<
       inputData: TCreateInput
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1838,7 +1840,7 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TCreateInput
       error: unknown
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1849,7 +1851,7 @@ export type AfterTransactionHookArgs<
       originalItem: TOutput | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1858,7 +1860,7 @@ export type AfterTransactionHookArgs<
       inputData: TUpdateInput
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1866,7 +1868,7 @@ export type AfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TOutput | undefined
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
   | {
       listKey: string
@@ -1874,27 +1876,23 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext<TPrisma, TDb>
+      context: import('../access/types.js').AccessContext
     }
 
 export type Hooks<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
-  TPrisma extends PrismaClientLike = PrismaClientLike,
-  TDb = AccessControlledDB<TPrisma>,
 > = {
   resolveInput?: (
-    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
+    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<TCreateInput | TUpdateInput>
-  validate?: (
-    args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
-  ) => Promise<void>
+  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
   beforeOperation?: (
-    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
+    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void>
   afterOperation?: (
-    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
+    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void>
   /**
    * Side effect BEFORE the write's transaction opens (#590 / ADR-0010).
@@ -1903,7 +1901,7 @@ export type Hooks<
    * with `status: 'rolled-back'`. See {@link BeforeTransactionHookArgs}.
    */
   beforeTransaction?: (
-    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
+    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void> | void
   /**
    * Side effect AFTER the write's transaction settles (#590 / ADR-0010).
@@ -1914,33 +1912,32 @@ export type Hooks<
    * {@link AfterTransactionHookArgs}.
    */
   afterTransaction?: (
-    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
+    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
   ) => Promise<void> | void
   /**
    * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
    */
-  validateInput?: (
-    args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TPrisma, TDb>,
-  ) => Promise<void>
+  validateInput?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
 }
 
 /**
- * A single field reference within a model-level {@link ListIndex}. Either
- * just the OpenSaaS field name, or an object naming it alongside a sort
- * direction.
+ * The five referential actions a foreign key can carry, in the ORM's own
+ * spelling so the generated contract re-emits the value verbatim.
  */
-export type ListIndexFieldRef =
-  | string
-  | {
-      field: string
-      /** Sort direction for this column within the index/constraint. */
-      sort?: 'asc' | 'desc'
-    }
+export type ReferentialAction = 'cascade' | 'restrict' | 'noAction' | 'setNull' | 'setDefault'
 
 /**
- * A model-level `@@unique`/`@@index` constraint spanning one or more of a
- * list's own fields. See {@link ListConfig.db}'s `indexes` for the full
- * explanation and examples (#864, #918).
+ * A single field reference within a model-level {@link ListIndex}: the
+ * OpenSaaS field name, bare or wrapped. An index column carries no sort
+ * direction (ADR-0040); a `sort` key on the wrapped form is refused at
+ * generation.
+ */
+export type ListIndexFieldRef = string | { field: string }
+
+/**
+ * A model-level unique constraint or index spanning one or more of a list's
+ * own fields. See {@link ListConfig.db}'s `indexes` for the full explanation
+ * and examples (#864, #918).
  */
 export type ListIndex = {
   /**
@@ -1948,21 +1945,17 @@ export type ListIndex = {
    * OpenSaaS field names, not raw database column names.
    *
    * One or more fields — a named single-column constraint is as legitimate
-   * as a composite one, and is the form to reach for when a live table's
-   * constraint carries a name Prisma wouldn't derive on its own. Field-level
-   * `isIndexed` remains the sugar for the unnamed single-column case; this
-   * is the full form when a name or a sort direction is needed.
+   * as a composite one. Field-level `isIndexed` remains the sugar for the
+   * unnamed single-column case; this is the full form when a name is needed.
    */
   fields: ListIndexFieldRef[]
   /**
-   * Emit `@@unique([...])` instead of `@@index([...])`.
+   * Emit a unique constraint instead of an index.
    * @default false
    */
   unique?: boolean
   /**
-   * Constraint/index name, emitted as Prisma's `map:` argument — lets an
-   * existing live constraint be adopted under its current name rather than
-   * renamed.
+   * The constraint/index's wire name, emitted as the contract's `name:`.
    */
   name?: string
 }
@@ -1985,13 +1978,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
-  hooks?: Hooks<
-    TTypeInfo['item'],
-    TTypeInfo['inputs']['create'],
-    TTypeInfo['inputs']['update'],
-    TTypeInfo['prisma'],
-    TTypeInfo['db']
-  >
+  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
   /**
    * Database configuration for this list (model level)
    */
@@ -2039,7 +2026,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *
      * When timestamps resolve to on but the list already declares its own `createdAt`/
      * `updatedAt` field, the auto column is skipped for the declared field(s) so Prisma
-     * never sees a duplicate (`P1012`).
+     * never sees a duplicate column.
      *
      * @example Opt a single list out of timestamps even when enabled globally
      * ```typescript
@@ -2051,21 +2038,40 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      */
     timestamps?: boolean
     /**
-     * Model-level `@@unique`/`@@index` constraints spanning one or more of
+     * How this list's `id` is minted, overriding the config-level
+     * `db.idField` default (ADR-0048). A plugin pins this on every list it
+     * injects so an app-level default cannot reach a table it owns.
+     *
+     * Refused on a singleton list: a singleton's id is derived from
+     * `isSingleton`, and that is the one knob.
+     *
+     * @example A list with a serial integer key
+     * ```typescript
+     * Invoice: list({
+     *   fields: { total: integer() },
+     *   db: { idField: 'int autoincrement' },
+     * })
+     * ```
+     */
+    idField?: IdFieldStrategy
+    /**
+     * Model-level unique constraints and indexes spanning one or more of
      * this list's own fields (#864, #918). See the [reference
      * docs](https://stack.opensaas.au/docs/reference/config-api#dbindexes)
      * for the full explanation, arity, and error conditions.
      *
      * Field-level `isIndexed` (on a scalar or relationship field) is the
      * sugar for the unnamed single-column case. `db.indexes` is the full
-     * form — reach for it when a constraint needs a `name` (Prisma's `map:`,
-     * for adopting an existing live constraint), a `sort` direction, or spans
-     * more than one column. Arity is incidental: each entry names one or
-     * more of the list's own OpenSaaS field names, not raw database column
-     * names. The generator resolves each to its underlying Prisma column — a
-     * scalar field's own name (its Prisma field name is unaffected by
-     * `db.map`), or a relationship field's foreign key column (`<field>Id`)
-     * when this side owns it.
+     * form — reach for it when a constraint needs a `name` or spans more
+     * than one column. Arity is incidental: each entry names one or more of
+     * the list's own OpenSaaS field names, not raw database column names.
+     * The generator resolves each to its underlying column — a scalar
+     * field's own name (unaffected by `db.map`), or a relationship field's
+     * foreign key column (`<field>Id`) when this side owns it.
+     *
+     * An index column carries no sort direction (ADR-0040): a `sort` key on
+     * an entry's field reference fails `pnpm generate` naming the list and
+     * the entry.
      *
      * A **unique** entry is the load-bearing case: it's the database-level
      * backstop for a business rule concurrent writes could otherwise both
@@ -2106,7 +2112,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * // Generates: @@unique([studentId, productionId])
      * ```
      *
-     * @example Hot lookup path (composite index) with a sort direction and an adopted constraint name
+     * @example Hot lookup path (composite index) with a name
      * ```typescript
      * AuthVerification: list({
      *   fields: {
@@ -2116,16 +2122,15 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *   db: {
      *     indexes: [
      *       {
-     *         fields: ['identifier', { field: 'createdAt', sort: 'desc' }],
+     *         fields: ['identifier', 'createdAt'],
      *         name: 'AuthVerification_identifier_createdAt_idx',
      *       },
      *     ],
      *   },
      * })
-     * // Generates: @@index([identifier, createdAt(sort: Desc)], map: "AuthVerification_identifier_createdAt_idx")
      * ```
      *
-     * @example Naming a single-column unique constraint (adopting a live table's existing name)
+     * @example Naming a single-column unique constraint
      * ```typescript
      * RateLimit: list({
      *   fields: { key: text() }, // no isIndexed here — db.indexes owns this column instead
@@ -2133,7 +2138,6 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *     indexes: [{ fields: ['key'], unique: true, name: 'RateLimit_key_key' }],
      *   },
      * })
-     * // Generates: @@unique([key], map: "RateLimit_key_key")
      * // Setting key's own isIndexed too would duplicate this constraint and
      * // fail generation — one of the two must own the column.
      * ```
@@ -2145,9 +2149,10 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * Restricts this list to a single record (singleton pattern)
    * When true:
    * - Prevents creating multiple records
-   * - Auto-creates the single record on first access (if autoCreate: true, which is the default)
+   * - Auto-creates the single record on first access (if autoCreate: true, which is the default,
+   *   and the list's `query` access rule answers a strict `true`, or the context is `sudo`)
    * - Provides a get() method for easy access to the singleton
-   * - Blocks delete and findMany operations
+   * - Blocks delete and the many-row read surface
    * - Changes UI to show edit form instead of list view
    *
    * @example Simple boolean (auto-create enabled)
@@ -2166,7 +2171,13 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
     | boolean
     | {
         /**
-         * Auto-create the singleton record on first access using field defaults
+         * Auto-create the singleton record on first access using field defaults.
+         *
+         * Fires only for a `query` access rule that answers a strict `true`, or
+         * under `sudo`. A rule that answers a filter, answers `false`, or is
+         * absent makes `get()` answer `null` and write nothing — a filter-scoped
+         * singleton needs `query: () => true` with the scoping moved onto the
+         * fields if the row is to be auto-created.
          * @default true
          */
         autoCreate?: boolean
@@ -2409,7 +2420,7 @@ export type ListViewUIConfig = {
    *         handler: async ({ ids, context }) => {
    *           let n = 0
    *           for (const id of ids) {
-   *             const r = await context.db.post.update({
+   *             const r = await context.db.Post.update({
    *               where: { id },
    *               data: { status: 'published' },
    *             })
@@ -2448,77 +2459,126 @@ export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeI
   access?: ListAccessControl<TTypeInfo['item']>
 }
 
-export type DatabaseConfig = {
-  provider: 'postgresql' | 'mysql' | 'sqlite'
+/**
+ * How a list's `id` column is minted (ADR-0048). Every list carries a single
+ * `id` column; this picks its shape.
+ *
+ * - `'uuid7'` — time-sortable UUID, minted by the ORM. The default.
+ * - `'cuid2'` — CUID, minted by the ORM.
+ * - `'int autoincrement'` — a serial integer key.
+ *
+ * A singleton list derives its id from `isSingleton` and refuses this option.
+ */
+export type IdFieldStrategy = 'uuid7' | 'cuid2' | 'int autoincrement'
+
+/**
+ * A Prisma extension pack the contract declares (ADR-0049, ADR-0065). An
+ * import descriptor rather than a pack value: the generated contract module is
+ * standalone and fully literal, so it re-emits `from` as an import instead of
+ * serialising an object out of the config.
+ */
+export type ExtensionDescriptor = {
   /**
-   * Factory function to create a Prisma client instance with a database adapter
-   * Required in Prisma 7+ - receives the PrismaClient class and returns a configured instance
+   * The pack's binding name — the key that spells its types on a field
+   * (`type.pgvector.Vector(n)`), and the identity two declarations are merged
+   * on. The same `name` declared twice with a different `from` is refused.
+   */
+  name: string
+  /**
+   * The pack's package name (e.g. `'@prisma/orm-extension-pgvector'`). The
+   * generator derives the `/pack`, `/control` and `/runtime` subpaths per
+   * emission.
+   */
+  from: string
+}
+
+// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
+// `PostgresBindingOptions` interface that carries `pg`, so `pg` is still read
+// off the contractJson options (the contract generic does not reach it).
+type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
+
+/**
+ * Per-deployment pool binding for the generated runtime client (ADR-0049,
+ * ADR-0054). Nothing here reaches the contract; it is read only by the
+ * generated `.opensaas/context.ts` when it constructs the client.
+ */
+export type DatabaseClientConfig = {
+  /**
+   * Pool options handed to the ORM client as-is when no `pg` factory is
+   * given.
+   */
+  poolOptions?: PostgresOptionsBase['poolOptions']
+  /**
+   * A lazy factory for the `pg` pool or client the runtime should bind to.
+   * A factory, not an instance: the config is loaded by the CLI and by tooling
+   * that never issues a query, and none of it should open a connection. Called
+   * at most once, after the config promise resolves, under the runtime's
+   * client singleton.
    *
-   * The connection URL is passed directly to the adapter, not to the config.
-   *
-   * @example SQLite with better-sqlite3
+   * @example Serverless Postgres over a WebSocket pool
    * ```typescript
-   * import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-   *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-   *   return new PrismaClient({ adapter })
-   * }
-   * ```
-   *
-   * @example PostgreSQL with pg
-   * ```typescript
-   * import { PrismaPg } from '@prisma/adapter-pg'
-   * import pg from 'pg'
-   *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-   *   const adapter = new PrismaPg(pool)
-   *   return new PrismaClient({ adapter })
-   * }
-   * ```
-   *
-   * @example Neon serverless (PostgreSQL)
-   * ```typescript
-   * import { PrismaNeon } from '@prisma/adapter-neon'
-   * import { neonConfig } from '@neondatabase/serverless'
+   * import { Pool, neonConfig } from '@neondatabase/serverless'
    * import ws from 'ws'
    *
-   * prismaClientConstructor: (PrismaClient) => {
-   *   neonConfig.webSocketConstructor = ws
-   *   const adapter = new PrismaNeon({
-   *     connectionString: process.env.DATABASE_URL
-   *   })
-   *   return new PrismaClient({ adapter })
+   * db: {
+   *   provider: 'postgresql',
+   *   client: {
+   *     pg: () => {
+   *       neonConfig.webSocketConstructor = ws
+   *       return new Pool({ connectionString: process.env.DATABASE_URL })
+   *     },
+   *   },
    * }
    * ```
    */
-  // Uses `any` for maximum flexibility with Prisma client constructors and adapters
-  // Different database adapters have varying type signatures that are hard to unify
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prismaClientConstructor: (PrismaClientClass: any) => any
+  pg?: () => NonNullable<PostgresBindingOptions['pg']>
+}
+
+export type DatabaseConfig = {
   /**
-   * Join table naming strategy for many-to-many relationships
-   * - 'prisma': Use Prisma's default alphabetically-sorted naming (e.g., `_LessonToTeacher`)
-   * - 'keystone': Use KeystoneJS-compatible naming based on field location (e.g., `_Lesson_teachers`)
+   * The database the stack targets. Postgres only.
+   */
+  provider: 'postgresql'
+  /**
+   * The id strategy every list gets unless it declares its own
+   * `db.idField` (ADR-0048).
    *
-   * Default: 'prisma'
+   * @default 'uuid7'
    *
-   * **Important for KeystoneJS migration:**
-   * When migrating from KeystoneJS, set this to 'keystone' to preserve existing join table names
-   * and avoid data loss. Keystone names join tables as `_Model_fieldName` based on where the
-   * relationship is defined in the schema.
-   *
-   * @example Preserve Keystone join table names during migration
+   * @example Small integer keys across the whole app
    * ```typescript
    * db: {
    *   provider: 'postgresql',
-   *   joinTableNaming: 'keystone',  // Use KeystoneJS naming convention
-   *   // ... rest of config
+   *   idField: 'int autoincrement',
    * }
    * ```
    */
-  joinTableNaming?: 'prisma' | 'keystone'
+  idField?: IdFieldStrategy
+  /**
+   * Extension packs the contract declares (ADR-0049). Each descriptor names a
+   * package; one declaration drives the contract module, `prisma.config.ts`,
+   * the runtime client and the pack's extension contract space under
+   * `migrations/`. A plugin adds its own through
+   * {@link PluginContext.addExtension}.
+   *
+   * Two entries with the same `name` are one declaration when their `from`
+   * agrees and a config error when it does not.
+   *
+   * @example Declare pgvector for a native vector column
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+   * }
+   * ```
+   */
+  extensions?: ExtensionDescriptor[]
+  /**
+   * Pool binding for the generated runtime client — see
+   * {@link DatabaseClientConfig}. Omit it to let the runtime open its own pool
+   * from the resolved database URL.
+   */
+  client?: DatabaseClientConfig
   /**
    * Postgres multi-schema support.
    *
@@ -2557,7 +2617,7 @@ export type DatabaseConfig = {
    * A per-list `db.timestamps` override takes precedence over this global setting. When
    * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
    * field, the auto column is skipped for the declared field(s) so Prisma never sees a
-   * duplicate (`P1012`).
+   * duplicate column.
    *
    * @default false
    *
@@ -2575,23 +2635,43 @@ export type DatabaseConfig = {
    * Opt into Keystone-compat mode for generated schema defaults.
    *
    * Keystone 6 gives every non-null text column an implicit empty-string
-   * default. With `keystoneCompat: true`, the generator mirrors that: any
-   * non-null `text()` column that has no explicit `defaultValue` emits
-   * `@default("")`, so a migrating project reaches Schema parity without
-   * hand-setting `defaultValue: ''` on dozens of columns.
+   * default. With `keystoneCompat: true`, the contract mirrors that: a
+   * non-null `text()` column that has no explicit `defaultValue` carries `''`,
+   * so a migrating project reaches schema parity without hand-setting
+   * `defaultValue: ''` on dozens of columns.
    *
    * Stays opt-in (default `false`) because a greenfield project would not want
    * implicit empty-string text defaults cluttering its schema. The flag never
    * affects nullable text, fields with an explicit `defaultValue`, or any
    * non-text field — an explicit `text({ defaultValue: 'x' })` always wins.
    *
+   * A column default also makes the column optional on the generated create
+   * input, so the compat default is carried only where the field's own create
+   * validator accepts both the omission it fills and `''` itself — the same
+   * verdict an explicit `defaultValue: ''` reaches through
+   * `applyCreateDefaults`.
+   *
+   * **Known limit — the flag is inert for `validation: { isRequired: true }`
+   * and for `validation: { length: { min: N } }` with `N > 0`, and
+   * `isRequired` is Keystone's commonest text column.** Keystone 6 renders
+   * both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own
+   * validator refuses (and `isRequired` refuses the omission besides), so
+   * carrying the default would write a row the config forbids. Full parity
+   * would need the flag to relax the create validator too, which
+   * `getZodSchema` has no config to read. Until then a migrating project sees
+   * `DROP DEFAULT` in `migrate diff` for those columns and must set
+   * `defaultValue: ''` on them by hand — which is refused at runtime for the
+   * same reason, so the validation has to be relaxed alongside it. A column
+   * made non-null through `db: { isNullable: false }` alone still gets the
+   * default, as does one declaring `length: { min: 0 }` or a `length.max`.
+   *
    * @default false
    *
-   * @example Reach Schema parity when migrating from Keystone
+   * @example Reach schema parity when migrating from Keystone
    * ```typescript
    * db: {
    *   provider: 'postgresql',
-   *   keystoneCompat: true, // non-null text without a default → @default("")
+   *   keystoneCompat: true, // non-null text without a default → default ''
    *   // ... rest of config
    * }
    * ```
@@ -2599,37 +2679,6 @@ export type DatabaseConfig = {
    * @see ADR-0004 (Keystone-compatible generator defaults)
    */
   keystoneCompat?: boolean
-  /**
-   * Optional function to extend or modify the generated Prisma schema
-   * Receives the generated schema as a string and should return the modified schema
-   * Useful for advanced Prisma features not directly supported by the config API
-   *
-   * @example Add multi-schema support for PostgreSQL
-   * ```typescript
-   * extendPrismaSchema: (schema) => {
-   *   // Add schemas array to datasource
-   *   let modifiedSchema = schema
-   *     .replace(
-   *       /(datasource db \{[^}]+provider\s*=\s*"postgresql")/,
-   *       '$1\n  schemas = ["public", "auth"]'
-   *     )
-   *
-   *   // Add @@schema("public") to all models
-   *   modifiedSchema = modifiedSchema.replace(
-   *     /^(model \w+\s*\{[\s\S]*?)(^}$)/gm,
-   *     (match, modelContent) => {
-   *       if (!modelContent.includes('@@schema')) {
-   *         return `${modelContent}\n  @@schema("public")\n}`
-   *       }
-   *       return match
-   *     }
-   *   )
-   *
-   *   return modifiedSchema
-   * }
-   * ```
-   */
-  extendPrismaSchema?: (schema: string) => string
   /**
    * Override the Prisma `generator client { ... }` options the CLI emits for the
    * `.opensaas` prisma-client subtree.
@@ -3003,7 +3052,7 @@ export type StorageConfig = Record<string, { type: string; [key: string]: unknow
  * Plugins can modify these during afterGenerate hooks
  */
 export type GeneratedFiles = {
-  prismaSchema: string
+  contractModule: string
   types: string
   context: string
   [key: string]: string // Allow plugins to add custom generated files
@@ -3060,6 +3109,21 @@ export type PluginContext = {
   registerMcpTool?: (tool: McpCustomTool) => void
 
   /**
+   * Declare an extension pack the plugin's field types need (ADR-0049), as
+   * if the app had listed it under `db.extensions`. Idempotent when the
+   * config already declares the same `name` from the same package; throws
+   * when it declares that `name` from a different one.
+   *
+   * @example
+   * ```typescript
+   * init: async (context) => {
+   *   context.addExtension({ name: 'pgvector', from: '@prisma/orm-extension-pgvector' })
+   * }
+   * ```
+   */
+  addExtension: (descriptor: ExtensionDescriptor) => void
+
+  /**
    * Store plugin-specific data in config for runtime access
    * Prefixed with plugin name to avoid conflicts
    */
@@ -3101,7 +3165,13 @@ export type Plugin = {
 
   /**
    * Optional: Post-process generated files
-   * Allows plugins to modify Prisma schema, types, or add custom generated files
+   * Allows plugins to modify the Contract module, types, or add custom generated files
+   *
+   * Runs before `prisma contract emit`, so a rewritten `contractModule` is the
+   * one the emitted `contract.json` / `contract.d.ts` describe and the one the
+   * relation-graph agreement gate checks. A rewrite that the contract toolchain
+   * rejects therefore fails `opensaas generate` rather than landing on disk
+   * unemitted.
    */
   afterGenerate?: (files: GeneratedFiles) => GeneratedFiles | Promise<GeneratedFiles>
 
@@ -3110,7 +3180,7 @@ export type Plugin = {
    * Called when creating context to provide plugin-specific services
    * Return value is stored in context.plugins[pluginName]
    *
-   * `sudo` returns an access-bypassing (but still hook-firing) `AccessContext`
+   * `sudo` returns an access-bypassing (but still hook-firing) `StackContext`
    * for the same request — use `sudo().db` for reads/writes that must not
    * depend on the caller's own list access policy (e.g. an identity lookup
    * like "who is this session"). Deliberately NOT a method on `AccessContext`
@@ -3119,10 +3189,16 @@ export type Plugin = {
    * of unrelated generated Prisma types elsewhere (nullable JSON `CreateInput`
    * fields) in a downstream app; passing it as a plain second argument avoids
    * that recursion entirely.
+   *
+   * It is a `StackContext`, not the `AccessContext` of the first argument:
+   * the two differ, and the difference bites. `StackContext` omits
+   * `ormHandle`, `_isSudo`'s internal companions and `_config`, so a core
+   * surface that needs the engine's own plumbing — `writePluginOwnedField`,
+   * say — takes the first argument, never this one (ADR-0068).
    */
   runtime?: (
     context: import('../access/types.js').AccessContext,
-    sudo: () => import('../access/types.js').AccessContext,
+    sudo: () => import('../types/context.js').StackContext,
   ) => unknown
 
   /**
@@ -3154,62 +3230,30 @@ export type Plugin = {
 /**
  * Configurable generator output locations.
  *
- * Lets a project relocate the generated Prisma schema and the `.opensaas`
+ * Lets a project relocate the generated Contract module and the `.opensaas`
  * bundle directory. Paths are interpreted relative to the project root.
  *
  * @example
  * ```typescript
  * output: {
- *   prismaSchema: 'prisma-opensaas/schema.prisma',
+ *   contractModule: 'prisma-opensaas/contract.ts',
  *   opensaasDir: '.opensaas',
  * }
  * ```
  */
 export interface OutputConfig {
   /**
-   * Path to the generated Prisma schema file.
-   * @default "prisma/schema.prisma"
+   * Path to the generated Contract module. `contract.json` and `contract.d.ts`
+   * are emitted into its directory, and `prisma.config.ts` points at it.
+   * @default "prisma/contract.ts"
    */
-  prismaSchema?: string
+  contractModule?: string
   /**
-   * Directory for the generated `.opensaas` bundle (types, lists, context,
-   * plugin-types, and the patched Prisma client).
+   * Directory for the generated `.opensaas` bundle (types, lists, context and
+   * plugin types).
    * @default ".opensaas"
    */
   opensaasDir?: string
-  /**
-   * Opt in to an additional **Node build** of the Generated bundle.
-   *
-   * By default (omitted) the generator emits only the bundler-loadable `.ts`
-   * form (ADR-0008): TypeScript with explicit `.ts` import extensions, traced
-   * and transpiled by the host's bundler. That form cannot execute under plain
-   * Node, so a live module that must run in BOTH a bundled and a bundler-less
-   * runtime (e.g. better-auth's Prisma adapter, imported by the Next server AND
-   * by a Playwright e2e helper or a build-time script) has no Node-loadable
-   * entry to point at.
-   *
-   * Setting `buildTarget: 'node'` additionally compiles the bundle to a
-   * plain-Node-loadable ESM form under `<opensaasDir>/dist/` (`.js` + `.d.ts`,
-   * with a `{"type":"module"}` marker). The compiled entry is
-   * `<opensaasDir>/dist/context.js`; a portable module imports it directly so
-   * the bundler traces it AND plain Node executes it (one specifier, both
-   * runtimes — see ADR-0011). The default `.ts` form is unchanged and still
-   * emitted; the Node build is purely additive.
-   *
-   * `'node'` is the only target today. The field is a string-literal union so
-   * future compiled targets can be added without a breaking change.
-   *
-   * @example
-   * ```typescript
-   * export default config({
-   *   output: { buildTarget: 'node' },
-   *   // ...
-   * })
-   * // Then import the compiled entry from a plain-Node consumer:
-   * //   const { rawOpensaasContext } = await import('./.opensaas/dist/context.js')
-   * ```
-   */
-  buildTarget?: 'node'
 }
 
 /**
@@ -3267,4 +3311,12 @@ export interface OpenSaasConfig {
    * @internal
    */
   _plugins?: Plugin[]
+  /**
+   * The dependency-set table and unique-constraint map `pnpm generate`
+   * emitted (ADR-0051, ADR-0042), supplied by the generated context. Absent
+   * for a config reached without generation, in which case the engine derives
+   * the dependency table from this config through the same computation.
+   * @internal
+   */
+  _tables?: GeneratedTables
 }

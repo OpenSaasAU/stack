@@ -107,9 +107,8 @@ export class RelationFilterAccessDeniedError extends Error {
  * `buildAccessScopedInclude`'s scoping walk passed an unrecognised key
  * straight through unscoped — the one surface among `data`/`where`/`orderBy`/
  * `include` that failed open rather than closed (issue #1082). `sudo` never
- * reaches this: it skips `buildAccessScopedInclude` entirely (see
- * `resolveReadInclude` in `context/index.ts`), matching every other
- * access-control escape hatch.
+ * reaches this: it skips `buildAccessScopedInclude` entirely, matching every
+ * other access-control escape hatch.
  */
 export class UndeclaredIncludeKeyError extends Error {
   public listKey: string
@@ -135,8 +134,8 @@ export class UndeclaredIncludeKeyError extends Error {
  * #1087). A key naming a synthetic back-relation (#1082) is NOT rejected — it
  * is a genuine countable to-many, resolved the same way the ordinary
  * `include` walk resolves it. `sudo` never reaches this: it skips
- * `buildAccessScopedInclude` entirely (see `resolveReadInclude` in
- * `context/index.ts`), matching every other access-control escape hatch.
+ * `buildAccessScopedInclude` entirely, matching every other access-control
+ * escape hatch.
  */
 export class UndeclaredCountKeyError extends Error {
   public listKey: string
@@ -238,5 +237,35 @@ export class InvalidCreateAccessResultError extends Error {
     )
     this.name = 'InvalidCreateAccessResultError'
     this.listKey = listKey
+  }
+}
+
+/**
+ * Thrown when an Access Filter carries an `undefined` condition — the shape
+ * `({ session }) => ({ authorId: session?.userId })` produces for an anonymous
+ * caller. The legacy read/update/delete paths hand the clause to the ORM,
+ * which reads an `undefined` value as "no constraint", so dropping it turns a
+ * scoping rule into a match-everything read (ADR-0022, ADR-0055).
+ *
+ * Deliberately distinct from `ValidationError`: this is a configuration fault
+ * in a trusted access rule, not caller input, and it must not be reported as a
+ * form error. It is the same refusal the secured builder's Where vocabulary
+ * makes, applied to the clause `mergeFilters` folds in, so the guarantee holds
+ * on every surface rather than only on `.where().all()/.first()`.
+ */
+export class UndefinedAccessFilterError extends Error {
+  public path: readonly string[]
+
+  constructor(path: readonly string[]) {
+    const key = path.join('.')
+    super(
+      `An access rule returned a filter whose condition on "${key}" is undefined. A filter may ` +
+        `only narrow, so a condition that resolved to undefined is refused rather than dropped — ` +
+        `dropping it would match every row. An access rule that has nothing to scope by must ` +
+        `return \`false\` (deny) or \`true\` (allow) explicitly: write ` +
+        `\`({ session }) => (session ? { ${path[0] ?? 'ownerId'}: session.userId } : false)\`.`,
+    )
+    this.name = 'UndefinedAccessFilterError'
+    this.path = path
   }
 }

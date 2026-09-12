@@ -1,7 +1,7 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import { getSyntheticFieldName } from '../fields/index.js'
-import { InvalidCreateAccessResultError } from './errors.js'
+import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './errors.js'
 
 /**
  * Access engine — operation-level access control and shared helpers.
@@ -62,14 +62,13 @@ export interface SyntheticReverseRelation {
  * `ref` (`ref: 'ListName'`, no target field) generates on its target model —
  * Prisma requires an opposite field there, but the config never declares one,
  * so it never appears in `parentListName`'s own `fields`. Reuses
- * `getSyntheticFieldName` (the same construction `getPrismaRelation` emits the
+ * `getSyntheticFieldName` (the same construction `getContractField` reports the
  * schema with) rather than re-deriving the `from_<List>_<field>` format by
  * string parsing, so the two cannot drift (#978).
  *
- * Returns the declared relationship field that owns the relation — the write
- * pipeline treats a resolved synthetic key exactly like a nested write through
- * that field, so it runs the same hooks/access/recovery machinery a declared
- * relationship field gets. Returns `null` when `fieldName` isn't one of these
+ * Returns the declared relationship field that owns the relation, so the write
+ * pipeline treats a resolved synthetic key exactly like that declared field.
+ * Returns `null` when `fieldName` isn't one of these
  * on `parentListName` (a genuinely unknown key, or a bidirectional relation's
  * ref, which never synthesizes a back-relation).
  */
@@ -122,6 +121,35 @@ export function listSyntheticReverseRelationNames(
   return names
 }
 
+/**
+ * Evaluate one operation-level access rule (`query`, `update` or `delete`).
+ *
+ * Returns what the rule returned: `true` (allow every row), `false` (deny), or
+ * a `PrismaFilter` scoping which rows the session may reach. An **absent** rule
+ * denies — access is opt-in, so a list that declares nothing is closed rather
+ * than open.
+ *
+ * A filter result is not a decision on its own. Pass it to {@link mergeFilters}
+ * to fold it into the caller's `where`, then check for `null` before querying.
+ * Gate a `create` with {@link checkCreateAccess} instead: create has no row to
+ * test a filter against, so a rule that returns one must be refused rather than
+ * read as an allow (ADR-0030). `checkCreateAccess` calls this and enforces that.
+ *
+ * @param accessControl - The rule from `access.operation[...]`, or `undefined`.
+ * @param args - The session, the existing row (update/delete), and the context
+ * the rule may read through.
+ *
+ * @example
+ * ```ts
+ * const result = await checkAccess(config.lists.Post.access?.operation?.query, {
+ *   session: context.session,
+ *   context,
+ * })
+ * const where = mergeFilters(callerWhere, result)
+ * if (where === null) return [] // denied — Silent failure
+ * const rows = await ormModel(context.ormHandle, 'Post').findMany({ where })
+ * ```
+ */
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {
@@ -171,12 +199,75 @@ export async function checkCreateAccess<T = Record<string, unknown>>(
   throw new InvalidCreateAccessResultError(listKey, result)
 }
 
+/**
+ * The path to the first `undefined` condition in an access filter, or `null`
+ * when it carries none. Walks arrays too, so an `undefined` inside an `AND`
+ * or `OR` branch is found rather than folded in.
+ */
+function findUndefinedCondition(value: unknown, trail: readonly string[]): string[] | null {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const found = findUndefinedCondition(entry, [...trail, `${index}`])
+      if (found !== null) return found
+    }
+    return null
+  }
+  if (typeof value !== 'object' || value === null || value instanceof Date) return null
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) return [...trail, key]
+    const found = findUndefinedCondition(entry, [...trail, key])
+    if (found !== null) return found
+  }
+  return null
+}
+
+/**
+ * Fold a {@link checkAccess} result into a caller's `where`, producing the
+ * clause to hand the database — or `null` when access is denied.
+ *
+ * `null` is the Silent failure signal, not an empty filter: a caller that
+ * receives it returns `null`/`[]` without querying, so a denial is
+ * indistinguishable from a miss and leaks no existence information. An empty
+ * object (`{}`) means the opposite — allowed, unscoped.
+ *
+ * The two filters are combined with `AND`, never merged key-by-key, so the
+ * access filter can only ever narrow what the caller asked for. A caller
+ * cannot widen its own visibility by naming the same field.
+ *
+ * Deliberately not generic, where {@link checkAccess} is: `checkAccess`'s `T`
+ * types the row a rule inspects (`item`), while this returns a clause in Prisma
+ * *operator* space — `AND` is not a `keyof T`, so `PrismaFilter<T>` cannot
+ * describe the result. Typing it as one would be a claim the value does not
+ * satisfy. A `PrismaFilter<Post>` from `checkAccess<Post>` is accepted here
+ * unchanged; only the merged clause is untyped.
+ *
+ * An access filter carrying an `undefined` condition anywhere throws
+ * {@link UndefinedAccessFilterError} rather than being handed on: the ORM
+ * reads `undefined` as "no constraint", so passing it through widens the read
+ * to every row. This is the same total-lowering rule the secured builder's
+ * Where vocabulary applies, so the guarantee holds on the legacy
+ * `findMany`/`count`/`delete` paths too. The caller's own
+ * `userFilter` is left alone — it can only ever be narrowed by this clause,
+ * and `undefined` there is the caller's own optional key, not a scoping rule
+ * that failed to resolve.
+ *
+ * @param userFilter - The caller's own `where`, if any.
+ * @param accessFilter - What {@link checkAccess} returned.
+ * @returns The clause to query with, or `null` when denied.
+ * @throws UndefinedAccessFilterError when the access filter has an
+ * `undefined` condition.
+ */
 export function mergeFilters(
   userFilter: PrismaFilter | undefined,
   accessFilter: boolean | PrismaFilter,
 ): PrismaFilter | null {
   if (accessFilter === false) {
     return null
+  }
+
+  if (accessFilter !== true) {
+    const undefinedAt = findUndefinedCondition(accessFilter, [])
+    if (undefinedAt !== null) throw new UndefinedAccessFilterError(undefinedAt)
   }
 
   if (accessFilter === true) {

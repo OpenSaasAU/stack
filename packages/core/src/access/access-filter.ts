@@ -1,4 +1,5 @@
 import type { Session, AccessContext, PrismaFilter } from './types.js'
+import { ormModel } from './orm-client.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
 import {
   checkAccess,
@@ -24,7 +25,6 @@ import {
   type SyntheticRelationTarget,
 } from './query-validation.js'
 import { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
-import { getDbKey } from '../lib/case-utils.js'
 
 /**
  * Access Filter — phase 1 of the two-phase read (pre-query).
@@ -43,11 +43,11 @@ import { getDbKey } from '../lib/case-utils.js'
  *
  * **Caller-directed (ADR-0026).** `buildAccessScopedInclude` walks only the
  * branches `requestedInclude` names — the caller's own `include`, a fragment
- * `query`'s projection, or `foldDeclaredDependencies`'s fold of a field's
- * `needs` (`declared-dependencies.ts`), all resolved before this module ever
- * runs. Naming a relation fetches that relation's own columns and stops
- * (the "One hop" rule, see `CONTEXT.md`); reaching further means the request
- * named a nested `include` there too. A relation nobody named never has its
+ * `query`'s projection, or `widenIncludeForDependencies`'s widening for a
+ * field's emitted `needs` set (`declared-dependencies.ts`), all resolved
+ * before this module ever runs. Naming a relation fetches that relation's own
+ * columns and stops (the "One hop" rule, see `CONTEXT.md`); reaching further
+ * means the request named a nested `include` there too. A relation nobody named never has its
  * list's `query` access evaluated at all — there is no separate "build the
  * whole tree, then reconcile against what was asked for" pass to walk it.
  *
@@ -324,8 +324,8 @@ function normalizeCountSelect(
  * - Otherwise → the caller-supplied nested `where` at that key (if any) is
  *   key- and read-access-validated against the RELATED list via the same
  *   `validateQueryKeys`/`validateQueryFieldReadAccess` primitives
- *   `createFindMany` already runs on a top-level `where` (#912/#915), then
- *   run through `buildAccessScopedWhere` — the same fold `createFindMany`
+ *   the top-level read already runs on a `where` (#912/#915), then
+ *   run through `buildAccessScopedWhere` — the same fold the top-level read
  *   applies to a top-level `where` (#916) — so a relation filter nested
  *   inside IT (e.g. `_count.select.posts.where.comments.some`) is scoped by
  *   THAT further list's own `query` access too, not just the counted
@@ -442,7 +442,7 @@ async function buildAccessScopedCountSelect(
       // that nested relation would reach Prisma unscoped by ITS list's
       // `query` access, letting the resulting count reveal whether
       // inaccessible rows over there exist. `buildAccessScopedWhere` is the
-      // same fold `createFindMany` runs on an ordinary top-level `where`
+      // same fold the top-level read runs on an ordinary `where`
       // (#916) — reused here rather than re-derived.
       scopedRequestedWhere = (await buildAccessScopedWhere(
         requestedWhere,
@@ -501,11 +501,12 @@ async function buildAccessScopedCountSelect(
  *   stops: no recursive call, no access evaluation on anything beneath it.
  *
  * **Depth is a cost limit, not a cycle guard (ADR-0026).** A `requestedInclude`
- * is always a finite literal — the caller's own object, or
- * `foldDeclaredDependencies`'s already-cycle-guarded fold — so this recursion
- * cannot loop unboundedly on its own; nothing here walks the relationship
- * graph unprompted. `READ_INCLUDE_MAX_DEPTH` still bounds how deep a request
- * may reach, fail-closed per ADR-0022: a request naming anything at or past
+ * is always a finite literal — the caller's own object, or the one-hop
+ * widening over it (`declared-dependencies.ts`, which never recurses into a
+ * branch it added) — so this recursion cannot loop unboundedly on its own;
+ * nothing here walks the relationship graph unprompted.
+ * `READ_INCLUDE_MAX_DEPTH` still bounds how deep a request may reach,
+ * fail-closed per ADR-0022: a request naming anything at or past
  * the cap throws `AccessScopeDepthExceededError` rather than silently
  * returning less than what was asked for.
  */
@@ -734,7 +735,7 @@ export function emptyToOneAccessVisibilityTree(): ToOneAccessVisibilityTree {
  * - `kind: 'denied'` → carried straight through; no query, nothing to check.
  * - `kind: 'scoped'` → every id present at this key across ALL of `items` is
  *   collected first (an empty set skips the query entirely — nothing to
- *   check), then ONE `findMany` through the RAW `prisma` client (not
+ *   check), then ONE `findMany` through the RAW ORM handle (not
  *   `context.db`, which would re-evaluate the same access-control function a
  *   second time) asks which of those ids also satisfy `accessWhere` — the
  *   exact `PrismaFilter` `checkAccess` already produced, handed to Prisma
@@ -776,14 +777,13 @@ export async function resolveToOneAccessVisibility(
       continue
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic model access by list name, mirroring the rest of the read pipeline
-    const model = (args.context.prisma as any)[getDbKey(entry.relatedListName)]
+    const model = ormModel(args.context.ormHandle, entry.relatedListName)
     const visibleRows = await model.findMany({
       where: { AND: [entry.accessWhere, { id: { in: [...ids] } }] },
       select: { id: true },
     })
     const visibleIds = new Set<string>(
-      Array.isArray(visibleRows) ? visibleRows.map((row: { id: unknown }) => String(row.id)) : [],
+      Array.isArray(visibleRows) ? visibleRows.map((row) => String(row.id)) : [],
     )
     resolved.filters[key] = { kind: 'visible', ids: visibleIds }
   }

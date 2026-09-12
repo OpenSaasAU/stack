@@ -15,7 +15,6 @@ export default defineConfig({
       reporter: ['text', 'json', 'html', 'json-summary'],
       exclude: [
         'node_modules/',
-        'tests/',
         'dist/',
         '**/*.d.ts',
         '**/*.config.*',
@@ -25,8 +24,8 @@ export default defineConfig({
       ],
       // Per-glob, per-file coverage gates on the security-critical core paths:
       // the access-control engine (`src/access`), the read/write context
-      // pipeline (`src/context` — Write Pipeline, Hook Pipeline, nested-op
-      // registry), and the config validator (`src/validation`). `perFile: true`
+      // pipeline (`src/context` — Write Pipeline, Hook Pipeline, the
+      // transaction bracket), and the config validator (`src/validation`). `perFile: true`
       // applies each threshold to every covered file in the glob, so the
       // numbers sit a couple of points below the *current lowest-covered file*
       // in each group — a real regression fails `test:coverage` (and the PR),
@@ -34,28 +33,40 @@ export default defineConfig({
       // Rationale: docs/adr/0002-testing-and-ci-strategy.md.
       thresholds: {
         perFile: true,
-        // Lowest current file: field-access.ts (stmts/lines 69.76, branch
-        // 56.41, funcs 66.66).
+        // Re-baselined once against the corpus rewritten by guarantee
+        // (#1156, ADR-0057, ADR-0002). No number here was lowered.
+        //
+        // Lowest current files: query-validation.ts (stmts 78.90, branch
+        // 73.27, lines 83.63) and field-access.ts (funcs 80).
         'src/access/**': {
-          statements: 65,
-          branches: 50,
-          functions: 62,
-          lines: 65,
+          statements: 76,
+          branches: 71,
+          functions: 78,
+          lines: 81,
         },
-        // Lowest current file: nested-operations.ts (stmts/lines 89.47,
-        // branch 69.23, funcs 100).
+        // Lowest current files: relationship-input.ts (stmts 88.49, funcs
+        // 94.11, lines 92.13) and transaction-boundary.ts (branch 82).
         'src/context/**': {
-          statements: 85,
-          branches: 65,
-          functions: 90,
-          lines: 85,
+          statements: 86,
+          branches: 80,
+          functions: 92,
+          lines: 90,
         },
-        // Lowest current file: field-config.ts (stmts 96.42, branch 87.50,
-        // funcs 100, lines 100).
+        // Lowest current files: field-names.ts (stmts 93.87, lines 95.23),
+        // extension-packs.ts (branch 88.23), database-config.ts (funcs 100).
+        //
+        // `functions` here is effectively absolute, not the couple of points of
+        // slack the note above describes: all seven files in the glob are at
+        // 100%, and the files are small enough that function coverage moves in
+        // coarse steps — schema.ts has two functions, so one untested helper
+        // takes it to 66 and fails this gate. Adding a function to this glob
+        // means adding a test that calls it. Leaving it strict is deliberate:
+        // this is the config validator, and the alternative is lowering a
+        // threshold, which ADR-0002's ratchet does not do.
         'src/validation/**': {
           statements: 92,
-          branches: 83,
-          functions: 95,
+          branches: 86,
+          functions: 98,
           lines: 95,
         },
       },

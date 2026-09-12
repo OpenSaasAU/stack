@@ -2,7 +2,7 @@ name: Test
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, prisma-8]
 
 # Cancel any in-progress run for the same PR/branch when a new push arrives.
 concurrency:
@@ -12,6 +12,40 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # The escape belongs to the job, not to the steps that happen to need it: a
+    # suite whose guarantee PGlite cannot exercise skips itself by name when the
+    # variable is absent, and a skip that reads as coverage is what this guards
+    # against (ADR-0063). It names the service container below.
+    #
+    # Setting it here is necessary but not sufficient: turbo's strict env mode
+    # (the default since 2.x) strips any variable a task does not declare, so
+    # every task that dials the escape must also list `DATABASE_URL` under
+    # `env` in turbo.json. `test` did not, and silently ran on PGlite while
+    # `test:coverage` ran on the container beside it.
+    env:
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    # The real Postgres the test harness runs against (ADR-0057's
+    # `DATABASE_URL` escape, #1143). pgvector's image rather than the plain
+    # one, so a pack-declaring contract's `CREATE EXTENSION vector` has
+    # something to install — ADR-0065 makes provisioning the deployment's job,
+    # and CI is a deployment.
+    services:
+      postgres:
+        # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
+        # would change CI's database with no commit here. Resolved from
+        # pgvector/pgvector:pg17 on 2026-09-06; bump both together.
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -29,23 +63,228 @@ jobs:
       - name: Check for duplicate ADR numbers
         run: pnpm check:adr-duplicates
 
+      - name: Check for Prisma error-code literals
+        run: pnpm check:prisma-error-codes
+
+      # A `'use client'` module imported for its side effects alone from a
+      # server component never runs in the browser, so the registration it
+      # exists for silently does not happen — generate, build, tsc and the
+      # suites all pass through it (#1172).
+      - name: Check for side-effect-only 'use client' imports
+        run: |
+          pnpm check:client-side-effect-imports
+          pnpm check:client-side-effect-imports --self-test
+
       - name: Lint codebase
         run: pnpm lint
 
       - name: Check format
         run: pnpm format:check
 
-      - name: Run tests
-        run: turbo run test
-        env:
-          OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
+      # `opensaas generate` must be deterministic: re-running it over a
+      # committed project leaves contract.ts, prisma.config.ts, contract.json,
+      # contract.d.ts and the seeded extension contract space under migrations/
+      # byte-identical. The contract fixture covers the constructs whose
+      # emission is easiest to make unstable; `starter`/`starter-auth` cover
+      # what the scaffolder ships, the three demos added by #1172 cover the
+      # field packages a scaffold does not reach — json, tiptap's richText, and
+      # storage's file/image — the five of #1171 join them here, and the two RAG
+      # demos added by #1173 cover the pgvector projects (ADR-0067). With #1173
+      # landed, every example that has a config to generate from is named here;
+      # `examples/plain-css-theming` is the one that never will be, because it
+      # is static HTML with no config to generate from. #1175 replaces this
+      # enumeration with an unfiltered run.
+      # `opensaas generate` loads each example's config, so every package that
+      # config imports has to be built — turbo's `build` is `dependsOn:
+      # ["^build"]`, which reaches a package's own dependencies and not the
+      # examples'. Naming each example's closure builds whatever a newly
+      # imported package turns out to be, rather than turning this step red a
+      # wave later. `^...` is the dependency operator only on a package NAME;
+      # against a path filter it selects the example itself as well.
+      - name: Build the CLI and the examples' dependencies for the regeneration gate
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-cli
+          --filter=opensaas-starter-example^...
+          --filter=opensaas-starter-auth-example^...
+          --filter=opensaas-custom-field-example^...
+          --filter=opensaas-blog-example^...
+          --filter=opensaas-composable-dashboard-example^...
+          --filter=opensaas-auth-example^...
+          --filter=opensaas-mcp-example^...
+          --filter=opensaas-json-demo-example^...
+          --filter=opensaas-tiptap-example^...
+          --filter=opensaas-file-upload-example^...
+          --filter=opensaas-rag-ollama-example^...
+          --filter=opensaas-rag-openai-chatbot-example^...
 
-      - name: Run tests with coverage
-        run: turbo run test:coverage
+      - name: Regenerate the contract fixture
+        run: node ../../../bin/opensaas.js generate
+        working-directory: ./packages/cli/tests/fixtures/contract-project
+
+      - name: Regenerate examples/starter
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/starter
+
+      - name: Regenerate examples/starter-auth
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/starter-auth
+
+      - name: Regenerate examples/custom-field
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/custom-field
+
+      - name: Regenerate examples/blog
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/blog
+
+      - name: Regenerate examples/composable-dashboard
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/composable-dashboard
+
+      - name: Regenerate examples/auth-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/auth-demo
+
+      - name: Regenerate examples/mcp-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/mcp-demo
+
+      - name: Regenerate examples/json-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/json-demo
+
+      - name: Regenerate examples/tiptap-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/tiptap-demo
+
+      - name: Regenerate examples/file-upload-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/file-upload-demo
+
+      - name: Regenerate examples/rag-ollama-demo
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-ollama-demo
+
+      # `opensaas.config.ts` reads OPENAI_API_KEY, so generation needs one
+      # present. Nothing here calls OpenAI: generation reads the config, and the
+      # embedding provider is not constructed until a write or a search runs.
+      - name: Regenerate examples/rag-openai-chatbot
+        run: node ../../packages/cli/bin/opensaas.js generate
+        working-directory: ./examples/rag-openai-chatbot
         env:
           OPENAI_API_KEY: 'sk-testing-key'
-          DATABASE_URL: 'file:./dev.db'
+
+      # `git add --intent-to-add` first: a plain `git diff` only sees tracked
+      # files, so a newly emitted artifact would land untracked and pass green.
+      # Ignored paths (the `.opensaas` bundle) stay ignored.
+      - name: Fail on a dirty regeneration
+        run: |
+          PATHS="packages/cli/tests/fixtures/contract-project examples/starter examples/starter-auth examples/custom-field examples/blog examples/composable-dashboard examples/auth-demo examples/mcp-demo examples/json-demo examples/tiptap-demo examples/file-upload-demo examples/rag-ollama-demo examples/rag-openai-chatbot"
+          git add --intent-to-add -- $PATHS
+          git diff --exit-code -- $PATHS
+
+      # Unlike its two sibling checks above, this one reads compiled output: it
+      # resolves @opensaas/* through each package's own `exports` to its dist,
+      # so it measures this branch's own declarations. The regeneration step
+      # above builds the CLI and the two examples' dependency closures, so the
+      # packages the doc blocks import beyond those are built here. turbo
+      # caches it, and the test steps below depend on the same task, so this is
+      # a reordering rather than an extra build.
+      #
+      # The doc-block fixtures describe THIS tree: `files.txt` names the
+      # repository's documents and `fragments.json` keys entries by
+      # `file:line`, so a fixture re-key is part of any change that moves a
+      # documented block (#1301).
+      - name: Build packages for the doc-block check
+        run: turbo run build --filter='./packages/*'
+
+      # The checker's own fixture of known-bad and known-good blocks: every bad
+      # block must be reported FAIL and every good one must pass, before the
+      # real documents are trusted to a run of it.
+      - name: Self-test the doc-block checker
+        run: node scripts/check-doc-typescript-blocks.mjs --self-test
+
+      - name: Check documented TypeScript blocks compile
+        run: pnpm check:doc-ts-blocks
+
+      # turbo's `test` task depends on `build`, so this run also builds every
+      # examples/* package it names: `starter`/`starter-auth` (#1170), the
+      # three demos added by #1172 — each of which also carries a `test` script
+      # that stands up a Dev database and round-trips its own feature — the
+      # five of #1171, and the two RAG demos of #1173. No example is left out
+      # of this filter for want of a build. `plain-css-theming` is absent
+      # because it has no scripts at all — it is static HTML, and the
+      # `data-slot` promise it rests on is covered by
+      # packages/ui/tests/browser/primitives/data-slot.browser.test.tsx in the
+      # browser run below. #1175 replaces this enumeration with an unfiltered
+      # run.
+      #
+      # Of #1171's five, custom-field, composable-dashboard and auth-demo carry
+      # no `test` script, so for them this is a build gate. The two that DO
+      # carry one — blog and mcp-demo — run in their own steps below, each
+      # against a database of its own. Neither RAG demo carries one either:
+      # rag-openai-chatbot has no suite, and rag-ollama-demo's is `test:rag`,
+      # deliberately off `test` because it needs an Ollama server on
+      # localhost:11434 that CI does not run. Both are build gates here.
+      - name: Run package tests and build the converted examples
+        run: >
+          turbo run test
+          --filter='./packages/*'
+          --filter=./examples/starter
+          --filter=./examples/starter-auth
+          --filter=./examples/custom-field
+          --filter=./examples/composable-dashboard
+          --filter=./examples/auth-demo
+          --filter=./examples/json-demo
+          --filter=./examples/tiptap-demo
+          --filter=./examples/file-upload-demo
+          --filter=./examples/rag-ollama-demo
+          --filter=./examples/rag-openai-chatbot
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+      # An example's `test` script is `opensaas dev -- <script>`, which
+      # reconciles the database `DATABASE_URL` names with that example's own
+      # contract. Two examples pointed at one database therefore fight: the
+      # second reconcile sees the first's tables as rows to drop and refuses,
+      # non-interactively, for want of consent. Each suite gets a database of
+      # its own on the same service container instead.
+      #
+      # This is why the run above is a filtered enumeration that excludes blog
+      # and mcp-demo: an unfiltered `turbo run test` would put both suites on
+      # one DATABASE_URL. #1175 replaces that enumeration, and must keep these
+      # three steps — or reproduce the per-suite databases some other way — or
+      # the collision the paragraph above describes comes back.
+      #
+      # `psql` comes from the ubuntu-latest runner image; nothing in this repo
+      # installs or pins it.
+      - name: Create a database per example suite
+        run: |
+          psql "$DATABASE_URL" -c 'create database blog_example'
+          psql "$DATABASE_URL" -c 'create database mcp_demo_example'
+
+      - name: Run the blog access-control suite
+        run: turbo run test --filter=./examples/blog
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
+
+      - name: Run the mcp-demo tool suite
+        run: turbo run test --filter=./examples/mcp-demo
+        env:
+          DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
+          BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
+          BETTER_AUTH_URL: 'http://localhost:3000'
+          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+      # Coverage is a package property; the examples carry no `test:coverage`.
+      - name: Run package tests with coverage
+        run: turbo run test:coverage --filter='./packages/*'
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
 
       - name: Install Playwright browsers
         uses: ./.github/actions/playwright
@@ -71,9 +310,53 @@ jobs:
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
 
+  # Every guard and the Playwright run below stands on `examples/starter-auth`
+  # and the scaffold built from `examples/starter`, both on Prisma 8 (#1170).
+  #
+  # The job runs twice, and the two legs differ in exactly one variable. On the
+  # `dev-database` leg no `DATABASE_URL` is set: the Playwright harness and the
+  # auth guards call the same lookup the app does, and with nothing set they
+  # start the Dev database in-process (ADR-0063) — naming a URL would take the
+  # escape branch and the sidecar this leg exists to exercise would never
+  # start. On the `postgres` leg the variable names the service container
+  # below, which is story 25 of #1125: the same suites on the parity server CI
+  # keeps for production's sake. Services are job-scoped, so the container is
+  # started for both legs and only the `postgres` leg dials it.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [dev-database, postgres]
+        include:
+          - database: dev-database
+            database_url: ''
+          - database: postgres
+            database_url: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    env:
+      BETTER_AUTH_URL: 'http://localhost:3000'
+      BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
+      NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+      # The lookup treats an empty variable as absent, so the dev-database leg
+      # still starts the sidecar.
+      DATABASE_URL: ${{ matrix.database_url }}
+
+    # Pinned by the same digest as the `test` job's; bump both together.
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -92,21 +375,21 @@ jobs:
           --filter=create-opensaas-app
 
       # Isolated first-run guard: scaffold the real CLI into an OS temp dir and
-      # run generate + db:push against the workspace toolchain (no network
-      # install). Opt-in via RUN_SCAFFOLD_GUARD so it stays out of the fast unit
-      # lane. See ADR-0002 and packages/create-opensaas-app/tests/scaffold-first-run-guard.test.ts.
+      # run generate against the workspace toolchain (no network install, no
+      # database — the first `pnpm dev` brings one up). Opt-in via
+      # RUN_SCAFFOLD_GUARD so it stays out of the fast unit lane. See ADR-0002
+      # and packages/create-opensaas-app/tests/scaffold-first-run-guard.test.ts.
       - name: Run scaffold first-run guard
         run: pnpm --filter create-opensaas-app test run scaffold-first-run-guard
         env:
           RUN_SCAFFOLD_GUARD: '1'
-          DATABASE_URL: 'file:./dev.db'
 
       # Live proof the database-backed rate limiter (issue #909) actually
-      # works: generates a real schema with the derived RateLimit list,
-      # pushes it to a real SQLite database, and drives real betterAuth()
-      # instances through it. Borrows the same offline toolchain as the
-      # scaffold guard above, so it needs no additional install. Opt-in via
-      # RUN_RATE_LIMIT_E2E so it stays out of the fast unit lane. See
+      # works: generates a real contract with the derived RateLimit list,
+      # applies it to a real Postgres (this leg's), and drives real
+      # betterAuth() instances through it. Borrows the same offline toolchain
+      # as the scaffold guard above, so it needs no additional install. Opt-in
+      # via RUN_RATE_LIMIT_E2E so it stays out of the fast unit lane. See
       # ADR-0002 and packages/auth/tests/rate-limit-e2e.test.ts.
       - name: Run database-backed rate limiter e2e guard
         run: pnpm --filter @opensaas/stack-auth test rate-limit-e2e
@@ -152,16 +435,21 @@ jobs:
         run: pnpm test:e2e
         env:
           CI: true
-          DATABASE_URL: 'file:./dev.db'
-          BETTER_AUTH_URL: http://localhost:3000
-          BETTER_AUTH_SECRET: 'secret-for-teating-in-github-actions-with-numbers1234'
-          NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
+
+      # The harness reconciled the example's database, which rewrites the
+      # committed `db` ref and snapshot under migrations/ (ADR-0065, ADR-0067).
+      # A diff here means the committed ref describes a contract the config no
+      # longer derives.
+      - name: Fail on a stale committed migrations directory
+        run: |
+          git add --intent-to-add -- examples/starter-auth/migrations
+          git diff --exit-code -- examples/starter-auth/migrations
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.database }}
           path: playwright-report/
           retention-days: 7
 
@@ -169,7 +457,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results
+          name: test-results-${{ matrix.database }}
           path: test-results/
           retention-days: 7
 

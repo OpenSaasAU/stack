@@ -10,7 +10,6 @@ out/
 
 # Generated files
 .opensaas/
-prisma/migrations/
 __generated__/
 *.db
 *.db-journal
@@ -57,3 +56,16 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# Contract-module equivalence test scratch (evaluated inside the package so
+# node resolution reaches its node_modules)
+packages/cli/tests/tmp-*/
+packages/auth/tests/tmp-*/
+
+# Nightly cold-clone scaffold (inside the workspace so the borrowed node_modules symlink stays under the bundler root)
+.cold-clone/
+
+# Doc-block compile check scratch (evaluated inside packages/rag so node
+# resolution reaches its node_modules; removed on exit and on SIGINT/SIGTERM,
+# ignored in case a run is killed outright)
+packages/rag/.doc-blocks-check-*/
