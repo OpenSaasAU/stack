@@ -81,9 +81,9 @@ export function formatConfigRefusals(refusals: ConfigRefusal[]): string {
 }
 
 /**
- * A refusal generation has already reported in full. Thrown only when the
- * caller asked for it: `opensaas generate` still exits on one, and the dev
- * loop catches it and keeps serving.
+ * A refusal generation has already reported in full. Always thrown, never
+ * exited past: `opensaas generate` catches it at the CLI entry point and
+ * exits, and the dev loop catches it and keeps serving.
  */
 export class GenerationFailedError extends Error {
   constructor(message: string) {
@@ -102,11 +102,6 @@ export interface GenerateCommandOptions {
    * them.
    */
   stagingDir?: string
-  /**
-   * Throw a {@link GenerationFailedError} rather than exiting the process, so
-   * a caller with something to keep alive survives a refusal.
-   */
-  throwOnFailure?: boolean
 }
 
 /** Where one generation put its files, and how to point Prisma at them. */
@@ -122,18 +117,16 @@ export interface GenerationResult {
   prismaConfig: string
 }
 
+/**
+ * Signals failure by throwing {@link GenerationFailedError} — never by
+ * exiting the process — so a caller with something to keep alive (the dev
+ * loop, holding an open database and app child) can clean up before
+ * deciding how to fail. `opensaas generate`, the CLI entry point, is the one
+ * caller that owns the whole process and translates the throw into an exit.
+ */
 export async function generateCommand(
   options: GenerateCommandOptions = {},
 ): Promise<GenerationResult> {
-  try {
-    return await runGeneration(options)
-  } catch (error) {
-    if (options.throwOnFailure === true) throw error
-    process.exit(1)
-  }
-}
-
-async function runGeneration(options: GenerateCommandOptions): Promise<GenerationResult> {
   console.log(chalk.bold('\n🚀 OpenSaas Generator\n'))
 
   const cwd = process.cwd()

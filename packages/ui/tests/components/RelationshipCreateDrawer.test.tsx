@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { RelationshipCreateDrawer } from '../../src/components/RelationshipCreateDrawer.js'
+import {
+  RelationshipCreateDrawer,
+  buildOptimisticRow,
+} from '../../src/components/RelationshipCreateDrawer.js'
 import type { RelationshipCreateDrawerProps } from '../../src/components/RelationshipCreateDrawer.js'
 
 // The drawer refreshes the table on a successful create (never navigates away).
@@ -80,6 +83,46 @@ describe('RelationshipCreateDrawer', () => {
     expect(mockRefresh).toHaveBeenCalled()
     expect(mockPush).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('reports an optimistic row (id + submitted scalars) before refreshing (#1376)', async () => {
+    const serverAction = vi.fn(async () => ({ created: true, id: 'p1' }))
+    const onRowCreated = vi.fn()
+    render(
+      <RelationshipCreateDrawer
+        {...baseProps()}
+        serverAction={serverAction}
+        onRowCreated={onRowCreated}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /add post/i }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/title/i), 'Hello')
+    await user.type(within(dialog).getByLabelText(/slug/i), 'hello')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    // The table can show the row immediately, without depending on
+    // router.refresh() having observed the write it is itself requesting.
+    expect(onRowCreated).toHaveBeenCalledWith({ id: 'p1', title: 'Hello', slug: 'hello' })
+    expect(onRowCreated.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRefresh.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('buildOptimisticRow omits a relationship field (no { id, label } to show)', () => {
+    const fields: Record<string, RelationshipCreateDrawerProps['fields'][string]> = {
+      title: { type: 'text' },
+      category: { type: 'relationship', many: false, ref: 'Category' },
+    }
+    const row = buildOptimisticRow(
+      fields,
+      { title: 'Hello', category: { connect: { id: 'c1' } } },
+      'p1',
+    )
+    expect(row).toEqual({ id: 'p1', title: 'Hello' })
+    expect(row).not.toHaveProperty('category')
   })
 
   it('keeps the drawer open and shows the reason on a create denial (Silent failure)', async () => {

@@ -73,6 +73,8 @@ export interface IntrospectedField {
   isId: boolean
   isList: boolean
   defaultValue?: string
+  /** Whether the field carries Prisma's `@updatedAt` attribute. */
+  isUpdatedAt?: boolean
   relation?: {
     name: string
     model: string

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
-import { generateCommand } from './commands/generate.js'
+import { generateCommand, GenerationFailedError } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
 import { devCommand } from './commands/dev.js'
 import { createDbCommand } from './commands/db.js'
@@ -16,7 +16,12 @@ program
   .command('generate')
   .description('Generate Prisma schema and TypeScript types from opensaas.config.ts')
   .action(async () => {
-    await generateCommand()
+    try {
+      await generateCommand()
+    } catch (error) {
+      if (!(error instanceof GenerationFailedError)) throw error
+      process.exit(1)
+    }
   })
 
 program

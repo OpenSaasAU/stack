@@ -202,6 +202,14 @@ export function RelationshipTableClient({
   const [pendingId, setPendingId] = React.useState<string | null>(null)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
 
+  // Rows optimistically shown after a successful pre-linked create (#1376),
+  // before `rows` (the server-confirmed prop) has caught up with them. Once a
+  // real row with the same id arrives, it takes over and the optimistic one
+  // is dropped rather than shown twice.
+  const [createdRows, setCreatedRows] = React.useState<Array<Record<string, unknown>>>([])
+  const realRowIds = React.useMemo(() => new Set(rows.map((row) => String(row.id))), [rows])
+  const pendingCreatedRows = createdRows.filter((row) => !realRowIds.has(String(row.id)))
+
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
   const countLabel = formatCountLabel(count, total)
   const showRemove = removeMode !== null
@@ -262,7 +270,10 @@ export function RelationshipTableClient({
     }
   }
 
-  const visibleRows = rows.filter((row) => !removedIds.has(String(row.id)))
+  const visibleRows = [
+    ...rows.filter((row) => !removedIds.has(String(row.id))),
+    ...pendingCreatedRows,
+  ]
 
   return (
     <Card data-slot="relationship-table" className="overflow-hidden">
@@ -302,6 +313,7 @@ export function RelationshipTableClient({
               parentId={parentId}
               basePath={basePath}
               serverAction={serverAction}
+              onRowCreated={(row) => setCreatedRows((prev) => [...prev, row])}
             />
           )}
         </div>

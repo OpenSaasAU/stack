@@ -9,9 +9,11 @@ import { AccessScopeDepthExceededError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
 import { buildAccessScopedInclude } from '../access/access-filter.js'
 import {
+  DECLARED_ROWS_BRANCH_KEY,
   DuplicateIncludeError,
   InvalidRefinementError,
   MultipleCombineRowBranchesError,
+  ReservedCombineKeyError,
 } from './include.js'
 
 const BOOT = 120_000
@@ -914,6 +916,176 @@ describe('Reductions', () => {
             posts.combine({ first: posts.limit(1), second: posts.limit(2) }),
           ),
       ).toThrow(MultipleCombineRowBranchesError)
+    },
+    BOOT,
+  )
+})
+
+/**
+ * A relation that is both reduced and a live declared dependency of a
+ * computed field returned alongside it (#1357): `resolveIncludes` used to
+ * skip the declared branch outright because the caller already named the
+ * relation (via `.count()`/`.combine()`), so the declaring hook computed over
+ * the reduction's `[]` stand-in instead of real rows. Isolated in its own
+ * fixture and database — `User.postTitles` declaring `needs: ['posts']`
+ * would otherwise widen every read of `User` throughout this file's shared
+ * `blogConfig`.
+ */
+describe('a relation that is both reduced and a live declared dependency', () => {
+  const reducedConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      Author: {
+        fields: {
+          handle: text({ validation: { isRequired: true } }),
+          posts: relationship({ ref: 'Story.author', many: true }),
+          postTitles: virtual({
+            type: 'string',
+            needs: ['posts'],
+            hooks: {
+              resolveOutput: ({ item }) => {
+                const posts: unknown[] = Array.isArray(item.posts) ? item.posts : []
+                return posts
+                  .filter(
+                    (post): post is Record<string, unknown> =>
+                      typeof post === 'object' && post !== null,
+                  )
+                  .map((post) => String(post.title))
+                  .sort()
+                  .join(',')
+              },
+            },
+          }),
+          // A row-dependent `read` rule reaching into the SAME declared
+          // relation: the access-control shape #1357 calls "the more serious
+          // one" — `item.posts.length > 0` failing closed because the
+          // relation it inspects was masked to `[]` rather than denied.
+          isPublished: virtual({
+            type: 'boolean',
+            needs: ['posts'],
+            access: { read: ({ item }) => Array.isArray(item.posts) && item.posts.length > 0 },
+            hooks: { resolveOutput: () => true },
+          }),
+        },
+        access: { operation: { query: () => true } },
+      },
+      Story: {
+        fields: {
+          title: text({ validation: { isRequired: true } }),
+          published: checkbox({ defaultValue: false }),
+          author: relationship({ ref: 'Author.posts' }),
+        },
+        access: { operation: { query: () => true } },
+      },
+    },
+  }
+
+  let reduced: TestDatabase
+  let author: Record<string, unknown>
+
+  beforeAll(async () => {
+    reduced = await createTestDatabase(reducedConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await reduced?.close()
+  })
+
+  beforeEach(async () => {
+    await reduced.truncate()
+    const namespace: unknown = Reflect.get(reduced.client.orm, 'public')
+    if (!isRecord(namespace)) throw new Error('no public namespace')
+    const authors: unknown = Reflect.get(namespace, 'Author')
+    const stories: unknown = Reflect.get(namespace, 'Story')
+    if (!isRecord(authors) || !isRecord(stories)) throw new Error('no collection')
+    const createAuthor: unknown = authors.create
+    const createStory: unknown = stories.create
+    if (typeof createAuthor !== 'function' || typeof createStory !== 'function') {
+      throw new Error('collection has no create')
+    }
+    author = await withOrigin('unsafe', async () => {
+      const created: unknown = await createAuthor.call(authors, { handle: 'ada' })
+      if (!isRecord(created)) throw new Error('create returned no row')
+      return created
+    })
+    await withOrigin('unsafe', () =>
+      createStory.call(stories, { title: "ada's published", published: true, authorId: author.id }),
+    )
+  })
+
+  test(
+    'a bare count satisfies the reduction and the declaring hook alike',
+    async () => {
+      const rows = await reduced
+        .context({})
+        .db.Author.include('posts', (posts) => posts.count())
+        .all()
+
+      expect(rows).toMatchObject([{ handle: 'ada', posts: 1, postTitles: "ada's published" }])
+    },
+    BOOT,
+  )
+
+  test(
+    'a read rule reaching into the same relation decides against real rows, not the masked []',
+    async () => {
+      const rows = await reduced
+        .context({})
+        .db.Author.include('posts', (posts) => posts.count())
+        .all()
+
+      // `isPublished`'s rule reads `item.posts.length > 0` — real rows would
+      // grant it; the reduction's `[]` stand-in would fail it closed.
+      expect(rows[0]).toMatchObject({ isPublished: true })
+    },
+    BOOT,
+  )
+
+  test(
+    'the same holds for a combine with no rows branch of its own',
+    async () => {
+      const namespace: unknown = Reflect.get(reduced.client.orm, 'public')
+      if (!isRecord(namespace)) throw new Error('no public namespace')
+      const stories: unknown = Reflect.get(namespace, 'Story')
+      if (!isRecord(stories)) throw new Error('no collection')
+      const createStory: unknown = stories.create
+      if (typeof createStory !== 'function') throw new Error('collection has no create')
+      await withOrigin('unsafe', () =>
+        createStory.call(stories, { title: "ada's second", published: true, authorId: author.id }),
+      )
+      await withOrigin('unsafe', () =>
+        createStory.call(stories, { title: "ada's third", published: false, authorId: author.id }),
+      )
+
+      const rows = await reduced
+        .context({})
+        .db.Author.include('posts', (posts) =>
+          posts.combine({
+            total: posts.count(),
+            published: posts.where({ published: { equals: true } }).count(),
+          }),
+        )
+        .all()
+
+      expect(rows[0].postTitles).toBe(["ada's published", "ada's second", "ada's third"].join(','))
+      expect(rows[0].posts).toMatchObject({ total: 3, published: 2 })
+      // The internal branch this engine rides the declared rows through never
+      // reaches the caller.
+      expect(Object.keys(rows[0].posts as object)).not.toContain(DECLARED_ROWS_BRANCH_KEY)
+    },
+    BOOT,
+  )
+
+  test(
+    "a caller cannot name a combine branch after this engine's own reserved key",
+    async () => {
+      expect(() =>
+        reduced
+          .context({})
+          .db.Author.include('posts', (posts) =>
+            posts.combine({ [DECLARED_ROWS_BRANCH_KEY]: posts.count() }),
+          ),
+      ).toThrow(ReservedCombineKeyError)
     },
     BOOT,
   )

@@ -36,6 +36,47 @@ export interface RelationshipCreateDrawerProps {
   basePath: string
   /** Server action that runs the create through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * Called with an optimistic row (the created id plus the submitted scalar
+   * fields) right after a successful create, so the table can show it
+   * immediately rather than waiting on `router.refresh()`'s RSC round-trip —
+   * which, requested for the very segment the create's own action just wrote
+   * to, is not guaranteed to observe that write (#1376). `router.refresh()`
+   * is still called afterwards to reconcile hook-computed values and the
+   * footer's total, but the row's initial appearance no longer depends on it
+   * landing at all.
+   */
+  onRowCreated?: (row: Record<string, unknown>) => void
+}
+
+/** The row id a create-and-link server action's `{ created, id }` result carries. */
+function extractCreatedId(result: unknown): string | undefined {
+  if (typeof result === 'object' && result !== null && 'id' in result) {
+    const id = (result as { id?: unknown }).id
+    return typeof id === 'string' ? id : undefined
+  }
+  return undefined
+}
+
+/**
+ * The optimistic row {@link RelationshipCreateDrawerProps.onRowCreated} is
+ * handed: the created id plus every submitted SCALAR field. A relationship
+ * field's submitted value is a `connect` shape (or, pre-transform, a bare id)
+ * rather than the `{ id, label }` a Relationship Cell renders, so it is left
+ * off the optimistic row entirely — that cell renders empty until the
+ * following `router.refresh()` fills it in from the real record.
+ */
+export function buildOptimisticRow(
+  fields: Record<string, SerializableFieldConfig>,
+  data: Record<string, unknown>,
+  id: string,
+): Record<string, unknown> {
+  const row: Record<string, unknown> = { id }
+  for (const [fieldName, value] of Object.entries(data)) {
+    if (fields[fieldName]?.type === 'relationship') continue
+    row[fieldName] = value
+  }
+  return row
 }
 
 /**
@@ -77,7 +118,7 @@ function RelationshipCreateForm({
   onCreated,
   onCancel,
 }: Omit<RelationshipCreateDrawerProps, 'title'> & {
-  onCreated: () => void
+  onCreated: (row: Record<string, unknown>) => void
   onCancel: () => void
 }) {
   const {
@@ -104,7 +145,10 @@ function RelationshipCreateForm({
         parentId,
       })
       const outcome = readCreateOutcome(result)
-      if (outcome.success) onCreated()
+      if (outcome.success) {
+        const id = extractCreatedId(result)
+        if (id) onCreated(buildOptimisticRow(fields, data, id))
+      }
       return outcome
     },
   })
@@ -183,6 +227,7 @@ export function RelationshipCreateDrawer({
   parentId,
   basePath,
   serverAction,
+  onRowCreated,
 }: RelationshipCreateDrawerProps) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -219,10 +264,13 @@ export function RelationshipCreateDrawer({
             parentId={parentId}
             basePath={basePath}
             serverAction={serverAction}
-            onCreated={() => {
-              // In-place: close the drawer and refresh so the re-fetched table
-              // shows the new (access-visible) row, preserving nav/filter state.
+            onCreated={(row) => {
+              // In-place: close the drawer, show the row immediately (its
+              // visibility does not depend on the refresh below observing the
+              // write — see onRowCreated's doc), and refresh to reconcile
+              // hook-computed values and the footer's total.
               setOpen(false)
+              onRowCreated?.(row)
               router.refresh()
             }}
             onCancel={() => setOpen(false)}

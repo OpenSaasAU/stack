@@ -206,6 +206,27 @@ export class MultipleCombineRowBranchesError extends Error {
   }
 }
 
+/**
+ * Thrown when a `combine` branch key collides with one of the engine's own
+ * reserved keys ({@link DECLARED_ROWS_BRANCH_KEY}, {@link DECLARED_COUNT_BRANCH_KEY}) —
+ * the internal branches a reduced-and-declared relation rides its declared
+ * dependency's rows through (see `IncludePlan.declaredRows` and #1357). A
+ * collision can only mean a caller wrote the reserved string itself, so it is
+ * refused rather than silently shadowed.
+ */
+export class ReservedCombineKeyError extends Error {
+  constructor(
+    readonly relation: string,
+    readonly key: string,
+  ) {
+    super(
+      `Cannot combine("${relation}", …) with a branch named "${key}" — that name is reserved for ` +
+        `this engine's own declared-dependency widening. Choose a different branch name.`,
+    )
+    this.name = 'ReservedCombineKeyError'
+  }
+}
+
 /** One relation the caller named, and everything they composed onto it. */
 export interface IncludeRequest {
   readonly name: string
@@ -231,6 +252,30 @@ export interface CombineBranchRequest {
   readonly kind: 'rows' | 'count'
   readonly request: IncludeRequest
 }
+
+/**
+ * The `combine()` branch key an internal declared-dependency rows fetch rides
+ * under, on a relation that is reduced without a rows branch of its own (see
+ * `IncludePlan.declaredRows`, `read.ts`'s `refine`/`maskReductions`/
+ * `restoreReductions`, and #1357). Not reachable by a caller-authored
+ * `combine()` spec — {@link ReservedCombineKeyError} refuses a caller key that
+ * collides with it — so its presence in a raw DB result always means this
+ * engine added it.
+ */
+export const DECLARED_ROWS_BRANCH_KEY = '__opensaas_declared_rows__'
+
+/**
+ * The `combine()` branch key a bare `.count()` reduce's own count rides under,
+ * once {@link DECLARED_ROWS_BRANCH_KEY} forces the query onto `combine()`
+ * instead of a bare `count()`. `restoreReductions` unwraps it back to the
+ * plain number a `.count()` caller expects.
+ */
+export const DECLARED_COUNT_BRANCH_KEY = '__opensaas_declared_count__'
+
+const RESERVED_COMBINE_KEYS: ReadonlySet<string> = new Set([
+  DECLARED_ROWS_BRANCH_KEY,
+  DECLARED_COUNT_BRANCH_KEY,
+])
 
 /** A resolved reduction: every branch's predicates already carry the Access Filter. */
 export type ReducePlan =
@@ -287,6 +332,26 @@ export interface IncludePlan {
    * still runs scoped.
    */
   readonly reduce?: ReducePlan
+  /**
+   * Present only when this relation is both reduced ({@link reduce}) and a
+   * live declared dependency of a computed field returned alongside it, and
+   * the reduce carries no rows branch of its own to satisfy it (#1357). The
+   * Access Filter predicates for an extra, caller-invisible rows fetch riding
+   * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
+   * stored width, one hop, exactly what an ordinary declared branch fetches,
+   * because that is what this stands in for. See `maskReductions` and
+   * `restoreReductions` in `read.ts`.
+   */
+  readonly declaredRows?: readonly WherePlan[]
+}
+
+/** The key a resolved reduce's own rows branch sits under, if it composed one. */
+function rowsBranchKeyOf(reduce: ReducePlan): string | undefined {
+  if (reduce.kind !== 'combine') return undefined
+  for (const branch of reduce.branches) {
+    if (branch.kind === 'rows') return branch.key
+  }
+  return undefined
 }
 
 function isOrderList(order: OrderBy | readonly OrderBy[]): order is readonly OrderBy[] {
@@ -320,6 +385,7 @@ function isReduction(value: RefinementResult): value is SecuredReduction {
 
 function branchesOf(name: string, spec: Record<string, RefinementResult>): CombineBranchRequest[] {
   const branches = Object.entries(spec).map(([key, value]): CombineBranchRequest => {
+    if (RESERVED_COMBINE_KEYS.has(key)) throw new ReservedCombineKeyError(name, key)
     if (isReduction(value)) {
       const composed = reductions.get(value)
       if (composed === undefined || composed.reduce?.kind !== 'count') {
@@ -475,6 +541,7 @@ async function resolveInclude(
   ctx: ResolveContext,
   depth: number,
   declared: boolean,
+  liveDeclaredDependency: boolean = false,
 ): Promise<IncludePlan | null> {
   const target = resolveIncludeTarget(request.name, ctx)
   const related: ResolveContext = {
@@ -516,6 +583,25 @@ async function resolveInclude(
   )
   if (access.kind !== 'true') predicates.push(access)
 
+  const reduce = request.reduce
+    ? await resolveReduce(request, target, ctx, related, access)
+    : undefined
+
+  // A relation that is both reduced and a live declared dependency of a
+  // sibling computed field must satisfy both: the reduction's own value for
+  // the caller, and real rows for the declaring hook's `needs` (#1357). If the
+  // reduce already carries a rows branch of its own (an explicit `combine`),
+  // those rows already satisfy the declaration and nothing more is needed.
+  const declaredRows =
+    !declared &&
+    liveDeclaredDependency &&
+    reduce !== undefined &&
+    rowsBranchKeyOf(reduce) === undefined
+      ? access.kind !== 'true'
+        ? [access]
+        : []
+      : undefined
+
   return {
     relation: request.name,
     relatedListName: target.relatedListName,
@@ -528,9 +614,8 @@ async function resolveInclude(
     includes,
     projection,
     declared,
-    ...(request.reduce
-      ? { reduce: await resolveReduce(request, target, ctx, related, access) }
-      : {}),
+    ...(reduce ? { reduce } : {}),
+    ...(declaredRows ? { declaredRows } : {}),
   }
 }
 
@@ -631,16 +716,17 @@ export async function resolveIncludes(
 ): Promise<IncludePlan[]> {
   const plans: IncludePlan[] = []
   const named = new Set<string>()
+  const declaredNames = new Set(declaredRelations(ctx, selected))
   for (const request of requests) {
     if (named.has(request.name)) throw new DuplicateIncludeError(ctx.listName, request.name)
     named.add(request.name)
     if (depth >= READ_INCLUDE_MAX_DEPTH) {
       throw new AccessScopeDepthExceededError(ctx.listName, request.name, depth)
     }
-    const plan = await resolveInclude(request, ctx, depth, false)
+    const plan = await resolveInclude(request, ctx, depth, false, declaredNames.has(request.name))
     if (plan !== null) plans.push(plan)
   }
-  for (const name of declaredRelations(ctx, selected)) {
+  for (const name of declaredNames) {
     if (named.has(name)) continue
     named.add(name)
     const plan = await resolveInclude(

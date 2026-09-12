@@ -6,7 +6,12 @@
 import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
-import { checkAccess, filterReadableFields } from '../access/index.js'
+import {
+  checkAccess,
+  emptyCountAccessDenialTree,
+  emptyToOneAccessVisibilityTree,
+  filterReadableFields,
+} from '../access/index.js'
 import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
@@ -33,19 +38,28 @@ import {
 } from './vocabulary.js'
 import {
   buildIncludeRequest,
+  DECLARED_COUNT_BRANCH_KEY,
+  DECLARED_ROWS_BRANCH_KEY,
   orderList,
   resolveIncludes,
+  type CombineBranchPlan,
   type IncludePlan,
   type IncludeRequest,
+  type ReducePlan,
   type Refinement,
 } from './include.js'
 import {
   dependencyAdditions,
+  reducedDeclaredKeys,
   resolveProjection,
   selectionScope,
   type ProjectionPlan,
 } from './select.js'
-import type { DependencyAdditions, FieldSelectionScope } from '../access/declared-dependencies.js'
+import type {
+  DependencyAdditions,
+  FieldSelectionScope,
+  ReducedDeclaredKeys,
+} from '../access/declared-dependencies.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 import {
@@ -67,6 +81,7 @@ export {
   InvalidRefinementError,
   MultipleCombineRowBranchesError,
   ReducedToOneIncludeError,
+  ReservedCombineKeyError,
   UnreducibleRefinementError,
 } from './include.js'
 export type {
@@ -371,6 +386,13 @@ interface ReadPlan {
   readonly selection: FieldSelectionScope | undefined
   /** The relation branches only the widening asked for, level by level (ADR-0051). */
   readonly additions: DependencyAdditions
+  /**
+   * Relation keys, level by level, that are both reduced and a live declared
+   * dependency (#1357) — `IncludePlan.declaredRows` on {@link includes}, in
+   * the shape Field Visibility consumes it in. See `maskReductions` and
+   * `restoreReductions` below.
+   */
+  readonly reducedDeclared: ReducedDeclaredKeys
   /** The caller's own row bound. */
   readonly limit?: number
   /** The caller's own row offset. */
@@ -526,6 +548,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
     projection,
     selection: selectionScope(projection, includes),
     additions: dependencyAdditions(includes),
+    reducedDeclared: reducedDeclaredKeys(includes),
     limit: state.limit,
     offset: state.offset,
     ...(distinct ? { distinct } : {}),
@@ -639,19 +662,61 @@ function refine(
   // A reduction replaces the rows, so nothing below it applies: `resolveReduce`
   // refuses a refinement that composed anything a count cannot honour.
   if (plan.reduce !== undefined) {
-    if (plan.reduce.kind === 'count') return refined.count()
-    const spec: Record<string, IncludeBranch> = {}
-    for (const branch of plan.reduce.branches) {
-      let branched = refined
-      for (const predicate of branch.predicates) {
-        branched = branched.where((model) => lowerWhere(predicate, model, ops))
-      }
-      spec[branch.key] =
-        branch.kind === 'count' ? branched.count() : shape(branched, plan, branch, ops)
+    if (plan.declaredRows === undefined) {
+      if (plan.reduce.kind === 'count') return refined.count()
+      return refined.combine(combineSpec(refined, plan, plan.reduce.branches, ops))
+    }
+    // Both the caller's own reduce AND the declared dependency's rows ride in
+    // this one query, under keys the caller cannot reach (#1357) —
+    // `maskReductions`/`restoreReductions` are where the two get split apart
+    // again on the way out.
+    const spec: Record<string, IncludeBranch> = {
+      [DECLARED_ROWS_BRANCH_KEY]: declaredRowsBranch(collection, plan, ops),
+      ...(plan.reduce.kind === 'count'
+        ? { [DECLARED_COUNT_BRANCH_KEY]: refined.count() }
+        : combineSpec(refined, plan, plan.reduce.branches, ops)),
     }
     return refined.combine(spec)
   }
   return shape(refined, plan, plan, ops)
+}
+
+function combineSpec(
+  refined: RefinableCollection,
+  plan: IncludePlan,
+  branches: readonly CombineBranchPlan[],
+  ops: WhereCombinators,
+): Record<string, IncludeBranch> {
+  const spec: Record<string, IncludeBranch> = {}
+  for (const branch of branches) {
+    let branched = refined
+    for (const predicate of branch.predicates) {
+      branched = branched.where((model) => lowerWhere(predicate, model, ops))
+    }
+    spec[branch.key] =
+      branch.kind === 'count' ? branched.count() : shape(branched, plan, branch, ops)
+  }
+  return spec
+}
+
+/**
+ * The internal, caller-invisible rows branch a reduced-and-declared relation
+ * rides alongside its own reduction (`IncludePlan.declaredRows`). Built off
+ * the UNFILTERED `collection` rather than `refined` — it is scoped by the
+ * Access Filter alone, never by the caller's own `where()` on the reduce,
+ * because it stands in for an ordinary declared branch (full stored width,
+ * one hop), not for the caller's own view of the relation.
+ */
+function declaredRowsBranch(
+  collection: RefinableCollection,
+  plan: IncludePlan,
+  ops: WhereCombinators,
+): RefinableCollection {
+  let branched = collection
+  for (const predicate of plan.declaredRows ?? []) {
+    branched = branched.where((model) => lowerWhere(predicate, model, ops))
+  }
+  return shape(branched, plan, { orders: [], limit: undefined, offset: undefined }, ops)
 }
 
 /** What a relation's rows look like: its projection, its sort and its page. */
@@ -809,20 +874,37 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * unreduced relation's do and {@link restoreReductions} writes them back
  * beside the counts.
  *
- * Known limits: where the stand-in is `[]` it is not the reduced relation's
- * rows, so a relationship `read` rule that inspects `item.<reducedRelation>`
- * decides on an empty array rather than on what the count counted. The common
- * `item.posts.length > 0` shape therefore fails closed (the key is dropped
- * even where the count is non-zero); an inverted `item.posts.length === 0`
- * fails open (the key is kept, carrying the count). Reduce a relation whose
- * own rule reads its rows only where that is acceptable.
+ * A relation that is both reduced and a live declared dependency of a
+ * computed field returned alongside it (#1357) is the third case: its
+ * `IncludePlan.declaredRows` fetched real rows purely for that declaration,
+ * under {@link DECLARED_ROWS_BRANCH_KEY}, and those are what stand in here —
+ * never `[]` — so the declaring hook's `needs` sees them via its own `item`,
+ * and a relationship `read` rule that inspects `item.<reducedRelation>`
+ * decides against real rows rather than an empty array. Field Visibility
+ * still must not compute over them as though they were an ordinary relation
+ * (ADR-0051): `ReducedDeclaredKeys` (`select.ts`) is what tells it to treat
+ * this key as a raw pass-through, and {@link restoreReductions} overwrites it
+ * with the reduction's own value regardless of what Field Visibility computed
+ * for it.
+ *
+ * Known limits: a relation reduced with NEITHER a rows branch of its own NOR
+ * a live declared dependency still stands in `[]`, so a relationship `read`
+ * rule inspecting `item.<reducedRelation>` without declaring it via `needs`
+ * decides on an empty array rather than on what the count counted — the
+ * common `item.posts.length > 0` shape fails closed there, and an inverted
+ * `item.posts.length === 0` fails open. A rule that reaches into a relation
+ * must declare it, the same requirement `needs` already states for a computed
+ * field's `resolveOutput`.
  */
 function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   if (!reduces(plans)) return row
   const masked: OrmRow = { ...row }
   for (const plan of plans) {
     if (plan.reduce !== undefined) {
-      const rows = combinedRows(row[plan.relation], rowsKeyOf(plan))
+      const rows =
+        plan.declaredRows !== undefined
+          ? declaredRowsOf(row[plan.relation])
+          : combinedRows(row[plan.relation], rowsKeyOf(plan))
       masked[plan.relation] = reduces(plan.includes)
         ? rows.map((related) => maskReductions(related, plan.includes))
         : rows
@@ -850,11 +932,31 @@ function rowsKeyOf(plan: IncludePlan): string | undefined {
   return undefined
 }
 
+/** The rows an internal declared-dependency branch fetched (`IncludePlan.declaredRows`). */
+function declaredRowsOf(value: unknown): OrmRow[] {
+  return combinedRows(value, DECLARED_ROWS_BRANCH_KEY)
+}
+
 /** The rows a `combine` returned under {@link rowsKeyOf}, or `[]` for a bare count. */
 function combinedRows(value: unknown, key: string | undefined): OrmRow[] {
   if (key === undefined || !isRow(value)) return []
   const rows = value[key]
   return Array.isArray(rows) ? rows.filter(isRow) : []
+}
+
+/**
+ * The reduction's own value, once {@link declaredRowsBranch}'s internal
+ * branch is spliced back out: a bare count unwrapped from
+ * {@link DECLARED_COUNT_BRANCH_KEY}, or a caller's own combine object with
+ * {@link DECLARED_ROWS_BRANCH_KEY} removed. The caller never sees either
+ * reserved key.
+ */
+function publicReductionValue(raw: unknown, reduce: ReducePlan): unknown {
+  if (!isRow(raw)) return raw
+  if (reduce.kind === 'count') return raw[DECLARED_COUNT_BRANCH_KEY] ?? 0
+  const publicValue: Record<string, unknown> = { ...raw }
+  delete publicValue[DECLARED_ROWS_BRANCH_KEY]
+  return publicValue
 }
 
 /** Write each reduced relation back, under the keys Field Visibility kept. */
@@ -863,6 +965,10 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
     if (plan.reduce !== undefined) {
       if (!(plan.relation in shown)) continue
       const raw = source[plan.relation]
+      if (plan.declaredRows !== undefined) {
+        shown[plan.relation] = publicReductionValue(raw, plan.reduce)
+        continue
+      }
       const key = rowsKeyOf(plan)
       if (key === undefined || !isRow(raw)) {
         shown[plan.relation] = raw
@@ -917,6 +1023,9 @@ async function visibleRows(
         listName,
         plan.additions,
         plan.selection,
+        emptyToOneAccessVisibilityTree(),
+        emptyCountAccessDenialTree(),
+        plan.reducedDeclared,
       )
       applyForeignKeys(filtered, plan.includes)
       restoreReductions(filtered, row, plan.includes)
@@ -933,6 +1042,7 @@ const ALL_DISPOSITIONS: PlanDispositions = {
   projection: 'applied',
   selection: 'applied',
   additions: 'applied',
+  reducedDeclared: 'applied',
   limit: 'applied',
   offset: 'applied',
   distinct: 'applied',
@@ -1076,6 +1186,7 @@ const AGGREGATE_DISPOSITIONS: PlanDispositions = {
   projection: 'inapplicable',
   selection: 'inapplicable',
   additions: 'inapplicable',
+  reducedDeclared: 'inapplicable',
   limit: 'refused',
   offset: 'refused',
   distinct: 'refused',
@@ -1161,6 +1272,7 @@ const NEAREST_DISPOSITIONS: PlanDispositions = {
   projection: 'applied',
   selection: 'applied',
   additions: 'applied',
+  reducedDeclared: 'applied',
   limit: 'inapplicable',
   offset: 'refused',
   distinct: 'refused',

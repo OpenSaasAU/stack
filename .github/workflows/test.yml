@@ -433,6 +433,7 @@ jobs:
           --filter=@opensaas/stack-auth
           --filter=@opensaas/stack-ui
           --filter=@opensaas/stack-cli
+          --filter=@opensaas/stack-tiptap
           --filter=create-opensaas-app
 
       # Isolated first-run guard: scaffold the real CLI into an OS temp dir and
@@ -492,19 +493,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
 
+      # `playwright.config.ts` now also boots examples/json-demo and
+      # examples/tiptap-demo (#1398), each reconciled against its own
+      # database on this leg: pointing them at the shared `postgres` database
+      # `DATABASE_URL` names would have the second reconcile see the first
+      # example's tables as rows to drop and refuse, non-interactively, for
+      # want of consent (the same reason example-gates gives each of its
+      # suites a database of its own). The dev-database leg needs no
+      # equivalent — each example isolates itself with its own PGlite data
+      # directory.
+      - name: Create per-example databases for the e2e Postgres leg
+        if: matrix.database == 'postgres'
+        run: |
+          psql "$DATABASE_URL" -c 'create database json_demo_example'
+          psql "$DATABASE_URL" -c 'create database tiptap_demo_example'
+
       - name: Run E2E tests
         run: pnpm test:e2e
         env:
           CI: true
 
-      # The harness reconciled the example's database, which rewrites the
+      # The harness reconciled each example's database, which rewrites its
       # committed `db` ref and snapshot under migrations/ (ADR-0065, ADR-0067).
       # A diff here means the committed ref describes a contract the config no
       # longer derives.
       - name: Fail on a stale committed migrations directory
         run: |
-          git add --intent-to-add -- examples/starter-auth/migrations
-          git diff --exit-code -- examples/starter-auth/migrations
+          PATHS="examples/starter-auth/migrations examples/json-demo/migrations examples/tiptap-demo/migrations"
+          git add --intent-to-add -- $PATHS
+          git diff --exit-code -- $PATHS
 
       - name: Upload Playwright report
         if: always()

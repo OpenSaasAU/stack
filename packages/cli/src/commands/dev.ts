@@ -9,7 +9,7 @@ import {
   type DevDatabase,
   type DevDatabaseExtension,
 } from '@opensaas/stack-core/dev-database'
-import { generateCommand, type GenerationResult } from './generate.js'
+import { generateCommand, GenerationFailedError, type GenerationResult } from './generate.js'
 import { loadOpenSaasConfig, runPrismaCli } from '../generator/index.js'
 import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
 import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
@@ -215,7 +215,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     staged = undefined
     fs.rmSync(stagingDir, { recursive: true, force: true })
     try {
-      return await generateCommand({ stagingDir, throwOnFailure: true })
+      return await generateCommand({ stagingDir })
     } catch (error) {
       return sayNothingStaged(say, error)
     }
@@ -364,7 +364,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // Read before generating, so an edit landing during startup leaves bytes
     // the watcher will not recognise as already reconciled.
     reconciledSource = fs.readFileSync(configPath, 'utf-8')
-    await generateCommand()
+    try {
+      await generateCommand()
+    } catch (error) {
+      if (!(error instanceof GenerationFailedError)) throw error
+      process.exitCode = 1
+      return
+    }
 
     if (!(await reconcile(cwd)) || interrupted) {
       process.exitCode = 1

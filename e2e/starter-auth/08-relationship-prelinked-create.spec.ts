@@ -40,10 +40,6 @@ test.describe('Relationship-table pre-linked create drawer', () => {
   test('adds a post pre-linked to the user via the drawer, including a required non-column field', async ({
     page,
   }) => {
-    test.fixme(
-      true,
-      'router.refresh() after the drawer create serves the pre-create render — #1376',
-    )
     const user = generateTestUser()
     await signUp(page, user)
 

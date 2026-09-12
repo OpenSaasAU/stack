@@ -204,6 +204,66 @@ describe('RelationshipTableClient', () => {
     expect(document.querySelector('[data-slot="relationship-table-add"]')).toBeNull()
   })
 
+  it('shows the drawer-created row immediately, without depending on router.refresh (#1376)', async () => {
+    const serverAction = vi.fn(async () => ({ created: true, id: 'p3' }))
+    render(
+      <RelationshipTableClient
+        {...baseProps()}
+        canCreate
+        createFields={{ title: { type: 'text', validation: { isRequired: true } } }}
+        relatedListTitle="Post"
+        serverAction={serverAction}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /add post/i }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/title/i), 'Third')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    // mockRefresh is a no-op stub in this unit test (it does not actually
+    // re-render with server props), yet the row is visible: its appearance
+    // does not depend on that call having any effect.
+    expect(screen.getByText('Third')).toBeInTheDocument()
+    expect(mockRefresh).toHaveBeenCalled()
+  })
+
+  it('drops the optimistic row once the same id arrives in the real rows prop', async () => {
+    const serverAction = vi.fn(async () => ({ created: true, id: 'p3' }))
+    const { rerender } = render(
+      <RelationshipTableClient
+        {...baseProps()}
+        canCreate
+        createFields={{ title: { type: 'text', validation: { isRequired: true } } }}
+        relatedListTitle="Post"
+        serverAction={serverAction}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /add post/i }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/title/i), 'Third')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(screen.getAllByText('Third')).toHaveLength(1)
+
+    // The refresh lands: the parent re-renders with the real row in `rows`.
+    // The optimistic entry must not also render — one "Third", not two.
+    rerender(
+      <RelationshipTableClient
+        {...baseProps()}
+        canCreate
+        createFields={{ title: { type: 'text', validation: { isRequired: true } } }}
+        relatedListTitle="Post"
+        serverAction={serverAction}
+        rows={[...baseProps().rows, { id: 'p3', title: 'Third', viewCount: 0 }]}
+        count={3}
+      />,
+    )
+    expect(screen.getAllByText('Third')).toHaveLength(1)
+  })
+
   it('confirms before deleting when removeAction is delete', async () => {
     const serverAction = vi.fn(async () => ({ removed: true }))
     render(
