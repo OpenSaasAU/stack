@@ -250,24 +250,29 @@ describe('ProcessingQueue', () => {
   })
 
   it('should process items concurrently with concurrency > 1', async () => {
+    let inFlight = 0
+    let peakInFlight = 0
+
     const queue = new ProcessingQueue(
       async (item: number) => {
+        inFlight++
+        peakInFlight = Math.max(peakInFlight, inFlight)
         await new Promise((resolve) => setTimeout(resolve, 10))
+        inFlight--
         return item * 2
       },
       3, // concurrency
     )
 
-    const start = Date.now()
     const results = await queue.addBatch([1, 2, 3, 4, 5])
-    const duration = Date.now() - start
 
     expect(results).toEqual([2, 4, 6, 8, 10])
 
-    // With concurrency 3, should be faster than sequential
-    // 5 items with 10ms each sequentially = 50ms
-    // With concurrency 3: ceil(5/3) * 10ms = 20ms
-    expect(duration).toBeLessThan(50)
+    // Assert concurrency structurally: with 5 items queued at once against a
+    // limit of 3, the peak of simultaneously in-flight processor calls should
+    // reach the limit and never exceed it. Wall-clock duration is a poor proxy
+    // for this property on a loaded CI runner (see #1441).
+    expect(peakInFlight).toBe(3)
   })
 
   it('should track queue size', async () => {
