@@ -4,8 +4,13 @@ import type { AccessContext } from '../access/types.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
 import { pascalToCamel } from '../lib/case-utils.js'
-import { AccessScopeDepthExceededError, RelationFilterAccessDeniedError } from '../access/errors.js'
+import {
+  AccessScopeDepthExceededError,
+  RelationFilterAccessDeniedError,
+  ResolveOutputCycleError,
+} from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
+import { DatabaseError } from '../lib/database-errors.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { generateFieldSchemas } from './field-schema.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
@@ -517,13 +522,18 @@ function parseWhereIds(
 /**
  * Framework-authored errors safe to hand an MCP client verbatim — everything
  * else is an application rule's own internal detail (#1361, #1456).
+ * `DatabaseError` (and its `UniqueConstraintViolation`/`SerializationFailure`
+ * subclasses) is explicitly documented as carrying a message "safe to show a
+ * user" (ADR-0042) — the driver's own text stays on `cause`, never here.
  */
 function isSafeMcpError(error: unknown): error is Error {
   return (
     error instanceof McpProjectionRefusedError ||
     error instanceof ValidationError ||
     error instanceof AccessScopeDepthExceededError ||
-    error instanceof RelationFilterAccessDeniedError
+    error instanceof RelationFilterAccessDeniedError ||
+    error instanceof ResolveOutputCycleError ||
+    error instanceof DatabaseError
   )
 }
 
@@ -531,9 +541,11 @@ function isSafeMcpError(error: unknown): error is Error {
  * Redacts an error raised while serving a CRUD tool behind a generic refusal,
  * logging the real error server-side, unless it's one of the known-safe
  * types. Shared by `query` (whose caller-named `fields` can throw while
- * resolving the projection) and `create`/`update`/`delete` (whose own result
- * runs Field Visibility over the full row exactly like a read does, so the
- * same throwing rule reaches the same code path there too).
+ * resolving the projection), `create`/`update` (whose own result runs Field
+ * Visibility over the full row exactly like a read does, so the same
+ * throwing rule reaches the same code path there too), and `delete` (which
+ * skips Field Visibility but shares this same outer catch for whatever else
+ * a hook or the database raises).
  */
 function redactMcpError(
   error: unknown,
