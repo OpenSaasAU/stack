@@ -441,6 +441,33 @@ describe('the relationship table server actions over a real database', () => {
     },
     BOOT,
   )
+
+  /**
+   * A plain scalar carries neither shape `classifyBackReference` recognises as
+   * a relationship, so it must refuse rather than fall through to `update` —
+   * `removeRelated` is a mislabelled "unlink" action, not a general column
+   * setter (#1442 review).
+   */
+  test(
+    'removeRelated refuses to disconnect through a non-relationship field',
+    async () => {
+      const post = await harness.context.db.Post.create({ data: { title: 'story' } })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: String(post?.id),
+        field: 'title',
+      })
+
+      expect(result).toMatchObject({ removed: false })
+      expect((result as { error?: string }).error).toContain('is not a relationship field')
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'story', author: null }])
+    },
+    BOOT,
+  )
+
   test(
     "linkRelated writes the parent's id into the related row's own foreign key",
     async () => {

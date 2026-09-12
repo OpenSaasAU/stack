@@ -29,8 +29,8 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
-import { resolveJunctionEdge } from './junction.js'
-import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
+import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
+import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
@@ -176,13 +176,9 @@ function classifyBackReference(
 ): BackReferenceClassification {
   const field = listConfig.fields[fieldName]
   if (isRelationshipField(field)) {
-    let owns: boolean
-    try {
-      owns = shouldHaveForeignKey(listKey, fieldName, field, config)
-    } catch {
-      owns = false
-    }
-    return owns ? { kind: 'owning', field } : { kind: 'nonOwning' }
+    return ownsForeignKey(config, listKey, fieldName, field)
+      ? { kind: 'owning', field }
+      : { kind: 'nonOwning' }
   }
   return resolveSyntheticReverseRelation(fieldName, listKey, config) !== null
     ? { kind: 'nonOwning' }
@@ -752,6 +748,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
           const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+          if (backRef.kind === 'notRelationship') {
+            return {
+              removed: false,
+              error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+            }
+          }
           if (backRef.kind === 'nonOwning') {
             return {
               removed: false,
