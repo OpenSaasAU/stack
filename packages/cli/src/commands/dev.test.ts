@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * The loop end to end — a real Dev database, a real reconcile and a real app
@@ -100,6 +100,17 @@ describe('devCommand', () => {
   let originalExit: typeof process.exit
   let originalDatabaseUrl: string | undefined
   let revision = 0
+  let devCommand: typeof import('./dev.js').devCommand
+
+  // A cold `import('./dev.js')` is slow and variable — done here, once, rather
+  // than inside each test's own 5-second timed region (the same shape #1404
+  // flags for `lower.test.ts`). The mocked modules `dev.js` imports keep live
+  // bindings, so resolving it once and calling the same `devCommand` in every
+  // test sees each test's own `vi.mocked(...).mockImplementationOnce(...)`
+  // exactly as a fresh import would.
+  beforeAll(async () => {
+    ;({ devCommand } = await import('./dev.js'))
+  })
 
   /**
    * Rewrites the watched config so a fired `change` carries bytes the loop has
@@ -147,15 +158,12 @@ describe('devCommand', () => {
 
   it('refuses a directory with no opensaas.config.ts', async () => {
     fs.unlinkSync(path.join(tempDir, 'opensaas.config.ts'))
-    const { devCommand } = await import('./dev.js')
 
     await expect(devCommand()).rejects.toThrow('process.exit(1)')
     expect(exitCode).toBe(1)
   })
 
   it('runs `next dev` when the invocation names no command', async () => {
-    const { devCommand } = await import('./dev.js')
-
     await devCommand()
 
     expect(spawned).toHaveLength(1)
@@ -165,7 +173,6 @@ describe('devCommand', () => {
 
   it('runs the command given after `--`, and hands the child no database URL', async () => {
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
-    const { devCommand } = await import('./dev.js')
 
     await devCommand({ appCommand: ['node', 'server.mjs'] })
 
@@ -184,7 +191,6 @@ describe('devCommand', () => {
     const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
 
-    const { devCommand } = await import('./dev.js')
     await devCommand({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
@@ -203,7 +209,6 @@ describe('devCommand', () => {
     })
     const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
 
-    const { devCommand } = await import('./dev.js')
     await devCommand({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
@@ -215,8 +220,6 @@ describe('devCommand', () => {
     const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockRejectedValueOnce(new Error('The `prisma` CLI is not installed'))
 
-    const { devCommand } = await import('./dev.js')
-
     await expect(devCommand()).rejects.toThrow('The `prisma` CLI is not installed')
     expect(spawned).toHaveLength(0)
     expect(stop).toHaveBeenCalled()
@@ -227,8 +230,6 @@ describe('devCommand', () => {
     vi.mocked(generateCommand).mockRejectedValueOnce(
       new GenerationFailedError('config surface invalid'),
     )
-
-    const { devCommand } = await import('./dev.js')
 
     await devCommand()
 
@@ -255,7 +256,6 @@ describe('devCommand', () => {
       }
     })
 
-    const { devCommand } = await import('./dev.js')
     await devCommand({ appCommand: ['node', 'server.mjs'] })
 
     expect(installedWhenStarting).toBe(baseline + 1)
@@ -299,7 +299,6 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    const { devCommand } = await import('./dev.js')
     const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
 
     const { CONTROL_FILE, requestDatabaseUpdate } = await import('../dev/control.js')
@@ -366,7 +365,6 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    const { devCommand } = await import('./dev.js')
     const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
 
     const { CONTROL_FILE } = await import('../dev/control.js')
@@ -424,7 +422,6 @@ describe('devCommand', () => {
       return { exitCode: 0, signal: null, output: plan, stdout: plan }
     })
 
-    const { devCommand } = await import('./dev.js')
     const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
 
     const { CONTROL_FILE } = await import('../dev/control.js')
@@ -471,7 +468,6 @@ describe('devCommand', () => {
       throw new Error('config surface invalid')
     })
 
-    const { devCommand } = await import('./dev.js')
     const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
 
     const { CONTROL_FILE } = await import('../dev/control.js')
@@ -493,7 +489,6 @@ describe('devCommand', () => {
     const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
 
-    const { devCommand } = await import('./dev.js')
     await devCommand()
 
     expect(spawned).toHaveLength(0)
