@@ -19,7 +19,7 @@ export type AdoptBetterAuthTablesOptions = {
    * The Postgres schema the live better-auth tables live in.
    *
    * Applied as the plugin-level {@link AuthConfig.schema}, placing every Auth
-   * list in this schema via `@@schema(...)`. Pass `'public'` (or any single
+   * list's contract namespace in this schema. Pass `'public'` (or any single
    * schema) for an install that is not on a separate schema; pass an explicit
    * value to match your layout.
    *

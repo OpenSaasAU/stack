@@ -586,7 +586,7 @@ export function createWriteStrategy(
       return { status: 'ok', originalItem: undefined, scope: [] }
     },
     async persist(collection, _ops, _scope, data) {
-      // Singleton lists use Int @id with value always 1 (matching Keystone 6).
+      // Singleton lists use an integer id, always 1 (matching Keystone 6).
       return insertRow(collection, singleton ? { id: 1, ...data } : data)
     },
   }
