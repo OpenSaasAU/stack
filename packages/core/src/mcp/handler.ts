@@ -574,18 +574,35 @@ async function handleCrudTool(
             )
             query = projection.apply(query)
           }
+
+          if (args.skip !== undefined) query = query.offset(args.skip)
+          const rows = await query.limit(Math.min(args.take || 10, 100)).all()
+          const items = projection ? projection.toWire(rows) : rows
+
+          return createSuccessResponse({ items, count: items.length }, id)
         } catch (error) {
           if (error instanceof McpProjectionRefusedError || error instanceof ValidationError) {
             return createErrorResultResponse(error.message, id)
           }
-          throw error
+          if (
+            error instanceof AccessScopeDepthExceededError ||
+            error instanceof RelationFilterAccessDeniedError
+          ) {
+            return createErrorResultResponse(error.message, id)
+          }
+          // A caller-named field's access rule can still throw here — a
+          // row-dependent rule cannot be classified ahead of the read
+          // (`resolveFieldsProjection` only contains rules for fields the
+          // caller did NOT ask for) — and whatever it threw is an internal
+          // detail of the application's own rule, not something to hand an
+          // external MCP client (#1361). Log it server-side and refuse with a
+          // message that names nothing about the rule or the session.
+          console.error(`[opensaas] MCP query "${listKey}" failed:`, error)
+          return createErrorResultResponse(
+            `Query on "${listKey}" failed due to an internal error.`,
+            id,
+          )
         }
-
-        if (args.skip !== undefined) query = query.offset(args.skip)
-        const rows = await query.limit(Math.min(args.take || 10, 100)).all()
-        const items = projection ? projection.toWire(rows) : rows
-
-        return createSuccessResponse({ items, count: items.length }, id)
       }
 
       case 'create':

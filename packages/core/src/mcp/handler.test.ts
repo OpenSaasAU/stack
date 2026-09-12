@@ -7,7 +7,11 @@ import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/
 import { getContext } from '../context/index.js'
 import type { McpSessionProvider } from './types.js'
 import { createMcpHandlers } from './handler.js'
-import { generateFieldsProjectionSchema, resolveFieldsProjection } from './projection.js'
+import {
+  McpProjectionRefusedError,
+  generateFieldsProjectionSchema,
+  resolveFieldsProjection,
+} from './projection.js'
 import { generateFieldSchemas } from './field-schema.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
@@ -28,6 +32,17 @@ const BOOT = 120_000
  */
 function unguardedSessionRule(): boolean {
   throw new TypeError("Cannot read properties of null (reading 'role')")
+}
+
+/**
+ * A row-dependent rule (#1361): unanswerable against `classifyRowIndependentRead`'s
+ * poisoned item, so — unlike `unguardedSessionRule` — it survives advertisement
+ * like any other row-dependent rule. It only throws once handed an actual
+ * fetched row, the shape a rule that misbehaves on some real rows takes.
+ */
+function explodesOnRealRows({ item }: { item: Record<string, unknown> }): boolean {
+  if (item.title) throw new TypeError(`row explosion for ${String(item.title)}`)
+  return true
 }
 
 /** The `item.<relation>.length === 0` rule shape, over a value typed `unknown`. */
@@ -170,6 +185,9 @@ function schemaConfig(): OpenSaasConfig {
               update: unguardedSessionRule,
             },
           }),
+          // Row-dependent, so it survives advertisement — the throw only
+          // happens once a real row reaches Field Visibility (#1361).
+          landmine: text({ access: { read: explodesOnRealRows } }),
           notes: relationship({ ref: 'BrittleNote.parent', many: true }),
         },
         access: {
@@ -830,7 +848,7 @@ describe('the MCP surface', () => {
     )
 
     test(
-      'containment belongs to the advertisement alone — the read path still throws',
+      'resolveFieldsProjection contains the same rule errors the advertisement does (#1361)',
       async () => {
         const config = schemaConfig()
         const context = await contextFor(config)()
@@ -846,6 +864,9 @@ describe('the MCP surface', () => {
           (projection as { properties: Record<string, unknown> }).properties.brittle,
         ).toBeUndefined()
 
+        // A caller that never named the brittle field is unaffected by its
+        // rule throwing while the vocabulary is decided — the whole point of
+        // containing it the same way the advertisement does.
         await expect(
           resolveFieldsProjection(
             { title: true },
@@ -855,7 +876,21 @@ describe('the MCP surface', () => {
             null,
             context,
           ),
-        ).rejects.toThrow(TypeError)
+        ).resolves.toBeDefined()
+
+        // Naming it explicitly still refuses — as an unadvertised field,
+        // exactly like a name that never existed (ADR-0053) — rather than
+        // raw-throwing the rule's own TypeError.
+        await expect(
+          resolveFieldsProjection(
+            { brittle: true },
+            'Brittle',
+            config.lists.Brittle,
+            config,
+            null,
+            context,
+          ),
+        ).rejects.toThrow(McpProjectionRefusedError)
       },
       BOOT,
     )
@@ -1424,6 +1459,97 @@ describe('the MCP surface', () => {
       async () => {
         expect(await refusal({ where: { title: { startsWith: 'a' } } })).toContain('Post.title')
         expect(await refusal({ orderBy: { title: 'sideways' } })).toContain('"asc" or "desc"')
+      },
+      BOOT,
+    )
+  })
+
+  /**
+   * #1361: a throwing field-level access rule must not leak its raw error
+   * text to the MCP client, and a rule on a field the caller never named
+   * must not fail the whole query.
+   */
+  describe('a throwing access rule on the read path', () => {
+    // Seeded via `sudo()`: `Brittle.brittle`'s own `read` rule throws
+    // unconditionally, and a write's OWN result runs Field Visibility over
+    // the full row (no `fields` projection applies to a write) — so even a
+    // create that never names `brittle` in its data would surface that same
+    // throw on the row it hands back. Sudo bypasses field access entirely,
+    // which is the only way to seed this list's rows at all.
+    async function seedBrittle(title = 'seed'): Promise<void> {
+      const orm = ormClientFor(database.data, database.client.orm)
+      const context = getContext(
+        schemaConfig(),
+        orm,
+        null,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        database.client,
+      )
+      const brittle = await context.sudo().db.Brittle.create({ data: { title } })
+      await context.sudo().db.BrittleNote.create({
+        data: { label: 'note', parent: { connect: { id: brittle?.id } } },
+      })
+    }
+
+    async function callBrittleQuery(
+      args: Record<string, unknown>,
+    ): Promise<{ isError?: boolean; content: Array<{ text: string }> }> {
+      const { body } = await callTool('list_brittle_query', args)
+      return body?.result as { isError?: boolean; content: Array<{ text: string }> }
+    }
+
+    test(
+      'a query naming fields but not the brittle one succeeds, at either nesting level',
+      async () => {
+        await seedBrittle()
+
+        const top = await callBrittleQuery({ fields: { title: true } })
+        expect(top.isError).toBeUndefined()
+        expect(JSON.parse(top.content[0].text)).toMatchObject({ items: [{ title: 'seed' }] })
+
+        const nested = await callBrittleQuery({
+          fields: { title: true, notes: { fields: { label: true } } },
+        })
+        expect(nested.isError).toBeUndefined()
+        expect(JSON.parse(nested.content[0].text)).toMatchObject({
+          items: [{ notes: [{ label: 'note' }] }],
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'naming the brittle field explicitly refuses without leaking its raw error text',
+      async () => {
+        const result = await callBrittleQuery({ fields: { brittle: true } })
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('has no field "brittle"')
+        expect(result.content[0].text).not.toContain('Cannot read properties of null')
+        expect(result.content[0].text).not.toContain('TypeError')
+      },
+      BOOT,
+    )
+
+    test(
+      'a rule that only throws on a real row is redacted on the wire and logged server-side',
+      async () => {
+        await seedBrittle('boom')
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+        const result = await callBrittleQuery({ fields: { title: true, landmine: true } })
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).not.toContain('row explosion')
+        expect(result.content[0].text).not.toContain('TypeError')
+
+        expect(errorSpy).toHaveBeenCalled()
+        expect(String(errorSpy.mock.calls[0]?.[1])).toContain('row explosion')
+
+        errorSpy.mockRestore()
       },
       BOOT,
     )
