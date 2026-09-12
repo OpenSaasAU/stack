@@ -115,6 +115,8 @@ export interface GenerationResult {
   livePaths: ResolvedWritePaths
   /** The Prisma config a CLI command must read to see this generation. */
   prismaConfig: string
+  /** Absolute paths of every project-local module the config imported (#1414). */
+  resolvedModules: string[]
 }
 
 /**
@@ -141,7 +143,11 @@ export async function generateCommand(
   const spinner = ora('Loading configuration...').start()
 
   try {
-    const { config: loaded, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
+    const {
+      config: loaded,
+      aliasWarnings,
+      resolvedModules,
+    } = await loadOpenSaasConfig(cwd, configPath)
     let config: OpenSaasConfig = loaded
 
     if (config.plugins && config.plugins.length > 0) {
@@ -424,7 +430,7 @@ export async function generateCommand(
       console.log(chalk.gray('  3. Start using your generated types!\n'))
     }
 
-    return { paths, livePaths: resolved, prismaConfig: paths.prismaConfig }
+    return { paths, livePaths: resolved, prismaConfig: paths.prismaConfig, resolvedModules }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     if (error instanceof GenerationFailedError) throw error
