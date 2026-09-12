@@ -9,14 +9,13 @@ pnpm install
 # Build core package
 cd packages/core && pnpm build
 
-# Setup example
+# Start the example: starts the Dev database, generates, reconciles the
+# schema, and runs the app — there is no separate database step
 cd ../../examples/blog
-pnpm generate
-pnpm db:push
-npx prisma generate
+pnpm dev
 
-# Run tests
-npx tsx test-access-control.ts
+# Run a one-off script against the running loop's database
+pnpm dev -- tsx test-access-control.ts
 ```
 
 ## Config Structure
@@ -36,22 +35,15 @@ import type { AccessControl } from '@opensaas/stack-core'
 
 export default config({
   db: {
-    provider: 'sqlite' | 'postgresql' | 'mysql',
-    url: process.env.DATABASE_URL,
+    provider: 'postgresql', // the only supported provider
   },
 
   lists: {
     ModelName: list({
       fields: {/* ... */},
       access: {/* ... */},
-      hooks: {/* ... */}, // Not yet implemented
+      hooks: {/* ... */},
     }),
-  },
-
-  session: {
-    getSession: async () => {
-      /* ... */
-    },
   },
 
   ui: {
@@ -59,6 +51,10 @@ export default config({
   },
 })
 ```
+
+The connection URL is not a config key — it's resolved from `DATABASE_URL`, or from
+the running Dev database when that's unset. The session isn't part of the config
+either: it's passed to `getContext()` at call time (see Context API below).
 
 ## Field Types
 
@@ -137,7 +133,7 @@ select({
 
 ```typescript
 relationship({
-  ref: 'ListName.fieldName', // Required
+  ref: 'ListName.fieldName', // or 'ListName' for a list-only, one-sided ref
   many: boolean, // Default: false
   ui: { displayMode: 'select' | 'cards' },
   access: FieldAccess,
@@ -150,7 +146,7 @@ relationship({
 
 ```typescript
 type AccessControl<T> = (args: {
-  session: Session
+  session: Session | null
   item?: T
   context: AccessContext
 }) => boolean | PrismaFilter<T> | Promise<boolean | PrismaFilter<T>>
@@ -231,15 +227,17 @@ internalNotes: text({ access: authorOnlyField })
 ### Get Context
 
 ```typescript
-import { getContext } from '@opensaas/stack-core'
-import { PrismaClient } from '@prisma/client'
-import config from './opensaas.config'
+import { getContext } from '@/.opensaas/context'
 
-const prisma = new PrismaClient()
-const session = await getSession() // Your auth system
+// Anonymous
+const anonymous = await getContext()
 
-const context = await getContext(config, prisma, session)
+// Authenticated — pass the session's own fields, never a wrapper
+const context = await getContext({ userId: 'user-123' })
 ```
+
+`getContext` is generated at `.opensaas/context.ts` by `opensaas generate`; it takes
+the session object itself, or nothing at all.
 
 ### Operations
 
@@ -290,31 +288,24 @@ A to-many field has no foreign key of its own to write, so it takes no `connect`
 ### Commands
 
 ```bash
-# Generate Prisma schema and TypeScript types
-npx opensaas generate
-# or
-pnpm generate  # (if in package.json scripts)
+# Start the Dev database, generate, reconcile the schema, and run the app
+pnpm dev
 
-# Push schema to database (Prisma)
-npx prisma db push
+# Regenerate the contract and the .opensaas bundle without running the app
+pnpm generate
 
-# Generate Prisma Client
-npx prisma generate
+# Apply a schema change the running loop staged but did not promote
+pnpm db:update
 
-# Run migrations (production)
-npx prisma migrate dev --name init
-npx prisma migrate deploy
+# Production: run Prisma's migrate from the committed migrations/ directory
 ```
 
 ### Generated Files
 
-- `prisma/schema.prisma` - Prisma schema
-- `.opensaas/types.ts` - TypeScript types
-  - Model types (User, Post, etc.)
-  - CreateInput types
-  - UpdateInput types
-  - WhereInput types
-  - Context type
+- `prisma/contract.ts` - the Contract module, plus the committed `prisma/contract.json` / `prisma/contract.d.ts` it emits
+- `prisma.config.ts` - Prisma's CLI config
+- `migrations/<space>/**` - one Extension contract space per declared pack
+- `.opensaas/` - the generated bundle: `context.ts`, `types.ts`, `lists.ts`, `plugin-types.ts`, `tables.ts` (not committed — `pnpm dev` regenerates it)
 
 ## Common Workflows
 
@@ -332,23 +323,23 @@ Comment: list({
 })
 ```
 
-2. Regenerate:
+2. Regenerate (or just run the `pnpm dev` loop, which reconciles automatically):
 
 ```bash
 pnpm generate
-npx prisma generate
 ```
 
 3. Use in code:
 
 ```typescript
-const comment = await context.db.comment.create({
+const comment = await context.db.Comment.create({
   data: {
     text: 'Great post!',
     post: { connect: { id: postId } },
     author: { connect: { id: userId } },
   },
 })
+if (comment === null) throw new Error('Access denied')
 ```
 
 ### Adding a New Field
@@ -364,12 +355,11 @@ Post: list({
 })
 ```
 
-2. Regenerate:
+2. Regenerate — under `pnpm dev`, this stages behind reconciliation and prompts
+   for `pnpm db:update` if the plan is destructive:
 
 ```bash
 pnpm generate
-npx prisma db push
-npx prisma generate
 ```
 
 ### Changing Access Control
@@ -386,22 +376,20 @@ access: {
 
 ## Testing Patterns
 
+Tests stand up a real, fully secured **Test context** — `createTestContext(config,
+session)` from `@opensaas/stack-core/testing` — rather than faking the secured
+surface. There is no in-memory imitation of the surface's guarantees.
+
 ### Mock Session
 
 ```typescript
-// Create context with specific user
-const mockSession = {
-  userId: 'user123',
-  user: { id: 'user123', name: 'Test User' },
-}
-
-const context = await getContext(config, prisma, mockSession)
+const harness = await createTestContext(config, { userId: 'user123' })
 ```
 
 ### Test Access Denial
 
 ```typescript
-const result = await context.db.post.update({
+const result = await harness.context.db.Post.update({
   where: { id: postId },
   data: { title: 'New Title' },
 })
@@ -413,11 +401,9 @@ expect(result).toBe(null)
 ### Test Field Filtering
 
 ```typescript
-const post = await context.db.post.findUnique({
-  where: { id: postId },
-})
+const post = await harness.context.db.Post.where({ id: { equals: postId } }).first()
 
-// Field should be undefined if access denied
+// Field is absent from the row if access denied
 expect(post?.internalNotes).toBe(undefined)
 ```
 
@@ -429,11 +415,8 @@ expect(post?.internalNotes).toBe(undefined)
 # Make sure core is built
 cd packages/core && pnpm build
 
-# Make sure types are generated
+# Make sure the contract and .opensaas bundle are generated
 cd examples/blog && pnpm generate
-
-# Make sure Prisma client is generated
-npx prisma generate
 ```
 
 ### Access Control Not Working
@@ -445,10 +428,9 @@ npx prisma generate
 ### Database Out of Sync
 
 ```bash
-# Reset database
-rm dev.db
-pnpm db:push
-npx prisma generate
+# Reset the Dev database
+rm -rf .opensaas/dev-db/
+pnpm dev
 ```
 
 ### Module Resolution Errors
@@ -475,7 +457,7 @@ cd packages/core && pnpm build
 - Use unique indexes for lookup fields
 - Set validation.isRequired on required fields
 - Use relationships instead of manual foreign keys
-- Keep field names consistent with Prisma conventions
+- Use PascalCase list keys; there is no camelCase spelling of a list on the secured surface
 
 ### Sessions
 
@@ -494,8 +476,7 @@ cd packages/core && pnpm build
 ## Reference Links
 
 - Main README: `README.md`
-- Getting Started Guide: `GETTING_STARTED.md`
-- Implementation Summary: `IMPLEMENTATION_SUMMARY.md`
-- Full Specification: `specs/Initial-opensaas-stack.md`
+- Architecture map: `specs/prisma-8/architecture-spec.md`
+- Docs site: https://stack.opensaas.au/
 - Example Config: `examples/blog/opensaas.config.ts`
 - Test Suite: `examples/blog/test-access-control.ts`
