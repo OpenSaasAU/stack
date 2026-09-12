@@ -63,6 +63,31 @@ export function noDependencyAdditions(): DependencyAdditions {
   return { keys: new Set(), nested: {} }
 }
 
+/**
+ * Relation keys, at each nesting level, whose fetched value is a declared-
+ * dependency rows stand-in rather than what the caller asked to see: a
+ * relation that is both reduced (`.count()`/`.combine()`) and a live declared
+ * dependency of a computed field returned alongside it (`IncludePlan.declaredRows`
+ * in `secured/include.ts`). Field Visibility treats each one as a raw
+ * pass-through — no recursion, no computed field runs on it, matching an
+ * ordinary declared branch (ADR-0051) — and leaves the key in the result for
+ * `restoreReductions` (`secured/read.ts`) to overwrite with the reduction's
+ * own value. Unlike {@link DependencyAdditions}, a key here is never stripped:
+ * the caller named the relation, so something is owed back under it.
+ */
+export type ReducedDeclaredKeys = {
+  /** Keys at THIS level carrying a declared-rows stand-in rather than their own value. */
+  keys: ReadonlySet<string>
+  /** The same tree one level down for a relation reached via a caller-named branch. */
+  nested: Readonly<Record<string, ReducedDeclaredKeys>>
+}
+
+const EMPTY_REDUCED_DECLARED_KEYS: ReducedDeclaredKeys = { keys: new Set(), nested: {} }
+
+export function noReducedDeclaredKeys(): ReducedDeclaredKeys {
+  return EMPTY_REDUCED_DECLARED_KEYS
+}
+
 function isEmpty(additions: DependencyAdditions): boolean {
   return additions.keys.size === 0 && Object.keys(additions.nested).length === 0
 }

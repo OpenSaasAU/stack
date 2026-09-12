@@ -4,8 +4,16 @@ import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
-import type { DependencyAdditions, FieldSelectionScope } from './declared-dependencies.js'
-import { getListDependencies, noDependencyAdditions } from './declared-dependencies.js'
+import type {
+  DependencyAdditions,
+  FieldSelectionScope,
+  ReducedDeclaredKeys,
+} from './declared-dependencies.js'
+import {
+  getListDependencies,
+  noDependencyAdditions,
+  noReducedDeclaredKeys,
+} from './declared-dependencies.js'
 import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
 import {
   emptyToOneAccessVisibilityTree,
@@ -75,6 +83,19 @@ import { buildDbDelegate } from '../context/index.js'
  * written into `filtered._count` as `0`, whether or not `_count` came back
  * from the database at all — a count is a session-relative value, and `0` is
  * what "no visible rows" means for it, never an absent key.
+ *
+ * **A relation that is both reduced and a live declared dependency (issue
+ * #1357).** `secured/read.ts`'s `maskReductions` hands this module the
+ * relation's real rows (fetched via `IncludePlan.declaredRows`) under the
+ * relation's own key, so the declaring hook's `needs` sees them via its own
+ * `item` — never the reduction's masked `[]`. That same key, though, is also
+ * what the caller will eventually see restored to the reduction's own value
+ * (`restoreReductions`), so this module must neither strip it (it is not a
+ * pure addition — the caller named it) nor recurse into it as an ordinary
+ * relation (ADR-0051: nothing computes on a declared branch). The
+ * `ReducedDeclaredKeys` tree names exactly these keys, and they get a raw
+ * pass-through: `filtered[key] = value`, no field-level recursion, no
+ * computed field run on the related rows.
  */
 
 type ResolveOutputHookRuntime = (args: {
@@ -241,6 +262,13 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // module doc above), and the same tree one level down for each nested
   // relation whose own nested include named a further `_count`.
   countDenials: CountAccessDenialTree = emptyCountAccessDenialTree(),
+  // Relation keys at THIS level whose value is a declared-dependency rows
+  // stand-in rather than what the caller will see (issue #1357, see module
+  // doc above) — a relation that is both reduced and a live declared
+  // dependency. Treated as a raw pass-through: no recursion, no computed
+  // field runs on it (ADR-0051), and `restoreReductions` in `read.ts`
+  // overwrites the key with the reduction's own value afterwards.
+  reducedDeclared: ReducedDeclaredKeys = noReducedDeclaredKeys(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -371,6 +399,18 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         // branch.
         if (additions.keys.has(fieldName)) continue
 
+        // A relation that is both reduced and a live declared dependency
+        // (issue #1357): `value` here is `maskReductions`' declared-rows
+        // stand-in, not what the caller will see. Recursing would run the
+        // related list's own computed fields over rows nobody asked for
+        // (ADR-0051 forbids that for a declared branch); pass it through
+        // raw instead — `restoreReductions` in `read.ts` overwrites this key
+        // with the reduction's own value once this function returns.
+        if (reducedDeclared.keys.has(fieldName)) {
+          filtered[fieldName] = value
+          continue
+        }
+
         relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
       } else if (synthetic) {
         // No declared field means no field-level `read` gate of its own to
@@ -406,6 +446,10 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // common case for a relation with no denied `_count` anywhere in its
       // own nested include.
       const nestedCountDenials = countDenials.nested[fieldName] ?? emptyCountAccessDenialTree()
+      // This relation's own reduced-declared keys, if its nested include
+      // named a further relation that is both reduced and declared (#1357).
+      // Falls back to empty — the common case.
+      const nestedReducedDeclared = reducedDeclared.nested[fieldName] ?? noReducedDeclaredKeys()
 
       if (relatedConfig) {
         if (Array.isArray(value)) {
@@ -422,6 +466,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 nestedSelection,
                 nestedToOneVisibility,
                 nestedCountDenials,
+                nestedReducedDeclared,
               ),
             ),
           )
@@ -442,6 +487,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 nestedSelection,
                 nestedToOneVisibility,
                 nestedCountDenials,
+                nestedReducedDeclared,
               )
             : null
         }

@@ -5,9 +5,14 @@
 // ADR-0041 and ADR-0051.
 
 import type { FieldConfig } from '../config/types.js'
-import type { DependencyAdditions, FieldSelectionScope } from '../access/declared-dependencies.js'
+import type {
+  DependencyAdditions,
+  FieldSelectionScope,
+  ReducedDeclaredKeys,
+} from '../access/declared-dependencies.js'
 import {
   getListDependencies,
+  noReducedDeclaredKeys,
   resolveDeclaredDependencies,
 } from '../access/declared-dependencies.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
@@ -240,4 +245,32 @@ export function selectionScope(
   }
   if (projection.caller === undefined && Object.keys(nested).length === 0) return undefined
   return { fields: projection.caller, nested }
+}
+
+/**
+ * The relation keys, level by level, whose fetched value is a declared-
+ * dependency rows stand-in rather than what the caller will see —
+ * `plan.declaredRows` on {@link IncludePlan} (#1357). Field Visibility reads
+ * this to skip recursing into such a key (ADR-0051: nothing computes on a
+ * declared branch) while still leaving it present for `restoreReductions` in
+ * `read.ts` to overwrite with the reduction's own value.
+ */
+export function reducedDeclaredKeys(includes: readonly IncludePlan[]): ReducedDeclaredKeys {
+  const keys = new Set<string>()
+  const nested: Record<string, ReducedDeclaredKeys> = {}
+  for (const plan of includes) {
+    if (plan.declaredRows !== undefined) {
+      // `plan.includes` is always empty here (a reduce refuses `include()`),
+      // so there is nothing beneath this key to descend into.
+      keys.add(plan.relation)
+      continue
+    }
+    const below = reducedDeclaredKeys(plan.includes)
+    if (below.keys.size > 0 || Object.keys(below.nested).length > 0) {
+      nested[plan.relation] = below
+    }
+  }
+  return keys.size > 0 || Object.keys(nested).length > 0
+    ? { keys, nested }
+    : noReducedDeclaredKeys()
 }
