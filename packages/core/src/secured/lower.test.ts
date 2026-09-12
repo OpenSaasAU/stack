@@ -58,7 +58,23 @@ describe('vectorLowering', () => {
 
     await expect(vectorLowering()).rejects.toThrow()
 
+    // Retry with a stand-in rather than unmocking to the real module: this
+    // test exercises the retry-after-rejection behaviour, not the ORM
+    // itself, and a cold import of the real module is slow enough to blow
+    // the suite's default timeout on a loaded CI runner (issue #1404).
+    // `ast` was never mocked in the rejected call above, so it needs a
+    // stand-in here too or it cold-imports on its own.
     vi.doUnmock('@prisma/orm-postgres/relational-core/expression')
+    vi.doMock('@prisma/orm-postgres/relational-core/expression', () => ({
+      buildOperation: vi.fn(() => ({ buildAst: vi.fn() })),
+      codecOf: vi.fn(),
+      toExpr: vi.fn(),
+      param: vi.fn(),
+    }))
+    vi.doMock('@prisma/orm-postgres/relational-core/ast', () => ({
+      BinaryExpr: vi.fn(),
+      OrderByItem: { asc: vi.fn() },
+    }))
 
     await expect(vectorLowering()).resolves.toEqual({
       order: expect.any(Function),
