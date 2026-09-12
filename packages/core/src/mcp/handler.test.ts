@@ -1493,7 +1493,7 @@ describe('the MCP surface', () => {
         data: { label: 'note', parent: { connect: { id: brittle?.id } } },
       })
       if (!brittle) throw new Error('seedBrittle: sudo create was denied')
-      return brittle.id
+      return String(brittle.id)
     }
 
     async function callBrittleQuery(
