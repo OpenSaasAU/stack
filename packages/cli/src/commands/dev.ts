@@ -33,15 +33,14 @@ const CONFIG_WRITE_SETTLE_MS = 200
 const DEFAULT_APP_COMMAND = ['next', 'dev'] as const
 
 /**
- * What to do with a save the loop skipped. The guard compares the config's own
- * bytes, so it skips two things a developer may well have meant: a retry after
- * a reconcile that failed, and a change that lives in a module the config
- * imports rather than in the config. `db update` regenerates and reconciles
- * from the current config either way, so it is the route out of both.
+ * What to do with a save the loop skipped. The guard compares bytes — the
+ * config's own, and every module it resolved as of the last generation
+ * (#1414) — so the only save this route is for is a deliberate retry of the
+ * exact bytes the loop already has: after a reconcile that failed.
  */
 const NOTHING_TO_RECONCILE_ROUTE =
-  'To regenerate and reconcile anyway — after a failed reconcile, or for a change in a ' +
-  'module the config imports — run `pnpm db:update` (`opensaas db update`) in another terminal.\n'
+  'To regenerate and reconcile anyway — after a failed reconcile — run `pnpm db:update` ' +
+  '(`opensaas db update`) in another terminal.\n'
 
 /** How a parked destructive change is applied, named wherever one is waiting. */
 const PARKED_ROUTE =
@@ -157,11 +156,62 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
    * make the guard depend on every generator and plugin `afterGenerate` being
    * byte-deterministic, which nothing enforces.
    *
-   * Bytes the config *imports* are outside it: the loader disables its module
-   * cache, so `opensaas db update` regenerates from them, and the skip message
-   * names that route.
+   * A module the config imports is covered the same way, through
+   * {@link reconciledModules} below (#1414).
    */
   let reconciledSource: string | undefined
+
+  /**
+   * The project-local modules the config imported as of the last generation
+   * the loop ran from — the paths the watcher adds beside `opensaas.config.ts`
+   * itself, so an edit inside a split config lands the same way an edit to
+   * the config file does.
+   */
+  let watchedModules: string[] = []
+
+  /**
+   * The bytes of every module in {@link watchedModules}, as of the same
+   * generation {@link reconciledSource} was read for — `null` for one that
+   * could not be read (deleted mid-session). Paired with `reconciledSource`
+   * to decide whether a watcher event has anything new to reconcile: a save
+   * that reproduces both is the race #1260 closed, still closed here because
+   * the two are compared as bytes, never as generated output.
+   */
+  let reconciledModules: Map<string, string | null> = new Map()
+
+  /** Reads each path's current bytes, `null` for one that cannot be read. */
+  const snapshotModules = (paths: readonly string[]): Map<string, string | null> => {
+    const snapshot = new Map<string, string | null>()
+    for (const modulePath of paths) {
+      try {
+        snapshot.set(modulePath, fs.readFileSync(modulePath, 'utf-8'))
+      } catch {
+        snapshot.set(modulePath, null)
+      }
+    }
+    return snapshot
+  }
+
+  const moduleSnapshotsEqual = (
+    a: ReadonlyMap<string, string | null>,
+    b: ReadonlyMap<string, string | null>,
+  ): boolean => {
+    if (a.size !== b.size) return false
+    for (const [modulePath, content] of a) {
+      if (b.get(modulePath) !== content) return false
+    }
+    return true
+  }
+
+  /** Reconciles the watcher's set with a fresh `resolvedModules` list. */
+  const syncWatchedModules = (nextModules: readonly string[]): void => {
+    const next = new Set(nextModules)
+    const stale = watchedModules.filter((modulePath) => !next.has(modulePath))
+    const added = nextModules.filter((modulePath) => !watchedModules.includes(modulePath))
+    if (stale.length > 0) watcher?.unwatch(stale)
+    if (added.length > 0) watcher?.add(added)
+    watchedModules = [...nextModules]
+  }
 
   const stop = async (): Promise<void> => {
     await watcher?.close()
@@ -246,7 +296,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
-    if (source === reconciledSource) {
+    const currentModules = snapshotModules(watchedModules)
+
+    if (source === reconciledSource && moduleSnapshotsEqual(currentModules, reconciledModules)) {
       console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.'))
       console.log(
         chalk.gray(
@@ -272,6 +324,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
     reconciledSource = source
+    syncWatchedModules(generation.resolvedModules)
+    reconciledModules = snapshotModules(watchedModules)
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -364,8 +418,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // Read before generating, so an edit landing during startup leaves bytes
     // the watcher will not recognise as already reconciled.
     reconciledSource = fs.readFileSync(configPath, 'utf-8')
+    let bootGeneration: GenerationResult
     try {
-      await generateCommand()
+      bootGeneration = await generateCommand()
     } catch (error) {
       if (!(error instanceof GenerationFailedError)) throw error
       process.exitCode = 1
@@ -377,10 +432,16 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
+    // The modules a split config imported, resolved by this same boot
+    // generation — read now rather than pre-generate, since which paths even
+    // are the config's modules is not known until generation reports them.
+    watchedModules = bootGeneration.resolvedModules
+    reconciledModules = snapshotModules(watchedModules)
+
     // Armed only now: `queue` serialises reconciles against each other, not
     // against this startup generate and reconcile, so a save landing earlier
     // would run a second `db update` against the same database concurrently.
-    watcher = chokidar.watch(configPath, {
+    watcher = chokidar.watch([configPath, ...watchedModules], {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: CONFIG_WRITE_SETTLE_MS, pollInterval: 50 },
@@ -390,6 +451,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         // Whatever threw, it was not a promote and not a park, so the bytes it
         // was working from have not reached the database or the live bundle.
         reconciledSource = undefined
+        reconciledModules = new Map()
         console.error(chalk.red('\nStaged reconcile failed:'), error)
       })
     })
@@ -409,7 +471,14 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     })
 
     console.log(chalk.gray(`Starting the app: ${appCommand.join(' ')}\n`))
-    console.log(chalk.gray('Watching opensaas.config.ts. Press Ctrl+C to stop.\n'))
+    console.log(
+      chalk.gray(
+        watchedModules.length === 0
+          ? 'Watching opensaas.config.ts. Press Ctrl+C to stop.\n'
+          : `Watching opensaas.config.ts and ${watchedModules.length} imported module(s). ` +
+              'Press Ctrl+C to stop.\n',
+      ),
+    )
 
     app = createAppRunner({ cwd, command: appCommand, devDatabase: database !== undefined })
     process.exitCode = await app.run()

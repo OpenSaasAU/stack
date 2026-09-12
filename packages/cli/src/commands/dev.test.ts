@@ -67,7 +67,15 @@ vi.mock('@opensaas/stack-core/internal', () => ({
 
 vi.mock('./generate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./generate.js')>()
-  return { ...actual, generateCommand: vi.fn().mockResolvedValue(undefined) }
+  return {
+    ...actual,
+    generateCommand: vi.fn().mockResolvedValue({
+      paths: {},
+      livePaths: {},
+      prismaConfig: '',
+      resolvedModules: [],
+    }),
+  }
 })
 
 vi.mock('../generator/index.js', async (importOriginal) => {
@@ -77,21 +85,29 @@ vi.mock('../generator/index.js', async (importOriginal) => {
     loadOpenSaasConfig: vi.fn().mockResolvedValue({
       config: { db: { provider: 'postgresql' }, lists: {} },
       aliasWarnings: [],
+      resolvedModules: [],
     }),
     runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
   }
 })
 
 const watcherHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+const watcherApi = vi.hoisted(() => ({ add: vi.fn(), unwatch: vi.fn() }))
+const watchCalls = vi.hoisted(() => [] as unknown[][])
 
 vi.mock('chokidar', () => ({
   default: {
-    watch: vi.fn(() => ({
-      on: (event: string, handler: (...args: unknown[]) => void) => {
-        watcherHandlers.set(event, handler)
-      },
-      close: vi.fn().mockResolvedValue(undefined),
-    })),
+    watch: vi.fn((...args: unknown[]) => {
+      watchCalls.push(args)
+      return {
+        on: (event: string, handler: (...args: unknown[]) => void) => {
+          watcherHandlers.set(event, handler)
+        },
+        add: watcherApi.add,
+        unwatch: watcherApi.unwatch,
+        close: vi.fn().mockResolvedValue(undefined),
+      }
+    }),
   },
 }))
 
@@ -149,6 +165,7 @@ describe('devCommand', () => {
     vi.clearAllMocks()
     spawned.length = 0
     watcherHandlers.clear()
+    watchCalls.length = 0
     child.hold = false
     pendingLoop = undefined
     loopSettled = false
@@ -294,13 +311,23 @@ describe('devCommand', () => {
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
-        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
       }
       stagedGenerations += 1
       if (stagedGenerations > 1) throw new Error('config surface invalid')
       fs.mkdirSync(path.dirname(staged.contractModule), { recursive: true })
       fs.writeFileSync(staged.contractModule, 'the parked generation', 'utf-8')
-      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+      return {
+        paths: staged,
+        livePaths: live,
+        prismaConfig: staged.prismaConfig,
+        resolvedModules: [],
+      }
     })
 
     const destructivePlan = JSON.stringify({
@@ -359,10 +386,20 @@ describe('devCommand', () => {
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
-        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
       }
       stagedGenerations += 1
-      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+      return {
+        paths: staged,
+        livePaths: live,
+        prismaConfig: staged.prismaConfig,
+        resolvedModules: [],
+      }
     })
 
     const destructivePlan = JSON.stringify({
@@ -412,10 +449,20 @@ describe('devCommand', () => {
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
-        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
       }
       stagedGenerations += 1
-      return { paths: staged, livePaths: live, prismaConfig: staged.prismaConfig }
+      return {
+        paths: staged,
+        livePaths: live,
+        prismaConfig: staged.prismaConfig,
+        resolvedModules: [],
+      }
     })
 
     // Call 1 is the boot reconcile; call 2 is the first save's dry run, failed
@@ -466,7 +513,12 @@ describe('devCommand', () => {
     let refusals = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
-        return { paths: live, livePaths: live, prismaConfig: live.prismaConfig }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
       }
       // Generation seeds each declared pack's contract space into
       // `migrations/` before it can refuse on the config surface.
@@ -500,5 +552,173 @@ describe('devCommand', () => {
     expect(spawned).toHaveLength(0)
     expect(process.exitCode).toBe(1)
     expect(stop).toHaveBeenCalled()
+  })
+
+  describe('watching a split config (#1414)', () => {
+    it('watches the modules the boot generation resolved, alongside the config file', async () => {
+      const modulePath = path.join(tempDir, 'db-client.ts')
+      fs.writeFileSync(modulePath, 'export const client = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [modulePath],
+          }
+        }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
+      })
+
+      await startLoop()
+
+      expect(watchCalls[0]?.[0]).toEqual([path.join(tempDir, 'opensaas.config.ts'), modulePath])
+    })
+
+    it('reconciles when a watched module changes even though the config bytes did not', async () => {
+      child.hold = true
+      const modulePath = path.join(tempDir, 'db-client.ts')
+      fs.writeFileSync(modulePath, 'export const client = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      let stagedGenerations = 0
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [modulePath],
+          }
+        }
+        stagedGenerations += 1
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules: [modulePath],
+        }
+      })
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        const plan = JSON.stringify({
+          kind: 'result',
+          envelope: { result: { plan: { operations: [] } } },
+        })
+        return { exitCode: 0, signal: null, output: plan, stdout: plan }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      // The config file itself is untouched — only the module it imports changes.
+      fs.writeFileSync(modulePath, 'export const client = 2\n')
+      watcherHandlers.get('change')?.()
+      await until(() => stagedGenerations === 1)
+
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('still skips a watcher event when neither the config nor its modules changed', async () => {
+      child.hold = true
+      const said: string[] = []
+      const log = vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+
+      const modulePath = path.join(tempDir, 'db-client.ts')
+      fs.writeFileSync(modulePath, 'export const client = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      let stagedGenerations = 0
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [modulePath],
+          }
+        }
+        stagedGenerations += 1
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      // Neither the config nor the module changed — a spurious watcher event.
+      watcherHandlers.get('change')?.()
+      await until(() => said.join('\n').includes('Config saved with no change'))
+      expect(stagedGenerations).toBe(0)
+
+      log.mockRestore()
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('adds a newly resolved module and stops watching one no longer imported', async () => {
+      child.hold = true
+      const moduleA = path.join(tempDir, 'a.ts')
+      const moduleB = path.join(tempDir, 'b.ts')
+      fs.writeFileSync(moduleA, 'export const a = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      let stagedGenerations = 0
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [moduleA],
+          }
+        }
+        stagedGenerations += 1
+        fs.writeFileSync(moduleB, 'export const b = 1\n')
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules: [moduleB],
+        }
+      })
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        const plan = JSON.stringify({
+          kind: 'result',
+          envelope: { result: { plan: { operations: [] } } },
+        })
+        return { exitCode: 0, signal: null, output: plan, stdout: plan }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      editConfig()
+      watcherHandlers.get('change')?.()
+      await until(() => stagedGenerations === 1)
+
+      expect(watcherApi.add).toHaveBeenCalledWith([moduleB])
+      expect(watcherApi.unwatch).toHaveBeenCalledWith([moduleA])
+
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
   })
 })

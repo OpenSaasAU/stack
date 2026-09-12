@@ -1,3 +1,4 @@
+import * as path from 'path'
 import { createJiti } from 'jiti'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveTsconfigAlias } from './tsconfig-alias.js'
@@ -7,6 +8,13 @@ export interface LoadedOpenSaasConfig {
   config: OpenSaasConfig
   /** Messages from resolving the project's tsconfig path aliases, for the caller to print. */
   aliasWarnings: string[]
+  /**
+   * Absolute paths of every project-local module the config imported, direct
+   * or transitive, besides the config file itself. A dependency resolved into
+   * `node_modules` is never included — a config split across its own modules
+   * is what this reports, not the packages it depends on (#1414).
+   */
+  resolvedModules: string[]
 }
 
 /**
@@ -16,7 +24,7 @@ export interface LoadedOpenSaasConfig {
  *
  * @example
  * ```typescript
- * const { config, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
+ * const { config, aliasWarnings, resolvedModules } = await loadOpenSaasConfig(cwd, configPath)
  * ```
  */
 export async function loadOpenSaasConfig(
@@ -24,11 +32,16 @@ export async function loadOpenSaasConfig(
   configPath: string,
 ): Promise<LoadedOpenSaasConfig> {
   const { alias, warnings } = resolveTsconfigAlias(cwd)
-  // jiti's module cache is keyed by path and outlives the instance holding it,
-  // so a second load in one process returns the first read of the file. The
-  // dev loop reloads this exact path every time the config changes, and would
-  // otherwise stage the schema the process booted on.
-  const jiti = createJiti(cwd, { interopDefault: true, alias, moduleCache: false })
+
+  // Module caching is enabled only long enough to read back the resolved
+  // import graph off jiti's own cache (the `NodeRequire.cache` shape its
+  // public API already documents), then cleared below — so a second load of
+  // this exact path in the same process still sees fresh bytes. That cache is
+  // Node's own process-wide `require.cache`, not an object private to this
+  // jiti instance, which is why only the entries this load actually added are
+  // deleted, never the ones already there before it ran.
+  const jiti = createJiti(cwd, { interopDefault: true, alias, moduleCache: true })
+  const cachedBeforeLoad = new Set(Object.keys(jiti.cache))
 
   // jiti's `interopDefault` doesn't unwrap an async `default` export, so the
   // module's own default is awaited here.
@@ -36,5 +49,13 @@ export async function loadOpenSaasConfig(
     configPath,
   )
 
-  return { config: await module.default, aliasWarnings: warnings }
+  const resolvedModules = Object.keys(jiti.cache).filter(
+    (modulePath) =>
+      !cachedBeforeLoad.has(modulePath) &&
+      modulePath !== configPath &&
+      !modulePath.split(path.sep).includes('node_modules'),
+  )
+  for (const modulePath of [configPath, ...resolvedModules]) delete jiti.cache[modulePath]
+
+  return { config: await module.default, aliasWarnings: warnings, resolvedModules }
 }
