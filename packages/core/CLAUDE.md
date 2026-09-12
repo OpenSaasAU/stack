@@ -319,15 +319,18 @@ Contention is not observable on the default test harness: PGlite serialises
 every transaction, so a suite that proves a gate admits exactly N runs behind
 the `DATABASE_URL` escape (`packages/core/src/secured/capacity-gate.test.ts`).
 
-#### A hook's context is `BaseContext`, bound to the write's own transaction
+#### A hook's context is `AccessContext`, bound to the write's own transaction
 
 A list/field `resolveInput` / `validate` / `beforeOperation` / `afterOperation`
-hook's `context` argument is `StackBaseContext<DB, S, PluginServices>` — the
-app's `BaseContext`: the secured `db`, the session, `unsafe`, `storage` and
-`plugins`, and nothing that can start a transaction or change who is asking.
-`sudo()`, `withSession()`, `transaction()` and `serverAction` live on
-`StackContext` (`Context`), which a server action or page component holds. See
-ADR-0050 and ADR-0052.
+hook's `context` argument is `AccessContext<DB>` — the engine's own context
+shape (`ormHandle`, `db`, `session`, `storage`, `plugins`), keyed to the app's
+generated `DB` via `TypeInfo.db` under `list<Lists.X.TypeInfo>` so
+`context.db.<misspelled list>` is a compile error and `context.db.<real list>`
+is that list's own `SecuredList` (ADR-0052's amendment for #1211/#1213). It
+carries no `unsafe`, and nothing that can start a transaction or change who is
+asking: `sudo()`, `withSession()`, `transaction()`, `serverAction` and `unsafe`
+live only on `StackContext`/`StackBaseContext` (`Context`/`BaseContext`),
+which a server action or page component holds. See ADR-0050 and ADR-0052.
 
 That `db` IS bound to the write's own transaction client, not the base one
 (ADR-0010): `bindContextToTransaction` in `write-pipeline.ts` rebuilds the
@@ -341,14 +344,15 @@ this one is a plugin's own column write (`writePluginOwnedField`, ADR-0068) or a
 `context.transaction` the _caller_ opened around the write.
 
 - **Unaffected:** `beforeTransaction` / `afterTransaction` (list and field) keep
-  the plain `AccessContext`, bound to the BASE client, always — see ADR-0028
-  for why boundary hooks must not run through a client that may already be
-  closed by flush time.
-- **A field's `resolveOutput`** takes the same `BaseContext`, but which client
-  it is bound to depends on how the read that triggered it arose: a plain
-  top-level read resolves against the base client; a `resolveOutput` that runs
-  as part of a create/update's OWN result (the write's Field Visibility pass)
-  resolves against THAT write's transaction client (ADR-0010).
+  the same keyed `AccessContext<DB>`, bound to the BASE client, always — see
+  ADR-0028 for why boundary hooks must not run through a client that may
+  already be closed by flush time.
+- **A field's `resolveOutput`** takes the same keyed `AccessContext<DB>`, but
+  which client it is bound to depends on how the read that triggered it arose:
+  a plain top-level read resolves against the base client; a `resolveOutput`
+  that runs as part of a create/update's OWN result (the write's Field
+  Visibility pass) resolves against THAT write's transaction client
+  (ADR-0010).
 
 See the hooks concept doc's "In-transaction vs transaction-boundary hooks"
 section.

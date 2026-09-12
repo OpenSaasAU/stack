@@ -1,4 +1,4 @@
-import type { AccessControl, FieldAccess } from '../access/types.js'
+import type { AccessControlledDB, AccessControl, FieldAccess } from '../access/types.js'
 import type { GeneratedTables } from '../contract/dependencies.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
@@ -26,7 +26,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -35,7 +35,7 @@ export type FieldResolveInputHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
 
 /** Arguments for {@link FieldHooks.validate} (and its deprecated `validateInput` alias). */
@@ -50,7 +50,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: undefined
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
       addValidationError: (msg: string) => void
     }
   | {
@@ -60,7 +60,7 @@ export type FieldValidateHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
       addValidationError: (msg: string) => void
     }
   | {
@@ -68,7 +68,7 @@ export type FieldValidateHookArgs<
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
       addValidationError: (msg: string) => void
     }
 
@@ -83,7 +83,7 @@ export type FieldBeforeOperationHookArgs<
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -92,14 +92,14 @@ export type FieldBeforeOperationHookArgs<
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
 
 /** Arguments for {@link FieldHooks.afterOperation}. */
@@ -114,7 +114,7 @@ export type FieldAfterOperationHookArgs<
       inputData: TTypeInfo['inputs']['create']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -124,14 +124,14 @@ export type FieldAfterOperationHookArgs<
       originalItem: TTypeInfo['item']
       item: TTypeInfo['item']
       resolvedData: TTypeInfo['inputs']['update']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       originalItem: TTypeInfo['item']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
 
 /**
@@ -155,7 +155,7 @@ export type FieldBeforeTransactionHookArgs<
       fieldKey: TFieldKey
       operation: 'create'
       inputData: TTypeInfo['inputs']['create']
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -163,14 +163,14 @@ export type FieldBeforeTransactionHookArgs<
       operation: 'update'
       inputData: TTypeInfo['inputs']['update']
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
       fieldKey: TFieldKey
       operation: 'delete'
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
 
 /**
@@ -201,7 +201,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['create']
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -210,7 +210,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TTypeInfo['inputs']['create']
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -222,7 +222,7 @@ export type FieldAfterTransactionHookArgs<
       originalItem: TTypeInfo['item'] | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -232,7 +232,7 @@ export type FieldAfterTransactionHookArgs<
       inputData: TTypeInfo['inputs']['update']
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -241,7 +241,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TTypeInfo['item'] | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
   | {
       listKey: string
@@ -250,7 +250,7 @@ export type FieldAfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TTypeInfo['item'] | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     }
 
 /** Arguments for {@link FieldHooks.resolveOutput}. */
@@ -268,7 +268,7 @@ export type FieldResolveOutputHookArgs<
   item: FieldNeedsItem<TTypeInfo, TFieldKey>
   listKey: string
   fieldName: TFieldKey
-  context: import('../access/types.js').AccessContext
+  context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
 }
 
 /**
@@ -1510,6 +1510,15 @@ type DeclaredOrStoredValueType<
  *
  * @template TKey - The list key/name (e.g., 'Post', 'User')
  * @template TFields - The fields configuration for the list
+ * @template TDb - The app's generated `db` surface (ADR-0052's `DB`, the same
+ *   type the generated `Context`/`BaseContext` instantiate). Defaults to
+ *   `unknown`, never {@link AccessControlledDB} directly: the generated `DB`
+ *   is an `interface` with no index signature (ADR-0032), so pinning the
+ *   default there would make `TypeInfo` (bare, as every field builder bounds
+ *   its own `TTypeInfo extends TypeInfo`) demand one from every list's real
+ *   `db` and reject it as "index signature is missing" on every field. A
+ *   `TypeInfo` written (or defaulted) without `TDb` keeps today's behaviour —
+ *   `HookDb` resolves the hook's `context.db` to {@link AccessControlledDB}.
  * @template TItem - The output type (Prisma model type)
  * @template TCreateInput - The Prisma create input type
  * @template TUpdateInput - The Prisma update input type
@@ -1524,12 +1533,14 @@ type DeclaredOrStoredValueType<
  *     create: Prisma.PostCreateInput
  *     update: Prisma.PostUpdateInput
  *   }
+ *   db: DB
  * }
  * ```
  */
 export interface TypeInfo<
   TKey extends string = string,
   TFields extends Record<string, any> = Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any -- TypeInfo must accept any field record
+  TDb = unknown,
 > {
   key: TKey
   fields: TFields
@@ -1555,7 +1566,40 @@ export interface TypeInfo<
    * a hook's `item` falls back to the whole stored row.
    */
   needs?: Record<string, { needs?: string; item?: unknown }>
+  /**
+   * The app's generated `db` surface — the same `DB` the generated `Context`
+   * and `BaseContext` instantiate. A hook's `context` is keyed off it, so
+   * `context.db.<misspelled list>` is a compile error and `context.db.<real
+   * list>` is that list's own `SecuredList` (ADR-0052's amendment for
+   * #1211/#1213).
+   *
+   * Written by `pnpm generate`; absent (or `unknown`) on a hand-authored
+   * `TypeInfo`, where {@link HookDb} falls back to {@link AccessControlledDB}.
+   */
+  db?: TDb
 }
+
+/**
+ * The `db` surface a hook's `context` is keyed to: {@link TypeInfo.db} when
+ * the `TypeInfo` carries a real one, else {@link AccessControlledDB} —
+ * applied both where a hand-authored `TypeInfo` omits the member entirely
+ * (mirrors {@link FieldNeedsItem}'s `NonNullable<TTypeInfo['needs']>` pattern
+ * for the same reason) and where `TypeInfo`'s own `TDb` default (`unknown`)
+ * is standing in for it.
+ *
+ * Also falls back for `TTypeInfo = any` — the untyped `list()` shape
+ * (`OpenSaasConfig['lists']` is `Record<string, ListConfig<any>>`) — where
+ * `unknown extends any['db']` would otherwise resolve to bare `any` and
+ * poison every `context.db.<list>` chain in the hook to `any`, turning a
+ * genuine `noImplicitAny` violation on the caller's own code into a silent
+ * pass. `0 extends 1 & T` is the standard is-`any` probe: true only for
+ * `any`, because only `any` widens `1` to accept `0` through the intersection.
+ */
+export type HookDb<TTypeInfo extends TypeInfo> = 0 extends 1 & TTypeInfo
+  ? AccessControlledDB
+  : unknown extends TTypeInfo['db']
+    ? AccessControlledDB
+    : NonNullable<TTypeInfo['db']>
 
 /**
  * The `item` a field's `resolveOutput` hook is handed: its declared
@@ -1645,6 +1689,7 @@ export type ResolveInputHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
@@ -1652,7 +1697,7 @@ export type ResolveInputHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1660,7 +1705,7 @@ export type ResolveInputHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
 
 /**
@@ -1673,6 +1718,7 @@ export type ValidateHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
@@ -1680,7 +1726,7 @@ export type ValidateHookArgs<
       inputData: TCreateInput
       resolvedData: TCreateInput
       item: undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
       addValidationError: (msg: string) => void
     }
   | {
@@ -1689,14 +1735,14 @@ export type ValidateHookArgs<
       inputData: TUpdateInput
       resolvedData: TUpdateInput
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
       addValidationError: (msg: string) => void
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
       addValidationError: (msg: string) => void
     }
 
@@ -1710,13 +1756,14 @@ export type BeforeOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
       resolvedData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1724,13 +1771,13 @@ export type BeforeOperationHookArgs<
       inputData: TUpdateInput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
 
 /**
@@ -1743,6 +1790,7 @@ export type AfterOperationHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
@@ -1750,7 +1798,7 @@ export type AfterOperationHookArgs<
       inputData: TCreateInput
       item: TOutput
       resolvedData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1759,13 +1807,13 @@ export type AfterOperationHookArgs<
       originalItem: TOutput
       item: TOutput
       resolvedData: TUpdateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
       operation: 'delete'
       originalItem: TOutput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
 
 /**
@@ -1781,25 +1829,26 @@ export type BeforeTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
       operation: 'create'
       inputData: TCreateInput
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
       operation: 'update'
       inputData: TUpdateInput
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
       operation: 'delete'
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
 
 /**
@@ -1824,6 +1873,7 @@ export type AfterTransactionHookArgs<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > =
   | {
       listKey: string
@@ -1832,7 +1882,7 @@ export type AfterTransactionHookArgs<
       inputData: TCreateInput
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1840,7 +1890,7 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       inputData: TCreateInput
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1851,7 +1901,7 @@ export type AfterTransactionHookArgs<
       originalItem: TOutput | undefined
       /** Persisted row — populated for the top-level list only; `undefined` for nested lists. */
       item: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1860,7 +1910,7 @@ export type AfterTransactionHookArgs<
       inputData: TUpdateInput
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1868,7 +1918,7 @@ export type AfterTransactionHookArgs<
       status: 'committed'
       /** Pre-write row — populated for the top-level list only; `undefined` for nested lists. */
       originalItem: TOutput | undefined
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
   | {
       listKey: string
@@ -1876,23 +1926,24 @@ export type AfterTransactionHookArgs<
       status: 'rolled-back'
       originalItem: TOutput | undefined
       error: unknown
-      context: import('../access/types.js').AccessContext
+      context: import('../access/types.js').AccessContext<TDb>
     }
 
 export type Hooks<
   TOutput = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
+  TDb = AccessControlledDB,
 > = {
   resolveInput?: (
-    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: ResolveInputHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
   ) => Promise<TCreateInput | TUpdateInput>
-  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  validate?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>) => Promise<void>
   beforeOperation?: (
-    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: BeforeOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
   ) => Promise<void>
   afterOperation?: (
-    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: AfterOperationHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
   ) => Promise<void>
   /**
    * Side effect BEFORE the write's transaction opens (#590 / ADR-0010).
@@ -1901,7 +1952,7 @@ export type Hooks<
    * with `status: 'rolled-back'`. See {@link BeforeTransactionHookArgs}.
    */
   beforeTransaction?: (
-    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: BeforeTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
   ) => Promise<void> | void
   /**
    * Side effect AFTER the write's transaction settles (#590 / ADR-0010).
@@ -1912,12 +1963,14 @@ export type Hooks<
    * {@link AfterTransactionHookArgs}.
    */
   afterTransaction?: (
-    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput>,
+    args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
   ) => Promise<void> | void
   /**
    * @deprecated Use 'validate' instead. This alias is provided for backwards compatibility.
    */
-  validateInput?: (args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput>) => Promise<void>
+  validateInput?: (
+    args: ValidateHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
+  ) => Promise<void>
 }
 
 /**
@@ -1978,7 +2031,12 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
   access?: {
     operation?: OperationAccess<TTypeInfo['item']>
   }
-  hooks?: Hooks<TTypeInfo['item'], TTypeInfo['inputs']['create'], TTypeInfo['inputs']['update']>
+  hooks?: Hooks<
+    TTypeInfo['item'],
+    TTypeInfo['inputs']['create'],
+    TTypeInfo['inputs']['update'],
+    HookDb<TTypeInfo>
+  >
   /**
    * Database configuration for this list (model level)
    */

@@ -54,6 +54,7 @@ function getFieldTypeImport(fieldType: string): { module: string; typeName: stri
  *     export type TypeInfo = {
  *       key: 'Post'
  *       item: Item
+ *       db: import('./types.ts').DB
  *       inputs: {
  *         create: import('./types.ts').PostCreateInput
  *         update: import('./types.ts').PostUpdateInput
@@ -140,6 +141,7 @@ export function generateListsNamespace(
     lines.push(`      needs: Needs`)
     lines.push(`      item: Item`)
     lines.push(`      output: import('./types.ts').${listName}`)
+    lines.push(`      db: import('./types.ts').DB`)
     lines.push(`      inputs: {`)
     lines.push(`        create: import('./types.ts').${listName}CreateInput`)
     lines.push(`        update: import('./types.ts').${listName}UpdateInput`)

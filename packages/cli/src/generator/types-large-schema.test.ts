@@ -302,4 +302,57 @@ void undeclared
 
     expect(output).toBe('')
   })
+
+  it(
+    "keys a list-level and a field-level hook's context.db to the app's own DB (#1213)",
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Lists } from './.opensaas/lists.ts'
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+// A list-level hook on Model10 (mid-chain: carries both 'previous' and
+// 'next', the shape #952's GetPayload cross-reference needed) reading
+// context.db off a real other list.
+const listLevel = list<Lists.Model10.TypeInfo>({
+  fields: {
+    title: text({ validation: { isRequired: true } }),
+  },
+  hooks: {
+    validate: async ({ context }) => {
+      const rows = await context.db.Model5.where({ id: { equals: '1' } }).all()
+      rows[0]?.title.toUpperCase()
+
+      // @ts-expect-error 'Model99' is not a list on this app's db
+      void context.db.Model99
+    },
+  },
+})
+
+// A field-level hook on the same list, same claim.
+const fieldLevel = list<Lists.Model10.TypeInfo>({
+  fields: {
+    title: text({
+      validation: { isRequired: true },
+      hooks: {
+        validate: async ({ context }) => {
+          const rows = await context.db.Model5.where({ id: { equals: '1' } }).all()
+          rows[0]?.title.toUpperCase()
+
+          // @ts-expect-error 'Model99' is not a list on this app's db
+          void context.db.Model99
+        },
+      },
+    }),
+  },
+})
+
+void listLevel
+void fieldLevel
+`)
+
+      expect(output).toBe('')
+    },
+  )
 })

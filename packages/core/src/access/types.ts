@@ -215,7 +215,16 @@ export type StorageUtils = {
 }
 
 // Uses `interface` rather than `type` so consumers can extend it via module augmentation.
-export interface AccessContext {
+//
+// `DB` is unconstrained here (unlike `StackContext`/`StackBaseContext`'s
+// `DB extends StackDb<DB>`): the generated `DB` is an `interface` with no
+// index signature (ADR-0032), and TypeScript cannot re-verify a bound like
+// `StackDb<DB>` — or even a plain `DB extends AccessControlledDB` — through
+// the indexed-access aliases (`HookDb<TTypeInfo>`, config/types.ts's `TDb`)
+// every hook-args type below keys its `context` to, applied to an
+// as-yet-unresolved `TTypeInfo`. Re-adding either bound here fails every one
+// of them with "index signature is missing in type 'DB'".
+export interface AccessContext<DB = AccessControlledDB> {
   session: Session | null
   /**
    * The engine's own ORM handle: the client `db`'s terminals, the Write
@@ -230,7 +239,7 @@ export interface AccessContext {
    * unscoped, and is not a member of this type.
    */
   ormHandle: OrmClient
-  db: AccessControlledDB
+  db: DB
   storage: StorageUtils
   plugins: Record<string, unknown>
   _isSudo: boolean
