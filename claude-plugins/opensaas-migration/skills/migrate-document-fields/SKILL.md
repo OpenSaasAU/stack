@@ -77,10 +77,36 @@ import { TiptapField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', TiptapField)
 ```
 
-Then import it in the admin page as a side effect:
+`page.tsx` is a server component, and a `'use client'` module only reaches the browser when
+something in the tree **renders** it. A bare `import '../../../lib/register-fields'` from `page.tsx`
+registers nothing. Carry the import in a client component instead:
 
 ```typescript
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+
 import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+Then render it alongside the admin UI:
+
+```typescript
+// app/admin/[[...admin]]/page.tsx
+import { AdminUI } from '@opensaas/stack-ui'
+import { FieldRegistration } from './FieldRegistration'
+
+export default async function AdminPage(props: AdminPageProps) {
+  return (
+    <>
+      <FieldRegistration />
+      <AdminUI {...await adminProps(props)} />
+    </>
+  )
+}
 ```
 
 ## Data Migration Note
