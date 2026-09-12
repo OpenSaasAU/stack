@@ -50,12 +50,10 @@ export class MigrationGenerator {
 
     const lists = this.generateLists(schema, answers, usedFieldTypes, warnings)
     const accessHelpers = this.generateAccessHelpers(answers)
-    const dbConfig = this.generateDatabaseConfig(
-      (answers.db_provider as string) || analysis.provider || 'sqlite',
-    )
+    const dbConfig = this.generateDatabaseConfig()
 
     const useAuth = answers.enable_auth === true
-    const imports = this.generateImports(usedFieldTypes, useAuth, dbConfig.provider)
+    const imports = this.generateImports(usedFieldTypes, useAuth)
 
     const configContent = this.assembleConfig({
       imports,
@@ -67,9 +65,9 @@ export class MigrationGenerator {
       adminBasePath: (answers.admin_base_path as string) || '/admin',
     })
 
-    const dependencies = this.generateDependencies(dbConfig.provider, useAuth)
-    const files = this.generateAdditionalFiles(answers, dbConfig.provider)
-    const steps = this.generateSteps(useAuth, dbConfig.provider)
+    const dependencies = this.generateDependencies(useAuth)
+    const files = this.generateAdditionalFiles(answers)
+    const steps = this.generateSteps(useAuth)
 
     if (schema) {
       const introspectorWarnings =
@@ -77,6 +75,14 @@ export class MigrationGenerator {
           ? this.prismaIntrospector.getWarnings(schema)
           : this.keystoneIntrospector.getWarnings(schema)
       warnings.push(...introspectorWarnings)
+    }
+
+    if (schema && schema.provider !== 'postgresql') {
+      warnings.push(
+        `Detected "${schema.provider}" as the existing database provider. OpenSaaS Stack ` +
+          `targets Postgres only — migrate the data itself to Postgres before pointing the ` +
+          `generated config at it.`,
+      )
     }
 
     return {
@@ -92,7 +98,6 @@ export class MigrationGenerator {
     schema: IntrospectedSchema | undefined,
     answers: Record<string, unknown>,
   ): MigrationOutput {
-    const dbProvider = (answers.db_provider as string) || schema?.provider || 'sqlite'
     const useAuth = answers.enable_auth === true
     const hasM2M = schema?.models.some((m) => m.fields.some((f) => f.relation && f.isList))
     const hasVirtualFields = schema?.models.some((m) =>
@@ -103,16 +108,23 @@ export class MigrationGenerator {
     if (schema) {
       warnings.push(...this.keystoneIntrospector.getWarnings(schema))
     }
+    if (schema && schema.provider !== 'postgresql') {
+      warnings.push(
+        `Detected "${schema.provider}" as the existing database provider. OpenSaaS Stack ` +
+          `targets Postgres only — migrate the data itself to Postgres before pointing the ` +
+          `migrated config at it.`,
+      )
+    }
 
     // Build the targeted migration guide as the "config content"
-    const dbAdapterExample = this.generateDatabaseAdapterExample(dbProvider)
+    const dbAdapterExample = this.generateDatabaseAdapterExample()
     const authMigrationExample = useAuth ? this.generateAuthMigrationExample(answers) : ''
     const virtualFieldsNote = hasVirtualFields
       ? `\n## Step 5: Migrate Virtual Fields\n\nYour schema has \`virtual()\` fields. These work differently — OpenSaaS Stack has no GraphQL.\n\n\`\`\`diff\n- fullName: virtual({\n-   field: graphql.field({\n-     type: graphql.String,\n-     resolve: (item) => \`\${item.firstName} \${item.lastName}\`,\n-   }),\n- })\n+ fullName: virtual({\n+   type: 'string',\n+   hooks: {\n+     resolveOutput: ({ item }) => \`\${item.firstName} \${item.lastName}\`,\n+   },\n+ })\n\`\`\`\n\nKey changes: remove \`graphql.field()\` wrapper, replace \`resolve(item)\` with \`hooks.resolveOutput({ item })\`, declare \`type\` as a string. Field arguments are not supported. For context queries inside \`resolveOutput\`, use \`context.db.*\` instead of \`context.query.*\`.\n`
       : ''
     const contextGraphqlNote = `\n## Step ${hasVirtualFields ? '6' : '5'}: Migrate context.graphql Calls\n\nSearch your codebase for \`context.graphql.run(\`, \`context.graphql.raw(\`, and \`context.query.\`. Replace with \`context.db.{ListName}.{method}()\` — list names are PascalCase, exactly as spelled in \`opensaas.config.ts\`.\n\n\`\`\`diff\n- const { posts } = await context.graphql.run({\n-   query: \`query { posts(where: { status: { equals: published } }) { id title } }\`,\n- })\n+ const posts = await context.db.Post.where({ status: { equals: 'published' } }).all()\n\`\`\`\n\nAccess control is enforced automatically. For nested data, make separate \`context.db\` calls per list.\n`
     const m2mNote = hasM2M
-      ? `\n### Many-to-Many Join Tables\n\nKeystone and Prisma use different join table naming conventions. Add \`joinTableNaming: 'keystone'\` to preserve your existing data:\n\n\`\`\`typescript\ndb: {\n  provider: '${dbProvider}',\n  joinTableNaming: 'keystone', // Preserves Keystone join table names (e.g. _Post_tags)\n  prismaClientConstructor: ...\n}\n\`\`\`\n\nOr set per-relationship with \`db: { relationName: 'Post_tags' }\` on the relationship field.\n`
+      ? `\n### Many-to-Many Relationships\n\nOpenSaaS Stack does not generate an implicit many-to-many the way Keystone's \`relationship({ many: true })\` on both sides did. Declare a junction list with its own surrogate id and a unique pair index instead:\n\n\`\`\`typescript\nPostTag: list({\n  fields: {\n    post: relationship({ ref: 'Post.tags' }),\n    tag: relationship({ ref: 'Tag.posts' }),\n  },\n  db: {\n    indexes: [{ fields: ['post', 'tag'], unique: true }],\n  },\n}),\n\`\`\`\n\nAdding or removing an edge is a \`create\`/\`delete\` of the junction list's own row, secured by that list's own access control.\n`
       : ''
 
     const configContent = `# KeystoneJS → OpenSaaS Stack: What to Change
@@ -142,7 +154,7 @@ If you import types from \`.keystone/types\`, replace with:
 
 ## Step 2: Update Database Config
 
-Add \`prismaClientConstructor\` — Prisma 7 requires a driver adapter.
+OpenSaaS Stack targets Postgres only, and the database block is just the provider name — no connection string, no driver adapter, no client constructor. The runtime builds its own client from the committed contract (\`prisma/contract.json\`).
 
 ${dbAdapterExample}
 ${m2mNote}
@@ -165,7 +177,7 @@ Your lists, fields, hooks, and access control functions copy over unchanged.
 The \`list()\`, field builders (\`text()\`, \`relationship()\`, etc.), and hook signatures are identical.
 ${virtualFieldsNote}${contextGraphqlNote}`
 
-    const dependencies = this.generateKeystoneDependencies(dbProvider, useAuth)
+    const dependencies = this.generateKeystoneDependencies(useAuth)
     const steps = this.generateKeystoneSteps(useAuth, hasVirtualFields ?? false)
 
     return {
@@ -177,53 +189,18 @@ ${virtualFieldsNote}${contextGraphqlNote}`
     }
   }
 
-  private generateDatabaseAdapterExample(provider: string): string {
-    switch (provider) {
-      case 'postgresql':
-        return `\`\`\`typescript
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
-
+  private generateDatabaseAdapterExample(): string {
+    return `\`\`\`typescript
 db: {
   provider: 'postgresql',
-  url: process.env.DATABASE_URL,
-  prismaClientConstructor: (PrismaClient) => {
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-    const adapter = new PrismaPg(pool)
-    return new PrismaClient({ adapter })
-  },
 },
-\`\`\``
+\`\`\`
 
-      case 'mysql':
-        return `\`\`\`typescript
-import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
-
-db: {
-  provider: 'mysql',
-  url: process.env.DATABASE_URL,
-  prismaClientConstructor: (PrismaClient) => {
-    const adapter = new PrismaPlanetScale({ url: process.env.DATABASE_URL! })
-    return new PrismaClient({ adapter })
-  },
-},
-\`\`\``
-
-      case 'sqlite':
-      default:
-        return `\`\`\`typescript
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
-db: {
-  provider: 'sqlite',
-  url: process.env.DATABASE_URL || 'file:./dev.db',
-  prismaClientConstructor: (PrismaClient) => {
-    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-    return new PrismaClient({ adapter })
-  },
-},
-\`\`\``
-    }
+No connection string, no driver adapter and no client constructor — the
+runtime builds its own client from the committed contract
+(\`prisma/contract.json\`). If your Keystone project used a database other
+than Postgres, migrate the data itself to Postgres first: this block only
+names the target provider, it does not convert your existing data.`
   }
 
   private generateAuthMigrationExample(answers: Record<string, unknown>): string {
@@ -282,22 +259,15 @@ control.
 `
   }
 
-  private generateKeystoneDependencies(dbProvider: string, useAuth: boolean): string[] {
+  private generateKeystoneDependencies(useAuth: boolean): string[] {
     const remove = ['@keystone-6/core', '@keystone-6/auth', '@keystone-6/fields-document']
-    const add: string[] = ['@opensaas/stack-core', '@opensaas/stack-ui']
-
-    switch (dbProvider) {
-      case 'postgresql':
-        add.push('@prisma/adapter-pg', 'pg', '@types/pg')
-        break
-      case 'mysql':
-        add.push('@prisma/adapter-planetscale')
-        break
-      case 'sqlite':
-      default:
-        add.push('@prisma/adapter-better-sqlite3', 'better-sqlite3')
-        break
-    }
+    const add: string[] = [
+      '@opensaas/stack-core',
+      '@opensaas/stack-ui',
+      '@opensaas/stack-cli',
+      '@prisma/orm-postgres',
+      'prisma',
+    ]
 
     if (useAuth) {
       add.push('@opensaas/stack-auth', 'better-auth')
@@ -311,7 +281,7 @@ control.
     const steps = [
       'Rename keystone.ts → opensaas.config.ts',
       'Update imports: @keystone-6/core → @opensaas/stack-core',
-      'Add prismaClientConstructor to db config (see guide above)',
+      "Replace the db config with { provider: 'postgresql' } (see guide above)",
     ]
 
     if (useAuth) {
@@ -329,9 +299,8 @@ control.
 
     steps.push(
       'Search for context.graphql.run/raw and context.query.* calls and replace with context.db.* (see guide above)',
-      'Run: pnpm opensaas generate',
-      'Run: npx prisma db push',
-      'Run: pnpm dev',
+      'Run: pnpm generate',
+      'Run: pnpm dev — starts the Dev database (or reconciles your own via DATABASE_URL) and reconciles the new schema',
       'Visit admin UI at http://localhost:3000/admin',
     )
 
@@ -604,64 +573,19 @@ const isOwner: AccessControl = ({ session, item }) => {
     return helpers.join('\n')
   }
 
-  private generateDatabaseConfig(provider: string): {
-    provider: string
+  private generateDatabaseConfig(): {
+    provider: 'postgresql'
     configCode: string
-    imports: string[]
   } {
-    switch (provider) {
-      case 'postgresql':
-        return {
-          provider: 'postgresql',
-          imports: ["import { PrismaPg } from '@prisma/adapter-pg'", "import pg from 'pg'"],
-          configCode: `    db: {
+    return {
       provider: 'postgresql',
-      prismaClientConstructor: (PrismaClient) => {
-        const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-        const adapter = new PrismaPg(pool)
-        return new PrismaClient({ adapter })
-      },
+      configCode: `    db: {
+      provider: 'postgresql',
     },`,
-        }
-
-      case 'mysql':
-        return {
-          provider: 'mysql',
-          imports: ["import { PrismaPlanetScale } from '@prisma/adapter-planetscale'"],
-          configCode: `    db: {
-      provider: 'mysql',
-      prismaClientConstructor: (PrismaClient) => {
-        const adapter = new PrismaPlanetScale({
-          url: process.env.DATABASE_URL!,
-        })
-        return new PrismaClient({ adapter })
-      },
-    },`,
-        }
-
-      case 'sqlite':
-      default:
-        return {
-          provider: 'sqlite',
-          imports: ["import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'"],
-          configCode: `    db: {
-      provider: 'sqlite',
-      prismaClientConstructor: (PrismaClient) => {
-        const adapter = new PrismaBetterSqlite3({
-          url: process.env.DATABASE_URL || 'file:./dev.db',
-        })
-        return new PrismaClient({ adapter })
-      },
-    },`,
-        }
     }
   }
 
-  private generateImports(
-    usedFieldTypes: Set<string>,
-    useAuth: boolean,
-    dbProvider: string,
-  ): string {
+  private generateImports(usedFieldTypes: Set<string>, useAuth: boolean): string {
     const imports: string[] = []
 
     imports.push("import { config, list } from '@opensaas/stack-core'")
@@ -673,9 +597,6 @@ const isOwner: AccessControl = ({ session, item }) => {
       imports.push("import { authPlugin } from '@opensaas/stack-auth'")
       imports.push("import type { AccessControl } from '@opensaas/stack-core'")
     }
-
-    const dbConfig = this.generateDatabaseConfig(dbProvider)
-    imports.push(...dbConfig.imports)
 
     return imports.join('\n')
   }
@@ -756,26 +677,14 @@ ${accessHelpers}${configBody}
 `
   }
 
-  private generateDependencies(dbProvider: string, useAuth: boolean): string[] {
+  private generateDependencies(useAuth: boolean): string[] {
     const deps: string[] = [
       '@opensaas/stack-core',
       '@opensaas/stack-ui',
-      '@prisma/client',
+      '@opensaas/stack-cli',
+      '@prisma/orm-postgres',
       'prisma',
     ]
-
-    switch (dbProvider) {
-      case 'postgresql':
-        deps.push('@prisma/adapter-pg', 'pg', '@types/pg')
-        break
-      case 'mysql':
-        deps.push('@prisma/adapter-planetscale')
-        break
-      case 'sqlite':
-      default:
-        deps.push('@prisma/adapter-better-sqlite3')
-        break
-    }
 
     if (useAuth) {
       deps.push('@opensaas/stack-auth', 'better-auth')
@@ -784,10 +693,7 @@ ${accessHelpers}${configBody}
     return deps
   }
 
-  private generateAdditionalFiles(
-    answers: Record<string, unknown>,
-    dbProvider: string,
-  ): Array<{
+  private generateAdditionalFiles(answers: Record<string, unknown>): Array<{
     path: string
     content: string
     language: string
@@ -800,22 +706,14 @@ ${accessHelpers}${configBody}
       description: string
     }> = []
 
-    const envVars: string[] = ['# Database']
-
-    switch (dbProvider) {
-      case 'postgresql':
-        envVars.push('DATABASE_URL="postgresql://user:password@localhost:5432/mydb"')
-        break
-      case 'mysql':
-        envVars.push('DATABASE_URL="mysql://user:password@localhost:3306/mydb"')
-        break
-      case 'sqlite':
-      default:
-        envVars.push('DATABASE_URL="file:./dev.db"')
-        break
-    }
-
-    envVars.push('')
+    const envVars: string[] = [
+      '# Database',
+      '# `opensaas dev` starts the Dev database for this project, so DATABASE_URL is',
+      '# unset here. Set it to reach a Postgres of your own — that is the Database',
+      '# escape, and no Dev database starts.',
+      '# DATABASE_URL="postgresql://user:password@localhost:5432/mydb"',
+      '',
+    ]
 
     if (answers.enable_auth) {
       envVars.push('# Auth')
@@ -848,7 +746,7 @@ ${accessHelpers}${configBody}
     return files
   }
 
-  private generateSteps(useAuth: boolean, dbProvider: string): string[] {
+  private generateSteps(useAuth: boolean): string[] {
     const steps = [
       'Save the generated config to `opensaas.config.ts`',
       'Copy `.env.example` to `.env` and fill in values',
@@ -860,10 +758,8 @@ ${accessHelpers}${configBody}
 
     steps.push(
       'Install dependencies: `pnpm add <dependencies>`',
-      'Generate Prisma schema: `pnpm opensaas generate`',
-      'Generate Prisma client: `npx prisma generate`',
-      'Push schema to database: `npx prisma db push`',
-      'Start development server: `pnpm dev`',
+      'Run: `pnpm generate` — emits the Contract module and its artifacts, `prisma.config.ts`, and the `.opensaas/` bundle',
+      'Run: `pnpm dev` — starts the Dev database (or reconciles your own via `DATABASE_URL`) and reconciles the new schema',
     )
 
     const adminPath = useAuth ? '' : '/admin'

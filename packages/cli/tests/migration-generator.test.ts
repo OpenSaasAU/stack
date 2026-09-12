@@ -17,19 +17,18 @@ describe('MigrationGenerator', () => {
   })
 
   describe('Basic Config Generation', () => {
-    it('should generate basic config for SQLite', async () => {
+    it('should generate a Postgres-only db block with no driver adapter or client constructor', async () => {
       const session: MigrationSession = {
         id: 'test',
         projectType: 'prisma',
         analysis: {
           projectTypes: ['prisma'],
           cwd: '/tmp',
-          provider: 'sqlite',
         },
         currentQuestionIndex: 0,
         answers: {
           preserve_database: true,
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
           default_access: 'public-read-auth-write',
           admin_base_path: '/admin',
@@ -42,14 +41,21 @@ describe('MigrationGenerator', () => {
       const output = await generator.generate(session)
 
       expect(output.configContent).toContain("import { config, list } from '@opensaas/stack-core'")
-      expect(output.configContent).toContain("provider: 'sqlite'")
-      expect(output.configContent).toContain('PrismaBetterSqlite3')
+      expect(output.configContent).toContain(`db: {
+      provider: 'postgresql',
+    },`)
+      expect(output.configContent).not.toContain('prismaClientConstructor')
+      expect(output.configContent).not.toMatch(/@prisma\/adapter-[a-z0-9-]+/)
       expect(output.dependencies).toContain('@opensaas/stack-core')
-      expect(output.dependencies).toContain('@prisma/adapter-better-sqlite3')
+      expect(output.dependencies).toContain('@prisma/orm-postgres')
+      expect(output.dependencies).not.toContain('@prisma/client')
+      expect(output.dependencies.some((dep) => dep.startsWith('@prisma/adapter-'))).toBe(false)
       expect(output.steps.length).toBeGreaterThan(0)
+      expect(output.steps.some((step) => step.includes('prisma db push'))).toBe(false)
+      expect(output.steps.some((step) => step.includes('prisma generate'))).toBe(false)
     })
 
-    it('should generate config for PostgreSQL', async () => {
+    it('ignores a non-Postgres db_provider answer — the emitted config is always Postgres-only', async () => {
       const session: MigrationSession = {
         id: 'test',
         projectType: 'prisma',
@@ -59,7 +65,9 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'postgresql',
+          // The wizard's `db_provider` question only ever offers 'postgresql'
+          // now, but a stale session answer must not resurrect a dead provider.
+          db_provider: 'sqlite',
           enable_auth: false,
         },
         isComplete: true,
@@ -70,36 +78,7 @@ describe('MigrationGenerator', () => {
       const output = await generator.generate(session)
 
       expect(output.configContent).toContain("provider: 'postgresql'")
-      expect(output.configContent).toContain('PrismaPg')
-      expect(output.configContent).toContain('pg.Pool')
-      expect(output.dependencies).toContain('@prisma/adapter-pg')
-      expect(output.dependencies).toContain('pg')
-      expect(output.dependencies).toContain('@types/pg')
-    })
-
-    it('should generate config for MySQL', async () => {
-      const session: MigrationSession = {
-        id: 'test',
-        projectType: 'prisma',
-        analysis: {
-          projectTypes: ['prisma'],
-          cwd: '/tmp',
-        },
-        currentQuestionIndex: 0,
-        answers: {
-          db_provider: 'mysql',
-          enable_auth: false,
-        },
-        isComplete: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      const output = await generator.generate(session)
-
-      expect(output.configContent).toContain("provider: 'mysql'")
-      expect(output.configContent).toContain('PrismaPlanetScale')
-      expect(output.dependencies).toContain('@prisma/adapter-planetscale')
+      expect(output.configContent).not.toContain("provider: 'sqlite'")
     })
   })
 
@@ -116,7 +95,7 @@ describe('MigrationGenerator', () => {
         answers: {
           enable_auth: true,
           auth_methods: ['email-password'],
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
@@ -144,7 +123,7 @@ describe('MigrationGenerator', () => {
         answers: {
           enable_auth: true,
           auth_methods: ['magic-link'],
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
@@ -169,7 +148,7 @@ describe('MigrationGenerator', () => {
         answers: {
           enable_auth: true,
           auth_methods: ['email-password', 'google', 'github'],
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
@@ -196,7 +175,7 @@ describe('MigrationGenerator', () => {
         answers: {
           enable_auth: true,
           auth_methods: ['email-password'],
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
@@ -293,61 +272,7 @@ describe('MigrationGenerator', () => {
   })
 
   describe('Additional Files', () => {
-    it('should generate .env.example with database URL', async () => {
-      const session: MigrationSession = {
-        id: 'test',
-        projectType: 'prisma',
-        analysis: {
-          projectTypes: ['prisma'],
-          cwd: '/tmp',
-        },
-        currentQuestionIndex: 0,
-        answers: {
-          db_provider: 'sqlite',
-          enable_auth: false,
-        },
-        isComplete: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      const output = await generator.generate(session)
-
-      const envFile = output.files.find((f) => f.path === '.env.example')
-      expect(envFile).toBeDefined()
-      expect(envFile?.content).toContain('DATABASE_URL')
-      expect(envFile?.content).toContain('file:./dev.db')
-    })
-
-    it('should include auth vars in .env.example when auth enabled', async () => {
-      const session: MigrationSession = {
-        id: 'test',
-        projectType: 'prisma',
-        analysis: {
-          projectTypes: ['prisma'],
-          cwd: '/tmp',
-        },
-        currentQuestionIndex: 0,
-        answers: {
-          enable_auth: true,
-          auth_methods: ['email-password', 'google'],
-          db_provider: 'sqlite',
-        },
-        isComplete: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-
-      const output = await generator.generate(session)
-
-      const envFile = output.files.find((f) => f.path === '.env.example')
-      expect(envFile?.content).toContain('BETTER_AUTH_SECRET')
-      expect(envFile?.content).toContain('BETTER_AUTH_URL')
-      expect(envFile?.content).toContain('GOOGLE_CLIENT_ID')
-      expect(envFile?.content).toContain('GOOGLE_CLIENT_SECRET')
-    })
-
-    it('should generate PostgreSQL connection string in .env.example', async () => {
+    it('should generate .env.example with a Postgres connection string, commented out', async () => {
       const session: MigrationSession = {
         id: 'test',
         projectType: 'prisma',
@@ -368,7 +293,39 @@ describe('MigrationGenerator', () => {
       const output = await generator.generate(session)
 
       const envFile = output.files.find((f) => f.path === '.env.example')
+      expect(envFile).toBeDefined()
+      expect(envFile?.content).toContain('DATABASE_URL')
       expect(envFile?.content).toContain('postgresql://')
+      // Commented out: `opensaas dev` runs the Dev database unless it is set.
+      expect(envFile?.content).toContain('# DATABASE_URL=')
+    })
+
+    it('should include auth vars in .env.example when auth enabled', async () => {
+      const session: MigrationSession = {
+        id: 'test',
+        projectType: 'prisma',
+        analysis: {
+          projectTypes: ['prisma'],
+          cwd: '/tmp',
+        },
+        currentQuestionIndex: 0,
+        answers: {
+          enable_auth: true,
+          auth_methods: ['email-password', 'google'],
+          db_provider: 'postgresql',
+        },
+        isComplete: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const output = await generator.generate(session)
+
+      const envFile = output.files.find((f) => f.path === '.env.example')
+      expect(envFile?.content).toContain('BETTER_AUTH_SECRET')
+      expect(envFile?.content).toContain('BETTER_AUTH_URL')
+      expect(envFile?.content).toContain('GOOGLE_CLIENT_ID')
+      expect(envFile?.content).toContain('GOOGLE_CLIENT_SECRET')
     })
   })
 
@@ -383,7 +340,7 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
         },
         isComplete: true,
@@ -396,10 +353,10 @@ describe('MigrationGenerator', () => {
       expect(output.steps).toContain('Save the generated config to `opensaas.config.ts`')
       expect(output.steps).toContain('Copy `.env.example` to `.env` and fill in values')
       expect(output.steps).toContain('Install dependencies: `pnpm add <dependencies>`')
-      expect(output.steps).toContain('Generate Prisma schema: `pnpm opensaas generate`')
-      expect(output.steps).toContain('Generate Prisma client: `npx prisma generate`')
-      expect(output.steps).toContain('Push schema to database: `npx prisma db push`')
-      expect(output.steps).toContain('Start development server: `pnpm dev`')
+      expect(output.steps.some((step) => step.includes('pnpm generate'))).toBe(true)
+      expect(output.steps.some((step) => step.includes('pnpm dev'))).toBe(true)
+      expect(output.steps.some((step) => step.includes('prisma generate'))).toBe(false)
+      expect(output.steps.some((step) => step.includes('prisma db push'))).toBe(false)
     })
 
     it('should include admin UI path in steps', async () => {
@@ -412,7 +369,7 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
           admin_base_path: '/admin',
         },
@@ -439,7 +396,7 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
           admin_base_path: '/dashboard',
         },
@@ -465,7 +422,7 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
         },
         isComplete: true,
@@ -491,7 +448,7 @@ describe('MigrationGenerator', () => {
         },
         currentQuestionIndex: 0,
         answers: {
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
           enable_auth: false,
         },
         isComplete: true,
@@ -503,12 +460,12 @@ describe('MigrationGenerator', () => {
 
       expect(output.dependencies).toContain('@opensaas/stack-core')
       expect(output.dependencies).toContain('@opensaas/stack-ui')
-      expect(output.dependencies).toContain('@prisma/client')
+      expect(output.dependencies).toContain('@prisma/orm-postgres')
       expect(output.dependencies).toContain('prisma')
     })
 
-    it('should include database-specific dependencies', async () => {
-      const postgresSession: MigrationSession = {
+    it('never includes a removed driver-adapter or a Prisma 7 client package', async () => {
+      const session: MigrationSession = {
         id: 'test',
         projectType: 'prisma',
         analysis: {
@@ -525,20 +482,10 @@ describe('MigrationGenerator', () => {
         updatedAt: new Date(),
       }
 
-      const postgresOutput = await generator.generate(postgresSession)
-      expect(postgresOutput.dependencies).toContain('@prisma/adapter-pg')
-      expect(postgresOutput.dependencies).toContain('pg')
+      const output = await generator.generate(session)
 
-      const sqliteSession: MigrationSession = {
-        ...postgresSession,
-        answers: {
-          db_provider: 'sqlite',
-          enable_auth: false,
-        },
-      }
-
-      const sqliteOutput = await generator.generate(sqliteSession)
-      expect(sqliteOutput.dependencies).toContain('@prisma/adapter-better-sqlite3')
+      expect(output.dependencies).not.toContain('@prisma/client')
+      expect(output.dependencies.some((dep) => dep.startsWith('@prisma/adapter-'))).toBe(false)
     })
   })
 
@@ -555,7 +502,7 @@ describe('MigrationGenerator', () => {
         answers: {
           enable_auth: true,
           auth_methods: ['email-password'],
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
@@ -580,7 +527,7 @@ describe('MigrationGenerator', () => {
         currentQuestionIndex: 0,
         answers: {
           enable_auth: false,
-          db_provider: 'sqlite',
+          db_provider: 'postgresql',
         },
         isComplete: true,
         createdAt: new Date(),
