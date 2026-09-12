@@ -60,7 +60,33 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
     })
   })
 
-  describe('write validation (YYYY-MM-DD string, or a Date post-resolveInput)', () => {
+  describe('filter condition (compares on the string, not a Date, #1437)', () => {
+    const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: {} }
+
+    it('produces a string comparison value', () => {
+      const field = calendarDay()
+      const condition = field
+        .getFilterSpec?.('startsOn', 'Event', config)
+        ?.toCondition('eq', '2025-01-15')
+      expect(condition).toEqual({ startsOn: { equals: '2025-01-15' } })
+    })
+
+    it('degrades to free text on a malformed value', () => {
+      const field = calendarDay()
+      expect(
+        field.getFilterSpec?.('startsOn', 'Event', config)?.toCondition('eq', 'not-a-date'),
+      ).toBeNull()
+    })
+
+    it('degrades to free text on an out-of-range month the regex alone cannot catch', () => {
+      const field = calendarDay()
+      expect(
+        field.getFilterSpec?.('startsOn', 'Event', config)?.toCondition('eq', '2025-13-01'),
+      ).toBeNull()
+    })
+  })
+
+  describe('write validation (YYYY-MM-DD string only)', () => {
     const fields: Record<string, FieldConfig> = {
       startsOn: calendarDay({ validation: { isRequired: true } }),
     }
@@ -79,18 +105,13 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       }
     })
 
-    it('accepts a Date instance (the shape resolveInput produces from a valid string)', () => {
-      // The write pipeline runs field `resolveInput` BEFORE this schema, and
-      // calendarDay's resolveInput turns a valid YYYY-MM-DD string into a UTC
-      // Date (see #621) so Prisma's `@db.Date` write validator accepts it. So
-      // by the time this schema runs, a successful write reaches it as a
-      // Date, not the original string — the schema must accept both shapes.
+    it('rejects a Date instance — the column takes the string as-is, never a Date (#1437)', () => {
       const result = validateWithZod(
         { startsOn: new Date('2025-01-15T00:00:00.000Z') } as unknown as Record<string, unknown>,
         fields,
         'create',
       )
-      expect(result.success).toBe(true)
+      expect(result.success).toBe(false)
     })
 
     it('zod schema for the field validates the YYYY-MM-DD shape', () => {
@@ -100,59 +121,10 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
     })
   })
 
-  describe('write transform (resolveInput coerces YYYY-MM-DD string to a UTC Date, #621)', () => {
-    // The write pipeline calls fieldConfig.hooks.resolveInput({ resolvedData,
-    // fieldKey, ... }) BEFORE zod validation runs. We exercise that hook
-    // directly with the value shapes a caller (or an upstream list-level
-    // resolveInput) can produce.
-    function writeValue(value: unknown): unknown {
+  describe('no write transform — the string reaches the column as-is (#1437)', () => {
+    it('declares no resolveInput hook', () => {
       const field = calendarDay()
-      const hook = field.hooks?.resolveInput
-      if (!hook) throw new Error('calendarDay must define a resolveInput hook')
-      return (
-        hook as unknown as (args: {
-          resolvedData: Record<string, unknown>
-          fieldKey: string
-        }) => unknown
-      )({ resolvedData: { startsOn: value }, fieldKey: 'startsOn' })
-    }
-
-    it('converts a YYYY-MM-DD string to a UTC-midnight Date', () => {
-      const result = writeValue('2025-01-15') as Date
-      expect(result).toBeInstanceOf(Date)
-      expect(result.toISOString()).toBe('2025-01-15T00:00:00.000Z')
-    })
-
-    it('passes an already-Date value through unchanged', () => {
-      const date = new Date('2025-06-01T00:00:00.000Z')
-      expect(writeValue(date)).toBe(date)
-    })
-
-    it('passes null/undefined through unchanged (so isRequired can still reject a missing value)', () => {
-      expect(writeValue(null)).toBeNull()
-      expect(writeValue(undefined)).toBeUndefined()
-    })
-
-    it('leaves a malformed string untouched so zod still rejects it with a clear message', () => {
-      expect(writeValue('15/01/2025')).toBe('15/01/2025')
-    })
-
-    it('reads resolvedData[fieldKey], not inputData — survives a list-level resolveInput default', () => {
-      // A list-level resolveInput can inject a default for an omitted key
-      // into resolvedData before field resolveInput runs. Reading
-      // resolvedData (not the original inputData) here means that injected
-      // default is what gets coerced, instead of being read as `undefined`
-      // and overwriting the injected default with null.
-      const field = calendarDay()
-      const hook = field.hooks?.resolveInput as unknown as (args: {
-        resolvedData: Record<string, unknown>
-        fieldKey: string
-      }) => unknown
-      const result = hook({
-        resolvedData: { startsOn: '2025-03-20' }, // injected by a list-level hook
-        fieldKey: 'startsOn',
-      }) as Date
-      expect(result.toISOString()).toBe('2025-03-20T00:00:00.000Z')
+      expect(field.hooks?.resolveInput).toBeUndefined()
     })
   })
 
@@ -203,10 +175,10 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
     })
   })
 
-  describe('end-to-end via context.db.*.create/update (#621 repro)', () => {
-    // Prisma's column codec rejects a bare YYYY-MM-DD string for a date
-    // column. Assert the value actually forwarded to the ORM is a Date, not
-    // the string the caller passed in.
+  describe('end-to-end via context.db.*.create/update (mocked ORM, #1437)', () => {
+    // The column's codec is a string pass-through (see the real-database test
+    // in calendar-day-column.test.ts). Assert the value forwarded to the ORM
+    // is the same YYYY-MM-DD string the caller passed in, not a Date.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock Prisma client
     let mockPrisma: any
 
@@ -238,38 +210,30 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
       }
     }
 
-    it('create: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
+    it('create: a YYYY-MM-DD string reaches Prisma unchanged, not a Date', async () => {
       const config = buildConfig()
-      mockPrisma.Event.create.mockResolvedValue({
-        id: '1',
-        startsOn: new Date('2025-01-15T00:00:00.000Z'),
-      })
+      mockPrisma.Event.create.mockResolvedValue({ id: '1', startsOn: '2025-01-15' })
       const context = await getContext(config, mockPrisma, null)
 
       await context.db.Event.create({ data: { startsOn: '2025-01-15' } })
 
       expect(mockPrisma.Event.create).toHaveBeenCalledTimes(1)
       const written = mockPrisma.Event.create.mock.calls[0][0]
-      expect(written.startsOn).toBeInstanceOf(Date)
-      expect((written.startsOn as Date).toISOString()).toBe('2025-01-15T00:00:00.000Z')
+      expect(written.startsOn).toBe('2025-01-15')
     })
 
-    it('update: a YYYY-MM-DD string reaches Prisma as a UTC-midnight Date', async () => {
+    it('update: a YYYY-MM-DD string reaches Prisma unchanged, not a Date', async () => {
       const config = buildConfig()
-      const existing = { id: '1', startsOn: new Date('2025-01-15T00:00:00.000Z') }
+      const existing = { id: '1', startsOn: '2025-01-15' }
       mockPrisma.Event.first.mockResolvedValue(existing)
-      mockPrisma.Event.update.mockResolvedValue({
-        ...existing,
-        startsOn: new Date('2025-02-20T00:00:00.000Z'),
-      })
+      mockPrisma.Event.update.mockResolvedValue({ ...existing, startsOn: '2025-02-20' })
       const context = await getContext(config, mockPrisma, null)
 
       await context.db.Event.update({ where: { id: '1' }, data: { startsOn: '2025-02-20' } })
 
       expect(mockPrisma.Event.update).toHaveBeenCalledTimes(1)
       const written = mockPrisma.Event.update.mock.calls[0][0]
-      expect(written.startsOn).toBeInstanceOf(Date)
-      expect((written.startsOn as Date).toISOString()).toBe('2025-02-20T00:00:00.000Z')
+      expect(written.startsOn).toBe('2025-02-20')
     })
 
     it('the read result is still normalised back to a YYYY-MM-DD string', async () => {
