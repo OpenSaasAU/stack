@@ -163,6 +163,19 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * True when `needle` appears as an exact value somewhere in `value`'s own
+ * tree. Exact equality, not substring: a UUIDv7 is drawn from hex digits, so
+ * short strings like 'ada' turn up inside one by chance and a substring scan
+ * over the serialised object would flag that coincidence as a leak.
+ */
+function containsValue(value: unknown, needle: string): boolean {
+  if (value === needle) return true
+  if (Array.isArray(value)) return value.some((entry) => containsValue(entry, needle))
+  if (isRecord(value)) return Object.values(value).some((entry) => containsValue(entry, needle))
+  return false
+}
+
 /** The one refusal a key gets, whichever of its reasons applies (ADR-0031). */
 function unqueryable(key: string, listName = 'Post'): string {
   return `Validation failed: Cannot query "${listName}" — "${key}" is not a queryable field of this list.`
@@ -424,7 +437,7 @@ describe('Field Visibility is the boundary, not the omission', () => {
       // foreign-key column included: a stripped relation must not survive
       // under a second name.
       expect(draft?.reviewerId).not.toBe(ada.userId)
-      expect(JSON.stringify(draft)).not.toContain('ada')
+      expect(containsValue(draft, 'ada')).toBe(false)
     },
     BOOT,
   )
