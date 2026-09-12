@@ -207,6 +207,7 @@ async function ItemViewLayoutView({
     listKey,
     detailsListConfig,
     detailsItemData,
+    'update',
   )
 
   const detailsCard = (
@@ -360,6 +361,7 @@ export async function ItemForm({
     listKey,
     listConfig,
     itemData,
+    mode === 'create' ? 'create' : 'update',
   )
 
   return (

@@ -83,6 +83,7 @@ async function renderUserForm(harness: TestContext, config: OpenSaasConfig, user
     'User',
     config.lists.User,
     record as Record<string, unknown>,
+    'update',
   )
 
   render(

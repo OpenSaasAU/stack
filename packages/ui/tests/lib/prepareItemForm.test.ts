@@ -108,10 +108,14 @@ describe('prepareItemForm', () => {
       },
     } as unknown as OpenSaasConfig
 
-    const { initialData } = await prepareItemForm(context, config, 'Event', config.lists.Event, {
-      id: '1',
-      occurredAtMs: 9007199254740993n,
-    })
+    const { initialData } = await prepareItemForm(
+      context,
+      config,
+      'Event',
+      config.lists.Event,
+      { id: '1', occurredAtMs: 9007199254740993n },
+      'update',
+    )
 
     expect(initialData.occurredAtMs).toBe(9007199254740993n)
   })
@@ -131,6 +135,7 @@ describe('prepareItemForm', () => {
       'Post',
       config.lists.Post,
       {},
+      'create',
     )
 
     expect(relationshipData.author).toEqual([
@@ -165,6 +170,7 @@ describe('prepareItemForm', () => {
       'Post',
       config.lists.Post,
       itemData,
+      'update',
     )
 
     expect(relationshipData.author).toEqual(
@@ -193,6 +199,7 @@ describe('prepareItemForm', () => {
       'Post',
       config.lists.Post,
       itemData,
+      'update',
     )
 
     expect(relationshipData.tags).toEqual(
@@ -230,7 +237,7 @@ describe('prepareItemForm', () => {
     const context = makeContext({ Author: author, Tag: tag })
     const config = makeConfig()
 
-    const promise = prepareItemForm(context, config, 'Post', config.lists.Post, {})
+    const promise = prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
     expect(authorCalled).toBe(true)
     expect(tagCalled).toBe(true)
@@ -245,7 +252,7 @@ describe('prepareItemForm', () => {
     const context = makeContext({ Author: author, Tag: makeDelegate(async () => []) })
     const config = makeConfig()
 
-    await prepareItemForm(context, config, 'Post', config.lists.Post, {})
+    await prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
     // Only the primary bounded read runs — no second, id-scoped one.
     expect(author.calls).toHaveLength(1)
@@ -277,6 +284,7 @@ describe('prepareItemForm relationship writability', () => {
       'Post',
       config.lists.Post,
       {},
+      'create',
     )
 
     expect(serializableFields.tags.readOnly).toBe(true)
@@ -295,6 +303,7 @@ describe('prepareItemForm relationship writability', () => {
       'User',
       config.lists.User,
       {},
+      'create',
     )
     const { serializableFields: profileFields } = await prepareItemForm(
       emptyContext(),
@@ -302,6 +311,7 @@ describe('prepareItemForm relationship writability', () => {
       'Profile',
       config.lists.Profile,
       {},
+      'create',
     )
 
     expect(userFields.profile.readOnly).toBe(true)

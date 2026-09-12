@@ -127,7 +127,12 @@ export async function resolveEditableColumns(
     if (field.type === 'password') continue
     if (field.type === 'json') continue
     if ('virtual' in field && field.virtual) continue
-    if (await isFieldPotentiallyWritable(field.access, { session: context.session, context })) {
+    if (
+      await isFieldPotentiallyWritable(field.access, 'update', {
+        session: context.session,
+        context,
+      })
+    ) {
       editable.push(column)
     }
   }
@@ -183,6 +188,7 @@ async function resolveCreateForm(
     section.relatedListKey,
     formListConfig,
     {},
+    'create',
   )
   return { fields: serializableFields, relationshipData }
 }

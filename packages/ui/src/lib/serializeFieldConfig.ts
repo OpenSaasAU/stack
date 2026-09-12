@@ -98,6 +98,13 @@ export const JUNCTION_EDGE_RELATIONSHIP_REASON =
   'Not editable here — add or remove these links from this relationship’s table.'
 
 /**
+ * Shown beneath a field an item form cannot write because the field's own
+ * CREATE/UPDATE access denies this session — set by `markWriteDeniedFields`
+ * in `operationAccess.ts` (issue #1402).
+ */
+export const FIELD_WRITE_DENIED_REASON = "Not editable — you don't have permission to change this."
+
+/**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
  * non-serializable properties (access, hooks, typePatch, valueForClientSerialization).
  */

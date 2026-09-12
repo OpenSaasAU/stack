@@ -6,6 +6,7 @@ import {
   serializeFieldConfigs,
   type SerializableFieldConfig,
 } from './serializeFieldConfig.js'
+import { markWriteDeniedFields } from './operationAccess.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
 import { applyClientValueTransforms } from './clientValueTransforms.js'
 
@@ -66,6 +67,10 @@ export function buildRelationshipInclude(
  * This is shared by `ItemForm` (which fetches through the composed read) and
  * `SingletonView` (which resolves via the singleton `get()`), so the
  * relationship/serialization logic lives in exactly one place.
+ *
+ * `operation` selects which of a field's own CREATE/UPDATE access rules gates
+ * it (issue #1402) — the caller already knows which write this form will
+ * perform, so it is not inferred from `itemData`.
  */
 export async function prepareItemForm(
   context: AccessContext,
@@ -74,6 +79,7 @@ export async function prepareItemForm(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
+  operation: 'create' | 'update',
 ): Promise<PreparedItemForm> {
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
@@ -108,6 +114,11 @@ export async function prepareItemForm(
   const serializableFields = serializeFieldConfigs(listConfig.fields)
   markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
   markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, readId(itemData))
+  await markWriteDeniedFields(serializableFields, listConfig.fields, operation, {
+    session: context.session,
+    context,
+    item: operation === 'update' ? itemData : undefined,
+  })
 
   const formData = { ...itemData }
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {

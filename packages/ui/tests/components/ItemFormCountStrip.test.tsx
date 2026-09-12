@@ -103,6 +103,7 @@ describe('ItemForm derived item-view pipeline (issue #797 regression)', () => {
       'Post',
       detailsListConfig,
       detailsItemData,
+      'update',
     )
 
     // Simulate an unmodified Save: the client form state starts as `initialData`.
