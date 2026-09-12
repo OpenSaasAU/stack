@@ -687,12 +687,15 @@ export function calendarDay<
     // Calendar days compare on the `YYYY-MM-DD` value itself — the column's
     // string codec passes it straight to the driver, so a Date built here
     // would hit the same local-timezone drift the write path had (#1437). A
-    // malformed value degrades to free text.
+    // malformed value, including an out-of-range month/day the regex alone
+    // cannot catch (e.g. '2025-13-01'), degrades to free text instead of
+    // reaching Postgres as an invalid date literal.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
+        if (Number.isNaN(new Date(`${trimmed}T00:00:00.000Z`).getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
       suggestions: { valueSource: { kind: 'none' } },

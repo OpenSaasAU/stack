@@ -77,6 +77,13 @@ describe('calendarDay field (YYYY-MM-DD string end-to-end)', () => {
         field.getFilterSpec?.('startsOn', 'Event', config)?.toCondition('eq', 'not-a-date'),
       ).toBeNull()
     })
+
+    it('degrades to free text on an out-of-range month the regex alone cannot catch', () => {
+      const field = calendarDay()
+      expect(
+        field.getFilterSpec?.('startsOn', 'Event', config)?.toCondition('eq', '2025-13-01'),
+      ).toBeNull()
+    })
   })
 
   describe('write validation (YYYY-MM-DD string only)', () => {
