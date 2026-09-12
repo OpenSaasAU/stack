@@ -11,5 +11,15 @@ export function TextCell({ value }: CellComponentProps) {
       </span>
     )
   }
+  // This is also the fallback for a field type with no registered Cell — a
+  // structured value stringified with `String()` reads as `[object Object]`,
+  // which looks broken rather than merely unsupported.
+  if (typeof value === 'object') {
+    return (
+      <span data-slot="cell-text" className="text-muted-foreground italic">
+        Unsupported value
+      </span>
+    )
+  }
   return <span data-slot="cell-text">{String(value)}</span>
 }

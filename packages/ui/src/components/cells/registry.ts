@@ -8,6 +8,7 @@ import { TimestampCell } from './TimestampCell.js'
 import { CalendarDayCell } from './CalendarDayCell.js'
 import { RelationshipCell } from './RelationshipCell.js'
 import { PasswordCell } from './PasswordCell.js'
+import { JsonCell } from './JsonCell.js'
 
 /**
  * Props every Cell component receives — the list-table rendering of one
@@ -51,6 +52,7 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   calendarDay: CalendarDayCell,
   relationship: RelationshipCell,
   password: PasswordCell,
+  json: JsonCell,
 }
 
 /**
