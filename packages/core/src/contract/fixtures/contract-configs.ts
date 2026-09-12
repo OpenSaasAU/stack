@@ -40,6 +40,7 @@ export const blogConfig: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.author', many: true }),
         displayName: virtual({
           type: 'string',
+          needs: ['name'],
           hooks: { resolveOutput: ({ item }) => String(item.name) },
         }),
       },

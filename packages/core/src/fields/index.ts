@@ -1404,6 +1404,7 @@ export function typeDescriptorToTypeString(
  *   lastName: text(),
  *   fullName: virtual({
  *     type: 'string',
+ *     needs: ['firstName', 'lastName'],
  *     hooks: {
  *       resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`
  *     }
@@ -1414,6 +1415,7 @@ export function typeDescriptorToTypeString(
  * fields: {
  *   totalPrice: virtual({
  *     type: "import('decimal.js').Decimal",
+ *     needs: ['price', 'quantity'],
  *     hooks: {
  *       resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity)
  *     }
@@ -1426,6 +1428,7 @@ export function typeDescriptorToTypeString(
  * fields: {
  *   totalPrice: virtual({
  *     type: { value: Decimal, from: 'decimal.js' },
+ *     needs: ['price', 'quantity'],
  *     hooks: {
  *       resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity)
  *     }
