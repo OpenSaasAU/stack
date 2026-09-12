@@ -1,5 +1,334 @@
 # @opensaas/stack-storage
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `file()`, `image()` and `richText()` describe their columns and their TypeScript face through the contract-shaped field-builder surface
+
+  Each builder now carries `getContractField`, which is what `opensaas generate` reads to derive the Contract, and declares its TypeScript face through `outputType`/`inputType`. The `getTypeScriptType`/`getTypeScriptImports`/`resultExtension` members these replace are removed from the field-builder contract in this same release.
+
+  `image()`/`file()` in Keystone-parity multi-column mode return the `kind: 'columns'` variant, so one logical field still emits its per-part physical columns:
+
+  ```ts
+  image({ storage: 'images', db: { columns: 'keystone' } })
+  // image_url text, image_width int, image_height int, image_filesize int,
+  // image_contentType text, image_contentDisposition text, image_pathname text
+  ```
+
+  The `db.map`, `db.isNullable` and `db.nativeType` overrides the single-column backing documents now reach the emitted column; previously they were declared but dropped. Two of them are a **schema change for a config that already sets them**:
+
+  - **`db.isNullable: false` now emits a NOT NULL column**, and the field's TypeScript face and validation follow it: `outputType`/`inputType` lose their `| null`, `null` is rejected, and the key becomes required on create (still omittable on update). A config that set `isNullable: false` while relying on the previously-nullable column must drop the override, or backfill the column before migrating.
+  - **`db.nativeType: 'Json'` now emits a `json` column, not `jsonb`.** The override was a no-op before, so the column was always `jsonb`; it is now honoured literally. `json` and `jsonb` differ in equality and indexing semantics, and the change generates a type-altering migration on an existing table. Set `nativeType: 'Jsonb'` (or drop the override) to keep the previous column type.
+
+  A `db.nativeType` value outside the Postgres types the contract carries is now a `opensaas generate` error naming the list and field, where it was previously ignored.
+
+  **`db.isNullable` alongside `db.columns` is now refused at generate time.** Multi-column mode has no single column for it to constrain — every part column is nullable, and an all-NULL row reads back as `null` — so `db: { isNullable: false, columns: 'keystone' }` could only ever be taken and dropped. It is now an `opensaas generate` error naming the list, the field and the fix, rather than a silently ignored option. Remove `db.isNullable`, or remove `db.columns` to use the single-`Json?` column the override applies to. `isNullable: true` alongside `db.columns` still passes, and single-column mode is unaffected.
+
+  **Bug fix: a multi-column `file()` with a `parts` subset wrote to columns its schema does not carry.** `splitFileMetadata` seeded `filename`, `filesize` and `url` before consulting `parts`, so a field configured as `db: { columns: { mode: 'keystone', parts: ['url', 'contentType'] } }` emitted a write payload naming `<field>_filename` and `<field>_filesize` — columns the generated schema never declared, which Prisma rejects as unknown fields. This affects released `@opensaas/stack-storage`; only a `file()` in multi-column mode with a non-default `parts` is reachable, and `image()` and default-`parts` fields were never affected. Writes now name exactly the opted-in part columns, so such a field works without changing your config.
+
+  `@opensaas/stack-tiptap` re-exports Tiptap's `JSONContent`, and `richText()` reads and writes as that type instead of `any`:
+
+  ```ts
+  const article = await context.db.article.findFirst()
+  // `null` here is "no row, or the Access Filter denied it" — guard before reading.
+  article?.body // import('@opensaas/stack-tiptap').JSONContent | null | undefined
+  ```
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Rewrite each package README against the Prisma 8 surface
+
+  The READMEs now document the API the packages actually ship, replacing the
+  Prisma 7 spellings that no longer resolve.
+
+  Reads compose on `context.db` keyed by the list's PascalCase config key and end
+  in a terminal, rather than calling a Prisma delegate:
+
+  ```ts
+  const posts = await context.db.Post.where({ status: { equals: 'published' } })
+    .orderBy({ createdAt: 'desc' })
+    .limit(20)
+    .all()
+
+  const post = await context.db.Post.where({ id }).first()
+  if (!post) return null
+  ```
+
+  `findMany`, `findUnique`, `findFirst` and `count()` are gone; the terminals are
+  `all()`, `first()`, `aggregate()` and `nearest()`. A denied read is silent, so
+  every `first()` result is a null check.
+
+  Writes take an args object with an identity-only `where`, and a relationship is
+  set with `connect` or cleared with `null`:
+
+  ```ts
+  const updated = await context.db.Post.update({
+    where: { id },
+    data: { title, author: { connect: { id: authorId } } },
+  })
+  ```
+
+  The database config documented in each README is the one `DatabaseConfig`
+  carries — `provider: 'postgresql'`, `idField`, `timestamps`, `schemas`,
+  `extensions` and `client`. `prismaClientConstructor`, `db.url` and
+  `extendPrismaSchema` are gone, and the connection is resolved from the
+  environment rather than named in the config.
+
+  Review round two swept each README against the built `.d.ts` rather than against
+  another doc, and corrected what the grep-shaped sweep had missed:
+
+  - The UI README's theming block documented bare `--background`/`--primary` HSL
+    triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
+    `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
+    stylesheet's own header says the design exists "without a duplicated `.dark`
+    block". Its primitives list also omitted eight real exports (`Textarea`,
+    `Popover`, `Calendar`, `TimePicker`, `DateTimePicker`, `Combobox`, `Badge`,
+    `Avatar`), and two samples read `config.lists` without awaiting `config`.
+  - The tiptap README reused a filter-returning `AccessControl` rule as
+    **field-level** `access.update`. `FieldAccess` types those slots as
+    boolean-returning, so that is a type error and a runtime
+    `InvalidFieldAccessResultError`, not a scoped update.
+  - The storage README's upload route was the last copy still casting
+    `formData.get(...) as string` / `as 'file' | 'image'` off a
+    `FormDataEntryValue | null`.
+  - The auth README's Account shape named `providerId: 'credentials'`; better-auth
+    1.7 uses `'credential'` for email/password, and the model carries `issuer`.
+  - The Vercel Blob README passed `cacheControl` to `vercelBlobStorage()`. The
+    provider option is `cacheControlMaxAge` (a number of seconds);
+    `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
+    type-checked and was silently ignored.
+
+  Round three corrected what round two's sweeps could not see, each having keyed
+  on where a construct sat rather than on what it was:
+
+  - The Vercel Blob README's **options listing** still named `cacheControl` 112
+    lines above the call site round two fixed, so the page contradicted itself and
+    the half a reader consults first was the wrong half.
+  - Sixteen hook samples across the docs and the core, cli and example READMEs
+    destructured a member the `delete` branch of its args union does not carry, so
+    the destructure failed before any in-body `operation` guard could narrow. Three
+    more named an argument on no branch at all: `value` and `inputValue` on
+    `resolveInput`/`afterOperation`, and `session` on `ResolveInputHookArgs`.
+  - The core README carried a third instance of the field-access class — a bare
+    `text({ access: … })` excerpt with no enclosing `fields: {` — plus
+    `query: true` where `OperationAccess.query` takes a function, a
+    `ValidationError` built from a string where the constructor takes `string[]`,
+    and a stale claim that `password()` is excluded from reads.
+  - The cli README's "What it does" block under `opensaas db update` described
+    `opensaas dev`, and called `migrate` a command group when it has no
+    subcommands.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove the PSL-shaped and TypeScript-face members from the field-builder contract
+
+  **Third-party field packages must migrate.** The generator emits a TypeScript
+  contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
+  `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
+  any more, so they are gone from `BaseFieldConfig` and from every builder:
+
+  - `getPrismaType`
+  - `getPrismaColumns`
+  - `getPrismaRelation`
+  - `getTypeScriptType`
+  - `getTypeScriptImports`
+  - `resultExtension`
+  - `VirtualField.outputType` (the required `string` narrowing; the optional
+    `outputType: TypeDescriptor` on `BaseFieldConfig` is what a virtual field
+    declares now)
+
+  The `PrismaRelationResult`, `MultiColumnPrismaResult` and `ResultExtensionConfig`
+  types they were shaped by are removed with them.
+
+  Migrating a field builder — describe the column instead of the PSL line:
+
+  ```ts
+  // Before
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getPrismaType: () => ({ type: 'String', modifiers: '? @unique' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    }
+  }
+
+  // After
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldName) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+        unique: true,
+      }),
+    }
+  }
+  ```
+
+  A field whose TypeScript face differs from its column's codec type declares it
+  directly, rather than through `resultExtension` or `getTypeScriptType`:
+
+  ```ts
+  // Before
+  resultExtension: { outputType: "import('@my/pkg').Metadata | null" },
+  getTypeScriptType: () => ({ type: 'Metadata | null', optional: true }),
+  getTypeScriptImports: () => [{ names: ['Metadata'], from: '@my/pkg' }],
+
+  // After — the import is inline, so no separate import declaration is needed
+  outputType: "import('@my/pkg').Metadata | null",
+  inputType: "File | import('@my/pkg').Metadata | null",
+  ```
+
+  A field spanning several physical columns returns `{ kind: 'columns', columns }`
+  from `getContractField` and keeps `getColumnNames`/`assembleColumns`/`splitColumns`.
+
+  **The generate-time gate moved with the contract.** `validateFieldConfig` now
+  requires `getContractField` and `getZodSchema` from a stored field (a
+  relationship only the former), and additionally `outputType` from a field that
+  has no single column to be typed from — one whose descriptor is
+  `kind: 'columns'` or `kind: 'computed'`. Both are read off the descriptor, so a
+  `computed` field carries the obligation whether or not its builder also sets the
+  `virtual` flag that core's own `virtual()` sets alongside it. That closes a hole
+  where such a field passed
+  the gate, generated successfully, and left every consumer reading it as
+  `unknown` (issue [#1292](https://github.com/OpenSaasAU/stack/issues/1292)). `FieldConfigValidationError.missingMethod` is renamed
+  to `missingMember` to carry `outputType` alongside the two methods.
+
+  `validateFieldConfig`'s signature changed with it: `listKey` and a new fourth
+  `config` argument are both **required**, because they are what
+  `getContractField` takes and reading the descriptor is what makes the rule
+  decidable. The optional `getColumnNames` is not consulted — it is a separate
+  member that only travels with `kind: 'columns'` by convention, so reading it
+  would both miss a `columns` field that does not implement it ([#1292](https://github.com/OpenSaasAU/stack/issues/1292)'s hole) and
+  wrongly demand `outputType` from a single-column field that does.
+  `FieldConfigValidationError.listKey` is likewise no longer optional.
+
+  The gate swallows a throw out of `getContractField`: that is a field's own
+  refusal seam (`embedding()` throws there for an impossible `dimensions`).
+  `opensaas generate` runs this gate first of all, and its config-surface step —
+  `validateDatabaseConfig` → `validateExtensionPacks` — re-reads every descriptor
+  straight afterwards and reports the throw as a `field-descriptor-error` refusal
+  carrying the field's own message, so the run still fails with
+  `List "<List>": fields.<field> cannot describe its contract column — <message>`
+  rather than a raw stack trace. Derivation is never reached.
+
+  `inputType` is never required by the generator. On a single-column field its
+  absence means the column's own input type; a `kind: 'columns'` field has no
+  single column for that to name, so it should declare `inputType` alongside
+  `outputType` — every multi-column field in this repo does, and what the
+  generator emits for one that does not is untested.
+
+  **A field-level hook's value type is resolved from the field key, and is
+  `unknown` when there is no single key to resolve.** `FieldHooks`'
+  `resolveInput`/`resolveOutput` positions used to be typed from the deleted
+  `getTypeScriptType`. `FieldHooks<TTypeInfo, 'title'>` now resolves to the
+  field's statically declared `outputType`, or else to the property the generated
+  `Lists.<List>.Item` carries for it.
+
+  But `BaseFieldConfig.hooks` cannot pin a field key — a builder is written
+  before it knows where it is mounted — so through the config surface
+  (`list<Lists.Post.TypeInfo>({ fields: { title: text({ hooks }) } })`) the
+  instantiation is `FieldHooks<TTypeInfo>`, whose key is the union of every field
+  on the list, and the value type is **`unknown`**: the same open type as before
+  this change. Resolving that union would type each field's hook by the whole
+  row, so a `text()` hook would accept a `Date` and reject its own `string`. An
+  honestly `unknown` type is better than a confidently wrong one; narrowing it
+  needs the field key threaded into `BaseFieldConfig`, tracked in issue [#1306](https://github.com/OpenSaasAU/stack/issues/1306).
+
+  Two related limits, for the same reason: `lists.ts` emits `Fields` as the field
+  _interfaces_, on which `outputType` is optional, so a declared face never
+  survives into a generated `TypeInfo` — the declared branch is reachable only
+  from a hand-authored one. And a virtual field's hook value stays `unknown`,
+  since it has no declared face there and no column in the stored row.
+
+  `db.keystoneCompat`'s implicit empty-string text default is now carried by
+  `text()`'s contract column, where the deleted `getPrismaType` used to emit it —
+  but only where the field's own create validator accepts **both** the omission
+  that default is there to fill **and** the `''` it inserts. Both questions are
+  asked of the schema rather than restated, so the column and the validator
+  cannot drift apart:
+
+  - a column default drops the column from the required half of the generated
+    `CreateInput`, so carrying one where the validator refuses an omission would
+    type-check a `create` that then threw `ValidationError`;
+  - and the value a column default inserts is never seen by validation — the
+    database supplies it — so carrying one where the validator refuses `''`
+    would store a row the config forbids on every omitted `create`. That is the
+    outcome an explicit `defaultValue: ''` already gets right: it is filled by
+    `applyCreateDefaults` before validation and correctly rejected. The two
+    spellings of "this column defaults to an empty string" now agree.
+
+  **Known limit: the flag is therefore inert for
+  `validation: { isRequired: true }` text — Keystone's commonest text column —
+  and for `validation: { length: { min: N } }` with `N` above zero.** Keystone 6
+  renders both as `NOT NULL DEFAULT ''`, so a migrating project sees
+  `DROP DEFAULT` for them in `migrate diff`. Setting `defaultValue: ''` by hand
+  is refused at runtime for the same reason, so the field's validation has to be
+  relaxed alongside it. Full parity would need the flag to relax the create
+  validator itself, which `getZodSchema` has no config to read; that is a
+  separate change. A column made non-null through `db: { isNullable: false }`
+  alone still gets the default, as does one carrying only a `length.max`.
+
+  Relatedly, `text()` no longer treats `validation: { length: { min: 0 } }` as
+  `min(1)`. A zero minimum now means no minimum, so `''` validates — which is
+  what the option says, and what lets such a column keep its compat default
+  without the column and the validator disagreeing. `isRequired` still imposes a
+  floor of `min(1)` on a field that declares `length: { min: 0 }` or no minimum
+  at all, and never lowers a larger declared one — `isRequired` with
+  `length: { min: 5 }` is still `min(5)`.
+
+  **Test coverage that thinned.** Three assertions were lost rather than ported,
+  and are recorded here so the change is not silent:
+
+  - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
+    provided" — `getContractField` is always given a `listKey`.
+  - The quoted-vs-unquoted PSL default rendering for a string versus an enum
+    `select()` — the contract carries one `{ kind: 'literal' }` for both.
+  - The per-field `getTypeScriptType` blocks in `tests/field-types.test.ts`
+    became `expect(field.outputType).toBeUndefined()` — "declares no override",
+    which is weaker than the old "text is `string`, optional when not required".
+    Column nullability is still asserted on the same fields, and the codec now
+    owns the type (ADR-0052), so the fact has moved rather than vanished.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - A Test context can exercise `file()` and `image()` fields
+
+  `createTestContext` built its context with no storage surface, so any write to a storage-backed field threw `No storage providers configured` — the Test context could not cover the storage package at all. It now takes one:
+
+  ```ts
+  import { createTestContext } from '@opensaas/stack-core/testing'
+  import { createStorageUtils } from '@opensaas/stack-storage/runtime'
+
+  // `config` is a promise whenever the config carries plugins, so resolve it
+  // once and hand the same value to both.
+  const resolved = await config
+
+  const harness = await createTestContext(resolved, null, {
+    storage: createStorageUtils(resolved),
+  })
+
+  const user = await harness.context.db.User.create({
+    data: { name: 'Ada', avatar: new File([bytes], 'avatar.png', { type: 'image/png' }) },
+  })
+  ```
+
+  `createStorageUtils(config)` is new in `@opensaas/stack-storage/runtime` and is the supported way to build that surface. `StorageUtils` types its option and metadata arguments as `unknown`, because core is this package's dependency and cannot name its types; the factory is the one place that re-narrows them, so a consumer building a context by hand no longer writes that conversion itself.
+
+  `deleteImage` **refuses** a value that is not `ImageMetadata`, naming the keys it received, rather than resolving as a silent no-op. The generated context always calls `deleteImage`, so a harness that swallowed an unrecognised shape would be quieter than the application it stands in for — the one failure mode a test surface must not have.
+
+  Omitting the option is unchanged: a config with no storage still throws on a storage-backed write, exactly as an application with none does.
+
+  Two type predicates now check every member their consumers read, rather than a subset the compiler then takes on trust:
+
+  - `isImageMetadata` checked 2 of `ImageMetadata`'s 9 required members and omitted `storageProvider`, which `deleteImage` dereferences first — a bogus value surfaced as `Storage provider 'undefined' not found in config` from inside the provider registry. It now checks all nine, plus the shape of the optional `metadata` and `transformations`.
+  - `isFileLike` narrows to `File` but checked only `arrayBuffer`, while the upload path also reads `name`, `type` and `size` — so a value carrying only `arrayBuffer` was stored with an `originalFilename` of `undefined`. It now checks all four.
+
+### Patch Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
 ## 0.43.0
 
 ## 0.42.3
