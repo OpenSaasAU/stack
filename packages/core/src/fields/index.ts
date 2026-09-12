@@ -282,7 +282,10 @@ export function integer<
  *
  * **Features:**
  * - Stores decimal numbers with configurable precision and scale
- * - Uses Prisma's Decimal type (backed by decimal.js for precision)
+ * - Read and write as a plain numeric-text string (e.g. `'19.99'`) — Prisma
+ *   8's numeric codec is a branded `string`, never a `decimal.js` `Decimal`
+ *   (ADR-0029's amendment), so full precision survives every boundary with
+ *   no special handling
  * - Default precision: 18 digits, scale: 4 decimal places
  * - Validation for min/max values
  * - Optional database column mapping and nullability control
@@ -312,7 +315,7 @@ export function integer<
  * const product = await context.db.Product.create({
  *   data: {
  *     price: '19.99', // Can use string
- *     // price: 19.99,  // or number (converted to Decimal)
+ *     // price: 19.99,  // or number
  *   }
  * })
  * ```
@@ -387,8 +390,8 @@ export function decimal<
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    // Decimals compare like integers, but the value stays a string so Prisma's
-    // Decimal keeps full precision. A non-numeric value degrades to free text.
+    // Decimals compare like integers, but the value stays a string so full
+    // precision survives the filter. A non-numeric value degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {

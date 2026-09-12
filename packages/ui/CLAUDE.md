@@ -34,7 +34,7 @@ shadcn/ui components:
 
 Field components for forms:
 
-- `TextField`, `IntegerField`, `CheckboxField`, `TimestampField`, `CalendarDayField`
+- `TextField`, `IntegerField`, `DecimalField`, `CheckboxField`, `TimestampField`, `CalendarDayField`
 - `PasswordField`, `SelectField`, `RelationshipField`
 - `FieldRenderer` - Renders field based on config (uses registry)
 

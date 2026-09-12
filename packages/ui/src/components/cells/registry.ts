@@ -45,6 +45,10 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   // branching, and after the server/client JSON round-trip (`jsonSafeClone`)
   // the value here is a real `bigint`.
   bigInt: IntegerCell,
+  // `decimal()`'s value is already a plain numeric-text string (Prisma 8's
+  // `pg/numeric@1` codec, never a `decimal.js` `Decimal`), so `String(value)`
+  // is a no-op and the same Cell applies unchanged.
+  decimal: IntegerCell,
   checkbox: CheckboxCell,
   select: SelectCell,
   timestamp: TimestampCell,
