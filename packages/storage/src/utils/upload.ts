@@ -14,6 +14,39 @@ export interface FileValidationResult {
   error?: string
 }
 
+const FILE_VALIDATION_OPTION_KEYS = ['maxFileSize', 'acceptedMimeTypes', 'acceptedExtensions']
+
+/**
+ * Checks every member {@link FileValidationOptions} declares, not just the
+ * ones a caller happened to set.
+ *
+ * Every clause below is `key === undefined || <right type>`, which is
+ * vacuously true when a key is absent — so this also rejects an unrecognised
+ * key (a typo'd `maxFilesize`) and an array, both of which would otherwise
+ * satisfy every clause while carrying none of the caller's intent. And
+ * `typeof` alone accepts `NaN`, which `validateFile`'s `options.maxFileSize &&
+ * …` then treats as falsy and skips — the same silent-disable failure mode
+ * reached through a different value.
+ */
+export function isFileValidationOptions(value: unknown): value is FileValidationOptions {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Partial<Record<keyof FileValidationOptions, unknown>>
+  return (
+    Object.keys(candidate).every((key) => FILE_VALIDATION_OPTION_KEYS.includes(key)) &&
+    (candidate.maxFileSize === undefined || isFiniteNumber(candidate.maxFileSize)) &&
+    (candidate.acceptedMimeTypes === undefined ||
+      (Array.isArray(candidate.acceptedMimeTypes) &&
+        candidate.acceptedMimeTypes.every((entry) => typeof entry === 'string'))) &&
+    (candidate.acceptedExtensions === undefined ||
+      (Array.isArray(candidate.acceptedExtensions) &&
+        candidate.acceptedExtensions.every((entry) => typeof entry === 'string')))
+  )
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 export function validateFile(
   file: { size: number; name: string; type: string },
   options?: FileValidationOptions,

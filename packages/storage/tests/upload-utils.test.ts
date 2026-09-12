@@ -5,6 +5,7 @@ import {
   getMimeType,
   fileToBuffer,
   parseFileFromFormData,
+  isFileValidationOptions,
   type FileValidationOptions,
 } from '../src/utils/upload.js'
 
@@ -151,6 +152,59 @@ describe('Upload Utilities', () => {
         const result = validateFile(file, options)
         expect(result.valid).toBe(false)
       })
+    })
+  })
+
+  describe('isFileValidationOptions', () => {
+    // The guard must narrow only what it has actually checked: passing zero
+    // of these caused `{ maxFileSize: 'one megabyte', acceptedMimeTypes: 42 }`
+    // to be accepted as real `FileValidationOptions` and silently disable
+    // both checks in `validateFile`.
+    it.each([
+      [
+        'a fully-populated valid config',
+        { maxFileSize: 2000, acceptedMimeTypes: ['image/jpeg'], acceptedExtensions: ['.jpg'] },
+      ],
+      ['an empty object', {}],
+      ['maxFileSize alone', { maxFileSize: 2000 }],
+      ['acceptedMimeTypes alone', { acceptedMimeTypes: ['image/jpeg', 'image/png'] }],
+      ['acceptedExtensions alone', { acceptedExtensions: ['.jpg', '.png'] }],
+      ['an empty acceptedMimeTypes array', { acceptedMimeTypes: [] }],
+      ['an empty acceptedExtensions array', { acceptedExtensions: [] }],
+    ])('accepts %s', (_label, value) => {
+      expect(isFileValidationOptions(value)).toBe(true)
+    })
+
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['a string', 'one megabyte'],
+      ['a number', 42],
+      // The exact shape the issue measured: both members wrong-typed.
+      [
+        'maxFileSize as a string, acceptedMimeTypes as a number',
+        { maxFileSize: 'one megabyte', acceptedMimeTypes: 42 },
+      ],
+      ['maxFileSize as a string', { maxFileSize: 'one megabyte' }],
+      ['maxFileSize as null', { maxFileSize: null }],
+      // NaN passes a bare `typeof x === 'number'` check, and `validateFile`'s
+      // `options.maxFileSize && …` then treats it as falsy and skips the
+      // check — the same silent-disable failure the string case above hits.
+      ['maxFileSize as NaN', { maxFileSize: NaN }],
+      ['maxFileSize as Infinity', { maxFileSize: Infinity }],
+      ['acceptedMimeTypes as a number', { acceptedMimeTypes: 42 }],
+      ['acceptedMimeTypes as a string', { acceptedMimeTypes: 'image/jpeg' }],
+      ['acceptedMimeTypes with a non-string entry', { acceptedMimeTypes: ['image/jpeg', 42] }],
+      ['acceptedExtensions as a number', { acceptedExtensions: 42 }],
+      ['acceptedExtensions with a non-string entry', { acceptedExtensions: ['.jpg', null] }],
+      ['an array', ['image/png']],
+      // Every clause is `key === undefined || …`, vacuously true when a key
+      // is simply absent — so a typo'd key must be refused explicitly, or it
+      // reaches downstream code as "validated" options that enforce nothing.
+      ['a misspelled key', { maxFilesize: 5000 }],
+      ['an unrecognised key alongside a valid one', { maxFileSize: 2000, extra: true }],
+    ])('rejects %s', (_label, value) => {
+      expect(isFileValidationOptions(value)).toBe(false)
     })
   })
 
