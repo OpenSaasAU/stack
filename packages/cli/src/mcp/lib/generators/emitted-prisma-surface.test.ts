@@ -417,6 +417,49 @@ describe('the code the feature wizard emits', () => {
       expect(implementation.configUpdates).toContain("db: {\n    provider: 'postgresql',\n  }")
     }
   })
+
+  /**
+   * The blog feature's listing/detail pages fall back to `post.createdAt` when
+   * `post-status` is off (no `publishedAt` to show instead) — but `post-status`
+   * is a boolean question, and `answerSets` only ever sets a boolean question
+   * to `true`, so every `blog #N` case above always has `post-status: true` and
+   * never exercises that fallback. Timestamps are opt-in (ADR-0004, #1316):
+   * without `db.timestamps`, the emitted Post list has no `createdAt` column
+   * for that fallback to read. Covered directly here rather than by widening
+   * `answerSets` to also try `false`, which would change every feature's case
+   * count for the sake of one boolean.
+   */
+  it('opts the blog Post list into db.timestamps, so createdAt exists whether or not post-status is enabled (#1316)', async () => {
+    const blogFeature = getAllFeatures().find((feature) => feature.id === 'blog')
+    if (blogFeature === undefined) throw new Error('the blog feature is missing from the catalog')
+
+    for (const postStatus of [true, false]) {
+      const implementation = new FeatureGenerator(
+        blogFeature,
+        {
+          'content-editor': 'Plain text editor',
+          'post-status': postStatus,
+          taxonomy: [],
+          'post-fields': [],
+        },
+        {},
+      ).generate()
+
+      expect(implementation.configUpdates).toContain('db: { timestamps: true },')
+
+      const declared = await evaluateLists(
+        `blog-status-${String(postStatus)}`,
+        implementation.configUpdates,
+      )
+      const config = (await defineConfig({
+        db: { provider: 'postgresql' },
+        lists: withOppositeEnds(declared),
+      })) as OpenSaasConfig
+
+      expect(refusals(config)).toEqual([])
+      expect((config.lists.Post as ListConfig).db?.timestamps).toBe(true)
+    }
+  })
 })
 
 /**
