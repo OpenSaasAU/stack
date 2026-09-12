@@ -73,6 +73,7 @@ export {
   CalendarDayCell,
   RelationshipCell,
   PasswordCell,
+  JsonCell,
   AvatarLabelCell,
   CellRenderer,
   cellComponentRegistry,

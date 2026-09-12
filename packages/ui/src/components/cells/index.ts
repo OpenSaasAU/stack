@@ -7,6 +7,7 @@ export { TimestampCell } from './TimestampCell.js'
 export { CalendarDayCell } from './CalendarDayCell.js'
 export { RelationshipCell } from './RelationshipCell.js'
 export { PasswordCell } from './PasswordCell.js'
+export { JsonCell } from './JsonCell.js'
 export { AvatarLabelCell } from './AvatarLabelCell.js'
 export { CellRenderer } from './CellRenderer.js'
 

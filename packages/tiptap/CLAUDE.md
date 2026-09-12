@@ -20,10 +20,15 @@ Demonstrates how to create third-party field packages that extend OpenSaas Stack
 - Uses Tiptap editor with StarterKit
 - Supports edit/read modes, custom toolbar
 
+### Cell (`src/components/TiptapCell.tsx`)
+
+- `TiptapCell` - List-table rendering of a `richText()` value: a short
+  plain-text excerpt extracted from the Tiptap document, never the raw JSON
+
 ### Main Exports (`src/index.ts`)
 
-- Re-exports field builder and component
-- Separate exports for `/fields` and `/components`
+- Re-exports the field builder and both components
+- Separate exports for `/fields` and `/components/register`
 
 ## Architecture
 
@@ -61,14 +66,14 @@ Due to Next.js server/client boundaries:
 ```typescript
 // lib/register-fields.ts
 'use client'
-import { registerFieldComponent } from '@opensaas/stack-ui'
-import { TiptapField } from '@opensaas/stack-tiptap'
-
-registerFieldComponent('richText', TiptapField)
+import '@opensaas/stack-tiptap/components/register'
 ```
 
-That module is `'use client'`, so a bare side-effect import of it from the server component
-`page.tsx` never runs in the browser. Carry it in a client component and render that:
+`@opensaas/stack-tiptap/components/register` registers both `TiptapField` (the form
+component) and `TiptapCell` (a plain-text excerpt for the list-table view) against the
+admin UI's registries as a side effect. That module is `'use client'`, so a bare
+side-effect import of it from the server component `page.tsx` never runs in the browser.
+Carry it in a client component and render that:
 
 ```tsx
 // app/admin/[[...admin]]/FieldRegistration.tsx
@@ -257,11 +262,11 @@ export interface TiptapFieldProps {
 
 ```typescript
 'use client'
-import { registerFieldComponent } from '@opensaas/stack-ui'
-import { TiptapField } from '@opensaas/stack-tiptap'
-
-registerFieldComponent('richText', TiptapField)
+import '@opensaas/stack-tiptap/components/register'
 ```
+
+Registers both `TiptapField` (the form component) and `TiptapCell` (the list-table
+cell) under `richText` — see `src/components/register.ts`.
 
 ### 4. SSR Safety
 
@@ -282,7 +287,9 @@ packages/tiptap/
 │   ├── fields/
 │   │   └── richText.ts       # Field builder
 │   ├── components/
-│   │   └── TiptapField.tsx   # React component
+│   │   ├── TiptapField.tsx   # React component (form)
+│   │   ├── TiptapCell.tsx    # React component (list-table cell)
+│   │   └── register.ts       # Registers both against the admin UI's registries
 │   ├── config/
 │   │   └── types.ts          # Type definitions
 │   └── index.ts              # Public exports
@@ -292,14 +299,17 @@ packages/tiptap/
 
 ## Exports
 
-The package declares two subpaths, and nothing else resolves:
+The package declares three subpaths, and nothing else resolves:
 
 ```typescript
-// Root: the field builder, the component and their types
-import { richText, TiptapField } from '@opensaas/stack-tiptap'
+// Root: the field builder, both components and their types
+import { richText, TiptapField, TiptapCell } from '@opensaas/stack-tiptap'
 
-// The field builder on its own, for a config that never touches the component
+// The field builder on its own, for a config that never touches the components
 import { richText } from '@opensaas/stack-tiptap/fields'
+
+// Registers TiptapField and TiptapCell against the admin UI's registries
+import '@opensaas/stack-tiptap/components/register'
 ```
 
 ## Example
