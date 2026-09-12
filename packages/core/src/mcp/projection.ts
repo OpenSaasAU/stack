@@ -149,8 +149,15 @@ async function decideField(
  *
  * `relationsSelectable: false` additionally drops relations, which is the
  * level-2 vocabulary (a relation named there terminates).
- * `containRuleErrors` is set only where this decides an advertisement — see
- * {@link decideAdvertisement}.
+ *
+ * Every call site decides a vocabulary — the advertised `tools/list` schema,
+ * or the set `resolveFieldsProjection` validates a caller's `fields` argument
+ * against (#1361) — never a fetched row, so a rule that throws while deciding
+ * ANY field here (not only ones a caller happens to have named) is always
+ * contained via {@link decideAdvertisement}: that field is simply absent from
+ * the vocabulary this call returns, and the rule itself still runs — and can
+ * still throw — the moment a caller-named field's value is actually read off
+ * a fetched row.
  */
 async function advertisableFields(
   listKey: string,
@@ -159,15 +166,15 @@ async function advertisableFields(
   config: OpenSaasConfig,
   session: Session | null,
   context: AccessContext,
-  options: { relationsSelectable: boolean; containRuleErrors: boolean },
+  options: { relationsSelectable: boolean },
 ): Promise<AdvertisableField[]> {
   const advertisable: AdvertisableField[] = []
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    const decide = (): Promise<AdvertisableField | null> =>
-      decideField(fieldName, fieldConfig, config, session, context, options)
-    const decided = options.containRuleErrors
-      ? await decideAdvertisement<AdvertisableField | null>(`${listKey}.${fieldName}`, decide, null)
-      : await decide()
+    const decided = await decideAdvertisement<AdvertisableField | null>(
+      `${listKey}.${fieldName}`,
+      () => decideField(fieldName, fieldConfig, config, session, context, options),
+      null,
+    )
     if (decided) advertisable.push(decided)
   }
   return advertisable
@@ -199,7 +206,7 @@ export async function generateFieldsProjectionSchema(
     config,
     session,
     context,
-    { relationsSelectable: true, containRuleErrors: true },
+    { relationsSelectable: true },
   )) {
     if (!relation) {
       properties[fieldName] = scalarSelectorSchema(fieldName)
@@ -213,7 +220,7 @@ export async function generateFieldsProjectionSchema(
       config,
       session,
       context,
-      { relationsSelectable: false, containRuleErrors: true },
+      { relationsSelectable: false },
     )) {
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
     }
@@ -351,6 +358,17 @@ function relationRefinement(
  * Throws {@link McpProjectionRefusedError} naming what was asked for and
  * what's available on any mismatch, rather than serving on a best-effort
  * basis.
+ *
+ * `advertisableFields` decides the same per-session vocabulary
+ * {@link generateFieldsProjectionSchema} advertises, over EVERY field of the
+ * list — not only the ones this caller named — so a rule that throws while
+ * deciding a field the caller never asked for must not fail the caller's
+ * query (#1361): that containment is built into `advertisableFields` itself.
+ * A field lost to containment this way is simply absent from the vocabulary:
+ * naming it explicitly below still refuses, exactly as an unknown field name
+ * does, and the thrown rule itself still runs (and still throws) the moment
+ * a caller-named field's value is actually read off a fetched row —
+ * containment belongs to the vocabulary decision alone.
  */
 export async function resolveFieldsProjection(
   fieldsArg: unknown,
@@ -369,7 +387,6 @@ export async function resolveFieldsProjection(
 
   const advertisable = await advertisableFields(listKey, listConfig, config, session, context, {
     relationsSelectable: true,
-    containRuleErrors: false,
   })
   const advertisableByName = new Map(advertisable.map((field) => [field.name, field]))
 
@@ -482,7 +499,6 @@ export async function resolveFieldsProjection(
         (
           await advertisableFields(related.listName, related.listConfig, config, session, context, {
             relationsSelectable: false,
-            containRuleErrors: false,
           })
         ).map((field) => field.name),
       )
