@@ -168,21 +168,17 @@ const postWithComments = await context.db.Post.where({ id: { equals: postId } })
   .first()
 ```
 
-A reusable projection is an ordinary function that takes and returns the composed query — no bespoke fragment type to declare:
+A reusable projection is an ordinary function that takes and returns the composed query — no bespoke fragment type to declare. Type the parameter off the composed read itself (`ReturnType<typeof context.db.Post.where>`), not the list surface (`context.db.Post`) — the list surface also carries `create`/`update`/`delete`, which a `.where(...)` result does not:
 
 ```typescript
-import type { getContext } from '@/.opensaas/context'
-
-type Db = Awaited<ReturnType<typeof getContext>>['db']
-
-function withAuthorAndTags(query: Db['Post']) {
+function withAuthorAndTags(query: ReturnType<typeof context.db.Post.where>) {
   return query
     .select('id', 'title')
     .include('author', (author) => author.select('id', 'name'))
     .include('tags', (tags) => tags.select('id', 'name'))
 }
 
-const withAuthor = await withAuthorAndTags(
+const postsWithAuthorAndTags = await withAuthorAndTags(
   context.db.Post.where({ published: { equals: true } }),
 ).all()
 ```
