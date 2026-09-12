@@ -604,6 +604,9 @@ ${useTiptap ? "import { richText } from '@opensaas/stack-tiptap/fields'" : ''}
       fields: {
         ${fields.join(',\n        ')},
       },
+      // Opt-in per ADR-0004 — the listing/detail pages below fall back to
+      // createdAt for the byline when there's no publishedAt to show instead.
+      db: { timestamps: true },
       access: {
         operation: {
           ${

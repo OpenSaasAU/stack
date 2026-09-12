@@ -2,6 +2,7 @@ import type { AccessContext, OrmRow, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
+import { getListDependencies } from '../access/declared-dependencies.js'
 import { decideAdvertisement } from './advertise.js'
 import type { Refinement, SecuredRefinement } from '../secured/include.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -15,28 +16,38 @@ function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
 }
 
 /**
- * `id`/`createdAt`/`updatedAt` are added to every list automatically and
- * excluded from `listConfig.fields` (CLAUDE.md's "System Fields"), so they
- * need their own selector entries at every level a `fields` projection can
- * name fields — a scalar-only loop over `listConfig.fields` would otherwise
- * never advertise or accept them. `id` is additionally forced into every
- * selection this module composes, never left to the caller: a record
- * projected down to none of its own identifying columns cannot be the target
- * of a follow-up `update`/`delete` call.
+ * `id` is added to every list automatically; `createdAt`/`updatedAt` are
+ * added only where the list actually carries them — an auto-timestamp
+ * (`db.timestamps`, ADR-0004) or a field the list declares itself. All three,
+ * where present, are excluded from `listConfig.fields` handling and need
+ * their own selector entries at every level a `fields` projection can name
+ * fields — a scalar-only loop over `listConfig.fields` would otherwise never
+ * advertise or accept them. `id` is additionally forced into every selection
+ * this module composes, never left to the caller: a record projected down to
+ * none of its own identifying columns cannot be the target of a follow-up
+ * `update`/`delete` call.
+ *
+ * `systemFields` is the list's actual set — `getListDependencies(config,
+ * listKey).systemFields` — never assumed present on every list.
  */
-function systemFieldProperties(): Record<string, unknown> {
-  return {
+function systemFieldProperties(systemFields: readonly string[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {
     id: {
       type: 'boolean',
       description: 'Include the "id" field (always returned regardless of selection)',
     },
-    createdAt: scalarSelectorSchema('createdAt'),
-    updatedAt: scalarSelectorSchema('updatedAt'),
   }
+  if (systemFields.includes('createdAt')) properties.createdAt = scalarSelectorSchema('createdAt')
+  if (systemFields.includes('updatedAt')) properties.updatedAt = scalarSelectorSchema('updatedAt')
+  return properties
 }
 
-function isSystemFieldName(name: string): name is 'id' | 'createdAt' | 'updatedAt' {
-  return name === 'id' || name === 'createdAt' || name === 'updatedAt'
+function isSelectableSystemFieldName(
+  name: string,
+  systemFields: readonly string[],
+): name is 'id' | 'createdAt' | 'updatedAt' {
+  if (name === 'id') return true
+  return (name === 'createdAt' || name === 'updatedAt') && systemFields.includes(name)
 }
 
 /**
@@ -198,7 +209,9 @@ export async function generateFieldsProjectionSchema(
   session: Session | null,
   context: AccessContext,
 ): Promise<Record<string, unknown>> {
-  const properties: Record<string, unknown> = systemFieldProperties()
+  const properties: Record<string, unknown> = systemFieldProperties(
+    getListDependencies(config, listKey).systemFields,
+  )
 
   for (const { name: fieldName, relation } of await advertisableFields(
     listKey,
@@ -213,7 +226,9 @@ export async function generateFieldsProjectionSchema(
       continue
     }
 
-    const level2Properties: Record<string, unknown> = systemFieldProperties()
+    const level2Properties: Record<string, unknown> = systemFieldProperties(
+      getListDependencies(config, relation.listName).systemFields,
+    )
     for (const { name: relFieldName } of await advertisableFields(
       relation.listName,
       relation.listConfig,
@@ -389,6 +404,7 @@ export async function resolveFieldsProjection(
     relationsSelectable: true,
   })
   const advertisableByName = new Map(advertisable.map((field) => [field.name, field]))
+  const systemFields = getListDependencies(config, listKey).systemFields
 
   // `id` is always selected, whether or not the caller asked for it — see
   // `systemFieldProperties`'s doc comment.
@@ -397,7 +413,7 @@ export async function resolveFieldsProjection(
   const countOnly: string[] = []
 
   for (const [fieldName, rawValue] of Object.entries(fieldsArg)) {
-    if (isSystemFieldName(fieldName)) {
+    if (isSelectableSystemFieldName(fieldName, systemFields)) {
       if (rawValue !== true) {
         throw new McpProjectionRefusedError(
           `"${listKey}.${fieldName}" is a scalar — select it with \`true\`, not ${JSON.stringify(rawValue)}.`,
@@ -502,8 +518,12 @@ export async function resolveFieldsProjection(
           })
         ).map((field) => field.name),
       )
+      const relSystemFields = getListDependencies(config, related.listName).systemFields
       for (const [relFieldName, relValue] of Object.entries(nestedFieldsArg)) {
-        if (!isSystemFieldName(relFieldName) && !relAdvertisable.has(relFieldName)) {
+        if (
+          !isSelectableSystemFieldName(relFieldName, relSystemFields) &&
+          !relAdvertisable.has(relFieldName)
+        ) {
           throw new McpProjectionRefusedError(
             `"${related.listName}" has no selectable field "${relFieldName}" at this depth — relations ` +
               `are not selectable two levels deep; issue a second query for that.`,

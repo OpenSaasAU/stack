@@ -98,6 +98,7 @@ export class PrismaIntrospector {
       isUnique: rest.includes('@unique'),
       isId: rest.includes('@id'),
       isList: !!isList,
+      isUpdatedAt: rest.includes('@updatedAt'),
     }
 
     // Extract default value (handle nested parentheses)

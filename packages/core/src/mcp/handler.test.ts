@@ -261,6 +261,21 @@ function schemaConfig(): OpenSaasConfig {
           },
         },
       },
+      // Opts out of the config-wide `db.timestamps: true` (#1316): the MCP
+      // vocabulary must not advertise or accept createdAt/updatedAt here, the
+      // way it would if it assumed every list carries them.
+      NoTimestamps: {
+        fields: { label: text() },
+        db: { timestamps: false },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => true,
+            delete: () => true,
+          },
+        },
+      },
       // Self-referential: the advertised schema has to terminate.
       Category: {
         fields: {
@@ -931,6 +946,77 @@ describe('the MCP surface', () => {
             context,
           ),
         ).rejects.toThrow(McpProjectionRefusedError)
+      },
+      BOOT,
+    )
+
+    test(
+      'the fields projection omits createdAt/updatedAt for a list that opts out of them, and Post still carries them (#1316)',
+      async () => {
+        const config = schemaConfig()
+        const context = await contextFor(config)()
+
+        const noTimestamps = await generateFieldsProjectionSchema(
+          'NoTimestamps',
+          config.lists.NoTimestamps,
+          config,
+          null,
+          context,
+        )
+        const noTimestampsProperties = (noTimestamps as { properties: Record<string, unknown> })
+          .properties
+        expect(noTimestampsProperties.id).toBeDefined()
+        expect(noTimestampsProperties.createdAt).toBeUndefined()
+        expect(noTimestampsProperties.updatedAt).toBeUndefined()
+
+        const post = await generateFieldsProjectionSchema(
+          'Post',
+          config.lists.Post,
+          config,
+          null,
+          context,
+        )
+        const postProperties = (post as { properties: Record<string, unknown> }).properties
+        expect(postProperties.createdAt).toBeDefined()
+        expect(postProperties.updatedAt).toBeDefined()
+
+        // Asking for a column the list does not have is refused exactly like
+        // an unknown field name, never composed into a `.select()` that names
+        // a nonexistent column.
+        await expect(
+          resolveFieldsProjection(
+            { createdAt: true },
+            'NoTimestamps',
+            config.lists.NoTimestamps,
+            config,
+            null,
+            context,
+          ),
+        ).rejects.toThrow(McpProjectionRefusedError)
+
+        await expect(
+          resolveFieldsProjection(
+            { label: true, updatedAt: true },
+            'NoTimestamps',
+            config.lists.NoTimestamps,
+            config,
+            null,
+            context,
+          ),
+        ).rejects.toThrow(McpProjectionRefusedError)
+
+        // The list that does carry it (via the config-wide default) is
+        // unaffected.
+        await expect(
+          resolveFieldsProjection(
+            { title: true, createdAt: true },
+            'Post',
+            config.lists.Post,
+            config,
+            null,
+            context,
+          ),
+        ).resolves.toBeDefined()
       },
       BOOT,
     )
