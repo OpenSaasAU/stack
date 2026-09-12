@@ -129,7 +129,7 @@ export async function SingletonView({
       serializableFields: createFields,
       initialData: createInitialData,
       relationshipData: createRelationshipData,
-    } = await prepareItemForm(context, config, listKey, listConfig, {})
+    } = await prepareItemForm(context, config, listKey, listConfig, {}, 'create')
 
     return (
       <div className="p-8 max-w-4xl">
@@ -165,6 +165,7 @@ export async function SingletonView({
     listKey,
     listConfig,
     record,
+    'update',
   )
 
   const itemId = record.id as string

@@ -1,5 +1,12 @@
-import type { AccessContext, FieldAccess, OperationAccess, Session } from '@opensaas/stack-core'
+import type {
+  AccessContext,
+  FieldAccess,
+  FieldConfig,
+  OperationAccess,
+  Session,
+} from '@opensaas/stack-core'
 import { checkFieldAccess } from '@opensaas/stack-core/internal'
+import { FIELD_WRITE_DENIED_REASON, type SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type OperationAccessName = 'query' | 'create' | 'update' | 'delete'
 
@@ -45,34 +52,81 @@ export async function isOperationPotentiallyAllowed(
 }
 
 /**
- * Decide whether a Relationship-table cell may show an inline-edit affordance
- * for its field, evaluating the field's UPDATE-time field-level access (#737).
+ * Decide whether a field may show an editable affordance for a given write
+ * operation — a Relationship-table cell's inline edit (#737) or an item
+ * form's control (#1402) — evaluating the field's CREATE/UPDATE-time
+ * field-level access.
  *
  * Delegates to the core engine's canonical `checkFieldAccess` (the single
  * field-access evaluator — the UI never re-implements it). A field with no
- * `update` access rule is writable (matches the engine's allow-by-default);
- * a rule that returns `false` for this session is NOT writable, so the cell
- * renders read-only with no affordance.
+ * access rule for `operation` is writable (matches the engine's
+ * allow-by-default); a rule that returns `false` for this session is NOT
+ * writable, so the caller renders it read-only with no affordance.
  *
- * Only a STATIC deny hides the affordance. Field access that depends on the
- * `item` (which we intentionally do not pass here, since the affordance is
- * decided per column, not per row) throws when it dereferences the missing
- * item — that is treated as "potentially writable" so the affordance shows and
- * any row-level (filter-scoped) denial surfaces at commit as a revert, never a
- * denied-vs-absent leak.
+ * Only a STATIC deny hides the affordance. Field access that depends on
+ * `item` (omitted by a caller deciding per column rather than per row, or
+ * simply not yet known) throws when it dereferences the missing item — that
+ * is treated as "potentially writable" so the affordance shows and any
+ * row-level (filter-scoped) denial surfaces at commit as a revert/refusal,
+ * never a denied-vs-absent leak.
  */
 export async function isFieldPotentiallyWritable(
   fieldAccess: FieldAccess | undefined,
-  args: { session: Session | null; context: AccessContext },
+  operation: 'create' | 'update',
+  args: { session: Session | null; context: AccessContext; item?: Record<string, unknown> },
 ): Promise<boolean> {
   try {
-    return await checkFieldAccess(fieldAccess, 'update', {
+    return await checkFieldAccess(fieldAccess, operation, {
       session: args.session,
       context: args.context,
+      item: args.item,
     })
   } catch {
     // Item-dependent field access can't be decided statically — keep the
     // affordance; the secured commit re-checks per row and reverts on denial.
     return true
   }
+}
+
+/**
+ * Mark every field whose CREATE/UPDATE field-level access denies this session
+ * read-only, so an item form renders it as a display value instead of an
+ * editable control it would then have to discard (issue #1402).
+ *
+ * Without this, a form built from the raw field configs collects a value for
+ * a field like `embedding()`'s (`access: { create: () => false, update: () =>
+ * false }` by default) and resubmits it on every save, which the write
+ * pipeline refuses WHOLE — `Cannot update "x": field-level access denied.` —
+ * leaving even the fields the session COULD write unsaved.
+ *
+ * Runs after `markUnwritableRelationships` and `markToManyEdgeWrites`: a field
+ * already read-only for one of those reasons keeps it, and a to-many carrying
+ * an edge plan is written against the RELATED list (ADR-0050) rather than in
+ * this payload, so this field's own access is not what gates it.
+ *
+ * Each field's access rule is checked concurrently (`Promise.all`), matching
+ * the per-field relationship fetch in `prepareItemForm` — a rule is
+ * user-defined and may itself do async work, so a list with many fields would
+ * otherwise pay that latency serially on every render.
+ *
+ * Mutates `serializableFields` in place.
+ */
+export async function markWriteDeniedFields(
+  serializableFields: Record<string, SerializableFieldConfig>,
+  fields: Record<string, FieldConfig>,
+  operation: 'create' | 'update',
+  args: { session: Session | null; context: AccessContext; item?: Record<string, unknown> },
+): Promise<void> {
+  await Promise.all(
+    Object.entries(fields).map(async ([fieldName, fieldConfig]) => {
+      const serialized = serializableFields[fieldName]
+      if (!serialized || serialized.readOnly || serialized.virtual || serialized.edgeWrite) return
+
+      const writable = await isFieldPotentiallyWritable(fieldConfig.access, operation, args)
+      if (!writable) {
+        serialized.readOnly = true
+        serialized.readOnlyReason = FIELD_WRITE_DENIED_REASON
+      }
+    }),
+  )
 }
