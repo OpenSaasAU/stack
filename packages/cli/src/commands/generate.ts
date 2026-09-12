@@ -17,6 +17,7 @@ import {
   stageWritePaths,
   STAGED_ROOT_PRISMA_CONFIG,
   loadOpenSaasConfig,
+  loadProjectEnvFile,
 } from '../generator/index.js'
 import type { ResolvedWritePaths } from '../generator/index.js'
 import {
@@ -139,6 +140,8 @@ export async function generateCommand(
     console.error(chalk.gray('   Please run this command from your project root'))
     throw new GenerationFailedError('opensaas.config.ts not found')
   }
+
+  loadProjectEnvFile(cwd)
 
   const spinner = ora('Loading configuration...').start()
 

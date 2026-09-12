@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { loadOpenSaasConfig } from './config-load.js'
+import { loadOpenSaasConfig, loadProjectEnvFile } from './config-load.js'
 
 /**
  * `loadOpenSaasConfig` through real jiti, never mocked: the module graph it
@@ -151,5 +151,44 @@ describe('loadOpenSaasConfig', () => {
     const second = await loadOpenSaasConfig(tempDir, configPath)
     expect((second.config as { value: number }).value).toBe(2)
     expect(second.resolvedModules).toEqual([])
+  })
+})
+
+describe('loadProjectEnvFile', () => {
+  let tempDir: string
+  let originalValue: string | undefined
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'load-env-test-'))
+    originalValue = process.env.LOAD_PROJECT_ENV_FILE_TEST
+    delete process.env.LOAD_PROJECT_ENV_FILE_TEST
+  })
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env.LOAD_PROJECT_ENV_FILE_TEST
+    else process.env.LOAD_PROJECT_ENV_FILE_TEST = originalValue
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it('loads a variable from the project .env into process.env', () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'LOAD_PROJECT_ENV_FILE_TEST=from-dotenv\n')
+
+    loadProjectEnvFile(tempDir)
+
+    expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBe('from-dotenv')
+  })
+
+  it('leaves a variable already in the environment untouched — a shell value wins', () => {
+    process.env.LOAD_PROJECT_ENV_FILE_TEST = 'from-shell'
+    fs.writeFileSync(path.join(tempDir, '.env'), 'LOAD_PROJECT_ENV_FILE_TEST=from-dotenv\n')
+
+    loadProjectEnvFile(tempDir)
+
+    expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBe('from-shell')
+  })
+
+  it('does nothing when the project has no .env', () => {
+    expect(() => loadProjectEnvFile(tempDir)).not.toThrow()
+    expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBeUndefined()
   })
 })

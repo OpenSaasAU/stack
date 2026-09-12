@@ -1,7 +1,6 @@
 import { createEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import type { EmbeddingProviderConfig, OllamaEmbeddingConfig } from '../config/types.js'
-import 'dotenv/config'
 
 export type ProviderType = 'openai' | 'ollama'
 
