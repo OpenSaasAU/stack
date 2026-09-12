@@ -115,9 +115,9 @@ const { postsCount } = await context.graphql.run({
 const count = await context.db.post.count({ where: { status: { equals: 'published' } } })
 ```
 
-### Nested / related data (fragment passed to context.db — recommended)
+### Nested / related data (composed read — recommended)
 
-OpenSaaS Stack provides `defineFragment` for composable, type-safe queries that include related data in a single call — the closest equivalent to Keystone's GraphQL fragments. Pass the fragment directly to `context.db` operations using the `query` parameter.
+A read is composed on `context.db.<List>` and narrowed with `.select()`; relations are reached with `.include()`, which composes at every level. This is the native equivalent of Keystone's GraphQL fragments — no separate declaration, no codegen, and the result type comes straight from the generated list types.
 
 ```typescript
 // Before — one GraphQL query with nested author and tags
@@ -132,69 +132,59 @@ const { posts } = await context.graphql.run({
   `,
 })
 
-// After — define fragments once, compose and reuse them
-import type { User, Post, Tag } from '@/.opensaas/prisma-client/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
-const tagFragment = defineFragment<Tag>()({ id: true, name: true } as const)
-const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  author: authorFragment, // nested fragment → loaded via Prisma include
-  tags: tagFragment, // many relationship
-} as const)
-
-// Type-inferred — no codegen needed
-type PostData = ResultOf<typeof postFragment>
-// → { id: string; title: string; author: { id: string; name: string } | null; tags: { id: string; name: string }[] }
-
-// Primary API: pass query fragment to context.db.findMany
-const posts = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-  orderBy: { publishedAt: 'desc' },
-})
-// posts: PostData[]
+// After — compose the read once, narrow with .select() / .include()
+const posts = await context.db.Post.where({ published: { equals: true } })
+  .select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .include('tags', (tags) => tags.select('id', 'name'))
+  .orderBy({ publishedAt: 'desc' })
+  .all()
+// posts[0] is exactly { id, title, author: { id, name } | null, tags: { id, name }[] }
+// plus the list's system fields — inferred, not declared
 ```
 
 For single-record queries:
 
 ```typescript
-const post = await context.db.post.findUnique({
-  where: { id: postId },
-  query: postFragment,
-})
+const post = await context.db.Post.where({ id: { equals: postId } })
+  .select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .first()
 if (!post) return notFound()
-// post: PostData
 ```
 
 For nested relationship filtering (e.g., only load approved comments):
 
 ```typescript
-const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
-
-const postWithComments = defineFragment<Post>()({
-  id: true,
-  title: true,
-  comments: {
-    query: commentFragment,
-    where: { approved: true }, // filter nested relationship
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-  },
-} as const)
-
-const posts = await context.db.post.findMany({ query: postWithComments })
+const postWithComments = await context.db.Post.where({ id: { equals: postId } })
+  .select('id', 'title')
+  .include('comments', (comments) =>
+    comments
+      .where({ approved: { equals: true } })
+      .orderBy({ createdAt: 'desc' })
+      .limit(5)
+      .select('id', 'body'),
+  )
+  .first()
 ```
 
-Standalone `runQuery` / `runQueryOne` helpers are also available for use in hooks or utilities where `context.db` is available but direct method call is inconvenient:
+A reusable projection is an ordinary function that takes and returns the composed query — no bespoke fragment type to declare:
 
 ```typescript
-import { runQuery, runQueryOne } from '@opensaas/stack-core'
+import type { getContext } from '@/.opensaas/context'
 
-const posts = await runQuery(context, 'Post', postFragment, { where: { published: true } })
-const post = await runQueryOne(context, 'Post', postFragment, { id: postId })
+type Db = Awaited<ReturnType<typeof getContext>>['db']
+
+function withAuthorAndTags(query: Db['Post']) {
+  return query
+    .select('id', 'title')
+    .include('author', (author) => author.select('id', 'name'))
+    .include('tags', (tags) => tags.select('id', 'name'))
+}
+
+const withAuthor = await withAuthorAndTags(
+  context.db.Post.where({ published: { equals: true } }),
+).all()
 ```
 
 ### Nested / related data (separate context.db calls — simpler alternative)
@@ -360,9 +350,9 @@ if (!updated) {
 >
 > **Never write the scalar FK directly.** Use the relation field (`author: { connect: { id } }`), not `authorId: …`. `filterWritableFields` strips `<field>Id` keys when a relationship field exists, so writing the FK directly is silently dropped.
 
-## Recipe 3 — gql.tada typed documents → `defineFragment` + `ResultOf`
+## Recipe 3 — gql.tada typed documents → a composed read
 
-gql.tada projects build typed documents (`TadaDocumentNode`) and derive types with `ResultOf` / `VariablesOf` from the GraphQL schema. OpenSaaS Stack has no GraphQL schema (ADR-0005): replace the typed _document_ with a typed _fragment_ created by `defineFragment`, and replace `ResultOf<typeof Doc>` with `ResultOf<typeof fragment>`. Variables (`VariablesOf`) become plain function parameters / `where` arguments — there is no document to parameterise, so a factory function is the closest equivalent.
+gql.tada projects build typed documents (`TadaDocumentNode`) and derive types with `ResultOf` / `VariablesOf` from the GraphQL schema. OpenSaaS Stack has no GraphQL schema (ADR-0005): replace the typed _document_ with a composed read narrowed by `.select()` / `.include()`, and read the row type straight off the generated list types — there is no bespoke `ResultOf` to derive it from. `VariablesOf` becomes plain function parameters / `where` arguments — there is no document to parameterise.
 
 ```typescript
 // Before — gql.tada typed document + ResultOf / VariablesOf
@@ -391,119 +381,85 @@ async function getPosts(vars: PostsVars) {
 ```
 
 ```typescript
-// After — defineFragment + ResultOf (no GraphQL schema, no codegen)
-import type { Post, User } from '@/.opensaas/prisma-client/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
-
-const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  author: authorFragment,
-} as const)
-
-// ResultOf reads the fragment, not a GraphQL document
-type PostData = ResultOf<typeof postFragment>
-// → { id: string; title: string; author: { id: string; name: string } | null }
-
-// VariablesOf has no equivalent — variables become plain function params + a `where`
-async function getPosts(authorId: string): Promise<PostData[]> {
-  return context.db.post.findMany({
-    query: postFragment,
-    where: { authorId: { equals: authorId } }, // relation filter collapsed (see Recipe 1)
-  })
+// After — a composed read, typed by inference (no GraphQL schema, no codegen)
+function getPosts(authorId: string) {
+  return context.db.Post.where({ authorId: { equals: authorId } }) // relation filter collapsed (see Recipe 1)
+    .select('id', 'title')
+    .include('author', (author) => author.select('id', 'name'))
+    .all()
 }
+
+// The row type comes off a real call, not a bespoke ResultOf utility
+type PostData = Awaited<ReturnType<typeof getPosts>>[number]
+// → { id: string; title: string; author: { id: string; name: string } | null }
 ```
 
 **Mapping summary:**
 
-| gql.tada                                         | OpenSaaS Stack                                                                                                                      |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `graphql('query … { … }')` (`TadaDocumentNode`)  | `defineFragment<Model>()({ … } as const)`                                                                                           |
-| `ResultOf<typeof Doc>`                           | `ResultOf<typeof fragment>`                                                                                                         |
-| `VariablesOf<typeof Doc>`                        | Plain function parameters → `where` / `take` / `orderBy` args (or a fragment **factory** for nested-relation variables — see below) |
-| `context.graphql.run({ query: Doc, variables })` | `context.db.<list>.findMany/findUnique({ query: fragment, where, … })`                                                              |
-| `.graphql` codegen of fragment files             | A shared `fragments.ts` of `defineFragment` definitions                                                                             |
+| gql.tada                                         | OpenSaaS Stack                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `graphql('query … { … }')` (`TadaDocumentNode`)  | `context.db.<List>.where(…).select(…).include(…)` — a composed read, no separate declaration   |
+| `ResultOf<typeof Doc>`                           | `Awaited<ReturnType<typeof fn>>[number]` off a real call, or the generated list types directly |
+| `VariablesOf<typeof Doc>`                        | Plain function parameters → `where` / `orderBy` / `limit` args                                 |
+| `context.graphql.run({ query: Doc, variables })` | `context.db.<List>.where(…).select(…).all()` / `.first()`                                      |
+| `.graphql` codegen of fragment files             | A shared file of ordinary functions, each returning a composed query value                     |
 
-When the old document parameterised a **nested** relationship filter, use a fragment factory so the runtime value is baked into the fragment:
+When the old document parameterised a **nested** relationship filter, the composed read takes the parameter directly — there is no separate factory step:
 
 ```typescript
-function makePostFragment(commentStatus: string) {
-  return defineFragment<Post>()({
-    id: true,
-    title: true,
-    comments: { query: commentFragment, where: { status: commentStatus } },
-  } as const)
+function postsWithComments(commentStatus: string) {
+  return context.db.Post.select('id', 'title').include('comments', (comments) =>
+    comments.where({ status: { equals: commentStatus } }).select('id', 'body'),
+  )
 }
-type PostData = ResultOf<ReturnType<typeof makePostFragment>>
 
-const posts = await context.db.post.findMany({ query: makePostFragment('approved') })
+const posts = await postsWithComments('approved').all()
 ```
 
-## Recipe 4 — fragment → Prisma `include` / `select` + null-on-access-denied
+## Recipe 4 — nested reads: `.select()` / `.include()` + null-on-access-denied
 
-A `defineFragment` selection maps directly onto a Prisma query under the hood, and the access-control layer applies on top:
+`.select()` and `.include()` compose directly on the read itself, and the access-control layer applies on top:
 
-- **Scalar fields selected with `true`** need no `include` — Prisma returns all scalar columns by default, and the fragment then **picks** only the selected keys (so `ResultOf` is exactly the shape you get back).
-- **Relationship fields selected with a nested fragment / `RelationSelector`** generate a Prisma `include` entry (recursively). The fragment walker emits `{ include: { author: { include: { … } } } }`; nested `where` / `orderBy` / `take` / `skip` from a `RelationSelector` are attached to that include entry.
+- **Scalar fields** are named in `.select('id', 'title', …)`. It replaces any previous call rather than accumulating, and it narrows only this list's own columns — it leaves any relation already reached with `.include()` on the row.
+- **Relationship fields** are reached with `.include(name, refine?)`, recursively: the refine callback receives the related list's own composed-read interface, so `.where()`, `.orderBy()`, `.limit()` and further `.select()` / `.include()` calls nest through it.
 
 ```typescript
-import type { Post, User, Comment } from '@/.opensaas/prisma-client/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
-const commentFragment = defineFragment<Comment>()({ id: true, body: true } as const)
-
-const postFragment = defineFragment<Post>()({
-  id: true, // scalar — picked, no include
-  title: true, // scalar — picked, no include
-  author: authorFragment, // single relation → include: { author: { ... } }
-  comments: {
-    // to-many RelationSelector → include with nested args
-    query: commentFragment,
-    where: { approved: true },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-  },
-} as const)
-
-const post = await context.db.post.findUnique({ where: { id: postId }, query: postFragment })
+const post = await context.db.Post.where({ id: { equals: postId } })
+  .select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .include('comments', (comments) =>
+    comments
+      .where({ approved: { equals: true } })
+      .orderBy({ createdAt: 'desc' })
+      .limit(5)
+      .select('id', 'body'),
+  )
+  .first()
 ```
 
-The fragment above is equivalent to this hand-written Prisma call (which `context.db` builds for you):
-
-```typescript
-await prisma.post.findFirst({
-  where: { id: postId /* + access filter merged in */ },
-  include: {
-    author: true,
-    comments: { where: { approved: true }, orderBy: { createdAt: 'desc' }, take: 5 },
-  },
-})
-// → then only { id, title, author: { id, name }, comments: { id, body }[] } is picked
-```
+This is the same shape Prisma itself runs under an equivalent `include` / `select` — the access filter rides in on top of it, and only what `.select()` named comes back.
 
 ### Null-on-access-denied semantics for nested relations
 
 Access control runs at **every level**, and denial is silent (no throw):
 
-- **Top-level single read** (`findUnique` / `findFirst`): returns `null` when the operation-level `query` access denies, the access filter excludes the row, or the row does not exist. Always `if (!post) …`.
-- **Top-level list read** (`findMany`): returns `[]` on denial; individual rows the access filter excludes are simply absent from the array.
-- **Nested single relation** (`author`): if the related record is filtered out by its list's access control (or the FK is null), the field comes back as `null` — even though the parent row was returned. `ResultOf` already types single relations as `T | null`, so this is expected:
+- **Top-level single read** (`.first()`): returns `null` when the operation-level `query` access denies, the access filter excludes the row, or the row does not exist. Always `if (!post) …`.
+- **Top-level list read** (`.all()`): returns `[]` on denial; individual rows the access filter excludes are simply absent from the array.
+- **Nested single relation** (`author`): if the related record is filtered out by its list's access control (or the FK is null), the field comes back as `null` — even though the parent row was returned. Every to-one read off an included row is `T | null` by arity alone, whatever the underlying column's nullability says (ADR-0058):
 
   ```typescript
-  type PostData = ResultOf<typeof postFragment>
-  // author: { id: string; name: string } | null   ← may be null on access denial
-  const post = await context.db.post.findUnique({ where: { id: postId }, query: postFragment })
+  const post = await context.db.Post.where({ id: { equals: postId } })
+    .select('id', 'title')
+    .include('author', (author) => author.select('id', 'name'))
+    .first()
   if (!post) return notFound()
   const authorName = post.author?.name ?? 'Unknown' // guard the nested null
   ```
 
 - **Nested to-many relation** (`comments`): records the nested list's access control excludes are dropped from the array — you get a (possibly empty) array, never `null`, for a to-many field.
-- **Field-level access**: a denied _field_ (not a whole record) is filtered out by `filterReadableFields` before the fragment picks fields; if you select a field you cannot read, it is absent from the result rather than throwing.
+- **Field-level access**: a denied _field_ is stripped from the row before it is returned; naming it in `.select()` does not surface it.
 
-> **Migration takeaway:** Keystone fragments resolved nested data through the GraphQL layer's own access checks and returned `null` for denied relations. The stack reproduces the same null-on-access-denied behaviour through `context.db` — so keep your Keystone null-guards (`post.author?.name`) when porting fragment consumers; they are still required.
+> **Migration takeaway:** Keystone fragments resolved nested data through the GraphQL layer's own access checks and returned `null` for denied relations. `context.db` reproduces the same null-on-access-denied behaviour through `.select()` / `.include()` — so keep your Keystone null-guards (`post.author?.name`) when porting fragment consumers; they are still required.
 
 ## Steps
 
@@ -511,7 +467,7 @@ Access control runs at **every level**, and denial is silent (no throw):
 2. For each occurrence:
    a. Read the file to understand the full query/mutation
    b. Identify the operation type:
-   - **Read with nested data** → prefer `context.db.{list}.findMany/findUnique({ query: fragment })` with `defineFragment` (see pattern above)
+   - **Read with nested data** → prefer a composed read narrowed with `.select()` / `.include()` (see pattern above)
    - **Simple read** → `context.db.{list}.findMany()` / `findUnique()`
    - **Create / update / delete** → `context.db.{list}.create()` / `update()` / `delete()`
    - **Count** → `context.db.{list}.count()`
@@ -519,8 +475,8 @@ Access control runs at **every level**, and denial is silent (no throw):
      d. Rewrite using the appropriate pattern above. Apply the relevant recipe:
    - **`where` clauses** → translate relation/scalar filters with **Recipe 1** (collapse `{ author: { id: { equals } } }` → `{ authorId: { equals } }`, quote enum values).
    - **`connect` / `disconnect` / `set` in `data`** → keep Prisma's relation-operation shapes with **Recipe 2**; never write the scalar FK directly.
-   - **gql.tada typed documents** (`graphql(...)`, `ResultOf`, `VariablesOf`) → replace with `defineFragment` + `ResultOf` per **Recipe 3**.
-   - **Nested reads** → map the fragment to `include`/`select` and keep null-guards per **Recipe 4**.
-     e. For fragment-based rewrites: create a shared `fragments.ts` file and import from it
-3. After all edits: check that any `import ... from '@keystone-6/core'` imports used only for graphql types are removed or reduced; also remove any GraphQL codegen type imports (replace with `ResultOf<typeof fragment>`); for gql.tada surfaces, remove `import { graphql, ResultOf, VariablesOf } from 'gql.tada'`
+   - **gql.tada typed documents** (`graphql(...)`, `ResultOf`, `VariablesOf`) → replace with a composed read narrowed by `.select()` / `.include()` per **Recipe 3**.
+   - **Nested reads** → map to `.select()` / `.include()` and keep null-guards per **Recipe 4**.
+     e. For reused nested-read shapes: create a shared file of ordinary functions returning composed query values, and import from it
+3. After all edits: check that any `import ... from '@keystone-6/core'` imports used only for graphql types are removed or reduced; also remove any GraphQL codegen type imports (replace with the generated list types, inferred from the composed read); for gql.tada surfaces, remove `import { graphql, ResultOf, VariablesOf } from 'gql.tada'`
 4. Report: list every file changed and summarise what was replaced

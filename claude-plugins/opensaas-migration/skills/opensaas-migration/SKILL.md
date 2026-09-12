@@ -317,7 +317,7 @@ export default config({
    - `@keystone-6/auth` → `@opensaas/stack-auth`
 5. **Add Prisma adapter** to database config (required for Prisma 7)
 6. **Migrate virtual fields** — if any `virtual()` fields exist, invoke the `keystone-virtual-fields-context` skill
-7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.`; for simple reads replace with `context.db.*`; for nested/joined data use `defineFragment` + `context.db.{list}.findMany({ query: fragment })`; invoke the `migrate-context-calls` skill for detailed patterns
+7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.`; for simple reads replace with `context.db.*`; for nested/joined data compose a read narrowed by `.select()` / `.include()`; invoke the `migrate-context-calls` skill for detailed patterns
 8. **Test** - the app structure should remain identical
 
 **DO NOT:**
@@ -396,7 +396,7 @@ Field arguments are not supported in OpenSaaS Stack. For detailed patterns inclu
 
 ### Challenge: context.graphql Calls
 
-Keystone apps often use `context.graphql.run()` for type-safe data access from routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly, or the new fragment-based query utilities for nested/joined data.
+Keystone apps often use `context.graphql.run()` for type-safe data access from routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly, or a composed read narrowed by `.select()` / `.include()` for nested/joined data.
 
 **Simple queries (no nesting):**
 
@@ -412,9 +412,9 @@ const posts = await context.db.post.findMany({
 })
 ```
 
-**Queries with nested/related data (fragments — recommended for Keystone migrations):**
+**Queries with nested/related data (composed reads — recommended for Keystone migrations):**
 
-OpenSaaS Stack provides `defineFragment` for composable, fully typed queries — the closest equivalent to Keystone GraphQL fragments and codegen types. Pass the fragment directly to `context.db` operations using the `query` parameter.
+`.select()` and `.include()` compose directly on the read itself — the closest equivalent to Keystone GraphQL fragments and codegen types, with the row type inferred from the chain rather than declared separately.
 
 ```typescript
 // Keystone — GraphQL fragment + codegen types
@@ -427,42 +427,35 @@ const { posts } = await context.graphql.run({
   `,
 })
 
-// OpenSaaS Stack — defineFragment + context.db (no codegen, no GraphQL)
-import type { User, Post } from '@/.opensaas/prisma-client/client'
-import { defineFragment, type ResultOf } from '@opensaas/stack-core'
-
-const authorFragment = defineFragment<User>()({ id: true, name: true } as const)
-const postFragment = defineFragment<Post>()({
-  id: true,
-  title: true,
-  author: authorFragment,
-} as const)
-
-type PostData = ResultOf<typeof postFragment>
-// → { id: string; title: string; author: { id: string; name: string } | null }
-
-// Primary API: pass query to context.db operations
-const posts = await context.db.post.findMany({ query: postFragment })
-// posts: PostData[]
+// OpenSaaS Stack — .select() / .include() (no codegen, no GraphQL)
+const postsWithAuthor = await context.db.Post.select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .all()
+// postsWithAuthor[0]: { id: string; title: string; author: { id: string; name: string } | null }
 
 // With filter, orderBy, pagination
-const filtered = await context.db.post.findMany({
-  query: postFragment,
-  where: { published: true },
-  orderBy: { createdAt: 'desc' },
-  take: 10,
-})
+const filtered = await context.db.Post.where({ published: { equals: true } })
+  .select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .orderBy({ createdAt: 'desc' })
+  .limit(10)
+  .all()
 
 // Single record
-const post = await context.db.post.findUnique({ where: { id }, query: postFragment })
+const post = await context.db.Post.where({ id: { equals: id } })
+  .select('id', 'title')
+  .include('author', (author) => author.select('id', 'name'))
+  .first()
 
-// Nested relationship filtering with RelationSelector
-const commentFrag = defineFragment<Comment>()({ id: true, body: true } as const)
-const postWithComments = defineFragment<Post>()({
-  id: true,
-  comments: { query: commentFrag, where: { approved: true }, take: 5 },
-} as const)
-const postsWithComments = await context.db.post.findMany({ query: postWithComments })
+// Nested relationship filtering
+const postsWithComments = await context.db.Post.select('id')
+  .include('comments', (comments) =>
+    comments
+      .where({ approved: { equals: true } })
+      .limit(5)
+      .select('id', 'body'),
+  )
+  .all()
 ```
 
 List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`. Access control is enforced automatically. For detailed patterns including sudo access, **invoke the `migrate-context-calls` skill**.
@@ -501,7 +494,7 @@ List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.
 - [ ] **Add Prisma adapter** to database config
 - [ ] **Update context creation** in API routes
 - [ ] **Migrate virtual fields** (if any) — replace `graphql.field()` + `resolve()` with `hooks.resolveOutput`; invoke `keystone-virtual-fields-context` skill
-- [ ] **Migrate context.graphql calls** (if any) — for simple reads use `context.db.*`; for nested/related data use `defineFragment` + `context.db.{list}.findMany({ query: fragment })` from `@opensaas/stack-core`; invoke `migrate-context-calls` skill for detailed patterns
+- [ ] **Migrate context.graphql calls** (if any) — for simple reads use `context.db.*`; for nested/related data compose a read narrowed by `.select()` / `.include()`; invoke `migrate-context-calls` skill for detailed patterns
 - [ ] Analyze and adapt access control patterns
 - [ ] Run `opensaas generate`
 - [ ] Run `prisma generate`
