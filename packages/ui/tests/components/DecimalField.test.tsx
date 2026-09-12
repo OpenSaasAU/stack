@@ -42,6 +42,18 @@ describe('DecimalField', () => {
       expect(onChange).toHaveBeenLastCalledWith(null)
     })
 
+    it('should accept a leading-dot value with no digit before the point', async () => {
+      const onChange = vi.fn()
+      const user = userEvent.setup()
+
+      render(<DecimalField name="price" value={null} onChange={onChange} label="Price" />)
+
+      const input = screen.getByRole('textbox')
+      await user.type(input, '.5')
+
+      expect(onChange).toHaveBeenLastCalledWith('.5')
+    })
+
     it('should handle negative numbers', async () => {
       const onChange = vi.fn()
       const user = userEvent.setup()

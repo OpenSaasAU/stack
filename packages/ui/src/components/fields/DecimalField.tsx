@@ -25,7 +25,7 @@ export interface DecimalFieldProps {
   helpText?: string
 }
 
-const DECIMAL_PATTERN = /^-?\d+(\.\d+)?$/
+const DECIMAL_PATTERN = /^-?(\d+(\.\d+)?|\.\d+)$/
 
 /**
  * `decimal()`'s application value is already a plain numeric-text string on
