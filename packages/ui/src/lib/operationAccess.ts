@@ -104,6 +104,11 @@ export async function isFieldPotentiallyWritable(
  * an edge plan is written against the RELATED list (ADR-0050) rather than in
  * this payload, so this field's own access is not what gates it.
  *
+ * Each field's access rule is checked concurrently (`Promise.all`), matching
+ * the per-field relationship fetch in `prepareItemForm` — a rule is
+ * user-defined and may itself do async work, so a list with many fields would
+ * otherwise pay that latency serially on every render.
+ *
  * Mutates `serializableFields` in place.
  */
 export async function markWriteDeniedFields(
@@ -112,14 +117,16 @@ export async function markWriteDeniedFields(
   operation: 'create' | 'update',
   args: { session: Session | null; context: AccessContext; item?: Record<string, unknown> },
 ): Promise<void> {
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    const serialized = serializableFields[fieldName]
-    if (!serialized || serialized.readOnly || serialized.virtual || serialized.edgeWrite) continue
+  await Promise.all(
+    Object.entries(fields).map(async ([fieldName, fieldConfig]) => {
+      const serialized = serializableFields[fieldName]
+      if (!serialized || serialized.readOnly || serialized.virtual || serialized.edgeWrite) return
 
-    const writable = await isFieldPotentiallyWritable(fieldConfig.access, operation, args)
-    if (!writable) {
-      serialized.readOnly = true
-      serialized.readOnlyReason = FIELD_WRITE_DENIED_REASON
-    }
-  }
+      const writable = await isFieldPotentiallyWritable(fieldConfig.access, operation, args)
+      if (!writable) {
+        serialized.readOnly = true
+        serialized.readOnlyReason = FIELD_WRITE_DENIED_REASON
+      }
+    }),
+  )
 }

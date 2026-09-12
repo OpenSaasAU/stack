@@ -125,6 +125,31 @@ export function buildDetailsItemData(
 }
 
 /**
+ * The row a details field's own CREATE/UPDATE access rule sees (#1402),
+ * distinct from {@link buildDetailsItemData}'s render-only slice: a rule may
+ * read a Relationship-table section field off `item`, and `detailsItemData`
+ * has that key stripped out entirely rather than merely absent-but-`undefined`
+ * — a rule that already guards against a missing value (`item.comments?.length`)
+ * would silently compute over nothing instead of the real relation.
+ *
+ * Reshapes each section field back to the bounded rows array a plain
+ * (non-derived-layout) read would have included, via {@link sectionRows},
+ * rather than the `{ items, total }` combine shape `composeItemViewRead`
+ * fetched it as — neither of which is a field of the list, so this is never
+ * the object rendered or submitted.
+ */
+export function buildAccessItemData(
+  itemData: Record<string, unknown>,
+  layout: ItemViewLayout,
+): Record<string, unknown> {
+  const accessItemData = { ...itemData }
+  for (const section of layout.sections) {
+    accessItemData[section.fieldName] = sectionRows(itemData[section.fieldName])
+  }
+  return accessItemData
+}
+
+/**
  * Edit-mode item view whose layout is DERIVED from the list shape (issue #734):
  * scalar/to-one fields (and picker-demoted relationships) in a details card
  * with the existing whole-form Save/Cancel, and each to-many relationship as a
@@ -208,6 +233,7 @@ async function ItemViewLayoutView({
     detailsListConfig,
     detailsItemData,
     'update',
+    buildAccessItemData(itemData, layout),
   )
 
   const detailsCard = (

@@ -71,6 +71,14 @@ export function buildRelationshipInclude(
  * `operation` selects which of a field's own CREATE/UPDATE access rules gates
  * it (issue #1402) — the caller already knows which write this form will
  * perform, so it is not inferred from `itemData`.
+ *
+ * `accessItem` is the row those field-access rules see, when it differs from
+ * `itemData` — the derived item-view layout (`ItemViewLayoutView`) calls this
+ * with `detailsItemData`, which has every Relationship-table section field
+ * stripped out entirely (not merely absent-but-`undefined`) so it can render
+ * the details card alone. A rule that reads such a field off `item` would
+ * otherwise see it missing rather than the row's real value. Defaults to
+ * `itemData`.
  */
 export async function prepareItemForm(
   context: AccessContext,
@@ -80,6 +88,7 @@ export async function prepareItemForm(
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
   operation: 'create' | 'update',
+  accessItem: Record<string, unknown> = itemData,
 ): Promise<PreparedItemForm> {
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
@@ -117,7 +126,7 @@ export async function prepareItemForm(
   await markWriteDeniedFields(serializableFields, listConfig.fields, operation, {
     session: context.session,
     context,
-    item: operation === 'update' ? itemData : undefined,
+    item: operation === 'update' ? accessItem : undefined,
   })
 
   const formData = { ...itemData }
