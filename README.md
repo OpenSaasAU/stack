@@ -6,7 +6,7 @@ A config-first stack for building admin-heavy applications with Next.js App Rout
 
 - 🔒 **Access control first** — every `context.db` operation is automatically secured; denied reads return `null`/`[]` (no information leakage).
 - 🤖 **Built for Claude Code** — clear, predictable patterns plus a shipped project `CLAUDE.md` and MCP tooling, so you build by describing features.
-- ⚡ **Config-first** — define lists, fields, and access rules once; generate the Prisma schema, TypeScript types, and a typed context.
+- ⚡ **Config-first** — define lists, fields, and access rules once; generate the Prisma contract, TypeScript types, and a typed context.
 - 🧩 **Composable & extensible** — shadcn/ui primitives → field components → standalone CRUD → full admin UI; add custom field types without forking core.
 
 ## Quick Start (3 steps)
@@ -14,10 +14,10 @@ A config-first stack for building admin-heavy applications with Next.js App Rout
 You need Node.js 18+ and `pnpm` (`npm install -g pnpm`).
 
 ```bash
-# 1. Scaffold — installs deps, generates the schema, and creates a SQLite DB for you
+# 1. Scaffold — installs deps and generates the schema
 npm create opensaas-app@latest my-app
 
-# 2. Run
+# 2. Run — starts the Dev database, applies the schema, and runs the app
 cd my-app
 pnpm dev
 ```
@@ -32,7 +32,7 @@ Your app runs at [http://localhost:3000](http://localhost:3000); the auto-genera
 npm create opensaas-app@latest my-app --with-auth
 ```
 
-> The scaffolder runs install → generate → db:push for you. To skip that and run the steps yourself, pass `--no-install`.
+> The scaffolder runs install → generate for you. To skip that and run the steps yourself, pass `--no-install`.
 
 📚 **[Full documentation →](https://stack.opensaas.au/docs)** · **[Quick Start guide →](https://stack.opensaas.au/docs/tutorials/quick-start)** · **[Building with Claude Code →](https://stack.opensaas.au/docs/how-to/claude-code)**
 
@@ -44,21 +44,13 @@ npm create opensaas-app@latest my-app --with-auth
 import { config, list } from '@opensaas/stack-core'
 import { text, select, relationship } from '@opensaas/stack-core/fields'
 import type { AccessControl } from '@opensaas/stack-core'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
-// Access control returns a boolean, or a Prisma filter that scopes the rows.
+// Access control returns a boolean, or a Where filter that scopes the rows.
 const isAuthor: AccessControl = ({ session }) =>
   session ? { authorId: { equals: session.userId } } : false
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -96,9 +88,10 @@ export default config({
 ### 2. Generate
 
 ```bash
-pnpm generate   # → prisma/schema.prisma, .opensaas/types.ts, .opensaas/context.ts
-pnpm db:push    # creates the database
+pnpm generate   # → prisma/contract.ts, prisma/contract.json, .opensaas/types.ts, .opensaas/context.ts
 ```
+
+`pnpm dev` runs this for you on every start and on every edit to `opensaas.config.ts` — there is no separate database step to run first.
 
 ### 3. Use the access-controlled context in your app
 
@@ -108,14 +101,14 @@ import { getContext } from '@/.opensaas/context'
 export async function getPosts() {
   const context = await getContext() // pass a session for authenticated access
   // Access control is enforced automatically.
-  return context.db.post.findMany({ include: { author: true } })
+  return context.db.Post.include('author', (author) => author.select('name')).all()
 }
 ```
 
 Denied operations return `null` (single) or `[]` (many) rather than throwing, so callers can't distinguish "denied" from "doesn't exist". Always null-check writes:
 
 ```typescript
-const post = await context.db.post.update({ where: { id }, data })
+const post = await context.db.Post.update({ where: { id }, data })
 if (!post) return { error: 'Not found or access denied' }
 ```
 

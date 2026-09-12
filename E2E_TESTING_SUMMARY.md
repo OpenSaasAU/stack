@@ -366,13 +366,12 @@ pnpm build
 ```
 
 **Issue**: Database errors
-**Solution**: Clean and regenerate:
+**Solution**: Stop `pnpm dev` and reset the Dev database:
 
 ```bash
 cd examples/starter-auth
-rm -f dev.db dev.db-journal
-pnpm generate
-pnpm db:push
+rm -rf .opensaas/dev-db
+pnpm dev
 ```
 
 ### Tests Fail Intermittently
