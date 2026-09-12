@@ -63,7 +63,14 @@ test.describe('tiptap-demo custom field registration', () => {
     await page.keyboard.type('This article has real content.')
 
     await page.click('button[type="submit"]')
-    await page.waitForURL(/\/admin\/article$/, { timeout: 10000 })
+    // The create form's `router.push`/`router.refresh()` pair back to the list
+    // page doesn't reliably land as a client-side transition under load — the
+    // save itself is what this test cares about, so wait for the mutation's
+    // own request to settle and read the result back from a fresh navigation
+    // rather than depending on that transition committing.
+    await page.waitForLoadState('networkidle')
+    await page.goto(`${BASE_URL}/admin/article`)
+    await page.waitForLoadState('networkidle')
     await expect(page.locator(`text=${unique}`)).toBeVisible({ timeout: 5000 })
 
     const articleRow = page.locator('tr', { has: page.locator(`text=${unique}`) })

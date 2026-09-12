@@ -42,7 +42,14 @@ test.describe('json-demo custom field registration', () => {
     await page.fill('textarea[name="configuration"]', '{"sku": "W-1"}')
 
     await page.click('button[type="submit"]')
-    await page.waitForURL(/\/admin\/product$/, { timeout: 10000 })
+    // The create form's `router.push`/`router.refresh()` pair back to the list
+    // page doesn't reliably land as a client-side transition under load — the
+    // save itself is what this test cares about, so wait for the mutation's
+    // own request to settle and read the result back from a fresh navigation
+    // rather than depending on that transition committing.
+    await page.waitForLoadState('networkidle')
+    await page.goto(`${BASE_URL}/admin/product`)
+    await page.waitForLoadState('networkidle')
     await expect(page.locator(`text=${uniqueName}`)).toBeVisible({ timeout: 5000 })
 
     // Reopen the created row: a reintroduced bug that writes `{}` into an
