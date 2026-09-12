@@ -23,6 +23,10 @@ e2e/
 │   ├── 01-auth.spec.ts    # Authentication tests
 │   ├── 02-posts-access-control.spec.ts  # CRUD and access control
 │   └── 03-admin-ui.spec.ts  # Admin UI functionality
+├── json-demo/             # Tests for json-demo's custom field registration
+│   └── 01-custom-fields.spec.ts
+├── tiptap-demo/           # Tests for tiptap-demo's custom field registration
+│   └── 01-rich-text-field.spec.ts
 ├── utils/
 │   ├── auth.ts            # Authentication helpers
 │   └── db.ts              # Database setup/cleanup utilities
@@ -30,6 +34,15 @@ e2e/
 ├── global-teardown.ts     # Run after all tests
 └── README.md              # This file
 ```
+
+`json-demo` and `tiptap-demo` each register a custom field component
+(`jsonEditor`/`taxonomy`, `richText`) via the client-registration pattern
+described in the root `CLAUDE.md`. Neither example's own build, `tsc`, or
+vitest suite renders a form, so a broken registration — the exact regression
+in #1172/#1388 — passes every other check and is only caught by loading the
+admin page in a real browser. `playwright.config.ts`'s `webServer` array boots
+both alongside `starter-auth`, each on its own port and, on the `postgres`
+CI leg, its own database (`e2e/utils/db.ts`'s `exampleDatabaseUrl`).
 
 ## How Tests Work
 

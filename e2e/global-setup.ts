@@ -35,6 +35,11 @@ function writeEnvFile(exampleDir: string): void {
 async function globalSetup(_config: FullConfig) {
   console.log('=== Global Setup for E2E Tests ===')
 
+  // Only starter-auth's database is reconciled here: `webServer` fully builds,
+  // starts its own `opensaas dev` (which generates and reconciles) and passes
+  // its readiness probe for every entry before Playwright runs global setup
+  // at all, so a second reconcile for json-demo/tiptap-demo would just repeat
+  // work their own webServer entry already did.
   const exampleDir = path.join(process.cwd(), 'examples/starter-auth')
   writeEnvFile(exampleDir)
 
