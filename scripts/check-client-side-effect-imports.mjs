@@ -15,16 +15,27 @@
 //
 //   - Roots are examples/ and packages/create-opensaas-app/templates/, not the
 //     whole tree. Application code under packages/*/src is not scanned.
-//   - Only a *bare* side-effect import is a finding. `import { x } from './m'`
-//     against a `'use client'` module is the supported boundary and is ignored,
-//     as is a side-effect import of a package (non-relative, non-`@/`) whose
-//     source this checker does not resolve.
+//   - Three shapes are findings: a bare side-effect import
+//     (`import './m'`, a trailing line comment tolerated), a star re-export
+//     (`export * from './m'`), and a standalone dynamic import
+//     (`await import('./m')` as its own statement). `import { x } from './m'`,
+//     `export { x } from './m'`, and a dynamic import whose result is assigned
+//     all consume the module themselves and are the supported boundary, so
+//     they are ignored — as is a side-effect import of a package
+//     (non-relative, non-`@/`) whose source this checker does not resolve.
+//   - Markdown is not scanned. A fenced code block teaching the broken shape
+//     (as `claude-plugins/opensaas-migration/skills/migrate-document-fields/
+//     SKILL.md` did until issue #1405) is invisible to this checker; catching
+//     it would mean pointing this check at the same fenced-block extraction
+//     the documentation type-checker already does, which is out of scope here.
 //   - The importer is judged by its own first directive only. A server module
 //     that is itself reached solely from a client module is still reported;
 //     that shape is rare and worth an explicit `'use client'` anyway.
 //   - Resolution tries the literal path then `.ts`/`.tsx`/`.js`/`.jsx` and an
 //     `index.*` under it. A path alias other than the `@/` root convention
 //     these projects use is not resolved and so is not checked.
+//   - Each pattern is matched line-by-line. An import, re-export, or dynamic
+//     import statement broken across multiple lines is not detected.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -110,7 +121,36 @@ function findProjectRoot(file) {
   }
 }
 
-const SIDE_EFFECT_IMPORT = /^[^\S\n]*import\s+(['"])([^'"]+)\1[^\S\n]*;?[^\S\n]*$/gm
+// A trailing `// comment` is tolerated on all three: it is the most natural
+// thing an author writes next to a side-effect import, and the checker would
+// otherwise miss the exact shape issue #1405 found in shipped documentation.
+const TRAILING = '[^\\S\\n]*;?[^\\S\\n]*(?://[^\\n]*)?$'
+const IMPORT_PATTERNS = [
+  // A bare side-effect import: `import './m'`.
+  {
+    describe: (specifier) => `import '${specifier}'`,
+    regex: new RegExp(`^[^\\S\\n]*import\\s+(['"])([^'"]+)\\1${TRAILING}`, 'gm'),
+  },
+  // A star re-export forwards bindings without a renderer consuming them
+  // either: `export * from './m'` / `export * as ns from './m'`.
+  {
+    describe: (specifier) => `export * from '${specifier}'`,
+    regex: new RegExp(
+      `^[^\\S\\n]*export\\s+\\*(?:\\s+as\\s+[A-Za-z_$][\\w$]*)?\\s+from\\s+(['"])([^'"]+)\\1${TRAILING}`,
+      'gm',
+    ),
+  },
+  // A standalone dynamic import: `import('./m')` / `await import('./m')` as
+  // its own statement. One whose result is assigned is a consumed import and
+  // is not matched, because the line no longer starts with `import`/`await`.
+  {
+    describe: (specifier) => `import('${specifier}')`,
+    regex: new RegExp(
+      `^[^\\S\\n]*(?:await\\s+)?import\\(\\s*(['"])([^'"]+)\\1\\s*\\)${TRAILING}`,
+      'gm',
+    ),
+  },
+]
 
 function findViolations(roots) {
   const violations = []
@@ -120,19 +160,21 @@ function findViolations(roots) {
       if (isClientModule(source)) continue
 
       const projectRoot = findProjectRoot(file)
-      SIDE_EFFECT_IMPORT.lastIndex = 0
-      let match
-      while ((match = SIDE_EFFECT_IMPORT.exec(source)) !== null) {
-        const specifier = match[2]
-        const resolved = resolveLocalImport(specifier, file, projectRoot)
-        if (!resolved) continue
-        if (!isClientModule(readFileSync(resolved, 'utf8'))) continue
-        violations.push({
-          file: path.relative(repoRoot, file),
-          line: source.slice(0, match.index).split('\n').length,
-          specifier,
-          target: path.relative(repoRoot, resolved),
-        })
+      for (const { describe, regex } of IMPORT_PATTERNS) {
+        regex.lastIndex = 0
+        let match
+        while ((match = regex.exec(source)) !== null) {
+          const specifier = match[2]
+          const resolved = resolveLocalImport(specifier, file, projectRoot)
+          if (!resolved) continue
+          if (!isClientModule(readFileSync(resolved, 'utf8'))) continue
+          violations.push({
+            file: path.relative(repoRoot, file),
+            line: source.slice(0, match.index).split('\n').length,
+            statement: describe(specifier),
+            target: path.relative(repoRoot, resolved),
+          })
+        }
       }
     }
   }
@@ -143,7 +185,7 @@ function report(violations) {
   console.error("A server module imports a 'use client' module for side effects only:\n")
   for (const v of violations) {
     console.error(`  ${v.file}:${v.line}`)
-    console.error(`    import '${v.specifier}'  ->  ${v.target}`)
+    console.error(`    ${v.statement}  ->  ${v.target}`)
   }
   console.error(
     "\nNext.js evaluates a 'use client' module only where the tree renders it, so this\n" +
@@ -161,8 +203,8 @@ if (selfTest) {
   const good = found.filter((v) => v.file.includes('/good/'))
 
   const problems = []
-  if (bad.length !== 3) {
-    problems.push(`expected 3 findings under bad/, got ${bad.length}: ${JSON.stringify(bad)}`)
+  if (bad.length !== 6) {
+    problems.push(`expected 6 findings under bad/, got ${bad.length}: ${JSON.stringify(bad)}`)
   }
   if (good.length !== 0) {
     problems.push(`expected 0 findings under good/, got ${good.length}: ${JSON.stringify(good)}`)
@@ -173,7 +215,7 @@ if (selfTest) {
     for (const problem of problems) console.error(`  - ${problem}`)
     process.exit(1)
   }
-  console.log(`Self-test passed: 3 bad shapes reported, 0 good shapes reported.`)
+  console.log(`Self-test passed: 6 bad shapes reported, 0 good shapes reported.`)
   process.exit(0)
 }
 
