@@ -117,6 +117,21 @@ describe('devCommand', () => {
    * still be reading from (#1472).
    */
   let pendingLoop: Promise<void> | undefined
+  let loopSettled = false
+
+  /**
+   * Starts the loop under test and tracks whether it has settled on its own,
+   * so afterEach knows whether it still needs to release the held child
+   * (below) before it can await the result.
+   */
+  const startLoop = (options?: Parameters<typeof devCommand>[0]): Promise<void> => {
+    pendingLoop = devCommand(options)
+    pendingLoop.then(
+      () => (loopSettled = true),
+      () => (loopSettled = true),
+    )
+    return pendingLoop
+  }
 
   /**
    * Rewrites the watched config so a fired `change` carries bytes the loop has
@@ -136,6 +151,7 @@ describe('devCommand', () => {
     watcherHandlers.clear()
     child.hold = false
     pendingLoop = undefined
+    loopSettled = false
 
     originalDatabaseUrl = process.env.DATABASE_URL
     delete process.env.DATABASE_URL
@@ -155,7 +171,13 @@ describe('devCommand', () => {
   })
 
   afterEach(async () => {
-    await pendingLoop?.catch(() => {})
+    if (pendingLoop !== undefined) {
+      // A test that held the child (`child.hold = true`) and failed before its
+      // own `child.emit('exit', ...)` would otherwise leave devCommand()
+      // permanently awaiting an exit nothing will ever send.
+      if (!loopSettled) child.emit('exit', 0, null)
+      await pendingLoop.catch(() => {})
+    }
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
@@ -166,15 +188,13 @@ describe('devCommand', () => {
 
   it('refuses a directory with no opensaas.config.ts', async () => {
     fs.unlinkSync(path.join(tempDir, 'opensaas.config.ts'))
-    pendingLoop = devCommand()
 
-    await expect(pendingLoop).rejects.toThrow('process.exit(1)')
+    await expect(startLoop()).rejects.toThrow('process.exit(1)')
     expect(exitCode).toBe(1)
   })
 
   it('runs `next dev` when the invocation names no command', async () => {
-    pendingLoop = devCommand()
-    await pendingLoop
+    await startLoop()
 
     expect(spawned).toHaveLength(1)
     expect(spawned[0]?.file).toBe('next')
@@ -183,8 +203,7 @@ describe('devCommand', () => {
 
   it('runs the command given after `--`, and hands the child no database URL', async () => {
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
-    await pendingLoop
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(spawned[0]?.file).toBe('node')
     expect(spawned[0]?.args).toEqual(['server.mjs'])
@@ -199,8 +218,7 @@ describe('devCommand', () => {
     })
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
-    await pendingLoop
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/inherited')
@@ -216,8 +234,7 @@ describe('devCommand', () => {
       return url === undefined || url.length === 0 ? undefined : { url, provenance: 'env' as const }
     })
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
-    await pendingLoop
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(stop).not.toHaveBeenCalled()
@@ -226,9 +243,8 @@ describe('devCommand', () => {
 
   it('stops the dev database when the boot sequence fails before the app starts', async () => {
     vi.mocked(runPrismaCli).mockRejectedValueOnce(new Error('The `prisma` CLI is not installed'))
-    pendingLoop = devCommand()
 
-    await expect(pendingLoop).rejects.toThrow('The `prisma` CLI is not installed')
+    await expect(startLoop()).rejects.toThrow('The `prisma` CLI is not installed')
     expect(spawned).toHaveLength(0)
     expect(stop).toHaveBeenCalled()
   })
@@ -238,8 +254,7 @@ describe('devCommand', () => {
       new GenerationFailedError('config surface invalid'),
     )
 
-    pendingLoop = devCommand()
-    await pendingLoop
+    await startLoop()
 
     expect(exitCode).toBeUndefined()
     expect(process.exit).not.toHaveBeenCalled()
@@ -263,8 +278,7 @@ describe('devCommand', () => {
       }
     })
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
-    await pendingLoop
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(installedWhenStarting).toBe(baseline + 1)
     expect(process.listenerCount('SIGINT')).toBe(baseline)
@@ -304,7 +318,7 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
@@ -366,7 +380,7 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
@@ -419,7 +433,7 @@ describe('devCommand', () => {
       return { exitCode: 0, signal: null, output: plan, stdout: plan }
     })
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
@@ -462,7 +476,7 @@ describe('devCommand', () => {
       throw new Error('config surface invalid')
     })
 
-    pendingLoop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
@@ -481,8 +495,7 @@ describe('devCommand', () => {
   it('does not start the app when reconciliation does not apply', async () => {
     vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
 
-    pendingLoop = devCommand()
-    await pendingLoop
+    await startLoop()
 
     expect(spawned).toHaveLength(0)
     expect(process.exitCode).toBe(1)
