@@ -296,6 +296,28 @@ describe('a read rule comparing the foreign key of an unreadable relation', () =
     },
     BOOT,
   )
+
+  test(
+    'reports the same foreign key as null on a bare read that never named the relation (issue #1243)',
+    async () => {
+      const asAuthor = scoped.context({ userId: scopedAuthorId })
+      const bare = await asAuthor.db.Post.where({ id: { equals: scopedPostId } }).first()
+      expect(bare?.author).toBeUndefined()
+      expect(bare?.authorId).toBeNull()
+    },
+    BOOT,
+  )
+
+  test(
+    'holds across a page of bare reads the same way it holds for one row',
+    async () => {
+      const asAuthor = scoped.context({ userId: scopedAuthorId })
+      const page = await asAuthor.db.Post.orderBy({ title: 'asc' }).all()
+      expect(page.map((row) => row.title)).toEqual(['authored', 'orphan'])
+      expect(page.map((row) => row.authorId)).toEqual([null, null])
+    },
+    BOOT,
+  )
 })
 
 /** The row type here carries no generated contract, so `.posts` reads as `unknown`. */

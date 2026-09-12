@@ -53,6 +53,14 @@ export type {
   ToOneVisibility,
   CountAccessDenialTree,
 } from './access-filter.js'
+// The foreign-key column of a to-one relationship a read never named at all —
+// the legacy-surface counterpart of `narrowUnincludedForeignKeys` in
+// `secured/read.ts` (issue #1243).
+export {
+  resolveForeignKeyVisibility,
+  emptyForeignKeyVisibilityMap,
+} from './foreign-key-visibility.js'
+export type { ForeignKeyVisibility, ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
 // Access-scoped to-many relationship counts (admin list view, issue #732)
 // and the shared per-relation resolver `_count` scoping (issue #1087) reuses.
 export { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
