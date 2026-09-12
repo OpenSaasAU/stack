@@ -244,57 +244,46 @@ const context = await getContext(config, prisma, session)
 ### Operations
 
 ```typescript
-// Find unique
-const item = await context.db.modelname.findUnique({
-  where: { id: string },
-  include?: any
-})  // Returns Item | null
+// Find one
+const item = await context.db.ModelName.where({ id: { equals: id } }).first()
+// Returns Item | null
 
-// Find many
-const items = await context.db.modelname.findMany({
-  where?: WhereInput,
-  take?: number,
-  skip?: number,
-  include?: any
-})  // Returns Item[]
+// Find many, with a composed read
+const items = await context.db.ModelName.where(whereInput).limit(take).offset(skip).all()
+// Returns Item[]
 
 // Create
-const item = await context.db.modelname.create({
-  data: CreateInput
-})  // Returns Item | null
+const item = await context.db.ModelName.create({ data: createInput })
+// Returns Item | null
 
 // Update
-const item = await context.db.modelname.update({
-  where: { id: string },
-  data: UpdateInput
-})  // Returns Item | null
+const item = await context.db.ModelName.update({ where: { id }, data: updateInput })
+// Returns Item | null
 
 // Delete
-const item = await context.db.modelname.delete({
-  where: { id: string }
-})  // Returns Item | null
+const item = await context.db.ModelName.delete({ where: { id } })
+// Returns Item | null
 
 // Count
-const count = await context.db.modelname.count({
-  where?: WhereInput
-})  // Returns number
+const { count } = await context.db.ModelName.where(whereInput).aggregate((aggregate) => ({
+  count: aggregate.count(),
+}))
+// Returns number
 ```
 
 ### Relationship Syntax
 
 ```typescript
-// Connect (create/update)
-author: { connect: { id: userId } }
+// Connect, on the field that owns the foreign key (create/update)
+const post = await context.db.Post.create({
+  data: { title: 'Hello', author: { connect: { id: userId } } },
+})
 
-// Disconnect (update only)
-author: { disconnect: true }
-
-// Many relationship
-tags: {
-  connect: [{ id: tag1Id }, { id: tag2Id }],
-  disconnect: [{ id: tag3Id }]
-}
+// Clear the edge — there is no `disconnect`
+const cleared = await context.db.Post.update({ where: { id }, data: { author: null } })
 ```
+
+A to-many field has no foreign key of its own to write, so it takes no `connect` — write the owning side instead, or write the junction list directly for many-to-many.
 
 ## Generator CLI
 

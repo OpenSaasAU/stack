@@ -788,11 +788,9 @@ pre-create the extension once — see
 
 ### OpenAI Rate Limit Errors
 
-**Error:**
-
-```
-Error: Rate limit exceeded
-```
+The provider wraps every OpenAI failure, so a 429 reaches you as
+`OpenAI embedding generation failed:` followed by the SDK's own message
+(`429 Rate limit reached for ...`).
 
 **Solution:**
 

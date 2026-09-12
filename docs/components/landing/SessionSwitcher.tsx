@@ -11,8 +11,8 @@ const context = await getContext({ userId: 'bob' })`,
 }
 
 const OPERATION_LINES: Record<Operation, string> = {
-  query: `const posts = await context.db.post.findMany()`,
-  update: `const post = await context.db.post.update({
+  query: `const posts = await context.db.Post.all()`,
+  update: `const post = await context.db.Post.update({
   where: { id: pricingDraft.id }, // Alice's draft
   data: { title: 'Pricing rework, take two' },
 })`,
