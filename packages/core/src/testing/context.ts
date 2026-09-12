@@ -507,5 +507,12 @@ export async function createTestContext(
   options: TestDatabaseOptions = {},
 ): Promise<TestContext> {
   const database = await createTestDatabase(config, options)
-  return { ...database, context: database.context(session) }
+  try {
+    return { ...database, context: database.context(session) }
+  } catch (error) {
+    // `database.context` can now throw (`InvalidSessionError`), after the
+    // database is already up — close it rather than leaking the instance.
+    await database.close()
+    throw error
+  }
 }

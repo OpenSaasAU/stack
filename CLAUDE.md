@@ -638,7 +638,7 @@ const context = await getContext({ userId: 'user-123' })
 const mine = await context.db.Post.where({ authorId: { equals: 'user-123' } }).all()
 ```
 
-**Pass the session's own fields, never a wrapper.** `getContext({ session })` is a bug that reads as signed in: the factory only distinguishes a session from `null`, and an object holding `undefined` is truthy. When the session may be absent, branch on it:
+**Pass the session's own fields, never a wrapper.** `getContext({ session })` throws `InvalidSessionError`: the factory only distinguishes a session from `null`, an object holding `undefined` is truthy, and `getContext`/`withSession`/`createTestContext` all refuse a session that holds `undefined` for one of its own keys rather than silently treating it as signed in (#1397). When the session may be absent, branch on it instead of wrapping a possibly-`undefined` value:
 
 ```typescript
 import { getContext } from '@/.opensaas/context'

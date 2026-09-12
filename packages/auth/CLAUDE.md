@@ -411,10 +411,12 @@ const session = await getSessionFromAuth(auth, sessionFields, await headers())
 const context = session ? await getContext(session) : await getContext()
 ```
 
-**Never wrap the session in an object.** `getContext({ session })` is a bug that
-reads as **signed in for an anonymous caller**: the factory distinguishes a
-session from `null` and nothing else, and `{ session: undefined }` is truthy. A
-caller that may have no session branches on it, as above.
+**Never wrap the session in an object.** `getContext({ session })` throws
+`InvalidSessionError`: the factory distinguishes a session from `null` and
+nothing else, `{ session: undefined }` is truthy, and a session holding
+`undefined` for one of its own keys is refused rather than silently read as
+signed in for an anonymous caller (#1397). A caller that may have no session
+branches on it, as above.
 
 ### Session Fields Configuration
 
