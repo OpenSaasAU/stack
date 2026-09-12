@@ -595,20 +595,16 @@ export function timestamp<
  *
  * **Features:**
  * - Stores date values only (no time component)
- * - PostgreSQL/MySQL: Uses native DATE type via @db.Date
- * - SQLite: Uses String representation
- * - **Writes:** pass a `YYYY-MM-DD` string (the declared type). A
- *   `resolveInput` hook converts a valid string to a UTC-midnight `Date`
- *   before validation, since Prisma 7's client validator rejects a bare date
- *   string for a `@db.Date` column (#621); a `Date` is also accepted
- *   directly. A malformed string is rejected at runtime by validation (a
- *   `ValidationError`). Genuine compile-time rejection of a `Date` at the
- *   `context.db` call site is tracked in #599.
- * - **Reads:** always return a `YYYY-MM-DD` string. Even though the underlying
- *   `@db.Date` column hands Prisma a `Date`, a `resolveOutput` transform
- *   normalises it back to a `YYYY-MM-DD` string so the runtime value matches
- *   the declared `string` type. UTC components are used to avoid timezone
- *   off-by-one errors.
+ * - PostgreSQL: a native `date` column bound to a string codec, so the value
+ *   in flight is a `YYYY-MM-DD` string on both sides of the driver
+ * - **Writes:** pass a `YYYY-MM-DD` string (the declared type) straight
+ *   through to the column. A malformed string is rejected at runtime by
+ *   validation (a `ValidationError`). Genuine compile-time rejection of a
+ *   `Date` at the `context.db` call site is tracked in #599.
+ * - **Reads:** always return a `YYYY-MM-DD` string. A `resolveOutput`
+ *   transform normalises the column's value — ordinarily already a string,
+ *   but tolerant of a `Date` from a differently-configured column — using its
+ *   UTC components so the result never drifts a day in a non-UTC timezone.
  * - Optional validation for required fields
  * - Database column mapping and nullability control
  * - Index support (boolean or 'unique')
@@ -653,21 +649,7 @@ export function calendarDay<
     outputType: 'string',
     inputType: 'string',
     ...options,
-    // Hook Pipeline runs field resolveInput before zod validation — the only
-    // point a YYYY-MM-DD string can be turned into what Prisma's `@db.Date`
-    // write validator accepts (#621). Reads resolvedData[fieldKey], not raw
-    // inputData, so a list-level resolveInput's injected default for an
-    // omitted key is still coerced rather than overwritten.
     hooks: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
-      resolveInput: ({ resolvedData, fieldKey }: { resolvedData: any; fieldKey: string }) => {
-        const value = resolvedData?.[fieldKey]
-        if (value == null || value instanceof Date) return value
-        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-          return new Date(`${value}T00:00:00.000Z`)
-        }
-        return value
-      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks must be generic
       resolveOutput: ({ value }: { value: any }) => formatCalendarDay(value),
       ...options?.hooks,
@@ -677,18 +659,13 @@ export function calendarDay<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      // Accepts a `Date` because resolveInput above already converted a valid
-      // string to one before this schema runs; a malformed string falls
-      // through resolveInput untouched and fails the regex here instead.
-      const stringSchema = z
+      const dateSchema = z
         .string({
           message: `${formatFieldName(fieldName)} must be a valid date in ISO8601 format (YYYY-MM-DD)`,
         })
         .regex(/^\d{4}-\d{2}-\d{2}$/, {
           message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
         })
-
-      const dateSchema = z.union([stringSchema, z.date()])
 
       if (isRequired && operation === 'create') {
         return dateSchema
@@ -707,17 +684,16 @@ export function calendarDay<
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
       }),
-    // Calendar days compare on the `YYYY-MM-DD` value (coerced to a UTC-midnight
-    // Date so it matches the `@db.Date` column). A malformed value degrades to
-    // free text.
+    // Calendar days compare on the `YYYY-MM-DD` value itself — the column's
+    // string codec passes it straight to the driver, so a Date built here
+    // would hit the same local-timezone drift the write path had (#1437). A
+    // malformed value degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
-        const date = new Date(`${trimmed}T00:00:00.000Z`)
-        if (Number.isNaN(date.getTime())) return null
-        return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
+        return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
       suggestions: { valueSource: { kind: 'none' } },
     }),
