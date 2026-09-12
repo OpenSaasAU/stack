@@ -2,12 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { FullConfig } from '@playwright/test'
 import { setupDatabase } from './utils/db.js'
-
-const REQUIRED_ENV: readonly (readonly [string, string])[] = [
-  ['BETTER_AUTH_SECRET', 'test-secret-key-for-e2e-tests-only-not-for-production-use'],
-  ['BETTER_AUTH_URL', 'http://localhost:3000'],
-  ['NEXT_PUBLIC_APP_URL', 'http://localhost:3000'],
-]
+import { REQUIRED_ENV } from './utils/required-env.js'
 
 /**
  * Adds the variables the app needs to serve, without touching anything already

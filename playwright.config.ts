@@ -1,11 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 import { exampleDatabaseUrl } from './e2e/utils/db.js'
+import { assertRequiredEnv } from './e2e/utils/required-env.js'
 
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
  */
 // require('dotenv').config();
+
+assertRequiredEnv()
 
 /**
  * A webServer `env` override for one example's own database, or none.
