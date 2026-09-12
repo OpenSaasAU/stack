@@ -3,6 +3,7 @@ import {
   executePlugins,
   executeBeforeGenerateHooks,
   executeAfterGenerateHooks,
+  getPluginData,
 } from './plugin-engine.js'
 import { z } from 'zod'
 import type { BaseFieldConfig, OpenSaasConfig, Plugin, PluginContext, TypeInfo } from './types.js'
@@ -263,6 +264,37 @@ describe('Plugin Engine', () => {
 
       expect(result._pluginData!['plugin-1']).toEqual({ value: 1 })
       expect(result._pluginData!['plugin-2']).toEqual({ value: 2 })
+    })
+
+    test('getPluginData reads back what setPluginData stored', async () => {
+      type TestPluginData = { apiKey: string; enabled: boolean }
+      const pluginData: TestPluginData = { apiKey: 'secret', enabled: true }
+
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async (context) => {
+          context.setPluginData<TestPluginData>('test-plugin', pluginData)
+        },
+      }
+
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {},
+        plugins: [plugin],
+      }
+
+      const result = await executePlugins(config)
+
+      expect(getPluginData<TestPluginData>(result, 'test-plugin')).toEqual(pluginData)
+    })
+
+    test('getPluginData returns undefined for a name no plugin stored', async () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {},
+      }
+
+      expect(getPluginData(config, 'nonexistent')).toBeUndefined()
     })
 
     test('handles empty plugin list', async () => {

@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { nextCookies } from 'better-auth/next-js'
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
+import { getPluginData } from '@opensaas/stack-core'
 import type { OpenSaasConfig, AnyStackContext, Session } from '@opensaas/stack-core'
 import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
 import { opensaasAuthAdapter } from '../adapter/index.js'
@@ -316,7 +317,7 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
   const resolvedConfig = await Promise.resolve(opensaasConfig)
   const resolvedContext = await Promise.resolve(context)
 
-  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
 
   if (!authConfig) {
     throw new Error(

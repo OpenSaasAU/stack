@@ -4,6 +4,7 @@
 
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
 import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+import { getPluginData } from '@opensaas/stack-core'
 import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
 import { rawOpensaasContext } from '@/.opensaas/context'
@@ -22,7 +23,7 @@ export const auth = createAuth(config, rawOpensaasContext)
  */
 export async function getSession(): Promise<Session | null> {
   const resolvedConfig = await config
-  const authConfig = resolvedConfig._pluginData?.auth as NormalizedAuthConfig | undefined
+  const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
   const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
   return getSessionFromAuth(auth, sessionFields, await headers())
 }
