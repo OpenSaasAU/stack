@@ -10,7 +10,7 @@ import {
   type DevDatabaseExtension,
 } from '@opensaas/stack-core/dev-database'
 import { generateCommand, GenerationFailedError, type GenerationResult } from './generate.js'
-import { loadOpenSaasConfig, runPrismaCli } from '../generator/index.js'
+import { loadOpenSaasConfig, loadProjectEnvFile, runPrismaCli } from '../generator/index.js'
 import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
 import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
 import {
@@ -76,20 +76,6 @@ function declaredDevDatabaseExtensions(config: OpenSaasConfig): DevDatabaseExten
     if (name !== undefined) loadable.add(name)
   }
   return [...loadable]
-}
-
-/**
- * Loads the project's `.env` before the Database escape is decided.
- *
- * The generated `prisma.config.ts` loads that same file, and `next dev` loads
- * it too, so a `DATABASE_URL` written there is what the reconcile and the app
- * resolve — the escape check has to see it or it predicts the wrong branch.
- * `process.loadEnvFile` throws when the file is absent, and leaves variables
- * already in the environment untouched, so a shell variable still wins.
- */
-function loadProjectEnvFile(cwd: string): void {
-  const envFile = path.join(cwd, '.env')
-  if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
 }
 
 async function reconcile(cwd: string): Promise<boolean> {

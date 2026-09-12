@@ -33,5 +33,5 @@ export type {
 } from './output-paths.js'
 export { resolveTsconfigAlias } from './tsconfig-alias.js'
 export type { TsconfigAliasResult } from './tsconfig-alias.js'
-export { loadOpenSaasConfig } from './config-load.js'
+export { loadOpenSaasConfig, loadProjectEnvFile } from './config-load.js'
 export type { LoadedOpenSaasConfig } from './config-load.js'

@@ -1076,9 +1076,6 @@ importers:
 
   packages/rag:
     dependencies:
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
       zod:
         specifier: ^4.5.4
         version: 4.6.2

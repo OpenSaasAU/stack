@@ -608,4 +608,38 @@ describe('Generate Command Integration', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
   })
+
+  describe('generateCommand .env loading (#1403)', () => {
+    let originalCwd: string
+    let originalValue: string | undefined
+
+    beforeEach(() => {
+      originalCwd = process.cwd()
+      originalValue = process.env.GENERATE_ENV_LOADING_TEST
+      delete process.env.GENERATE_ENV_LOADING_TEST
+    })
+
+    afterEach(() => {
+      process.chdir(originalCwd)
+      if (originalValue === undefined) delete process.env.GENERATE_ENV_LOADING_TEST
+      else process.env.GENERATE_ENV_LOADING_TEST = originalValue
+    })
+
+    it('loads the project .env before reading the config, the same as `dev`', async () => {
+      process.chdir(tempDir)
+      fs.writeFileSync(path.join(tempDir, '.env'), 'GENERATE_ENV_LOADING_TEST=from-dotenv\n')
+      // Fails fast at field validation — no plugin hooks, contract derivation
+      // or Prisma shell-out — while still exercising the same path a config
+      // reading `process.env` at module scope would (#1403).
+      fs.writeFileSync(
+        path.join(tempDir, 'opensaas.config.ts'),
+        "export default { db: { provider: 'postgresql' }, " +
+          "lists: { Bad: { fields: { broken: { type: 'broken' } } } } }\n",
+      )
+
+      await expect(generateCommand()).rejects.toBeInstanceOf(GenerationFailedError)
+
+      expect(process.env.GENERATE_ENV_LOADING_TEST).toBe('from-dotenv')
+    })
+  })
 })

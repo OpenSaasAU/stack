@@ -12,7 +12,7 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "generate-screenshots": "tsx scripts/generate-screenshots.ts",
-    "generate:embeddings": "tsx scripts/generate-embeddings.ts"
+    "generate:embeddings": "tsx --env-file-if-exists=.env scripts/generate-embeddings.ts"
   },
   "dependencies": {
     "@markdoc/markdoc": "^0.5.8",

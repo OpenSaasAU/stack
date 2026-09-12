@@ -1,7 +1,23 @@
+import * as fs from 'fs'
 import * as path from 'path'
 import { createJiti } from 'jiti'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveTsconfigAlias } from './tsconfig-alias.js'
+
+/**
+ * Loads the project's `.env` before `opensaas.config.ts` is read.
+ *
+ * Every command that loads the config calls this first, so a config that
+ * reads `process.env` at module scope — a provider factory branching on an
+ * API key, say — sees the same values whether it ran under `generate` or
+ * under `dev`. `process.loadEnvFile` throws when the file is absent, and
+ * leaves variables already in the environment untouched, so a shell
+ * variable still wins.
+ */
+export function loadProjectEnvFile(cwd: string): void {
+  const envFile = path.join(cwd, '.env')
+  if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
+}
 
 /** A loaded `opensaas.config.ts`, with whatever the alias resolution wants to say. */
 export interface LoadedOpenSaasConfig {
