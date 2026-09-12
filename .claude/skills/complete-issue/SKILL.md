@@ -59,8 +59,8 @@ Make a todo list for all the tasks below and work through them one at a time, ma
 
 ### 6. CI Review Cycle
 
-- Complete a full review with a subagent using the /review skill.
-- Post a comment on the PR with the review results and any requested changes.
+- Get a subagent to complete a full review using the /review skill - DO NOT run /review yourself ALWAYS use a subagent with a fresh context for this step.
+- Instruct the subagent to post a comment on the PR with the review results and any requested changes.
 
 ### 7. Address Review Feedback
 
