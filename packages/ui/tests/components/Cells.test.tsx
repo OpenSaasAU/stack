@@ -202,6 +202,22 @@ describe('TextCell', () => {
     render(<TextCell value={[1, 2, 3]} field={{ type: 'someUnknownType' }} fieldName="t" />)
     expect(screen.getByText('Unsupported value')).toBeInTheDocument()
   })
+
+  // A `virtual()` field can declare a custom class type (CLAUDE.md's own
+  // `Decimal` example) with no registered Cell of its own. It must keep
+  // rendering through its own `toString()` rather than being caught by the
+  // plain-object/array placeholder above.
+  it('renders a class instance with a custom toString via String(), not the placeholder', () => {
+    class Money {
+      constructor(private cents: number) {}
+      toString() {
+        return `$${(this.cents / 100).toFixed(2)}`
+      }
+    }
+    render(<TextCell value={new Money(2340)} field={{ type: 'someUnknownType' }} fieldName="t" />)
+    expect(screen.getByText('$23.40')).toBeInTheDocument()
+    expect(screen.queryByText('Unsupported value')).not.toBeInTheDocument()
+  })
 })
 
 describe('JsonCell', () => {
