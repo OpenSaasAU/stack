@@ -325,12 +325,10 @@ avatar: image({
 
 ### Supported Formats
 
-- `jpeg` / `jpg`
+- `jpeg`
 - `png`
 - `webp` (recommended for web)
 - `avif` (modern, best compression)
-- `gif`
-- `tiff`
 
 ## Validation
 

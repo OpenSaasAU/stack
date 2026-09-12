@@ -222,7 +222,9 @@ title: text({
   access: {
     read: () => true,
     create: isSignedIn,
-    update: isAuthor,
+    // Field-level access is boolean-only, so this checks the row directly
+    // rather than reusing the operation-level `isAuthor` filter.
+    update: ({ session, item }) => !!session && session.userId === item!.authorId,
   },
 })
 ```

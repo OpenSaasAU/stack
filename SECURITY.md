@@ -29,10 +29,10 @@ OpenSaas Stack's primary security feature is its automatic access control system
 ```typescript
 // ✅ Good - Access control enforced
 const context = await getContext({ userId })
-const posts = await context.db.post.findMany()
+const posts = await context.db.Post.where({ status: { equals: 'published' } }).all()
 
 // ❌ Bad - Bypasses access control
-const posts = await prisma.post.findMany()
+const posts = await context.unsafe.orm.public.Post.all()
 ```
 
 ### 2. Authentication
@@ -178,7 +178,7 @@ module.exports = {
 Access-controlled operations return `null` or `[]` on denial rather than throwing errors. This prevents information leakage but requires explicit null checks:
 
 ```typescript
-const post = await context.db.post.findUnique({ where: { id } })
+const post = await context.db.Post.where({ id: { equals: id } }).first()
 if (!post) {
   // Could be: doesn't exist OR access denied
   return { error: 'Not found or access denied' }
