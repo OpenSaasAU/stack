@@ -1589,17 +1589,26 @@ export interface TypeInfo<
  *
  * Also falls back for `TTypeInfo = any` — the untyped `list()` shape
  * (`OpenSaasConfig['lists']` is `Record<string, ListConfig<any>>`) — where
- * `unknown extends any['db']` would otherwise resolve to bare `any` and
- * poison every `context.db.<list>` chain in the hook to `any`, turning a
- * genuine `noImplicitAny` violation on the caller's own code into a silent
- * pass. `0 extends 1 & T` is the standard is-`any` probe: true only for
- * `any`, because only `any` widens `1` to accept `0` through the intersection.
+ * `TTypeInfo['db']` would otherwise resolve to bare `any` and poison every
+ * `context.db.<list>` chain in the hook to `any`, turning a genuine
+ * `noImplicitAny` violation on the caller's own code into a silent pass.
+ *
+ * A hand-authored `TypeInfo.db` (the third-party-field pattern) is trusted
+ * as given, unlike `StackContext`/`StackBaseContext`'s `DB extends
+ * StackDb<DB>` (`types/context.ts`): that self-referential constraint can't
+ * be re-verified through this indexed-access alias applied to an
+ * as-yet-unresolved `TTypeInfo` without rejecting every real, generated `DB`
+ * as "index signature is missing" (see the constraint dropped from
+ * `AccessContext` in `access/types.ts`, and from `TypeInfo`'s own `TDb`
+ * above). So a `TypeInfo.db` naming a raw ORM client, rather than a `DB`
+ * surface, is not caught here the way it would be on `StackContext`.
  */
-export type HookDb<TTypeInfo extends TypeInfo> = 0 extends 1 & TTypeInfo
-  ? AccessControlledDB
-  : unknown extends TTypeInfo['db']
+export type HookDb<TTypeInfo extends TypeInfo> =
+  IsAny<TTypeInfo> extends true
     ? AccessControlledDB
-    : NonNullable<TTypeInfo['db']>
+    : unknown extends TTypeInfo['db']
+      ? AccessControlledDB
+      : NonNullable<TTypeInfo['db']>
 
 /**
  * The `item` a field's `resolveOutput` hook is handed: its declared

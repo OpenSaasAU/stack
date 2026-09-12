@@ -10,6 +10,13 @@ Status: superseded by [ADR-0050](0050-nested-relation-input-leaves-the-secured-w
 > change who is asking. Those four operations live on `StackContext`
 > (`Context`), which a server action or page component holds.
 >
+> **Narrowed again by ADR-0052's second amendment ([#1213](https://github.com/OpenSaasAU/stack/issues/1213)).**
+> `StackBaseContext` requires `unsafe`, and the object `bindContextToTransaction`
+> actually hands a hook never carried it — on any line, before or after this
+> record. What a hook receives is `AccessContext<DB>`: the same shape it always
+> had, now keyed to the app's own generated `DB` instead of an unkeyed default.
+> No hook gains `unsafe`, `sudo`, `withSession` or `transaction`.
+>
 > What survives unchanged is this record's other half, and the reason it was
 > written: a hook's `db` is bound to the **write's own transaction client**
 > (ADR-0010), carrying the write's transaction owner (ADR-0028) and the hook's
