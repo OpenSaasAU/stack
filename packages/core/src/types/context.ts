@@ -1,6 +1,6 @@
 import type { AccessControlledDB, Session, StackDb, StorageUtils } from '../access/types.js'
 import type { ServerActionProps } from '../context/index.js'
-import type { UnsafeSurface } from '../unsafe.js'
+import type { UnsafeCapableClient, UnsafeSurface } from '../unsafe.js'
 
 export type { StackDb }
 
@@ -10,21 +10,28 @@ export type { StackDb }
  * nothing that can start a transaction or change who is asking — that is
  * {@link StackContext}.
  *
- * `.opensaas/types.ts` names it per app:
+ * `.opensaas/types.ts` names it per app, keying `TClient` to the app's own
+ * Prisma 8 client so `unsafe.sql`/`unsafe.raw` carry the emitted contract's
+ * types rather than degrading to `object` (ADR-0052):
  *
  * ```ts
  * export interface BaseContext<S extends Session = Session>
- *   extends StackBaseContext<DB, S, PluginServices> {}
+ *   extends StackBaseContext<DB, S, PluginServices, PostgresClient<Contract>> {}
  * ```
  *
  * @typeParam DB - the generated `db` surface, one `SecuredList` per list.
  * @typeParam S - the app's session shape.
  * @typeParam P - the app's plugin services, from `.opensaas/plugin-types.ts`.
+ * @typeParam TClient - the Prisma 8 client `unsafe`'s lanes are keyed to.
+ *   Defaults to the structural {@link UnsafeCapableClient}, which is why
+ *   `context.unsafe.sql`/`.raw` read as `object` unless a caller — the
+ *   generated bundle, most often — names the app's own client type here.
  */
 export interface StackBaseContext<
   DB extends StackDb<DB> = AccessControlledDB,
   S extends Session = Session,
   P = Record<string, unknown>,
+  TClient extends UnsafeCapableClient = UnsafeCapableClient,
 > {
   db: DB
   session: S | null
@@ -34,7 +41,7 @@ export interface StackBaseContext<
    * the documented escape hatch for the cases the secured surface cannot
    * express, and every use should say why.
    */
-  unsafe: UnsafeSurface
+  unsafe: UnsafeSurface<TClient>
   storage: StorageUtils
   plugins: P
   _isSudo: boolean
@@ -47,7 +54,7 @@ export interface StackBaseContext<
  *
  * ```ts
  * export interface Context<S extends Session = Session>
- *   extends StackContext<DB, S, PluginServices> {}
+ *   extends StackContext<DB, S, PluginServices, TxDB, PostgresClient<Contract>> {}
  * ```
  */
 export interface StackContext<
@@ -55,19 +62,20 @@ export interface StackContext<
   S extends Session = Session,
   P = Record<string, unknown>,
   TxDB extends StackDb<TxDB> = DB,
-> extends StackBaseContext<DB, S, P> {
+  TClient extends UnsafeCapableClient = UnsafeCapableClient,
+> extends StackBaseContext<DB, S, P, TClient> {
   serverAction: (props: ServerActionProps) => Promise<unknown>
   /**
    * Bypass access control for operations reached through the returned
    * context. Hooks still run. This is not an authorisation — the caller owns
    * the decision to elevate.
    */
-  sudo: () => StackContext<DB, S, P, TxDB>
+  sudo: () => StackContext<DB, S, P, TxDB, TClient>
   /**
    * Substitute the session without changing what access control decides.
    * Preserves the receiver's sudo state.
    */
-  withSession: (session: S | null) => StackContext<DB, S, P, TxDB>
+  withSession: (session: S | null) => StackContext<DB, S, P, TxDB, TClient>
   /**
    * Run `fn` inside ONE interactive transaction. The context handed to `fn`
    * is access-checked and hook-firing exactly as this one is, but persists
@@ -87,7 +95,7 @@ export interface StackContext<
    * the transaction-bound `db` and nowhere else (ADR-0042, ADR-0047).
    */
   transaction: <T>(
-    fn: (txContext: StackTransactionContext<TxDB, S, P, TxDB>) => Promise<T>,
+    fn: (txContext: StackTransactionContext<TxDB, S, P, TxDB, TClient>) => Promise<T>,
   ) => Promise<T>
 }
 
@@ -106,7 +114,8 @@ export interface StackTransactionContext<
   S extends Session = Session,
   P = Record<string, unknown>,
   TxDB extends StackDb<TxDB> = DB,
-> extends StackContext<DB, S, P, TxDB> {
+  TClient extends UnsafeCapableClient = UnsafeCapableClient,
+> extends StackContext<DB, S, P, TxDB, TClient> {
   /**
    * Take PostgreSQL's transaction-scoped advisory lock on `key`, waiting until
    * it is free. Released when the transaction ends, whichever way it ends.
@@ -118,6 +127,6 @@ export interface StackTransactionContext<
    * collision costs spurious serialisation, never a missed lock (ADR-0047).
    */
   advisoryLock: (key: string) => Promise<void>
-  sudo: () => StackTransactionContext<DB, S, P, TxDB>
-  withSession: (session: S | null) => StackTransactionContext<DB, S, P, TxDB>
+  sudo: () => StackTransactionContext<DB, S, P, TxDB, TClient>
+  withSession: (session: S | null) => StackTransactionContext<DB, S, P, TxDB, TClient>
 }

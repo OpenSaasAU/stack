@@ -136,10 +136,22 @@ describe('the generated types file', () => {
 
   it('binds the transaction context to the locking surface', () => {
     expect(types).toContain(
-      'extends Stack$StackContext<DB, TSession, Stack$PluginServices, TxDB> {}',
+      'extends Stack$StackContext<DB, TSession, Stack$PluginServices, TxDB, ' +
+        'Stack$PostgresClient<Stack$Contract>> {}',
     )
     expect(types).toContain(
-      'extends Stack$StackTransactionContext<TxDB, TSession, Stack$PluginServices, TxDB> {}',
+      'extends Stack$StackTransactionContext<TxDB, TSession, Stack$PluginServices, TxDB, ' +
+        'Stack$PostgresClient<Stack$Contract>> {}',
+    )
+  })
+
+  it('keys the Unsafe surface to the app’s own Prisma client (ADR-0052)', () => {
+    expect(types).toContain(
+      "import type { PostgresClient as Stack$PostgresClient } from '@prisma/orm-postgres/runtime'",
+    )
+    expect(types).toContain(
+      'extends Stack$StackBaseContext<DB, TSession, Stack$PluginServices, ' +
+        'Stack$PostgresClient<Stack$Contract>> {}',
     )
   })
 
