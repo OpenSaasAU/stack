@@ -124,4 +124,32 @@ describe('loadOpenSaasConfig', () => {
     const second = await loadOpenSaasConfig(tempDir, configPath)
     expect((second.config as { revision: number }).revision).toBe(2)
   })
+
+  it('sees an edit to a node_modules dependency still on raw TypeScript form between two loads — excluded from the watch list is not exempt from the freshness guarantee', async () => {
+    // Stands in for a workspace-linked package or a git dependency with no
+    // prebuilt dist: jiti has to run its own transform to load it, exactly as
+    // it does for a project file, so it ends up in the same cache — and this
+    // load's own bytes must still win over what a previous load cached, same
+    // as for a project file.
+    const packageDir = path.join(tempDir, 'node_modules', 'a-dependency')
+    fs.mkdirSync(packageDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({ name: 'a-dependency', main: 'index.ts', type: 'module' }),
+    )
+    fs.writeFileSync(path.join(packageDir, 'index.ts'), 'export const value: number = 1\n')
+    fs.writeFileSync(
+      configPath,
+      "import { value } from 'a-dependency'\nexport default { lists: {}, value }\n",
+    )
+
+    const first = await loadOpenSaasConfig(tempDir, configPath)
+    expect((first.config as { value: number }).value).toBe(1)
+
+    fs.writeFileSync(path.join(packageDir, 'index.ts'), 'export const value: number = 2\n')
+
+    const second = await loadOpenSaasConfig(tempDir, configPath)
+    expect((second.config as { value: number }).value).toBe(2)
+    expect(second.resolvedModules).toEqual([])
+  })
 })

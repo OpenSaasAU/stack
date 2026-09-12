@@ -324,8 +324,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
     reconciledSource = source
-    syncWatchedModules(generation.resolvedModules)
-    reconciledModules = snapshotModules(watchedModules)
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -338,6 +336,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (planned.plan.destructive) {
       restoreMigrationRefs(cwd, refs)
       staged = generation
+      // Only now, not right after staging: a rejected generation must never
+      // have already moved the live watch onto its module graph — the bundle
+      // and the database are still the previous generation's until this one
+      // is at least parked.
+      syncWatchedModules(generation.resolvedModules)
+      reconciledModules = snapshotModules(watchedModules)
       console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
       for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
       console.log(chalk.yellow(`\nThe app keeps serving the previous schema. ${PARKED_ROUTE}`))
@@ -353,6 +357,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     }
 
     promote(generation)
+    syncWatchedModules(generation.resolvedModules)
+    reconciledModules = snapshotModules(watchedModules)
     console.log(chalk.green('\nDatabase updated and the new contract promoted.\n'))
   }
 
@@ -383,6 +389,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     }
 
     promote(generation)
+    syncWatchedModules(generation.resolvedModules)
+    reconciledModules = snapshotModules(watchedModules)
+    // Best-effort: this request did not read the config itself, so this is
+    // the freshest bytes available for what the loop just generated from. A
+    // config deleted out from under a running loop is caught the same way
+    // the watcher's own read of it already is — by leaving nothing reconciled.
+    try {
+      reconciledSource = fs.readFileSync(configPath, 'utf-8')
+    } catch {
+      reconciledSource = undefined
+    }
+
     for (const line of describePlan(applied.plan)) say(line)
 
     if (applied.plan.destructive) {
@@ -427,16 +445,17 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
+    // Read as soon as generation names them, same reasoning as reconciledSource
+    // above: `reconcile()` below is interactive and can sit at a destructive
+    // plan's consent prompt indefinitely, and an edit to a watched module made
+    // while it waits must not be mistaken for one already reconciled.
+    watchedModules = bootGeneration.resolvedModules
+    reconciledModules = snapshotModules(watchedModules)
+
     if (!(await reconcile(cwd)) || interrupted) {
       process.exitCode = 1
       return
     }
-
-    // The modules a split config imported, resolved by this same boot
-    // generation — read now rather than pre-generate, since which paths even
-    // are the config's modules is not known until generation reports them.
-    watchedModules = bootGeneration.resolvedModules
-    reconciledModules = snapshotModules(watchedModules)
 
     // Armed only now: `queue` serialises reconciles against each other, not
     // against this startup generate and reconcile, so a save landing earlier

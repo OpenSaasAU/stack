@@ -720,5 +720,173 @@ describe('devCommand', () => {
       child.emit('exit', 0, null)
       await pendingLoop
     })
+
+    it('captures the boot module snapshot before the interactive reconcile can block on it', async () => {
+      child.hold = true
+      const modulePath = path.join(tempDir, 'db-client.ts')
+      fs.writeFileSync(modulePath, 'export const client = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [modulePath],
+          }
+        }
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
+      })
+
+      let releaseReconcile: () => void = () => {}
+      const reconcileGate = new Promise<void>((resolve) => {
+        releaseReconcile = resolve
+      })
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        await reconcileGate
+        return { exitCode: 0, signal: null, output: '' }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+
+      // The boot reconcile is now blocked — standing in for Prisma's real
+      // destructive-change consent prompt. Edit the watched module while it
+      // waits, the way a developer could during that prompt.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      fs.writeFileSync(modulePath, 'export const client = 2\n')
+      releaseReconcile()
+
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      const said: string[] = []
+      const log = vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+
+      // The module changed while boot was still blocked on the prompt, so
+      // this event must reconcile — not report nothing changed.
+      watcherHandlers.get('change')?.()
+      await until(() => said.length > 0)
+
+      expect(said.join('\n')).not.toContain('Config saved with no change')
+
+      log.mockRestore()
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('does not move the watched module set onto a generation whose dry run failed', async () => {
+      child.hold = true
+      const moduleA = path.join(tempDir, 'a.ts')
+      const moduleB = path.join(tempDir, 'b.ts')
+      fs.writeFileSync(moduleA, 'export const a = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      let stagedGenerations = 0
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [moduleA],
+          }
+        }
+        stagedGenerations += 1
+        fs.writeFileSync(moduleB, 'export const b = 1\n')
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules: [moduleB],
+        }
+      })
+      // The boot reconcile succeeds; the staged generation's dry run fails.
+      let prismaCalls = 0
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        prismaCalls += 1
+        if (prismaCalls === 1) return { exitCode: 0, signal: null, output: '' }
+        return { exitCode: 1, signal: null, output: 'database is not reachable' }
+      })
+
+      const said: string[] = []
+      const error = vi.spyOn(console, 'error').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      editConfig()
+      watcherHandlers.get('change')?.()
+      await until(() => said.join('\n').includes('did not apply'))
+      expect(stagedGenerations).toBe(1)
+
+      // The staged generation named moduleB, but its dry run never applied —
+      // the live watch must still be exactly what it was at boot.
+      expect(watcherApi.add).not.toHaveBeenCalled()
+      expect(watcherApi.unwatch).not.toHaveBeenCalled()
+
+      error.mockRestore()
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('syncs the watched module set when `db update` runs its own fresh generation', async () => {
+      child.hold = true
+      const moduleA = path.join(tempDir, 'a.ts')
+      const moduleB = path.join(tempDir, 'b.ts')
+      fs.writeFileSync(moduleA, 'export const a = 1\n')
+
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [moduleA],
+          }
+        }
+        fs.writeFileSync(moduleB, 'export const b = 1\n')
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules: [moduleB],
+        }
+      })
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        const plan = JSON.stringify({
+          kind: 'result',
+          envelope: { result: { plan: { operations: [] } } },
+        })
+        return { exitCode: 0, signal: null, output: plan, stdout: plan }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+      // No prior config edit — `staged` is undefined, so this drives its own
+      // fresh stage rather than reusing a parked one.
+      const ok = await requestDatabaseUpdate(tempDir, ['postgres'], () => {})
+      expect(ok).toBe(true)
+
+      expect(watcherApi.add).toHaveBeenCalledWith([moduleB])
+      expect(watcherApi.unwatch).toHaveBeenCalledWith([moduleA])
+
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
   })
 })

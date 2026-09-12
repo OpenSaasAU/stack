@@ -49,13 +49,20 @@ export async function loadOpenSaasConfig(
     configPath,
   )
 
-  const resolvedModules = Object.keys(jiti.cache).filter(
-    (modulePath) =>
-      !cachedBeforeLoad.has(modulePath) &&
-      modulePath !== configPath &&
-      !modulePath.split(path.sep).includes('node_modules'),
+  // Every entry this load newly added, freshness demands cleared regardless of
+  // where it resolved to — a `node_modules` package still on its source form
+  // (a workspace link, a git dependency) goes through the same transform and
+  // caches exactly like a project file, and staleness in that cache is the
+  // bug `moduleCache: false` used to prevent outright. `resolvedModules`,
+  // reported for the caller to watch, is the stricter, project-local subset.
+  const newlyCached = Object.keys(jiti.cache).filter(
+    (modulePath) => !cachedBeforeLoad.has(modulePath),
   )
-  for (const modulePath of [configPath, ...resolvedModules]) delete jiti.cache[modulePath]
+  const resolvedModules = newlyCached.filter(
+    (modulePath) =>
+      modulePath !== configPath && !modulePath.split(path.sep).includes('node_modules'),
+  )
+  for (const modulePath of newlyCached) delete jiti.cache[modulePath]
 
   return { config: await module.default, aliasWarnings: warnings, resolvedModules }
 }
