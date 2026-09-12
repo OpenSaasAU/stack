@@ -279,6 +279,16 @@ describe('createStorageUtils().uploadImage', () => {
     ['fit outside the enum', { thumbnail: { fit: 'zoom' } }],
     ['format outside the enum', { thumbnail: { format: 'bmp' } }],
     ['quality as a string', { thumbnail: { quality: 'high' } }],
+    // NaN/Infinity pass a bare `typeof x === 'number'` check, and
+    // `transformImage`'s own `transformation.width || transformation.height`
+    // and `quality || 80` fallbacks then treat NaN as falsy — silently
+    // dropping the dimension or quality the caller asked for.
+    ['width as NaN', { thumbnail: { width: NaN } }],
+    ['quality as Infinity', { thumbnail: { quality: Infinity } }],
+    ['an array instead of a config object', { thumbnail: [100, 100] }],
+    // Vacuously true under a bare `key === undefined || …` check: no known
+    // key is set, so a typo'd key would otherwise sail through unenforced.
+    ['a misspelled key', { thumbnail: { withd: 100 } }],
   ])(
     'refuses transformations with %s rather than silently disabling them',
     async (_label, transformations) => {

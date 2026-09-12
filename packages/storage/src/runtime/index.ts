@@ -324,19 +324,32 @@ function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
 
 const IMAGE_TRANSFORMATION_FITS = ['cover', 'contain', 'fill', 'inside', 'outside']
 const IMAGE_TRANSFORMATION_FORMATS = ['jpeg', 'png', 'webp', 'avif']
+const IMAGE_TRANSFORMATION_CONFIG_KEYS = ['width', 'height', 'fit', 'format', 'quality']
 
-/** Same defect class as {@link isFileValidationOptions}: checks every member of {@link ImageTransformationConfig}. */
+/**
+ * Same defect class as {@link isFileValidationOptions}, and the same fix:
+ * every member checked, an unrecognised key or an array refused rather than
+ * vacuously accepted, and `Number.isFinite` rather than bare `typeof` so a
+ * `NaN` doesn't reach `transformImage`'s own `transformation.width ||
+ * transformation.height` and `quality || 80` fallbacks as a false "unset".
+ */
 function isImageTransformationConfig(value: unknown): value is ImageTransformationConfig {
   return (
     isRecord(value) &&
-    (value.width === undefined || typeof value.width === 'number') &&
-    (value.height === undefined || typeof value.height === 'number') &&
+    !Array.isArray(value) &&
+    Object.keys(value).every((key) => IMAGE_TRANSFORMATION_CONFIG_KEYS.includes(key)) &&
+    (value.width === undefined || isFiniteNumber(value.width)) &&
+    (value.height === undefined || isFiniteNumber(value.height)) &&
     (value.fit === undefined ||
       (typeof value.fit === 'string' && IMAGE_TRANSFORMATION_FITS.includes(value.fit))) &&
     (value.format === undefined ||
       (typeof value.format === 'string' && IMAGE_TRANSFORMATION_FORMATS.includes(value.format))) &&
-    (value.quality === undefined || typeof value.quality === 'number')
+    (value.quality === undefined || isFiniteNumber(value.quality))
   )
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
 }
 
 function uploadImageOptions(options: unknown): UploadImageOptions | undefined {

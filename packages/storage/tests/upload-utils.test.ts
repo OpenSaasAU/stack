@@ -187,11 +187,22 @@ describe('Upload Utilities', () => {
       ],
       ['maxFileSize as a string', { maxFileSize: 'one megabyte' }],
       ['maxFileSize as null', { maxFileSize: null }],
+      // NaN passes a bare `typeof x === 'number'` check, and `validateFile`'s
+      // `options.maxFileSize && …` then treats it as falsy and skips the
+      // check — the same silent-disable failure the string case above hits.
+      ['maxFileSize as NaN', { maxFileSize: NaN }],
+      ['maxFileSize as Infinity', { maxFileSize: Infinity }],
       ['acceptedMimeTypes as a number', { acceptedMimeTypes: 42 }],
       ['acceptedMimeTypes as a string', { acceptedMimeTypes: 'image/jpeg' }],
       ['acceptedMimeTypes with a non-string entry', { acceptedMimeTypes: ['image/jpeg', 42] }],
       ['acceptedExtensions as a number', { acceptedExtensions: 42 }],
       ['acceptedExtensions with a non-string entry', { acceptedExtensions: ['.jpg', null] }],
+      ['an array', ['image/png']],
+      // Every clause is `key === undefined || …`, vacuously true when a key
+      // is simply absent — so a typo'd key must be refused explicitly, or it
+      // reaches downstream code as "validated" options that enforce nothing.
+      ['a misspelled key', { maxFilesize: 5000 }],
+      ['an unrecognised key alongside a valid one', { maxFileSize: 2000, extra: true }],
     ])('rejects %s', (_label, value) => {
       expect(isFileValidationOptions(value)).toBe(false)
     })
