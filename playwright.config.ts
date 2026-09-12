@@ -7,10 +7,20 @@ import { exampleDatabaseUrl } from './e2e/utils/db.js'
  */
 // require('dotenv').config();
 
-/** A webServer `env` override for one example's own database, or none. */
-function databaseEnvFor(databaseName: string): { DATABASE_URL: string } | undefined {
+/**
+ * A webServer `env` override for one example's own database, or none.
+ *
+ * `webServer.env` merges into `process.env` rather than replacing it, so a
+ * bare `DATABASE_URL` override would lose to an inherited `DIRECT_DATABASE_URL`
+ * — the app's own lookup (`packages/core/src/db/url.ts`) checks that one
+ * first. Clearing it here (the lookup treats an empty value as unset) makes
+ * `DATABASE_URL` the one the app actually finds, whichever was originally set.
+ */
+function databaseEnvFor(
+  databaseName: string,
+): { DATABASE_URL: string; DIRECT_DATABASE_URL: string } | undefined {
   const url = exampleDatabaseUrl(databaseName)
-  return url ? { DATABASE_URL: url } : undefined
+  return url ? { DATABASE_URL: url, DIRECT_DATABASE_URL: '' } : undefined
 }
 
 /**

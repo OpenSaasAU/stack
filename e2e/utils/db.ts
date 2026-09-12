@@ -96,19 +96,25 @@ export async function cleanupDatabase(): Promise<void> {
 }
 
 /**
- * Derives one example's own database name out of a shared Postgres
- * connection string, so multiple examples on the e2e job's `postgres` leg
- * each reconcile against a database of their own instead of fighting over
- * the one the job's `DATABASE_URL` names (`playwright.config.ts`'s
- * `webServer.env`, and this module's own `setupDatabase` call for that
- * example, both go through this).
+ * Derives one example's own database name out of the connection string the
+ * app's own lookup would otherwise find, so multiple examples on the e2e
+ * job's `postgres` leg each reconcile against a database of their own
+ * instead of fighting over the one shared connection names (the same reason
+ * `example-gates` gives each of its suites a database of its own).
+ * `playwright.config.ts`'s `webServer.env` is the only caller — each
+ * example's own `opensaas dev` reconciles before Playwright ever runs
+ * `global-setup.ts`, so nothing there needs this too.
  *
- * Returns `undefined` when `DATABASE_URL` is unset — the `dev-database` leg,
+ * Checks `DIRECT_DATABASE_URL` before `DATABASE_URL`, mirroring
+ * `CONNECTION_VARIABLES` in `packages/core/src/db/url.ts` — the app's own
+ * lookup takes the same precedence, so a run with both set (ADR-0003's
+ * pooled/direct pair) still overrides the connection the app would actually
+ * use. Returns `undefined` when neither is set — the `dev-database` leg,
  * where each example isolates itself with its own PGlite data directory
  * instead and needs no override.
  */
 export function exampleDatabaseUrl(databaseName: string): string | undefined {
-  const base = process.env.DATABASE_URL
+  const base = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL
   if (!base) return undefined
   const url = new URL(base)
   url.pathname = `/${databaseName}`
