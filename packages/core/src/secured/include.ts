@@ -453,7 +453,7 @@ interface IncludeTarget {
  * alone: `db: { foreignKey: { map } }` renames the physical column, and the
  * non-owning side of a one-to-one owns no column at all.
  */
-function foreignKeyOf(
+export function foreignKeyOf(
   name: string,
   fieldConfig: FieldConfig,
   ctx: ResolveContext,
@@ -461,6 +461,42 @@ function foreignKeyOf(
   const descriptor = fieldConfig.getContractField?.(name, ctx.listName, ctx.config)
   if (descriptor === undefined || descriptor.kind !== 'relation') return undefined
   return descriptor.foreignKey
+}
+
+/** One to-one relationship field that owns a foreign-key column. */
+export interface ForeignKeyOwner {
+  readonly relation: string
+  readonly fieldConfig: FieldConfig
+  readonly ref: string
+  readonly foreignKey: string
+}
+
+/**
+ * Every to-one relationship field on this list that owns a foreign-key
+ * column — whether or not this read included or declared it.
+ *
+ * The foreign key is on the row unconditionally (ADR-0043): Prisma returns it
+ * regardless of `include`. `resolveInclude` only ever resolves a relation this
+ * read actually named or declared, so a to-one nobody asked for has no
+ * {@link IncludePlan} entry and nothing narrows its column — the gap issue
+ * #1243 closes. `narrowUnincludedForeignKeys` (`read.ts`) is what actually
+ * does that narrowing; this is the enumeration it walks.
+ */
+export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
+  const owners: ForeignKeyOwner[] = []
+  for (const [name, fieldConfig] of Object.entries(ctx.listConfig.fields)) {
+    if (fieldConfig.type !== 'relationship' || !('ref' in fieldConfig) || !fieldConfig.ref) continue
+    if ('many' in fieldConfig && fieldConfig.many === true) continue
+    const foreignKey = foreignKeyOf(name, fieldConfig, ctx)
+    if (foreignKey === undefined) continue
+    owners.push({
+      relation: name,
+      fieldConfig,
+      ref: fieldConfig.ref as string,
+      foreignKey: foreignKey.name,
+    })
+  }
+  return owners
 }
 
 /**

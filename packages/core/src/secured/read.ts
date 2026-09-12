@@ -8,9 +8,11 @@ import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
 import {
   checkAccess,
+  checkFieldAccess,
   emptyCountAccessDenialTree,
   emptyToOneAccessVisibilityTree,
   filterReadableFields,
+  getRelatedListConfig,
 } from '../access/index.js'
 import { withOrigin } from '../origin.js'
 import {
@@ -25,6 +27,7 @@ import {
   resolveColumns,
   resolveNearest,
   resolveOrderBy,
+  resolveRelatedAccessPlan,
   resolveWhere,
   unqueryableKey,
   type ColumnPlan,
@@ -40,6 +43,7 @@ import {
   buildIncludeRequest,
   DECLARED_COUNT_BRANCH_KEY,
   DECLARED_ROWS_BRANCH_KEY,
+  foreignKeyOwningRelations,
   orderList,
   resolveIncludes,
   type CombineBranchPlan,
@@ -851,6 +855,156 @@ function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   }
 }
 
+/** The `id IN (...)` predicate a batched existence check narrows its scan to. */
+function identityIn(
+  model: PredicateAccessor,
+  listName: string,
+  keys: readonly RowLockKey[],
+): AnyExpression {
+  const expression = model['id']?.in?.(keys)
+  if (expression === undefined) throw unqueryableKey(listName, 'id')
+  return expression
+}
+
+/**
+ * Resolve the read-time context `foreignKeyOwningRelations` and
+ * `resolveRelatedAccessPlan` need for one list, mirroring what `resolveInclude`
+ * builds for a relation it actually resolves.
+ */
+function relatedResolveContext(
+  binding: ReadBinding,
+  listName: string,
+  listConfig: ListConfig<TypeInfo>,
+): ResolveContext {
+  return {
+    listName,
+    listConfig,
+    config: binding.config,
+    session: binding.context.session,
+    context: binding.context,
+    checkFieldRead: false,
+    applyRelationAccess: true,
+    accessFilterPath: [],
+  }
+}
+
+/**
+ * Narrow the foreign-key column of every to-one relationship this read did
+ * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
+ * because a relation nobody named has no {@link IncludePlan} entry for it to
+ * walk (issue #1243).
+ *
+ * The column is on the row regardless of `include` (ADR-0043), so it needs
+ * its own visibility decision: the owning relationship field's own `read`
+ * rule, evaluated per row against the RAW row (before Field Visibility
+ * strips anything else), and the related list's own `query` access — `true`
+ * leaves the column as the plain pass-through value it already is, `false`
+ * nulls it outright, and a filter is resolved with one batched existence
+ * check per relation across the whole page, keyed off the column's own value
+ * rather than a fetched related row (there is no fetched related row here to
+ * key off).
+ *
+ * Runs AFTER {@link applyForeignKeys}, on its output — mutated in place —
+ * and recurses into every relation THAT pass over its results the same way
+ * {@link applyForeignKeys} does, so a related list reached only through an
+ * include gets its own un-included to-ones narrowed too.
+ */
+async function narrowUnincludedForeignKeys(
+  binding: ReadBinding,
+  filteredRows: readonly OrmRow[],
+  rawRows: readonly OrmRow[],
+  listName: string,
+  listConfig: ListConfig<TypeInfo>,
+  resolvedIncludes: readonly IncludePlan[],
+): Promise<void> {
+  const ctx = relatedResolveContext(binding, listName, listConfig)
+  const alreadyIncluded = new Set(resolvedIncludes.map((plan) => plan.relation))
+
+  for (const owner of foreignKeyOwningRelations(ctx)) {
+    if (alreadyIncluded.has(owner.relation)) continue
+    if (!rawRows.some((row) => owner.foreignKey in row)) continue
+
+    const related = getRelatedListConfig(owner.ref, binding.config)
+    if (!related) continue
+
+    const access = await resolveRelatedAccessPlan(
+      { listName: related.listName, listConfig: related.listConfig },
+      ctx,
+    )
+
+    for (let i = 0; i < filteredRows.length; i++) {
+      const raw = rawRows[i]
+      if (!(owner.foreignKey in raw)) continue
+      const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
+        session: binding.context.session,
+        context: binding.context,
+        item: raw,
+      })
+      if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
+    }
+
+    if (access.kind === 'true' || access.kind === 'false') continue
+
+    const idsByRow = rawRows.map((row) => row[owner.foreignKey])
+    const idMap = new Map<string, unknown>()
+    for (let i = 0; i < filteredRows.length; i++) {
+      if (filteredRows[i][owner.foreignKey] === null) continue
+      const value = idsByRow[i]
+      if (value !== null && value !== undefined) idMap.set(String(value), value)
+    }
+    if (idMap.size === 0) continue
+
+    const ops = await whereCombinators()
+    const visible = await withOrigin('engine', () =>
+      collectionFor(binding.ormHandle, related.listName)
+        .where((model) => lowerWhere(access, model, ops))
+        .where((model) => identityIn(model, related.listName, [...idMap.values()] as RowLockKey[]))
+        .select('id')
+        .all(),
+    )
+    const visibleIds = new Set(visible.map((row) => String(row.id)))
+
+    for (let i = 0; i < filteredRows.length; i++) {
+      if (filteredRows[i][owner.foreignKey] === null) continue
+      const value = idsByRow[i]
+      if (value === null || value === undefined) continue
+      if (!visibleIds.has(String(value))) filteredRows[i][owner.foreignKey] = null
+    }
+  }
+
+  for (const plan of resolvedIncludes) {
+    const relatedListConfig = binding.config.lists[plan.relatedListName]
+    if (relatedListConfig === undefined) continue
+
+    const nestedFiltered: OrmRow[] = []
+    const nestedRaw: OrmRow[] = []
+    for (let i = 0; i < filteredRows.length; i++) {
+      const filteredValue = filteredRows[i][plan.relation]
+      const rawValue = rawRows[i][plan.relation]
+      if (Array.isArray(filteredValue) && Array.isArray(rawValue)) {
+        for (let j = 0; j < filteredValue.length; j++) {
+          if (isRow(filteredValue[j]) && isRow(rawValue[j])) {
+            nestedFiltered.push(filteredValue[j])
+            nestedRaw.push(rawValue[j])
+          }
+        }
+      } else if (isRow(filteredValue) && isRow(rawValue)) {
+        nestedFiltered.push(filteredValue)
+        nestedRaw.push(rawValue)
+      }
+    }
+    if (nestedFiltered.length === 0) continue
+    await narrowUnincludedForeignKeys(
+      binding,
+      nestedFiltered,
+      nestedRaw,
+      plan.relatedListName,
+      relatedListConfig,
+      plan.includes,
+    )
+  }
+}
+
 function reduces(plans: readonly IncludePlan[]): boolean {
   return plans.some((plan) => plan.reduce !== undefined || reduces(plan.includes))
 }
@@ -1001,10 +1155,14 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
 
 /**
  * What every terminal returns rows through — the one place a row this engine
- * read becomes a row a caller may see, and the only place the foreign-key
+ * read becomes a row a caller may see, and the only place any foreign-key
  * pass runs. `all()`, `first()`, the `forUpdate()` lane and `nearest()` all
  * come through here, so none of them can drift apart on what a column reads
  * as, and neither can a hook or a `read` rule.
+ *
+ * The batch is what lets {@link narrowUnincludedForeignKeys} resolve a
+ * to-one this read never named at all for a whole page in one query per
+ * relation rather than one per row.
  */
 async function visibleRows(
   binding: ReadBinding,
@@ -1012,7 +1170,7 @@ async function visibleRows(
   plan: ReadPlan,
 ): Promise<OrmRow[]> {
   const { listConfig, context, config, listName } = binding
-  return await Promise.all(
+  const results = await Promise.all(
     rows.map(async (row) => {
       const filtered = await filterReadableFields(
         maskReductions(row, plan.includes),
@@ -1032,6 +1190,8 @@ async function visibleRows(
       return filtered
     }),
   )
+  await narrowUnincludedForeignKeys(binding, results, rows, listName, listConfig, plan.includes)
+  return results
 }
 
 /** `all()` is the terminal every plan member was designed for. */

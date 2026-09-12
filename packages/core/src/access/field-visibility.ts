@@ -20,6 +20,8 @@ import {
   isToOneRelationship,
   emptyCountAccessDenialTree,
 } from './access-filter.js'
+import type { ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
+import { emptyForeignKeyVisibilityMap, foreignKeyFieldAccess } from './foreign-key-visibility.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
 // (via the `access/index.ts` barrel) — this is an intentional cyclic
 // dependency, the same shape and for the same reason as the one documented in
@@ -269,6 +271,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // field runs on it (ADR-0051), and `restoreReductions` in `read.ts`
   // overwrites the key with the reduction's own value afterwards.
   reducedDeclared: ReducedDeclaredKeys = noReducedDeclaredKeys(),
+  // The foreign-key columns of to-one relationships this read never named at
+  // all, resolved by `resolveForeignKeyVisibility` (issue #1243) — a column
+  // no other pass here touches, since the relation itself is absent from
+  // `workingItem` and the existing to-one machinery above never runs for it.
+  foreignKeyVisibility: ForeignKeyVisibilityMap = emptyForeignKeyVisibilityMap(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -292,6 +299,29 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       delete workingItem[name]
     }
     workingItem[fieldName] = assembled
+  }
+
+  // A to-one relationship's foreign-key column this read never named at all
+  // (issue #1243): the column is still on `workingItem` (ADR-0043), and
+  // nothing else in this function ever visits it, because the generic
+  // per-field pass below finds no `fieldConfigs` entry for `<field>Id` and
+  // passes the raw value through unchanged. Mutated here, BEFORE that pass
+  // runs, so it flows through carrying the narrowed value rather than the raw
+  // one — `null` when the owning relationship field's own `read` rule denies
+  // it, or the related list's `query` access denies it, or resolves to a
+  // filter the column's value does not satisfy.
+  for (const [column, visibility] of Object.entries(foreignKeyVisibility)) {
+    if (!(column in workingItem)) continue
+    const canReadField = await foreignKeyFieldAccess(column, fieldConfigs, workingItem, args)
+    if (!canReadField || visibility.kind === 'denied') {
+      workingItem[column] = null
+      continue
+    }
+    if (visibility.kind === 'open') continue
+    const value = workingItem[column]
+    if (value !== null && value !== undefined && !visibility.ids.has(String(value))) {
+      workingItem[column] = null
+    }
   }
 
   // This list's actual system fields, from the emitted table (ADR-0051):
