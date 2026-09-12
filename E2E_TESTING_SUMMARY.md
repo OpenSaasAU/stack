@@ -204,7 +204,7 @@ pnpm exec playwright test e2e/starter-auth/00-build.spec.ts
 1. **Before Tests** (`global-setup.ts`):
    - Creates `.env` file from `.env.example` if needed
    - Sets test environment variables
-   - Runs database setup (generate schema, db push)
+   - Starts (or reaches) the Dev database
 
 2. **Test Execution**:
    - Playwright starts Next.js dev server automatically
