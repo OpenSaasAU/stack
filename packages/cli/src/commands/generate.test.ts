@@ -25,6 +25,8 @@ import {
   formatFieldValidationErrors,
   formatNeedsClosureErrors,
   formatConfigRefusals,
+  generateCommand,
+  GenerationFailedError,
 } from './generate.js'
 
 // Mock ora module
@@ -575,6 +577,35 @@ describe('Generate Command Integration', () => {
       expect(message).toContain('List "AuthVerification"')
       expect(message).toContain('db.indexes[0]')
       expect(message).toContain('Remove "sort"')
+    })
+  })
+
+  describe('generateCommand failure contract (#1223)', () => {
+    let originalCwd: string
+    let exitSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      originalCwd = process.cwd()
+      // A caller with something to keep alive (the dev loop) must be able to
+      // catch a refusal and clean up — `process.exit` would skip its `finally`
+      // no matter where the call happened, so the contract is that this
+      // never runs, not that its result goes unobserved.
+      exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('generateCommand must not call process.exit')
+      })
+    })
+
+    afterEach(() => {
+      process.chdir(originalCwd)
+      exitSpy.mockRestore()
+    })
+
+    it('throws GenerationFailedError instead of exiting when opensaas.config.ts is missing', async () => {
+      process.chdir(tempDir)
+
+      await expect(generateCommand()).rejects.toBeInstanceOf(GenerationFailedError)
+      await expect(generateCommand()).rejects.toThrow('opensaas.config.ts not found')
+      expect(exitSpy).not.toHaveBeenCalled()
     })
   })
 })
