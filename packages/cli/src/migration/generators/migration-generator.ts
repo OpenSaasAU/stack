@@ -352,6 +352,29 @@ control.
     return listDefinitions.join('\n')
   }
 
+  /**
+   * OpenSaaS Stack's auto-timestamps (`db.timestamps: true`) are off by
+   * default (ADR-0004) — a source model's `createdAt`/`updatedAt` columns are
+   * only the auto-managed shape the stack can opt into, rather than plain
+   * data, when BOTH are present and match that exact shape: `createdAt`
+   * default to `now()`, `updatedAt` carrying `@updatedAt`. Anything else
+   * (only one of the pair, a custom default, no `@updatedAt`) is emitted as
+   * an ordinary declared field instead of dropped, so the column's data has
+   * somewhere to live in the generated config.
+   */
+  private hasAutoTimestamps(model: IntrospectedModel): boolean {
+    const createdAt = model.fields.find((f) => f.name === 'createdAt')
+    const updatedAt = model.fields.find((f) => f.name === 'updatedAt')
+    return (
+      !!createdAt &&
+      !!updatedAt &&
+      createdAt.type === 'DateTime' &&
+      createdAt.defaultValue === 'now()' &&
+      updatedAt.type === 'DateTime' &&
+      updatedAt.isUpdatedAt === true
+    )
+  }
+
   private generateList(
     model: IntrospectedModel,
     schema: IntrospectedSchema,
@@ -362,12 +385,11 @@ control.
   ): string {
     const fields: string[] = []
 
-    // OpenSaaS adds id/createdAt/updatedAt automatically - skip them here
-    const systemFields = ['id', 'createdAt', 'updatedAt']
+    const autoTimestamps = this.hasAutoTimestamps(model)
 
     for (const field of model.fields) {
-      if (systemFields.includes(field.name)) continue
       if (field.isId) continue
+      if (autoTimestamps && (field.name === 'createdAt' || field.name === 'updatedAt')) continue
 
       const fieldDef = this.generateField(field, schema, usedFieldTypes, warnings)
       if (fieldDef) {
@@ -376,11 +398,12 @@ control.
     }
 
     const access = this.generateListAccess(hasOwnerAccess, model, answers)
+    const db = autoTimestamps ? `\n      db: { timestamps: true },` : ''
 
     const fieldsBlock = fields.length > 0 ? `\n${fields.join('\n')}\n      ` : ''
 
     return `    ${model.name}: list({
-      fields: {${fieldsBlock}},${access}
+      fields: {${fieldsBlock}},${db}${access}
     }),`
   }
 
