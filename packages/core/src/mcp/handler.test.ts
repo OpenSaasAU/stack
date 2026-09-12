@@ -1476,7 +1476,7 @@ describe('the MCP surface', () => {
     // create that never names `brittle` in its data would surface that same
     // throw on the row it hands back. Sudo bypasses field access entirely,
     // which is the only way to seed this list's rows at all.
-    async function seedBrittle(title = 'seed'): Promise<void> {
+    async function seedBrittle(title = 'seed'): Promise<string> {
       const orm = ormClientFor(database.data, database.client.orm)
       const context = getContext(
         schemaConfig(),
@@ -1492,6 +1492,8 @@ describe('the MCP surface', () => {
       await context.sudo().db.BrittleNote.create({
         data: { label: 'note', parent: { connect: { id: brittle?.id } } },
       })
+      if (!brittle) throw new Error('seedBrittle: sudo create was denied')
+      return brittle.id
     }
 
     async function callBrittleQuery(
@@ -1548,6 +1550,56 @@ describe('the MCP surface', () => {
 
         expect(errorSpy).toHaveBeenCalled()
         expect(String(errorSpy.mock.calls[0]?.[1])).toContain('row explosion')
+
+        errorSpy.mockRestore()
+      },
+      BOOT,
+    )
+
+    /**
+     * #1456: a create/update's own returned row runs through Field Visibility
+     * exactly like a read does (no `fields`/`.select()` narrows a write's
+     * result), so the same throwing rule leaks through the write path's own
+     * catch unless it's redacted the same way.
+     */
+    test(
+      'create does not leak the raw error text for a field it never wrote',
+      async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+        const { body } = await callTool('list_brittle_create', { data: { title: 'boom' } })
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).not.toContain('Cannot read properties of null')
+        expect(result.content[0].text).not.toContain('TypeError')
+
+        expect(errorSpy).toHaveBeenCalled()
+        expect(String(errorSpy.mock.calls[0]?.[1])).toContain('Cannot read properties of null')
+
+        errorSpy.mockRestore()
+      },
+      BOOT,
+    )
+
+    test(
+      'update does not leak the raw error text for a field it never wrote',
+      async () => {
+        const id = await seedBrittle()
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+        const { body } = await callTool('list_brittle_update', {
+          where: { id },
+          data: { title: 'updated' },
+        })
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).not.toContain('Cannot read properties of null')
+        expect(result.content[0].text).not.toContain('TypeError')
+
+        expect(errorSpy).toHaveBeenCalled()
+        expect(String(errorSpy.mock.calls[0]?.[1])).toContain('Cannot read properties of null')
 
         errorSpy.mockRestore()
       },

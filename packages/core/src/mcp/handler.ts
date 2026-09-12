@@ -514,6 +514,43 @@ function parseWhereIds(
   return { ...where, id: operators }
 }
 
+/**
+ * Framework-authored errors safe to hand an MCP client verbatim — everything
+ * else is an application rule's own internal detail (#1361, #1456).
+ */
+function isSafeMcpError(error: unknown): error is Error {
+  return (
+    error instanceof McpProjectionRefusedError ||
+    error instanceof ValidationError ||
+    error instanceof AccessScopeDepthExceededError ||
+    error instanceof RelationFilterAccessDeniedError
+  )
+}
+
+/**
+ * Redacts an error raised while serving a CRUD tool behind a generic refusal,
+ * logging the real error server-side, unless it's one of the known-safe
+ * types. Shared by `query` (whose caller-named `fields` can throw while
+ * resolving the projection) and `create`/`update`/`delete` (whose own result
+ * runs Field Visibility over the full row exactly like a read does, so the
+ * same throwing rule reaches the same code path there too).
+ */
+function redactMcpError(
+  error: unknown,
+  listKey: string,
+  operationLabel: string,
+  id?: number | string,
+): Response {
+  if (isSafeMcpError(error)) {
+    return createErrorResultResponse(error.message, id)
+  }
+  console.error(`[opensaas] MCP ${operationLabel} "${listKey}" failed:`, error)
+  return createErrorResultResponse(
+    `${operationLabel} on "${listKey}" failed due to an internal error.`,
+    id,
+  )
+}
+
 async function handleCrudTool(
   toolKey: string,
   operation: string,
@@ -581,27 +618,13 @@ async function handleCrudTool(
 
           return createSuccessResponse({ items, count: items.length }, id)
         } catch (error) {
-          if (error instanceof McpProjectionRefusedError || error instanceof ValidationError) {
-            return createErrorResultResponse(error.message, id)
-          }
-          if (
-            error instanceof AccessScopeDepthExceededError ||
-            error instanceof RelationFilterAccessDeniedError
-          ) {
-            return createErrorResultResponse(error.message, id)
-          }
           // A caller-named field's access rule can still throw here — a
           // row-dependent rule cannot be classified ahead of the read
           // (`resolveFieldsProjection` only contains rules for fields the
           // caller did NOT ask for) — and whatever it threw is an internal
           // detail of the application's own rule, not something to hand an
-          // external MCP client (#1361). Log it server-side and refuse with a
-          // message that names nothing about the rule or the session.
-          console.error(`[opensaas] MCP query "${listKey}" failed:`, error)
-          return createErrorResultResponse(
-            `Query on "${listKey}" failed due to an internal error.`,
-            id,
-          )
+          // external MCP client (#1361).
+          return redactMcpError(error, listKey, 'Query', id)
         }
       }
 
@@ -663,16 +686,12 @@ async function handleCrudTool(
         return createErrorResponse(`Unknown operation: ${operation}`, id)
     }
   } catch (error) {
-    if (
-      error instanceof AccessScopeDepthExceededError ||
-      error instanceof RelationFilterAccessDeniedError
-    ) {
-      return createErrorResultResponse(error.message, id)
-    }
-    return createErrorResultResponse(
-      'Operation failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
-      id,
-    )
+    // A create/update's own returned row runs through Field Visibility
+    // exactly like a read does (no `fields`/`.select()` narrows a write's
+    // result), so a field whose `read` rule throws reaches here the same way
+    // it reaches the query path's own catch above (#1456).
+    const operationLabel = operation.charAt(0).toUpperCase() + operation.slice(1)
+    return redactMcpError(error, listKey, operationLabel, id)
   }
 }
 
