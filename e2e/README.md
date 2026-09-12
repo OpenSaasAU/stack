@@ -98,9 +98,27 @@ This approach ensures:
    ```
 
 3. Install Playwright browsers (first time only):
+
    ```bash
    pnpm exec playwright install
    ```
+
+4. Set the environment variables the starter-auth webServer needs to boot.
+   CI sets these at the job level; locally they must be in the shell that
+   runs `pnpm test:e2e` — `playwright.config.ts` fails fast, before starting
+   any server, naming whichever of these is missing:
+
+   ```bash
+   export BETTER_AUTH_SECRET="test-secret-key-for-e2e-tests-only-not-for-production-use"
+   export BETTER_AUTH_URL="http://localhost:3000"
+   export NEXT_PUBLIC_APP_URL="http://localhost:3000"
+   ```
+
+   These are test-only values with no bearing on any real deployment — the
+   suite never talks to production auth. Global setup also writes them into
+   `examples/starter-auth/.env` if that file doesn't already have them, but
+   only after the webServer has already tried to start with the first build,
+   so they still need to be in the shell's environment up front.
 
 ### Run All Tests
 
