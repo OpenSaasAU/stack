@@ -2,6 +2,13 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { startDevDatabase } from '@opensaas/stack-core/dev-database'
+import { findDatabaseConnection } from '@opensaas/stack-core/internal'
+import { CONTROL_FILE, requestDatabaseUpdate } from '../dev/control.js'
+import { runPrismaCli } from '../generator/index.js'
+import { resolveOutputPaths, stageWritePaths } from '../generator/output-paths.js'
+import { devCommand } from './dev.js'
+import { GenerationFailedError, generateCommand } from './generate.js'
 
 /**
  * The loop end to end — a real Dev database, a real reconcile and a real app
@@ -63,13 +70,17 @@ vi.mock('./generate.js', async (importOriginal) => {
   return { ...actual, generateCommand: vi.fn().mockResolvedValue(undefined) }
 })
 
-vi.mock('../generator/index.js', () => ({
-  loadOpenSaasConfig: vi.fn().mockResolvedValue({
-    config: { db: { provider: 'postgresql' }, lists: {} },
-    aliasWarnings: [],
-  }),
-  runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
-}))
+vi.mock('../generator/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../generator/index.js')>()
+  return {
+    ...actual,
+    loadOpenSaasConfig: vi.fn().mockResolvedValue({
+      config: { db: { provider: 'postgresql' }, lists: {} },
+      aliasWarnings: [],
+    }),
+    runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
+  }
+})
 
 const watcherHandlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
 
@@ -100,6 +111,27 @@ describe('devCommand', () => {
   let originalExit: typeof process.exit
   let originalDatabaseUrl: string | undefined
   let revision = 0
+  /**
+   * The devCommand() call each test starts, so afterEach can settle it before
+   * removing the temp dir a timed-out test's abandoned continuation might
+   * still be reading from (#1472).
+   */
+  let pendingLoop: Promise<void> | undefined
+  let loopSettled = false
+
+  /**
+   * Starts the loop under test and tracks whether it has settled on its own,
+   * so afterEach knows whether it still needs to release the held child
+   * (below) before it can await the result.
+   */
+  const startLoop = (options?: Parameters<typeof devCommand>[0]): Promise<void> => {
+    pendingLoop = devCommand(options)
+    pendingLoop.then(
+      () => (loopSettled = true),
+      () => (loopSettled = true),
+    )
+    return pendingLoop
+  }
 
   /**
    * Rewrites the watched config so a fired `change` carries bytes the loop has
@@ -118,6 +150,8 @@ describe('devCommand', () => {
     spawned.length = 0
     watcherHandlers.clear()
     child.hold = false
+    pendingLoop = undefined
+    loopSettled = false
 
     originalDatabaseUrl = process.env.DATABASE_URL
     delete process.env.DATABASE_URL
@@ -136,7 +170,14 @@ describe('devCommand', () => {
     fs.writeFileSync(path.join(tempDir, 'opensaas.config.ts'), 'export default {}\n')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    if (pendingLoop !== undefined) {
+      // A test that held the child (`child.hold = true`) and failed before its
+      // own `child.emit('exit', ...)` would otherwise leave devCommand()
+      // permanently awaiting an exit nothing will ever send.
+      if (!loopSettled) child.emit('exit', 0, null)
+      await pendingLoop.catch(() => {})
+    }
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
@@ -147,16 +188,13 @@ describe('devCommand', () => {
 
   it('refuses a directory with no opensaas.config.ts', async () => {
     fs.unlinkSync(path.join(tempDir, 'opensaas.config.ts'))
-    const { devCommand } = await import('./dev.js')
 
-    await expect(devCommand()).rejects.toThrow('process.exit(1)')
+    await expect(startLoop()).rejects.toThrow('process.exit(1)')
     expect(exitCode).toBe(1)
   })
 
   it('runs `next dev` when the invocation names no command', async () => {
-    const { devCommand } = await import('./dev.js')
-
-    await devCommand()
+    await startLoop()
 
     expect(spawned).toHaveLength(1)
     expect(spawned[0]?.file).toBe('next')
@@ -165,9 +203,7 @@ describe('devCommand', () => {
 
   it('runs the command given after `--`, and hands the child no database URL', async () => {
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
-    const { devCommand } = await import('./dev.js')
-
-    await devCommand({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(spawned[0]?.file).toBe('node')
     expect(spawned[0]?.args).toEqual(['server.mjs'])
@@ -176,16 +212,13 @@ describe('devCommand', () => {
   })
 
   it('starts no dev database and passes the environment through when a URL is already resolved', async () => {
-    const { findDatabaseConnection } = await import('@opensaas/stack-core/internal')
     vi.mocked(findDatabaseConnection).mockReturnValueOnce({
       url: 'postgres://someone@example.test:5432/inherited',
       provenance: 'env',
     })
-    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
 
-    const { devCommand } = await import('./dev.js')
-    await devCommand({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/inherited')
@@ -196,15 +229,12 @@ describe('devCommand', () => {
       path.join(tempDir, '.env'),
       'DATABASE_URL=postgres://someone@example.test:5432/from-dotenv\n',
     )
-    const { findDatabaseConnection } = await import('@opensaas/stack-core/internal')
     vi.mocked(findDatabaseConnection).mockImplementationOnce(() => {
       const url = process.env.DATABASE_URL
       return url === undefined || url.length === 0 ? undefined : { url, provenance: 'env' as const }
     })
-    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
 
-    const { devCommand } = await import('./dev.js')
-    await devCommand({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(stop).not.toHaveBeenCalled()
@@ -212,25 +242,19 @@ describe('devCommand', () => {
   })
 
   it('stops the dev database when the boot sequence fails before the app starts', async () => {
-    const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockRejectedValueOnce(new Error('The `prisma` CLI is not installed'))
 
-    const { devCommand } = await import('./dev.js')
-
-    await expect(devCommand()).rejects.toThrow('The `prisma` CLI is not installed')
+    await expect(startLoop()).rejects.toThrow('The `prisma` CLI is not installed')
     expect(spawned).toHaveLength(0)
     expect(stop).toHaveBeenCalled()
   })
 
   it('runs the loop async stop() when boot generation fails, rather than exiting the process (#1223)', async () => {
-    const { generateCommand, GenerationFailedError } = await import('./generate.js')
     vi.mocked(generateCommand).mockRejectedValueOnce(
       new GenerationFailedError('config surface invalid'),
     )
 
-    const { devCommand } = await import('./dev.js')
-
-    await devCommand()
+    await startLoop()
 
     expect(exitCode).toBeUndefined()
     expect(process.exit).not.toHaveBeenCalled()
@@ -242,7 +266,6 @@ describe('devCommand', () => {
   it('has signal handlers installed before the dev database starts, and removes them after', async () => {
     const baseline = process.listenerCount('SIGINT')
     let installedWhenStarting = 0
-    const { startDevDatabase } = await import('@opensaas/stack-core/dev-database')
     vi.mocked(startDevDatabase).mockImplementationOnce(async () => {
       installedWhenStarting = process.listenerCount('SIGINT')
       return {
@@ -255,8 +278,7 @@ describe('devCommand', () => {
       }
     })
 
-    const { devCommand } = await import('./dev.js')
-    await devCommand({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(installedWhenStarting).toBe(baseline + 1)
     expect(process.listenerCount('SIGINT')).toBe(baseline)
@@ -265,12 +287,10 @@ describe('devCommand', () => {
   it('refuses `db update` when a refused generation replaced the parked one', async () => {
     child.hold = true
 
-    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
     const { paths: live } = resolveOutputPaths(tempDir)
     const stagingDir = path.join(tempDir, '.opensaas', 'staged')
     const staged = stageWritePaths(live, stagingDir)
 
-    const { generateCommand } = await import('./generate.js')
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
@@ -291,7 +311,6 @@ describe('devCommand', () => {
         },
       },
     })
-    const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockImplementation(async () => ({
       exitCode: 0,
       signal: null,
@@ -299,10 +318,8 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    const { devCommand } = await import('./dev.js')
-    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
-    const { CONTROL_FILE, requestDatabaseUpdate } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
     const change = watcherHandlers.get('change')
@@ -325,7 +342,7 @@ describe('devCommand', () => {
     expect(fs.existsSync(live.contractModule)).toBe(false)
 
     child.emit('exit', 0, null)
-    await loop
+    await pendingLoop
   })
 
   it('stages nothing for a save that reproduces the config it already reconciled', async () => {
@@ -335,12 +352,10 @@ describe('devCommand', () => {
       said.push(parts.map((part) => String(part)).join(' '))
     })
 
-    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
     const { paths: live } = resolveOutputPaths(tempDir)
     const stagingDir = path.join(tempDir, '.opensaas', 'staged')
     const staged = stageWritePaths(live, stagingDir)
 
-    const { generateCommand } = await import('./generate.js')
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
@@ -358,7 +373,6 @@ describe('devCommand', () => {
         },
       },
     })
-    const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockImplementation(async () => ({
       exitCode: 0,
       signal: null,
@@ -366,10 +380,8 @@ describe('devCommand', () => {
       stdout: destructivePlan,
     }))
 
-    const { devCommand } = await import('./dev.js')
-    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
-    const { CONTROL_FILE } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
     const change = watcherHandlers.get('change')
@@ -388,17 +400,15 @@ describe('devCommand', () => {
 
     log.mockRestore()
     child.emit('exit', 0, null)
-    await loop
+    await pendingLoop
   })
 
   it('retries an identical re-save after a reconcile that failed', async () => {
     child.hold = true
 
-    const { resolveOutputPaths, stageWritePaths } = await import('../generator/output-paths.js')
     const { paths: live } = resolveOutputPaths(tempDir)
     const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
 
-    const { generateCommand } = await import('./generate.js')
     let stagedGenerations = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
@@ -410,7 +420,6 @@ describe('devCommand', () => {
 
     // Call 1 is the boot reconcile; call 2 is the first save's dry run, failed
     // the way a database briefly out of reach fails it.
-    const { runPrismaCli } = await import('../generator/index.js')
     let prismaCalls = 0
     vi.mocked(runPrismaCli).mockImplementation(async () => {
       prismaCalls += 1
@@ -424,10 +433,8 @@ describe('devCommand', () => {
       return { exitCode: 0, signal: null, output: plan, stdout: plan }
     })
 
-    const { devCommand } = await import('./dev.js')
-    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
-    const { CONTROL_FILE } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
     const change = watcherHandlers.get('change')
@@ -444,7 +451,7 @@ describe('devCommand', () => {
     expect(prismaCalls).toBeGreaterThan(2)
 
     child.emit('exit', 0, null)
-    await loop
+    await pendingLoop
   })
 
   it('puts the migration refs back when the config change stages nothing', async () => {
@@ -454,10 +461,8 @@ describe('devCommand', () => {
     fs.mkdirSync(refsDir, { recursive: true })
     fs.writeFileSync(path.join(refsDir, 'db.json'), JSON.stringify({ hash: 'before' }), 'utf-8')
 
-    const { resolveOutputPaths } = await import('../generator/output-paths.js')
     const { paths: live } = resolveOutputPaths(tempDir)
 
-    const { generateCommand } = await import('./generate.js')
     let refusals = 0
     vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
       if (options.stagingDir === undefined) {
@@ -471,10 +476,8 @@ describe('devCommand', () => {
       throw new Error('config surface invalid')
     })
 
-    const { devCommand } = await import('./dev.js')
-    const loop = devCommand({ appCommand: ['node', 'server.mjs'] })
+    startLoop({ appCommand: ['node', 'server.mjs'] })
 
-    const { CONTROL_FILE } = await import('../dev/control.js')
     await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
     editConfig()
@@ -486,15 +489,13 @@ describe('devCommand', () => {
     expect(restored).toEqual({ hash: 'before' })
 
     child.emit('exit', 0, null)
-    await loop
+    await pendingLoop
   })
 
   it('does not start the app when reconciliation does not apply', async () => {
-    const { runPrismaCli } = await import('../generator/index.js')
     vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
 
-    const { devCommand } = await import('./dev.js')
-    await devCommand()
+    await startLoop()
 
     expect(spawned).toHaveLength(0)
     expect(process.exitCode).toBe(1)
