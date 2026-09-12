@@ -58,7 +58,10 @@ vi.mock('@opensaas/stack-core/internal', () => ({
   findDatabaseConnection: vi.fn(() => undefined),
 }))
 
-vi.mock('./generate.js', () => ({ generateCommand: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('./generate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./generate.js')>()
+  return { ...actual, generateCommand: vi.fn().mockResolvedValue(undefined) }
+})
 
 vi.mock('../generator/index.js', () => ({
   loadOpenSaasConfig: vi.fn().mockResolvedValue({
@@ -215,6 +218,23 @@ describe('devCommand', () => {
     const { devCommand } = await import('./dev.js')
 
     await expect(devCommand()).rejects.toThrow('The `prisma` CLI is not installed')
+    expect(spawned).toHaveLength(0)
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('runs the loop async stop() when boot generation fails, rather than exiting the process (#1223)', async () => {
+    const { generateCommand, GenerationFailedError } = await import('./generate.js')
+    vi.mocked(generateCommand).mockRejectedValueOnce(
+      new GenerationFailedError('config surface invalid'),
+    )
+
+    const { devCommand } = await import('./dev.js')
+
+    await devCommand()
+
+    expect(exitCode).toBeUndefined()
+    expect(process.exit).not.toHaveBeenCalled()
+    expect(process.exitCode).toBe(1)
     expect(spawned).toHaveLength(0)
     expect(stop).toHaveBeenCalled()
   })
