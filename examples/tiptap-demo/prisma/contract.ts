@@ -36,7 +36,7 @@ export const contract = defineContract(
         content: field.json(),
         excerpt: field.json().optional(),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        authorId: field.uuidNative().optional().column('author'),
+        authorId: field.uuidNative().optional(),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),

@@ -35,7 +35,7 @@ export const contract = defineContract(
         content: field.text().optional(),
         coverImage: field.json().optional(),
         attachment: field.json().optional(),
-        authorId: field.uuidNative().optional().column('author'),
+        authorId: field.uuidNative().optional(),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),

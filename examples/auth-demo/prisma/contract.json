@@ -275,7 +275,7 @@
             "storage": {
               "fields": {
                 "authorId": {
-                  "column": "author"
+                  "column": "authorId"
                 },
                 "content": {
                   "column": "content"
@@ -732,7 +732,7 @@
             },
             "Post": {
               "columns": {
-                "author": {
+                "authorId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -781,7 +781,7 @@
                 {
                   "source": {
                     "columns": [
-                      "author"
+                      "authorId"
                     ],
                     "namespaceId": "public",
                     "tableName": "Post"
@@ -798,10 +798,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "author"
+                    "authorId"
                   ],
-                  "name": "Post_author_idx_d6f5b826",
-                  "prefix": "Post_author_idx",
+                  "name": "Post_authorId_idx_e47547ed",
+                  "prefix": "Post_authorId_idx",
                   "unique": false
                 }
               ],
@@ -1029,7 +1029,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "c917b601262e3c2273e05ecf91dcb0c49c5661c28fe07d8f896ad797f94e7402"
+    "storageHash": "468899da0780e40fc7a5d7dc28ce037dfc771bd9c22b2349f5e6d7549d6c47d0"
   },
   "execution": {
     "executionHash": "2a37caf16f34ae2bd8b4f3e8090859f6cc1b6352bd7f085d1502541f7127f148",

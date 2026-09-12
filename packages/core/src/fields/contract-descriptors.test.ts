@@ -330,7 +330,7 @@ describe('getContractField — every core builder describes its contract contrib
     expect(field.outputType).toBe("import('@acme/money').Money")
   })
 
-  test('relationship (to-one, bidirectional): owns an indexed, nullable foreign key mapped to the field name', () => {
+  test('relationship (to-one, bidirectional): owns an indexed, nullable foreign key named after the field', () => {
     const field = postAuthor
     expect(field.getContractField?.('author', 'Post', config)).toEqual({
       kind: 'relation',
@@ -339,7 +339,6 @@ describe('getContractField — every core builder describes its contract contrib
       many: false,
       foreignKey: {
         name: 'authorId',
-        map: 'author',
         nullable: true,
         unique: false,
         index: true,
@@ -389,7 +388,6 @@ describe('getContractField — every core builder describes its contract contrib
       many: false,
       foreignKey: {
         name: 'userId',
-        map: 'user',
         nullable: false,
         unique: true,
         index: true,

@@ -40,7 +40,7 @@ export const contract = defineContract(
         internalNotes: field.text().optional(),
         status: field.text().default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        authorId: field.uuidNative().optional().column('author'),
+        authorId: field.uuidNative().optional(),
         createdAt: field.temporal.createdAtString(),
         updatedAt: field.temporal.updatedAtString(),
       },

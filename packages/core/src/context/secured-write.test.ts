@@ -39,16 +39,17 @@ function schemaConfig(): OpenSaasConfig {
 }
 
 /**
- * The foreign key each post carries, straight off the driver. The column is
- * named for the field (`author`), the contract member for the key it holds
- * (`authorId`) — so this reads what was actually stored, not what the engine
- * chose to return.
+ * The foreign key each post carries, straight off the driver by its contract
+ * member (`authorId`) — so this reads what was actually stored, not what the
+ * engine chose to return.
  */
 async function storedAuthorIds(url: string): Promise<Array<string | null>> {
   const client = new pg.Client({ connectionString: url })
   await client.connect()
   try {
-    const result = await client.query('select "author" from "public"."Post" order by "title"')
+    const result = await client.query(
+      'select "authorId" as "author" from "public"."Post" order by "title"',
+    )
     return result.rows.map((row: { author: string | null }) => row.author)
   } finally {
     await client.end()

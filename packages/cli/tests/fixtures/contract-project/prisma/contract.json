@@ -94,7 +94,7 @@
                   "column": "action"
                 },
                 "actorId": {
-                  "column": "actor"
+                  "column": "actorId"
                 },
                 "createdAt": {
                   "column": "createdAt"
@@ -282,13 +282,13 @@
                   "column": "attachment"
                 },
                 "authorId": {
-                  "column": "author"
+                  "column": "authorId"
                 },
                 "body": {
                   "column": "body"
                 },
                 "categoryId": {
-                  "column": "category"
+                  "column": "categoryId"
                 },
                 "createdAt": {
                   "column": "createdAt"
@@ -386,7 +386,7 @@
                   "column": "updatedAt"
                 },
                 "userId": {
-                  "column": "user"
+                  "column": "userId"
                 }
               },
               "namespaceId": "public",
@@ -598,7 +598,7 @@
                   "column": "id"
                 },
                 "managerId": {
-                  "column": "manager"
+                  "column": "managerId"
                 },
                 "name": {
                   "column": "name"
@@ -627,7 +627,7 @@
                   "nativeType": "text",
                   "nullable": false
                 },
-                "actor": {
+                "actorId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -656,7 +656,7 @@
                 {
                   "source": {
                     "columns": [
-                      "actor"
+                      "actorId"
                     ],
                     "namespaceId": "audit",
                     "tableName": "AuditEntry"
@@ -673,10 +673,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "actor"
+                    "actorId"
                   ],
-                  "name": "AuditEntry_actor_idx_da7d3797",
-                  "prefix": "AuditEntry_actor_idx",
+                  "name": "AuditEntry_actorId_idx_a58f6b4b",
+                  "prefix": "AuditEntry_actorId_idx",
                   "unique": false
                 }
               ],
@@ -759,7 +759,7 @@
                   "nativeType": "timestamptz",
                   "nullable": false
                 },
-                "user": {
+                "userId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -770,7 +770,7 @@
                   "onDelete": "cascade",
                   "source": {
                     "columns": [
-                      "user"
+                      "userId"
                     ],
                     "namespaceId": "public",
                     "tableName": "Profile"
@@ -793,7 +793,7 @@
               "uniques": [
                 {
                   "columns": [
-                    "user"
+                    "userId"
                   ]
                 }
               ]
@@ -881,7 +881,7 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
-                "manager": {
+                "managerId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -901,7 +901,7 @@
                 {
                   "source": {
                     "columns": [
-                      "manager"
+                      "managerId"
                     ],
                     "namespaceId": "public",
                     "tableName": "User"
@@ -918,10 +918,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "manager"
+                    "managerId"
                   ],
-                  "name": "User_manager_idx_93cf3cc1",
-                  "prefix": "User_manager_idx",
+                  "name": "User_managerId_idx_f8369ba6",
+                  "prefix": "User_managerId_idx",
                   "unique": false
                 }
               ],
@@ -945,7 +945,7 @@
                   "nativeType": "jsonb",
                   "nullable": true
                 },
-                "author": {
+                "authorId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -955,7 +955,7 @@
                   "nativeType": "jsonb",
                   "nullable": true
                 },
-                "category": {
+                "categoryId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -1018,7 +1018,7 @@
                   "onDelete": "setNull",
                   "source": {
                     "columns": [
-                      "author"
+                      "authorId"
                     ],
                     "namespaceId": "public",
                     "tableName": "post"
@@ -1034,7 +1034,7 @@
                 {
                   "source": {
                     "columns": [
-                      "category"
+                      "categoryId"
                     ],
                     "namespaceId": "public",
                     "tableName": "post"
@@ -1051,15 +1051,15 @@
               "indexes": [
                 {
                   "columns": [
-                    "author"
+                    "authorId"
                   ],
-                  "name": "post_author_idx_d6f5b826",
-                  "prefix": "post_author_idx",
+                  "name": "post_authorId_idx_e47547ed",
+                  "prefix": "post_authorId_idx",
                   "unique": false
                 },
                 {
                   "columns": [
-                    "author",
+                    "authorId",
                     "status"
                   ],
                   "name": "post_author_status",
@@ -1067,10 +1067,10 @@
                 },
                 {
                   "columns": [
-                    "category"
+                    "categoryId"
                   ],
-                  "name": "post_category_idx_f2600f8e",
-                  "prefix": "post_category_idx",
+                  "name": "post_categoryId_idx_15c304f2",
+                  "prefix": "post_categoryId_idx",
                   "unique": false
                 }
               ],
@@ -1096,7 +1096,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "9d76ddf4bf714237a44249e5e5f765c5775586992a706774ccf2c7a0da5e195a"
+    "storageHash": "bf884008ca84b96723431c4d2eb7aa537e2fd1b051887c068b8605d2e9f2deb8"
   },
   "execution": {
     "executionHash": "dae5903078565ab31cb5f8ebb7ad424a5c262825cb64eb3e9499e857380e9396",

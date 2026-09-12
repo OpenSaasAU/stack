@@ -250,7 +250,7 @@
                   "column": "id"
                 },
                 "ownerId": {
-                  "column": "owner"
+                  "column": "ownerId"
                 }
               },
               "namespaceId": "public",
@@ -343,7 +343,7 @@
             "storage": {
               "fields": {
                 "authorId": {
-                  "column": "author"
+                  "column": "authorId"
                 },
                 "content": {
                   "column": "content"
@@ -828,7 +828,7 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
-                "owner": {
+                "ownerId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -838,7 +838,7 @@
                 {
                   "source": {
                     "columns": [
-                      "owner"
+                      "ownerId"
                     ],
                     "namespaceId": "public",
                     "tableName": "Note"
@@ -855,10 +855,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "owner"
+                    "ownerId"
                   ],
-                  "name": "Note_owner_idx_01158e2c",
-                  "prefix": "Note_owner_idx",
+                  "name": "Note_ownerId_idx_e2d0c1ef",
+                  "prefix": "Note_ownerId_idx",
                   "unique": false
                 }
               ],
@@ -871,7 +871,7 @@
             },
             "Post": {
               "columns": {
-                "author": {
+                "authorId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -929,7 +929,7 @@
                 {
                   "source": {
                     "columns": [
-                      "author"
+                      "authorId"
                     ],
                     "namespaceId": "public",
                     "tableName": "Post"
@@ -946,10 +946,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "author"
+                    "authorId"
                   ],
-                  "name": "Post_author_idx_d6f5b826",
-                  "prefix": "Post_author_idx",
+                  "name": "Post_authorId_idx_e47547ed",
+                  "prefix": "Post_authorId_idx",
                   "unique": false
                 }
               ],
@@ -1177,7 +1177,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "7b15b05bbab7fc8a37c1e3d93c2437db3e8324c9b1bc0ab21461d950dcb12ec6"
+    "storageHash": "a3c568810fd87df81bc4b23f18df43403e8f3a29c48f93cb44c5e9c9dfcd464a"
   },
   "execution": {
     "executionHash": "26b60f4cb79e129157ebb5dfc4f5ccb621b521b2b170875af684be56a0aedaff",

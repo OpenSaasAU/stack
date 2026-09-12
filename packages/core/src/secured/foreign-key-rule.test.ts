@@ -3,6 +3,47 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
+/**
+ * The same two rule shapes, one level deeper: `Blog.posts` is a to-many the
+ * top-level read always reaches, and `Post.author` is the nested to-one the
+ * two field rules read `item.authorId` off. Before #1236 this nesting was
+ * refused outright (`NestedToOneIncludeError`); now that the foreign key's
+ * physical column no longer collides with the relation's own alias, the read
+ * executes, and `restoreForeignKeys`'s removal must not have reopened the
+ * fail-open the flat shapes above close (issue #1236, comment recording the
+ * asymmetry between `restoreForeignKeys` and `applyForeignKeys`).
+ */
+const nestedConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    Blog: {
+      fields: {
+        name: text({ validation: { isRequired: true } }),
+        posts: relationship({ ref: 'Post.blog', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    User: {
+      fields: { name: text({ validation: { isRequired: true } }) },
+      // Denied outright, exactly like `scopedConfig.User` — the include's own
+      // subquery scopes `author` away regardless of the outer read.
+      access: { operation: { query: () => false } },
+    },
+    Post: {
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+        blog: relationship({ ref: 'Blog.posts' }),
+        author: relationship({ ref: 'User' }),
+        ownerNotes: text({
+          access: { read: ({ session, item }) => session?.userId === item?.authorId },
+        }),
+        orphanNotes: text({ access: { read: ({ item }) => item?.authorId == null } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+  },
+}
+
 const BOOT = 120_000
 
 /**
@@ -77,6 +118,12 @@ let scopedAuthorId: string
 let scopedPostId: string
 let orphanPostId: string
 
+let nested: TestDatabase
+let nestedAuthorId: string
+let nestedBlogId: string
+let nestedAuthoredPostId: string
+let nestedOrphanPostId: string
+
 beforeAll(async () => {
   database = await createTestDatabase(config)
   const sudo = database.context(null).sudo()
@@ -110,11 +157,41 @@ beforeAll(async () => {
   if (!scopedPost || !orphanPost) throw new Error('seed scoped posts')
   scopedPostId = String(scopedPost.id)
   orphanPostId = String(orphanPost.id)
+
+  nested = await createTestDatabase(nestedConfig)
+  const nestedSudo = nested.context(null).sudo()
+  const nestedAuthor = await nestedSudo.db.User.create({ data: { name: 'author' } })
+  if (!nestedAuthor) throw new Error('seed nested user')
+  nestedAuthorId = String(nestedAuthor.id)
+  const blog = await nestedSudo.db.Blog.create({ data: { name: 'blog' } })
+  if (!blog) throw new Error('seed nested blog')
+  nestedBlogId = String(blog.id)
+  const authoredPost = await nestedSudo.db.Post.create({
+    data: {
+      title: 'authored',
+      ownerNotes: 'OWNER',
+      orphanNotes: 'ORPHAN',
+      blog: { connect: { id: nestedBlogId } },
+      author: { connect: { id: nestedAuthorId } },
+    },
+  })
+  const orphanPostNested = await nestedSudo.db.Post.create({
+    data: {
+      title: 'orphan',
+      ownerNotes: 'OWNER',
+      orphanNotes: 'ORPHAN',
+      blog: { connect: { id: nestedBlogId } },
+    },
+  })
+  if (!authoredPost || !orphanPostNested) throw new Error('seed nested posts')
+  nestedAuthoredPostId = String(authoredPost.id)
+  nestedOrphanPostId = String(orphanPostNested.id)
 }, BOOT)
 
 afterAll(async () => {
   await database?.close()
   await scoped?.close()
+  await nested?.close()
 })
 
 describe('a read rule comparing the foreign key', () => {
@@ -216,6 +293,86 @@ describe('a read rule comparing the foreign key of an unreadable relation', () =
         .first()
       expect(included?.author).toBeNull()
       expect(included?.authorId).toBeNull()
+    },
+    BOOT,
+  )
+})
+
+/** The row type here carries no generated contract, so `.posts` reads as `unknown`. */
+function postsOf(row: unknown): Record<string, unknown>[] {
+  const posts = (row as { posts?: unknown })?.posts
+  return Array.isArray(posts) ? (posts as Record<string, unknown>[]) : []
+}
+
+describe('the same rule, one level deeper (#1236)', () => {
+  test(
+    'the nested to-one executes rather than being refused',
+    async () => {
+      const asAuthor = nested.context({ userId: nestedAuthorId })
+      const rows = await asAuthor.db.Blog.where({ id: { equals: nestedBlogId } })
+        .include('posts', (posts) => posts.orderBy({ title: 'asc' }).include('author'))
+        .all()
+
+      expect(rows).toHaveLength(1)
+      expect(postsOf(rows[0]).map((post) => post.title)).toEqual(['authored', 'orphan'])
+    },
+    BOOT,
+  )
+
+  test(
+    'still opens an owner-only field to the author, nested exactly as flat',
+    async () => {
+      const asAuthor = nested.context({ userId: nestedAuthorId })
+      const [row] = await asAuthor.db.Blog.where({ id: { equals: nestedBlogId } })
+        .include('posts', (posts) => posts.where({ id: { equals: nestedAuthoredPostId } }))
+        .all()
+
+      expect(postsOf(row)[0]?.ownerNotes).toBe('OWNER')
+    },
+    BOOT,
+  )
+
+  test(
+    'keeps an "unowned rows are public" field closed on an owned row, nested',
+    async () => {
+      const asAuthor = nested.context({ userId: nestedAuthorId })
+      const [row] = await asAuthor.db.Blog.where({ id: { equals: nestedBlogId } })
+        .include('posts', (posts) => posts.where({ id: { equals: nestedAuthoredPostId } }))
+        .all()
+
+      expect(postsOf(row)[0]?.orphanNotes).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  test(
+    'still opens an "unowned rows are public" field on a row that really has no author, nested',
+    async () => {
+      const asAuthor = nested.context({ userId: nestedAuthorId })
+      const [row] = await asAuthor.db.Blog.where({ id: { equals: nestedBlogId } })
+        .include('posts', (posts) =>
+          posts.where({ id: { equals: nestedOrphanPostId } }).include('author'),
+        )
+        .all()
+
+      expect(postsOf(row)[0]?.orphanNotes).toBe('ORPHAN')
+      expect(postsOf(row)[0]?.author).toBeNull()
+    },
+    BOOT,
+  )
+
+  test(
+    'reports the nested foreign key of a relation the caller may not see as null',
+    async () => {
+      const asAuthor = nested.context({ userId: nestedAuthorId })
+      const [row] = await asAuthor.db.Blog.where({ id: { equals: nestedBlogId } })
+        .include('posts', (posts) =>
+          posts.where({ id: { equals: nestedAuthoredPostId } }).include('author'),
+        )
+        .all()
+
+      expect(postsOf(row)[0]?.author).toBeNull()
+      expect(postsOf(row)[0]?.authorId).toBeNull()
     },
     BOOT,
   )

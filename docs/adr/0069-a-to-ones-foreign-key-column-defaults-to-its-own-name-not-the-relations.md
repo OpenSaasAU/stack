@@ -1,0 +1,34 @@
+# A to-one's foreign-key column defaults to its own name, not the relation's
+
+Status: accepted
+
+## Context
+
+`getContractRelation` (`packages/core/src/fields/index.ts`) derived a to-one's foreign-key column as `{ name: '<field>Id', map: '<field>' }` whenever `db.foreignKey.map` was left unset — the contract MEMBER is `authorId`, but the PHYSICAL column defaulted to `author`, the relation field's own name.
+
+rc.8 aliases an include by the relation's name and a scalar projection by its physical column name. With the default above, `Post.author` (the relation) and `Post.authorId` (the scalar) land on the **same alias** — `author` — in the compiled query. Two consequences, one already patched and one still open when this record was written:
+
+1. **Patched in #1235.** `.include('author')` returned the related row under the `authorId` key too, so a relation Field Visibility had stripped survived under its foreign key. `restoreForeignKeys`/`applyForeignKeys` (`secured/read.ts`) papered over it: re-read the row's own column off a query that named no include (so nothing could collide), then narrow it back down to what the caller may see after Field Visibility ran.
+2. **Still open, and this record's subject.** A **nested** to-one include — `.include('posts', (posts) => posts.include('author'))` — fails outright in rc.8 with `column reference "author" is ambiguous`, because the collision recurs one level down where the read-boundary patch above cannot reach it (it only ever re-read the TOP level's own columns). `NestedToOneIncludeError` (`secured/include.ts`) refused the shape by name rather than letting the database reject it unintelligibly.
+
+The comment thread on issue #1236 traced a second, worse consequence of the same collision: a field-level `read` rule of the shape `session.userId === item.authorId` (or its inverse, `item.authorId == null`) reads a value the collision could corrupt, which flips an allow to a deny **or a deny to a disclosure** depending on whether the caller happened to include the relation. That is an access-control fail-open, not merely a broken read.
+
+## Decision
+
+- **The physical column defaults to the contract member's own name.** `getContractRelation` no longer defaults `foreignKey.map` to the field name; it carries `map` only when `db.foreignKey.map` is set explicitly. `derive.ts`'s existing `map !== name` check then does its job as documented: a to-one's foreign key column is named `<field>Id` — contract member and physical column agree — unless the application explicitly renames it.
+- **Renaming a foreign-key column onto the relation's own name is refused at generate time.** `db.foreignKey.map` equal to the field's own name reintroduces exactly this collision, deliberately rather than by the old default, so it is refused by name (naming the list, the field and the fix) rather than left to fail the same way at read time.
+- **The read-boundary workaround is deleted, not reduced.** `restoreForeignKeys`, `ownColumns`, `scopedForeignKeys`, `foldsToOwnColumn`, `identityOf` and `identityIn` (`secured/read.ts`) are gone: with no collision, the scoped read's own row already carries the correct foreign-key column, so there is nothing to restore. `applyForeignKeys` — the pass that narrows a to-one's foreign key to `null` when the relation itself is denied or scoped away — stays. It was never part of the workaround (the `mappedAuthor` fixture, whose column was already renamed and so never collided, exercised it before this record), and it already recurses into nested includes; removing the restore pass leaves it as the only foreign-key pass, with no asymmetry to keep in sync.
+- **`NestedToOneIncludeError` and its refusal are deleted.** The alias collision it guarded against cannot arise once the physical column disagrees with the relation's own name, so the guard's condition (`target.foreignKey?.map === request.name`) is now unreachable rather than merely untested.
+
+## Consequences
+
+- **This is a schema change for every existing database.** A to-one relationship that relied on the default — every one that did not set `db.foreignKey.map` — has its physical column renamed from `<field>` to `<field>Id`. There is no opt-out: keeping the old physical name is exactly the collision this record closes, so `db.foreignKey.map: '<field>'` is refused by the same generate-time check that would have produced it by accident.
+- **The safe migration order is rename-then-regenerate, not regenerate-then-migrate.** `ALTER TABLE "<Table>" RENAME COLUMN "<field>" TO "<field>Id"` for every affected relationship, run against the existing database BEFORE deploying the regenerated contract, leaves the column already where the new contract expects it — so the deploy reconciles against a schema with no diff to plan, rather than depending on whatever a diffing tool infers from two differently-named columns it has no history connecting. Every example and fixture in this repository was regenerated the ordinary way (no live data to preserve), which is why their own diffs are contract-artifact-only.
+- Every test and fixture that seeded a to-one by writing the relation's own field name directly through the Unsafe surface (`{ author: id }`) now writes the foreign-key member instead (`{ authorId: id }`) — that shape was always a member-level write, and it only ever reached the right column because the physical name happened to collide with it.
+- A raw SQL assertion reading a to-one's physical column by name (several `context/*.test.ts` files, over `pg.Client`) now reads `<field>Id`.
+- `packages/ui`'s `ItemForm.composeItemViewRead` still does not nest an `.include()` for a Relationship-table section's own relationship columns — that gap was never caused by this collision, and closing it is a follow-up now that the engine no longer refuses the shape.
+
+## Considered options
+
+- **Keep the default, and make the read-boundary workaround handle the nested case too** (recurse `restoreForeignKeys` the way `applyForeignKeys` already does, per the issue's own comment thread). Rejected: it treats the emitted contract's own collision as permanent and pays for it on every include-plus-select forever — a companion query per page, already measured as a cost taken knowingly — rather than removing the defect the workaround exists to route around. It also does nothing for the fail-open: the corrupted value a row-dependent rule reads is a property of the collision itself, not of how deep the include nests, so a nested-recursing restore pass would still need to run before every such rule evaluates, at every level, forever.
+- **Refuse the nested shape permanently** (keep `NestedToOneIncludeError`) rather than fixing the column. Rejected: it is the workaround already shipped, stated in the issue that opened this record as the treatment of the symptom rather than the defect, and it does not touch the fail-open either.

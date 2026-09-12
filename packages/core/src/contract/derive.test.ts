@@ -53,7 +53,6 @@ describe('deriveContract — ids', () => {
         name: 'invoiceId',
         type: { pack: 'pg', type: 'int' },
         nullable: true,
-        map: 'invoice',
         index: true,
       },
     ])
@@ -264,6 +263,15 @@ describe('deriveContract — relations', () => {
     expect(mapped.models[0].columns[0].map).toBe('b_ref')
   })
 
+  test("a foreign-key map that equals the relation's own field name is refused (#1236)", () => {
+    expect(() =>
+      single({
+        A: { fields: { b: relationship({ ref: 'B', db: { foreignKey: { map: 'b' } } }) } },
+        B: { fields: { name: text() } },
+      }),
+    ).toThrow(/fields\.b maps its foreign key onto "b" — the relation's own name/)
+  })
+
   test('isIndexed on a relationship shapes the FK column: false drops the index, unique replaces it', () => {
     const data = single({
       A: {
@@ -275,12 +283,11 @@ describe('deriveContract — relations', () => {
       B: { fields: { name: text() } },
     })
     expect(data.models[0].columns).toEqual([
-      { name: 'plainId', type: { pack: 'pg', type: 'uuid' }, nullable: true, map: 'plain' },
+      { name: 'plainId', type: { pack: 'pg', type: 'uuid' }, nullable: true },
       {
         name: 'onlyId',
         type: { pack: 'pg', type: 'uuid' },
         nullable: true,
-        map: 'only',
         unique: true,
       },
     ])
@@ -404,7 +411,6 @@ describe('deriveContract — db.indexes resolution', () => {
       name: 'bId',
       type: { pack: 'pg', type: 'uuid' },
       nullable: true,
-      map: 'b',
     })
     expect(data.models[0].indexes).toEqual([{ columns: ['bId'], unique: false, name: 'A_b_idx' }])
   })
@@ -435,7 +441,6 @@ describe('deriveContract — db.indexes resolution', () => {
       name: 'userId',
       type: { pack: 'pg', type: 'uuid' },
       nullable: true,
-      map: 'user',
     })
     expect(profile.indexes).toEqual([
       { columns: ['userId'], unique: true, name: 'Profile_user_key' },

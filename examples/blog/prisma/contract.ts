@@ -53,7 +53,7 @@ export const contract = defineContract(
         status: field.text().default('draft'),
         publishDate: field.column(dateStringColumn).optional().column('publish_date'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        authorId: field.uuidNative().optional().column('author'),
+        authorId: field.uuidNative().optional(),
         createdAt: field.temporal.createdAtString(),
         updatedAt: field.temporal.updatedAtString(),
       },
@@ -78,8 +78,8 @@ export const contract = defineContract(
     const model_PostTag = (models.PostTag = model('PostTag', {
       fields: {
         id: field.id.uuidv7Native(),
-        postId: field.uuidNative().optional().column('post'),
-        tagId: field.uuidNative().optional().column('tag'),
+        postId: field.uuidNative().optional(),
+        tagId: field.uuidNative().optional(),
         createdAt: field.temporal.createdAtString(),
         updatedAt: field.temporal.updatedAtString(),
       },

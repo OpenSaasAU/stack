@@ -105,11 +105,11 @@ describe('deriveConstraintMap', () => {
   it('names the unique on the owning column of a one-to-one, by its field key', () => {
     const map = deriveConstraintMap(oneToOneConfig, deriveContract(oneToOneConfig))
 
-    expect(map.Profile_user_key).toEqual({ list: 'Profile', fields: ['user'] })
+    expect(map.Profile_userId_key).toEqual({ list: 'Profile', fields: ['user'] })
     // `Passport` sorts before `Person`, so `Passport.holder` owns the column.
-    expect(map.Passport_holder_key).toEqual({ list: 'Passport', fields: ['holder'] })
+    expect(map.Passport_holderId_key).toEqual({ list: 'Passport', fields: ['holder'] })
     // `partner` sorts before `spouse` on the self-referential pair.
-    expect(map.Person_partner_key).toEqual({ list: 'Person', fields: ['partner'] })
+    expect(map.Person_partnerId_key).toEqual({ list: 'Person', fields: ['partner'] })
   })
 
   it('adopts a db.indexes unique entry under its exact declared name', () => {
