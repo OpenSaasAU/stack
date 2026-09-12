@@ -431,6 +431,7 @@ describe('Field Visibility is the boundary, not the omission', () => {
       expect(includedRelations(recorder.plans[0]).sort()).toEqual(['declaredEditor', 'reviewer'])
       const published = rows.find((row) => row.published === true)
       const draft = rows.find((row) => row.published === false)
+      expect(draft).toBeDefined()
       expect(published?.reviewer).toMatchObject({ handle: 'ada' })
       expect(draft?.reviewer).toBeUndefined()
       // The relation is stripped from every key that could carry it, the
