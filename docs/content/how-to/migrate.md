@@ -881,13 +881,12 @@ export async function GET() {
 // After (Server action)
 // app/actions/posts.ts
 ;('use server')
-import { headers } from 'next/headers'
 import { getContext } from '@/.opensaas/context'
-import { auth } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
 export async function getPosts() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  const context = await getContext(session?.user)
+  const session = await getSession()
+  const context = session ? await getContext(session) : await getContext()
   return await context.db.Post.where({ published: { equals: true } }).all()
 }
 ```
