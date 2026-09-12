@@ -44,6 +44,7 @@ export { getInitials, getAvatarTone, AVATAR_TONES } from './lib/avatar.js'
 export {
   TextField,
   IntegerField,
+  DecimalField,
   CheckboxField,
   SelectField,
   TimestampField,
@@ -121,6 +122,7 @@ export type { EmptyStateProps, EmptyStateClassNames } from './components/EmptySt
 export type {
   TextFieldProps,
   IntegerFieldProps,
+  DecimalFieldProps,
   CheckboxFieldProps,
   SelectFieldProps,
   TimestampFieldProps,

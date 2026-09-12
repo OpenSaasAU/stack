@@ -2,6 +2,8 @@
 
 Status: accepted
 
+> **Amended 2026-09-12 by [decimal has no registered admin component, so the field cannot be edited](https://github.com/OpenSaasAU/stack/issues/1428).** `decimal()` gained its admin component, which forced the empirical check this record deferred. There is no asymmetry to retrofit: Prisma 8's `pg/numeric@1` codec (`@prisma/orm-target-postgres`) is a branded `string` (`Numeric<P, S>`) on both read and write, never a `decimal.js` `Decimal` — confirmed by reading a value back through a live `context.db` write carrying more significant digits than a JS `number` can hold. The `Decimal`/`decimal.js` description below and in the `decimal()` builder's own doc comment describes a pre-Prisma-8 assumption that the rebuild (#1420) never carried forward. `DecimalField` and `jsonSafeClone` therefore need no `bigInt`-style tagged encoding: the value is JSON-safe and full-precision as a plain string at every boundary already.
+
 A field type's **TypeScript type** and its **wire representation** are separate contracts, and a field may deliberately differ between them. The TypeScript type is chosen for correctness in application code; the wire representation is chosen for what the transport can carry. Where they differ, the field owns the conversion at the boundary, states it in its documentation, and covers it with a regression test at that boundary.
 
 ## Context
