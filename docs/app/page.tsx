@@ -22,7 +22,7 @@ const CONFIG_SNIPPET = `import { config, list } from '@opensaas/stack-core'
 import { text, select, relationship } from '@opensaas/stack-core/fields'
 
 export default config({
-  db: { provider: 'sqlite', url: 'file:./dev.db' },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
