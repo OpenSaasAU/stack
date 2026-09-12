@@ -125,16 +125,16 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     ])
     expect(table(contract, 'Post').foreignKeys).toEqual([
       {
-        source: { namespaceId: 'public', tableName: 'Post', columns: ['author'] },
+        source: { namespaceId: 'public', tableName: 'Post', columns: ['authorId'] },
         target: { namespaceId: 'public', tableName: 'User', columns: ['id'] },
         onDelete: 'setNull',
       },
       {
-        source: { namespaceId: 'public', tableName: 'Post', columns: ['category'] },
+        source: { namespaceId: 'public', tableName: 'Post', columns: ['categoryId'] },
         target: { namespaceId: 'public', tableName: 'Category', columns: ['id'] },
       },
     ])
-    expect(table(contract, 'Post').columns.author).toMatchObject({
+    expect(table(contract, 'Post').columns.authorId).toMatchObject({
       nativeType: 'uuid',
       nullable: true,
     })
@@ -144,9 +144,9 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     ])
     expect(table(contract, 'Post').indexes.map((index) => index.columns)).toEqual([
       ['title'],
-      ['author'],
-      ['category'],
-      ['author', 'status'],
+      ['authorId'],
+      ['categoryId'],
+      ['authorId', 'status'],
     ])
     expect(table(contract, 'Post').indexes[3]).toMatchObject({ name: 'post_author_status' })
     expect(table(contract, 'Post').indexes[3]).not.toHaveProperty('prefix')
@@ -258,7 +258,6 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
       name: 'userId',
       type: { pack: 'pg', type: 'int' },
       nullable: false,
-      map: 'user',
       unique: true,
     })
     expect(model(data, 'Profile').foreignKeys).toEqual([
@@ -271,7 +270,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     ])
     expect(table(contract, 'Profile').foreignKeys).toEqual([
       {
-        source: { namespaceId: 'public', tableName: 'Profile', columns: ['user'] },
+        source: { namespaceId: 'public', tableName: 'Profile', columns: ['userId'] },
         target: { namespaceId: 'public', tableName: 'User', columns: ['id'] },
         onDelete: 'cascade',
         onUpdate: 'cascade',
@@ -288,8 +287,8 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
       },
     ])
 
-    expect(table(contract, 'Profile').uniques).toEqual([{ columns: ['user'] }])
-    expect(table(contract, 'Profile').columns.user).toMatchObject({
+    expect(table(contract, 'Profile').uniques).toEqual([{ columns: ['userId'] }])
+    expect(table(contract, 'Profile').columns.userId).toMatchObject({
       nativeType: 'int4',
       nullable: false,
     })
@@ -322,9 +321,9 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     })
     expect(table(contract, 'Passport').uniques).toEqual([
       { columns: ['number'] },
-      { columns: ['holder'] },
+      { columns: ['holderId'] },
     ])
-    expect(table(contract, 'Passport').columns.holder).toMatchObject({
+    expect(table(contract, 'Passport').columns.holderId).toMatchObject({
       codecId: 'sql/char@1',
       typeParams: { length: 24 },
       nullable: true,
@@ -348,9 +347,9 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
       oneToOne: true,
       synthetic: false,
     })
-    expect(table(contract, 'Person').uniques).toEqual([{ columns: ['partner'] }])
+    expect(table(contract, 'Person').uniques).toEqual([{ columns: ['partnerId'] }])
     expect(table(contract, 'Person').foreignKeys).toContainEqual({
-      source: { namespaceId: 'public', tableName: 'Person', columns: ['partner'] },
+      source: { namespaceId: 'public', tableName: 'Person', columns: ['partnerId'] },
       target: { namespaceId: 'public', tableName: 'Person', columns: ['id'] },
     })
     expect(emittedModel(emitted, 'Person').relations.spouse).toEqual({
@@ -402,13 +401,12 @@ describe('one-to-one — a named unique db.indexes entry on the owning column na
       name: 'userId',
       type: { pack: 'pg', type: 'uuid' },
       nullable: true,
-      map: 'user',
     })
     expect(model(data, 'Profile').indexes).toEqual([
       { columns: ['userId'], unique: true, name: 'Profile_user_key' },
     ])
     expect(table(contract, 'Profile').uniques).toEqual([
-      { columns: ['user'], name: 'Profile_user_key' },
+      { columns: ['userId'], name: 'Profile_user_key' },
     ])
     expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
   })

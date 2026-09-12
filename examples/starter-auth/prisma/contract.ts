@@ -27,7 +27,7 @@ export const contract = defineContract(
         status: field.text().default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
         viewCount: field.int().optional().default(0),
-        authorId: field.uuidNative().optional().column('author'),
+        authorId: field.uuidNative().optional(),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),
@@ -38,7 +38,7 @@ export const contract = defineContract(
       fields: {
         id: field.id.uuidv7Native(),
         body: field.text(),
-        ownerId: field.uuidNative().optional().column('owner'),
+        ownerId: field.uuidNative().optional(),
       },
       relations: {
         owner: rel.belongsTo(() => models.User, { from: 'ownerId', to: 'id' }),

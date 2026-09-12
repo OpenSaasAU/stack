@@ -144,7 +144,7 @@
             "storage": {
               "fields": {
                 "authorId": {
-                  "column": "author"
+                  "column": "authorId"
                 },
                 "content": {
                   "column": "content"
@@ -260,10 +260,10 @@
                   "column": "id"
                 },
                 "postId": {
-                  "column": "post"
+                  "column": "postId"
                 },
                 "tagId": {
-                  "column": "tag"
+                  "column": "tagId"
                 },
                 "updatedAt": {
                   "column": "updatedAt"
@@ -509,7 +509,7 @@
           "table": {
             "Post": {
               "columns": {
-                "author": {
+                "authorId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -577,7 +577,7 @@
                 {
                   "source": {
                     "columns": [
-                      "author"
+                      "authorId"
                     ],
                     "namespaceId": "public",
                     "tableName": "Post"
@@ -594,10 +594,10 @@
               "indexes": [
                 {
                   "columns": [
-                    "author"
+                    "authorId"
                   ],
-                  "name": "Post_author_idx_d6f5b826",
-                  "prefix": "Post_author_idx",
+                  "name": "Post_authorId_idx_e47547ed",
+                  "prefix": "Post_authorId_idx",
                   "unique": false
                 },
                 {
@@ -638,12 +638,12 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
-                "post": {
+                "postId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
                 },
-                "tag": {
+                "tagId": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": true
@@ -658,7 +658,7 @@
                 {
                   "source": {
                     "columns": [
-                      "post"
+                      "postId"
                     ],
                     "namespaceId": "public",
                     "tableName": "PostTag"
@@ -674,7 +674,7 @@
                 {
                   "source": {
                     "columns": [
-                      "tag"
+                      "tagId"
                     ],
                     "namespaceId": "public",
                     "tableName": "PostTag"
@@ -691,18 +691,18 @@
               "indexes": [
                 {
                   "columns": [
-                    "post"
+                    "postId"
                   ],
-                  "name": "PostTag_post_idx_7836a4d5",
-                  "prefix": "PostTag_post_idx",
+                  "name": "PostTag_postId_idx_a7a72715",
+                  "prefix": "PostTag_postId_idx",
                   "unique": false
                 },
                 {
                   "columns": [
-                    "tag"
+                    "tagId"
                   ],
-                  "name": "PostTag_tag_idx_545159b7",
-                  "prefix": "PostTag_tag_idx",
+                  "name": "PostTag_tagId_idx_86854244",
+                  "prefix": "PostTag_tagId_idx",
                   "unique": false
                 }
               ],
@@ -714,8 +714,8 @@
               "uniques": [
                 {
                   "columns": [
-                    "post",
-                    "tag"
+                    "postId",
+                    "tagId"
                   ]
                 }
               ]
@@ -882,7 +882,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "2c1fb4a6b284fdf333193c0c1f144fe1a91963569074b19909a6aefcf38f38c4"
+    "storageHash": "009224f52bdbfbd1ddfe13fe931e4ff0711395cbf89618183169c1bffd08cc27"
   },
   "execution": {
     "executionHash": "af5dc3d5f24b634b2e758fd00fab12e7bb54e8a31c5b0abc1323b1407a9bc321",

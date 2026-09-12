@@ -33,7 +33,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'c917b601262e3c2273e05ecf91dcb0c49c5661c28fe07d8f896ad797f94e7402'>;
+  StorageHashBase<'468899da0780e40fc7a5d7dc28ce037dfc771bd9c22b2349f5e6d7549d6c47d0'>;
 export type ExecutionHash =
   ExecutionHashBase<'2a37caf16f34ae2bd8b4f3e8090859f6cc1b6352bd7f085d1502541f7127f148'>;
 export type ProfileHash =
@@ -372,7 +372,7 @@ export type StorageColumnTypes = {
       readonly userId: CodecTypes['pg/uuid@1']['output'];
     };
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly internalNotes: CodecTypes['pg/text@1']['output'] | null;
@@ -429,7 +429,7 @@ export type StorageColumnInputTypes = {
       readonly userId: CodecTypes['pg/uuid@1']['input'];
     };
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly internalNotes: CodecTypes['pg/text@1']['input'] | null;
@@ -625,7 +625,7 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
                 };
-                readonly author: {
+                readonly authorId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
@@ -635,9 +635,9 @@ type ContractBase = Omit<
               uniques: readonly [{ readonly columns: readonly ['slug'] }];
               indexes: readonly [
                 {
-                  readonly name: 'Post_author_idx_d6f5b826';
-                  readonly prefix: 'Post_author_idx';
-                  readonly columns: readonly ['author'];
+                  readonly name: 'Post_authorId_idx_e47547ed';
+                  readonly prefix: 'Post_authorId_idx';
+                  readonly columns: readonly ['authorId'];
                   readonly unique: false;
                 },
               ];
@@ -646,7 +646,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'Post';
-                    readonly columns: readonly ['author'];
+                    readonly columns: readonly ['authorId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -1004,7 +1004,7 @@ type ContractBase = Omit<
                 readonly internalNotes: { readonly column: 'internalNotes' };
                 readonly status: { readonly column: 'status' };
                 readonly publishedAt: { readonly column: 'publishedAt' };
-                readonly authorId: { readonly column: 'author' };
+                readonly authorId: { readonly column: 'authorId' };
               };
             };
           };

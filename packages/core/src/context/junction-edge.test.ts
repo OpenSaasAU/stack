@@ -86,7 +86,9 @@ async function storedEdges(
   const client = new pg.Client({ connectionString: url })
   await client.connect()
   try {
-    const result = await client.query('select "post", "tag" from "public"."PostTag"')
+    const result = await client.query(
+      'select "postId" as "post", "tagId" as "tag" from "public"."PostTag"',
+    )
     return result.rows.map((row: { post: string | null; tag: string | null }) => ({
       post: row.post,
       tag: row.tag,

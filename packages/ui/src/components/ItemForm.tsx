@@ -45,11 +45,12 @@ type AnyListConfig = ListConfig<any>
  * both, so the total can never count a row the rows branch may not show, and
  * neither is a rule this component re-derives.
  *
- * **Known limit.** A relationship column ON a table's rows is not reached: a
- * to-one whose foreign key is mapped onto the relation's own name — the
- * contract's default — cannot be included one hop down
- * (`NestedToOneIncludeError`, https://github.com/OpenSaasAU/stack/issues/1236).
- * Those Cells render from the row without the related record until that lands.
+ * **Known limit.** A relationship column ON a table's rows is not reached:
+ * this composition does not nest a further `.include()` for a Relationship
+ * table section's own relationship columns, so those Cells render from the
+ * row without the related record. The engine itself no longer blocks the
+ * nesting (issue #1236 removed the alias collision that used to refuse it);
+ * wiring it here is a follow-up, not a core limitation.
  */
 export function composeItemViewRead(
   read: SecuredQuery,

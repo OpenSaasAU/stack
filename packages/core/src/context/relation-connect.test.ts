@@ -50,17 +50,17 @@ function schemaConfig(authorQuery: () => boolean | PrismaFilter = () => true): O
 }
 
 /**
- * What each post actually stores for its link. The physical column is named
- * for the field (`author`); the contract member for the key it holds
- * (`authorId`). Reading the column is what stops the engine's own return value
- * from being both the claim and the evidence.
+ * What each post actually stores for its link, read straight off the driver
+ * by the contract member (`authorId`) rather than through the engine — the
+ * point is to stop the engine's own return value from being both the claim
+ * and the evidence.
  */
 async function storedLinks(url: string): Promise<Array<{ title: string; author: string | null }>> {
   const client = new pg.Client({ connectionString: url })
   await client.connect()
   try {
     const result = await client.query(
-      'select "title", "author" from "public"."Post" order by "title"',
+      'select "title", "authorId" as "author" from "public"."Post" order by "title"',
     )
     return result.rows.map((row: { title: string; author: string | null }) => ({
       title: row.title,

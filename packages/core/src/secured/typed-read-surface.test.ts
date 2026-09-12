@@ -196,9 +196,9 @@ beforeEach(async () => {
   await database.truncate()
   const user = await seed('User', { handle: 'ada' })
   ada = { userId: user.id }
-  await seed('Post', { title: 'alpha', kind: 'essay', views: 3, author: user.id })
-  await seed('Post', { title: 'beta', kind: 'note', views: 2, author: user.id })
-  await seed('Post', { title: 'gamma', kind: 'note', views: 1, author: user.id })
+  await seed('Post', { title: 'alpha', kind: 'essay', views: 3, authorId: user.id })
+  await seed('Post', { title: 'beta', kind: 'note', views: 2, authorId: user.id })
+  await seed('Post', { title: 'gamma', kind: 'note', views: 1, authorId: user.id })
 })
 
 describe('the members the generated surface promises', () => {
@@ -265,7 +265,7 @@ describe('each promised member answers', () => {
 
   test('first() pages inside the Access Filter, not around it', async () => {
     const other = await seed('User', { handle: 'bob' })
-    await seed('Post', { title: 'delta', kind: 'essay', views: 9, author: other.id })
+    await seed('Post', { title: 'delta', kind: 'essay', views: 9, authorId: other.id })
 
     // Four rows exist and `delta` sorts second, so an offset of one over the
     // whole table would answer with it rather than with ada's own `beta`.
@@ -307,7 +307,7 @@ describe('each promised member answers', () => {
 
   test('offset pages within the Access Filter, not around it', async () => {
     const other = await seed('User', { handle: 'bob' })
-    await seed('Post', { title: 'delta', kind: 'essay', views: 9, author: other.id })
+    await seed('Post', { title: 'delta', kind: 'essay', views: 9, authorId: other.id })
 
     // Four rows exist; ada may see three, so an offset of three is empty for
     // her and would return `delta` if the skip ran over the whole table.

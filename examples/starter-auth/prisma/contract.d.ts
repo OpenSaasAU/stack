@@ -33,7 +33,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'7b15b05bbab7fc8a37c1e3d93c2437db3e8324c9b1bc0ab21461d950dcb12ec6'>;
+  StorageHashBase<'a3c568810fd87df81bc4b23f18df43403e8f3a29c48f93cb44c5e9c9dfcd464a'>;
 export type ExecutionHash =
   ExecutionHashBase<'26b60f4cb79e129157ebb5dfc4f5ccb621b521b2b170875af684be56a0aedaff'>;
 export type ProfileHash =
@@ -386,10 +386,10 @@ export type StorageColumnTypes = {
     readonly Note: {
       readonly body: CodecTypes['pg/text@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly owner: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly ownerId: CodecTypes['pg/uuid@1']['output'] | null;
     };
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly internalNotes: CodecTypes['pg/text@1']['output'] | null;
@@ -449,10 +449,10 @@ export type StorageColumnInputTypes = {
     readonly Note: {
       readonly body: CodecTypes['pg/text@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly owner: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly ownerId: CodecTypes['pg/uuid@1']['input'] | null;
     };
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly internalNotes: CodecTypes['pg/text@1']['input'] | null;
@@ -620,7 +620,7 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
                 };
-                readonly owner: {
+                readonly ownerId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
@@ -630,9 +630,9 @@ type ContractBase = Omit<
               uniques: readonly [];
               indexes: readonly [
                 {
-                  readonly name: 'Note_owner_idx_01158e2c';
-                  readonly prefix: 'Note_owner_idx';
-                  readonly columns: readonly ['owner'];
+                  readonly name: 'Note_ownerId_idx_e2d0c1ef';
+                  readonly prefix: 'Note_ownerId_idx';
+                  readonly columns: readonly ['ownerId'];
                   readonly unique: false;
                 },
               ];
@@ -641,7 +641,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'Note';
-                    readonly columns: readonly ['owner'];
+                    readonly columns: readonly ['ownerId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -701,7 +701,7 @@ type ContractBase = Omit<
                     readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
                   };
                 };
-                readonly author: {
+                readonly authorId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
@@ -711,9 +711,9 @@ type ContractBase = Omit<
               uniques: readonly [{ readonly columns: readonly ['slug'] }];
               indexes: readonly [
                 {
-                  readonly name: 'Post_author_idx_d6f5b826';
-                  readonly prefix: 'Post_author_idx';
-                  readonly columns: readonly ['author'];
+                  readonly name: 'Post_authorId_idx_e47547ed';
+                  readonly prefix: 'Post_authorId_idx';
+                  readonly columns: readonly ['authorId'];
                   readonly unique: false;
                 },
               ];
@@ -722,7 +722,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'Post';
-                    readonly columns: readonly ['author'];
+                    readonly columns: readonly ['authorId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -1053,7 +1053,7 @@ type ContractBase = Omit<
               readonly fields: {
                 readonly id: { readonly column: 'id' };
                 readonly body: { readonly column: 'body' };
-                readonly ownerId: { readonly column: 'owner' };
+                readonly ownerId: { readonly column: 'ownerId' };
               };
             };
           };
@@ -1121,7 +1121,7 @@ type ContractBase = Omit<
                 readonly status: { readonly column: 'status' };
                 readonly publishedAt: { readonly column: 'publishedAt' };
                 readonly viewCount: { readonly column: 'viewCount' };
-                readonly authorId: { readonly column: 'author' };
+                readonly authorId: { readonly column: 'authorId' };
               };
             };
           };

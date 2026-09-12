@@ -33,7 +33,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'2c1fb4a6b284fdf333193c0c1f144fe1a91963569074b19909a6aefcf38f38c4'>;
+  StorageHashBase<'009224f52bdbfbd1ddfe13fe931e4ff0711395cbf89618183169c1bffd08cc27'>;
 export type ExecutionHash =
   ExecutionHashBase<'af5dc3d5f24b634b2e758fd00fab12e7bb54e8a31c5b0abc1323b1407a9bc321'>;
 export type ProfileHash =
@@ -334,7 +334,7 @@ export type FieldInputTypes = {
 export type StorageColumnTypes = {
   readonly public: {
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly content: CodecTypes['pg/text@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
@@ -349,8 +349,8 @@ export type StorageColumnTypes = {
     readonly PostTag: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly post: CodecTypes['pg/uuid@1']['output'] | null;
-      readonly tag: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly postId: CodecTypes['pg/uuid@1']['output'] | null;
+      readonly tagId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['output'];
     };
     readonly Settings: {
@@ -380,7 +380,7 @@ export type StorageColumnTypes = {
 export type StorageColumnInputTypes = {
   readonly public: {
     readonly Post: {
-      readonly author: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly authorId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly content: CodecTypes['pg/text@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
@@ -395,8 +395,8 @@ export type StorageColumnInputTypes = {
     readonly PostTag: {
       readonly createdAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly post: CodecTypes['pg/uuid@1']['input'] | null;
-      readonly tag: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly postId: CodecTypes['pg/uuid@1']['input'] | null;
+      readonly tagId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly updatedAt: CodecTypes['pg/timestamptz-string@1']['input'];
     };
     readonly Settings: {
@@ -487,7 +487,7 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
                 };
-                readonly author: {
+                readonly authorId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
@@ -514,9 +514,9 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
-                  readonly name: 'Post_author_idx_d6f5b826';
-                  readonly prefix: 'Post_author_idx';
-                  readonly columns: readonly ['author'];
+                  readonly name: 'Post_authorId_idx_e47547ed';
+                  readonly prefix: 'Post_authorId_idx';
+                  readonly columns: readonly ['authorId'];
                   readonly unique: false;
                 },
               ];
@@ -525,7 +525,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'Post';
-                    readonly columns: readonly ['author'];
+                    readonly columns: readonly ['authorId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -542,12 +542,12 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: false;
                 };
-                readonly post: {
+                readonly postId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
                 };
-                readonly tag: {
+                readonly tagId: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: true;
@@ -565,18 +565,18 @@ type ContractBase = Omit<
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [{ readonly columns: readonly ['post', 'tag'] }];
+              uniques: readonly [{ readonly columns: readonly ['postId', 'tagId'] }];
               indexes: readonly [
                 {
-                  readonly name: 'PostTag_post_idx_7836a4d5';
-                  readonly prefix: 'PostTag_post_idx';
-                  readonly columns: readonly ['post'];
+                  readonly name: 'PostTag_postId_idx_a7a72715';
+                  readonly prefix: 'PostTag_postId_idx';
+                  readonly columns: readonly ['postId'];
                   readonly unique: false;
                 },
                 {
-                  readonly name: 'PostTag_tag_idx_545159b7';
-                  readonly prefix: 'PostTag_tag_idx';
-                  readonly columns: readonly ['tag'];
+                  readonly name: 'PostTag_tagId_idx_86854244';
+                  readonly prefix: 'PostTag_tagId_idx';
+                  readonly columns: readonly ['tagId'];
                   readonly unique: false;
                 },
               ];
@@ -585,7 +585,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'PostTag';
-                    readonly columns: readonly ['post'];
+                    readonly columns: readonly ['postId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -597,7 +597,7 @@ type ContractBase = Omit<
                   readonly source: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'PostTag';
-                    readonly columns: readonly ['tag'];
+                    readonly columns: readonly ['tagId'];
                   };
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
@@ -840,7 +840,7 @@ type ContractBase = Omit<
                 readonly status: { readonly column: 'status' };
                 readonly publishDate: { readonly column: 'publish_date' };
                 readonly publishedAt: { readonly column: 'publishedAt' };
-                readonly authorId: { readonly column: 'author' };
+                readonly authorId: { readonly column: 'authorId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
               };
@@ -898,8 +898,8 @@ type ContractBase = Omit<
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly id: { readonly column: 'id' };
-                readonly postId: { readonly column: 'post' };
-                readonly tagId: { readonly column: 'tag' };
+                readonly postId: { readonly column: 'postId' };
+                readonly tagId: { readonly column: 'tagId' };
                 readonly createdAt: { readonly column: 'createdAt' };
                 readonly updatedAt: { readonly column: 'updatedAt' };
               };

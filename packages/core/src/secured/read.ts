@@ -66,7 +66,6 @@ export {
   InvalidCombineBranchError,
   InvalidRefinementError,
   MultipleCombineRowBranchesError,
-  NestedToOneIncludeError,
   ReducedToOneIncludeError,
   UnreducibleRefinementError,
 } from './include.js'
@@ -760,109 +759,6 @@ function relatedRowsOf(row: OrmRow, plan: IncludePlan): OrmRow[] {
 }
 
 /**
- * Whether a to-one's own column can be read back off the relation the query
- * returned. It can when nothing narrowed the relation: the related row is
- * then present exactly when the column is non-null, so its id IS the column.
- * A narrowed relation — the related list's Access Filter, or the caller's own
- * refinement `where` — answers `null` for a row it scoped away just as it does
- * for a column that is genuinely null, and the two are no longer separable
- * from this query's result.
- */
-function foldsToOwnColumn(plan: IncludePlan): boolean {
-  return plan.predicates.length === 0
-}
-
-/** The to-one columns this level's includes leave unreadable on the row. */
-function scopedForeignKeys(plans: readonly IncludePlan[]): string[] {
-  const columns: string[] = []
-  for (const plan of plans) {
-    if (plan.arity !== 'one') continue
-    if (plan.foreignKey === undefined) continue
-    if (foldsToOwnColumn(plan)) continue
-    columns.push(plan.foreignKey)
-  }
-  return columns
-}
-
-function identityOf(row: OrmRow): RowLockKey | undefined {
-  const id = row.id
-  return typeof id === 'string' || typeof id === 'number' ? id : undefined
-}
-
-/**
- * Re-read the named columns of rows the scoped read already returned, off a
- * query that includes nothing.
- *
- * Prisma 8 aliases an include by the relation's name and a scalar column by
- * its physical name, and the contract maps a to-one's foreign key onto the
- * relation's own name (`contract/derive.ts`, #1236). The two aliases collide,
- * the include's payload wins, and the column is gone from the result — so the
- * only way to see it is a query that names no include.
- */
-async function ownColumns(
-  binding: ReadBinding,
-  rows: readonly OrmRow[],
-  columns: readonly string[],
-): Promise<Map<RowLockKey, OrmRow>> {
-  const byIdentity = new Map<RowLockKey, OrmRow>()
-  const keys: RowLockKey[] = []
-  for (const row of rows) {
-    const key = identityOf(row)
-    if (key !== undefined) keys.push(key)
-  }
-  if (keys.length === 0) return byIdentity
-  const collection = collectionFor(binding.ormHandle, binding.listName)
-    .where((model) => identityIn(model, binding.listName, keys))
-    .select('id', ...columns)
-  for (const row of await withOrigin('engine', () => collection.all())) {
-    const key = identityOf(row)
-    if (key !== undefined) byIdentity.set(key, row)
-  }
-  return byIdentity
-}
-
-function identityIn(
-  model: PredicateAccessor,
-  listName: string,
-  keys: readonly RowLockKey[],
-): AnyExpression {
-  const expression = model['id']?.in?.(keys)
-  if (expression === undefined) throw unqueryableKey(listName, 'id')
-  return expression
-}
-
-/**
- * Put each row's own foreign-key column back where the include's alias
- * overwrote it, so a `read` rule that reaches into `item.<fk>` is answered
- * against the column the row stores — the same value it is answered against
- * on a read that named no include.
- *
- * Runs BEFORE Field Visibility, and writes the stored column rather than a
- * visible one: a rule decides what the caller may see, so a value that had
- * already been narrowed by visibility would be the decision feeding itself.
- * {@link applyForeignKeys} is the pass that narrows, and it runs after.
- */
-async function restoreForeignKeys(
-  binding: ReadBinding,
-  rows: readonly OrmRow[],
-  plans: readonly IncludePlan[],
-): Promise<void> {
-  const scoped = scopedForeignKeys(plans)
-  const stored = scoped.length === 0 ? undefined : await ownColumns(binding, rows, scoped)
-  for (const row of rows) {
-    const key = identityOf(row)
-    const own = stored === undefined || key === undefined ? undefined : stored.get(key)
-    for (const plan of plans) {
-      if (plan.arity === 'one' && plan.foreignKey !== undefined && plan.foreignKey in row) {
-        row[plan.foreignKey] = foldsToOwnColumn(plan)
-          ? (relatedRowsOf(row, plan)[0]?.id ?? null)
-          : (own?.[plan.foreignKey] ?? null)
-      }
-    }
-  }
-}
-
-/**
  * Narrow the foreign-key column of every included to-one to what the caller
  * may see.
  *
@@ -999,13 +895,10 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
 
 /**
  * What every terminal returns rows through — the one place a row this engine
- * read becomes a row a caller may see, and the only place either foreign-key
+ * read becomes a row a caller may see, and the only place the foreign-key
  * pass runs. `all()`, `first()`, the `forUpdate()` lane and `nearest()` all
  * come through here, so none of them can drift apart on what a column reads
  * as, and neither can a hook or a `read` rule.
- *
- * The batch is what lets {@link restoreForeignKeys} recover a scoped to-one's
- * column for a whole page in one query rather than one per row.
  */
 async function visibleRows(
   binding: ReadBinding,
@@ -1013,7 +906,6 @@ async function visibleRows(
   plan: ReadPlan,
 ): Promise<OrmRow[]> {
   const { listConfig, context, config, listName } = binding
-  await restoreForeignKeys(binding, rows, plan.includes)
   return await Promise.all(
     rows.map(async (row) => {
       const filtered = await filterReadableFields(

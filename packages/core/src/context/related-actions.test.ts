@@ -41,7 +41,7 @@ async function storedLinks(url: string): Promise<Array<{ title: string; author: 
   await client.connect()
   try {
     const result = await client.query(
-      'select "title", "author" from "public"."Post" order by "title"',
+      'select "title", "authorId" as "author" from "public"."Post" order by "title"',
     )
     return result.rows.map((row: { title: string; author: string | null }) => ({
       title: row.title,

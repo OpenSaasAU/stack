@@ -138,9 +138,9 @@ async function seedBlog(): Promise<void> {
     published: true,
     views: 10,
     kind: 'essay',
-    author: ada.userId,
-    reviewer: ada.userId,
-    watcher: ada.userId,
+    authorId: ada.userId,
+    reviewerId: ada.userId,
+    watcherId: ada.userId,
     editorNotes: 'secret',
   })
   await seed('Post', {
@@ -148,33 +148,33 @@ async function seedBlog(): Promise<void> {
     published: true,
     views: 4,
     kind: 'note',
-    author: ada.userId,
+    authorId: ada.userId,
   })
   await seed('Post', {
     title: 'ada three',
     published: false,
     views: 2,
     kind: 'note',
-    author: ada.userId,
+    authorId: ada.userId,
   })
   await seed('Post', {
     title: 'bob one',
     published: true,
     views: 5,
     kind: 'poem',
-    author: bob.userId,
-    reviewer: bob.userId,
+    authorId: bob.userId,
+    reviewerId: bob.userId,
   })
   await seed('Post', {
     title: 'bob two',
     published: false,
     views: 1,
     kind: 'note',
-    author: bob.userId,
+    authorId: bob.userId,
   })
   seededDraft = await seed('Draft', { title: 'nobody may read this' })
-  await seed('Secret', { code: 'hunter2', owner: ada.userId })
-  await seed('Secret', { code: 'swordfish', owner: bob.userId })
+  await seed('Secret', { code: 'hunter2', ownerId: ada.userId })
+  await seed('Secret', { code: 'swordfish', ownerId: bob.userId })
 }
 
 function count(result: Record<string, number>): number {

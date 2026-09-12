@@ -90,10 +90,10 @@ beforeEach(async () => {
   const author = await seed('User', { name: 'Ada' })
   ada = { userId: author.id }
   await seed('User', { name: 'Grace' })
-  await seed('Post', { title: 'On Engines', author: author.id })
-  await seed('Post', { title: 'On Looms', author: author.id })
+  await seed('Post', { title: 'On Engines', authorId: author.id })
+  await seed('Post', { title: 'On Looms', authorId: author.id })
   const ledger = await seed('Ledger', { name: 'private' })
-  await seed('Post', { title: 'On Ledgers', ledger: ledger.id })
+  await seed('Post', { title: 'On Ledgers', ledgerId: ledger.id })
 })
 
 describe('the filter engine over the secured surface', () => {

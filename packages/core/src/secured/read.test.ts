@@ -146,20 +146,20 @@ async function seedBlog(): Promise<void> {
     title: "ada's published",
     published: true,
     views: 10,
-    author: ada.userId,
+    authorId: ada.userId,
     editorNotes: 'secret',
   })
   await seed('Post', {
     title: "ada's draft",
     published: false,
     views: 2,
-    author: ada.userId,
+    authorId: ada.userId,
   })
   await seed('Post', {
     title: "bob's published",
     published: true,
     views: 5,
-    author: bob.userId,
+    authorId: bob.userId,
   })
   await seed('Draft', { title: 'nobody may read this' })
 }
@@ -202,7 +202,7 @@ describe('a real round trip through the secured surface', () => {
       const written = await seed('Post', {
         title: 'written by the driver',
         published: true,
-        author: author.userId,
+        authorId: author.userId,
       })
 
       const rows = await database.context(author).db.Post.all()
@@ -320,9 +320,10 @@ describe('the Access Filter is a filter entry', () => {
         ? Reflect.get(recorder.plans[0].ast, 'where')
         : undefined
       expect(isRecord(where) ? where.kind : undefined).toBe('and')
-      // The plan names physical columns: the `authorId` the access filter
-      // spells is the relationship field's own `author` column.
-      expect(filterColumns(where)).toEqual(['published', 'author'])
+      // The plan names physical columns, and the access filter's `authorId`
+      // is now the physical column too — the relation's own name no longer
+      // collides with its foreign key's (#1236).
+      expect(filterColumns(where)).toEqual(['published', 'authorId'])
     },
     BOOT,
   )
@@ -335,7 +336,7 @@ describe('the Access Filter is a filter entry', () => {
       const where: unknown = isRecord(recorder.plans[0].ast)
         ? Reflect.get(recorder.plans[0].ast, 'where')
         : undefined
-      expect(filterColumns(where)).toEqual(['author'])
+      expect(filterColumns(where)).toEqual(['authorId'])
     },
     BOOT,
   )
@@ -489,7 +490,7 @@ describe('the Where vocabulary', () => {
   test(
     'contains is case-insensitive and matches a literal per-cent sign',
     async () => {
-      await seed('Post', { title: '50% off, ADA', published: true, views: 1, author: ada.userId })
+      await seed('Post', { title: '50% off, ADA', published: true, views: 1, authorId: ada.userId })
 
       expect(titles(await owned({ title: { contains: 'ada' } }).all())).toEqual([
         '50% off, ADA',
@@ -603,7 +604,7 @@ describe('the Where vocabulary', () => {
     'a related list the session cannot query is the empty set',
     async () => {
       const context = database.context(ada)
-      await seed('Secret', { code: 'shh', owner: ada.userId })
+      await seed('Secret', { code: 'shh', ownerId: ada.userId })
 
       // `Secret` denies `query`, so `some` is false and `none`/`every` are
       // true — the parent rows are never distinguished by a list the session

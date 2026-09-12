@@ -6,16 +6,6 @@
 //
 // Known limits
 //
-// - A nested include of a to-one whose foreign-key column is mapped onto the
-//   relation's own name — the contract's default (`fields/index.ts`) — is
-//   refused rather than served: the include alias and the column collide and
-//   the database answers `column reference "<name>" is ambiguous`. The schema
-//   change that renames the column is #1236; when it lands,
-//   {@link NestedToOneIncludeError} and the test that asserts it are the
-//   deletions. The same collision under a relation the WIDENING added is
-//   left out instead of refused, so a computed field declaring a to-one on a
-//   nested branch sees it absent — the behaviour that predated the widening,
-//   and #1236's to fix.
 // - The pre-query omission is observable. A relation the caller may not read
 //   comes back absent while an undeclared one is refused, so relation NAMES
 //   can be enumerated by a caller who can already read the list. Relation
@@ -68,13 +58,7 @@ export interface SecuredRefinement {
    * refinement includes on the row.
    */
   select(...fields: readonly string[]): SecuredRefinement
-  /**
-   * Reach one hop further. Counts against the read-include depth cap.
-   *
-   * A to-one whose foreign-key column carries the relation's own name — the
-   * contract's default — is refused here until #1236 renames the column; see
-   * {@link NestedToOneIncludeError}.
-   */
+  /** Reach one hop further. Counts against the read-include depth cap. */
   include(name: string, refine?: Refinement): SecuredRefinement
   /**
    * Reduce the related rows to how many of them this session may see, in
@@ -141,30 +125,6 @@ export class DuplicateIncludeError extends Error {
         `engine refuses the pair rather than choosing which one applies.`,
     )
     this.name = 'DuplicateIncludeError'
-  }
-}
-
-/**
- * Thrown when a nested include names a to-one whose foreign-key column carries
- * the relation's own name. See the `Known limits` note at the top of this
- * module: the include alias and the column collide in the emitted SQL, so the
- * read is refused here rather than reaching the database and failing with
- * `column reference "…" is ambiguous`. Tracked as #1236.
- */
-export class NestedToOneIncludeError extends Error {
-  constructor(
-    readonly listName: string,
-    readonly relation: string,
-  ) {
-    super(
-      `Cannot include "${listName}.${relation}" inside another include: a to-one relation whose ` +
-        `foreign-key column is mapped onto the relation's own name collides with the include's ` +
-        `alias one level down, and the database refuses the query as ambiguous. Read this ` +
-        `relation from a separate top-level include, or rename the column with ` +
-        `\`db: { foreignKey: { map: '…' } }\`. Tracked as ` +
-        `https://github.com/OpenSaasAU/stack/issues/1236.`,
-    )
-    this.name = 'NestedToOneIncludeError'
   }
 }
 
@@ -517,14 +477,6 @@ async function resolveInclude(
   declared: boolean,
 ): Promise<IncludePlan | null> {
   const target = resolveIncludeTarget(request.name, ctx)
-  if (depth > 0 && target.arity === 'one' && target.foreignKey?.map === request.name) {
-    // A refusal the caller cannot act on is not a refusal worth raising: the
-    // widening is the engine's own, so a declared branch the alias collision
-    // blocks is left out here rather than failing a read whose call site
-    // names nothing wrong. See the `Known limits` note above.
-    if (declared) return null
-    throw new NestedToOneIncludeError(ctx.listName, request.name)
-  }
   const related: ResolveContext = {
     ...ctx,
     listName: target.relatedListName,

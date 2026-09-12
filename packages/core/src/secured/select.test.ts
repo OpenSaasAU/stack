@@ -214,11 +214,11 @@ async function seedShop(): Promise<void> {
     title: 'a crate of punchcards',
     note: 'leave at the door',
     cardLast4: '4242',
-    buyer: user.id,
-    receipt: receipt.id,
+    buyerId: user.id,
+    receiptId: receipt.id,
   })
-  await seed('Line', { price: 3, order: order.id })
-  await seed('Line', { price: 4, order: order.id })
+  await seed('Line', { price: 3, orderId: order.id })
+  await seed('Line', { price: 4, orderId: order.id })
   await seed('Profile', { avatar_filename: 'ada.png', avatar_filesize: 12 })
   await seed('Ticket', { subject: 'open one', open: 'yes', detail: 'visible' })
   await seed('Ticket', { subject: 'shut one', open: 'no', detail: 'hidden' })
@@ -357,9 +357,15 @@ describe('Projection', () => {
     async () => {
       const rows = await database.context(ada).db.Order.select('buyerId').all()
 
-      // The plan projects the foreign key's own physical column, which the
-      // decoder reads back under the contract member `buyerId`.
-      expect(projectedColumns(recorder.plans[0])).toEqual(['buyer', 'createdAt', 'id', 'updatedAt'])
+      // The plan projects the foreign key's own physical column, which is now
+      // the contract member's own name (#1236) — the decoder reads it back
+      // under that same `buyerId`.
+      expect(projectedColumns(recorder.plans[0])).toEqual([
+        'buyerId',
+        'createdAt',
+        'id',
+        'updatedAt',
+      ])
       expect(rows[0].buyerId).toBe(ada.userId)
       expect(rows[0]).not.toHaveProperty('title')
     },
@@ -385,7 +391,7 @@ describe('limit', () => {
     'bounds all() and composes with the rest of the read',
     async () => {
       const context = database.context(ada)
-      await seed('Order', { title: 'a second crate', buyer: ada.userId })
+      await seed('Order', { title: 'a second crate', buyerId: ada.userId })
 
       expect(await context.db.Order.limit(1).all()).toHaveLength(1)
       expect(await context.db.Order.all()).toHaveLength(2)

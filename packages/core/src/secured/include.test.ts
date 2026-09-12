@@ -12,7 +12,6 @@ import {
   DuplicateIncludeError,
   InvalidRefinementError,
   MultipleCombineRowBranchesError,
-  NestedToOneIncludeError,
 } from './include.js'
 
 const BOOT = 120_000
@@ -212,28 +211,28 @@ async function seedBlog(): Promise<void> {
   const bobRow = await seed('User', { handle: 'bob' })
   bob = { userId: bobRow.id, handle: 'bob' }
 
-  await seed('Badge', { label: "ada's badge", user: adaRow.id })
-  await seed('Secret', { code: 'nobody may read this', owner: adaRow.id })
-  await seed('Note', { body: 'pinned note', pinned: true, owner: adaRow.id })
-  await seed('Note', { body: 'loose note', pinned: false, owner: adaRow.id })
+  await seed('Badge', { label: "ada's badge", userId: adaRow.id })
+  await seed('Secret', { code: 'nobody may read this', ownerId: adaRow.id })
+  await seed('Note', { body: 'pinned note', pinned: true, ownerId: adaRow.id })
+  await seed('Note', { body: 'loose note', pinned: false, ownerId: adaRow.id })
 
   const category = await seed('Category', { name: 'essays' })
   await seed('Post', {
     title: "ada's published",
     published: true,
-    author: adaRow.id,
+    authorId: adaRow.id,
     mappedAuthorId: bobRow.id,
-    category: category.id,
+    categoryId: category.id,
     editorNotes: 'secret',
-    hiddenEditor: bobRow.id,
-    declaredEditor: bobRow.id,
-    reviewer: adaRow.id,
+    hiddenEditorId: bobRow.id,
+    declaredEditorId: bobRow.id,
+    reviewerId: adaRow.id,
   })
   await seed('Post', {
     title: "bob's draft",
     published: false,
-    author: bobRow.id,
-    reviewer: adaRow.id,
+    authorId: bobRow.id,
+    reviewerId: adaRow.id,
   })
 }
 
@@ -272,7 +271,7 @@ describe('One hop', () => {
   test(
     'a refinement narrows, sorts and pages the related rows',
     async () => {
-      await seed('Post', { title: "ada's second", published: true, author: ada.userId })
+      await seed('Post', { title: "ada's second", published: true, authorId: ada.userId })
 
       const rows = await database
         .context(ada)
@@ -542,28 +541,29 @@ describe("the foreign key follows the relation's own visibility", () => {
   )
 })
 
-describe('a nested to-one is refused until #1236', () => {
+describe('a nested to-one executes rather than colliding (#1236)', () => {
   test(
-    'the refusal names the relation and the issue rather than reaching the database',
+    'a to-one under its default-mapped foreign key is served nested',
     async () => {
-      const nested = database
+      const rows = await database
         .context(ada)
         .db.User.include('posts', (posts) => posts.include('author'))
         .all()
 
-      await expect(nested).rejects.toThrow(NestedToOneIncludeError)
-      await expect(nested).rejects.toThrow(/1236/)
-      expect(recorder.plans).toEqual([])
+      expect(rows).toHaveLength(1)
+      expect(rows[0].posts).toEqual([
+        expect.objectContaining({
+          title: "ada's published",
+          author: expect.objectContaining({ handle: 'ada' }),
+        }),
+      ])
     },
     BOOT,
   )
 
   test(
-    'a nested to-one whose column is renamed is served',
+    'a to-one whose column is explicitly renamed behaves identically nested',
     async () => {
-      // The collision is the column name, not the arity: the day #1236 renames
-      // every to-one's column, the guard above is the deletion and this is the
-      // shape that already worked.
       const rows = await database
         .context(ada)
         .db.User.include('posts', (posts) => posts.include('mappedAuthor'))
@@ -742,7 +742,7 @@ describe('the read-include depth cap', () => {
     for (let index = 1; index <= 7; index += 1) {
       previous = await seed(`C${index}`, {
         ...label(`c${index}`),
-        ...(previous ? { prev: previous.id } : {}),
+        ...(previous ? { prevId: previous.id } : {}),
       })
     }
     recorder.clear()
@@ -843,8 +843,8 @@ describe('Reductions', () => {
   test(
     'combine returns the rows beside a count, and the count is not chained after the page',
     async () => {
-      await seed('Post', { title: "ada's second", published: true, author: ada.userId })
-      await seed('Post', { title: "ada's third", published: true, author: ada.userId })
+      await seed('Post', { title: "ada's second", published: true, authorId: ada.userId })
+      await seed('Post', { title: "ada's third", published: true, authorId: ada.userId })
 
       const rows = await database
         .context(ada)

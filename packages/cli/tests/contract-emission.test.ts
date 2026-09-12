@@ -91,7 +91,7 @@ describe('prisma contract emit — the blog fixture', () => {
     // suffix and no `prefix` — unlike the derived per-column indexes beside it.
     expect(indexes).toContainEqual({
       name: 'post_author_status',
-      columns: ['author', 'status'],
+      columns: ['authorId', 'status'],
       unique: false,
     })
   })

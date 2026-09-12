@@ -1150,10 +1150,19 @@ function getContractRelation<TTypeInfo extends import('../config/types.js').Type
     return { kind: 'relation', target, inverse, many: false }
   }
 
+  const explicitMap = typeof field.db?.foreignKey === 'object' ? field.db.foreignKey.map : undefined
+  if (explicitMap === fieldName) {
+    throw new Error(
+      `List "${listKey}": fields.${fieldName} maps its foreign key onto "${fieldName}" — the ` +
+        `relation's own name. rc.8 aliases an include by relation name and a scalar by physical ` +
+        `column name, so the two would collide again (#1236). Pick a different ` +
+        `db.foreignKey.map, or drop it to default to "${fieldName}Id".`,
+    )
+  }
+
   const foreignKey: ContractForeignKeyDescriptor = {
     name: `${fieldName}Id`,
-    map:
-      typeof field.db?.foreignKey === 'object' ? (field.db.foreignKey.map ?? fieldName) : fieldName,
+    ...(explicitMap !== undefined ? { map: explicitMap } : {}),
     nullable: field.db?.isNullable ?? true,
     unique: field.isIndexed === 'unique' || isOneToOneRelationship(fieldName, field, config),
     index: field.isIndexed === undefined || field.isIndexed === true,

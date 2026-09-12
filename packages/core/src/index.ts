@@ -151,10 +151,8 @@ export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './secured/r
 // refinement it was handed — dropping it would run the include unscoped by
 // everything the caller wrote (#1148).
 export { InvalidRefinementError } from './secured/read.js'
-// Thrown when one read names the same relation twice, and when a nested
-// include names a to-one whose foreign-key column carries the relation's own
-// name — the collision #1236 removes (#1148).
-export { DuplicateIncludeError, NestedToOneIncludeError } from './secured/read.js'
+// Thrown when one read names the same relation twice (#1148).
+export { DuplicateIncludeError } from './secured/read.js'
 // Thrown when `.select()` names a relation — reachable so a caller can tell it
 // apart from any other `ValidationError` (#1149).
 export { RelationSelectError } from './secured/read.js'

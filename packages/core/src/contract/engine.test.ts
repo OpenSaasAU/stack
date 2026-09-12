@@ -116,8 +116,8 @@ describe('engine: the blog derivation boots a Prisma 8 runtime on PGlite', () =>
     expect(constraints.rows.map((row) => row.def)).toEqual(
       expect.arrayContaining([
         'UNIQUE (slug)',
-        'FOREIGN KEY (author) REFERENCES "User"(id) ON DELETE SET NULL',
-        'FOREIGN KEY (category) REFERENCES "Category"(id)',
+        'FOREIGN KEY ("authorId") REFERENCES "User"(id) ON DELETE SET NULL',
+        'FOREIGN KEY ("categoryId") REFERENCES "Category"(id)',
       ]),
     )
     const indexes = await db.pglite.query<{ indexname: string }>(
@@ -184,8 +184,8 @@ describe('engine: the one-to-one derivation applies SERIAL ids and the owning un
       `select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = '"Profile"'::regclass and contype in ('u', 'f') order by 1`,
     )
     expect(constraints.rows.map((row) => row.def)).toEqual([
-      'FOREIGN KEY ("user") REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE CASCADE',
-      'UNIQUE ("user")',
+      'FOREIGN KEY ("userId") REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE CASCADE',
+      'UNIQUE ("userId")',
     ])
 
     const orm = runtime(db, contract)
