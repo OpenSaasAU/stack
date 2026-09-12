@@ -331,7 +331,7 @@ set inside these actions persists — there is no extra wiring for that.
 
 Create a sign-in page using the pre-built component:
 
-```typescript
+```tsx
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
 import { signInAction } from '@/lib/actions/auth'
@@ -354,7 +354,7 @@ export default function SignInPage() {
 
 Create a sign-up page:
 
-```typescript
+```tsx
 // app/sign-up/page.tsx
 import { SignUpForm } from '@opensaas/stack-auth/ui'
 import { signUpAction } from '@/lib/actions/auth'
@@ -377,7 +377,7 @@ export default function SignUpPage() {
 
 Create a password reset request page:
 
-```typescript
+```tsx
 // app/forgot-password/page.tsx
 import { ForgotPasswordForm } from '@opensaas/stack-auth/ui'
 import { requestPasswordResetAction } from '@/lib/actions/auth'
@@ -398,7 +398,7 @@ The reset link in the email lands here. `ResetPasswordForm` takes the token from
 `searchParams` alongside its action; an empty token renders an "invalid or expired
 link" state rather than a password form.
 
-```typescript
+```tsx
 // app/reset-password/page.tsx
 import { ResetPasswordForm } from '@opensaas/stack-auth/ui'
 import { resetPasswordAction } from '@/lib/actions/auth'
@@ -431,7 +431,7 @@ admin mutation goes through, and it re-reads the session on the server so a writ
 is checked against the caller's own access rules rather than the session the page
 rendered with:
 
-```typescript
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
@@ -516,7 +516,7 @@ export async function createPost(title: string) {
 
 ### Client-Side Protection
 
-```typescript
+```tsx
 'use client'
 
 import { useSession } from '@/lib/auth-client'
@@ -543,7 +543,7 @@ export function ProtectedComponent() {
 
 Get the current session in server components or actions:
 
-```typescript
+```tsx
 import { getSession } from '@/lib/auth'
 
 export default async function MyPage() {
@@ -590,7 +590,7 @@ alongside `getSession()`.
 
 Use the `useSession()` hook in client components:
 
-```typescript
+```tsx
 'use client'
 
 import { authClient } from '@/lib/auth-client'
@@ -955,7 +955,7 @@ Pass it to the form to get OAuth buttons for the listed providers. The buttons
 render only when `signInSocialAction` is present — `showSocialProviders` on its
 own is not enough:
 
-```typescript
+```tsx
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
 import { signInAction, signInSocialAction } from '@/lib/actions/auth'
@@ -1687,7 +1687,7 @@ your own, the same contract applies: an auth action resolves to an
 `AuthActionResult` rather than throwing, so a failed sign-in arrives as
 `{ success: false, error }` and there is nothing to catch:
 
-```typescript
+```tsx
 'use client'
 
 import { useState } from 'react'
@@ -1858,7 +1858,7 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 }
 ```
 
-```typescript
+```tsx
 // app/sign-in/page.tsx
 import { SignInForm } from '@opensaas/stack-auth/ui'
 import { signInAction } from '@/lib/actions/auth'
@@ -1877,7 +1877,7 @@ export default function SignInPage() {
 }
 ```
 
-```typescript
+```tsx
 // app/admin/[[...admin]]/page.tsx
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
