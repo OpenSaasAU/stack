@@ -28,136 +28,136 @@
     "excuses": ["TS2307 'next/headers'", "TS2307 'next/navigation'", "TS2307 '@/lib/auth'"],
     "reason": "Next.js and the reader's own file, neither present in this repo"
   },
-  "docs/content/how-to/authentication.md:487": {
+  "docs/content/how-to/authentication.md:483": {
     "excuses": ["TS2307 '@/lib/auth'", "TS2339 'Post'"],
     "reason": "the reader's own file, and `Post` is not one of the three lists the prelude models"
   },
-  "docs/content/how-to/authentication.md:570": {
+  "docs/content/how-to/authentication.md:566": {
     "whole": "a bare object-shape illustration — the flat `getSession()` projection's keys written as pseudo-fields, not a statement"
   },
-  "docs/content/how-to/authentication.md:628": {
+  "docs/content/how-to/authentication.md:624": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:682": {
+  "docs/content/how-to/authentication.md:678": {
     "excuses": ["TS2345"],
     "reason": "elides `fields` deliberately — the section illustrates the returned-filter shape, not a complete list"
   },
-  "docs/content/how-to/authentication.md:776": {
+  "docs/content/how-to/authentication.md:772": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:808": {
+  "docs/content/how-to/authentication.md:804": {
     "excuses": ["authPlugin", "TS2345"],
     "reason": "a bare name the prose supplies, and `select({/* ... */})` is a placeholder, not a complete field config"
   },
-  "docs/content/how-to/authentication.md:823": {
+  "docs/content/how-to/authentication.md:819": {
     "whole": "a bare `access:` object-literal property, not a statement"
   },
-  "docs/content/how-to/authentication.md:839": {
+  "docs/content/how-to/authentication.md:835": {
     "excuses": ["authPlugin", "TS7031 'session'"],
     "reason": "a bare name the prose supplies, and the hook's parameters are typed by the list it is attached to"
   },
-  "docs/content/how-to/authentication.md:866": {
+  "docs/content/how-to/authentication.md:862": {
     "excuses": ["authPlugin", "TS7006 'args'", "sendWelcomeEmail"],
     "reason": "a bare name the prose supplies, plus a hook parameter and an application-side helper this repo does not define"
   },
-  "docs/content/how-to/authentication.md:885": {
+  "docs/content/how-to/authentication.md:881": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:936": {
+  "docs/content/how-to/authentication.md:932": {
     "excuses": ["TS2307 'next/headers'", "TS2307 'next/navigation'", "TS2307 '@/lib/auth'"],
     "reason": "Next.js and the reader's own file, neither present in this repo"
   },
-  "docs/content/how-to/authentication.md:998": {
+  "docs/content/how-to/authentication.md:994": {
     "excuses": ["authPlugin", "TS7031 'user'", "TS7031 'url'", "resend"],
     "reason": "a bare name the prose supplies, plus better-auth's own callback parameters and an email client this repo does not install"
   },
-  "docs/content/how-to/authentication.md:1035": {
+  "docs/content/how-to/authentication.md:1031": {
     "excuses": ["TS2307 'resend'"],
     "reason": "a third-party SDK this repo does not install"
   },
-  "docs/content/how-to/authentication.md:1069": {
+  "docs/content/how-to/authentication.md:1065": {
     "excuses": ["TS2307 '@sendgrid/mail'"],
     "reason": "a third-party SDK this repo does not install"
   },
-  "docs/content/how-to/authentication.md:1215": {
+  "docs/content/how-to/authentication.md:1211": {
     "excuses": ["adoptBetterAuthTables"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1239": {
+  "docs/content/how-to/authentication.md:1235": {
     "excuses": ["adoptBetterAuthTables"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1260": {
+  "docs/content/how-to/authentication.md:1256": {
     "excuses": ["authPlugin", "adoptBetterAuthTables"],
     "reason": "bare names the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1273": {
+  "docs/content/how-to/authentication.md:1269": {
     "excuses": ["adoptBetterAuthTables"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1283": {
+  "docs/content/how-to/authentication.md:1279": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1309": {
+  "docs/content/how-to/authentication.md:1305": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1325": {
+  "docs/content/how-to/authentication.md:1321": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1349": {
+  "docs/content/how-to/authentication.md:1345": {
     "whole": "a bare `lists:` object-literal property, not a statement"
   },
-  "docs/content/how-to/authentication.md:1391": {
+  "docs/content/how-to/authentication.md:1387": {
     "excuses": ["authPlugin", "TS7031 'session'", "TS7031 'item'"],
     "reason": "a bare name the prose supplies, and each rule's parameters are typed by the list access config it is attached to"
   },
-  "docs/content/how-to/authentication.md:1439": {
+  "docs/content/how-to/authentication.md:1435": {
     "whole": "a bare object-shape illustration of the User list's row, not a statement"
   },
-  "docs/content/how-to/authentication.md:1466": {
+  "docs/content/how-to/authentication.md:1462": {
     "whole": "a bare object-shape illustration of the Session list's row, not a statement"
   },
-  "docs/content/how-to/authentication.md:1488": {
+  "docs/content/how-to/authentication.md:1484": {
     "whole": "a bare object-shape illustration of the Account list's row, not a statement"
   },
-  "docs/content/how-to/authentication.md:1518": {
+  "docs/content/how-to/authentication.md:1514": {
     "whole": "a bare object-shape illustration of the Verification list's row, not a statement"
   },
-  "docs/content/how-to/authentication.md:1539": {
+  "docs/content/how-to/authentication.md:1535": {
     "whole": "a bare object-shape illustration of the RateLimit list's row, not a statement"
   },
-  "docs/content/how-to/authentication.md:1548": {
+  "docs/content/how-to/authentication.md:1544": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1573": {
+  "docs/content/how-to/authentication.md:1569": {
     "whole": "a fragment continuing the prose above — `id` and `data` are shorthand properties with nothing in scope to supply them, and `Post` is not one of the three lists the prelude models"
   },
-  "docs/content/how-to/authentication.md:1584": {
+  "docs/content/how-to/authentication.md:1580": {
     "whole": "a bare `fields:` object-literal property, not a statement"
   },
-  "docs/content/how-to/authentication.md:1597": {
+  "docs/content/how-to/authentication.md:1593": {
     "excuses": ["postSchema"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1610": {
+  "docs/content/how-to/authentication.md:1606": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1621": {
+  "docs/content/how-to/authentication.md:1617": {
     "whole": "two `sessionFields:` alternatives shown side by side, not a statement"
   },
-  "docs/content/how-to/authentication.md:1662": {
+  "docs/content/how-to/authentication.md:1658": {
     "excuses": ["authPlugin"],
     "reason": "a bare name the prose supplies"
   },
-  "docs/content/how-to/authentication.md:1813": {
+  "docs/content/how-to/authentication.md:1809": {
     "excuses": [
       "TS2307 '../opensaas.config'",
       "TS2305 'rawOpensaasContext'",
@@ -165,15 +165,15 @@
     ],
     "reason": "the reader's own config and the generated bundle's `rawOpensaasContext`, plus Next.js, none present in this repo"
   },
-  "docs/content/how-to/authentication.md:1840": {
+  "docs/content/how-to/authentication.md:1836": {
     "excuses": ["TS2307 'next/headers'", "TS2307 '@/lib/auth'"],
     "reason": "Next.js and the reader's own file, neither present in this repo"
   },
-  "docs/content/how-to/authentication.md:1935": {
+  "docs/content/how-to/authentication.md:1927": {
     "excuses": ["TS2451 'context'", "getContext", "getSession"],
     "reason": "a ❌/✅ pair shares one fence and both snippets redeclare `context`"
   },
-  "docs/content/how-to/authentication.md:1975": {
+  "docs/content/how-to/authentication.md:1967": {
     "excuses": ["authPlugin", "TS2345"],
     "reason": "a bare name the prose supplies, and `select({/* ... */})` is a placeholder, not a complete field config"
   },
