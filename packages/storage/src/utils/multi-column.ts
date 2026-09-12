@@ -19,13 +19,7 @@ import type { FileMetadata, ImageMetadata } from '../config/types.js'
  * column (whose physical name is configurable via `@map`).
  */
 export type ImageColumnPart =
-  | 'url'
-  | 'width'
-  | 'height'
-  | 'filesize'
-  | 'contentType'
-  | 'contentDisposition'
-  | 'pathname'
+  'url' | 'width' | 'height' | 'filesize' | 'contentType' | 'contentDisposition' | 'pathname'
 
 /**
  * The logical "parts" of a Keystone file field. `pathname` and `contentType`
@@ -70,7 +64,7 @@ export const DEFAULT_FILE_COLUMN_PARTS: readonly FileColumnPart[] = [
   'url',
 ] as const
 
-/** The Prisma scalar type each image part is stored as. */
+/** The scalar type each image part is stored as, folded into a contract column type in {@link imageColumnDescriptors}. */
 const IMAGE_PART_PRISMA_TYPE: Record<ImageColumnPart, 'String' | 'Int'> = {
   url: 'String',
   width: 'Int',
@@ -81,7 +75,7 @@ const IMAGE_PART_PRISMA_TYPE: Record<ImageColumnPart, 'String' | 'Int'> = {
   pathname: 'String',
 }
 
-/** The Prisma scalar type each file part is stored as. */
+/** The scalar type each file part is stored as, folded into a contract column type in {@link fileColumnDescriptors}. */
 const FILE_PART_PRISMA_TYPE: Record<FileColumnPart, 'String' | 'Int'> = {
   filename: 'String',
   filesize: 'Int',
@@ -102,7 +96,7 @@ export type FileColumnMap = Record<FileColumnPart, string>
 export interface MultiColumnDescriptor {
   /** The contract column's field name (the property carrying `map`). */
   name: string
-  /** The Prisma scalar type. */
+  /** The scalar type, folded into the contract column's own type constructor. */
   type: 'String' | 'Int'
   /** The physical column name, carried as the contract column's `map`. */
   map: string

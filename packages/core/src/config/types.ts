@@ -8,14 +8,7 @@ import type {
 } from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
-  | 'text'
-  | 'integer'
-  | 'checkbox'
-  | 'timestamp'
-  | 'password'
-  | 'select'
-  | 'relationship'
-  | string // Allow custom field types from third-party packages
+  'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
 
 /**
  * Field-level hook argument types (exported for user annotations)
@@ -520,32 +513,33 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
      *   phoneNumber: text({
      *     db: { isNullable: false }
      *   })
-     *   // Generates: phoneNumber String (non-nullable)
+     *   // Contract: the phoneNumber column is non-nullable
      *
      *   // DB nullable (explicit), regardless of validation
      *   lastMessagePreview: text({
      *     db: { isNullable: true }
      *   })
-     *   // Generates: lastMessagePreview String? (nullable)
+     *   // Contract: the lastMessagePreview column is nullable
      * }
      * ```
      */
     isNullable?: boolean
     /**
-     * Override the native database type for the column.
-     * Generates a @db.<nativeType> attribute in the Prisma schema.
-     * The available types depend on your database provider.
+     * Override the native database type for the column. Folded into the
+     * contract column's own type constructor (`ColumnTypeDescriptor`), so the
+     * column is typed by `nativeType` directly rather than the field's
+     * default. The available types depend on your database provider.
      *
      * @example
      * ```typescript
      * // PostgreSQL: use TEXT instead of VARCHAR
      * fields: {
      *   description: text({ db: { nativeType: 'Text' } })
-     *   // Generates: description String? @db.Text
+     *   // Contract: description is a Text column
      *
      *   // PostgreSQL: use SMALLINT instead of INT
      *   count: integer({ db: { nativeType: 'SmallInt' } })
-     *   // Generates: count Int? @db.SmallInt
+     *   // Contract: count is a SmallInt column
      * }
      * ```
      */
@@ -798,12 +792,7 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
  * belongs here.
  */
 export type ContractLiteral =
-  | string
-  | number
-  | boolean
-  | null
-  | ContractLiteral[]
-  | { [key: string]: ContractLiteral }
+  string | number | boolean | null | ContractLiteral[] | { [key: string]: ContractLiteral }
 
 /**
  * A column's type as a pack-qualified type constructor —
@@ -1030,12 +1019,7 @@ export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
  * variants; `secondary` is the neutral fallback used for unmapped options.
  */
 export type SelectOptionVariant =
-  | 'default'
-  | 'secondary'
-  | 'success'
-  | 'warning'
-  | 'destructive'
-  | 'outline'
+  'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline'
 
 /**
  * A single choice in a `select` field.
@@ -1062,9 +1046,10 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
     /**
      * Whether to store as a native database enum type.
      * - 'string' (default): stores as a plain string/varchar column
-     * - 'enum': stores as a Prisma enum, generating a native enum type in the schema
+     * - 'enum': stores as a native enum column, declared once in the contract's
+     *   `enums` and referenced by this column's type
      *
-     * Note: enum values must be valid Prisma identifiers (letters, numbers, underscores,
+     * Note: enum values must be valid identifiers (letters, numbers, underscores,
      * starting with a letter) when using 'enum' type.
      *
      * @default 'string'
@@ -1072,11 +1057,11 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
     type?: 'string' | 'enum'
     map?: string
     /**
-     * Force the generated column to be nullable (`?`) even when a `defaultValue`
-     * is present. By default a select with a `defaultValue` generates NOT NULL;
+     * Force the column to be nullable even when a `defaultValue` is present.
+     * By default a select with a `defaultValue` produces a NOT NULL column;
      * set this to `true` for an explicit opt-in to a nullable column with a
-     * default (e.g. `String? @default("X")` or `<Enum>? @default(X)`), so that
-     * a live column containing NULLs migrates without a NOT NULL failure.
+     * default, so that a live column containing NULLs migrates without a NOT
+     * NULL failure.
      *
      * @default undefined (NOT NULL when a default is present — unchanged behaviour)
      *
@@ -1088,18 +1073,18 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
      *   defaultValue: 'draft',
      *   db: { isNullable: true },
      * })
-     * // Generates: String? @default("draft")
+     * // Contract: a nullable column with a default of 'draft'
      * ```
      */
     isNullable?: boolean
     /**
-     * Override the generated Prisma enum type name for native-enum selects
-     * (only applies when `type: 'enum'`). By default the enum is named
+     * Override the native enum type name for native-enum selects (only
+     * applies when `type: 'enum'`). By default the enum is named
      * `<List><Field>` (e.g. `AccountNoteStatus`); set this to match a live DB
      * enum type whose name differs (e.g. Keystone's `…Type` suffix).
      *
-     * The custom name is applied to both the generated `enum` block and every
-     * reference to it in the owning model.
+     * The custom name is carried on the contract's declared `enums` entry and
+     * every column referencing it.
      *
      * @example
      * ```typescript
@@ -1107,7 +1092,7 @@ export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
      *   options: [{ label: 'Open', value: 'open' }],
      *   db: { type: 'enum', enumName: 'AccountNoteStatusType' },
      * })
-     * // Generates: enum AccountNoteStatusType { ... } and the column references it
+     * // Contract: declares enum AccountNoteStatusType and the column references it
      * ```
      */
     enumName?: string
@@ -1257,8 +1242,8 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        *   ref: 'User.sessions',
        *   db: { isNullable: false },
        * })
-       * // Generates: userId String  (was String?)
-       * //            user   User    @relation(...)  (was User?)
+       * // Contract: the userId column and the user relation are both
+       * // non-nullable (were nullable by default)
        * ```
        */
       isNullable?: boolean
@@ -2372,12 +2357,7 @@ export type ItemViewUIConfig = {
  * string.
  */
 export type BulkActionVariant =
-  | 'default'
-  | 'destructive'
-  | 'outline'
-  | 'secondary'
-  | 'ghost'
-  | 'link'
+  'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
 
 /**
  * Arguments passed to a custom Bulk action's server-side `handler` (issue #736).
@@ -2700,16 +2680,14 @@ export type DatabaseConfig = {
    * Keystone 6, which never adds timestamps automatically, and keeps Keystone → stack
    * migrations non-destructive (Schema parity). See ADR-0004.
    *
-   * When `true`, every list receives:
-   * ```prisma
-   * createdAt DateTime @default(now())
-   * updatedAt DateTime @default(now()) @updatedAt
-   * ```
+   * When `true`, every list receives a `createdAt` column (a database `now()`
+   * default) and an `updatedAt` column, maintained application-side with no
+   * database backstop (ADR-0048).
    *
    * A per-list `db.timestamps` override takes precedence over this global setting. When
    * timestamps are enabled but a list already declares its own `createdAt`/`updatedAt`
-   * field, the auto column is skipped for the declared field(s) so Prisma never sees a
-   * duplicate column.
+   * field, the auto column is skipped for the declared field(s) so the contract never
+   * carries a duplicate column.
    *
    * @default false
    *
@@ -3250,7 +3228,7 @@ export type Plugin = {
   init: (context: PluginContext) => void | Promise<void>
 
   /**
-   * Optional: Modify config before Prisma schema generation
+   * Optional: Modify config before contract generation
    * Useful for programmatic config transformations
    */
   beforeGenerate?: (config: OpenSaasConfig) => OpenSaasConfig | Promise<OpenSaasConfig>

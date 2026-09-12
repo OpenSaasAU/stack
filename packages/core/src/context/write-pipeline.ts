@@ -65,8 +65,7 @@ export type WriteOperation = 'create' | 'update' | 'delete'
  * was (ADR-0044).
  */
 export type TargetResolution =
-  | { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope }
-  | { status: 'denied' }
+  { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope } | { status: 'denied' }
 
 /**
  * Per-operation strategy. Supplies the three axes on which create/update/delete

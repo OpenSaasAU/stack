@@ -454,7 +454,7 @@ export type AuthConfig = {
    * (`'memory' | 'database' | 'secondary-storage'`, default `'memory'`). Set
    * it to `'database'` to persist the limiter across restarts/instances — the
    * plugin then derives a fifth `RateLimit` Auth list (per ADR-0007) so the
-   * required table exists in the generated Prisma schema, following the same
+   * required table exists in the generated contract, following the same
    * adoption knobs (`modelName`/`fields`/`tableName`/`schema`) the other four
    * models carry. Derivation keys off `storage` alone — `enabled: false` with
    * `storage: 'database'` still produces the list, since better-auth still
@@ -522,7 +522,7 @@ export type AuthConfig = {
    * accepting them here would create two unranked ways to set the same thing.
    * So is `additionalFields` under `user`/`session`/`account`/`verification` —
    * it has schema consequences (new columns) that a passthrough can't also
-   * apply to the generated Prisma schema; add fields to the derived list
+   * apply to the generated contract; add fields to the derived list
    * instead (`extendUserList` for the user model, or declare the list
    * yourself for the others — see `packages/auth/CLAUDE.md`).
    *
