@@ -13,7 +13,11 @@
     "reason": "the reader's own file, authored in the block above"
   },
   "docs/content/how-to/authentication.md:173": {
-    "excuses": ["TS2307 '../opensaas.config'", "TS2307 'next/headers'", "TS2305 'rawOpensaasContext'"],
+    "excuses": [
+      "TS2307 '../opensaas.config'",
+      "TS2307 'next/headers'",
+      "TS2305 'rawOpensaasContext'"
+    ],
     "reason": "the reader's own config and the generated bundle's `rawOpensaasContext`, plus Next.js, none present in this repo"
   },
   "docs/content/how-to/authentication.md:229": {
@@ -154,7 +158,11 @@
     "reason": "a bare name the prose supplies"
   },
   "docs/content/how-to/authentication.md:1813": {
-    "excuses": ["TS2307 '../opensaas.config'", "TS2305 'rawOpensaasContext'", "TS2307 'next/headers'"],
+    "excuses": [
+      "TS2307 '../opensaas.config'",
+      "TS2305 'rawOpensaasContext'",
+      "TS2307 'next/headers'"
+    ],
     "reason": "the reader's own config and the generated bundle's `rawOpensaasContext`, plus Next.js, none present in this repo"
   },
   "docs/content/how-to/authentication.md:1840": {

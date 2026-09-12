@@ -340,11 +340,7 @@ export default function SignInPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Sign In</h1>
-      <SignInForm
-        signInAction={signInAction}
-        redirectTo="/admin"
-        showSocialProviders={false}
-      />
+      <SignInForm signInAction={signInAction} redirectTo="/admin" showSocialProviders={false} />
     </div>
   )
 }
@@ -1867,11 +1863,7 @@ export default function SignInPage() {
   return (
     <div className="container mx-auto max-w-md py-16">
       <h1 className="text-3xl font-bold mb-8">Sign In</h1>
-      <SignInForm
-        signInAction={signInAction}
-        redirectTo="/admin"
-        showSocialProviders={false}
-      />
+      <SignInForm signInAction={signInAction} redirectTo="/admin" showSocialProviders={false} />
     </div>
   )
 }
