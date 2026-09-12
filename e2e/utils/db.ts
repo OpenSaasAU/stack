@@ -16,11 +16,14 @@ export interface PreparedDatabase {
 }
 
 /**
- * The Dev database this process started, if it started one. Playwright runs
- * `globalSetup` and `globalTeardown` in the same process, so the handle
- * survives between them without a file.
+ * The Dev databases this process started, if it started any. Playwright runs
+ * `globalSetup` and `globalTeardown` in the same process, so the handles
+ * survive between them without a file. One entry per project directory this
+ * run's `setupDatabase` actually started a database for — in the common case
+ * that project's own webServer already started one before `globalSetup` ran,
+ * so this stays empty.
  */
-let started: DevDatabase | undefined
+const started: DevDatabase[] = []
 
 const cliEntry = path.join(process.cwd(), 'packages', 'cli', 'bin', 'opensaas.js')
 
@@ -61,11 +64,13 @@ export async function setupDatabase(projectDir: string): Promise<PreparedDatabas
     // PGlite's own `mkdir` of the data directory is not recursive, so the
     // Generated bundle directory has to exist before it runs.
     fs.mkdirSync(path.dirname(dataDir), { recursive: true })
-    started = await startDevDatabase({
-      dataDir,
-      extensions: ['vector'],
-      cwd: projectDir,
-    })
+    started.push(
+      await startDevDatabase({
+        dataDir,
+        extensions: ['vector'],
+        cwd: projectDir,
+      }),
+    )
   }
 
   const connection = findDatabaseConnection({ cwd: projectDir })
@@ -85,8 +90,27 @@ export async function setupDatabase(projectDir: string): Promise<PreparedDatabas
   return connection
 }
 
-/** Stops the Dev database, if this process started one. */
+/** Stops every Dev database this process started. */
 export async function cleanupDatabase(): Promise<void> {
-  await started?.stop()
-  started = undefined
+  await Promise.all(started.splice(0).map((db) => db.stop()))
+}
+
+/**
+ * Derives one example's own database name out of a shared Postgres
+ * connection string, so multiple examples on the e2e job's `postgres` leg
+ * each reconcile against a database of their own instead of fighting over
+ * the one the job's `DATABASE_URL` names (`playwright.config.ts`'s
+ * `webServer.env`, and this module's own `setupDatabase` call for that
+ * example, both go through this).
+ *
+ * Returns `undefined` when `DATABASE_URL` is unset — the `dev-database` leg,
+ * where each example isolates itself with its own PGlite data directory
+ * instead and needs no override.
+ */
+export function exampleDatabaseUrl(databaseName: string): string | undefined {
+  const base = process.env.DATABASE_URL
+  if (!base) return undefined
+  const url = new URL(base)
+  url.pathname = `/${databaseName}`
+  return url.toString()
 }

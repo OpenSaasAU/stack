@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { FullConfig } from '@playwright/test'
-import { setupDatabase } from './utils/db.js'
+import { exampleDatabaseUrl, setupDatabase } from './utils/db.js'
 
 const REQUIRED_ENV: readonly (readonly [string, string])[] = [
   ['BETTER_AUTH_SECRET', 'test-secret-key-for-e2e-tests-only-not-for-production-use'],
@@ -32,6 +32,24 @@ function writeEnvFile(exampleDir: string): void {
   fs.writeFileSync(envPath, `${prefix}${added}\n`, 'utf8')
 }
 
+/**
+ * Runs `fn` with `DATABASE_URL` swapped to `override` for its duration, so a
+ * `setupDatabase` call for one example reconciles against that example's own
+ * database rather than the job-level one every process inherits. A no-op when
+ * `override` is `undefined` (the `dev-database` leg, where nothing needs it).
+ */
+async function withDatabaseUrl<T>(override: string | undefined, fn: () => Promise<T>): Promise<T> {
+  if (override === undefined) return fn()
+  const original = process.env.DATABASE_URL
+  process.env.DATABASE_URL = override
+  try {
+    return await fn()
+  } finally {
+    if (original === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = original
+  }
+}
+
 async function globalSetup(_config: FullConfig) {
   console.log('=== Global Setup for E2E Tests ===')
 
@@ -42,6 +60,17 @@ async function globalSetup(_config: FullConfig) {
   console.log(
     `Database ready (${provenance}): ${provenance === 'dev-database' ? url : 'the DATABASE_URL server'}`,
   )
+
+  // Neither example wires authPlugin, so neither needs a `.env`.
+  const jsonDemoDir = path.join(process.cwd(), 'examples/json-demo')
+  await withDatabaseUrl(exampleDatabaseUrl('json_demo_example'), () => setupDatabase(jsonDemoDir))
+  console.log('Database ready for examples/json-demo')
+
+  const tiptapDemoDir = path.join(process.cwd(), 'examples/tiptap-demo')
+  await withDatabaseUrl(exampleDatabaseUrl('tiptap_demo_example'), () =>
+    setupDatabase(tiptapDemoDir),
+  )
+  console.log('Database ready for examples/tiptap-demo')
 
   console.log('=== Global Setup Complete ===\n')
 }
