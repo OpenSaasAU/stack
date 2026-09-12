@@ -607,7 +607,7 @@ type ListIndex = {
 Field-level [`isIndexed`](/docs/reference/fields-api#isindexed) is the sugar for the unnamed single-column case. `db.indexes` is the full form — reach for it when a constraint needs a `name` (for adopting an existing live constraint under a name the generator would not derive) or spans more than one column. Arity is incidental: an entry names **one or more** of the list's own OpenSaaS field names (not raw database column names). The generator resolves each to its column — a scalar field's own name (unaffected by `db.map`), or a relationship field's foreign key column (`<field>Id`) when this side owns it.
 
 {% callout type="warning" %}
-An index column carries **no sort direction**. `ListIndexFieldRef` has no `sort` key, so `{ field, sort }` is an excess-property error in TypeScript — not a `pnpm generate` refusal. The generator never inspects `sort`; the index keeps its column order.
+An index column carries **no sort direction**. `ListIndexFieldRef` has no `sort` key, so `{ field, sort }` fails at `pnpm generate` time, naming the list and the entry ([ADR-0040](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0040-the-generator-emits-a-typescript-contract-module-not-psl.md)) — the index keeps its column order.
 {% /callout %}
 
 **Example — composite unique (a database-level backstop a hook's existence check can't close on its own):**
@@ -692,6 +692,7 @@ The second list declares no `createdAt` field; `db.timestamps` is what makes the
 - An entry whose `fields` array is empty.
 - An entry naming a field that maps to more than one database column, which has no single column to index.
 - A single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes — the error names both the field/`isIndexed` and the entry, since either one should be removed rather than both left producing the same constraint.
+- A field reference carrying a `sort` key — an index column has no sort direction (see the callout above).
 
 No entry is ever silently dropped or emitted as an invalid constraint.
 
