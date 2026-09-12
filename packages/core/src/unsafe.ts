@@ -73,15 +73,11 @@ export interface UnsafeTransactionScope<
  * - Prisma's raw guardrails (`lints()`, `budgets()`) are opt-in middleware and
  *   the stack installs none, here or on the client. A statement this surface
  *   runs meets whatever an application armed, and nothing else (ADR-0062).
- * - The lanes' types are only as precise as the client the surface was built
- *   from. The context's own surface is built through {@link UnsafeCapableClient},
- *   so its lanes are structural; instantiating them over the app's emitted
- *   contract belongs to the generated bundle (ADR-0052).
  *
  * @example
  * ```typescript
  * const rows = context.unsafe.query(
- *   context.unsafe.sql.public.Post.select({ id: true }).build(),
+ *   context.unsafe.sql.public.Post.select('id').build(),
  * )
  * for await (const row of rows) {
  *   // consumed outside any scope, still marked

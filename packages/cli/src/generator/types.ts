@@ -235,27 +235,32 @@ function generateDbType(config: OpenSaasConfig): string {
 function generateContextTypes(): string {
   const session = imported('Session')
   const services = imported('PluginServices')
+  // The app's own Prisma 8 client, keyed to its emitted contract — naming it
+  // here is what keeps `context.unsafe.sql`/`.raw` typed as Prisma's own
+  // builder and raw tag rather than degrading to `object` at the generic
+  // default (ADR-0052).
+  const client = `${imported('PostgresClient')}<${imported('Contract')}>`
   return `/**
  * The context a hook, an access rule and a plugin service see: the secured
  * \`db\`, the session and the ambient plumbing, with nothing that can start a
  * transaction or change who is asking.
  */
 export interface BaseContext<TSession extends ${session} = ${session}>
-  extends ${imported('StackBaseContext')}<DB, TSession, ${services}> {}
+  extends ${imported('StackBaseContext')}<DB, TSession, ${services}, ${client}> {}
 
 /**
  * The full context a server action or page component holds — everything
  * \`BaseContext\` carries plus \`sudo()\`, \`withSession()\` and \`transaction()\`.
  */
 export interface Context<TSession extends ${session} = ${session}>
-  extends ${imported('StackContext')}<DB, TSession, ${services}, TxDB> {}
+  extends ${imported('StackContext')}<DB, TSession, ${services}, TxDB, ${client}> {}
 
 /**
  * The context inside \`context.transaction()\`: the same surface over \`TxDB\`,
  * whose reads carry \`forUpdate()\`, plus \`advisoryLock()\`.
  */
 export interface TransactionContext<TSession extends ${session} = ${session}>
-  extends ${imported('StackTransactionContext')}<TxDB, TSession, ${services}, TxDB> {}`
+  extends ${imported('StackTransactionContext')}<TxDB, TSession, ${services}, TxDB, ${client}> {}`
 }
 
 /**
@@ -300,9 +305,15 @@ export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTa
   const coreImports = ['Session', 'StackBaseContext', 'StackContext', 'StackTransactionContext']
   if (listNames.length > 0) {
     coreImports.push('CreateInput', 'Row', 'SecuredList', 'StoredRow', 'UpdateInput')
-    lines.push(`import type { Contract as ${imported('Contract')} } from '${CONTRACT_IMPORT}'`)
   }
   if (needsFields.length > 0) coreImports.push('NeedsRow')
+  // Named unconditionally: Context/BaseContext/TransactionContext key the
+  // Unsafe surface to it (PostgresClient<Contract>) whether or not the config
+  // declares any list.
+  lines.push(`import type { Contract as ${imported('Contract')} } from '${CONTRACT_IMPORT}'`)
+  lines.push(
+    `import type { PostgresClient as ${imported('PostgresClient')} } from '@prisma/orm-postgres/runtime'`,
+  )
   lines.push('import type {')
   for (const name of coreImports.sort()) {
     lines.push(`  ${name} as ${imported(name)},`)
