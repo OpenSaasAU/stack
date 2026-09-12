@@ -25,12 +25,35 @@ function schemaConfig(postDelete: () => boolean = () => true): OpenSaasConfig {
     db: { provider: 'postgresql', timestamps: true },
     lists: {
       Author: {
-        fields: { name: text(), posts: relationship({ ref: 'Post.author', many: true }) },
+        fields: {
+          name: text(),
+          posts: relationship({ ref: 'Post.author', many: true }),
+          // The non-owning half of a one-to-one: `Bio.author` claims the
+          // foreign key below, so this side owns no column (#1442).
+          bio: relationship({ ref: 'Bio.author' }),
+        },
         access: { operation: OPEN },
       },
       Post: {
-        fields: { title: text(), author: relationship({ ref: 'Author.posts' }) },
+        fields: {
+          title: text(),
+          author: relationship({ ref: 'Author.posts' }),
+          // A list-only ref: synthesises the always-non-owning
+          // `from_Post_category` back-relation on Category (#1442).
+          category: relationship({ ref: 'Category' }),
+        },
         access: { operation: { ...OPEN, delete: postDelete } },
+      },
+      Bio: {
+        fields: {
+          notes: text(),
+          author: relationship({ ref: 'Author.bio', db: { foreignKey: true } }),
+        },
+        access: { operation: OPEN },
+      },
+      Category: {
+        fields: { name: text() },
+        access: { operation: OPEN },
       },
     },
   }
@@ -46,6 +69,42 @@ async function storedLinks(url: string): Promise<Array<{ title: string; author: 
     return result.rows.map((row: { title: string; author: string | null }) => ({
       title: row.title,
       author: row.author,
+    }))
+  } finally {
+    await client.end()
+  }
+}
+
+async function storedBioLinks(
+  url: string,
+): Promise<Array<{ notes: string; author: string | null }>> {
+  const client = new pg.Client({ connectionString: url })
+  await client.connect()
+  try {
+    const result = await client.query(
+      'select "notes", "authorId" as "author" from "public"."Bio" order by "notes"',
+    )
+    return result.rows.map((row: { notes: string; author: string | null }) => ({
+      notes: row.notes,
+      author: row.author,
+    }))
+  } finally {
+    await client.end()
+  }
+}
+
+async function storedPostCategories(
+  url: string,
+): Promise<Array<{ title: string; category: string | null }>> {
+  const client = new pg.Client({ connectionString: url })
+  await client.connect()
+  try {
+    const result = await client.query(
+      'select "title", "categoryId" as "category" from "public"."Post" order by "title"',
+    )
+    return result.rows.map((row: { title: string; category: string | null }) => ({
+      title: row.title,
+      category: row.category,
     }))
   } finally {
     await client.end()
@@ -89,6 +148,16 @@ describe('the relationship table server actions over a real database', () => {
   async function seedAuthor(name: string): Promise<string> {
     const author = await harness.context.db.Author.create({ data: { name } })
     return String(author?.id)
+  }
+
+  async function seedBio(notes: string): Promise<string> {
+    const bio = await harness.context.db.Bio.create({ data: { notes } })
+    return String(bio?.id)
+  }
+
+  async function seedCategory(name: string): Promise<string> {
+    const category = await harness.context.db.Category.create({ data: { name } })
+    return String(category?.id)
   }
 
   /**
@@ -144,7 +213,7 @@ describe('the relationship table server actions over a real database', () => {
    * own refusal instead of this one, which is what the message pins.
    */
   test(
-    'createRelated refuses a to-many back-reference by naming its arity',
+    'createRelated refuses a to-many back-reference by naming its ownership',
     async () => {
       await seedAuthor('owner')
       const post = await harness.context.db.Post.create({ data: { title: 'p' } })
@@ -158,8 +227,57 @@ describe('the relationship table server actions over a real database', () => {
       })
 
       expect(result).toMatchObject({ created: false })
-      expect((result as { error?: string }).error).toContain('to-many back-reference')
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
       expect(await storedAuthorNames(harness.url)).toEqual(['owner'])
+    },
+    BOOT,
+  )
+
+  /**
+   * The non-owning half of a one-to-one (#1442): `Author.bio` has `many`
+   * falsy exactly like the owning `Post.author`, so a guard keyed on arity
+   * alone lets this one through — it must be caught on ownership instead.
+   */
+  test(
+    'createRelated refuses the non-owning half of a one-to-one',
+    async () => {
+      const bioId = await seedBio('existing')
+
+      const result = await harness.context.serverAction({
+        listKey: 'Author',
+        action: 'createRelated',
+        data: { name: 'new' },
+        field: 'bio',
+        parentId: bioId,
+      })
+
+      expect(result).toMatchObject({ created: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
+      expect(await storedAuthorNames(harness.url)).toEqual([])
+    },
+    BOOT,
+  )
+
+  /**
+   * A synthetic `from_<List>_<field>` back-relation (#1442): never declared,
+   * so never itself in `listConfig.fields` — the undeclared shape the guard's
+   * `!!backRefField` check used to mistake for "not many" and let through.
+   */
+  test(
+    'createRelated refuses a synthetic back-relation',
+    async () => {
+      const post = await harness.context.db.Post.create({ data: { title: 'p' } })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Category',
+        action: 'createRelated',
+        data: { name: 'new' },
+        field: 'from_Post_category',
+        parentId: String(post?.id),
+      })
+
+      expect(result).toMatchObject({ created: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
     },
     BOOT,
   )
@@ -256,9 +374,70 @@ describe('the relationship table server actions over a real database', () => {
       })
 
       expect(result).toMatchObject({ removed: false })
-      expect((result as { error?: string }).error).toContain('to-many back-reference')
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
       expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: authorId }])
       expect(await storedAuthorNames(harness.url)).toEqual(['ada'])
+    },
+    BOOT,
+  )
+
+  /**
+   * The non-owning half of a one-to-one (#1442): `many` is falsy on both
+   * `Author.bio` and the owning `Bio.author`, so the old arity guard let this
+   * one through to an `update` that the engine's own ownership check refused.
+   */
+  test(
+    'removeRelated refuses to disconnect through the non-owning half of a one-to-one',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const bioId = await seedBio('bio')
+      await harness.context.db.Bio.update({
+        where: { id: bioId },
+        data: { author: { connect: { id: authorId } } },
+      })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Author',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: authorId,
+        field: 'bio',
+      })
+
+      expect(result).toMatchObject({ removed: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
+      expect(await storedBioLinks(harness.url)).toEqual([{ notes: 'bio', author: authorId }])
+    },
+    BOOT,
+  )
+
+  /**
+   * A synthetic `from_<List>_<field>` back-relation (#1442): undeclared, so
+   * `listConfig.fields[field]` is `undefined` and the old guard's
+   * `!!backRefField` check read that as "not many" — this is the shape the
+   * issue's reachability note asked to confirm rather than assume.
+   */
+  test(
+    'removeRelated refuses to disconnect through a synthetic back-relation',
+    async () => {
+      const categoryId = await seedCategory('news')
+      await harness.context.db.Post.create({
+        data: { title: 'story', category: { connect: { id: categoryId } } },
+      })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Category',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: categoryId,
+        field: 'from_Post_category',
+      })
+
+      expect(result).toMatchObject({ removed: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
+      expect(await storedPostCategories(harness.url)).toEqual([
+        { title: 'story', category: categoryId },
+      ])
     },
     BOOT,
   )
@@ -333,7 +512,59 @@ describe('the relationship table server actions over a real database', () => {
       })
 
       expect(result).toMatchObject({ linked: false })
-      expect((result as { error?: string }).error).toContain('to-many back-reference')
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
+    },
+    BOOT,
+  )
+
+  /**
+   * The non-owning half of a one-to-one (#1442): same falsy `many` as the
+   * to-many case above, but a different reason it owns no column — the guard
+   * must reach the same refusal by ownership, not by re-deriving it from
+   * arity.
+   */
+  test(
+    'linkRelated through the non-owning half of a one-to-one has no column to write',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const bioId = await seedBio('bio')
+
+      const result = await harness.context.serverAction({
+        listKey: 'Author',
+        action: 'linkRelated',
+        id: authorId,
+        field: 'bio',
+        parentId: bioId,
+      })
+
+      expect(result).toMatchObject({ linked: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
+      expect(await storedBioLinks(harness.url)).toEqual([{ notes: 'bio', author: null }])
+    },
+    BOOT,
+  )
+
+  /**
+   * A synthetic back-relation (#1442): undeclared on `Category`, so it never
+   * appears in `listConfig.fields` and the old `isRelationshipField` guard
+   * already refused it — but with the wrong message. Ownership is the reason.
+   */
+  test(
+    'linkRelated through a synthetic back-relation has no column to write',
+    async () => {
+      const categoryId = await seedCategory('news')
+      const post = await harness.context.db.Post.create({ data: { title: 'story' } })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Category',
+        action: 'linkRelated',
+        id: categoryId,
+        field: 'from_Post_category',
+        parentId: String(post?.id),
+      })
+
+      expect(result).toMatchObject({ linked: false })
+      expect((result as { error?: string }).error).toContain('non-owning back-reference')
     },
     BOOT,
   )

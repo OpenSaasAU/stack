@@ -1,6 +1,7 @@
-import type { OpenSaasConfig, ListConfig } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
+import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
@@ -29,7 +30,7 @@ import {
   deleteWriteStrategy,
 } from './write-pipeline.js'
 import { resolveJunctionEdge } from './junction.js'
-import { isRelationshipField } from '../fields/index.js'
+import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
@@ -153,6 +154,39 @@ function warnIfSelectIgnored(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
+}
+
+type BackReferenceClassification =
+  { kind: 'owning'; field: RelationshipField } | { kind: 'nonOwning' } | { kind: 'notRelationship' }
+
+/**
+ * Whether `fieldName` on `listKey` owns a foreign-key column — the property
+ * `removeRelated`/`createRelated`/`linkRelated` actually need, rather than
+ * `many`, which is only a proxy for it: a non-owning to-one (the inverse half
+ * of a one-to-one) has `many` falsy exactly like an owning one, and a
+ * synthetic `from_<List>_<field>` back-relation is never declared, so it is
+ * never itself in `listConfig.fields` (#1442).
+ */
+function classifyBackReference(
+  listKey: string,
+  fieldName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+): BackReferenceClassification {
+  const field = listConfig.fields[fieldName]
+  if (isRelationshipField(field)) {
+    let owns: boolean
+    try {
+      owns = shouldHaveForeignKey(listKey, fieldName, field, config)
+    } catch {
+      owns = false
+    }
+    return owns ? { kind: 'owning', field } : { kind: 'nonOwning' }
+  }
+  return resolveSyntheticReverseRelation(fieldName, listKey, config) !== null
+    ? { kind: 'nonOwning' }
+    : { kind: 'notRelationship' }
 }
 
 /**
@@ -708,21 +742,21 @@ export function getContext<TConfig extends OpenSaasConfig>(
           result = await model.delete({ where: { id: relatedId } })
         } else {
           // Disconnect: an UPDATE on the related list nulling its back-reference,
-          // never a delete — the row itself survives. A to-many back-reference
-          // owns no foreign key to null, so removing that edge is deleting the
-          // junction row under its own delete access (`mode: 'delete'`), not an
-          // update here (ADR-0050, ADR-0018 as amended).
+          // never a delete — the row itself survives. A non-owning back-reference
+          // (a to-many, the inverse half of a one-to-one, or a synthetic
+          // `from_<List>_<field>` back-relation) owns no foreign key to null, so
+          // removing that edge is deleting the junction row under its own delete
+          // access (`mode: 'delete'`), or nulling the field on the list that DOES
+          // own the column, not an update here (ADR-0050, ADR-0018 as amended).
           if (!props.field) {
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
-          const backRefField = listConfig.fields[props.field]
-          const backRefIsMany =
-            !!backRefField && 'many' in backRefField && backRefField.many === true
-          if (backRefIsMany) {
+          const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+          if (backRef.kind === 'nonOwning') {
             return {
               removed: false,
               error:
-                `Cannot unlink through "${props.field}": a to-many back-reference owns no ` +
+                `Cannot unlink through "${props.field}": a non-owning back-reference owns no ` +
                 `foreign key to clear. Remove the row itself instead.`,
             }
           }
@@ -748,9 +782,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
     // Runs on the RELATED list (ADR-0018 boundary — see ServerActionProps above).
     // The back-reference to the parent is set here from `field`/`parentId`, so
-    // the client can never re-target the link. Only a to-one back-reference
-    // owns a column to hold it; a to-many one is refused below. Honours Silent
-    // failure: an access-denied create returns `null`, surfaced as
+    // the client can never re-target the link. Only the foreign-key-owning side
+    // owns a column to hold it; a non-owning one is refused below. Honours
+    // Silent failure: an access-denied create returns `null`, surfaced as
     // `{ created: false }` with a generic reason (no denied-vs-absent leak).
     if (props.action === 'createRelated') {
       try {
@@ -767,28 +801,30 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         const data: Record<string, unknown> = { ...props.data }
         if (props.field && props.parentId) {
-          const backRefField = listConfig.fields[props.field]
+          const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
           // The back-reference must name a relationship field on this list; a
           // non-relationship field would otherwise receive a nonsensical
           // { connect } value. Also hardening — the drawer only ever passes a
           // real relationship back-reference here.
-          if (!isRelationshipField(backRefField)) {
+          if (backRef.kind === 'notRelationship') {
             return {
               created: false,
               error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
             }
           }
-          // A to-many back-reference owns no foreign key, so there is no column
-          // on the row being created for the parent to go in (ADR-0050).
-          if ('many' in backRefField && backRefField.many === true) {
+          // A non-owning back-reference (a to-many, the inverse half of a
+          // one-to-one, or a synthetic back-relation) owns no foreign key, so
+          // there is no column on the row being created for the parent to go
+          // in (ADR-0050).
+          if (backRef.kind === 'nonOwning') {
             return {
               created: false,
               error:
-                `Cannot preset "${props.field}": a to-many back-reference owns no foreign key. ` +
+                `Cannot preset "${props.field}": a non-owning back-reference owns no foreign key. ` +
                 `Link the parent from the side that holds the column.`,
             }
           }
-          const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+          const parentId = parseId(backRef.field.ref.split('.')[0], props.parentId)
           if (parentId === null) {
             return { created: false, error: 'Access denied or operation failed' }
           }
@@ -879,27 +915,28 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
 
     // The write runs on the RELATED list, so that list's own update access and
-    // hooks decide it, never the parent's. Only a to-one back-reference owns a
-    // column to hold the link. Honours Silent failure: an access-denied update
-    // returns `null`, surfaced as `{ linked: false }` with a generic reason.
+    // hooks decide it, never the parent's. Only the foreign-key-owning side
+    // owns a column to hold the link. Honours Silent failure: an access-denied
+    // update returns `null`, surfaced as `{ linked: false }` with a generic
+    // reason.
     if (props.action === 'linkRelated') {
-      const backRefField = listConfig.fields[props.field]
-      if (!isRelationshipField(backRefField)) {
+      const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+      if (backRef.kind === 'notRelationship') {
         return {
           linked: false,
           error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
         }
       }
-      if ('many' in backRefField && backRefField.many === true) {
+      if (backRef.kind === 'nonOwning') {
         return {
           linked: false,
           error:
-            `Cannot link through "${props.field}": a to-many back-reference owns no foreign key. ` +
+            `Cannot link through "${props.field}": a non-owning back-reference owns no foreign key. ` +
             `Link the parent from the side that holds the column.`,
         }
       }
       const relatedId = parseId(props.listKey, props.id)
-      const parentId = parseId(backRefField.ref.split('.')[0], props.parentId)
+      const parentId = parseId(backRef.field.ref.split('.')[0], props.parentId)
       if (relatedId === null || parentId === null) {
         return { linked: false, error: 'Access denied or operation failed' }
       }
