@@ -7,6 +7,8 @@ import { CheckboxCell } from '../../src/components/cells/CheckboxCell.js'
 import { RelationshipCell } from '../../src/components/cells/RelationshipCell.js'
 import { TextCell } from '../../src/components/cells/TextCell.js'
 import { PasswordCell } from '../../src/components/cells/PasswordCell.js'
+import { JsonCell } from '../../src/components/cells/JsonCell.js'
+import { getCellComponent } from '../../src/components/cells/registry.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
 
 const statusField: SerializableFieldConfig = {
@@ -185,6 +187,72 @@ describe('TextCell', () => {
   it('renders a dash for empty values', () => {
     render(<TextCell value="" field={{ type: 'text' }} fieldName="t" />)
     expect(screen.getByText('-')).toBeInTheDocument()
+  })
+
+  // issue #1418: a field type with no registered Cell falls back to TextCell,
+  // and `String(anObject)` reads as `[object Object]` — worse than an explicit
+  // placeholder.
+  it('renders an explicit placeholder for an object value instead of stringifying it', () => {
+    render(<TextCell value={{ foo: 'bar' }} field={{ type: 'someUnknownType' }} fieldName="t" />)
+    expect(screen.queryByText('[object Object]')).not.toBeInTheDocument()
+    expect(screen.getByText('Unsupported value')).toBeInTheDocument()
+  })
+
+  it('renders an explicit placeholder for an array value instead of stringifying it', () => {
+    render(<TextCell value={[1, 2, 3]} field={{ type: 'someUnknownType' }} fieldName="t" />)
+    expect(screen.getByText('Unsupported value')).toBeInTheDocument()
+  })
+
+  // A `virtual()` field can declare a custom class type (CLAUDE.md's own
+  // `Decimal` example) with no registered Cell of its own. It must keep
+  // rendering through its own `toString()` rather than being caught by the
+  // plain-object/array placeholder above.
+  it('renders a class instance with a custom toString via String(), not the placeholder', () => {
+    class Money {
+      constructor(private cents: number) {}
+      toString() {
+        return `$${(this.cents / 100).toFixed(2)}`
+      }
+    }
+    render(<TextCell value={new Money(2340)} field={{ type: 'someUnknownType' }} fieldName="t" />)
+    expect(screen.getByText('$23.40')).toBeInTheDocument()
+    expect(screen.queryByText('Unsupported value')).not.toBeInTheDocument()
+  })
+})
+
+describe('JsonCell', () => {
+  it('is registered as the default Cell for the json field type', () => {
+    expect(getCellComponent('json')).toBe(JsonCell)
+  })
+
+  it('renders a dash for an empty value', () => {
+    render(<JsonCell value={null} field={{ type: 'json' }} fieldName="metadata" />)
+    expect(screen.getByText('-')).toBeInTheDocument()
+  })
+
+  it('renders a compact size summary for an object, never the raw payload', () => {
+    render(<JsonCell value={{ a: 1, b: 2, c: 3 }} field={{ type: 'json' }} fieldName="metadata" />)
+    const cell = screen.getByText('Object (3 keys)')
+    expect(cell).toHaveAttribute('data-slot', 'cell-json')
+    expect(screen.queryByText('[object Object]')).not.toBeInTheDocument()
+  })
+
+  it('renders a compact size summary for an array', () => {
+    render(<JsonCell value={[1, 2]} field={{ type: 'json' }} fieldName="tags" />)
+    expect(screen.getByText('Array (2 items)')).toBeInTheDocument()
+  })
+
+  it('singularises a one-item shape', () => {
+    render(<JsonCell value={['x']} field={{ type: 'json' }} fieldName="tags" />)
+    expect(screen.getByText('Array (1 item)')).toBeInTheDocument()
+
+    render(<JsonCell value={{ a: 1 }} field={{ type: 'json' }} fieldName="metadata" />)
+    expect(screen.getByText('Object (1 key)')).toBeInTheDocument()
+  })
+
+  it('renders a scalar JSON value directly', () => {
+    render(<JsonCell value="hello" field={{ type: 'json' }} fieldName="note" />)
+    expect(screen.getByText('hello')).toBeInTheDocument()
   })
 })
 

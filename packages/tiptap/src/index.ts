@@ -3,6 +3,7 @@ export { richText } from './fields/richText.js'
 
 // Components
 export { TiptapField } from './components/TiptapField.js'
+export { TiptapCell } from './components/TiptapCell.js'
 
 // Types
 export type { JSONContent } from '@tiptap/react'
