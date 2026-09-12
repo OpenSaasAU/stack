@@ -8,7 +8,14 @@ import type {
 } from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
-  'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
+  | 'text'
+  | 'integer'
+  | 'checkbox'
+  | 'timestamp'
+  | 'password'
+  | 'select'
+  | 'relationship'
+  | string // Allow custom field types from third-party packages
 
 /**
  * Field-level hook argument types (exported for user annotations)
@@ -476,8 +483,8 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
   hooks?: FieldHooks<TTypeInfo>
   /**
    * Marks this field as virtual — not stored in database, computed via
-   * `resolveInput`/`resolveOutput` hooks, and excluded from the Prisma
-   * schema and input types. Computed whenever the read is going to return
+   * `resolveInput`/`resolveOutput` hooks, and excluded from the contract
+   * and input types. Computed whenever the read is going to return
    * it (ADR-0027) — not gated behind an explicit `include`/selection.
    */
   virtual?: boolean
@@ -486,14 +493,14 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    */
   db?: {
     /**
-     * Custom database column name
-     * Adds a @map attribute in Prisma schema
+     * Custom database column name. Carried on the contract column as `map`,
+     * when it differs from the field's own name.
      * @example
      * ```typescript
      * fields: {
      *   firstName: text({ db: { map: 'first_name' } })
      * }
-     * // Generates: firstName String @map("first_name")
+     * // Contract: the firstName column maps to 'first_name'
      * ```
      */
     map?: string
@@ -791,7 +798,12 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
  * belongs here.
  */
 export type ContractLiteral =
-  string | number | boolean | null | ContractLiteral[] | { [key: string]: ContractLiteral }
+  | string
+  | number
+  | boolean
+  | null
+  | ContractLiteral[]
+  | { [key: string]: ContractLiteral }
 
 /**
  * A column's type as a pack-qualified type constructor —
@@ -1018,7 +1030,12 @@ export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConf
  * variants; `secondary` is the neutral fallback used for unmapped options.
  */
 export type SelectOptionVariant =
-  'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline'
+  | 'default'
+  | 'secondary'
+  | 'success'
+  | 'warning'
+  | 'destructive'
+  | 'outline'
 
 /**
  * A single choice in a `select` field.
@@ -1199,9 +1216,10 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
     ref: string // Format: 'ListName.fieldName' or 'ListName'
     many?: boolean
     /**
-     * Controls whether to create an index on the foreign key field
-     * Defaults to true for all foreign key fields (matching Keystone behavior)
-     * Can be set to 'unique' for unique constraints or false to disable indexing
+     * Controls whether the foreign key column carries a contract-level index
+     * or unique constraint. Defaults to true for all foreign key fields
+     * (matching Keystone behavior). Can be set to 'unique' for a unique
+     * constraint or false to leave the column unindexed.
      *
      * @default true (for foreign key fields)
      *
@@ -1209,15 +1227,15 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
      * ```typescript
      * // Standard indexed foreign key (default)
      * author: relationship({ ref: 'User.posts' })
-     * // Generates: @@index([authorId])
+     * // Contract: an index on the authorId column
      *
      * // Unique foreign key (one-to-one)
      * author: relationship({ ref: 'User.posts', isIndexed: 'unique' })
-     * // Generates: @@unique([authorId])
+     * // Contract: a unique constraint on the authorId column
      *
      * // Disable indexing (not recommended, may cause performance issues)
      * author: relationship({ ref: 'User.posts', isIndexed: false })
-     * // No index generated
+     * // No index or constraint on the column
      * ```
      */
     isIndexed?: boolean | 'unique'
@@ -1266,7 +1284,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * User: list({
        *   fields: {
        *     account: relationship({ ref: 'Account.user', db: { foreignKey: true } })
-       *     // Generates: accountId String? @unique
+       *     // Contract: a unique accountId column
        *   }
        * })
        *
@@ -1274,7 +1292,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * User: list({
        *   fields: {
        *     account: relationship({ ref: 'Account.user', db: { foreignKey: { map: 'account_id' } } })
-       *     // Generates: accountId String? @unique @map("account_id")
+       *     // Contract: a unique accountId column mapped to 'account_id'
        *   }
        * })
        *
@@ -1288,7 +1306,7 @@ export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
        * Post: list({
        *   fields: {
        *     category: relationship({ ref: 'Category', db: { foreignKey: { map: 'category_id' } } })
-       *     // Generates: categoryId String? @map("category_id")
+       *     // Contract: the categoryId column mapped to 'category_id'
        *   }
        * })
        * ```
@@ -2053,27 +2071,27 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    */
   db?: {
     /**
-     * Custom database table name.
-     * Adds a `@@map` attribute to the generated Prisma model.
+     * Custom database table name. Carried on the contract model as `table`,
+     * so the model name (the list key) can differ from the physical table.
      *
-     * Useful when the Prisma model name (the list key) must differ from the
+     * Useful when the model name (the list key) must differ from the
      * physical table name — e.g. adopting an existing better-auth installation
      * whose tables were created under a different name.
      *
      * @example
      * ```typescript
      * AuthUser: list({ fields: { ... }, db: { map: 'user' } })
-     * // Generates: model AuthUser { ... @@map("user") }
+     * // Contract: model AuthUser has table 'user'
      * ```
      */
     map?: string
     /**
-     * Database schema for this model (Postgres multi-schema).
-     * Adds a `@@schema` attribute to the generated Prisma model.
+     * Database schema for this model (Postgres multi-schema). Carried on the
+     * contract model as its `namespace`.
      *
-     * Requires the schema to be listed in the datasource `schemas` array (see
-     * {@link DatabaseConfig.schemas}) and the `multiSchema` preview feature,
-     * both of which the generator emits automatically when `db.schemas` is set.
+     * The schema must also appear in {@link DatabaseConfig.schemas}, which the
+     * contract collects into its own `namespaces` list — Prisma resolves a
+     * model's `namespace` against that list.
      *
      * Useful when adopting an existing installation whose tables live in a
      * non-`public` schema — e.g. a separate-schema better-auth layout.
@@ -2081,7 +2099,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * @example
      * ```typescript
      * AuthUser: list({ fields: { ... }, db: { schema: 'auth' } })
-     * // Generates: model AuthUser { ... @@schema("auth") }
+     * // Contract: model AuthUser has namespace 'auth'
      * ```
      */
     schema?: string
@@ -2178,7 +2196,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      *     indexes: [{ fields: ['student', 'production'], unique: true }],
      *   },
      * })
-     * // Generates: @@unique([studentId, productionId])
+     * // Contract: a unique constraint on [studentId, productionId]
      * ```
      *
      * @example Hot lookup path (composite index) with a name
@@ -2354,7 +2372,12 @@ export type ItemViewUIConfig = {
  * string.
  */
 export type BulkActionVariant =
-  'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+  | 'default'
+  | 'destructive'
+  | 'outline'
+  | 'secondary'
+  | 'ghost'
+  | 'link'
 
 /**
  * Arguments passed to a custom Bulk action's server-side `handler` (issue #736).
@@ -2651,13 +2674,13 @@ export type DatabaseConfig = {
   /**
    * Postgres multi-schema support.
    *
-   * When set, the generator enables Prisma's `multiSchema` preview feature and
-   * emits the `schemas = [...]` array on the datasource block. Combine with a
-   * per-list `db.schema` (see {@link ListConfig}) to place models in a specific
-   * schema via `@@schema(...)`.
+   * When set, the contract's `namespaces` collects these schemas (unioned
+   * with every `db.schema` a list uses — see {@link ListConfig}) and Prisma
+   * resolves each model's `namespace` against that list. Combine with a
+   * per-list `db.schema` to place a model in a specific schema.
    *
-   * Only applies to the `postgresql` provider. When unset, the generated schema
-   * is unchanged (single `public` schema, no `@@schema` attributes).
+   * Only applies to the `postgresql` provider. When unset, every model stays
+   * in the default `public` schema.
    *
    * @example Separate `auth` schema alongside the default `public`
    * ```typescript
@@ -3354,13 +3377,13 @@ export interface OpenSaasConfig {
    * existing `prisma/` directory (e.g. during a Keystone → stack migration).
    *
    * Both fields are resolved relative to the project root (the directory the
-   * CLI runs in). When omitted, defaults are unchanged: the schema is written to
-   * `prisma/schema.prisma` and the `.opensaas` bundle to `.opensaas/`.
+   * CLI runs in). When omitted, defaults are unchanged: the Contract module is
+   * written to `prisma/contract.ts` and the `.opensaas` bundle to `.opensaas/`.
    *
    * The generated files' cross-references follow these locations — `context.ts`
    * imports the generated types/lists from the resolved `.opensaas` dir, and the
-   * top-level `prisma.config.ts` points at the configured schema path so the
-   * `prisma` CLI keeps working.
+   * top-level `prisma.config.ts` points at the configured Contract module path
+   * so the `prisma` CLI keeps working.
    */
   output?: OutputConfig
   /**

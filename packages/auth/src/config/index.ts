@@ -21,7 +21,7 @@ const DEFAULT_MODEL_NAMES = {
 /**
  * `tableName` defaults to today's behaviour when not explicitly set: it
  * follows `modelName` when that differs from the better-auth default (so a
- * renamed list still pins its table via `@@map`), otherwise it stays unset.
+ * renamed list still pins its table via `db.map`), otherwise it stays unset.
  * An explicit `tableName` is independent of `modelName` — it lets a renamed
  * list key adopt a differently-named live table (e.g. better-auth's own
  * default lowercase table names).
