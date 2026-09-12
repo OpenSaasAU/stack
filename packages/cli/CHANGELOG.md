@@ -1,5 +1,1476 @@
 # @opensaas/stack-cli
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` no longer reconciles or promotes on a save that changes nothing
+
+  The loop reconciled on every watcher event, including one carrying config bytes
+  it had already generated from — and an identical-bytes `writeFileSync` fires a
+  change event of its own on every platform. `promoteStagedGeneration` rewrites
+  the live root `prisma.config.ts` as its last act, so that no-op reconcile
+  overwrote a committed file the user had not changed. (On Linux, inotify can
+  deliver one `fs.writeFileSync` as two events, which doubled the odds per save
+  but was never the cause.)
+
+  The loop now remembers the config source it generated from and skips a save that
+  reproduces it, naming the way out:
+
+  ```
+  Config saved with no change: nothing to reconcile.
+  To regenerate and reconcile anyway — after a failed reconcile, or for a change in a
+  module the config imports — run `pnpm db:update` (`opensaas db update`) in another terminal.
+  ```
+
+  That route matters because the guard compares the config's own bytes, and the
+  config file is all the loop watches. A change in a module the config **imports**
+  fires no event, and re-saving the config no longer forces a regenerate the way
+  it used to. `opensaas db update` regenerates from the current config — the
+  loader disables its module cache, so the reload re-reads every imported module —
+  and promotes. When a destructive change is parked, the skip says so and re-shows
+  the `pnpm db:update` guidance rather than going quiet.
+
+  A reconcile that fails after generating — a database briefly out of reach, say —
+  no longer leaves the guard armed, so saving again retries instead of reporting
+  that nothing changed.
+
+  A save that does change the config behaves exactly as before: an additive edit
+  goes live without a restart, a destructive one waits for `pnpm db:update`, and a
+  config change with no schema effect (adding a `virtual()` field, say) still
+  promotes its regenerated bundle. Whitespace- and comment-only edits still
+  reconcile and promote in full — the guard compares bytes, not meaning, and only
+  ever errs towards doing the work.
+
+  The watcher also debounces with `awaitWriteFinish`, so one save reaches it as one
+  event. That costs every config save at least 200ms of latency before the loop
+  reacts.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `context.prisma` becomes the Unsafe surface, `context.unsafe`
+
+  The deliberately unsecured handle now carries a name that states the bypass, and it is Prisma 8's own query lanes rather than a bare client. Everything the secured surface does, it skips — no access filter, no field visibility, no `resolveOutput`, no hooks, no error normalisation — and every execution enters the unsafe origin, so the tripwire lets it through and a query issued by neither surface is still refused.
+
+  ```typescript
+  // Before
+  const posts = await context.prisma.post.findMany()
+
+  // After — the ORM lane, behind a transparent proxy that marks every call
+  const posts = await context.unsafe.orm.public.Post.all()
+
+  // Rows, streamed, from a typed SQL plan
+  const rows = context.unsafe.query(context.unsafe.sql.public.Post.select('id').build())
+  for await (const row of rows) {
+    // consumed after the scope closed, still marked
+  }
+
+  // Statistics from a raw statement
+  const stats = await context.unsafe.execute(
+    context.unsafe.raw.sql`UPDATE "public"."Post" SET "published" = true`.affectedCount().build(),
+  )
+  ```
+
+  `sql` and `raw` are Prisma's builders untouched. The surface hands out neither the bare client nor `prepare()`/`runtime()` — they are not among its own members, in the type or in the runtime value — because either would execute a statement the tripwire never sees.
+
+  Inside `context.transaction(...)`, the transaction context's `unsafe` runs its plans through the transaction's own executor while keeping the client's contract-scoped raw lane, so a script no longer has to close over the outer client. The engine's own ORM handle is rebound to the transaction's collections at the same time: a Prisma 8 transaction holds one pooled connection for the whole callback, so a `db` left on the outer handle would commit outside the open transaction, or wait for a second connection the dev database's single-connection pool never frees.
+
+  Core exports the surface and its builders from `@opensaas/stack-core` and `@opensaas/stack-core/unsafe`; the generated context hands the client to `getContext` so it can build one.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Move the toolchain to the Prisma 8 line and drop Prisma 7 and SQLite
+
+  The Prisma 8 ORM family (`@prisma/orm-postgres` at `8.0.0-rc.8`) and the `prisma` CLI (`8.0.0-rc.12`) are now the single pinned toolchain. `@prisma/client`, `@prisma/adapter-better-sqlite3` and every other Prisma 7 package are gone from every manifest, and every package states a Node `>=22.18.0` floor.
+
+  - `@opensaas/stack-core` peers on `@prisma/orm-postgres` instead of `@prisma/client`, and takes `@electric-sql/pglite`, `@electric-sql/pglite-socket` and `@electric-sql/pglite-pgvector` as optional peers for the in-process dev database.
+  - `@opensaas/stack-cli` depends on `prisma`, `@prisma/orm-postgres` and the three PGlite packages directly. `opensaas generate` runs `prisma` from the app's own `node_modules/.bin`, so the app must still list `prisma@8.0.0-rc.12` as a devDependency and `@prisma/orm-postgres@8.0.0-rc.8` as a dependency itself.
+
+  An app on this line installs the family alongside the stack:
+
+  ```bash
+  pnpm add @prisma/orm-postgres@8.0.0-rc.8
+  pnpm add -D prisma@8.0.0-rc.12
+  ```
+
+  This is the first step of the Prisma 8 build ([#1121](https://github.com/OpenSaasAU/stack/issues/1121)); the generator, runtime and examples follow in later releases.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Every write through `context.db` opens a real Prisma 8 transaction again
+
+  The Write Pipeline decided whether to open a transaction by probing the client
+  for `$transaction` — the Prisma 7 name, which no Prisma 8 object carries. The
+  guard was constant-false, so every write ran with no transaction and no
+  rollback guarantee: a multi-statement write that failed partway, or a hook that
+  threw after the database call, left its rows committed.
+
+  The transaction capability is now an explicit signal rather than a probed
+  method name. `getContext` resolves a `TransactionOpener` from the Prisma 8
+  client it is handed, and puts it on the context; a context that is already
+  bound to an open transaction — `context.transaction()`'s callback, a hook's
+  rebound context — carries none, so a joined write still joins the enclosing
+  transaction rather than opening a second one (ADR-0028). `context.transaction()`
+  opens through the same opener, so both paths share one mechanism.
+
+  The generated context now hands `getContext` the ORM handle rather than the
+  client, which is what the engine reaches models through:
+
+  ```typescript
+  // .opensaas/context.ts (generated)
+  getOpensaasContext(
+    config,
+    ormHandleFor(config, db),
+    session,
+    storage,
+    false,
+    undefined,
+    undefined,
+    db,
+  )
+  ```
+
+  `requireOrmHandle(config, orm)` is exported from `@opensaas/stack-core` for a
+  caller that builds a context over a Prisma 8 client of its own, and throws
+  `OrmHandleUnresolvableError` naming the list whose collection the client does
+  not expose.
+
+  A context built over a Prisma 8 client whose collections do not cover the
+  config now refuses at construction rather than quietly downgrading its writes
+  to non-transactional, and `context.transaction()` over a client that can
+  neither open a transaction nor join one throws `TransactionUnavailableError`
+  instead of running the callback with no atomicity. A context assembled from a
+  hand-built ORM double — `getContext` called without its `client` argument —
+  still writes directly against that double, and now says so.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@{](https://github.com/{)! - The generated types file declares the contract remainder and instantiates core's generics
+
+  `.opensaas/types.ts` no longer re-derives every scalar type, nullability and
+  relation arity by hand. It writes one `Remainder` entry per list — the four
+  facts the emitted Contract artifacts cannot carry — and names one interface per
+  shape extending a generic `@opensaas/stack-core` now exports, keyed by the
+  emitted `Contract`:
+
+  ```typescript
+  export type Remainder = {
+
+      computed: { displayName: string }
+      output: { secret: import('@opensaas/stack-core/internal').HashedPassword }
+      input: Record<never, never>
+      needs: { displayName: 'name' }
+    }
+    Settings: {
+      computed: Record<never, never>
+      output: Record<never, never>
+      input: Record<never, never>
+      needs: Record<never, never>
+      singleton: true
+    }
+  }
+
+  export interface User extends Stack$Row<Stack$Contract, Remainder, 'User'> {}
+  export interface UserCreateInput extends Stack$CreateInput<Stack$Contract, Remainder, 'User'> {}
+  export interface UserUpdateInput extends Stack$UpdateInput<Stack$Contract, Remainder, 'User'> {}
+  export interface UserList extends Stack$SecuredList<Stack$Contract, Remainder, 'User'> {}
+
+  export interface Context<TSession extends Stack$Session = Stack$Session> extends Stack$StackContext<
+    DB,
+    TSession,
+    Stack$PluginServices
+  > {}
+  ```
+
+  Everything the file imports is aliased behind `Stack$`, so a list may be named
+  `Row`, `Contract` or `Session` without shadowing the generic its own interface
+  is declared from. Only what is used is imported, so a bundle compiled under
+  `noUnusedLocals` stays clean.
+
+  `Post`, `PostCreateInput`, `PostUpdateInput`, `Context`, `BaseContext`,
+  `TransactionContext` and `Lists.Post.TypeInfo` keep their names, so imports do
+  not change. What changes is what they mean:
+
+  - **An included to-one relation reads `| null`, a to-many `[]`** — by arity
+    alone, whatever the foreign key's nullability. Access control can scope the
+    related row away, so code that dereferenced a required relation without a
+    check now fails `tsc`.
+  - **A virtual field's `resolveOutput` hook receives exactly its declared
+    `needs` plus the list's system fields.** Reading an undeclared column is a
+    compile error for any hook authored under `list<Lists.Post.TypeInfo>`:
+
+    ```typescript
+    excerpt: virtual({
+      type: 'string',
+      needs: ['content'],
+      hooks: {
+        resolveOutput: ({ item }) => item.content.slice(0, 100), // compiles
+        // resolveOutput: ({ item }) => item.title,              // tsc error
+      },
+    })
+    ```
+
+    The set is the one `deriveDependencyTable` resolves for the runtime
+    (ADR-0051), not the declaration as written, so **a `needs` naming a
+    relationship yields a different `item` type than before**: it now carries the
+    foreign-key column this side owns as well as the relation, matching what the
+    widening actually fetches.
+
+    ```typescript
+    byline: virtual({
+      type: 'string',
+      needs: ['author'],
+      hooks: {
+        // `authorId` is now on `item`; previously only `author` was.
+        resolveOutput: ({ item }) => `${item.author?.name ?? '?'} (${item.authorId})`,
+      },
+    })
+    ```
+
+    A `needs` entry naming a field the list does not have is dropped rather than
+    typed, the list's system fields are its actual ones (a list with
+    `db.timestamps: false` carries only `id`), and only a **virtual** field gets
+    this narrowed `item` — a stored field's `resolveOutput` still sees the whole
+    row, which is what the runtime hands it.
+
+  - **A write input is checked against the contract's columns.** A system-filled
+    column (`id`, `createdAt`, `updatedAt`) is not writable, a non-nullable column
+    with no default is required on create, and an unknown key is rejected.
+  - **Every write terminal admits silent denial.** `create` returns
+    `Row | null`, and `createMany` / `updateMany` — which run one secured write
+    per item — return `(Row | null)[]`, so a partially denied batch is visible in
+    the type. Code that used a create result without checking now fails `tsc`:
+
+    ```typescript
+    const post = await context.db.post.create({ data })
+    if (!post) return { error: 'Access denied' }
+    ```
+
+  - Every per-list `GetPayload`, `Select`, `Include`, `WhereInput`, `*Args`,
+    `VirtualFields`, `TransformedFields` and `{List}Crud` type is gone;
+    `CustomDB` is now `DB`.
+
+  Resolving a list's model off the ORM client now **throws**
+  `OrmModelMissingError` where the client carries no delegate for it. The
+  previous behaviour degraded silently in one place: a nested write's
+  pre-existing-id capture treated a missing parent delegate as "no pre-existing
+  ids", so a disconnect that should have been reported instead ran against an
+  empty set. A real client always carries the delegate, so this surfaces on test
+  doubles — give the double the model, or use a client whose model keys match the
+  config's list names in `getDbKey` form (`AuthUser` → `authUser`):
+
+  ```typescript
+  // Before: a double missing `post` silently captured nothing
+  const prisma = { user: userDouble }
+  // After: give it the delegate the config declares
+  const prisma = { user: userDouble, post: postDouble }
+  ```
+
+  `PrismaClientLike = any` is deleted. `context.prisma` is `OrmClient`, a
+  structural interface, and `AccessContext`, `StackContext` and
+  `AccessControlledDB` lose their `TPrisma` type parameter — drop the argument:
+
+  ```typescript
+  // Before
+  function render(context: AccessContext<unknown>) {}
+  // After
+  function render(context: AccessContext) {}
+  ```
+
+  `OrmClient`, `OrmRow` and `OrmOperationArgs` are deliberately untyped
+  (`Record<string, unknown>` and an index signature). The unsecured surface's
+  shape depends on the config's list names, so the typed surface is the generated
+  bundle's `DB` and `Row`; `unknown` here forces a narrow at each use where the
+  `any` it replaces did not. Use `context.db` when you want types.
+
+  `StackContext`'s first parameter is now the generated `db` surface, not the
+  client, and refuses one: a stale `StackContext<MyPrismaClient>` fails its
+  constraint rather than silently meaning `db: MyPrismaClient`.
+
+  `pnpm generate` now refuses two configs it used to emit uncompilable code for:
+  a virtual field with no declared `outputType`, and two lists whose generated
+  names collide (`Post` and `PostList` both want `PostList`). Both errors name the
+  list and field involved.
+
+  The bundle's type-only import of the emitted declarations is now
+  `'../prisma/contract.d.js'`. `'../prisma/contract.d.ts'` resolved to the
+  Contract module sitting beside it, so `Contract` was not among the exports the
+  import found; re-run `pnpm generate`.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove `findMany` / `findFirst` / `findUnique` / `count` from the generated read surface
+
+  The Prisma 7 read names outlived the client that could serve them: every one of
+  them type-checked and then threw `TypeError: … is not a function`, under `sudo`
+  too. Reaching for one is now a compile error rather than a runtime failure.
+
+  ```typescript
+  // Before
+  const posts = await context.db.Post.findMany({ where: { published: { equals: true } } })
+  const post = await context.db.Post.findUnique({ where: { id } })
+  const first = await context.db.Post.findFirst({ where: { slug: { equals: slug } } })
+  const total = await context.db.Post.count()
+
+  // After
+  const posts = await context.db.Post.where({ published: { equals: true } }).all()
+  const post = await context.db.Post.where({ id }).first()
+  const first = await context.db.Post.where({ slug: { equals: slug } }).first()
+  const { total } = await context.db.Post.aggregate((aggregate) => ({ total: aggregate.count() }))
+  ```
+
+  A singleton's `get()` is unchanged in shape and now resolves through the same
+  composed read an ordinary list reads through, so its operation access, Access
+  Filter, Field Visibility and related-list `query` access are the engine's rather
+  than a second copy of them.
+
+  Its auto-create is also tightened on a security path. `get()` previously fired
+  the auto-create for any `query` rule that did not answer a strict `false`, so a
+  rule that answered a **filter** — a first-class form, used to scope a read —
+  fell through it. On an absent row that created the singleton and handed it to a
+  session the filter excluded; on a present row it reached the singleton-create
+  constraint's unscoped row count and threw
+  `Cannot create: … is a singleton list with an existing record`, turning a read
+  whose whole design is silent failure into an existence oracle. The auto-create
+  now fires only for a rule that answered a strict `true` (or under `sudo`), and
+  the created row is handed back through the composed read rather than raw. Every
+  other form — `false`, a filter, a missing rule — answers the same `null` an
+  absent row answers, writes nothing, and raises nothing; a rule that throws still
+  propagates.
+
+  If you relied on a filter-returning `query` rule auto-creating a singleton, give
+  that list a `query` rule that answers `true` and scope it with the Access Filter
+  on the fields instead.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Delete the Node build; the Generated bundle loads under plain Node from the committed contract
+
+  The `.opensaas/` bundle is erasable TypeScript by contract and loads natively under Node 22.18+, so the compiled twin that existed to serve bundler-less consumers is gone (ADR-0054, withdrawing ADR-0011). Removed:
+
+  - `output.buildTarget` from the config surface. A config that sets it is now a compile error; delete the `output` block (or the key) — nothing replaces it, because `.opensaas/context.ts` is the one specifier both a bundler and plain Node load.
+
+    ```typescript
+    // Before
+    export default config({
+      output: { buildTarget: 'node' },
+      // ...
+    })
+
+    // After
+    export default config({
+      // ...
+    })
+    ```
+
+    A plain-Node consumer imports the bundle entry directly:
+
+    ```typescript
+    const { rawOpensaasContext } = await import('./.opensaas/context.ts')
+    ```
+
+  - The CLI's Node build step, its `.opensaas/dist/` layout, and `@typescript/native` as a runtime dependency of `@opensaas/stack-cli` (it stays a devDependency, the compiler the package builds and type-checks its own tests with).
+
+  The CLI's tests now run the real `node` binary over a generated bundle with no flags and no loader, and type-check generator output under `erasableSyntaxOnly` and `verbatimModuleSyntax` so a non-erasable construct fails a CLI test before it fails a user's Node.
+
+  `create-opensaas-app` no longer accepts `--db`, and its SQLite-to-PostgreSQL transform is deleted. The scaffolded project uses the database its template declares; change it by editing `db` in the generated `opensaas.config.ts`. The scaffolded `tsconfig.json` now carries `erasableSyntaxOnly` and `verbatimModuleSyntax`, so the type-checker reports a non-erasable config before Node does.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Wait for the dev loop's promotion to finish before the staged-reconcile test stamps the root config
+
+  `packages/cli/tests/staged-reconcile.test.ts` treated the app answering with the new
+  contract as proof that the promotion behind it had finished. It is not: promotion moves
+  a set of files and the filesystem offers no multi-file commit. `prisma/contract.ts` is
+  swapped first, then `prisma/contract.json` — the first of them the app reads, and so the
+  first that can change its answer — then `contract.d.ts`, then `.opensaas/`, and the
+  project-root `prisma.config.ts` last. Between the app's answer changing and that final
+  swap the test could append its "held back until promotion" stamp to a root config the
+  loop was about to overwrite, and the next assertion then read a regenerated file with no
+  stamp in it.
+
+  The test now waits for the loop's own end-of-promotion line before stamping. That line
+  is printed after `promoteStagedGeneration` returns, so it is the one signal emitted once
+  the whole set is in place, and the wait is anchored to the output the config edit
+  produced so an earlier promotion's line cannot satisfy it.
+
+  No change to the reconciler: the invariant under test — a parked generation must not
+  reach the live root config — holds, and the test still guards it.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `embedding()` is a native pgvector column with its index, distance function and write denial on the field
+
+  The field emits a `Vector(n)` column with its metadata in a `jsonb` column beside it,
+  declares that column to `nearest()`, and carries the vector index it wants:
+
+  ```typescript
+  import { ragPlugin, openaiEmbeddings } from '@opensaas/stack-rag'
+  import { embedding } from '@opensaas/stack-rag/fields'
+
+  export default config({
+    plugins: [ragPlugin({ provider: openaiEmbeddings({ apiKey: process.env.OPENAI_API_KEY! }) })],
+    db: { provider: 'postgresql' },
+    lists: {
+      Article: list({
+        fields: {
+          content: text(),
+          contentEmbedding: embedding({
+            sourceField: 'content',
+            dimensions: 1536,
+            distanceFunction: 'cosine',
+            index: { method: 'hnsw', m: 16, efConstruction: 64 },
+          }),
+        },
+      }),
+    },
+  })
+  ```
+
+  `ragPlugin` declares the pgvector extension pack itself through `addExtension`, so no
+  config names it.
+
+  `embedding()` declares its two columns through `getContractField` alone — one field of two
+  differently-typed columns has no honest single PSL type to give, which is part of why the
+  PSL-shaped members are removed from the field-builder contract in this same release. That
+  needs the matching `@opensaas/stack-core` change, which puts `getContractField` in their
+  place at the field self-containment gate. `embedding()`'s descriptor is `kind: 'columns'`,
+  so the gate asks it for an `outputType` as well — two columns give no single column to be
+  typed from — and it declares one.
+
+  The operator class is derived from `distanceFunction` and the column type, and a declared
+  `opclass` that disagrees fails `pnpm generate`. An indexed field over 2,000 dimensions
+  emits `halfvec` (which pgvector can index to 4,000); over 4,000 generation fails with a
+  named error. An unindexed field stays `vector` at any dimension.
+
+  **`index:` does not yet build an index.** `@prisma/orm-extension-pgvector@8.0.0-rc.8`
+  registers no index types, so nothing lowers the declaration to a `CREATE INDEX`. Today it
+  derives the column type and the operator class — and applies both dimension caps above —
+  and nothing else. Declare it to pin the shape you want; re-check when the pack reaches GA.
+
+  A field that declares no `dimensions` takes its provider's, so the number is written
+  once — in the provider — rather than at every `searchable()`/`embedding()` call site:
+
+  ```typescript
+  ragPlugin({ provider: ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 }) })
+  // content: searchable(text())  →  vector(768), with no dimension repeated on the field
+  ```
+
+  Only a provider that declares no dimension of its own (a custom provider) reaches the
+  1536 default. `ragPlugin`'s `beforeGenerate` still refuses a **declared** dimension that
+  disagrees with a statically known provider dimension, and `OllamaEmbeddingConfig.dimensions`
+  is now required — generation must never depend on a running Ollama:
+
+  ```typescript
+  ollamaEmbeddings({ model: 'nomic-embed-text', dimensions: 768 })
+  ```
+
+  `beforeGenerate` also refuses a non-Postgres datasource by name. Every column the plugin
+  emits is Postgres-only — a pgvector vector column plus a `pg.jsonb` column beside it — and
+  the plugin declares the pgvector pack for every config, so a `ragPlugin` on any other
+  provider now fails generation with a message saying so instead of producing a contract
+  nothing can lower.
+
+  A field naming a provider `ragPlugin` does not declare is refused there too. The provider
+  fixes the column's dimension, so resolving an unrecognised name to the default one — as it
+  used to — emitted a column of the wrong width, and the dimension check then agreed with
+  itself and passed:
+
+  ```typescript
+  ragPlugin({ provider: openaiEmbeddings({ apiKey }) })
+  // content: embedding({ provider: 'ollama' })
+  // Before: vector(1536), silently, for a provider that was never declared.
+  // Now:    pnpm generate fails, naming the field, the name, and what is declared.
+  ```
+
+  A name is recognised when it is `'default'`, a key of `providers`, or the default
+  provider's own `type` — so `embedding({ provider: 'openai' })` beside
+  `ragPlugin({ provider: openaiEmbeddings(…) })` keeps working.
+
+  `createEmbeddingProvider` now refuses a built-in provider config that is missing a
+  required member. `EmbeddingProviderConfig`'s third member is an open `{ type: string }`
+  catch-all for custom providers, and it was absorbing `{ type: 'ollama', model }` — so an
+  omitted `dimensions` type-checked and reached the provider as `undefined`. The helpers
+  `createProviderFromEnv` / `getProviderConfigFromEnv` now read the Ollama model's size from
+  `OLLAMA_EMBEDDING_DIMENSIONS`, defaulting to 768 (`nomic-embed-text`), and refuse a value
+  that is not a positive integer.
+
+  **What that type does and does not catch.** It closes the `createEmbeddingProvider(…)`
+  call site only. Everywhere a provider config is written against the union itself — most
+  importantly `ragPlugin({ provider: … })` and `ragPlugin({ providers: { … } })` — the
+  catch-all still absorbs a built-in `type` with a member missing, because TypeScript cannot
+  subtract `'ollama'` from `string` and closing it would mean a breaking change to a public
+  type. So `ragPlugin({ provider: { type: 'ollama', model: 'nomic-embed-text' } })` still
+  compiles. What stops it is `beforeGenerate`, which fails `pnpm generate` naming the
+  provider and saying `ollamaEmbeddings({ dimensions })` is required — a generate-time
+  refusal rather than a compile error. Use the `ollamaEmbeddings()` / `openaiEmbeddings()`
+  helpers, whose parameters are the concrete config types, to get the error from `tsc`.
+
+  **Embedding generation runs end to end.** `context.db.Article.create({ data: { content } })`
+  commits the row, and once that transaction settles the plugin embeds the **persisted**
+  source text and writes the vector and its metadata to the column past that field's own
+  write denial. Writing the source text again regenerates it; a write that leaves the source
+  text alone does not,
+  because the `sourceHash` on the stored metadata short-circuits.
+
+  When a generation does fail, the log distinguishes a **standing** defect from a transient
+  one by the **error**, not by where in the hook it was raised. A provider `type` no factory
+  answers to is standing: it is said once in full per field and then one line per row, naming
+  what has to change and saying that retrying will not help. Anything else is reported per
+  occurrence as transient, saying the row is committed and to retry by writing the source
+  field again.
+
+  There is no regeneration command ([#1271](https://github.com/OpenSaasAU/stack/issues/1271)), so a row whose generation failed keeps its null
+  embedding until its source field is written again.
+
+  **Further known limits on generation ([#1271](https://github.com/OpenSaasAU/stack/issues/1271)).** Embeddings are generated in an
+  `afterTransaction` hook, after the row commits, which bounds what it can do:
+
+  - A provider failure is logged, not thrown. The caller's write did succeed, and reporting
+    it as a failure would invite a retry that duplicates the row. The row keeps a null
+    embedding, and there is no regeneration path yet.
+  - A **nested** record is never embedded — `afterTransaction` carries a persisted row for
+    the top-level record only. On this release that row cannot be created in the first place:
+    a nested spelling under a relationship key is refused by `NestedRelationInputError`
+    (ADR-0050), so the hook's warning is a backstop rather than something a write reaches.
+
+  Generation keys on the **persisted** source text, not the caller's input, so a source
+  field a `resolveInput` hook derives is embedded like any other.
+
+  The embedding and its metadata are write-denied to application code: an ordinary create or
+  update naming them throws. The plugin writes them itself, past that denial and running no
+  hook of the list's (ADR-0068), after the write's transaction settles. Applications that maintain their own vectors opt out explicitly:
+
+  ```typescript
+  manualVector: embedding({ dimensions: 1536, allowManualWrites: true })
+  ```
+
+  Semantic search runs through the secured surface's `nearest()` terminal:
+
+  ```typescript
+  const matches = await context.db.Article.where({ published: { equals: true } }).nearest(
+    'contentEmbedding',
+    queryVector,
+    { limit: 10, minScore: 0.7 },
+  )
+  ```
+
+  `packages/rag/src/storage/` is deleted in full — `createVectorStorage`,
+  `registerVectorStorage`, `JsonVectorStorage`, `JsonFileStorage`, `PgVectorStorage`,
+  `SqliteVssStorage`, `prismaFilterToSQL` — along with `pgvectorStorage()`,
+  `sqliteVssStorage()`, `jsonStorage()`, `RAGConfig.storage` and every vector-storage config
+  type. `semanticSearch()` and `findSimilar()` keep their names and drop their `storage`
+  option. The scaffolder's semantic-search feature template no longer emits a `storage`
+  option.
+
+  **This drops semantic search for every database except Postgres.** The `json`,
+  `json-file` and `sqlite-vss` backends are removed with no replacement, and `embedding()`
+  now emits Postgres-only columns (`pgvector.Vector(n)` plus `pg.jsonb`). An app on SQLite,
+  or one that used `jsonStorage()` to avoid a database extension, has no migration path in
+  this release other than moving to Postgres with pgvector installed. If you need the old
+  in-JavaScript cosine scan, keep it in your own app — `docs/lib/embeddings-search.ts` in
+  this repo is a ~40-line worked example of exactly that.
+
+  `@prisma/orm-extension-pgvector` is now a peer dependency of `@opensaas/stack-rag`:
+  install it alongside the package, since `ragPlugin` names it in every config it builds.
+
+  ```bash
+  pnpm add @opensaas/stack-rag @prisma/orm-extension-pgvector
+  ```
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` is the dev loop: it starts the Dev database, generates, reconciles and runs the app
+
+  Running `opensaas dev` in a project now starts the Dev database on a free loopback port
+  (persisting under `.opensaas/dev-db`, with `vector` loaded when the config declares the pgvector
+  pack), runs `generate`, runs `prisma db update` against it, and spawns the app — `next dev` by
+  default:
+
+  ```bash
+  opensaas dev              # runs `next dev`
+  opensaas dev -- vitest    # runs your own command instead
+  ```
+
+  The app child is handed **no** `DATABASE_URL` — one inherited from the environment is removed
+  rather than merely left uninjected: it finds the database through the state file, so
+  the generated runtime reports `'dev-database'` provenance and takes the single-connection binding.
+  `DATABASE_URL` already set is the Database escape — no Dev database starts and the environment
+  passes through untouched. The project's `.env` is loaded before that decision is made, the same
+  file the generated `prisma.config.ts` and `next dev` load, so a `DATABASE_URL` written there is
+  honoured rather than shadowed by a sidecar nothing uses; a shell variable still outranks the file.
+  The database dies with the process; `opensaas.config.ts` is still watched, and the loop shuts the
+  database down on every path that unwinds — a failed reconcile, a Prisma CLI that will not run, and
+  Ctrl-C at the consent prompt included. A `generate` that refuses ends the process outright, past
+  the reach of an async shutdown, so that path is covered synchronously instead: the app child is
+  killed and the run's state file removed.
+
+  Every Prisma CLI spawn is asynchronous now (a `spawnSync` deadlocks the socket server the Dev
+  database is served on), with stdin closed for `contract emit` and the terminal inherited for the
+  boot `db update`, so a destructive plan stops at Prisma's own consent prompt and the app is never
+  started.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Add the row lock and the advisory lock to the transaction-bound context
+
+  A capacity gate is the case a stricter isolation level used to cover, and `context.transaction(fn)` no longer takes one. `.forUpdate()` is the replacement: a row lock on the contended parent, taken **before** the count, so every racer takes the same token on the same row and the count cannot go stale under a booking a racer that got there first has already committed.
+
+  ```typescript
+  const result = await context.transaction(async (tx) => {
+    // The lock comes BEFORE both reads below. `null` here is denied-or-gone —
+    // either way there is no gate to run.
+    const held = await tx.db.Slot.where({ id: { equals: slotId } })
+      .forUpdate()
+      .first()
+    if (held === null) return { booked: false }
+
+    // BOTH sides of the gate are read after the lock, each in its own statement.
+    // `held`'s own columns are the row as of BEFORE the lock was granted, so
+    // `held.capacity` can be stale; this re-read cannot be, because no one else
+    // can commit an update to a row this transaction holds.
+    const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
+    const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
+      (aggregate) => ({ taken: aggregate.count() }),
+    )
+    if (slot === null || taken >= slot.capacity) return { booked: false }
+
+    return { booked: true, item: await tx.db.Booking.create({ data: { slotId, holder } }) }
+  })
+  ```
+
+  **The lock is a mutex on the row, not a fresh read of it.** Each of the two statements takes its own snapshot under Read Committed, so a column another transaction committed between the read and the lock reaches the caller as its **pre-lock** value — only the row's identity is post-lock, and this differs from a single-statement `SELECT … FOR UPDATE`, which Postgres re-evaluates after acquiring. Read whatever the gate compares against in its own statement after the lock, the way the count above is.
+
+  `.forUpdate()` is on the transaction-bound builder and nowhere else. A lock taken outside a transaction is released at the end of the statement that took it, so it would compile, run, return rows and guard nothing — `context.db.Slot.forUpdate()` is a compile error rather than a throw. The generated bundle names two faces per list for it, `SlotList` and `SlotTxList`, and `TransactionContext` is the context over the locking one.
+
+  The terminal runs two statements. The scoped read goes first and resolves operation access, the Access Filter and Field Visibility exactly as any read does; the engine then composes `SELECT <pk> FROM <table> WHERE <pk> IN ($1…$n) ORDER BY <pk> LIMIT $n+1 FOR UPDATE` over the keys it returned and runs it on the transaction's own connection. So the locked set is provably a subset of the readable set, and **a terminal never returns a row it did not lock**: a row deleted between the two statements locks nothing, `first()` yields `null` and `all()` the surviving subset. `null` now means denied-or-vanished.
+
+  `first()` and `all()` carry the modifier. `aggregate()` and `nearest()` refuse it rather than drop it — an aggregate returns no primary keys to lock, and a ranking is not a gate. There is no `forShare`, no `NOWAIT` and no `SKIP LOCKED`: a skipped locked row would be indistinguishable from an access-denied one, which would make silent failure mean two things at once. The engine always emits `ORDER BY <pk>`, so acquisition order is the same in every session.
+
+  A list whose table has no single-column primary key cannot be locked (`RowLockIdentityError`), and one terminal binds at most `ROW_LOCK_MAX_KEYS` keys (`RowLockKeyLimitExceededError`) — a cost limit, fail-closed, well under Postgres's bind-parameter ceiling, where the failure is a corrupted bind rather than a clean refusal.
+
+  `tx.advisoryLock(key)` joins it on the transaction context, for an invariant that is not a row:
+
+  ```typescript
+  await context.transaction(async (tx) => {
+    await tx.advisoryLock(`checkout:${cartId}`)
+    // …
+  })
+  ```
+
+  It runs `pg_advisory_xact_lock(hashtext($1))` and releases when the transaction ends, whichever way it ends. It sits on the context rather than on `db` because it locks a number and belongs to no list. `hashtext` is 32-bit, so two distinct keys can collide — a collision costs spurious serialisation, never a missed lock.
+
+  See ADR-0047 and ADR-0062.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Add the Dev database primitive and give the URL lookup a provenance
+
+  `@opensaas/stack-core/dev-database` exports `startDevDatabase()`, which starts an
+  in-process PGlite behind a socket server on a free loopback TCP port and publishes
+  it in a state file (URL and pid) under the Generated bundle directory, so that the
+  app, a seed script and a second-terminal `db update` all find it through the same
+  lookup instead of an injected variable (ADR-0063). PGlite and its socket and
+  pgvector packages are optional peers, imported only when the primitive is called.
+
+  ```typescript
+  import { startDevDatabase } from '@opensaas/stack-core/dev-database'
+
+  const database = await startDevDatabase({
+    dataDir: '.opensaas/dev-db',
+    extensions: ['vector'],
+  })
+  // ... database.url, database.port
+  await database.stop()
+  ```
+
+  `stop()` is idempotent — a `SIGINT` handler and a `finally` may both call it — and drops
+  the state file only once the socket server and PGlite are actually released. A failure
+  anywhere in startup tears down whatever was already constructed, so no port is left
+  bound. An IPv6 `host` is bracketed into the published URL.
+
+  `resolveDatabaseUrl()` now returns `{ url, provenance }` rather than a bare string,
+  and consults the dev database state file when the environment names no connection.
+  `provenance` is `'env'` for `DATABASE_URL`/`DIRECT_DATABASE_URL` and `'dev-database'`
+  for the state file; with neither it throws, naming both remedies. Callers that want
+  just the string take `.url`; `findDatabaseUrl()`, which the generated
+  `prisma.config.ts` uses, is unchanged in shape and still non-throwing.
+
+  ```typescript
+  // Before
+  const url = resolveDatabaseUrl()
+
+  // After
+  const { url, provenance } = resolveDatabaseUrl()
+  ```
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `context.db` is keyed by the PascalCase list name and carries the opaque read wrapper
+
+  `context.db.<List>` is now spelled the way the config spells the list — `context.db.AuthUser`, not
+  `context.db.authUser` — and `getDbKey()` is deleted (`getUrlKey()` and `getListKeyFromUrl()` stay).
+  Every call site through the secured surface, and every ORM handle the engine reaches a model
+  through, moves to the list key.
+
+  ```typescript
+  // Before
+  const posts = await context.db.blogPost.findMany()
+
+  // After
+  const posts = await context.db.BlogPost.findMany()
+  ```
+
+  The same member is now also a query value: `.where(...)` composes an immutable read and `.all()` /
+  `.first()` are the terminals that run it. A terminal resolves operation-level `query` access, adds
+  the access filter as a second entry in the collection's own filter list (nothing is hand-merged),
+  enters the engine origin around the ORM call, applies Field Visibility, and returns `[]` / `null`
+  on denial — indistinguishable from an empty result.
+
+  ```typescript
+  const mine = await context.db.Post.where({ published: true }).all()
+  const first = await context.db.Post.where({ authorId: session.userId }).first()
+  ```
+
+  `where` takes an equality predicate (`{ column: value }` or `{ column: { equals: value } }`); an
+  operator the engine does not lower yet is refused rather than passed through.
+
+  The three read members belong to a list you can query for many rows, so a singleton list does not
+  carry them — `get()` stays the way to read one. That matches the type the generator has always
+  emitted for a singleton.
+
+  Code the CLI writes into your project moves to the list key with everything else: the feature
+  generator's blog and auth pages (`context.db.Post.findMany(…)`), and the Keystone migration guide,
+  which now says list names are PascalCase.
+
+  A predicate whose condition is `undefined` is still skipped rather than refused, matching Prisma's
+  `undefined`-means-omitted semantics — so an access filter spelled `({ session }) => ({ authorId:
+session?.userId })` constrains nothing for an anonymous caller, while the explicit `{ equals:
+undefined }` spelling of the same rule is refused. Making the lowering total is the closed Where
+  vocabulary's job ([#1147](https://github.com/OpenSaasAU/stack/issues/1147)). Relation-valued `needs` are likewise not yet widened on `all()`/`first()`
+  the way `findMany` widens them ([#1149](https://github.com/OpenSaasAU/stack/issues/1149)).
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Rewrite each package README against the Prisma 8 surface
+
+  The READMEs now document the API the packages actually ship, replacing the
+  Prisma 7 spellings that no longer resolve.
+
+  Reads compose on `context.db` keyed by the list's PascalCase config key and end
+  in a terminal, rather than calling a Prisma delegate:
+
+  ```ts
+  const posts = await context.db.Post.where({ status: { equals: 'published' } })
+    .orderBy({ createdAt: 'desc' })
+    .limit(20)
+    .all()
+
+  const post = await context.db.Post.where({ id }).first()
+  if (!post) return null
+  ```
+
+  `findMany`, `findUnique`, `findFirst` and `count()` are gone; the terminals are
+  `all()`, `first()`, `aggregate()` and `nearest()`. A denied read is silent, so
+  every `first()` result is a null check.
+
+  Writes take an args object with an identity-only `where`, and a relationship is
+  set with `connect` or cleared with `null`:
+
+  ```ts
+  const updated = await context.db.Post.update({
+    where: { id },
+    data: { title, author: { connect: { id: authorId } } },
+  })
+  ```
+
+  The database config documented in each README is the one `DatabaseConfig`
+  carries — `provider: 'postgresql'`, `idField`, `timestamps`, `schemas`,
+  `extensions` and `client`. `prismaClientConstructor`, `db.url` and
+  `extendPrismaSchema` are gone, and the connection is resolved from the
+  environment rather than named in the config.
+
+  Review round two swept each README against the built `.d.ts` rather than against
+  another doc, and corrected what the grep-shaped sweep had missed:
+
+  - The UI README's theming block documented bare `--background`/`--primary` HSL
+    triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
+    `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
+    stylesheet's own header says the design exists "without a duplicated `.dark`
+    block". Its primitives list also omitted eight real exports (`Textarea`,
+    `Popover`, `Calendar`, `TimePicker`, `DateTimePicker`, `Combobox`, `Badge`,
+    `Avatar`), and two samples read `config.lists` without awaiting `config`.
+  - The tiptap README reused a filter-returning `AccessControl` rule as
+    **field-level** `access.update`. `FieldAccess` types those slots as
+    boolean-returning, so that is a type error and a runtime
+    `InvalidFieldAccessResultError`, not a scoped update.
+  - The storage README's upload route was the last copy still casting
+    `formData.get(...) as string` / `as 'file' | 'image'` off a
+    `FormDataEntryValue | null`.
+  - The auth README's Account shape named `providerId: 'credentials'`; better-auth
+    1.7 uses `'credential'` for email/password, and the model carries `issuer`.
+  - The Vercel Blob README passed `cacheControl` to `vercelBlobStorage()`. The
+    provider option is `cacheControlMaxAge` (a number of seconds);
+    `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
+    type-checked and was silently ignored.
+
+  Round three corrected what round two's sweeps could not see, each having keyed
+  on where a construct sat rather than on what it was:
+
+  - The Vercel Blob README's **options listing** still named `cacheControl` 112
+    lines above the call site round two fixed, so the page contradicted itself and
+    the half a reader consults first was the wrong half.
+  - Sixteen hook samples across the docs and the core, cli and example READMEs
+    destructured a member the `delete` branch of its args union does not carry, so
+    the destructure failed before any in-body `operation` guard could narrow. Three
+    more named an argument on no branch at all: `value` and `inputValue` on
+    `resolveInput`/`afterOperation`, and `session` on `ResolveInputHookArgs`.
+  - The core README carried a third instance of the field-access class — a bare
+    `text({ access: … })` excerpt with no enclosing `fields: {` — plus
+    `query: true` where `OperationAccess.query` takes a function, a
+    `ValidationError` built from a string where the constructor takes `string[]`,
+    and a stale claim that `password()` is excluded from reads.
+  - The cli README's "What it does" block under `opensaas db update` described
+    `opensaas dev`, and called `migrate` a command group when it has no
+    subcommands.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas generate` seeds each declared extension pack's contract space under `migrations/`
+
+  Every `db.extensions` entry now has its `/pack`, `/control` and `/runtime` subpaths derived from the package name and checked, and its migration package, head ref and contract snapshot materialised under `migrations/` — between writing `prisma.config.ts` and emitting the contract (ADR-0065). Seeding opens no database connection; the space's content is a function of the installed pack version alone.
+
+  ```typescript
+  // opensaas.config.ts
+  export default config({
+    db: {
+      provider: 'postgresql',
+      extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+    },
+    lists: {/* ... */},
+  })
+  ```
+
+  `pnpm generate` then writes, and reports, the pack's space:
+
+  ```
+  ✅ pgvector: migrations/pgvector updated
+  ```
+
+  ```
+  migrations/pgvector/20260601T0000_install_vector_extension/migration.json
+  migrations/pgvector/20260601T0000_install_vector_extension/ops.json
+  migrations/pgvector/refs/head.json
+  migrations/snapshots/<hash>/contract.json
+  migrations/snapshots/<hash>/contract.d.ts
+  ```
+
+  Commit these files. A second `generate` leaves them byte-identical and reports the space `unchanged`; upgrading the pack to a version shipping a new migration package rewrites the head ref, so the upgrade surfaces as a generate diff rather than a silent drift. Prisma then runs `CREATE EXTENSION IF NOT EXISTS` from the committed space on `db init`, `db update` and `db migrate` — there is no hand-run DDL step.
+
+  A pack that does not publish one of the three subpaths fails generation naming the pack and the exact missing subpath, and it fails before anything is written — `prisma.config.ts` is never left carrying an import that cannot resolve. A pack whose `/control` subpath loads but default-exports no control descriptor is refused the same way, naming the pack and the subpath rather than failing as a `TypeError` from inside the seed phase.
+
+  Subpaths are resolved under the `import` condition, the same way the generated artifacts reach them, so an ESM-only pack is accepted and a dual-published pack is loaded from its ESM build. Overlapping `exports` patterns are ranked the way Node ranks them, and a directory at a subpath is not treated as a resolution — ESM cannot import one.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `pnpm generate` emits the Prisma 8 artifact set: a Contract module, `prisma.config.ts` and the committed contract artifacts
+
+  `opensaas generate` no longer writes a Prisma schema or a generated Prisma client. It derives the contract from `opensaas.config.ts`, renders a standalone, fully literal `prisma/contract.ts`, writes a `prisma.config.ts` at the project root, shells to the pinned `prisma contract emit` for `prisma/contract.json` + `prisma/contract.d.ts`, checks the emitted relation graph against the derivation, then writes the `.opensaas/` bundle.
+
+  The Contract module imports nothing from your config — only `@prisma/orm-postgres/contract-builder`, the column-type helpers, and each pack declared in `db.extensions`:
+
+  ```typescript
+  // prisma/contract.ts — generated
+  import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
+  import pgvector from '@prisma/orm-extension-pgvector/pack'
+
+  export const contract = defineContract({ extensions: { pgvector } }, ({ field, model, rel }) => {
+    // ...
+  })
+  ```
+
+  `prisma.config.ts` imports each pack's `/control` façade, loads the project's `.env`, and resolves its connection through the stack's URL lookup (`DIRECT_DATABASE_URL`, then `DATABASE_URL`). Prisma's config evaluation loads no dotenv of its own, so without that load a project keeping its connection only in `.env` would reach `db update` and `migrate` with nothing set. The load is native — `process.loadEnvFile`, no dependency — and guarded, so a project with no `.env` still generates and runs:
+
+  ```typescript
+  // prisma.config.ts — generated
+  import { existsSync } from 'node:fs'
+  import { join } from 'node:path'
+  import { definePrismaConfig } from 'prisma/config'
+  import { defineConfig } from '@prisma/orm-postgres/config'
+  import { findDatabaseUrl } from '@opensaas/stack-core'
+  import pgvector from '@prisma/orm-extension-pgvector/control'
+
+  const envFile = join(import.meta.dirname, '.env')
+  if (existsSync(envFile)) process.loadEnvFile(envFile)
+
+  export default definePrismaConfig({
+    orm: defineConfig({
+      contract: './prisma/contract.ts',
+      output: './prisma',
+      extensions: [pgvector],
+      db: { connection: findDatabaseUrl() },
+    }),
+  })
+  ```
+
+  Commit `prisma/contract.ts`, `prisma/contract.json` and `prisma/contract.d.ts` — a schema change is then reviewable in the PR that made it, and CI can fail on a stale artifact.
+
+  The generated `.opensaas/context.ts` constructs its client from the committed `contract.json` rather than from a generated client package:
+
+  ```typescript
+  postgres<Contract>({ contractJson, url: resolveDatabaseUrl() })
+  ```
+
+  Core adds `resolveDatabaseUrl()` (throws when nothing is set) and `findDatabaseUrl()` (returns `undefined`) — the one place a connection string is read from `DIRECT_DATABASE_URL` or `DATABASE_URL` — plus `resolveListTimestamps`. `output.prismaSchema` is now `output.contractModule` (default `prisma/contract.ts`), and a plugin's `afterGenerate` receives `contractModule` where it received `prismaSchema`. The hook runs **before** `prisma contract emit`, so a rewritten `contractModule` is the one the emitted artifacts describe and the one the relation-graph gate checks — a rewrite the toolchain rejects fails `opensaas generate` rather than landing on disk unemitted.
+
+  Until the bundle is rewritten against `prisma/contract.d.ts`, the per-model `Select`, `Include`, `WhereInput`, `*Args` and write-`data` shapes in `.opensaas/types.ts` are unnarrowed placeholders: a query result is typed as the full model row (no `select`/`include` narrowing), and only the scalars OpenSaaS itself narrows are checked on a write.
+
+  `authPlugin`'s per-model `indexes` no longer document a `sort` direction on a field reference; an index column cannot carry one, and a `sort` key is refused at generation.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove the PSL-shaped and TypeScript-face members from the field-builder contract
+
+  **Third-party field packages must migrate.** The generator emits a TypeScript
+  contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
+  `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
+  any more, so they are gone from `BaseFieldConfig` and from every builder:
+
+  - `getPrismaType`
+  - `getPrismaColumns`
+  - `getPrismaRelation`
+  - `getTypeScriptType`
+  - `getTypeScriptImports`
+  - `resultExtension`
+  - `VirtualField.outputType` (the required `string` narrowing; the optional
+    `outputType: TypeDescriptor` on `BaseFieldConfig` is what a virtual field
+    declares now)
+
+  The `PrismaRelationResult`, `MultiColumnPrismaResult` and `ResultExtensionConfig`
+  types they were shaped by are removed with them.
+
+  Migrating a field builder — describe the column instead of the PSL line:
+
+  ```ts
+  // Before
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getPrismaType: () => ({ type: 'String', modifiers: '? @unique' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    }
+  }
+
+  // After
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldName) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+        unique: true,
+      }),
+    }
+  }
+  ```
+
+  A field whose TypeScript face differs from its column's codec type declares it
+  directly, rather than through `resultExtension` or `getTypeScriptType`:
+
+  ```ts
+  // Before
+  resultExtension: { outputType: "import('@my/pkg').Metadata | null" },
+  getTypeScriptType: () => ({ type: 'Metadata | null', optional: true }),
+  getTypeScriptImports: () => [{ names: ['Metadata'], from: '@my/pkg' }],
+
+  // After — the import is inline, so no separate import declaration is needed
+  outputType: "import('@my/pkg').Metadata | null",
+  inputType: "File | import('@my/pkg').Metadata | null",
+  ```
+
+  A field spanning several physical columns returns `{ kind: 'columns', columns }`
+  from `getContractField` and keeps `getColumnNames`/`assembleColumns`/`splitColumns`.
+
+  **The generate-time gate moved with the contract.** `validateFieldConfig` now
+  requires `getContractField` and `getZodSchema` from a stored field (a
+  relationship only the former), and additionally `outputType` from a field that
+  has no single column to be typed from — one whose descriptor is
+  `kind: 'columns'` or `kind: 'computed'`. Both are read off the descriptor, so a
+  `computed` field carries the obligation whether or not its builder also sets the
+  `virtual` flag that core's own `virtual()` sets alongside it. That closes a hole
+  where such a field passed
+  the gate, generated successfully, and left every consumer reading it as
+  `unknown` (issue [#1292](https://github.com/OpenSaasAU/stack/issues/1292)). `FieldConfigValidationError.missingMethod` is renamed
+  to `missingMember` to carry `outputType` alongside the two methods.
+
+  `validateFieldConfig`'s signature changed with it: `listKey` and a new fourth
+  `config` argument are both **required**, because they are what
+  `getContractField` takes and reading the descriptor is what makes the rule
+  decidable. The optional `getColumnNames` is not consulted — it is a separate
+  member that only travels with `kind: 'columns'` by convention, so reading it
+  would both miss a `columns` field that does not implement it ([#1292](https://github.com/OpenSaasAU/stack/issues/1292)'s hole) and
+  wrongly demand `outputType` from a single-column field that does.
+  `FieldConfigValidationError.listKey` is likewise no longer optional.
+
+  The gate swallows a throw out of `getContractField`: that is a field's own
+  refusal seam (`embedding()` throws there for an impossible `dimensions`).
+  `opensaas generate` runs this gate first of all, and its config-surface step —
+  `validateDatabaseConfig` → `validateExtensionPacks` — re-reads every descriptor
+  straight afterwards and reports the throw as a `field-descriptor-error` refusal
+  carrying the field's own message, so the run still fails with
+  `List "<List>": fields.<field> cannot describe its contract column — <message>`
+  rather than a raw stack trace. Derivation is never reached.
+
+  `inputType` is never required by the generator. On a single-column field its
+  absence means the column's own input type; a `kind: 'columns'` field has no
+  single column for that to name, so it should declare `inputType` alongside
+  `outputType` — every multi-column field in this repo does, and what the
+  generator emits for one that does not is untested.
+
+  **A field-level hook's value type is resolved from the field key, and is
+  `unknown` when there is no single key to resolve.** `FieldHooks`'
+  `resolveInput`/`resolveOutput` positions used to be typed from the deleted
+  `getTypeScriptType`. `FieldHooks<TTypeInfo, 'title'>` now resolves to the
+  field's statically declared `outputType`, or else to the property the generated
+  `Lists.<List>.Item` carries for it.
+
+  But `BaseFieldConfig.hooks` cannot pin a field key — a builder is written
+  before it knows where it is mounted — so through the config surface
+  (`list<Lists.Post.TypeInfo>({ fields: { title: text({ hooks }) } })`) the
+  instantiation is `FieldHooks<TTypeInfo>`, whose key is the union of every field
+  on the list, and the value type is **`unknown`**: the same open type as before
+  this change. Resolving that union would type each field's hook by the whole
+  row, so a `text()` hook would accept a `Date` and reject its own `string`. An
+  honestly `unknown` type is better than a confidently wrong one; narrowing it
+  needs the field key threaded into `BaseFieldConfig`, tracked in issue [#1306](https://github.com/OpenSaasAU/stack/issues/1306).
+
+  Two related limits, for the same reason: `lists.ts` emits `Fields` as the field
+  _interfaces_, on which `outputType` is optional, so a declared face never
+  survives into a generated `TypeInfo` — the declared branch is reachable only
+  from a hand-authored one. And a virtual field's hook value stays `unknown`,
+  since it has no declared face there and no column in the stored row.
+
+  `db.keystoneCompat`'s implicit empty-string text default is now carried by
+  `text()`'s contract column, where the deleted `getPrismaType` used to emit it —
+  but only where the field's own create validator accepts **both** the omission
+  that default is there to fill **and** the `''` it inserts. Both questions are
+  asked of the schema rather than restated, so the column and the validator
+  cannot drift apart:
+
+  - a column default drops the column from the required half of the generated
+    `CreateInput`, so carrying one where the validator refuses an omission would
+    type-check a `create` that then threw `ValidationError`;
+  - and the value a column default inserts is never seen by validation — the
+    database supplies it — so carrying one where the validator refuses `''`
+    would store a row the config forbids on every omitted `create`. That is the
+    outcome an explicit `defaultValue: ''` already gets right: it is filled by
+    `applyCreateDefaults` before validation and correctly rejected. The two
+    spellings of "this column defaults to an empty string" now agree.
+
+  **Known limit: the flag is therefore inert for
+  `validation: { isRequired: true }` text — Keystone's commonest text column —
+  and for `validation: { length: { min: N } }` with `N` above zero.** Keystone 6
+  renders both as `NOT NULL DEFAULT ''`, so a migrating project sees
+  `DROP DEFAULT` for them in `migrate diff`. Setting `defaultValue: ''` by hand
+  is refused at runtime for the same reason, so the field's validation has to be
+  relaxed alongside it. Full parity would need the flag to relax the create
+  validator itself, which `getZodSchema` has no config to read; that is a
+  separate change. A column made non-null through `db: { isNullable: false }`
+  alone still gets the default, as does one carrying only a `length.max`.
+
+  Relatedly, `text()` no longer treats `validation: { length: { min: 0 } }` as
+  `min(1)`. A zero minimum now means no minimum, so `''` validates — which is
+  what the option says, and what lets such a column keep its compat default
+  without the column and the validator disagreeing. `isRequired` still imposes a
+  floor of `min(1)` on a field that declares `length: { min: 0 }` or no minimum
+  at all, and never lowers a larger declared one — `isRequired` with
+  `length: { min: 5 }` is still `min(5)`.
+
+  **Test coverage that thinned.** Three assertions were lost rather than ported,
+  and are recorded here so the change is not silent:
+
+  - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
+    provided" — `getContractField` is always given a `listKey`.
+  - The quoted-vs-unquoted PSL default rendering for a string versus an enum
+    `select()` — the contract carries one `{ kind: 'literal' }` for both.
+  - The per-field `getTypeScriptType` blocks in `tests/field-types.test.ts`
+    became `expect(field.outputType).toBeUndefined()` — "declares no override",
+    which is weaker than the old "text is `string`, optional when not required".
+    Column nullability is still asserted on the same fields, and the codec now
+    owns the type (ADR-0052), so the fact has moved rather than vanished.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Bring the CLI's MCP server onto the Prisma 8 surface
+
+  `opensaas_implement_feature` wrote a config the stack cannot load: `provider: 'sqlite'`
+  with a `prismaClientConstructor`, under an `@prisma/adapter-better-sqlite3` import, and
+  finished by telling the user to run `pnpm db:push`. The feature generator now emits the
+  Postgres-only block, and every instruction the server prints names a command that exists:
+
+  ```typescript
+  // Emitted into the user's opensaas.config.ts
+  export default config({
+    plugins: [authPlugin({ ... })],
+    db: {
+      provider: 'postgresql',
+    },
+    lists: { ... },
+  })
+  ```
+
+  Next steps now read "Run `pnpm dev` — `opensaas dev` starts the Dev database, regenerates,
+  and reconciles it with the new schema", with `pnpm db:update` for a change held back as
+  destructive. `opensaas_feature_docs`, `opensaas_answer_migration`, the wizard completion
+  text and the validation checklist carry the same substitutions, and the migration wizard
+  offers `postgresql` as the only `db_provider`.
+
+  Three emitted-code bugs found by running the generator are fixed with it. The `avatar` and
+  `featuredImage` field entries carried a trailing `//` comment that swallowed the
+  comma-separator and the field after it, so the object literal did not parse. The blog
+  feature emitted `Post.tags` and `Tag.posts` as an implicit many-to-many, which ADR-0048
+  deletes and the contract validator refuses by name — both ends now point at a `PostTag`
+  junction list carrying a unique `db.indexes` entry over the pair. And the `file-upload`
+  feature placed its `image()`/`file()` entries directly in `lists`, where list declarations
+  belong; they now sit inside the list that owns them.
+
+  ```typescript
+  // Emitted for a blog with Tags
+  Post: list({ fields: { tags: relationship({ ref: 'PostTag.post', many: true }) } }),
+  Tag: list({ fields: { posts: relationship({ ref: 'PostTag.tag', many: true }) } }),
+  PostTag: list({
+    fields: {
+      post: relationship({ ref: 'Post.tags' }),
+      tag: relationship({ ref: 'Tag.posts' }),
+    },
+    db: { indexes: [{ fields: ['post', 'tag'], unique: true }] },
+  }),
+  ```
+
+  A new suite generates all 13 wizard answer paths derived from the catalog. Each asserts the
+  result parses as TypeScript and names none of the dead surface; the 12 that declare lists
+  also evaluate those declarations and run them through the chain `opensaas generate` runs
+  before it writes anything — `validateConfigFields`, `validateNeedsDeclarations`,
+  `validateDatabaseConfig`, `validateRelations`, `deriveContract` — so a config the stack
+  refuses fails the suite rather than passing because it parsed.
+
+- [#1453](https://github.com/OpenSaasAU/stack/pull/1453) [`37bdc74`](https://github.com/OpenSaasAU/stack/commit/37bdc74624cb6790347e1605725fb5aabcb02cc9) Thanks [@borisno2](https://github.com/borisno2)! - The migration assistant (`opensaas migrate --with-ai`, `opensaas_answer_migration`) no longer emits a Prisma 7 database block. `MigrationGenerator` now writes the Postgres-only `db: { provider: 'postgresql' }` block for both a fresh Prisma/Next.js migration and the KeystoneJS migration guide — no `prismaClientConstructor`, no driver adapter import, and no `joinTableNaming` guidance for a key that no longer exists. The Keystone guide's many-to-many step now shows a junction-list example instead, and the emitted next steps point at `pnpm generate`/`pnpm dev` instead of `prisma generate`/`prisma db push`.
+
+  A generate-and-validate test suite (`emitted-migration-surface.test.ts`) now covers the migration generator the same way `emitted-prisma-surface.test.ts` covers the feature wizard: every emitted config is parsed, swept for dead Prisma 7 surface, and run through the CLI's own pre-write validation chain.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Generation emits the dependency-set table and the unique-constraint map; the runtime dependency fold is deleted
+
+  `pnpm generate` now resolves each computed field's `needs` into its one-hop set — columns and relations, a relation implying its foreign-key column — records each list's actual system fields, and writes both plus a unique-constraint-name-to-field-names map to `.opensaas/tables.ts`. The generated context hands them to the runtime, so the engine widens a read from an emitted fact instead of walking the config on every read (ADR-0051), and a unique violation can resolve to per-field messages without parsing error prose (ADR-0042).
+
+  ```ts
+  // .opensaas/tables.ts
+  export const dependencyTable: DependencyTable = {
+    Post: {
+      systemFields: ['id', 'createdAt', 'updatedAt'],
+      fields: {
+        byline: { columns: ['authorId', 'title'], relations: ['author'] },
+      },
+    },
+    Category: { systemFields: ['id'], fields: {} }, // db.timestamps: false
+  }
+
+  export const constraintMap: ConstraintMap = {
+    User_email_key: { list: 'User', fields: ['email'] },
+    Profile_user_key: { list: 'Profile', fields: ['user'] },
+  }
+  ```
+
+  Core exports `deriveDependencyTable(config)`, `deriveConstraintMap(config, contract)` and `deriveGeneratedTables(config, contract)` for anything that needs the same facts.
+
+  The dependency set is one hop and non-transitive, so a declaration can no longer form a closure: `validateNeedsClosureDepth` and its `'cycle'`/`'depth'` refusals, the recursive `foldDeclaredDependencies`, its `visitedLists` cycle guard and `DeclaredOnlyTree` are all removed. A config that used to fail generation with an over-deep or cyclic `needs` closure now generates. `validateNeedsDeclarations` is unchanged and still refuses an entry naming nothing on the list, an entry naming a computed field, and a `needs` on a field with no `resolveOutput` hook.
+
+  One behaviour change to be aware of: a relation fetched only to satisfy a declaration no longer has its own computed fields run, so it no longer carries its own declarations either. A hook needing two hops takes a privileged read inside itself.
+
+  **Migration note (silent break):** a `resolveOutput` hook on a list reached only as another field's declared dependency stops running. Its value was already stripped from the caller's result along with the branch, so nothing a caller receives changes — but a hook with a side effect (a counter, a log, a cache write) loses it. Grep for `resolveOutput` hooks on lists that appear in another list's `needs` and do more than return a value.
+
+  The derived constraint names now match what PostgreSQL actually stores for an identifier over 63 bytes. A primary key is emitted unnamed and PostgreSQL derives it with `makeObjectName`, which reserves the `_pkey` label and shrinks the table component (`<58 chars>_pkey`); a unique is named by Prisma and only clipped by PostgreSQL, which keeps the leading 63 bytes and loses `_key`. Previously both were clipped, so every derived primary-key name over the limit was wrong and a `23505` on it would have missed the map.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Correct the RAG agent guidance for the native vector column, and prove the declared-dependency read under exact selection
+
+  `packages/rag/CLAUDE.md` described the world before `embedding()` became a
+  pgvector column. Two sections were wrong in ways that produced code that throws:
+
+  - Automatic generation was documented as a field-level `afterOperation` hook
+    writing the embedding through `context.db.Article.update(...)`. That write is
+    exactly what the field's write denial now refuses. The section describes the
+    real path instead — a list-level `afterTransaction` hook, running after the
+    commit, writing through the plugin's own escalated path — and points at
+    `embedding({ allowManualWrites: true })` for an app that maintains its own
+    vectors.
+  - The migration guide claimed "Existing embeddings in JSON format are
+    compatible" and prescribed `pnpm db:push`. There is no conversion: the vector
+    is a `vector(n)` column with a `jsonb` metadata sibling, and an embedding is
+    derived data that is regenerated from its source text.
+  - The guide now says how the schema change is actually applied, because
+    `db:update` is not `db:push`'s drop-in replacement. `opensaas db update` opens
+    no connection of its own — it hands the request to a running `opensaas dev`
+    loop and exits non-zero when none is listening — so locally the loop applies
+    the change (`pnpm dev`, against `DATABASE_URL` when set and the Dev database
+    otherwise), a destructive plan such as a dimension change needs
+    `pnpm db:update --confirm <database name>` from a second terminal, and a
+    deployment has no loop at all and migrates with `prisma migration plan` then
+    `prisma db migrate`.
+  - Automatic generation is gated on `autoGenerate` alone; a field carrying it
+    with no `sourceField` is a config error that `pnpm generate` throws on, not a
+    silent skip. Re-saving a row's source field is what regenerates its embedding
+    after a dimension change, and the recipe now says so: a null vector reads back
+    as no stored embedding at all, so the `sourceHash` gate has nothing to match
+    and does not short-circuit.
+
+  `examples/rag-ollama-demo`'s README described `pnpm generate` as writing "the
+  contract's own migrations". It writes the Contract module and `prisma.config.ts`,
+  emits `prisma/contract.json` and `prisma/contract.d.ts` — both of which have to
+  be committed — and seeds only declared extension packs' spaces under
+  `migrations/`. The app's own schema history comes from `prisma migration plan`.
+
+  The CLI's field-package contract test now reads a multi-column storage field
+  through a real table under `.select()`, with a computed field that declares it
+  and an identical one that declares nothing:
+
+  ```typescript
+  badge: virtual({
+    type: 'string',
+    needs: ['hero'],
+    hooks: { resolveOutput: ({ item }) => heroOf(item) },
+  })
+  ```
+
+  The declaring hook receives the assembled value — the widening resolves the
+  logical key to its part columns — and the non-declaring one reads `undefined`
+  on the same row.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The generated context constructs the Prisma 8 client from `contract.json`
+
+  Core gains `@opensaas/stack-core/client`, whose `resolveRuntimeConnection()` chooses how the
+  runtime binds its connection, and the generated `.opensaas/context.ts` builds its client from it
+  once per process — with the stack-owned origin tripwire in `middleware` and each declared pack's
+  runtime façade in `extensions`.
+
+  ```typescript
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+
+  postgres<Contract>({
+    contractJson,
+    middleware: [originTripwire],
+    ...resolveRuntimeConnection(config.db.client),
+  })
+  ```
+
+  Three branches, in order:
+
+  - `db.client.pg` — your own pool. The factory is called here and nowhere else, once, after the
+    config promise resolves, so loading the config (the CLI's `generate`, tooling, a type check)
+    never opens a connection.
+  - A dev database (`opensaas dev`) — a single-connection pool with `verifyMarker: false`, both
+    required by the socket-multiplexed dev database and applied on its provenance only.
+  - `DATABASE_URL` — the connection string and Prisma's defaults, plus `db.client.poolOptions`.
+
+  With neither a connection variable nor a running dev database, the first use throws
+  `DatabaseUrlUnresolvedError`, naming both remedies. That failure is not cached: a process that
+  starts before its database does drops the memo and builds a client on the next call, so the dev
+  server booting ahead of `opensaas dev` recovers on its own rather than serving a stale error for
+  the rest of its life.
+
+  An explicit `db.client.pg` still wins over a running dev database, but now says so — binding your
+  own pool there loses the single connection and `verifyMarker: false` that database requires, and
+  `resolveRuntimeConnection` warns rather than rebinding silently.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Stage the dev loop's regeneration behind reconciliation, and add `opensaas db update`
+
+  A config edit under `opensaas dev` no longer regenerates in place. The new contract
+  and bundle are written to `.opensaas/staged/`, `prisma db update` is planned against
+  them, and they are promoted only once the plan has applied — so the app never reloads
+  onto a contract the database does not carry.
+
+  A plan that would destroy data is not applied. The loop prints it, leaves the database
+  and the bundle at the previous schema, keeps serving, and tells you to run
+  `pnpm db:update`:
+
+  ```
+  This change would destroy data, so it was not applied:
+    • Drop column "note" from "Note" (destructive)
+      ALTER TABLE "public"."Note" DROP COLUMN "note"
+
+  The app keeps serving the previous schema. To apply it, run `pnpm db:update`
+  (`opensaas db update --confirm postgres`) in another terminal.
+  ```
+
+  `opensaas db update` is that command:
+
+  ```bash
+  opensaas db update --confirm postgres
+  ```
+
+  It passes the consent token through to Prisma, promotes the staged artifacts, and
+  restarts the app child after a destructive promote — a client cached across a reload
+  would otherwise keep querying the dropped column. The reconcile itself runs inside the
+  running loop, which owns the Dev database and the migrations refs, so a second terminal
+  opens no connection of its own. With no loop listening, the command fails naming
+  `opensaas dev`. If the loop goes away part-way through an exchange, the command says so
+  rather than claiming no loop is running.
+
+  Staging covers the whole generation: the project-root `prisma.config.ts` is held back
+  with the rest and promoted with it, so a discarded `db.extensions` change leaves no
+  config describing extensions the contract does not carry. Promotion moves the entire
+  staged bundle directory — including files a plugin's `afterGenerate` wrote — and swaps
+  each file into place through a rename, so the running app never reads a half-written
+  one.
+
+  Each file lands atomically; the set of them does not. The filesystem offers no
+  multi-file commit, so a crash part-way through promotion leaves the bundle split across
+  two contracts. The loop reports the split, naming the file it stopped on, and re-running
+  `opensaas generate` rewrites the whole bundle from the current config.
+
+### Patch Changes
+
+- [#1465](https://github.com/OpenSaasAU/stack/pull/1465) [`0c33f68`](https://github.com/OpenSaasAU/stack/commit/0c33f68b5d9449b4cdaecc792815bbd64afd7e9f) Thanks [@borisno2](https://github.com/borisno2)! - Fix `context.unsafe.sql`/`.raw` degrading to `object` through the generated `Context`/`BaseContext`/`TransactionContext` types. The generated bundle now keys the Unsafe surface to the app's own Prisma 8 client, so a migration script gets Prisma's own typed SQL builder and raw tag with no cast.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The Prisma 8 config surface: `db.idField`, `db.extensions`, `db.client`, `db.provider` (postgresql only), typed `onDelete`/`onUpdate` on relationships, `db.indexes` without `sort`, and `PluginContext.addExtension` (ADR-0040, ADR-0048, ADR-0049, ADR-0064).
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      idField: 'uuid7', // the default; 'cuid2' | 'int autoincrement'
+      extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+      client: {
+        pg: () => new Pool({ connectionString: process.env.DATABASE_URL }), // a lazy factory
+      },
+    },
+    lists: {
+      Invoice: list({
+        fields: {
+          customer: relationship({ ref: 'Customer.invoices', db: { onDelete: 'restrict' } }),
+        },
+        db: {
+          idField: 'int autoincrement',
+          indexes: [{ fields: ['customer'], name: 'Invoice_customer_idx' }],
+        },
+      }),
+    },
+  })
+
+  // A plugin declares the pack its field types need; the same name from the same
+  // package merges, the same name from a different package throws.
+  init: async (context) => {
+    context.addExtension({ name: 'pgvector', from: '@prisma/orm-extension-pgvector' })
+  }
+  ```
+
+  `pnpm generate` now refuses, naming the list, the entry and the fix (`validateDatabaseConfig` and `validateRelations` are exported for the same checks elsewhere): a `sort` direction on a `db.indexes` field reference; `many: true` on both sides of a relationship or on a list-only ref (author the junction as its own list); `db.idField` on a singleton; `db.foreignKey: true` on both sides of a one-to-one; `db.isNullable: false`, `db.onDelete`/`db.onUpdate` or a `db.indexes` entry on a side that owns no foreign key column; `'setNull'` together with `db.isNullable: false`; a `many: false` relationship whose `ref` is its own field; the same extension pack name declared from two packages; and a relationship at a composite-keyed list.
+
+  `prismaClientConstructor`, `extendPrismaSchema` (config- and field-level), `joinTableNaming` and `db.relationName` are removed from the config types. `@opensaas/stack-auth`'s derived lists declare their cascade through `db.onDelete` instead of `extendPrismaSchema`.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Field builders declare their contract contribution as a structured descriptor, and `needs` accepts stored columns
+
+  Every core field builder now carries `getContractField(fieldName, listKey, config)`, returning a `ContractFieldDescriptor`: a stored column as a pack-qualified type constructor (`{ pack, type, args }`) with native type, nullability and column mapping; for a relationship, the relation and the foreign-key column this side owns; for a virtual field, `{ kind: 'computed' }`. It is the only way a field describes its storage: the PSL-shaped `getPrismaType`/`getPrismaColumns`/`getPrismaRelation` it replaces are removed from the contract in this same release.
+
+  ```typescript
+  import type { BaseFieldConfig } from '@opensaas/stack-core/extend'
+
+  export function embedding(dimensions: number): BaseFieldConfig<TypeInfo> {
+    return {
+      type: 'embedding',
+      getContractField: (fieldName) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pgvector', type: 'Vector', args: [dimensions] },
+        nullable: true,
+      }),
+      // ...getZodSchema and the rest of the builder
+    }
+  }
+
+  text().getContractField('title', 'Post', config)
+  // { kind: 'column', name: 'title', type: { pack: 'pg', type: 'text' }, nullable: true }
+
+  relationship({ ref: 'User.posts' }).getContractField('author', 'Post', config)
+  // { kind: 'relation', target: 'User', inverse: { field: 'posts', synthetic: false }, many: false,
+  //   foreignKey: { name: 'authorId', map: 'author', nullable: true, unique: false, index: true,
+  //                 references: { list: 'User', field: 'id' } } }
+  ```
+
+  A default that is not a JSON literal (a `Date`, a `Decimal`, a `Map`) is refused by the builder, naming the list and field, rather than silently dropped; a `bigint` default is carried as its decimal string whether written `42n`, `42` or `'42'`. A caller-supplied `outputType`/`inputType` now wins over the `select`, `password` and `calendarDay` builder defaults.
+
+  A field's TypeScript face is one pair of `TypeDescriptor` values — `outputType` (what a read returns) and `inputType` (what a write accepts) — set only where it differs from the column's codec type: `password` reads as `HashedPassword`, `select` reads and writes its option union, `calendarDay` reads and writes a `YYYY-MM-DD` string, and `virtual({ type })` keeps its spelling with `outputType` as the computed entry. A stored field that sets neither takes the codec's type.
+
+  `needs` now accepts stored-column keys as well as relations (`needs: ['lineItems', 'price']`), and `pnpm generate` refuses a `needs` on a field with no `resolveOutput` hook, naming the list and field. A declared column is honoured at runtime: under a fragment `query` that selects only the computed field, the hook's `item` still carries the column and the result still does not.
+
+  ```typescript
+  total: virtual({
+    type: 'number',
+    needs: ['price', 'quantity'],
+    hooks: { resolveOutput: ({ item }) => item.price * item.quantity },
+  })
+  ```
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@{](https://github.com/{)! - The secured surface takes the closed Where vocabulary, lowered in one place
+
+  `context.db.<List>.where(...)` now accepts the whole vocabulary — `equals`,
+  `not`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `contains`, the `AND`/`OR`/`NOT`
+  combinators, and `some`/`every`/`none` on a relation of any cardinality — plus a
+  new scalar-only `.orderBy()`. Everything lowers onto the ORM's predicate lambda
+  in one place (ADR-0055).
+
+  ```typescript
+  const posts = await context.db.Post.where({
+    OR: [{ title: { contains: 'release' } }, { views: { gte: 100 } }],
+   some: { handle: { equals: 'ada' } } },
+  })
+    .orderBy({ views: 'desc' })
+    .all()
+  ```
+
+  - `contains` is engine-escaped and case-insensitive, so `contains: '50%'` matches
+    a literal per-cent sign rather than binding a wildcard.
+  - `equals: null` lowers to `IS NULL`, `not: null` to `IS NOT NULL`.
+  - A relation predicate scopes the `EXISTS` by the related list's own `query`
+    access. `some` and `none` ask about the rows the caller may see; `every` asks
+    whether every row the caller may see matches, so a row the caller cannot see
+    never decides the parent's membership. A related list the session cannot
+    query is the empty set: `some` is false, `none` and `every` are true.
+  - An Access Filter that scopes by a relation is expanded into the related list's
+    own Access Filter. A filter that expands into itself — directly, or through
+    another list — throws `AccessFilterRecursionError` naming the chain, rather
+    than recursing until the process runs out of memory. An acyclic chain deeper
+    than ten lists is refused the same way. Failing closed is deliberate: a
+    truncated Access Filter is a widened read.
+  - An unknown key or operator is a `ValidationError` naming the list and the key,
+    under `sudo` too. A key the session cannot read is refused with the identical
+    message a key the list does not declare gets, so the refusal is not an
+    existence oracle; a denied caller still gets the Silent failure first and sees
+    no validation error at all.
+
+  **Lowering is now total.** A condition that resolved to `undefined` is refused
+  rather than dropped, on both spellings. An access rule written as
+  `({ session }) => ({ authorId: session?.userId })` used to match every row for an
+  anonymous caller; it now throws. Spell the denial:
+
+  ```typescript
+  // Before — silently matched everything when session was null
+  query: ({ session }) => ({ authorId: session?.userId })
+
+  // After
+  query: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
+  ```
+
+  The same refusal now covers the clause `mergeFilters` folds in, so the guarantee
+  holds on every surface rather than only on `.where().all()/.first()`: an access
+  filter carrying an `undefined` condition anywhere (including nested under an
+  operator or inside an `AND`/`OR` branch) throws the new, exported
+  `UndefinedAccessFilterError`. A caller's own `where` is untouched — this applies
+  only to what an access rule returns.
+
+  **Also changed:** the filter engine's `FilterCondition` is a Where vocabulary
+  value; a to-one relationship's label filter emits `some` rather than `is`; a
+  to-many count filter shrinks to presence (`orders:0` → `none`, `orders:>0` /
+  `orders:>=1` → `some`, any other comparison degrades to free text);
+  and read-path key validation rejects an operator outside the vocabulary
+  (`startsWith`, `endsWith`, `mode`, `search` and the array/JSON operators are
+  gone).
+
+  **Removed exports.** These have no replacement — the behaviour they carried is
+  either gone or now expressed in the Where vocabulary:
+
+  | Removed                                       | What to do instead                                             |
+  | --------------------------------------------- | -------------------------------------------------------------- |
+  | `RELATIONSHIP_COUNT_FILTER_KEY`               | Nothing — the count-filter marker no longer exists.            |
+  | `RelationshipCountFilterMarker`               | Nothing — same.                                                |
+  | `resolveRelationshipCountFilters`             | Nothing — a count filter shrinks to `some`/`none` when parsed. |
+  | `resolveRelationshipLabelFilters`             | Nothing — a to-one label filter emits `some` directly.         |
+  | `isToOneRelationshipField`                    | Read `many` off the relationship field config.                 |
+  | `ColumnEquality`, `UnsupportedPredicateError` | Gone with the predicate builder they belonged to.              |
+
+  **Newly exported:** `UndefinedAccessFilterError` and, from the secured surface,
+  `AccessFilterRecursionError`.
+
+- [#1466](https://github.com/OpenSaasAU/stack/pull/1466) [`95cb6dc`](https://github.com/OpenSaasAU/stack/commit/95cb6dc70a6c622c70c8cd74a14abb53f25bc95f) Thanks [@borisno2](https://github.com/borisno2)! - Fix three spots that assumed every list carries `createdAt`/`updatedAt` (timestamps are opt-in, ADR-0004): the migration generator no longer drops a source model's timestamp columns — it opts the list into `db.timestamps` when they match the auto-managed shape, or declares them as ordinary fields otherwise; the MCP fields projection no longer advertises or accepts `createdAt`/`updatedAt` on a list that doesn't have them; and the blog feature generator's scaffolded Post list now opts into `db.timestamps`, since its generated pages read `post.createdAt`.
+
+- [#1461](https://github.com/OpenSaasAU/stack/pull/1461) [`aa65d0f`](https://github.com/OpenSaasAU/stack/commit/aa65d0fef6b2df0120e48ec3c1c34e7cd59ef175) Thanks [@borisno2](https://github.com/borisno2)! - `generateCommand()` now throws `GenerationFailedError` on failure instead of calling `process.exit(1)`. `opensaas generate` catches it at the CLI entry point and exits 1 as before; `opensaas dev` catches it at boot and runs the loop's async `stop()`, so a generation failure closes the Dev database cleanly instead of orphaning it.
+
+- [#1467](https://github.com/OpenSaasAU/stack/pull/1467) [`2739ad8`](https://github.com/OpenSaasAU/stack/commit/2739ad8923ab3db893eefb718d21fcb2d079a519) Thanks [@borisno2](https://github.com/borisno2)! - Fix a list/field hook's `context.db` resolving through core's unkeyed default instead of the app's own generated `db` surface, so `context.db.typoedListName` compiled inside a hook and a real list lost its row type. `TypeInfo` now carries the generated `db`, and every hook-args type keys `context` to it.
+
+- [#1474](https://github.com/OpenSaasAU/stack/pull/1474) [`540d7e1`](https://github.com/OpenSaasAU/stack/commit/540d7e112a3aa62c7fc2422e4f91a85a0409d35e) Thanks [@borisno2](https://github.com/borisno2)! - Fix `dev.test.ts` flaking in CI: the cold `./dev.js` import no longer sits inside a test's 5s timeout, and a timed-out test can no longer leak a spawn call into the next test.
+- Updated dependencies [[`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`0c33f68`](https://github.com/OpenSaasAU/stack/commit/0c33f68b5d9449b4cdaecc792815bbd64afd7e9f), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`5aa3815`](https://github.com/OpenSaasAU/stack/commit/5aa38159fe5a54f3f0c294cc47f439ec9175d544), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`21bd0d5`](https://github.com/OpenSaasAU/stack/commit/21bd0d53860d8ad2f801c65e83637e523adc19f6), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`27d91d5`](https://github.com/OpenSaasAU/stack/commit/27d91d54fcd79122dfe695b5dea94c14572a2b98), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`95cb6dc`](https://github.com/OpenSaasAU/stack/commit/95cb6dc70a6c622c70c8cd74a14abb53f25bc95f), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`d59945a`](https://github.com/OpenSaasAU/stack/commit/d59945a36ba6615823e22822f366fb2507fbad68), [`9fe6917`](https://github.com/OpenSaasAU/stack/commit/9fe6917f37f4110740e2aa9ee174355699f8b36d), [`2739ad8`](https://github.com/OpenSaasAU/stack/commit/2739ad8923ab3db893eefb718d21fcb2d079a519), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`3fb20e0`](https://github.com/OpenSaasAU/stack/commit/3fb20e05ce986e25d317910280cfd45abb034c8a), [`4dd1dd0`](https://github.com/OpenSaasAU/stack/commit/4dd1dd0b555a6838a989d2ee43399c676742be0c), [`7242781`](https://github.com/OpenSaasAU/stack/commit/7242781e1d27e6e7a4a08ed63d7ecb544e20db6e), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`1ecc97e`](https://github.com/OpenSaasAU/stack/commit/1ecc97ec31580d778d138122f89798f4be651744), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7adac1b`](https://github.com/OpenSaasAU/stack/commit/7adac1bfdbce5c49c8f09a3f69bd9684a77d4cc2), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03)]:
+  - @opensaas/stack-core@0.44.0
+
 ## 0.43.0
 
 ### Patch Changes

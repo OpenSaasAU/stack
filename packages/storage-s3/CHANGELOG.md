@@ -1,5 +1,11 @@
 # @opensaas/stack-storage-s3
 
+## 0.44.0
+
+### Patch Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
 ## 0.43.0
 
 ## 0.42.3

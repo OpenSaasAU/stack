@@ -1,5 +1,700 @@
 # @opensaas/stack-ui
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `connect` on the foreign-key-owning field, with `null` as its counterpart
+
+  A write payload's `field: { connect: { id } }` is lowered onto the column the
+  row actually carries. The terminal issues the reachability query first — the
+  target list's `query` access ANDed with the identity criterion — then writes
+  the scalar foreign key, both inside the terminal's origin. `field: null`
+  clears the same column, which is what replaces nested `disconnect`
+  (ADR-0050).
+
+  ```typescript
+  await context.db.Post.create({ data: { title: 'Hello', author: { connect: { id: userId } } } })
+  await context.db.Post.update({ where: { id }, data: { author: null } })
+  ```
+
+  An unreadable target and one that does not exist are the same answer: the
+  write returns `null`, with no error and nothing written, so a foreign key
+  cannot become a probing oracle.
+
+  Three refusals name what a payload may carry on a relationship key:
+
+  - `NonOwningRelationInputError` — relation input on a field that owns no
+    foreign key (an inverse to-many, the non-owning half of a one-to-one, a
+    junction list's inverse, a synthetic back-relation). The generated input
+    types carry no member for those, so this is the runtime half of a compile
+    error.
+  - `MalformedRelationInputError` — an owning field carrying neither
+    `{ connect: { id } }` nor `null`.
+  - `RelationTargetMissingError` — a `connect` whose ref names a list the config
+    does not declare.
+
+  The relationship table's remove control follows the same rule: removing a row
+  through a to-one back-reference assigns `null` to it and the row survives,
+  while removing a junction row deletes it under that list's own delete access.
+
+  A relationship whose foreign key lives on the related row — a to-many, or the
+  non-owning half of a one-to-one — is not writable through the surfaces that
+  carry a payload for a single row, so neither surface offers it any more:
+
+  - The admin item form renders it read-only, stating that the related record
+    holds the link, instead of a picker whose selection had nowhere to go. An
+    item form ignores a change for any field it rendered read-only, so a field
+    component that does not honour the read mode it is handed cannot stage a
+    value the submit transform would then have to drop.
+  - The standalone `ItemCreateForm` / `ItemEditForm` take optional `listKey` and
+    `config` props. Given both, they mark the non-owning half of a one-to-one
+    the same way — a field config alone cannot answer which end holds the
+    column, so without them that end still renders a picker whose selection the
+    engine refuses at save.
+  - The MCP create/update tools omit it from the advertised `data` properties,
+    so a client cannot spell a call that could only fail.
+
+  On the end that does hold the column, the MCP schema now advertises `null`
+  alongside `connect`, so both spellings of an edge the engine accepts are
+  describable through the tool surface — and only those: the object form
+  requires `connect`, requires `id` within it, and admits no other key, matching
+  what the engine lowers rather than leaving the difference to prose.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove `findMany` / `findFirst` / `findUnique` / `count` from the generated read surface
+
+  The Prisma 7 read names outlived the client that could serve them: every one of
+  them type-checked and then threw `TypeError: … is not a function`, under `sudo`
+  too. Reaching for one is now a compile error rather than a runtime failure.
+
+  ```typescript
+  // Before
+  const posts = await context.db.Post.findMany({ where: { published: { equals: true } } })
+  const post = await context.db.Post.findUnique({ where: { id } })
+  const first = await context.db.Post.findFirst({ where: { slug: { equals: slug } } })
+  const total = await context.db.Post.count()
+
+  // After
+  const posts = await context.db.Post.where({ published: { equals: true } }).all()
+  const post = await context.db.Post.where({ id }).first()
+  const first = await context.db.Post.where({ slug: { equals: slug } }).first()
+  const { total } = await context.db.Post.aggregate((aggregate) => ({ total: aggregate.count() }))
+  ```
+
+  A singleton's `get()` is unchanged in shape and now resolves through the same
+  composed read an ordinary list reads through, so its operation access, Access
+  Filter, Field Visibility and related-list `query` access are the engine's rather
+  than a second copy of them.
+
+  Its auto-create is also tightened on a security path. `get()` previously fired
+  the auto-create for any `query` rule that did not answer a strict `false`, so a
+  rule that answered a **filter** — a first-class form, used to scope a read —
+  fell through it. On an absent row that created the singleton and handed it to a
+  session the filter excluded; on a present row it reached the singleton-create
+  constraint's unscoped row count and threw
+  `Cannot create: … is a singleton list with an existing record`, turning a read
+  whose whole design is silent failure into an existence oracle. The auto-create
+  now fires only for a rule that answered a strict `true` (or under `sudo`), and
+  the created row is handed back through the composed read rather than raw. Every
+  other form — `false`, a filter, a missing rule — answers the same `null` an
+  absent row answers, writes nothing, and raises nothing; a rule that throws still
+  propagates.
+
+  If you relied on a filter-returning `query` rule auto-creating a singleton, give
+  that list a `query` rule that answers `true` and scope it with the Access Filter
+  on the fields instead.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `context.db` is keyed by the PascalCase list name and carries the opaque read wrapper
+
+  `context.db.<List>` is now spelled the way the config spells the list — `context.db.AuthUser`, not
+  `context.db.authUser` — and `getDbKey()` is deleted (`getUrlKey()` and `getListKeyFromUrl()` stay).
+  Every call site through the secured surface, and every ORM handle the engine reaches a model
+  through, moves to the list key.
+
+  ```typescript
+  // Before
+  const posts = await context.db.blogPost.findMany()
+
+  // After
+  const posts = await context.db.BlogPost.findMany()
+  ```
+
+  The same member is now also a query value: `.where(...)` composes an immutable read and `.all()` /
+  `.first()` are the terminals that run it. A terminal resolves operation-level `query` access, adds
+  the access filter as a second entry in the collection's own filter list (nothing is hand-merged),
+  enters the engine origin around the ORM call, applies Field Visibility, and returns `[]` / `null`
+  on denial — indistinguishable from an empty result.
+
+  ```typescript
+  const mine = await context.db.Post.where({ published: true }).all()
+  const first = await context.db.Post.where({ authorId: session.userId }).first()
+  ```
+
+  `where` takes an equality predicate (`{ column: value }` or `{ column: { equals: value } }`); an
+  operator the engine does not lower yet is refused rather than passed through.
+
+  The three read members belong to a list you can query for many rows, so a singleton list does not
+  carry them — `get()` stays the way to read one. That matches the type the generator has always
+  emitted for a singleton.
+
+  Code the CLI writes into your project moves to the list key with everything else: the feature
+  generator's blog and auth pages (`context.db.Post.findMany(…)`), and the Keystone migration guide,
+  which now says list names are PascalCase.
+
+  A predicate whose condition is `undefined` is still skipped rather than refused, matching Prisma's
+  `undefined`-means-omitted semantics — so an access filter spelled `({ session }) => ({ authorId:
+session?.userId })` constrains nothing for an anonymous caller, while the explicit `{ equals:
+undefined }` spelling of the same rule is refused. Making the lowering total is the closed Where
+  vocabulary's job ([#1147](https://github.com/OpenSaasAU/stack/issues/1147)). Relation-valued `needs` are likewise not yet widened on `all()`/`first()`
+  the way `findMany` widens them ([#1149](https://github.com/OpenSaasAU/stack/issues/1149)).
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view reads through the secured surface, and its total is an `aggregate`
+
+  The list table now composes one secured read instead of calling `findMany`/`count`: the filter engine's Where vocabulary value goes to `.where()`, a to-one relationship is an `.include()` and a to-many displayed as a count column is the native count reducer, and the header's total is `.aggregate((a) => ({ total: a.count() }))` over the same scoped read — so the number above the table always equals the number of rows the session may page through.
+
+  Sorting by a to-many relationship count is gone with the `_count` include that powered it: `orderBy` takes the list's own scalar columns, so a `?sort=` naming a relationship is ignored exactly the way a read-denied field's sort already was, and the count column's header no longer offers a sort affordance it cannot honour. The count itself still displays through the reducer.
+
+  ```
+  ?search=orders:0     → orders: { none: {} }
+  ?search=orders:>0    → orders: { some: {} }
+  ?search=orders:>5    → falls back to free text, rather than erroring
+  ?search=name:ada     → matches "Ada" (text eq/contains are case-insensitive)
+  ```
+
+  A count comparison the vocabulary cannot express no longer errors: the token falls back to free text, so `orders:>5` searches the list's free-text fields for `5` — and on a list with no free-text field the token is dropped altogether, leaving the read unfiltered by it.
+
+  The URL grammar is unchanged, so a bookmarked filter keeps parsing identically.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Rewrite each package README against the Prisma 8 surface
+
+  The READMEs now document the API the packages actually ship, replacing the
+  Prisma 7 spellings that no longer resolve.
+
+  Reads compose on `context.db` keyed by the list's PascalCase config key and end
+  in a terminal, rather than calling a Prisma delegate:
+
+  ```ts
+  const posts = await context.db.Post.where({ status: { equals: 'published' } })
+    .orderBy({ createdAt: 'desc' })
+    .limit(20)
+    .all()
+
+  const post = await context.db.Post.where({ id }).first()
+  if (!post) return null
+  ```
+
+  `findMany`, `findUnique`, `findFirst` and `count()` are gone; the terminals are
+  `all()`, `first()`, `aggregate()` and `nearest()`. A denied read is silent, so
+  every `first()` result is a null check.
+
+  Writes take an args object with an identity-only `where`, and a relationship is
+  set with `connect` or cleared with `null`:
+
+  ```ts
+  const updated = await context.db.Post.update({
+    where: { id },
+    data: { title, author: { connect: { id: authorId } } },
+  })
+  ```
+
+  The database config documented in each README is the one `DatabaseConfig`
+  carries — `provider: 'postgresql'`, `idField`, `timestamps`, `schemas`,
+  `extensions` and `client`. `prismaClientConstructor`, `db.url` and
+  `extendPrismaSchema` are gone, and the connection is resolved from the
+  environment rather than named in the config.
+
+  Review round two swept each README against the built `.d.ts` rather than against
+  another doc, and corrected what the grep-shaped sweep had missed:
+
+  - The UI README's theming block documented bare `--background`/`--primary` HSL
+    triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
+    `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
+    stylesheet's own header says the design exists "without a duplicated `.dark`
+    block". Its primitives list also omitted eight real exports (`Textarea`,
+    `Popover`, `Calendar`, `TimePicker`, `DateTimePicker`, `Combobox`, `Badge`,
+    `Avatar`), and two samples read `config.lists` without awaiting `config`.
+  - The tiptap README reused a filter-returning `AccessControl` rule as
+    **field-level** `access.update`. `FieldAccess` types those slots as
+    boolean-returning, so that is a type error and a runtime
+    `InvalidFieldAccessResultError`, not a scoped update.
+  - The storage README's upload route was the last copy still casting
+    `formData.get(...) as string` / `as 'file' | 'image'` off a
+    `FormDataEntryValue | null`.
+  - The auth README's Account shape named `providerId: 'credentials'`; better-auth
+    1.7 uses `'credential'` for email/password, and the model carries `issuer`.
+  - The Vercel Blob README passed `cacheControl` to `vercelBlobStorage()`. The
+    provider option is `cacheControlMaxAge` (a number of seconds);
+    `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
+    type-checked and was silently ignored.
+
+  Round three corrected what round two's sweeps could not see, each having keyed
+  on where a construct sat rather than on what it was:
+
+  - The Vercel Blob README's **options listing** still named `cacheControl` 112
+    lines above the call site round two fixed, so the page contradicted itself and
+    the half a reader consults first was the wrong half.
+  - Sixteen hook samples across the docs and the core, cli and example READMEs
+    destructured a member the `delete` branch of its args union does not carry, so
+    the destructure failed before any in-body `operation` guard could narrow. Three
+    more named an argument on no branch at all: `value` and `inputValue` on
+    `resolveInput`/`afterOperation`, and `session` on `ResolveInputHookArgs`.
+  - The core README carried a third instance of the field-access class — a bare
+    `text({ access: … })` excerpt with no enclosing `fields: {` — plus
+    `query: true` where `OperationAccess.query` takes a function, a
+    `ValidationError` built from a string where the constructor takes `string[]`,
+    and a stale claim that `password()` is excluded from reads.
+  - The cli README's "What it does" block under `opensaas db update` described
+    `opensaas dev`, and called `migrate` a command group when it has no
+    subcommands.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `serializeFieldConfigs` is exported from `@opensaas/stack-ui/server`
+
+  A page that hands `config.lists.Post.fields` straight to a `'use client'`
+  component fails at render: a field config carries its own methods
+  (`getZodSchema`, `getContractField`, `getFilterSpec`, …) and its `hooks` and
+  `access` rules are functions, and React refuses to serialise a function across
+  the boundary. `ItemCreateForm` and `ItemEditForm` already sanitise internally,
+  but by then the props have crossed the boundary at the caller's own client
+  component — so the caller needs the sanitiser too, and until now had to
+  hand-roll one.
+
+  ```typescript
+  // app/posts/page.tsx — a Server Component
+  import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+
+  <CreatePostDialog fields={serializeFieldConfigs((await config).lists.Post.fields)} />
+  ```
+
+  ```typescript
+  // components/CreatePostDialog.tsx
+  'use client'
+  import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
+
+  export function CreatePostDialog({ fields }: { fields: Record<string, SerializableFieldConfig> }) {
+  ```
+
+  `serializeFieldConfig` and the `SerializableFieldConfig` type are exported
+  alongside it. This is the same allowlist the admin UI uses, so it stays complete
+  as `FieldConfig` grows.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove the PSL-shaped and TypeScript-face members from the field-builder contract
+
+  **Third-party field packages must migrate.** The generator emits a TypeScript
+  contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
+  `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
+  any more, so they are gone from `BaseFieldConfig` and from every builder:
+
+  - `getPrismaType`
+  - `getPrismaColumns`
+  - `getPrismaRelation`
+  - `getTypeScriptType`
+  - `getTypeScriptImports`
+  - `resultExtension`
+  - `VirtualField.outputType` (the required `string` narrowing; the optional
+    `outputType: TypeDescriptor` on `BaseFieldConfig` is what a virtual field
+    declares now)
+
+  The `PrismaRelationResult`, `MultiColumnPrismaResult` and `ResultExtensionConfig`
+  types they were shaped by are removed with them.
+
+  Migrating a field builder — describe the column instead of the PSL line:
+
+  ```ts
+  // Before
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getPrismaType: () => ({ type: 'String', modifiers: '? @unique' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    }
+  }
+
+  // After
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldName) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+        unique: true,
+      }),
+    }
+  }
+  ```
+
+  A field whose TypeScript face differs from its column's codec type declares it
+  directly, rather than through `resultExtension` or `getTypeScriptType`:
+
+  ```ts
+  // Before
+  resultExtension: { outputType: "import('@my/pkg').Metadata | null" },
+  getTypeScriptType: () => ({ type: 'Metadata | null', optional: true }),
+  getTypeScriptImports: () => [{ names: ['Metadata'], from: '@my/pkg' }],
+
+  // After — the import is inline, so no separate import declaration is needed
+  outputType: "import('@my/pkg').Metadata | null",
+  inputType: "File | import('@my/pkg').Metadata | null",
+  ```
+
+  A field spanning several physical columns returns `{ kind: 'columns', columns }`
+  from `getContractField` and keeps `getColumnNames`/`assembleColumns`/`splitColumns`.
+
+  **The generate-time gate moved with the contract.** `validateFieldConfig` now
+  requires `getContractField` and `getZodSchema` from a stored field (a
+  relationship only the former), and additionally `outputType` from a field that
+  has no single column to be typed from — one whose descriptor is
+  `kind: 'columns'` or `kind: 'computed'`. Both are read off the descriptor, so a
+  `computed` field carries the obligation whether or not its builder also sets the
+  `virtual` flag that core's own `virtual()` sets alongside it. That closes a hole
+  where such a field passed
+  the gate, generated successfully, and left every consumer reading it as
+  `unknown` (issue [#1292](https://github.com/OpenSaasAU/stack/issues/1292)). `FieldConfigValidationError.missingMethod` is renamed
+  to `missingMember` to carry `outputType` alongside the two methods.
+
+  `validateFieldConfig`'s signature changed with it: `listKey` and a new fourth
+  `config` argument are both **required**, because they are what
+  `getContractField` takes and reading the descriptor is what makes the rule
+  decidable. The optional `getColumnNames` is not consulted — it is a separate
+  member that only travels with `kind: 'columns'` by convention, so reading it
+  would both miss a `columns` field that does not implement it ([#1292](https://github.com/OpenSaasAU/stack/issues/1292)'s hole) and
+  wrongly demand `outputType` from a single-column field that does.
+  `FieldConfigValidationError.listKey` is likewise no longer optional.
+
+  The gate swallows a throw out of `getContractField`: that is a field's own
+  refusal seam (`embedding()` throws there for an impossible `dimensions`).
+  `opensaas generate` runs this gate first of all, and its config-surface step —
+  `validateDatabaseConfig` → `validateExtensionPacks` — re-reads every descriptor
+  straight afterwards and reports the throw as a `field-descriptor-error` refusal
+  carrying the field's own message, so the run still fails with
+  `List "<List>": fields.<field> cannot describe its contract column — <message>`
+  rather than a raw stack trace. Derivation is never reached.
+
+  `inputType` is never required by the generator. On a single-column field its
+  absence means the column's own input type; a `kind: 'columns'` field has no
+  single column for that to name, so it should declare `inputType` alongside
+  `outputType` — every multi-column field in this repo does, and what the
+  generator emits for one that does not is untested.
+
+  **A field-level hook's value type is resolved from the field key, and is
+  `unknown` when there is no single key to resolve.** `FieldHooks`'
+  `resolveInput`/`resolveOutput` positions used to be typed from the deleted
+  `getTypeScriptType`. `FieldHooks<TTypeInfo, 'title'>` now resolves to the
+  field's statically declared `outputType`, or else to the property the generated
+  `Lists.<List>.Item` carries for it.
+
+  But `BaseFieldConfig.hooks` cannot pin a field key — a builder is written
+  before it knows where it is mounted — so through the config surface
+  (`list<Lists.Post.TypeInfo>({ fields: { title: text({ hooks }) } })`) the
+  instantiation is `FieldHooks<TTypeInfo>`, whose key is the union of every field
+  on the list, and the value type is **`unknown`**: the same open type as before
+  this change. Resolving that union would type each field's hook by the whole
+  row, so a `text()` hook would accept a `Date` and reject its own `string`. An
+  honestly `unknown` type is better than a confidently wrong one; narrowing it
+  needs the field key threaded into `BaseFieldConfig`, tracked in issue [#1306](https://github.com/OpenSaasAU/stack/issues/1306).
+
+  Two related limits, for the same reason: `lists.ts` emits `Fields` as the field
+  _interfaces_, on which `outputType` is optional, so a declared face never
+  survives into a generated `TypeInfo` — the declared branch is reachable only
+  from a hand-authored one. And a virtual field's hook value stays `unknown`,
+  since it has no declared face there and no column in the stored row.
+
+  `db.keystoneCompat`'s implicit empty-string text default is now carried by
+  `text()`'s contract column, where the deleted `getPrismaType` used to emit it —
+  but only where the field's own create validator accepts **both** the omission
+  that default is there to fill **and** the `''` it inserts. Both questions are
+  asked of the schema rather than restated, so the column and the validator
+  cannot drift apart:
+
+  - a column default drops the column from the required half of the generated
+    `CreateInput`, so carrying one where the validator refuses an omission would
+    type-check a `create` that then threw `ValidationError`;
+  - and the value a column default inserts is never seen by validation — the
+    database supplies it — so carrying one where the validator refuses `''`
+    would store a row the config forbids on every omitted `create`. That is the
+    outcome an explicit `defaultValue: ''` already gets right: it is filled by
+    `applyCreateDefaults` before validation and correctly rejected. The two
+    spellings of "this column defaults to an empty string" now agree.
+
+  **Known limit: the flag is therefore inert for
+  `validation: { isRequired: true }` text — Keystone's commonest text column —
+  and for `validation: { length: { min: N } }` with `N` above zero.** Keystone 6
+  renders both as `NOT NULL DEFAULT ''`, so a migrating project sees
+  `DROP DEFAULT` for them in `migrate diff`. Setting `defaultValue: ''` by hand
+  is refused at runtime for the same reason, so the field's validation has to be
+  relaxed alongside it. Full parity would need the flag to relax the create
+  validator itself, which `getZodSchema` has no config to read; that is a
+  separate change. A column made non-null through `db: { isNullable: false }`
+  alone still gets the default, as does one carrying only a `length.max`.
+
+  Relatedly, `text()` no longer treats `validation: { length: { min: 0 } }` as
+  `min(1)`. A zero minimum now means no minimum, so `''` validates — which is
+  what the option says, and what lets such a column keep its compat default
+  without the column and the validator disagreeing. `isRequired` still imposes a
+  floor of `min(1)` on a field that declares `length: { min: 0 }` or no minimum
+  at all, and never lowers a larger declared one — `isRequired` with
+  `length: { min: 5 }` is still `min(5)`.
+
+  **Test coverage that thinned.** Three assertions were lost rather than ported,
+  and are recorded here so the change is not silent:
+
+  - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
+    provided" — `getContractField` is always given a `listKey`.
+  - The quoted-vs-unquoted PSL default rendering for a string versus an enum
+    `select()` — the contract carries one `{ kind: 'literal' }` for both.
+  - The per-field `getTypeScriptType` blocks in `tests/field-types.test.ts`
+    became `expect(field.outputType).toBeUndefined()` — "declares no override",
+    which is weaker than the old "text is `string`, optional when not required".
+    Column nullability is still asserted on the same fields, and the codec now
+    owns the type (ADR-0052), so the fact has moved rather than vanished.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@{](https://github.com/{)! - The secured surface takes the closed Where vocabulary, lowered in one place
+
+  `context.db.<List>.where(...)` now accepts the whole vocabulary — `equals`,
+  `not`, `in`, `notIn`, `lt`, `lte`, `gt`, `gte`, `contains`, the `AND`/`OR`/`NOT`
+  combinators, and `some`/`every`/`none` on a relation of any cardinality — plus a
+  new scalar-only `.orderBy()`. Everything lowers onto the ORM's predicate lambda
+  in one place (ADR-0055).
+
+  ```typescript
+  const posts = await context.db.Post.where({
+    OR: [{ title: { contains: 'release' } }, { views: { gte: 100 } }],
+   some: { handle: { equals: 'ada' } } },
+  })
+    .orderBy({ views: 'desc' })
+    .all()
+  ```
+
+  - `contains` is engine-escaped and case-insensitive, so `contains: '50%'` matches
+    a literal per-cent sign rather than binding a wildcard.
+  - `equals: null` lowers to `IS NULL`, `not: null` to `IS NOT NULL`.
+  - A relation predicate scopes the `EXISTS` by the related list's own `query`
+    access. `some` and `none` ask about the rows the caller may see; `every` asks
+    whether every row the caller may see matches, so a row the caller cannot see
+    never decides the parent's membership. A related list the session cannot
+    query is the empty set: `some` is false, `none` and `every` are true.
+  - An Access Filter that scopes by a relation is expanded into the related list's
+    own Access Filter. A filter that expands into itself — directly, or through
+    another list — throws `AccessFilterRecursionError` naming the chain, rather
+    than recursing until the process runs out of memory. An acyclic chain deeper
+    than ten lists is refused the same way. Failing closed is deliberate: a
+    truncated Access Filter is a widened read.
+  - An unknown key or operator is a `ValidationError` naming the list and the key,
+    under `sudo` too. A key the session cannot read is refused with the identical
+    message a key the list does not declare gets, so the refusal is not an
+    existence oracle; a denied caller still gets the Silent failure first and sees
+    no validation error at all.
+
+  **Lowering is now total.** A condition that resolved to `undefined` is refused
+  rather than dropped, on both spellings. An access rule written as
+  `({ session }) => ({ authorId: session?.userId })` used to match every row for an
+  anonymous caller; it now throws. Spell the denial:
+
+  ```typescript
+  // Before — silently matched everything when session was null
+  query: ({ session }) => ({ authorId: session?.userId })
+
+  // After
+  query: ({ session }) => (session ? { authorId: { equals: session.userId } } : false)
+  ```
+
+  The same refusal now covers the clause `mergeFilters` folds in, so the guarantee
+  holds on every surface rather than only on `.where().all()/.first()`: an access
+  filter carrying an `undefined` condition anywhere (including nested under an
+  operator or inside an `AND`/`OR` branch) throws the new, exported
+  `UndefinedAccessFilterError`. A caller's own `where` is untouched — this applies
+  only to what an access rule returns.
+
+  **Also changed:** the filter engine's `FilterCondition` is a Where vocabulary
+  value; a to-one relationship's label filter emits `some` rather than `is`; a
+  to-many count filter shrinks to presence (`orders:0` → `none`, `orders:>0` /
+  `orders:>=1` → `some`, any other comparison degrades to free text);
+  and read-path key validation rejects an operator outside the vocabulary
+  (`startsWith`, `endsWith`, `mode`, `search` and the array/JSON operators are
+  gone).
+
+  **Removed exports.** These have no replacement — the behaviour they carried is
+  either gone or now expressed in the Where vocabulary:
+
+  | Removed                                       | What to do instead                                             |
+  | --------------------------------------------- | -------------------------------------------------------------- |
+  | `RELATIONSHIP_COUNT_FILTER_KEY`               | Nothing — the count-filter marker no longer exists.            |
+  | `RelationshipCountFilterMarker`               | Nothing — same.                                                |
+  | `resolveRelationshipCountFilters`             | Nothing — a count filter shrinks to `some`/`none` when parsed. |
+  | `resolveRelationshipLabelFilters`             | Nothing — a to-one label filter emits `some` directly.         |
+  | `isToOneRelationshipField`                    | Read `many` off the relationship field config.                 |
+  | `ColumnEquality`, `UnsupportedPredicateError` | Gone with the predicate builder they belonged to.              |
+
+  **Newly exported:** `UndefinedAccessFilterError` and, from the secured surface,
+  `AccessFilterRecursionError`.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Framework components and `createAuth` accept the app's generated context; core is declared side-effect free
+
+  The generated `Context` and the engine's `AccessContext` describe one request from two faces, and neither type is assignable to the other. `@opensaas/stack-ui`'s public components (`AdminUI`, `Dashboard`, `Navigation`, `ListView`, `ItemForm`, `SingletonView`, `RelationshipTable`) and `@opensaas/stack-auth`'s `createAuth` / `buildBetterAuthOptions` now take the app-facing context — what `getContext()` and `rawOpensaasContext` produce — so a page passes it straight through:
+
+  ```tsx
+  import { getContext, config } from '@/.opensaas/context'
+
+  export default async function AdminPage() {
+    return (
+      <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    )
+  }
+  ```
+
+  Core exports the bridge for other framework code: `AnyStackContext` is the type of a context on either face, and `engineContextOf(context)` returns the engine's `AccessContext` for it (`EngineContextUnavailableError` for a hand-assembled object).
+
+  **Watch for this when you upgrade.** The seven components above previously read `context.db[listKey]` and `context.session` and worked with any object carrying them. They now narrow through `engineContextOf`, which accepts a context the engine built or a full `AccessContext` and throws otherwise. A hand-assembled stand-in — a component test's double, a Storybook story, a wrapper that rebuilds `{ db, session, … }` by hand instead of passing `getContext()`'s result through — now throws at render. Pass a context from `getContext()`, or from `createTestContext` in `@opensaas/stack-core/testing`.
+
+  Two engine fixes the first Next app on Prisma 8 exposed:
+
+  - The origin store the tripwire reads, and the key an app-facing context carries its engine face under, are one per process rather than one per module instance. Next.js compiles the page layer and the route-handler layer separately, each with its own copy of the module, while the generated context caches one client for both: a query marked through one layer's Unsafe surface was refused as unmarked by the other layer's tripwire (every `/api/auth/*` route answered 500), and a context built by one layer's `getContext()` could not be narrowed by the other layer's `engineContextOf`. Both now resolve through one helper over the symbol registry `globalThis` shares.
+  - On the include path the ORM hands an included to-one back under its foreign-key key as well as its own, so a row-dependent field `read` rule comparing `item.authorId` saw the related row rather than its id and denied the author. A field `read` rule is now answered against the row's own stored foreign key whichever way the row was read, so the same rule gives the same answer with and without `.include()` — including where the related list's Access Filter scopes the relation away, which previously made `item.authorId` read as `null` and could open a field whose rule tests for an absent relation. Every terminal (`all()`, `first()`, the `forUpdate()` lane, `nearest()`) returns rows through one funnel that runs both foreign-key passes; a read whose to-one include is narrowed costs one extra query to read the column the include's alias overwrites ([#1236](https://github.com/OpenSaasAU/stack/issues/1236)).
+
+  Core's `package.json` now declares `"sideEffects": false`. The root barrel re-exports modules that import `node:fs` and `node:async_hooks`; a client component importing a value from the barrel — as the admin's own do — would otherwise pull them into the browser bundle and fail to compile under Turbopack. The declaration is truthful: no module in core has an import-time effect a consumer relies on.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The item form writes to-many edges against the related list, and admin routing parses ids through the contract
+
+  A to-many relationship's foreign key lives on the related row, so it can never ride in the record's own update payload — and connecting through an inverse field no longer compiles. The item form's multi-select now writes each edge as a write against the **related list**, under that list's own access control: adding one sets the related row's foreign key, removing one clears it. A denied write reverts the control to what the database actually holds and shows the reason, instead of navigating away on a save that never landed.
+
+  The related-row writes go through two server actions, both keyed on the related list:
+
+  ```typescript
+  // Link an existing related row to the parent (new)
+  await serverAction({
+    listKey: 'Post',
+    action: 'linkRelated',
+    id: postId,
+    field: 'author',
+    parentId: userId,
+  })
+
+  // Unlink it again (unchanged)
+  await serverAction({
+    listKey: 'Post',
+    action: 'removeRelated',
+    mode: 'disconnect',
+    id: postId,
+    field: 'author',
+  })
+  ```
+
+  Nothing needs configuring: a to-many whose back-reference owns a nullable foreign key becomes editable on the edit form automatically. A to-many with no writable edge — a list-only `ref`, a required foreign key (`db.isNullable: false` or `validation: { isRequired: true }`), or an edge across an explicit junction list — stays read-only with its reason.
+
+  On the **default** edit route a to-many renders as a relationship table rather than a multi-select, so that table's "Link existing" control — until now offered only for an edge across a junction list — now also links an existing related row by writing its own foreign key, under the related list's update access. Selecting a post on a user's edit page therefore updates that post's foreign key whether the field is left at its default display or demoted to `ui.itemView.displayMode: 'picker'`.
+
+  The edge writes commit before the record's own update and are not rolled back, so a record update that then fails reports the save as partial instead of as a plain failure.
+
+  Ids now cross the wire through one contract-driven coercion (ADR-0048), which reads each list's id type from the contract:
+
+  ```typescript
+  import { parseListId } from '@opensaas/stack-core'
+
+  parseListId(config, 'Post', '12') // { ok: true, value: 12 } on an int-keyed list
+  parseListId(config, 'Post', 'not-an-int') // { ok: false }
+  parseListId(config, 'Post', '3000000000') // { ok: false } — outside the int4 column
+  ```
+
+  Admin routing parses the URL's item id through it and **404s a malformed one**, so `/admin/post/not-an-int` on an integer-keyed list is a not-found rather than a query built on a `NaN`. The server actions parse their ids the same way.
+
+  Nav counts are read through the secured `aggregate` reducer, so a badge again reports the rows the session may see.
+
+- [#1454](https://github.com/OpenSaasAU/stack/pull/1454) [`62a8696`](https://github.com/OpenSaasAU/stack/commit/62a8696f88aef1df2ad723b017dd8ed8ecb1f238) Thanks [@borisno2](https://github.com/borisno2)! - The admin item form (create and edit) now respects a field's own CREATE/UPDATE field-level access: a field this session may not write renders read-only, with a reason shown beneath it, instead of an editable control whose value the save would then have to discard.
+
+  Previously, any list carrying a field with `access: { create: () => false, update: () => false }` — the default for `embedding()` fields, among others — was uneditable through the admin entirely: the form resubmitted every field on save, and the write pipeline refused the whole update ("Cannot update \"x\": field-level access denied."), leaving even the fields the session could write unsaved.
+
+  No config change is required — this is resolved automatically wherever `prepareItemForm` builds a form (the full admin item view, the singleton editor, and the Relationship-table's pre-linked create drawer).
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Render `embedding()` fields in the admin UI, and stop serialising vectors to the browser
+
+  The `embedding` field type had no admin UI component, so every embedding column
+  rendered as `Unsupported field type: embedding`. Worse, the item form still sent
+  the field's value back on save, which the field's own write deny then refused —
+  so **an item with an embedding field could not be saved from the admin UI at
+  all** (`Validation failed: Cannot update "contentEmbedding": field-level access
+denied.`).
+
+  `@opensaas/stack-rag/components/register` registers a read-only renderer for the
+  field and a list-table Cell. The registries live in the browser bundle, so the
+  import belongs in a client component:
+
+  ```tsx
+  // app/admin/[[...admin]]/FieldRegistration.tsx
+  'use client'
+
+  import '@opensaas/stack-rag/components/register'
+
+  export function FieldRegistration() {
+    return null
+  }
+  ```
+
+  ```tsx
+  // app/admin/[[...admin]]/page.tsx
+  <>
+    <FieldRegistration />
+    <AdminUI context={context} config={config} /* ... */ />
+  </>
+  ```
+
+  `ui.showVector` and `ui.showMetadata` were a documented surface with nothing
+  behind them; they now drive that renderer — and the page payload, not just the
+  display. A vector the admin UI does not render is no longer serialised to the
+  browser, so the default (`showVector: false`) keeps a 768- or 1536-float array
+  out of every admin page:
+
+  ```typescript
+  contentEmbedding: embedding({
+    sourceField: 'content',
+    ui: { showVector: true }, // opt in to rendering (and shipping) the vector
+  })
+  ```
+
+  An embedding is also out of the default list-table columns, since a vector is
+  unreadable in a table; naming it in `ui.listView.initialColumns` still shows it.
+
+  In `@opensaas/stack-ui`, a field's `ui.valueForClientSerialization` now runs on
+  the list-view path as well as the item form. The list table serialises whole
+  rows rather than only the columns it renders, so a field withheld from the
+  default columns still reached the browser in full. Any field declaring that
+  transform now has it honoured on both paths.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Adding an edge across a junction is a create of the junction row, under that list's own create access
+
+  A many-to-many is an explicit junction list (ADR-0048), so an edge is one of its rows and adding one is a create — never a nested write on either parent. `context.serverAction({ listKey, action: 'addRelated', field, parentId, targetId })` names the **parent** list and its to-many field; the junction list, its back-reference and its far-endpoint field are resolved from the config on the server, so a caller can neither name a junction list of its own choosing nor set a column of the edge row beyond the two endpoints.
+
+  ```ts
+  // Post.tags: relationship({ ref: 'PostTag.post', many: true })
+  // PostTag  : { post: relationship({ ref: 'Post.tags' }), tag: relationship({ ref: 'Tag.posts' }) }
+  await context.serverAction({
+    listKey: 'Post',
+    action: 'addRelated',
+    field: 'tags',
+    parentId: post.id,
+    targetId: tag.id,
+  })
+  // → { added: true, id } — a PostTag row, gated on PostTag's own create access
+  ```
+
+  The create is evaluated against the junction list, so a caller denied `create` there cannot add the edge and the denial is the usual silent one: `{ added: false }` with a generic reason, nothing written, nothing raised. Both endpoints go through `connect`, so an endpoint the caller cannot read is indistinguishable from one that does not exist, and both are indistinguishable from that operation-level denial — one generic reason covers all three. A **field-level** denial on an endpoint stays loud and names the field, as it does for every create in the framework ([#568](https://github.com/OpenSaasAU/stack/issues/568)); this does not change that.
+
+  `resolveJunctionEdge(config, parentListKey, fieldName)` is exported for callers that need the same answer. It returns `null` — leaving the ordinary to-many treatment in place — for a list-only `ref`, a junction with a third foreign key or none, and a junction carrying any stored field of its own. That last rule is what keeps an ordinary two-parent child row (`Comment { body, article, author }`) from being read as an edge: it owns two foreign keys like a junction does, and no requiredness flag separates the two, so the column it carries is the only evidence. The cost is that a junction with a genuinely optional annotation column keeps its ordinary treatment too.
+
+  In the admin UI, a to-many section that is such an edge gains a **"Link"** control beside "+ Add", offered only when the junction list's own `create` access is not statically denied. The item form's to-many picker stays read-only — an edge can never ride in the parent's write payload — but its stated reason now points at that table rather than at another list's edit page. The item view renders such a field as the table itself rather than as a field of the details card, so the reason is what the create page and the standalone forms show; a field demoted to `ui.itemView.displayMode: 'picker'` has no table anywhere and keeps the original reason.
+
+### Patch Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
+- [#1468](https://github.com/OpenSaasAU/stack/pull/1468) [`5aa3815`](https://github.com/OpenSaasAU/stack/commit/5aa38159fe5a54f3f0c294cc47f439ec9175d544) Thanks [@borisno2](https://github.com/borisno2)! - Update a stale doc comment on `composeItemViewRead` that cited the now-fixed [#1236](https://github.com/OpenSaasAU/stack/issues/1236) as the reason a Relationship table's own relationship columns aren't nested-included. No behavior change.
+
+- [#1462](https://github.com/OpenSaasAU/stack/pull/1462) [`5d54a02`](https://github.com/OpenSaasAU/stack/commit/5d54a02f096b59ecefba4c507df8a82ec200a23d) Thanks [@borisno2](https://github.com/borisno2)! - Fix the relationship-table pre-linked create drawer showing the new row optimistically instead of depending on `router.refresh()` reliably observing the write it just made ([#1376](https://github.com/OpenSaasAU/stack/issues/1376)).
+
 ## 0.43.0
 
 ### Minor Changes
