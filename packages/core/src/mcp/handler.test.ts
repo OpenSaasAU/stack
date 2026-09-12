@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import * as z from 'zod'
 import type { AccessContext, Session } from '../access/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { checkbox, relationship, text } from '../fields/index.js'
+import { checkbox, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
 import type { McpSessionProvider } from './types.js'
@@ -162,6 +162,13 @@ function schemaConfig(): OpenSaasConfig {
         },
         access: { operation: { query: () => true, create: () => true } },
       },
+      // A unique-constraint fixture: `UniqueConstraintViolation`'s message is
+      // documented as safe to show a user (ADR-0042), so it belongs in the
+      // MCP write path's allowlist alongside the engine-refusal error types.
+      UniqueThing: {
+        fields: { slug: text({ isIndexed: 'unique' }) },
+        access: { operation: { query: () => true, create: () => true } },
+      },
       // Reached only as a relation target, to pin the level-2 vocabulary.
       Memoed: {
         fields: {
@@ -206,6 +213,39 @@ function schemaConfig(): OpenSaasConfig {
           parent: relationship({ ref: 'Brittle.notes' }),
         },
         access: { operation: { query: () => true } },
+      },
+      // Two lists whose `resolveOutput` hooks read each other — a
+      // `ResolveOutputCycleError` fixture, the framework-authored refusal a
+      // create/update's own Field Visibility pass can raise same as a read's.
+      CycleOne: {
+        fields: {
+          name: text(),
+          echo: virtual({
+            type: 'string',
+            hooks: {
+              resolveOutput: async ({ context }) => {
+                await context.db.CycleTwo.all()
+                return 'one'
+              },
+            },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true } },
+      },
+      CycleTwo: {
+        fields: {
+          name: text(),
+          echo: virtual({
+            type: 'string',
+            hooks: {
+              resolveOutput: async ({ context }) => {
+                await context.db.CycleOne.all()
+                return 'two'
+              },
+            },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true } },
       },
       // An `int autoincrement` key: the wire still carries a string, and the
       // boundary coercion is what decides what the column gets (ADR-0048).
@@ -1489,10 +1529,10 @@ describe('the MCP surface', () => {
         database.client,
       )
       const brittle = await context.sudo().db.Brittle.create({ data: { title } })
-      await context.sudo().db.BrittleNote.create({
-        data: { label: 'note', parent: { connect: { id: brittle?.id } } },
-      })
       if (!brittle) throw new Error('seedBrittle: sudo create was denied')
+      await context.sudo().db.BrittleNote.create({
+        data: { label: 'note', parent: { connect: { id: brittle.id } } },
+      })
       return String(brittle.id)
     }
 
@@ -1606,4 +1646,88 @@ describe('the MCP surface', () => {
       BOOT,
     )
   })
+
+  /**
+   * `ResolveOutputCycleError` (#844, ADR-0023) is a loud, framework-authored
+   * refusal whose message names only lists and fields on its own resolve
+   * chain — no session or application data — so it belongs in the same
+   * allowlist as `AccessScopeDepthExceededError`/`RelationFilterAccessDeniedError`
+   * rather than behind the generic "failed due to an internal error" text.
+   */
+  describe('a resolveOutput cycle on query and create', () => {
+    // Seeded against a config where CycleOne/CycleTwo have no `echo` field at
+    // all — a virtual field has no column, so this doesn't change the
+    // underlying table — so `sudo()`'s own create doesn't compute `echo` and
+    // trigger the cycle while seeding (resolve-chain.test.ts's same split).
+    // A hook only fires per row it has to compute a value for: an empty
+    // `CycleTwo` means `context.db.CycleTwo.all()` returns `[]` without ever
+    // reaching CycleTwo's own `echo` hook, so the chain needs a seeded row on
+    // both sides before it can loop back into itself.
+    async function seedCycle(): Promise<void> {
+      const orm = ormClientFor(database.data, database.client.orm)
+      const base = schemaConfig()
+      const plainConfig: OpenSaasConfig = {
+        ...base,
+        lists: {
+          ...base.lists,
+          CycleOne: { fields: { name: text() }, access: base.lists.CycleOne.access },
+          CycleTwo: { fields: { name: text() }, access: base.lists.CycleTwo.access },
+        },
+      }
+      const context = getContext(
+        plainConfig,
+        orm,
+        null,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        database.client,
+      )
+      await context.sudo().db.CycleOne.create({ data: { name: 'one' } })
+      await context.sudo().db.CycleTwo.create({ data: { name: 'two' } })
+    }
+
+    test(
+      'a query reaches the real cycle diagnostic rather than the generic redaction',
+      async () => {
+        await seedCycle()
+        const { body } = await callTool('list_cycleOne_query', {})
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('resolveOutput cycle detected')
+        expect(result.content[0].text).not.toContain('failed due to an internal error')
+      },
+      BOOT,
+    )
+
+    test(
+      'a create reaches the real cycle diagnostic rather than the generic redaction',
+      async () => {
+        await seedCycle()
+        const { body } = await callTool('list_cycleOne_create', { data: { name: 'x' } })
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('resolveOutput cycle detected')
+        expect(result.content[0].text).not.toContain('failed due to an internal error')
+      },
+      BOOT,
+    )
+  })
+
+  test(
+    'a unique constraint violation on create keeps its own safe message rather than the generic redaction',
+    async () => {
+      await callTool('list_uniqueThing_create', { data: { slug: 'dup' } })
+      const { body } = await callTool('list_uniqueThing_create', { data: { slug: 'dup' } })
+      const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text.toLowerCase()).toContain('unique')
+      expect(result.content[0].text).not.toContain('failed due to an internal error')
+    },
+    BOOT,
+  )
 })
