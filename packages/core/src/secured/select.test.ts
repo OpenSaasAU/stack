@@ -174,6 +174,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+/**
+ * True when `needle` appears as an exact value somewhere in `value`'s own
+ * tree. Exact equality, not substring: a UUIDv7 is drawn from hex digits, so
+ * short strings like '4242' turn up inside one by chance and a substring scan
+ * over the serialised object would flag that coincidence as a leak.
+ */
+function containsValue(value: unknown, needle: string): boolean {
+  if (value === needle) return true
+  if (Array.isArray(value)) return value.some((entry) => containsValue(entry, needle))
+  if (isRecord(value)) return Object.values(value).some((entry) => containsValue(entry, needle))
+  return false
+}
+
 function collection(model: string): Record<string, unknown> {
   const namespace: unknown = Reflect.get(database.client.orm, 'public')
   if (!isRecord(namespace)) throw new Error('no public namespace')
@@ -481,9 +494,10 @@ describe('Declared dependency set', () => {
 
       // The declaration outranks the caller-facing denial…
       expect(rows[0].masked).toBe('••••4242')
-      // …and the column itself still never reaches the caller.
+      // …and the column itself still never reaches the caller, under its own
+      // key or any other.
       expect(rows[0]).not.toHaveProperty('cardLast4')
-      expect(JSON.stringify(rows[0])).not.toContain('"4242"')
+      expect(containsValue(rows[0], '4242')).toBe(false)
     },
     BOOT,
   )
