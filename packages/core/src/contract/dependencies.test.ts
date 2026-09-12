@@ -29,8 +29,7 @@ describe('deriveDependencyTable', () => {
 
     expect(table.Post.fields.byline).toEqual({ columns: ['authorId'], relations: ['author'] })
     expect(table.Post.fields.excerpt).toEqual({ columns: ['content', 'title'], relations: [] })
-    // A computed field that declares nothing still has a row — its set is empty.
-    expect(table.User.fields.displayName).toEqual({ columns: [], relations: [] })
+    expect(table.User.fields.displayName).toEqual({ columns: ['name'], relations: [] })
     // Every field with a `resolveOutput` is a computed field here, virtual or
     // not — `calendarDay()`'s own output hook puts `publishDate` in the table.
     expect(Object.keys(table.Post.fields).sort()).toEqual(['byline', 'excerpt', 'publishDate'])

@@ -1509,6 +1509,7 @@ TypeScript type for the virtual field output. Supports three formats:
 ```typescript
 fullName: virtual({
   type: 'string', // or 'number', 'boolean', 'Date', etc.
+  needs: ['firstName', 'lastName'],
   hooks: {
     resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
   },
@@ -1522,6 +1523,7 @@ import Decimal from 'decimal.js'
 
 totalPrice: virtual({
   type: "import('decimal.js').Decimal",
+  needs: ['price', 'quantity'],
   hooks: {
     resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity),
   },
@@ -1535,6 +1537,7 @@ import Decimal from 'decimal.js'
 
 totalPrice: virtual({
   type: { value: Decimal, from: 'decimal.js' },
+  needs: ['price', 'quantity'],
   hooks: {
     resolveOutput: ({ item }) => new Decimal(item.price).times(item.quantity),
   },

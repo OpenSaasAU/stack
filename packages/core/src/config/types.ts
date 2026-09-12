@@ -448,7 +448,9 @@ export type FieldHooks<
    *   return value
    * }
    *
-   * // Async example (e.g., for virtual fields that query the database)
+   * // Async example (e.g., for virtual fields that query the database).
+   * // `item.relatedId` requires the field to declare `needs: ['relatedId']` —
+   * // a hook's `item` carries only its own declared dependency set.
    * resolveOutput: async ({ item, context }) => {
    *   const related = await context.db.OtherList.where({ id: item.relatedId }).first()
    *   return related?.name
