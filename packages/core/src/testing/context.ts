@@ -74,8 +74,19 @@ export interface TestDatabaseOptions {
   storage?: StorageUtils
 }
 
-/** A stood-up database, its client, and the contexts built over it. */
-export interface TestDatabase {
+/**
+ * A stood-up database, its client, and the contexts built over it.
+ *
+ * @typeParam TContext - the context shape `context()` hands back. Defaults to
+ * the engine's own untyped {@link StackContext}`<AccessControlledDB>`, whose
+ * rows are unknown. Name the app's own generated `Context` here —
+ * `createTestDatabase<Context>(config)` — to get back the same row, `where`,
+ * `select` and `include` types the generated `getContext()` gives an
+ * application, over the harness's own isolated database.
+ */
+export interface TestDatabase<
+  TContext extends { session: unknown } = StackContext<AccessControlledDB>,
+> {
   /** The connection string this instance is bound to. */
   readonly url: string
   /** `'pglite'` for the in-process dev database, `'escape'` for `DATABASE_URL`. */
@@ -92,7 +103,7 @@ export interface TestDatabase {
    */
   readonly client: PostgresClient<PrismaContract>
   /** A real, fully secured context over this database, at `session`. */
-  context(session?: Session | null): StackContext<AccessControlledDB>
+  context(session?: TContext['session']): TContext
   /** Empty every table the contract declares, restarting identity sequences. */
   truncate(): Promise<void>
   /** Close the client, drop the instance, and remove its temporary files. */
@@ -100,9 +111,11 @@ export interface TestDatabase {
 }
 
 /** What {@link createTestContext} returns: a {@link TestDatabase} and one context. */
-export interface TestContext extends Omit<TestDatabase, 'context'> {
+export interface TestContext<
+  TContext extends { session: unknown } = StackContext<AccessControlledDB>,
+> extends Omit<TestDatabase<TContext>, 'context'> {
   /** The secured context at the session `createTestContext` was called with. */
-  readonly context: StackContext<AccessControlledDB>
+  readonly context: TContext
 }
 
 function isCollection(value: unknown): value is Record<string, unknown> {
@@ -392,6 +405,11 @@ async function startInstance(
  *   not a seam on the secured wrapper: seed through it when a fixture must
  *   bypass the engine, and through `context.db` when the engine is the subject.
  *
+ * Generic over the context {@link TestDatabase.context} hands back — name the
+ * app's own generated `Context` (`createTestDatabase<Context>(config)`) to get
+ * typed rows, `where`, `select` and `include` over this harness's database;
+ * omitted, `context()` returns the engine's untyped `StackContext<AccessControlledDB>`.
+ *
  * @example
  * ```typescript
  * let db: TestDatabase
@@ -400,10 +418,9 @@ async function startInstance(
  * beforeEach(async () => { await db.truncate() })
  * ```
  */
-export async function createTestDatabase(
-  config: OpenSaasConfig,
-  options: TestDatabaseOptions = {},
-): Promise<TestDatabase> {
+export async function createTestDatabase<
+  TContext extends { session: unknown } = StackContext<AccessControlledDB>,
+>(config: OpenSaasConfig, options: TestDatabaseOptions = {}): Promise<TestDatabase<TContext>> {
   const data = deriveContract(config)
   const packs = await loadExtensionPacks(data.extensions, options.packs)
   const contract = buildPrismaContract(data, { packs: contractPacks(packs) })
@@ -449,13 +466,18 @@ export async function createTestDatabase(
     const tables = qualified(data)
 
     let closed = false
+    // The engine's own `getContext` always returns `StackContext<AccessControlledDB>`
+    // — it has no way to know the app's generated `DB` shape. This cast is the
+    // same one the generated `.opensaas/context.ts` performs on its own
+    // `getContext()`, layering the caller-named `TContext` on top of the
+    // identical runtime object.
     return {
       url: instance.url,
       provenance: instance.provenance,
       contract,
       data,
       client,
-      context: (session = null) =>
+      context: (session: Session | null = null) =>
         getContext(config, orm, session, options.storage, false, undefined, undefined, client),
       truncate: async () => {
         if (tables.length === 0) return
@@ -468,7 +490,7 @@ export async function createTestDatabase(
         await instance.release()
         rmSync(migrationsDir, { recursive: true, force: true })
       },
-    }
+    } as unknown as TestDatabase<TContext>
   } catch (error) {
     await pool?.end().catch(() => {})
     await instance.release().catch(() => {})
@@ -489,11 +511,16 @@ export async function createTestDatabase(
  * {@link TestDatabase.context} per test — every limit documented on
  * `createTestDatabase` applies here unchanged.
  *
+ * Generic over the context returned, exactly as {@link createTestDatabase} is
+ * — name the app's own generated `Context` to get typed rows over this
+ * harness's database instead of the engine's untyped `StackContext<AccessControlledDB>`:
+ *
  * @example
  * ```typescript
  * import { createTestContext } from '@opensaas/stack-core/testing'
+ * import type { Context } from '../.opensaas/types.js'
  *
- * const harness = await createTestContext(config, { userId: 'user-1' })
+ * const harness = await createTestContext<Context>(config, { userId: 'user-1' })
  * try {
  *   const posts = await harness.context.db.Post.all()
  * } finally {
@@ -501,11 +528,13 @@ export async function createTestDatabase(
  * }
  * ```
  */
-export async function createTestContext(
+export async function createTestContext<
+  TContext extends { session: unknown } = StackContext<AccessControlledDB>,
+>(
   config: OpenSaasConfig,
-  session: Session | null = null,
+  session: TContext['session'] = null,
   options: TestDatabaseOptions = {},
-): Promise<TestContext> {
-  const database = await createTestDatabase(config, options)
+): Promise<TestContext<TContext>> {
+  const database = await createTestDatabase<TContext>(config, options)
   return { ...database, context: database.context(session) }
 }
