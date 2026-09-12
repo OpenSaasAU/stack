@@ -6,7 +6,12 @@ import type {
   ImageMetadata,
   ImageTransformationConfig,
 } from '../config/types.js'
-import { validateFile, getMimeType, type FileValidationOptions } from '../utils/upload.js'
+import {
+  validateFile,
+  getMimeType,
+  isFileValidationOptions,
+  type FileValidationOptions,
+} from '../utils/upload.js'
 import { getImageDimensions, processImageTransformations } from '../utils/image.js'
 import { getStorageProviderFactory } from './registry.js'
 
@@ -256,9 +261,13 @@ export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadat
  */
 export function createStorageUtils(config: OpenSaasConfig): StorageUtils {
   return {
-    uploadFile: (providerName, file, buffer, options) =>
+    // `async` here isn't incidental: it turns a throw from `uploadFileOptions`
+    // narrowing bad options into the same rejected promise validation and
+    // upload failures already produce, rather than a synchronous throw at
+    // call time that a caller awaiting the result would not catch.
+    uploadFile: async (providerName, file, buffer, options) =>
       uploadFile(config, providerName, { file, buffer }, uploadFileOptions(options)),
-    uploadImage: (providerName, file, buffer, options) =>
+    uploadImage: async (providerName, file, buffer, options) =>
       uploadImage(config, providerName, { file, buffer }, uploadImageOptions(options)),
     deleteFile: (providerName, filename) => deleteFile(config, providerName, filename),
     // Resolving on an unrecognised shape would make this surface *quieter*
@@ -287,24 +296,67 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+/**
+ * Checks every member of {@link FileValidationOptions}, not just that
+ * `validation` is an object.
+ *
+ * `isRecord(validation)` narrowed `unknown` to `FileValidationOptions` while
+ * checking zero of its members: `{ maxFileSize: 'one megabyte' }` passed the
+ * old check and reached `validateFile` as a real `FileValidationOptions`,
+ * where `file.size > 'one megabyte'` is always `false` — validation silently
+ * disabled rather than refused.
+ */
 function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
   if (!isRecord(options)) return undefined
   const result: UploadFileOptions = {}
   const { validation, metadata } = options
-  if (isRecord(validation)) result.validation = validation
+  if (validation !== undefined) {
+    if (!isFileValidationOptions(validation)) {
+      throw new Error(
+        `uploadFile validation options must be { maxFileSize?: number, acceptedMimeTypes?: string[], acceptedExtensions?: string[] }, received ${describeMetadata(validation)}`,
+      )
+    }
+    result.validation = validation
+  }
   if (isRecord(metadata)) result.metadata = stringRecord(metadata)
   return result
+}
+
+const IMAGE_TRANSFORMATION_FITS = ['cover', 'contain', 'fill', 'inside', 'outside']
+const IMAGE_TRANSFORMATION_FORMATS = ['jpeg', 'png', 'webp', 'avif']
+
+/** Same defect class as {@link isFileValidationOptions}: checks every member of {@link ImageTransformationConfig}. */
+function isImageTransformationConfig(value: unknown): value is ImageTransformationConfig {
+  return (
+    isRecord(value) &&
+    (value.width === undefined || typeof value.width === 'number') &&
+    (value.height === undefined || typeof value.height === 'number') &&
+    (value.fit === undefined ||
+      (typeof value.fit === 'string' && IMAGE_TRANSFORMATION_FITS.includes(value.fit))) &&
+    (value.format === undefined ||
+      (typeof value.format === 'string' && IMAGE_TRANSFORMATION_FORMATS.includes(value.format))) &&
+    (value.quality === undefined || typeof value.quality === 'number')
+  )
 }
 
 function uploadImageOptions(options: unknown): UploadImageOptions | undefined {
   const base = uploadFileOptions(options)
   if (!isRecord(options)) return base
   const { transformations } = options
-  if (!isRecord(transformations)) return base
+  if (transformations === undefined) return base
+  if (!isRecord(transformations)) {
+    throw new Error(
+      `uploadImage transformations must be a map of transformation name to { width?, height?, fit?, format?, quality? }, received ${describeMetadata(transformations)}`,
+    )
+  }
   const result: UploadImageOptions = { ...base, transformations: {} }
   for (const [name, transformation] of Object.entries(transformations)) {
-    if (isRecord(transformation))
-      result.transformations = { ...result.transformations, [name]: transformation }
+    if (!isImageTransformationConfig(transformation)) {
+      throw new Error(
+        `uploadImage transformation '${name}' must be { width?: number, height?: number, fit?: 'cover' | 'contain' | 'fill' | 'inside' | 'outside', format?: 'jpeg' | 'png' | 'webp' | 'avif', quality?: number }, received ${describeMetadata(transformation)}`,
+      )
+    }
+    result.transformations = { ...result.transformations, [name]: transformation }
   }
   return result
 }

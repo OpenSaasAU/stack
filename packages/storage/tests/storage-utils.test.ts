@@ -13,6 +13,20 @@ import type {
   BaseStorageConfig,
 } from '../src/config/types.js'
 
+vi.mock('sharp', () => {
+  const mockSharp = vi.fn(() => ({
+    metadata: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
+    resize: vi.fn().mockReturnThis(),
+    jpeg: vi.fn().mockReturnThis(),
+    png: vi.fn().mockReturnThis(),
+    webp: vi.fn().mockReturnThis(),
+    avif: vi.fn().mockReturnThis(),
+    toBuffer: vi.fn().mockResolvedValue(Buffer.from('transformed-image-data')),
+  }))
+
+  return { default: mockSharp }
+})
+
 /**
  * `StorageUtils.deleteImage` takes `unknown` — core cannot name this package's
  * types — so the factory is the only place the shape is established. A
@@ -157,4 +171,122 @@ describe('createStorageUtils().deleteImage', () => {
     ).rejects.toThrow(/deleteImage expected ImageMetadata/)
     expect(spy).not.toHaveBeenCalled()
   })
+})
+
+/**
+ * `StorageUtils.uploadFile`/`uploadImage` also take `options: unknown`, and
+ * `uploadFileOptions` narrowed `options.validation` to `FileValidationOptions`
+ * while checking that it was an object and nothing else: `{ maxFileSize: 'one
+ * megabyte', acceptedMimeTypes: 42 }` reached `validateFile` as real options,
+ * where a size comparison against a string and an `includes` check against a
+ * number are both no-ops — validation silently disabled instead of refused.
+ */
+function makeFile(bytes: number): File {
+  return new File([new Uint8Array(bytes)], 'photo.png', { type: 'image/png' })
+}
+
+describe('createStorageUtils().uploadFile', () => {
+  it('uploads when no options are given', async () => {
+    const metadata = await createStorageUtils(config).uploadFile(
+      'fake',
+      makeFile(10),
+      Buffer.from('data'),
+    )
+    expect(metadata).toMatchObject({ filename: 'photo.png' })
+  })
+
+  it('applies real validation: a file over maxFileSize is rejected, not silently allowed', async () => {
+    await expect(
+      createStorageUtils(config).uploadFile('fake', makeFile(2000), Buffer.from('data'), {
+        validation: { maxFileSize: 1000 },
+      }),
+    ).rejects.toThrow(/File size exceeds maximum/)
+  })
+
+  it('applies real validation: an accepted MIME type list still rejects a mismatch', async () => {
+    await expect(
+      createStorageUtils(config).uploadFile('fake', makeFile(10), Buffer.from('data'), {
+        validation: { acceptedMimeTypes: ['application/pdf'] },
+      }),
+    ).rejects.toThrow(/is not allowed/)
+  })
+
+  it('uploads when validation options are well-typed and satisfied', async () => {
+    const metadata = await createStorageUtils(config).uploadFile(
+      'fake',
+      makeFile(10),
+      Buffer.from('data'),
+      { validation: { maxFileSize: 1000, acceptedMimeTypes: ['image/png'] } },
+    )
+    expect(metadata).toMatchObject({ filename: 'photo.png' })
+  })
+
+  it.each([
+    ['maxFileSize as a string', { maxFileSize: 'one megabyte' }],
+    [
+      'maxFileSize as a string and acceptedMimeTypes as a number',
+      { maxFileSize: 'one megabyte', acceptedMimeTypes: 42 },
+    ],
+    ['acceptedMimeTypes as a number', { acceptedMimeTypes: 42 }],
+    ['acceptedMimeTypes with a non-string entry', { acceptedMimeTypes: ['image/png', 42] }],
+    ['acceptedExtensions as a string', { acceptedExtensions: '.png' }],
+  ])(
+    'refuses validation options with %s rather than silently disabling validation',
+    async (_label, validation) => {
+      // A file that violates no *correctly-typed* rule, so a guard that checks
+      // nothing would let this call through and prove nothing either way.
+      await expect(
+        createStorageUtils(config).uploadFile('fake', makeFile(10), Buffer.from('data'), {
+          validation,
+        }),
+      ).rejects.toThrow(/uploadFile validation options must be/)
+    },
+  )
+
+  it('names what it received', async () => {
+    await expect(
+      createStorageUtils(config).uploadFile('fake', makeFile(10), Buffer.from('data'), {
+        validation: { maxFileSize: 'one megabyte' },
+      }),
+    ).rejects.toThrow(/an object with keys: maxFileSize/)
+  })
+})
+
+describe('createStorageUtils().uploadImage', () => {
+  it('uploads with no transformations', async () => {
+    const metadata = await createStorageUtils(config).uploadImage(
+      'fake',
+      makeFile(10),
+      Buffer.from('data'),
+    )
+    expect(metadata).toMatchObject({ filename: 'photo.png' })
+  })
+
+  it('uploads and applies a well-typed transformation', async () => {
+    const metadata = await createStorageUtils(config).uploadImage(
+      'fake',
+      makeFile(10),
+      Buffer.from('data'),
+      { transformations: { thumbnail: { width: 100, height: 100, fit: 'cover' } } },
+    )
+    expect(metadata).toMatchObject({ filename: 'photo.png' })
+  })
+
+  it.each([
+    ['a non-record transformations map', 'thumbnail'],
+    ['a non-record transformation entry', { thumbnail: 'cover' }],
+    ['width as a string', { thumbnail: { width: '100' } }],
+    ['fit outside the enum', { thumbnail: { fit: 'zoom' } }],
+    ['format outside the enum', { thumbnail: { format: 'bmp' } }],
+    ['quality as a string', { thumbnail: { quality: 'high' } }],
+  ])(
+    'refuses transformations with %s rather than silently disabling them',
+    async (_label, transformations) => {
+      await expect(
+        createStorageUtils(config).uploadImage('fake', makeFile(10), Buffer.from('data'), {
+          transformations,
+        }),
+      ).rejects.toThrow(/uploadImage transformation/)
+    },
+  )
 })

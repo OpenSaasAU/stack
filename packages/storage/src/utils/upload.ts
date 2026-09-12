@@ -14,6 +14,21 @@ export interface FileValidationResult {
   error?: string
 }
 
+/** Checks every member {@link FileValidationOptions} declares, not just the ones a caller happened to set. */
+export function isFileValidationOptions(value: unknown): value is FileValidationOptions {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<Record<keyof FileValidationOptions, unknown>>
+  return (
+    (candidate.maxFileSize === undefined || typeof candidate.maxFileSize === 'number') &&
+    (candidate.acceptedMimeTypes === undefined ||
+      (Array.isArray(candidate.acceptedMimeTypes) &&
+        candidate.acceptedMimeTypes.every((entry) => typeof entry === 'string'))) &&
+    (candidate.acceptedExtensions === undefined ||
+      (Array.isArray(candidate.acceptedExtensions) &&
+        candidate.acceptedExtensions.every((entry) => typeof entry === 'string')))
+  )
+}
+
 export function validateFile(
   file: { size: number; name: string; type: string },
   options?: FileValidationOptions,
