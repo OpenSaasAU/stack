@@ -535,6 +535,7 @@ Field components are used internally by forms but can also be used directly for 
 
 - `TextField` - Text input for string fields
 - `IntegerField` - Number input for integer fields
+- `DecimalField` - Text input for `decimal` fields (reads and writes numeric text, never a JS `number` or `Decimal`)
 - `CheckboxField` - Checkbox for boolean fields
 - `SelectField` - Dropdown for enum fields
 - `TimestampField` - Date/time picker for timestamp fields
