@@ -44,6 +44,25 @@ describe('Lists Namespace Generator', () => {
       expect(lists).toContain("update: import('./types.ts').PostUpdateInput")
     })
 
+    it("keys TypeInfo's `db` member to the generated `DB` surface (#1213)", () => {
+      const config: OpenSaasConfig = {
+        db: {
+          provider: 'postgresql',
+        },
+        lists: {
+          Post: {
+            fields: {
+              title: text(),
+            },
+          },
+        },
+      }
+
+      const lists = generateListsNamespace(config, deriveDependencyTable(config))
+
+      expect(lists).toContain("db: import('./types.ts').DB")
+    })
+
     it('should generate Lists namespace for multiple lists', () => {
       const config: OpenSaasConfig = {
         db: {

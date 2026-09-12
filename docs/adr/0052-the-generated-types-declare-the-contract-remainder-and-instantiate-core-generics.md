@@ -172,3 +172,52 @@ base-client-bound context of ADR-0028, keyed to the same `DB`.
 not a second mechanism: the seam it establishes — the client type enters at
 `TypeInfo`, and core's hook types read it from there — is the seam this record
 keeps. What changes under the contract is only what `TypeInfo` holds.
+
+## Amendment — the seam keeps, the carried type does not ([#1213](https://github.com/OpenSaasAU/stack/issues/1213))
+
+The amendment above prescribed `StackBaseContext<DB, S, PluginServices>` for
+`resolveInput`/`validate`/`beforeOperation`/`afterOperation` (list and field),
+reasoning from ADR-0066's pre-supersession design. Implementing the seam
+against `main`'s actual runtime (`bindContextToTransaction` in
+`context/write-pipeline.ts`) found that decision unimplementable without a
+runtime change: the object a hook is handed is built as a bare
+`AccessContext` literal — `session`, `ormHandle`, `db`, `storage`, `plugins`,
+the resolve chain and the transaction-owner/lock internals — and carries no
+`unsafe`. `StackBaseContext` requires `unsafe`; typing the hook's `context` as
+one would describe a capability the value does not have, and calling
+`context.unsafe.sql(...)` from inside a hook would compile and then throw.
+
+This ticket is scoped types-only (`#1213`'s own "Out of scope" list names the
+runtime "already correct"), so the fix keys to what the runtime actually
+hands out rather than widening it to match the prior amendment's aspiration.
+Every hook — `resolveInput`, `validate`, `beforeOperation`, `afterOperation`,
+`beforeTransaction`, `afterTransaction` (list and field) and a field
+`resolveOutput` — receives `AccessContext<DB>`: the same engine-internal shape
+all of them already had, now keyed to the app's own generated `DB` instead of
+the unparameterised default, with `AccessContext` itself widened from a
+concrete `db: AccessControlledDB` to a generic `db: DB` to carry it. None of
+them gain `unsafe`, `sudo`, `withSession` or `transaction` — the "neither
+gaining" `beforeTransaction`/`afterTransaction`/`resolveOutput` carve-out in
+`#1213`'s acceptance criteria turned out to describe all seven, not three.
+
+`TypeInfo` carries only `db: DB` (defaulted to `unknown`, not
+`AccessControlledDB` directly — the generated `DB` is an `interface` with no
+index signature, ADR-0032, so defaulting to the index-signature-carrying
+`AccessControlledDB` would make bare `TypeInfo` — the bound every field
+builder's own `TTypeInfo extends TypeInfo` uses — reject every real list's
+`db` as "index signature is missing"). `S` and `P` are not threaded: `S`
+already resolves consistently through `Session`'s global module augmentation,
+and no fixture or field builder in this codebase instantiates `TypeInfo`'s
+`db` against an app whose `PluginServices` isn't structurally compatible with
+the engine shape, so the gap that would require threading `P` too has not
+been observed to bite.
+
+A hook's `context` therefore remains **not** assignable to the generated
+`Context`/`BaseContext` without a cast — `#1213`'s first acceptance criterion,
+read as literal nominal assignability, is not met. Closing that gap for real
+means teaching `bindContextToTransaction` to build a genuine `unsafe` bound to
+`tx` (and deciding whether that is a capability hooks should statically
+advertise at all, which is a design question ADR-0066's own "Give
+`beforeTransaction`/`afterTransaction` the same treatment — Rejected" already
+answered once in the opposite direction for the boundary hooks). That is
+runtime work, filed separately rather than folded into a types-only ticket.
