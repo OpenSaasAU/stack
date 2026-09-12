@@ -92,10 +92,10 @@ const FIELD_ORDER: Partial<Record<BaseModelKey, string[]>> = {
     'accountId',
     'providerId',
     // `issuer` (better-auth 1.7+, issue #986) groups with accountId/providerId
-    // as the account's identity fields — together the table-level
-    // `@@unique([issuer, accountId])` better-auth declares (not yet emitted;
-    // blocked on #986 reading better-auth's own table-level `indexes` through
-    // the app-supplied `db.indexes` passthrough #985 adds).
+    // as the account's identity fields — together the compound unique
+    // constraint on [issuer, accountId] better-auth declares (not yet
+    // emitted; blocked on #986 reading better-auth's own table-level
+    // `indexes` through the app-supplied `db.indexes` passthrough #985 adds).
     'issuer',
     'user',
     'accessToken',
@@ -464,7 +464,7 @@ function buildForeignKeyField(
 }
 
 /**
- * Build the list-level `db` config (`timestamps` + `@@map` + `@@schema`) for
+ * Build the list-level `db` config (`timestamps` + `map` + `schema`) for
  * a derived base-model list.
  *
  * `timestamps` is a per-model input, not hardcoded: better-auth's adapter

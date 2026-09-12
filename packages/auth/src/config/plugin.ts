@@ -96,11 +96,11 @@ export function authPlugin(config: AuthConfig): Plugin {
         return generationConfig
       }
 
-      // Multi-schema Prisma requires the datasource to list every schema in use
-      // AND every model to carry an `@@schema`. Merge the auth schema(s) into the
-      // datasource `schemas` array (always including `public` for the app's own
-      // lists), and default any list without an explicit `db.schema` to `public`
-      // so the generated multi-schema schema is coherent and valid.
+      // The contract's multi-schema support requires every namespace in use to be
+      // declared AND every model in a non-default namespace to name it. Merge the
+      // auth schema(s) into `db.schemas` (always including `public` for the app's
+      // own lists), and default any list without an explicit `db.schema` to
+      // `public` so the generated contract's namespaces are coherent and valid.
       const schemas = Array.from(
         new Set(['public', ...(generationConfig.db.schemas ?? []), ...authSchemas]),
       )

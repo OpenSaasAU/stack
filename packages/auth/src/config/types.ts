@@ -132,8 +132,8 @@ export type SessionConfig = {
  * Account/Verification) **closed** — no permissive defaults. This is the
  * application's seam to grant them access: the plugin applies each entry to
  * the corresponding list when it creates it (its own `addList` path), so the
- * access rides along with the list's `@@map`/`@@schema`/fields and can't
- * drift from the plugin's shape. A model with no entry here stays closed
+ * access rides along with the list's table map, namespace and fields and
+ * can't drift from the plugin's shape. A model with no entry here stays closed
  * (deny-by-default).
  *
  * @example
@@ -204,7 +204,8 @@ export type AuthModelConfig = {
   modelName?: string
   /**
    * The physical database table name for this model, independent of
-   * `modelName`. Generates a `@@map("...")` on the derived list.
+   * `modelName`. Carried as the derived list's `db.map` (the contract
+   * model's `table`).
    *
    * Lets a renamed list key (e.g. `modelName: 'AuthUser'`, to avoid colliding
    * with an app's own domain `User`) still adopt a live table under a
@@ -212,7 +213,7 @@ export type AuthModelConfig = {
    * table names (`user`, `session`, `account`, `verification`).
    *
    * @default `modelName` when it differs from the better-auth default model
-   *   name, otherwise unset (no `@@map`) — i.e. today's behaviour when this
+   *   name, otherwise unset (no table map) — i.e. today's behaviour when this
    *   option is not set.
    *
    * @example
@@ -224,7 +225,7 @@ export type AuthModelConfig = {
   tableName?: string
   /**
    * Map better-auth field names to database column names.
-   * Each entry generates a `@map("column")` on the derived field.
+   * Each entry becomes the derived field's own column map.
    *
    * @example
    * ```typescript
@@ -233,8 +234,8 @@ export type AuthModelConfig = {
    */
   fields?: Record<string, string>
   /**
-   * Database schema (Postgres) for this auth model.
-   * Generates a `@@schema("...")` on the derived list, overriding the
+   * Database schema (Postgres) for this auth model. Carried as the derived
+   * list's `db.schema` (the contract model's `namespace`), overriding the
    * plugin-level {@link AuthConfig.schema} for this one model.
    *
    * @example
@@ -245,16 +246,17 @@ export type AuthModelConfig = {
    */
   schema?: string
   /**
-   * App-authored model-level `@@unique`/`@@index` constraints for this auth
+   * App-authored model-level unique constraints and indexes for this auth
    * model, in the same shape as a list's own {@link ListConfig.db} `indexes`
    * (core's {@link ListIndex}). Entries name this model's own OpenSaaS field
    * keys (e.g. `identifier`, `createdAt` on `verification`) — the same names
    * used in this model's `fields` column map — not raw database column names.
    *
    * The stack already derives some indexes from better-auth's own table
-   * definitions (e.g. `User.email` is `@unique`). When an entry here covers a
-   * column that also carries a derived index, the derived index is
-   * suppressed for that column and only this entry is emitted — the
+   * definitions (e.g. `User.email` carries a unique constraint). When an
+   * entry here covers a column that also carries a derived index, the
+   * derived index is suppressed for that column and only this entry is
+   * emitted — the
    * application's declaration wins (ADR-0035). This is what makes adopting a
    * live database's real constraint name, or extending a derived column into
    * a composite index, expressible.
@@ -297,7 +299,7 @@ export type AuthConfig = {
 
   /**
    * better-auth `user` model configuration (modelName + field column maps).
-   * Used to derive the Auth user list's key, table `@@map`, and field `@map`s.
+   * Used to derive the Auth user list's key, table map, and field column maps.
    *
    * Custom fields beyond the better-auth basics are added via `extendUserList`.
    */
@@ -311,15 +313,15 @@ export type AuthConfig = {
    * Database schema (Postgres) for the generated Auth lists.
    *
    * When set, all four Auth lists (user/session/account/verification) are placed
-   * in this schema via `@@schema(...)`, and the stack's multi-schema support is
-   * wired automatically: the datasource `schemas` array gains this schema (plus
-   * `public`) and the `multiSchema` preview feature is enabled. A per-model
+   * in this schema (each list's contract `namespace`), and the stack's
+   * multi-schema support is wired automatically: the contract's `namespaces`
+   * gains this schema (plus `public`). A per-model
    * {@link AuthModelConfig.schema} overrides this for an individual list.
    *
    * Useful for adopting an existing separate-schema better-auth installation
    * (e.g. an `auth` Postgres schema) so the generated lists diff clean against
    * the live tables. When unset, the Auth lists stay in the default `public`
-   * schema and no `@@schema` is emitted (greenfield default unchanged).
+   * schema (greenfield default unchanged).
    *
    * Only applies to the `postgresql` provider.
    *
@@ -452,7 +454,7 @@ export type AuthConfig = {
    * (`'memory' | 'database' | 'secondary-storage'`, default `'memory'`). Set
    * it to `'database'` to persist the limiter across restarts/instances — the
    * plugin then derives a fifth `RateLimit` Auth list (per ADR-0007) so the
-   * required table exists in the generated Prisma schema, following the same
+   * required table exists in the generated contract, following the same
    * adoption knobs (`modelName`/`fields`/`tableName`/`schema`) the other four
    * models carry. Derivation keys off `storage` alone — `enabled: false` with
    * `storage: 'database'` still produces the list, since better-auth still
@@ -520,7 +522,7 @@ export type AuthConfig = {
    * accepting them here would create two unranked ways to set the same thing.
    * So is `additionalFields` under `user`/`session`/`account`/`verification` —
    * it has schema consequences (new columns) that a passthrough can't also
-   * apply to the generated Prisma schema; add fields to the derived list
+   * apply to the generated contract; add fields to the derived list
    * instead (`extendUserList` for the user model, or declare the list
    * yourself for the others — see `packages/auth/CLAUDE.md`).
    *
@@ -547,8 +549,8 @@ export type AuthConfig = {
  * Resolved per-model auth configuration after normalization.
  * Always carries a concrete `modelName` (the developer's override or the
  * better-auth default) and a (possibly empty) `fields` column map. `tableName`
- * is the resolved physical table name — `undefined` means no `@@map` is
- * emitted (the list key doubles as the table name). `schema` carries the
+ * is the resolved physical table name — `undefined` means no table map is
+ * set (the list key doubles as the table name). `schema` carries the
  * resolved Postgres schema for the model (per-model override, else the
  * plugin-level schema, else `undefined` for the default `public` schema).
  */

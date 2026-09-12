@@ -149,8 +149,8 @@ function renameKeys(
  *   stack's generator emits the contract, so better-auth's CLI (`generate`,
  *   `migrate`) is unsupported against this adapter.
  * - **No issuer-scoped account uniqueness.** better-auth declares the account
- *   identity key (`providerId` + `accountId`) as a table-level `@@unique`,
- *   which `deriveAuthLists` does not emit yet
+ *   identity key (`providerId` + `accountId`) as a table-level unique
+ *   constraint, which `deriveAuthLists` does not emit yet
  *   ([#986](https://github.com/OpenSaasAU/stack/issues/986)). Nothing in the
  *   database stops two concurrent sign-ins through the same issuer identity
  *   from creating two accounts; better-auth's own existence check is all that

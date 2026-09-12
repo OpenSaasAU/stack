@@ -64,7 +64,7 @@ export const DEFAULT_FILE_COLUMN_PARTS: readonly FileColumnPart[] = [
   'url',
 ] as const
 
-/** The Prisma scalar type each image part is stored as. */
+/** The scalar type each image part is stored as, folded into a contract column type in {@link imageColumnDescriptors}. */
 const IMAGE_PART_PRISMA_TYPE: Record<ImageColumnPart, 'String' | 'Int'> = {
   url: 'String',
   width: 'Int',
@@ -75,7 +75,7 @@ const IMAGE_PART_PRISMA_TYPE: Record<ImageColumnPart, 'String' | 'Int'> = {
   pathname: 'String',
 }
 
-/** The Prisma scalar type each file part is stored as. */
+/** The scalar type each file part is stored as, folded into a contract column type in {@link fileColumnDescriptors}. */
 const FILE_PART_PRISMA_TYPE: Record<FileColumnPart, 'String' | 'Int'> = {
   filename: 'String',
   filesize: 'Int',
@@ -85,8 +85,8 @@ const FILE_PART_PRISMA_TYPE: Record<FileColumnPart, 'String' | 'Int'> = {
 }
 
 /**
- * Map of image part → physical column name (the value used in `@map`).
- * Defaults follow Keystone's `<field>_<part>` naming.
+ * Map of image part → physical column name (the value carried as each
+ * column's `map`). Defaults follow Keystone's `<field>_<part>` naming.
  */
 export type ImageColumnMap = Record<ImageColumnPart, string>
 
@@ -94,11 +94,11 @@ export type FileColumnMap = Record<FileColumnPart, string>
 
 /** A single physical column to emit for a multi-column field. */
 export interface MultiColumnDescriptor {
-  /** The Prisma model field name (the property carrying `@map`). */
+  /** The contract column's field name (the property carrying `map`). */
   name: string
-  /** The Prisma scalar type. */
+  /** The scalar type, folded into the contract column's own type constructor. */
   type: 'String' | 'Int'
-  /** The physical column name used in `@map`. */
+  /** The physical column name, carried as the contract column's `map`. */
   map: string
 }
 
@@ -157,9 +157,9 @@ export function resolveFileColumnMap(
 }
 
 /**
- * The Prisma model field name carrying a given image part's column. We name the
- * model field after the physical column itself (i.e. `<field>_url`) so the
- * generated property and its `@map` line up with the live Keystone column.
+ * The contract column name carrying a given image part's column. We name the
+ * column after the physical column itself (i.e. `<field>_url`) so the
+ * generated column and its `map` line up with the live Keystone column.
  */
 function imagePartFieldName(map: ImageColumnMap, part: ImageColumnPart): string {
   return map[part]
@@ -171,8 +171,8 @@ function filePartFieldName(map: FileColumnMap, part: FileColumnPart): string {
 
 /**
  * Describe the physical columns an image field emits in multi-column mode.
- * Each descriptor's `name` is the Prisma model field name and `map` is the
- * physical column it maps to (here they are identical so the schema reads
+ * Each descriptor's `name` is the contract column name and `map` is the
+ * physical column it maps to (here they are identical so the contract reads
  * naturally over the live columns).
  */
 export function imageColumnDescriptors(map: ImageColumnMap): MultiColumnDescriptor[] {

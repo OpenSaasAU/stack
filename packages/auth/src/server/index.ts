@@ -146,7 +146,7 @@ const MODELS_WITH_NO_ADDITIONAL_FIELDS_PASSTHROUGH = [
  * Reject `betterAuthOptions` keys that already have a dedicated, non-passthrough
  * seam — accepting them here would create two unranked ways to set the same
  * thing, or (for `additionalFields`) silently diverge from the generated
- * Prisma schema. See the `betterAuthOptions` doc comment on `AuthConfig`.
+ * contract. See the `betterAuthOptions` doc comment on `AuthConfig`.
  */
 function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, unknown>): void {
   if ('database' in betterAuthOptions) {
@@ -205,7 +205,7 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
     throw new Error(
       '[@opensaas/stack-auth] `betterAuthOptions.rateLimit.storage` is not supported — it has ' +
         'schema consequences (deriving the `RateLimit` list) that a passthrough cannot also ' +
-        "apply to the generated Prisma schema. Use `authPlugin({ rateLimit: { storage: 'database' } })` " +
+        "apply to the generated contract. Use `authPlugin({ rateLimit: { storage: 'database' } })` " +
         'instead.',
     )
   }
@@ -220,8 +220,8 @@ function assertNoUnsupportedPassthroughKeys(betterAuthOptions: Record<string, un
     ) {
       throw new Error(
         `[@opensaas/stack-auth] \`betterAuthOptions.${model}.additionalFields\` is not ` +
-          'supported — it adds columns that would not be reflected in the generated Prisma ' +
-          'schema. Add fields to the derived list instead: ' +
+          'supported — it adds columns that would not be reflected in the generated ' +
+          'contract. Add fields to the derived list instead: ' +
           (model === 'user'
             ? '`extendUserList`, or declare the list yourself in your own `lists` config.'
             : 'declare the derived list yourself in your own `lists` config (the auth plugin ' +

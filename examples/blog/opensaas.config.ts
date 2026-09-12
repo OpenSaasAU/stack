@@ -140,8 +140,8 @@ export default config({
         title: text({
           validation: { isRequired: true },
           // Non-unique index: titles are looked up and sorted on, but are not
-          // required to be distinct. Emitted as `@@index([title])` on the model
-          // — Prisma has no field-level `@index` attribute.
+          // required to be distinct. Contract: a (non-unique) index on the
+          // title column.
           isIndexed: true,
           access: {
             read: () => true,

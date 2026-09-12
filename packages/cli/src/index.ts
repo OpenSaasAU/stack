@@ -14,7 +14,7 @@ program.name('opensaas').description('OpenSaas Stack CLI').version('0.1.0')
 
 program
   .command('generate')
-  .description('Generate Prisma schema and TypeScript types from opensaas.config.ts')
+  .description('Generate the database contract and TypeScript types from opensaas.config.ts')
   .action(async () => {
     try {
       await generateCommand()
