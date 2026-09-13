@@ -96,7 +96,7 @@ export const secondClient = postgres<Contract>({
 | `unsafe`               | `UnsafeSurface`     | [The bypass](#the-unsafe-surface).                                                        |
 | `storage`              | `StorageUtils`      | File and image operations. See [Storage](/docs/reference/storage).                        |
 | `plugins`              | plugin services     | Whatever registered plugins contributed.                                                  |
-| `serverAction(props)`  | `Promise<unknown>`  | Generic create/update/delete entry point for Next.js Server Actions.                      |
+| `serverAction(props)`  | `Promise<unknown>`  | [Every write the admin UI issues](#server-actions), over one Next.js Server Action.       |
 | `sudo()`               | `Context`           | [Bypass access control, keep hooks](#sudo).                                               |
 | `withSession(session)` | `Context`           | [Substitute the session](#withsession).                                                   |
 | `transaction(fn)`      | `Promise<T>`        | [One interactive transaction](#transactions).                                             |
@@ -429,6 +429,87 @@ async function rename(context: Context, id: string, title: string) {
 ```
 
 If you genuinely need to distinguish "absent" from "denied" — for an admin diagnostic, say — re-run the read under [`sudo()`](#sudo) and compare. Do that deliberately, and never in a response a non-privileged caller sees.
+
+---
+
+## Server actions
+
+`context.serverAction(props)` is the one entry point `@opensaas/stack-ui`'s admin components call through — the list view's create/edit forms, bulk selection, and every control a relationship table or drawer exposes. An application wires it into a `'use server'` function once and hands that function to `AdminUI`:
+
+```typescript
+import type { ServerActionInput } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+
+async function serverAction(props: ServerActionInput) {
+  'use server'
+  const context = await getContext()
+  return await context.serverAction(props)
+}
+```
+
+Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, not `ServerActionProps` from `@opensaas/stack-core/internal` directly — `internal` carries no semver guarantee.
+
+`props` is a **discriminated union on `action`**, eleven members wide. None of them throws for an access denial or a validation failure — each returns its own named result shape instead, following [Silent failure](#silent-failure) — so the wrapper above needs no `try/catch` for the ordinary "denied or invalid" case. It still throws for a genuinely unexpected failure (a bug in a hook, a dropped connection); that is Next.js's own error boundary's job, not this function's.
+
+`create`, `update`, `delete` and `relationshipOptions` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
+
+### `create`, `update`, `delete`
+
+The direct mirror of `context.db.<List>.create/update/delete`, run against `listKey` itself — this is the case the table row above already named.
+
+| Props                                     | Success                   | Denial                      |
+| ----------------------------------------- | ------------------------- | --------------------------- |
+| `{ listKey, action: 'create', data }`     | `{ success: true, data }` | `{ success: false, error }` |
+| `{ listKey, action: 'update', id, data }` | `{ success: true, data }` | `{ success: false, error }` |
+| `{ listKey, action: 'delete', id }`       | `{ success: true, data }` | `{ success: false, error }` |
+
+`id` arrives as a string over the wire and is parsed through the list's own id type ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-id-strategy-is-a-per-list-config-key-not-a-hardcoded-uuid.md)) before it reaches the ORM; an id the list's key type cannot hold denies the same way an access refusal does. A thrown `ValidationError` or `DatabaseError` is caught here and turned into `{ success: false, error, fieldErrors? }` rather than reaching the caller as a rejection, so a form can show a per-field message with no `try/catch` of its own.
+
+### `bulkDelete`
+
+`{ listKey, action: 'bulkDelete', ids }` → `{ deleted: number, total: number }`, never `{ success }`.
+
+Deletes each id **row by row through the secured context**, so every row's own delete access and hooks apply individually — this is not one query with an `IN` clause. A denied or already-gone row is simply not counted, and a per-row database error (a foreign-key constraint, say) is swallowed the same way rather than aborting the rest. The "N of M" shape reports partial denial without saying **which** rows were denied or why — the same reasoning as [Silent failure](#silent-failure), extended to a batch.
+
+### `bulkAction`
+
+`{ listKey, action: 'bulkAction', key, ids }` → `{ bulkAction: true, message? }` or `{ bulkAction: false, error }`.
+
+Runs a list's own custom bulk action ([`ui.listView.bulkActions`](/docs/reference/config-api)), looked up server-side by `key` — the client only ever sends the serialisable `{ key, ids }`, never the handler itself. Refusals:
+
+- `key` names no declared action on `listKey` → `{ bulkAction: false, error: 'Bulk action "…" not found on list "…"' }`.
+- The action's own `hasAccess` (if declared) returns false → `{ bulkAction: false, error: 'Access denied' }`. This is re-checked here on every call, so a client cannot invoke a bulk action its own UI merely hid.
+- The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else the handler throws is logged server-side and reaches the caller only as `{ bulkAction: false, error: 'Action failed' }`, so a handler bug never leaks an internal detail.
+
+The handler receives `{ listKey, ids, context }` and does its own row-by-row work through `context.db`, so per-id access control and hooks still apply inside it — this action is a lookup-and-dispatch, not a bypass.
+
+### `removeRelated`, `updateRelated`, `createRelated`, `linkRelated`
+
+These four back a relationship table's row controls. In every one of them **`listKey` and `id` (where present) name the RELATED row, never the parent** ([ADR-0018](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0018-relationship-table-row-removal-disconnects-by-default.md)) — so it is the related list's own access control and hooks that decide the write, not the parent list's. `field` is always the relationship field on the related list that owns the foreign key back to the parent.
+
+| Props                                                                              | Success                  | Denial                      |
+| ---------------------------------------------------------------------------------- | ------------------------ | --------------------------- |
+| `{ listKey, action: 'removeRelated', mode: 'disconnect' \| 'delete', id, field? }` | `{ removed: true }`      | `{ removed: false, error }` |
+| `{ listKey, action: 'updateRelated', id, field, value }`                           | `{ updated: true }`      | `{ updated: false, error }` |
+| `{ listKey, action: 'createRelated', data, field?, parentId? }`                    | `{ created: true, id? }` | `{ created: false, error }` |
+| `{ listKey, action: 'linkRelated', id, field, parentId }`                          | `{ linked: true }`       | `{ linked: false, error }`  |
+
+- **`removeRelated`** unlinks or deletes a row from a relationship table. `mode: 'delete'` deletes the row outright. `mode: 'disconnect'` instead updates the row, setting `field` to `null` — the row survives, only the edge is cleared. Disconnect refuses with a named error, not a Silent `false`, when `field` is missing, when `field` is not a relationship field on `listKey`, or when it does not own a foreign key: a to-many back-reference, the inverse half of a one-to-one, or a synthetic `from_<List>_<field>` back-relation owns no column to null, so disconnecting through it is not expressible here — delete the junction row (`mode: 'delete'`), or null the field from the list that _does_ own the column, instead.
+- **`updateRelated`** writes one scalar `field`/`value` pair on the related row — the inline cell edit in a relationship table.
+- **`createRelated`** creates a new related row, and — when both `field` and `parentId` are given — presets the back-reference from them, **composed on the server**: `data[field]` is overwritten with `{ connect: { id: parentId } }` after any client-supplied value under that key is discarded, so a hostile client can never redirect the new row's parent. Passing exactly one of `field`/`parentId` is refused (`'createRelated requires both field and parentId, or neither'`); passing neither creates an unlinked row under `data` alone. The same non-relationship/non-owning refusals as `removeRelated`'s disconnect apply when `field` is given.
+- **`linkRelated`** points an _existing_ related row's `field` at `parentId`, again composing the `connect` server-side rather than trusting `data`. Same field-classification refusals as the other three.
+
+### `addRelated`
+
+`{ listKey, action: 'addRelated', field, parentId, targetId }` → `{ added: true, id? }` or `{ added: false, error }`.
+
+The odd one out: unlike the four above, `listKey` here names the **parent** list and `field` its to-many field — this is the action that links two rows across an **explicit junction list** ([ADR-0050](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0050-nested-relation-input-leaves-the-secured-write-surface.md)), which has no single "related row" to write. The junction list, its back-reference field and its far-endpoint field are all resolved from the config on the server from `listKey`/`field` alone — the client sends nothing that names a junction list or a column beyond the two endpoint ids, which is what makes this action safe to expose at all: a caller cannot point it at an edge, or a column of an edge, of their own choosing. The junction row is created under the **junction list's own `create` access**, never the parent's, and both endpoints go through `connect` — so a `parentId` or `targetId` the caller cannot read denies exactly like one that does not exist. Refuses by name, before touching the database, when `listKey`/`field` do not resolve to an edge across an explicit junction list at all (`'Cannot link through "…": it is not an edge across an explicit junction list. Write the related row against its own list instead.'`) — a many-to-many the config expresses some other way is not this action's job.
+
+### `relationshipOptions`
+
+`{ listKey, action: 'relationshipOptions', field, search?, take?, selectedIds? }` → `{ success: true, data: RelationshipOption[] }`, where `RelationshipOption` is `{ id: string, label: string }`.
+
+Backs a relationship field's combobox: a bounded, projected read of the target list's `id` and label field alone — no other field's `resolveOutput` runs, and no `needs` on the target list widens the read into a further relation. `field` must name a relationship field on `listKey`; otherwise the refusal is `{ success: false, error: 'Field "…" on list "…" is not a relationship field' }`. Operation-level `query` access on the target list still applies and denies the ordinary way — an inaccessible target list answers `{ success: true, data: [] }`, the composed read's own [Silent failure](#silent-failure), not a distinct error. `search` filters the label field with `contains` when it is a text field and is otherwise ignored; `selectedIds` is unioned into the result outside the `take`-bounded window, so an already-chosen option stays visible even once a search or a page size would otherwise drop it.
 
 ---
 
