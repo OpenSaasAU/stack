@@ -175,18 +175,19 @@ describe('batchProcess', () => {
 describe('RateLimiter', () => {
   it('should allow requests under rate limit', async () => {
     const limiter = new RateLimiter(100) // 100 requests per minute
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
 
-    const start = Date.now()
-
-    // Should process quickly since we're under limit
     await limiter.waitForSlot()
     await limiter.waitForSlot()
     await limiter.waitForSlot()
 
-    const duration = Date.now() - start
+    // Under the limit, each slot resolves without scheduling a throttling
+    // delay. Wall-clock elapsed time is a poor proxy for this on a loaded or
+    // coverage-instrumented CI runner (see #1320); the absence of a
+    // `setTimeout` call is the property itself.
+    expect(setTimeoutSpy).not.toHaveBeenCalled()
 
-    // Should be nearly instant
-    expect(duration).toBeLessThan(100)
+    setTimeoutSpy.mockRestore()
   })
 
   it('should throttle requests exceeding rate limit', { timeout: 70000 }, async () => {
