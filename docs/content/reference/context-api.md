@@ -89,18 +89,18 @@ export const secondClient = postgres<Contract>({
 
 ## The context object
 
-| Property               | Type                | Notes                                                                                     |
-| ---------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
-| `db`                   | the secured surface | One entry per list, keyed by the **list key** — `context.db.Post`, not `context.db.post`. |
-| `session`              | `S \| null`         | Whatever your app puts there. The stack requires only that it exists.                     |
-| `unsafe`               | `UnsafeSurface`     | [The bypass](#the-unsafe-surface).                                                        |
-| `storage`              | `StorageUtils`      | File and image operations. See [Storage](/docs/reference/storage).                        |
-| `plugins`              | plugin services     | Whatever registered plugins contributed.                                                  |
-| `serverAction(props)`  | `Promise<unknown>`  | [Every write the admin UI issues](#server-actions), over one Next.js Server Action.       |
-| `sudo()`               | `Context`           | [Bypass access control, keep hooks](#sudo).                                               |
-| `withSession(session)` | `Context`           | [Substitute the session](#withsession).                                                   |
-| `transaction(fn)`      | `Promise<T>`        | [One interactive transaction](#transactions).                                             |
-| `_isSudo`              | `boolean`           | Whether this context is elevated.                                                         |
+| Property               | Type                | Notes                                                                                          |
+| ---------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `db`                   | the secured surface | One entry per list, keyed by the **list key** — `context.db.Post`, not `context.db.post`.      |
+| `session`              | `S \| null`         | Whatever your app puts there. The stack requires only that it exists.                          |
+| `unsafe`               | `UnsafeSurface`     | [The bypass](#the-unsafe-surface).                                                             |
+| `storage`              | `StorageUtils`      | File and image operations. See [Storage](/docs/reference/storage).                             |
+| `plugins`              | plugin services     | Whatever registered plugins contributed.                                                       |
+| `serverAction(props)`  | `Promise<unknown>`  | [Every write and lookup the admin UI issues](#server-actions), over one Next.js Server Action. |
+| `sudo()`               | `Context`           | [Bypass access control, keep hooks](#sudo).                                                    |
+| `withSession(session)` | `Context`           | [Substitute the session](#withsession).                                                        |
+| `transaction(fn)`      | `Promise<T>`        | [One interactive transaction](#transactions).                                                  |
+| `_isSudo`              | `boolean`           | Whether this context is elevated.                                                              |
 
 {% callout type="warning" %}
 List keys on `context.db` are **PascalCase, exactly as written in your config**. `context.db.blogPost` is a compile error; the key is `context.db.BlogPost`. There is no case-conversion helper to call — the generated types name the keys directly.
@@ -449,7 +449,7 @@ async function serverAction(props: ServerActionInput) {
 
 Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, not `ServerActionProps` from `@opensaas/stack-core/internal` directly — `internal` carries no semver guarantee.
 
-`props` is a **discriminated union on `action`**, eleven members wide. None of them throws for an access denial or a validation failure — each returns its own named result shape instead, following [Silent failure](#silent-failure) — so the wrapper above needs no `try/catch` for the ordinary "denied or invalid" case. It still throws for a genuinely unexpected failure (a bug in a hook, a dropped connection); that is Next.js's own error boundary's job, not this function's.
+`props` is a **discriminated union on `action`**, eleven members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case. The one narrow exception is `bulkAction`'s own `hasAccess` check, which runs outside any `try`/`catch` here and so can still reject the call if it throws — see [`bulkAction`](#bulkaction).
 
 `create`, `update`, `delete` and `relationshipOptions` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
 
@@ -463,7 +463,7 @@ The direct mirror of `context.db.<List>.create/update/delete`, run against `list
 | `{ listKey, action: 'update', id, data }` | `{ success: true, data }` | `{ success: false, error }` |
 | `{ listKey, action: 'delete', id }`       | `{ success: true, data }` | `{ success: false, error }` |
 
-`id` arrives as a string over the wire and is parsed through the list's own id type ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-id-strategy-is-a-per-list-config-key-not-a-hardcoded-uuid.md)) before it reaches the ORM; an id the list's key type cannot hold denies the same way an access refusal does. A thrown `ValidationError` or `DatabaseError` is caught here and turned into `{ success: false, error, fieldErrors? }` rather than reaching the caller as a rejection, so a form can show a per-field message with no `try/catch` of its own.
+`id` arrives as a string over the wire and is parsed through the list's own id type ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)) before it reaches the ORM; an id the list's key type cannot hold denies the same way an access refusal does. A thrown `ValidationError` or `DatabaseError` is caught here and turned into `{ success: false, error, fieldErrors? }` rather than reaching the caller as a rejection, so a form can show a per-field message with no `try/catch` of its own.
 
 ### `bulkDelete`
 
@@ -478,7 +478,7 @@ Deletes each id **row by row through the secured context**, so every row's own d
 Runs a list's own custom bulk action ([`ui.listView.bulkActions`](/docs/reference/config-api)), looked up server-side by `key` — the client only ever sends the serialisable `{ key, ids }`, never the handler itself. Refusals:
 
 - `key` names no declared action on `listKey` → `{ bulkAction: false, error: 'Bulk action "…" not found on list "…"' }`.
-- The action's own `hasAccess` (if declared) returns false → `{ bulkAction: false, error: 'Access denied' }`. This is re-checked here on every call, so a client cannot invoke a bulk action its own UI merely hid.
+- The action's own `hasAccess` (if declared) returns false → `{ bulkAction: false, error: 'Access denied' }`. This is re-checked here on every call, so a client cannot invoke a bulk action its own UI merely hid. `hasAccess` itself runs outside a `try`/`catch`, unlike every other check in this section — if it **throws** rather than returning `false`, that reaches the caller as a rejection, not as `{ bulkAction: false }`.
 - The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else the handler throws is logged server-side and reaches the caller only as `{ bulkAction: false, error: 'Action failed' }`, so a handler bug never leaks an internal detail.
 
 The handler receives `{ listKey, ids, context }` and does its own row-by-row work through `context.db`, so per-id access control and hooks still apply inside it — this action is a lookup-and-dispatch, not a bypass.
@@ -497,7 +497,7 @@ These four back a relationship table's row controls. In every one of them **`lis
 - **`removeRelated`** unlinks or deletes a row from a relationship table. `mode: 'delete'` deletes the row outright. `mode: 'disconnect'` instead updates the row, setting `field` to `null` — the row survives, only the edge is cleared. Disconnect refuses with a named error, not a Silent `false`, when `field` is missing, when `field` is not a relationship field on `listKey`, or when it does not own a foreign key: a to-many back-reference, the inverse half of a one-to-one, or a synthetic `from_<List>_<field>` back-relation owns no column to null, so disconnecting through it is not expressible here — delete the junction row (`mode: 'delete'`), or null the field from the list that _does_ own the column, instead.
 - **`updateRelated`** writes one scalar `field`/`value` pair on the related row — the inline cell edit in a relationship table.
 - **`createRelated`** creates a new related row, and — when both `field` and `parentId` are given — presets the back-reference from them, **composed on the server**: `data[field]` is overwritten with `{ connect: { id: parentId } }` after any client-supplied value under that key is discarded, so a hostile client can never redirect the new row's parent. Passing exactly one of `field`/`parentId` is refused (`'createRelated requires both field and parentId, or neither'`); passing neither creates an unlinked row under `data` alone. The same non-relationship/non-owning refusals as `removeRelated`'s disconnect apply when `field` is given.
-- **`linkRelated`** points an _existing_ related row's `field` at `parentId`, again composing the `connect` server-side rather than trusting `data`. Same field-classification refusals as the other three.
+- **`linkRelated`** points an _existing_ related row's `field` at `parentId` — there is no `data` prop here at all, only the update `{ [field]: { connect: { id: parentId } } }` the server composes from `field`/`parentId` directly. Same field-classification refusals as the other three.
 
 ### `addRelated`
 
