@@ -837,6 +837,25 @@ describe('the MCP surface', () => {
       return text
     }
 
+    /** The write-side counterpart of {@link refusalText}: a `create`/`update` tool call expected to error. */
+    async function writeRefusalText(
+      getSession: McpSessionProvider,
+      toolName: string,
+      args: Record<string, unknown>,
+    ): Promise<string> {
+      const { body } = await rpc(
+        'tools/call',
+        { name: toolName, arguments: args },
+        schemaConfig(),
+        getSession,
+      )
+      const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+      expect(result.isError).toBe(true)
+      const text = result.content[0].text
+      expect(text).toContain('Available fields: ')
+      return text
+    }
+
     test(
       'a constantly denied field leaves the read vocabulary for every session',
       async () => {
@@ -912,6 +931,145 @@ describe('the MCP surface', () => {
       'a write rule that reads the payload is row-dependent, not a denial',
       async () => {
         expect((await dataSchemaFor(author, 'list_memo_create'))?.draftedBy).toBeDefined()
+      },
+      BOOT,
+    )
+
+    /**
+     * #1360: the write side used to distinguish a field withheld from the
+     * `data` schema (`field-level access denied`) from one that never
+     * existed (`it is not a field of this list`), letting a caller enumerate
+     * denied fields one probe at a time. Both now take the identical branch,
+     * the write-side counterpart of the read-side fix (#1163).
+     */
+    test(
+      'a create naming a field the data schema withheld is refused in the same bytes as a name that never existed',
+      async () => {
+        const dropped = await writeRefusalText(author, 'list_memo_create', {
+          data: { title: 'x', internal: 'y' },
+        })
+        const unknown = await writeRefusalText(author, 'list_memo_create', {
+          data: { title: 'x', neverExisted: 'y' },
+        })
+
+        expect(dropped).toBe(unknown.replace('neverExisted', 'internal'))
+        expect(unknown).not.toContain('internal')
+        expect(unknown).not.toContain('adminOnly')
+
+        // `internal` denies every session, not just this one.
+        const adminDropped = await writeRefusalText(admin, 'list_memo_create', {
+          data: { title: 'x', internal: 'y' },
+        })
+        expect(adminDropped).toBe(
+          (
+            await writeRefusalText(admin, 'list_memo_create', {
+              data: { title: 'x', neverExisted: 'y' },
+            })
+          ).replace('neverExisted', 'internal'),
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'a create naming a role-gated field withheld from THIS session is refused the same way, but not for the role it is advertised to',
+      async () => {
+        const dropped = await writeRefusalText(author, 'list_memo_create', {
+          data: { title: 'x', adminOnly: 'y' },
+        })
+        const unknown = await writeRefusalText(author, 'list_memo_create', {
+          data: { title: 'x', neverExisted: 'y' },
+        })
+        expect(dropped).toBe(unknown.replace('neverExisted', 'adminOnly'))
+
+        const asAdmin = await rpc(
+          'tools/call',
+          { name: 'list_memo_create', arguments: { data: { title: 'x', adminOnly: 'y' } } },
+          schemaConfig(),
+          admin,
+        )
+        const result = asAdmin.body?.result as { isError?: boolean }
+        expect(result.isError).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'an update naming a field the data schema withheld is refused in the same bytes as a name that never existed',
+      async () => {
+        // Well-formed but nonexistent — the vocabulary check runs before the
+        // row lookup, so which UUID is named here doesn't matter.
+        const placeholderId = '00000000-0000-0000-0000-000000000000'
+        const dropped = await writeRefusalText(author, 'list_memo_update', {
+          where: { id: placeholderId },
+          data: { internal: 'y' },
+        })
+        const unknown = await writeRefusalText(author, 'list_memo_update', {
+          where: { id: placeholderId },
+          data: { neverExisted: 'y' },
+        })
+
+        expect(dropped).toBe(unknown.replace('neverExisted', 'internal'))
+      },
+      BOOT,
+    )
+
+    /**
+     * Acceptance criterion: masking is scoped to ROW-INDEPENDENT withholding
+     * only. `ownerNotes` is advertised on update (row-dependent — it may pass
+     * on rows this session owns), so a denial that only resolves once a real
+     * row is fetched reaches the caller as the write pipeline's own message,
+     * unmasked.
+     */
+    test(
+      "a row-dependent denial at write time is not masked — it reaches the caller as the write pipeline's own refusal",
+      async () => {
+        const created = await rpc(
+          'tools/call',
+          {
+            name: 'list_memo_create',
+            arguments: { data: { title: 'seed', ownerId: 'someone-else' } },
+          },
+          schemaConfig(),
+          author,
+        )
+        const createdPayload = JSON.parse(
+          (created.body?.result as { content: Array<{ text: string }> }).content[0].text,
+        )
+        const id = createdPayload.item.id
+
+        const updated = await rpc(
+          'tools/call',
+          {
+            name: 'list_memo_update',
+            arguments: { where: { id }, data: { ownerNotes: 'sneaky' } },
+          },
+          schemaConfig(),
+          author,
+        )
+        const result = updated.body?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(result.isError).toBe(true)
+        const text = result.content[0].text
+
+        expect(text).toContain('field-level access denied')
+        expect(text).not.toContain('Available fields: ')
+      },
+      BOOT,
+    )
+
+    test(
+      'the available-fields tail names exactly what the create schema advertises',
+      async () => {
+        const advertised = Object.keys((await dataSchemaFor(author, 'list_memo_create')) ?? {})
+        const refusal = await writeRefusalText(author, 'list_memo_create', {
+          data: { neverExisted: 'y' },
+        })
+        const tail = refusal.slice(refusal.indexOf('Available fields: ') + 18, -1)
+
+        expect(tail.split(', ')).toEqual(advertised)
       },
       BOOT,
     )
