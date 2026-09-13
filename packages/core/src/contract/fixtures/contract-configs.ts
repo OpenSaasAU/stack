@@ -294,15 +294,6 @@ export const nativeTypesConfig: OpenSaasConfig = {
 }
 
 /**
- * The names and values the renderer has to survive rather than the ones it
- * usually sees: a list called `models` (the record the emitted callback keeps
- * its model tokens in), a list called `StatusEnum` beside an enum called
- * `Status`, a non-identifier field key, a non-identifier index name, and a
- * default carrying a quote, a backslash, every line terminator and non-ASCII
- * text. Nothing here enforces PascalCase or an identifier-shaped field key, so
- * every one of these is reachable from a real config.
- */
-/**
  * Names long enough that PostgreSQL has to truncate the constraint names it
  * derives: a 60-character table (whose `_pkey` overflows on the label alone), a
  * unique column whose table+column pair overflows, and a composite unique whose
@@ -327,6 +318,15 @@ export const longIdentifierConfig: OpenSaasConfig = {
   },
 }
 
+/**
+ * The names and values the renderer has to survive rather than the ones it
+ * usually sees: a list called `models` (the record the emitted callback keeps
+ * its model tokens in), a list called `StatusEnum` beside an enum called
+ * `Status`, a non-identifier field key, a non-identifier index name, and a
+ * default carrying a quote, a backslash, every line terminator and non-ASCII
+ * text. Nothing here enforces PascalCase or an identifier-shaped field key, so
+ * every one of these is reachable from a real config.
+ */
 export const hostileNamesConfig: OpenSaasConfig = {
   db: { provider: 'postgresql' },
   lists: {

@@ -184,7 +184,10 @@ describe('the generated bundle type-checks', () => {
     }
   })
 
-  test('tsc --noEmit reports nothing for the bundle and the emitted contract', () => {
+  // `skipLibCheck` means this proves the BUNDLE compiles against the emitted
+  // `contract.d.ts`'s types, not that `contract.d.ts` itself is error-free —
+  // a `.d.ts` is never type-checked under that option.
+  test('tsc --noEmit reports nothing for the bundle', () => {
     fs.writeFileSync(
       path.join(projectDir, 'tsconfig.json'),
       JSON.stringify(TSCONFIG, null, 2),

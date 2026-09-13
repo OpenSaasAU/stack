@@ -39,7 +39,12 @@
   "license": "MIT",
   "pnpm": {
     "overrides": {
-      "@better-auth/utils": "0.5.0"
+      "@better-auth/utils": "0.5.0",
+      "better-auth>prisma": "-",
+      "better-auth>@prisma/client": "-",
+      "better-auth>better-sqlite3": "-",
+      "@better-auth/prisma-adapter>prisma": "-",
+      "@better-auth/prisma-adapter>@prisma/client": "-"
     }
   },
   "devDependencies": {

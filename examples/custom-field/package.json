@@ -2,6 +2,9 @@
   "name": "opensaas-custom-field-example",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "dev": "opensaas dev -- next dev -p 3001",
     "build": "pnpm generate && next build",

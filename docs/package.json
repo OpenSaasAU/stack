@@ -2,6 +2,9 @@
   "name": "opensaas-stack-docs",
   "version": "0.0.1",
   "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev",
