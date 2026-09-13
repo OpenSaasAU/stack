@@ -8,6 +8,7 @@ import {
   verifyExtensionSubpaths,
   ExtensionSubpathError,
   ExtensionDescriptorError,
+  OrphanExtensionSpaceError,
 } from './extension-spaces.js'
 
 const PGVECTOR_HASH = '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8'
@@ -324,6 +325,62 @@ describe('seedExtensionContractSpaces', () => {
     await expect(seedExtensionContractSpaces(cwd, declaration)).rejects.toThrow(
       /"legacy".*"@fake\/legacy-dir\/pack"/s,
     )
+  })
+})
+
+describe('detecting an orphaned extension space', () => {
+  it('refuses and leaves the directory untouched when a seeded pack is dropped', async () => {
+    const cwd = scratchProject()
+    await seedExtensionContractSpaces(cwd, contract([pgvector]))
+    const before = readSpaceFiles(cwd)
+
+    await expect(seedExtensionContractSpaces(cwd, contract())).rejects.toThrow(
+      OrphanExtensionSpaceError,
+    )
+    await expect(seedExtensionContractSpaces(cwd, contract())).rejects.toThrow(
+      /migrations[/\\]pgvector.*remove the directory or re-add the extension/s,
+    )
+    expect(readSpaceFiles(cwd)).toEqual(before)
+  })
+
+  it('names every orphaned space, sorted, when more than one is left behind', async () => {
+    const cwd = scratchProject()
+    await seedExtensionContractSpaces(cwd, contract([pgvector]))
+    // Simulate a second leftover pack space without needing a second real
+    // pack fixture — orphan detection only cares about the directory shape.
+    fs.cpSync(path.join(cwd, 'migrations/pgvector'), path.join(cwd, 'migrations/other-orphan'), {
+      recursive: true,
+    })
+
+    const error: unknown = await seedExtensionContractSpaces(cwd, contract()).catch((e) => e)
+
+    expect(error).toBeInstanceOf(OrphanExtensionSpaceError)
+    expect((error as OrphanExtensionSpaceError).spaceIds).toEqual(['other-orphan', 'pgvector'])
+  })
+
+  it('flags only the dropped pack when another declared pack keeps its space', async () => {
+    const cwd = scratchProject()
+    await seedExtensionContractSpaces(cwd, contract([pgvector]))
+    fs.cpSync(path.join(cwd, 'migrations/pgvector'), path.join(cwd, 'migrations/other-orphan'), {
+      recursive: true,
+    })
+
+    const error: unknown = await seedExtensionContractSpaces(cwd, contract([pgvector])).catch(
+      (e) => e,
+    )
+
+    expect(error).toBeInstanceOf(OrphanExtensionSpaceError)
+    expect((error as OrphanExtensionSpaceError).spaceIds).toEqual(['other-orphan'])
+  })
+
+  it('never treats a hand-authored migration directory as an orphaned pack space', async () => {
+    const cwd = scratchProject()
+    const legacyDir = path.join(cwd, 'migrations', 'legacy')
+    fs.mkdirSync(legacyDir, { recursive: true })
+    fs.writeFileSync(path.join(legacyDir, 'migration.json'), '{}')
+
+    await expect(seedExtensionContractSpaces(cwd, contract())).resolves.toEqual({ seeded: [] })
+    expect(fs.existsSync(legacyDir)).toBe(true)
   })
 })
 

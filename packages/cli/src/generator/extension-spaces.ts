@@ -4,6 +4,11 @@ import { createRequire } from 'module'
 import { pathToFileURL } from 'url'
 import { runContractSpaceSeedPhase } from '@prisma/orm-toolchain/cli/control-api'
 import type { ContractSpaceSeedPhaseInputs } from '@prisma/orm-toolchain/cli/control-api'
+import {
+  APP_SPACE_ID,
+  listContractSpaceDirectories,
+  verifyContractSpaces,
+} from '@prisma/orm-toolchain/migration-tools/spaces'
 import type { ContractData } from '@opensaas/stack-core'
 
 // The toolchain declares the per-extension descriptor inline and exports only
@@ -55,6 +60,25 @@ export class ExtensionDescriptorError extends Error {
         `generates against.`,
     )
     this.name = 'ExtensionDescriptorError'
+  }
+}
+
+/**
+ * Thrown when `migrations/` carries a contract-space directory that no
+ * longer corresponds to any pack in `db.extensions` — the pack was
+ * dropped from the config, or its space id changed, and the seeded
+ * directory was left behind. Each entry's message is the toolchain's own
+ * `orphanSpaceDir` remediation, byte-identical to what a later `db init`/
+ * `db update` would otherwise refuse with (ADR-0065).
+ */
+export class OrphanExtensionSpaceError extends Error {
+  constructor(
+    /** One entry per orphaned space directory, keyed by the directory's own name. */
+    readonly spaceIds: readonly string[],
+    remediations: readonly string[],
+  ) {
+    super(remediations.join('\n'))
+    this.name = 'OrphanExtensionSpaceError'
   }
 }
 
@@ -269,6 +293,22 @@ export function verifyExtensionSubpaths(cwd: string, data: ContractData): void {
  * Seeding opens no database connection — it is a file copy out of the pack's
  * own descriptor.
  *
+ * Once the currently declared packs are seeded, every contract-space
+ * directory under `migrations/` is checked against them via the toolchain's
+ * own `verifyContractSpaces` — the same structural check a later `db init`/
+ * `db update` runs. A directory that is not the app space and does not
+ * belong to a currently declared pack is an **orphan**: most often a pack
+ * that was removed from `db.extensions` without removing its seeded space.
+ * This refuses with {@link OrphanExtensionSpaceError} naming every such
+ * directory, rather than leaving `generate` to exit 0 and the failure to
+ * surface later, out of the toolchain, as `db init`/`db update`'s own
+ * `orphanSpaceDir` refusal. Nothing under `migrations/` is ever deleted by
+ * this check — including the orphan's own migration packages and the
+ * content-addressed snapshot entries they reference — so a hand-authored
+ * migration directory this check does not recognise as a pack space (it
+ * carries its own `migration.json`, per the toolchain's own space/package
+ * distinction) is never at risk (#1192).
+ *
  * Known limits:
  * - The migrations directory is the toolchain's default, `<cwd>/migrations`.
  *   A project that overrides `migrations.dir` in a hand-edited
@@ -279,11 +319,8 @@ export function verifyExtensionSubpaths(cwd: string, data: ContractData): void {
  *   generated client's business.
  * - A pack whose `/control` descriptor ships no `contractSpace` is resolved
  *   and passed through; the toolchain reports nothing seeded for it.
- * - Only the grow direction is tracked. Dropping a pack from `db.extensions`
- *   rewrites the other emissions but leaves `migrations/<pack>/**` on disk,
- *   and `generate` still exits 0; the toolchain then refuses the next
- *   `db init`/`db update` with `orphanSpaceDir`. Remove the directory by hand
- *   until https://github.com/OpenSaasAU/stack/issues/1192 lands.
+ * - Orphan detection is refuse-and-report only. Removing the directory (or
+ *   re-adding the extension) is left to the user; there is no `--prune` flag.
  * - Subpaths are resolved by reading the pack's `exports` under the `import`
  *   condition, which is how the generated artifacts reach them. Exotic maps
  *   (nested patterns, `imports`-style self-reference) are not covered.
@@ -292,6 +329,8 @@ export function verifyExtensionSubpaths(cwd: string, data: ContractData): void {
  * @param data - The derived contract, read only for its declared extensions.
  * @throws {ExtensionSubpathError} when a declared pack lacks a required subpath.
  * @throws {ExtensionDescriptorError} when `/control` has no default descriptor.
+ * @throws {OrphanExtensionSpaceError} when a seeded space directory no longer
+ *   matches any currently declared pack.
  *
  * @example
  * ```typescript
@@ -303,7 +342,12 @@ export async function seedExtensionContractSpaces(
   cwd: string,
   data: ContractData,
 ): Promise<SeededExtensionSpaces> {
-  if (data.extensions.length === 0) return { seeded: [] }
+  const migrationsDir = path.join(cwd, 'migrations')
+
+  if (data.extensions.length === 0) {
+    await refuseOrphanedExtensionSpaces(migrationsDir, new Set([APP_SPACE_ID]))
+    return { seeded: [] }
+  }
 
   const descriptors: SeedPhaseExtensionInput[] = []
   const packBySpaceId = new Map<string, string>()
@@ -317,9 +361,14 @@ export async function seedExtensionContractSpaces(
   }
 
   const result = await runContractSpaceSeedPhase({
-    migrationsDir: path.join(cwd, 'migrations'),
+    migrationsDir,
     extensions: descriptors,
   })
+
+  await refuseOrphanedExtensionSpaces(
+    migrationsDir,
+    new Set([APP_SPACE_ID, ...packBySpaceId.keys()]),
+  )
 
   return {
     seeded: result.seeded.map((record) => ({
@@ -329,4 +378,34 @@ export async function seedExtensionContractSpaces(
       migrationDirs: record.newMigrationDirs,
     })),
   }
+}
+
+/**
+ * Refuse every on-disk contract-space directory that isn't `loadedSpaces` —
+ * the app space plus whatever pack space ids are currently declared and
+ * already seeded. Read-only: it never removes a directory itself, leaving
+ * that to the user per the toolchain's own `orphanSpaceDir` remediation.
+ *
+ * @throws {OrphanExtensionSpaceError} naming every orphaned directory.
+ */
+async function refuseOrphanedExtensionSpaces(
+  migrationsDir: string,
+  loadedSpaces: ReadonlySet<string>,
+): Promise<void> {
+  const spaceDirsOnDisk = await listContractSpaceDirectories(migrationsDir)
+  const result = verifyContractSpaces({
+    loadedSpaces,
+    spaceDirsOnDisk,
+    headRefsBySpace: new Map(),
+    markerRowsBySpace: new Map(),
+  })
+  if (result.ok) return
+
+  const orphans = result.violations.filter((violation) => violation.kind === 'orphanSpaceDir')
+  if (orphans.length === 0) return
+
+  throw new OrphanExtensionSpaceError(
+    orphans.map((violation) => violation.spaceId),
+    orphans.map((violation) => violation.remediation),
+  )
 }
