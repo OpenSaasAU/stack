@@ -14,7 +14,10 @@ import { getContext, InvalidSessionError } from './index.js'
  * read an unpublished draft because `{ userId: undefined }` is truthy.
  *
  * `withSession` and `createTestContext` both route through the same
- * low-level `getContext`, so one guard there closes the hole for all three.
+ * low-level `getContext`, so one guard there closes the hole for all three —
+ * including the generated bundle's `getContext(session?)`, which does
+ * nothing but `session ?? null` before handing the value to this same
+ * function, so its own passthrough call site needs no separate test.
  */
 
 function schemaConfig(): OpenSaasConfig {
@@ -65,7 +68,7 @@ describe('a session holding an undefined-valued key', () => {
     expect(() => context.withSession({ userId: undefined })).toThrow(InvalidSessionError)
   })
 
-  test('createTestContext refuses the same shape, and leaves no database running', async () => {
+  test('createTestContext refuses the same shape', async () => {
     await expect(createTestContext(schemaConfig(), { userId: undefined })).rejects.toThrow(
       InvalidSessionError,
     )

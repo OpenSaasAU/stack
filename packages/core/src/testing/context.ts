@@ -512,7 +512,8 @@ export async function createTestContext(
   } catch (error) {
     // `database.context` can now throw (`InvalidSessionError`), after the
     // database is already up — close it rather than leaking the instance.
-    await database.close()
+    // A failure in `close()` itself must not mask the original error.
+    await database.close().catch(() => {})
     throw error
   }
 }

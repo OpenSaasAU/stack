@@ -1,4 +1,4 @@
-import { describe, it, expectTypeOf } from 'vitest'
+import { describe, it, expect, expectTypeOf } from 'vitest'
 import type { OpenSaasConfig, AccessContext, Session } from '@opensaas/stack-core'
 import { emailOTP } from 'better-auth/plugins'
 import { createAuth, getSessionFromAuth } from './index.js'
@@ -48,5 +48,44 @@ describe('getSessionFromAuth accepts either createAuth() overload (#906)', () =>
 
   it('return type stays Promise<Session | null>, unchanged by the widened/narrowed instance', () => {
     expectTypeOf(getSessionFromAuth).returns.toEqualTypeOf<Promise<Session | null>>()
+  })
+})
+
+/**
+ * `getContext` refuses a session holding `undefined` for one of its own
+ * keys (#1397). A `sessionFields` entry that resolves to a key present with
+ * an explicit `undefined` value — a `customSession` plugin field that is
+ * there but unset, say — must be omitted from the projected session rather
+ * than passed through, or a genuinely signed-in session would hit that
+ * refusal.
+ */
+describe('getSessionFromAuth omits a field resolved to undefined (#1397)', () => {
+  const authWith = (user: Record<string, unknown>) => ({
+    api: { getSession: async () => ({ user }) },
+  })
+
+  it('drops the field rather than handing getContext a key set to undefined', async () => {
+    const session = await getSessionFromAuth(
+      authWith({ id: 'user-1', role: undefined }),
+      ['userId', 'role'],
+      new Headers(),
+    )
+
+    // `toEqual` treats a key holding `undefined` as equal to an absent one,
+    // which is exactly the distinction under test — assert the key is
+    // actually gone, not merely that it reads as `undefined`.
+    expect(session).not.toBeNull()
+    expect(Object.prototype.hasOwnProperty.call(session, 'role')).toBe(false)
+    expect(session).toStrictEqual({ userId: 'user-1' })
+  })
+
+  it('still projects the field when it resolves to a real value', async () => {
+    const session = await getSessionFromAuth(
+      authWith({ id: 'user-1', role: 'admin' }),
+      ['userId', 'role'],
+      new Headers(),
+    )
+
+    expect(session).toEqual({ userId: 'user-1', role: 'admin' })
   })
 })

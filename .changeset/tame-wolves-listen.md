@@ -23,3 +23,7 @@ Build the session from an optional identifier by omitting the key rather than se
 ```typescript
 const context = userId ? await getContext({ userId }) : await getContext()
 ```
+
+The MCP runtime's own session-to-context translation is hardened the same way: a custom MCP session field resolved to `undefined` is dropped before it reaches `getContext`, rather than tripping the new refusal for a session that is genuinely signed in (`userId` is required and untouched, so the refusal still catches it if that one is ever `undefined`).
+
+Note this doesn't close every way an object can reach `getContext` looking signed in — wrapping an already-resolved session under a key, `getContext({ session })`, still reads as signed in when that wrapped value is `null` rather than `undefined`, because `null` is a value, not a missing one. Don't wrap the session at all: branch on it before calling `getContext`, as above.
