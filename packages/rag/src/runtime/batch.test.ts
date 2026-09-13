@@ -177,17 +177,19 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(100) // 100 requests per minute
     const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
 
-    await limiter.waitForSlot()
-    await limiter.waitForSlot()
-    await limiter.waitForSlot()
+    try {
+      await limiter.waitForSlot()
+      await limiter.waitForSlot()
+      await limiter.waitForSlot()
 
-    // Under the limit, each slot resolves without scheduling a throttling
-    // delay. Wall-clock elapsed time is a poor proxy for this on a loaded or
-    // coverage-instrumented CI runner (see #1320); the absence of a
-    // `setTimeout` call is the property itself.
-    expect(setTimeoutSpy).not.toHaveBeenCalled()
-
-    setTimeoutSpy.mockRestore()
+      // Under the limit, each slot resolves without scheduling a throttling
+      // delay. Wall-clock elapsed time is a poor proxy for this on a loaded or
+      // coverage-instrumented CI runner (see #1320); the absence of a
+      // `setTimeout` call is the property itself.
+      expect(setTimeoutSpy).not.toHaveBeenCalled()
+    } finally {
+      setTimeoutSpy.mockRestore()
+    }
   })
 
   it('should throttle requests exceeding rate limit', { timeout: 70000 }, async () => {
