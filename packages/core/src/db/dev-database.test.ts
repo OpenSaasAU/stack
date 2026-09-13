@@ -140,6 +140,28 @@ describe('startDevDatabase', () => {
     expect(readDevDatabaseState({ cwd: projectRoot })).toBeUndefined()
   })
 
+  test('a state file recorded by a live pid with a stale start time is ignored (simulated reboot/pid wrap)', () => {
+    const observed = processStartTime(process.pid)
+    if (observed === undefined) return // this platform cannot supply one: nothing to simulate
+
+    // Not written through writeDevDatabaseState, which would stamp the real,
+    // current startedAt — this reproduces a record left by an EARLIER boot of
+    // this same pid, which the real (unmocked) comparator must catch.
+    const stateDir = path.join(projectRoot, '.opensaas')
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(
+      path.join(stateDir, 'dev-db.json'),
+      JSON.stringify({
+        url: 'postgres://postgres@127.0.0.1:54999/postgres',
+        pid: process.pid,
+        startedAt: observed - 60 * 60 * 1000,
+      }),
+      'utf8',
+    )
+
+    expect(readDevDatabaseState({ cwd: projectRoot })).toBeUndefined()
+  })
+
   test(
     'stopping drops this instance state file but not a newer one',
     async () => {
@@ -293,6 +315,27 @@ describe('startDevDatabase', () => {
       writeFileSync(
         path.join(dataDir, '.opensaas-dev-database.lock'),
         JSON.stringify({ pid: 2 ** 30 }),
+        'utf8',
+      )
+
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      started.push(database)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a dataDir lock recorded by a live pid with a stale start time is replaced (simulated reboot/pid wrap)',
+    async () => {
+      const observed = processStartTime(process.pid)
+      if (observed === undefined) return // this platform cannot supply one: nothing to simulate
+
+      const dataDir = path.join(projectRoot, 'dev-db')
+      mkdirSync(dataDir, { recursive: true })
+      writeFileSync(
+        path.join(dataDir, '.opensaas-dev-database.lock'),
+        JSON.stringify({ pid: process.pid, startedAt: observed - 60 * 60 * 1000 }),
         'utf8',
       )
 

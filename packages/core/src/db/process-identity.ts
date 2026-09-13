@@ -55,6 +55,11 @@ function macosProcessStartTime(pid: number): number | undefined {
     output = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      // `ps` renders weekday/month names and `Date.parse` reads them back in
+      // the process's own locale; forcing C here keeps the two in the same
+      // locale regardless of the caller's — an unpinned locale would parse to
+      // `Invalid Date` under a non-English one and silently disable this.
+      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
     }).trim()
   } catch {
     return undefined

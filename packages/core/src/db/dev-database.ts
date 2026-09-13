@@ -35,7 +35,12 @@
 import type { Extension } from '@electric-sql/pglite'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
-import { identifiesLiveProcess, processClaimSchema, processStartTime } from './process-identity.js'
+import {
+  describeSelf,
+  identifiesLiveProcess,
+  processClaimSchema,
+  type ProcessClaim,
+} from './process-identity.js'
 import {
   clearDevDatabaseState,
   devDatabaseStatePath,
@@ -179,10 +184,24 @@ function readDataDirLock(lockFile: string) {
   return claim.success ? claim.data : undefined
 }
 
-function writeDataDirLock(lockFile: string): void {
-  const claim = { pid: process.pid, startedAt: processStartTime(process.pid) }
+function writeDataDirLock(lockFile: string, claim: ProcessClaim): void {
   writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
 }
+
+/** Removes the lock only while it still names the claim that took it. */
+function releaseDataDirLock(lockFile: string, claim: ProcessClaim): void {
+  const existing = readDataDirLock(lockFile)
+  if (
+    existing !== undefined &&
+    (existing.pid !== claim.pid || existing.startedAt !== claim.startedAt)
+  ) {
+    return
+  }
+  rmSync(lockFile, { force: true })
+}
+
+/** Bounds the stale-lock replacement loop below — a cost limit, not a real ceiling on contention. */
+const MAX_DATA_DIR_LOCK_ATTEMPTS = 5
 
 /**
  * Claims `dataDir` for this process before PGlite ever opens it, so a second
@@ -191,30 +210,43 @@ function writeDataDirLock(lockFile: string): void {
  * left behind is replaced rather than honoured, mirroring the state file's
  * own stale-record handling (`identifiesLiveProcess`).
  *
+ * Replacing a stale lock is read-then-write, not atomic on its own — the
+ * `wx` create on the next loop iteration is what actually resolves two
+ * starters racing the same replacement: at most one of them can create the
+ * file, and the other's next `EEXIST` observes ITS live claim and throws
+ * below rather than both believing they hold the directory. `release` is
+ * likewise ownership-checked, so a starter that lost that race can never
+ * delete the winner's lock out from under it at `stop()`.
+ *
  * @throws {DevDatabaseInUseError} when a live sidecar already holds `dataDir`.
  */
 function acquireDataDirLock(dataDir: string): () => void {
   mkdirSync(dataDir, { recursive: true })
   const lockFile = path.join(dataDir, DATA_DIR_LOCK_FILE_NAME)
-  const release = () => rmSync(lockFile, { force: true })
+  const claim = describeSelf()
 
-  try {
-    writeDataDirLock(lockFile)
-    return release
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+  for (let attempt = 0; attempt < MAX_DATA_DIR_LOCK_ATTEMPTS; attempt++) {
+    try {
+      writeDataDirLock(lockFile, claim)
+      return () => releaseDataDirLock(lockFile, claim)
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+    }
+
+    const existing = readDataDirLock(lockFile)
+    if (existing !== undefined && identifiesLiveProcess(existing)) {
+      throw new DevDatabaseInUseError(dataDir, existing.pid)
+    }
+
+    // Stale: the pid that wrote this lock is gone, or a reboot/wrap has
+    // handed it to an unrelated process. Clear it and loop back to the `wx`
+    // create above.
+    rmSync(lockFile, { force: true })
   }
 
-  const existing = readDataDirLock(lockFile)
-  if (existing !== undefined && identifiesLiveProcess(existing)) {
-    throw new DevDatabaseInUseError(dataDir, existing.pid)
-  }
-
-  // Stale: the pid that wrote this lock is gone, or a reboot/wrap has handed
-  // it to an unrelated process. Replace it and proceed.
-  rmSync(lockFile, { force: true })
-  writeDataDirLock(lockFile)
-  return release
+  throw new Error(
+    `Could not claim the dev database data directory "${dataDir}": a stale lock kept reappearing.`,
+  )
 }
 
 /**
@@ -266,8 +298,10 @@ export async function startDevDatabase(
 
   try {
     const pglite = new PGlite({ ...(dataDir !== undefined && { dataDir }), extensions })
-    await pglite.waitReady
+    // Registered before the `await` below, not after: a rejected `waitReady`
+    // must still close the handle it rejected on, not just release the lock.
     teardown.unshift(() => pglite.close())
+    await pglite.waitReady
 
     const server = new PGLiteSocketServer({
       db: pglite,
