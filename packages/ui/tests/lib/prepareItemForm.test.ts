@@ -1,112 +1,98 @@
-import { describe, it, expect } from 'vitest'
-import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 
-type Rows = Array<Record<string, unknown>>
+vi.mock('@opensaas/stack-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opensaas/stack-core')>()
+  return { ...actual, getRelationshipOptions: vi.fn() }
+})
 
-/** One composed read, as `getRelationshipOptions` built it. */
-interface RecordedRead {
-  where: unknown[]
-  orderBy: unknown
-  select: readonly string[]
-  limit: number | undefined
-}
-
-interface DelegateStub {
-  where: (predicate: unknown) => DelegateStub
-  orderBy: (order: unknown) => DelegateStub
-  select: (...fields: readonly string[]) => DelegateStub
-  limit: (count: number) => DelegateStub
-  all: () => Promise<Rows>
-}
+import { getRelationshipOptions } from '@opensaas/stack-core'
+import { bigInt, relationship, text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
+import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 
 /**
- * A composed-read double for the secured surface `getRelationshipOptions`
- * drives (ADR-0041), recording what each chain composed before its terminal.
+ * `getRelationshipOptions` itself — its bounded window, its projection, and
+ * its second, id-scoped union query for a currently-selected id that fell
+ * outside that window — is pinned exhaustively against a composed-read double
+ * in `packages/core/src/query/relationship-options.test.ts` (a legitimate
+ * seam: `QueryRunnerContext` is the primitive's own documented structural
+ * interface, not a stand-in for the full secured surface). What belongs here
+ * is `prepareItemForm`'s OWN orchestration — that it calls the primitive once
+ * per relationship field, forwards the right `selectedIds`, runs the fetches
+ * concurrently, and shapes the results into `relationshipData` — so the
+ * primitive is mocked at the function boundary rather than the whole
+ * `AccessContext` being hand-faked (#1373).
  */
-function makeDelegate(all: (read: RecordedRead) => Promise<Rows>) {
-  const calls: RecordedRead[] = []
-  function build(read: RecordedRead): DelegateStub {
-    return {
-      where: (predicate: unknown) => build({ ...read, where: [...read.where, predicate] }),
-      orderBy: (order: unknown) => build({ ...read, orderBy: order }),
-      select: (...fields: readonly string[]) => build({ ...read, select: fields }),
-      limit: (count: number) => build({ ...read, limit: count }),
-      all: () => {
-        calls.push(read)
-        return all(read)
-      },
-    }
-  }
-  return {
-    calls,
-    query: build({ where: [], orderBy: undefined, select: [], limit: undefined }),
-  }
-}
+const mockedGetRelationshipOptions = vi.mocked(getRelationshipOptions)
 
-function makeContext(delegates: Record<string, ReturnType<typeof makeDelegate>>): AccessContext {
-  const db: Record<string, DelegateStub> = {}
-  for (const [key, delegate] of Object.entries(delegates)) db[key] = delegate.query
-  const context = {
-    db,
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  return context as unknown as AccessContext
-}
+const BOOT = 120_000
 
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
+      Event: {
+        fields: { occurredAtMs: bigInt() },
+        access: { operation: { query: () => true, create: () => true } },
+      },
       Author: {
         fields: {
-          name: { type: 'text' },
-          posts: { type: 'relationship', ref: 'Post.author', many: true },
+          name: text(),
+          posts: relationship({ ref: 'Post.author', many: true }),
         },
-        access: { operation: { query: () => true } },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Tag: {
-        fields: { name: { type: 'text' }, posts: { type: 'relationship', ref: 'Post.tags' } },
-        access: { operation: { query: () => true } },
+        fields: { name: text(), posts: relationship({ ref: 'Post.tags' }) },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Post: {
         fields: {
-          title: { type: 'text' },
-          author: { type: 'relationship', ref: 'Author.posts' },
-          tags: { type: 'relationship', ref: 'Tag.posts', many: true },
+          title: text(),
+          author: relationship({ ref: 'Author.posts' }),
+          tags: relationship({ ref: 'Tag.posts', many: true }),
         },
-        access: { operation: { query: () => true } },
+        access: { operation: { query: () => true, create: () => true } },
       },
       // A one-to-one: both ends are `many: false` and exactly one holds the
       // column. `Profile` sorts before `User`, so `Profile.user` owns it.
       User: {
-        fields: { name: { type: 'text' }, profile: { type: 'relationship', ref: 'Profile.user' } },
-        access: { operation: { query: () => true } },
+        fields: { name: text(), profile: relationship({ ref: 'Profile.user' }) },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Profile: {
-        fields: { bio: { type: 'text' }, user: { type: 'relationship', ref: 'User.profile' } },
-        access: { operation: { query: () => true } },
+        fields: { bio: text(), user: relationship({ ref: 'User.profile' }) },
+        access: { operation: { query: () => true, create: () => true } },
       },
     },
-  } as unknown as OpenSaasConfig
+  }
 }
+
+let harness: TestContext
+let context: AccessContext
+
+beforeAll(async () => {
+  harness = await createTestContext(makeConfig(), null)
+  context = harness.context as unknown as AccessContext
+}, BOOT)
+
+afterAll(async () => {
+  await harness?.close()
+})
+
+beforeEach(() => {
+  mockedGetRelationshipOptions.mockReset()
+  mockedGetRelationshipOptions.mockResolvedValue([])
+})
+
+afterEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('prepareItemForm', () => {
   it('carries a bigInt field value through the JSON round-trip as a bigint, not a throw', async () => {
-    const context = makeContext({})
-    const config = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Event: {
-          fields: { occurredAtMs: { type: 'bigInt' } },
-          access: { operation: { query: () => true } },
-        },
-      },
-    } as unknown as OpenSaasConfig
+    const config = makeConfig()
 
     const { initialData } = await prepareItemForm(
       context,
@@ -120,15 +106,19 @@ describe('prepareItemForm', () => {
     expect(initialData.occurredAtMs).toBe(9007199254740993n)
   })
 
-  it('fetches relationship options via a bounded, projected read — never an unbounded one', async () => {
-    const author = makeDelegate(async () => [
-      { id: 'a1', name: 'Ada Lovelace' },
-      { id: 'a2', name: 'Alan Turing' },
-    ])
-    const tag = makeDelegate(async () => [{ id: 't1', name: 'engineering' }])
-    const context = makeContext({ Author: author, Tag: tag })
-    const config = makeConfig()
+  it('fetches relationship options once per relationship field and shapes the result', async () => {
+    mockedGetRelationshipOptions.mockImplementation(async (_context, _config, relatedListKey) => {
+      if (relatedListKey === 'Author') {
+        return [
+          { id: 'a1', label: 'Ada Lovelace' },
+          { id: 'a2', label: 'Alan Turing' },
+        ]
+      }
+      if (relatedListKey === 'Tag') return [{ id: 't1', label: 'engineering' }]
+      return []
+    })
 
+    const config = makeConfig()
     const { relationshipData } = await prepareItemForm(
       context,
       config,
@@ -143,48 +133,27 @@ describe('prepareItemForm', () => {
       { id: 'a2', label: 'Alan Turing' },
     ])
     expect(relationshipData.tags).toEqual([{ id: 't1', label: 'engineering' }])
-
-    // The primary window must be bounded, and projected to id + label so no
-    // other field's `resolveOutput` runs over it.
-    for (const delegate of [author, tag]) {
-      expect(delegate.calls[0].limit).toBeGreaterThan(0)
-      expect(delegate.calls[0].select).toEqual(['id', 'name'])
-    }
+    expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      selectedIds: [],
+    })
+    expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Tag', {
+      selectedIds: [],
+    })
   })
 
-  it('unions the currently-selected single-relationship id even when outside the bounded window', async () => {
-    // The bounded window only returns a1; a9 (the item's current author) is
-    // outside it and must be unioned in via a second, id-scoped query.
-    const queued: Rows[] = [
-      [{ id: 'a1', name: 'Ada Lovelace' }],
-      [{ id: 'a9', name: 'Currently Selected' }],
-    ]
-    const author = makeDelegate(async () => queued.shift() ?? [])
-    const context = makeContext({ Author: author, Tag: makeDelegate(async () => []) })
+  it('extracts the currently-selected single-relationship id into selectedIds', async () => {
     const config = makeConfig()
-
     const itemData = { id: 'p1', title: 'Post', author: { id: 'a9', name: 'Currently Selected' } }
-    const { relationshipData } = await prepareItemForm(
-      context,
-      config,
-      'Post',
-      config.lists.Post,
-      itemData,
-      'update',
-    )
 
-    expect(relationshipData.author).toEqual(
-      expect.arrayContaining([{ id: 'a9', label: 'Currently Selected' }]),
-    )
-    expect(author.calls[1].where).toEqual([{ id: { in: ['a9'] } }])
+    await prepareItemForm(context, config, 'Post', config.lists.Post, itemData, 'update')
+
+    expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      selectedIds: ['a9'],
+    })
   })
 
-  it('unions every currently-selected id for a many relationship', async () => {
-    const queued: Rows[] = [[{ id: 't1', name: 'engineering' }], [{ id: 't9', name: 'design' }]]
-    const tag = makeDelegate(async () => queued.shift() ?? [])
-    const context = makeContext({ Author: makeDelegate(async () => []), Tag: tag })
+  it('extracts every currently-selected id for a many relationship into selectedIds', async () => {
     const config = makeConfig()
-
     const itemData = {
       id: 'p1',
       title: 'Post',
@@ -193,22 +162,12 @@ describe('prepareItemForm', () => {
         { id: 't9', name: 'design' },
       ],
     }
-    const { relationshipData } = await prepareItemForm(
-      context,
-      config,
-      'Post',
-      config.lists.Post,
-      itemData,
-      'update',
-    )
 
-    expect(relationshipData.tags).toEqual(
-      expect.arrayContaining([
-        { id: 't1', label: 'engineering' },
-        { id: 't9', label: 'design' },
-      ]),
-    )
-    expect(tag.calls[1].where).toEqual([{ id: { in: ['t9'] } }])
+    await prepareItemForm(context, config, 'Post', config.lists.Post, itemData, 'update')
+
+    expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Tag', {
+      selectedIds: ['t1', 't9'],
+    })
   })
 
   it('fetches relationship options for multiple fields concurrently, not serially', async () => {
@@ -219,24 +178,26 @@ describe('prepareItemForm', () => {
     // both before either resolves.
     let authorCalled = false
     let tagCalled = false
-    let resolveAuthor!: (value: Rows) => void
-    let resolveTag!: (value: Rows) => void
+    let resolveAuthor!: (value: Array<{ id: string; label: string }>) => void
+    let resolveTag!: (value: Array<{ id: string; label: string }>) => void
 
-    const author = makeDelegate(() => {
-      authorCalled = true
-      return new Promise<Rows>((resolve) => {
-        resolveAuthor = resolve
-      })
+    mockedGetRelationshipOptions.mockImplementation(async (_context, _config, relatedListKey) => {
+      if (relatedListKey === 'Author') {
+        authorCalled = true
+        return new Promise((resolve) => {
+          resolveAuthor = resolve
+        })
+      }
+      if (relatedListKey === 'Tag') {
+        tagCalled = true
+        return new Promise((resolve) => {
+          resolveTag = resolve
+        })
+      }
+      return []
     })
-    const tag = makeDelegate(() => {
-      tagCalled = true
-      return new Promise<Rows>((resolve) => {
-        resolveTag = resolve
-      })
-    })
-    const context = makeContext({ Author: author, Tag: tag })
+
     const config = makeConfig()
-
     const promise = prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
     expect(authorCalled).toBe(true)
@@ -248,14 +209,13 @@ describe('prepareItemForm', () => {
   })
 
   it('passes no selectedIds when the relationship is empty (create mode)', async () => {
-    const author = makeDelegate(async () => [])
-    const context = makeContext({ Author: author, Tag: makeDelegate(async () => []) })
     const config = makeConfig()
 
     await prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
-    // Only the primary bounded read runs — no second, id-scoped one.
-    expect(author.calls).toHaveLength(1)
+    expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      selectedIds: [],
+    })
   })
 })
 
@@ -267,19 +227,11 @@ describe('prepareItemForm', () => {
  * that never reached the database.
  */
 describe('prepareItemForm relationship writability', () => {
-  const emptyContext = () =>
-    makeContext({
-      Author: makeDelegate(async () => []),
-      Tag: makeDelegate(async () => []),
-      User: makeDelegate(async () => []),
-      Profile: makeDelegate(async () => []),
-    })
-
   it('marks a to-many read-only and leaves the foreign-key-owning to-one editable', async () => {
     const config = makeConfig()
 
     const { serializableFields } = await prepareItemForm(
-      emptyContext(),
+      context,
       config,
       'Post',
       config.lists.Post,
@@ -298,7 +250,7 @@ describe('prepareItemForm relationship writability', () => {
     const config = makeConfig()
 
     const { serializableFields: userFields } = await prepareItemForm(
-      emptyContext(),
+      context,
       config,
       'User',
       config.lists.User,
@@ -306,7 +258,7 @@ describe('prepareItemForm relationship writability', () => {
       'create',
     )
     const { serializableFields: profileFields } = await prepareItemForm(
-      emptyContext(),
+      context,
       config,
       'Profile',
       config.lists.Profile,

@@ -38,6 +38,19 @@ function inInt4(value: number): boolean {
 }
 
 /**
+ * The JSON Schema for a list's own id at the type its primary key actually
+ * carries (ADR-0048) — an `int autoincrement` (or singleton) list advertises
+ * `integer` rather than telling every caller every id is a string. Shared by
+ * the `where.id` schema on `update`/`delete` and the `connect.id` schema
+ * inside a relationship field's `data` schema, so the two never drift.
+ */
+export function listIdJsonSchema(config: OpenSaasConfig, listKey: string): Record<string, unknown> {
+  const strategy = listIdColumn(config, listKey)?.strategy
+  const integer = strategy === 'int autoincrement' || strategy === 'singleton'
+  return { type: integer ? 'integer' : 'string' }
+}
+
+/**
  * The primary-key column of one list, as the contract declares it, or `null`
  * when the config declares no such list.
  */

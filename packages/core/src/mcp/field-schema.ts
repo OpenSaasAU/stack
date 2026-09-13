@@ -3,12 +3,14 @@ import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { decideAdvertisement } from './advertise.js'
 import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
+import { listIdJsonSchema } from '../contract/id-boundary.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
 export function fieldToJsonSchema(
   fieldName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
   fieldConfig: any,
+  config: OpenSaasConfig,
 ): Record<string, unknown> {
   const baseSchema: Record<string, unknown> = {}
 
@@ -41,7 +43,7 @@ export function fieldToJsonSchema(
         baseSchema.enum = fieldConfig.options.map((opt: { value: string }) => opt.value)
       }
       break
-    case 'relationship':
+    case 'relationship': {
       // `null` is the only spelling that clears the edge — nested `disconnect`
       // is refused (ADR-0050) — so the schema has to admit it alongside
       // `connect`, or a client cannot express half of what the write surface
@@ -49,11 +51,15 @@ export function fieldToJsonSchema(
       baseSchema.type = ['object', 'null']
       baseSchema.description =
         'Link this record to a row of the related list with { "connect": { "id": "..." } }, or clear the link with null.'
+      // `connect.id` is the RELATED list's own id, at its own type (ADR-0048)
+      // — an integer-keyed related list must validate an integer here exactly
+      // as `where.id` does on that list's own tools.
+      const relatedListKey: string = fieldConfig.ref.split('.')[0]
       baseSchema.properties = {
         connect: {
           type: 'object',
           properties: {
-            id: { type: 'string' },
+            id: listIdJsonSchema(config, relatedListKey),
           },
           required: ['id'],
           additionalProperties: false,
@@ -67,6 +73,7 @@ export function fieldToJsonSchema(
       baseSchema.required = ['connect']
       baseSchema.additionalProperties = false
       break
+    }
     default:
       baseSchema.type = 'string'
   }
@@ -84,7 +91,7 @@ export function fieldToJsonSchema(
  * ownership question with no answer is treated as "not this end", which at
  * worst omits a field the engine would have refused anyway.
  */
-function ownsForeignKey(
+export function ownsForeignKey(
   listKey: string,
   fieldName: string,
   fieldConfig: RelationshipField,
@@ -144,7 +151,7 @@ export async function generateFieldSchemas(
       continue
     }
 
-    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig)
+    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig, config)
 
     if (isRequired) required.push(fieldName)
   }

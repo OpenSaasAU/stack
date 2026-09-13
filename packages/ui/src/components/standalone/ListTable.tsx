@@ -14,6 +14,7 @@ import {
 } from '../../primitives/table.js'
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
+import type { CellValue } from '../cells/registry.js'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import { isDefaultColumnField } from '../../lib/defaultColumns.js'
 
@@ -228,7 +229,7 @@ export function ListTable({
                       )}
                     >
                       <CellRenderer
-                        value={item[column]}
+                        value={item[column] as CellValue}
                         field={getFieldConfig(column)}
                         fieldName={column}
                         basePath={basePath}

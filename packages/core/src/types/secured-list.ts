@@ -162,25 +162,6 @@ export type ListFilterArgs<C, R extends RemainderBase, K extends keyof R & strin
   distinct?: (keyof StoredRow<C, R, K> & string) | (keyof StoredRow<C, R, K> & string)[]
 }
 
-export type FindUniqueArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { where: ListUniqueWhere<C, R, K> }
-
-export type FindManyArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> &
-  ListFilterArgs<C, R, K>
-
-export type CountArgs<C, R extends RemainderBase, K extends keyof R & string> = {
-  where?: ListWhere<C, R, K>
-  take?: number
-  skip?: number
-}
-
 export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
   C,
   R,

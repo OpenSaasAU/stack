@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation.js'
 import { cn, formatFieldName } from '../lib/utils.js'
 import { CellRenderer } from './cells/CellRenderer.js'
+import type { CellValue } from './cells/registry.js'
 import { FieldRenderer } from './fields/FieldRenderer.js'
 import { getFieldComponent } from './fields/registry.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
@@ -151,7 +152,12 @@ export function RelationshipTableCell({
   if (!canEdit) {
     return (
       <div data-slot="relationship-table-cell-display">
-        <CellRenderer value={displayValue} field={field} fieldName={column} basePath={basePath} />
+        <CellRenderer
+          value={displayValue as CellValue}
+          field={field}
+          fieldName={column}
+          basePath={basePath}
+        />
       </div>
     )
   }
@@ -278,7 +284,12 @@ export function RelationshipTableCell({
           startEdit()
         }}
       >
-        <CellRenderer value={displayValue} field={field} fieldName={column} basePath={basePath} />
+        <CellRenderer
+          value={displayValue as CellValue}
+          field={field}
+          fieldName={column}
+          basePath={basePath}
+        />
       </button>
       {(fieldError || error) && (
         <p

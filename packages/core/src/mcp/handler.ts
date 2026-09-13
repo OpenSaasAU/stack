@@ -1,10 +1,11 @@
 import * as z from 'zod'
-import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
+import type { ListConfig, OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import { getPluginData } from '../config/plugin-engine.js'
 import type { AccessContext } from '../access/types.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
 import { pascalToCamel } from '../lib/case-utils.js'
+import { isRelationshipField } from '../fields/index.js'
 import {
   AccessScopeDepthExceededError,
   RelationFilterAccessDeniedError,
@@ -13,8 +14,13 @@ import {
 import { ValidationError } from '../hooks/index.js'
 import { DatabaseError } from '../lib/database-errors.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { generateFieldSchemas } from './field-schema.js'
-import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
+import { generateFieldSchemas, ownsForeignKey } from './field-schema.js'
+import {
+  listIdColumn,
+  listIdJsonSchema,
+  parseListId,
+  type ListIdValue,
+} from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
@@ -237,17 +243,6 @@ function whereDescription(listKey: string): string {
   )
 }
 
-/**
- * The `where.id` schema for the `update`/`delete` tools, at the type this
- * list's primary key actually carries (ADR-0048) — an `int autoincrement` list
- * validates an integer rather than being told every id is a string.
- */
-function idSchema(config: OpenSaasConfig, listKey: string): Record<string, unknown> {
-  const strategy = listIdColumn(config, listKey)?.strategy
-  const integer = strategy === 'int autoincrement' || strategy === 'singleton'
-  return { type: integer ? 'integer' : 'string' }
-}
-
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
@@ -358,7 +353,7 @@ async function handleToolsList(
               type: 'object',
               description: 'Record identifier',
               properties: {
-                id: idSchema(config, listKey),
+                id: listIdJsonSchema(config, listKey),
               },
               required: ['id'],
             },
@@ -384,7 +379,7 @@ async function handleToolsList(
               type: 'object',
               description: 'Record identifier',
               properties: {
-                id: idSchema(config, listKey),
+                id: listIdJsonSchema(config, listKey),
               },
               required: ['id'],
             },
@@ -461,7 +456,7 @@ async function handleToolsCall(
   return await handleCustomTool(toolName, toolArgs, session, config, getContext, id)
 }
 
-function isWhereObject(value: unknown): value is Record<string, unknown> {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -518,6 +513,68 @@ function parseWhereIds(
     operators[operator] = id
   }
   return { ...where, id: operators }
+}
+
+/** `{ connect: { id } }`, and nothing beside either key — the only shape {@link coerceConnectIds} parses. Any other shape is left alone for the write pipeline's own `MalformedRelationInputError` to refuse. */
+function connectCriterion(value: unknown): Record<string, unknown> | undefined {
+  if (!isPlainObject(value)) return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'connect') return undefined
+  const criterion = value.connect
+  if (!isPlainObject(criterion)) return undefined
+  const criterionKeys = Object.keys(criterion)
+  if (criterionKeys.length !== 1 || criterionKeys[0] !== 'id') return undefined
+  return criterion
+}
+
+/**
+ * A `data` payload's own `{ connect: { id } }` values, each at the RELATED
+ * list's own id type (ADR-0048) — the write half of the same boundary
+ * coercion `parseWhereIds` applies to a `where.id`. The advertised schema
+ * (`fieldToJsonSchema`) already tells a well-behaved caller which type to
+ * send; this is what refuses a malformed one rather than letting it reach the
+ * reachability query as a value the target column cannot hold.
+ *
+ * Only a field that owns its foreign key can carry `connect` at all (ADR-0050
+ * refuses it everywhere else already), so every other field's value is
+ * returned unchanged. `null` (clearing the edge) and a value the write
+ * pipeline itself refuses (a malformed shape, a second key) both pass through
+ * unchanged — this only ever narrows a well-shaped `connect.id`, never widens
+ * or replaces a refusal that already exists downstream.
+ *
+ * Returns `null` when a `connect.id` names a value its related list's id
+ * column cannot hold — the caller turns that into the same generic
+ * "access denied or record not found" `where.id` already answers with.
+ */
+function coerceConnectIds(
+  data: Record<string, unknown>,
+  listKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
+): Record<string, unknown> | null {
+  let coerced: Record<string, unknown> | undefined
+
+  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+    if (!Object.hasOwn(data, fieldName)) continue
+    if (!isRelationshipField(fieldConfig)) continue
+    if (!ownsForeignKey(listKey, fieldName, fieldConfig, config)) continue
+
+    const criterion = connectCriterion(data[fieldName])
+    if (criterion === undefined) continue
+
+    const relatedListKey = fieldConfig.ref.split('.')[0]
+    const strategy = listIdColumn(config, relatedListKey)?.strategy
+    if (strategy !== 'int autoincrement' && strategy !== 'singleton') continue
+
+    const parsed = parseListId(config, relatedListKey, criterion.id)
+    if (!parsed.ok) return null
+
+    coerced ??= { ...data }
+    coerced[fieldName] = { connect: { id: parsed.value } }
+  }
+
+  return coerced ?? data
 }
 
 /**
@@ -603,7 +660,7 @@ async function handleCrudTool(
         let query: SecuredQuery = context.db[listKey]
         let projection: ResolvedFieldsProjection | undefined
         try {
-          if (isWhereObject(args.where)) {
+          if (isPlainObject(args.where)) {
             const parsedWhere = parseWhereIds(args.where, config, listKey)
             if (parsedWhere === null) return createSuccessResponse({ items: [], count: 0 }, id)
             query = query.where(whereArgument(parsedWhere, listKey))
@@ -641,10 +698,21 @@ async function handleCrudTool(
         }
       }
 
-      case 'create':
-        result = await context.db[listKey].create({
-          data: args.data,
-        })
+      case 'create': {
+        // A `connect.id` naming a value its related list's id column cannot
+        // hold answers exactly as a missing row does — the same boundary
+        // coercion `where.id` gets below, applied to the write's own edges
+        // (ADR-0048, Silent failure).
+        const data = isPlainObject(args.data)
+          ? coerceConnectIds(args.data, listKey, listConfig, config)
+          : args.data
+        if (data === null) {
+          return createErrorResultResponse(
+            'Failed to create record. Access denied or validation failed.',
+            id,
+          )
+        }
+        result = await context.db[listKey].create({ data })
         if (!result) {
           return createErrorResultResponse(
             'Failed to create record. Access denied or validation failed.',
@@ -652,6 +720,7 @@ async function handleCrudTool(
           )
         }
         return createSuccessResponse({ success: true, item: result }, id)
+      }
 
       case 'update': {
         // A malformed id answers exactly as a missing row does: shape is all
@@ -664,9 +733,18 @@ async function handleCrudTool(
             id,
           )
         }
+        const data = isPlainObject(args.data)
+          ? coerceConnectIds(args.data, listKey, listConfig, config)
+          : args.data
+        if (data === null) {
+          return createErrorResultResponse(
+            'Failed to update record. Access denied or record not found.',
+            id,
+          )
+        }
         result = await context.db[listKey].update({
           where: { id: parsed.value },
-          data: args.data,
+          data,
         })
         if (!result) {
           return createErrorResultResponse(
