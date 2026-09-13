@@ -6,7 +6,8 @@ import { text } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
-import { withOrigin } from '../origin.js'
+import { UnmarkedQueryError, withOrigin } from '../origin.js'
+import { DatabaseError } from '../lib/database-errors.js'
 
 /**
  * #1205 / ADR-0010: every write through `context.db` opens a transaction, so a
@@ -55,6 +56,31 @@ function contextOver(
 ): StackContext<AccessControlledDB> {
   const orm = ormClientFor(database.data, database.client.orm)
   return getContext(config, orm, session, undefined, false, undefined, undefined, database.client)
+}
+
+/**
+ * Write an Audit row directly through the raw ORM handle a hook receives,
+ * bypassing `context.db` entirely. `marked: true` wraps the call in
+ * `withOrigin('engine', …)`, the shape a hook must use to reach the database
+ * without the tripwire refusing it; `marked: false` omits that wrap, so the
+ * statement carries no origin and the tripwire refuses it (ADR-0059).
+ */
+async function writeAuditRow(
+  context: { ormHandle: Record<string, unknown> },
+  note: string,
+  { marked }: { marked: boolean },
+): Promise<void> {
+  const collection = context.ormHandle.Audit
+  if (typeof collection !== 'object' || collection === null) {
+    throw new Error('the context carries no Audit collection')
+  }
+  const create = Reflect.get(collection, 'create')
+  if (typeof create !== 'function') throw new Error('the collection has no create')
+  if (marked) {
+    await withOrigin('engine', () => create.call(collection, { note }))
+  } else {
+    await create.call(collection, { note })
+  }
 }
 
 async function rows(url: string, table: string): Promise<Record<string, unknown>[]> {
@@ -165,19 +191,6 @@ describe('every write through context.db opens a transaction', () => {
   test(
     'a hook\u2019s own write through ormHandle rolls back with the write',
     async () => {
-      const writeThroughHandle = async (
-        context: { ormHandle: Record<string, unknown> },
-        note: string,
-      ): Promise<void> => {
-        const collection = context.ormHandle.Audit
-        if (typeof collection !== 'object' || collection === null) {
-          throw new Error('the context carries no Audit collection')
-        }
-        const create = Reflect.get(collection, 'create')
-        if (typeof create !== 'function') throw new Error('the collection has no create')
-        await withOrigin('engine', () => create.call(collection, { note }))
-      }
-
       const config = (thrower: boolean): OpenSaasConfig => ({
         ...schemaConfig(),
         lists: {
@@ -186,7 +199,7 @@ describe('every write through context.db opens a transaction', () => {
             access: { operation: OPEN },
             hooks: {
               afterOperation: async ({ context }) => {
-                await writeThroughHandle(context, 'job created')
+                await writeAuditRow(context, 'job created', { marked: true })
                 if (thrower) throw new Error('the hook rejected the write')
               },
             },
@@ -209,6 +222,52 @@ describe('every write through context.db opens a transaction', () => {
 
       expect(await rows(database.url, 'Job')).toHaveLength(1)
       expect(await rows(database.url, 'Audit')).toHaveLength(1)
+    },
+    BOOT,
+  )
+
+  test(
+    'a tripwire refusal mid-write rolls back and reaches the caller unwrapped',
+    async () => {
+      // Same shape as the hook above, but `marked: false` omits the
+      // `withOrigin` wrap: this statement carries no origin at all (ADR-0059's
+      // tripwire is the whole of ADR-0038's enforcement), so the second
+      // statement of this write is refused rather than merely throwing an
+      // application error, which is #1209's guarantee.
+      const config: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          Job: {
+            fields: { name: text() },
+            access: { operation: OPEN },
+            hooks: {
+              afterOperation: async ({ context }) => {
+                await writeAuditRow(context, 'job created', { marked: false })
+              },
+            },
+          },
+          Audit: { fields: { note: text() }, access: { operation: OPEN } },
+        },
+      }
+
+      const failure: unknown = await contextOver(database, config)
+        .db.Job.create({ data: { name: 'ship' } })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+
+      // A regression that stops the tripwire from firing would otherwise crash
+      // this assertion on `Object.getPrototypeOf(undefined)` rather than fail
+      // it cleanly, so pin that the write actually rejected first.
+      expect(failure).toBeInstanceOf(Error)
+      // Prototype identity, not message matching (#1209's acceptance criterion):
+      // a wrapped or re-classified error would still carry a plausible message.
+      expect(Object.getPrototypeOf(failure)).toBe(UnmarkedQueryError.prototype)
+      expect(failure).not.toBeInstanceOf(DatabaseError)
+
+      expect(await rows(database.url, 'Job')).toEqual([])
+      expect(await rows(database.url, 'Audit')).toEqual([])
     },
     BOOT,
   )
