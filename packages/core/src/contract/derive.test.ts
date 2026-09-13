@@ -160,6 +160,28 @@ describe('deriveContract — columns', () => {
     ).toEqual(['avatar_id', 'avatar_width'])
   })
 
+  /**
+   * The secured surface always types a multi-column field's assembled logical
+   * key as optional on create (#1195) — there is no all-parts-required case
+   * for it to satisfy a NOT NULL part with, so a non-nullable part is refused
+   * rather than left writable through no typed path at all.
+   */
+  test('a non-nullable part on a multi-column field is refused', () => {
+    const image: BaseFieldConfig<TypeInfo> = {
+      type: 'image',
+      getContractField: (name) => ({
+        kind: 'columns',
+        columns: [
+          { name: `${name}_id`, type: { pack: 'pg', type: 'text' }, nullable: false },
+          { name: `${name}_width`, type: { pack: 'pg', type: 'int' }, nullable: true },
+        ],
+      }),
+    }
+    expect(() => single({ A: { fields: { avatar: image } } })).toThrow(
+      /"A\.avatar".*avatar_id.*non-nullable/s,
+    )
+  })
+
   test('enums are collected once; one name with two value sets is refused', () => {
     const options = [
       { label: 'A', value: 'a' },

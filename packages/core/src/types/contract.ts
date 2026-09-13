@@ -14,6 +14,11 @@ import type {
  *   codec's (`password` reads as `HashedPassword` over a text column).
  * - `input` — the same asymmetry on the write side (`calendarDay` writes as
  *   `string`).
+ * - `columns` — a multi-column field's physical column names (`kind:
+ *   'columns'`, ADR-0006), as the union of their literal names, keyed by the
+ *   field's own logical name. The field itself is not a column — `output`/
+ *   `input` above carry its assembled TypeScript face — so this is what tells
+ *   `Row`/`WritableColumn` which physical keys to hide behind it (#1195).
  * - `needs` — each computed field's declared dependency set, as a union of the
  *   column and relation keys it reads (ADR-0051).
  * - `singleton` — `true` on a list declared `isSingleton`. The contract sees an
@@ -23,6 +28,7 @@ export type ListRemainder = {
   computed: Record<string, unknown>
   output: Record<string, unknown>
   input: Record<string, unknown>
+  columns: Record<string, string>
   needs: Record<string, string>
   singleton?: boolean
 }
@@ -221,3 +227,24 @@ export type SystemFilledColumn<C, K extends string> = {
 export type ListId<C, K extends string> = 'id' extends keyof ColumnOutputTypes<C, K>
   ? ColumnOutputTypes<C, K>['id']
   : never
+
+/**
+ * The logical field keys of `K`'s multi-column fields (`kind: 'columns'`,
+ * ADR-0006) — synthetic keys with no column of their own, present only
+ * through the remainder's `output`/`input` (#1195).
+ */
+export type MultiColumnFieldKey<
+  R extends RemainderBase,
+  K extends keyof R & string,
+> = keyof R[K]['columns'] & string
+
+/**
+ * The union of every physical column a multi-column field on `K` owns. Never
+ * a real read or write key — `Row`/`WritableColumn` omit it so only the
+ * field's assembled logical key (typed through `output`/`input`) reaches a
+ * caller (#1195).
+ */
+export type MultiColumnPhysicalColumn<
+  R extends RemainderBase,
+  K extends keyof R & string,
+> = R[K]['columns'][keyof R[K]['columns']]

@@ -221,3 +221,52 @@ advertise at all, which is a design question ADR-0066's own "Give
 `beforeTransaction`/`afterTransaction` the same treatment — Rejected" already
 answered once in the opposite direction for the boundary hooks). That is
 runtime work, filed separately rather than folded into a types-only ticket.
+
+## Amendment — a multi-column field's logical key reaches `CreateInput`/`UpdateInput`, and its physical columns leave the row ([#1195](https://github.com/OpenSaasAU/stack/issues/1195))
+
+`CreateInput`/`UpdateInput` map over `WritableColumn`, which was built purely
+from the contract's own columns (`keyof ColumnInputTypes<C, K>`). A `kind:
+'columns'` field (ADR-0006's Keystone-parity `image()`/`file()` mode, and
+`@opensaas/stack-rag`'s `embedding()`) owns several physical columns and no
+column of its own under its logical name, so that name never appeared in
+`WritableColumn` and the field's declared `inputType` — already collected
+into the remainder's `input`, since `readInputType` never conditioned on
+descriptor kind — was collected and then never read. The mirror bug sat in
+`Row`/`StoredRow`: `StoredFields` only `Omit`s a physical column that the
+remainder's `output` happens to override by the same name, so a multi-column
+field's per-part columns (`hero_url`, `hero_width`, …) stayed on the row
+beside the assembled `hero` the runtime actually returns. Both compiled and
+were silently wrong — an omission Field Visibility's runtime strip already
+made correct at the value level, and this record's own "shrinks to what the
+contract cannot express" premise had no member for.
+
+The fix adds one remainder facet, `columns: Record<string, string>` — a
+multi-column field's own logical name mapped to the union of its physical
+column names, rendered the same way `needs` renders a union of literal keys.
+Two generics read it: `MultiColumnPhysicalColumn<R, K>` is the union of every
+list's multi-column physical names (indexing `R[K]['columns']` by its own
+`keyof`, which collapses to `never` when the list declares none, exactly as
+an empty `needs` does), and `MultiColumnFieldKey<R, K>` is `keyof
+R[K]['columns']` — the logical names themselves. `WritableColumn` and
+`StoredFields`'s `Omit` both subtract the physical union, so a multi-column
+field's per-part columns leave `Row`, `CreateInput` and `UpdateInput`
+entirely; `CreateInput`/`UpdateInput` then add one further, always-optional
+member over `MultiColumnFieldKey`, typed through the same `ColumnInput`
+lookup every override already uses — every part column is nullable
+(ADR-0006), so there is no all-parts-required case to reproduce
+`RequiredCreateColumn`'s column-default logic for.
+
+One coincidence fell out rather than being designed for: `embedding()`'s
+vector column shares its model field name with the field's own logical key
+(`getContractField`'s first `columns` entry is named `fieldName` itself,
+`getMetadataColumn` names the second). The physical-column exclusion still
+removes it from `WritableColumn`, and the additive multi-column member adds
+the same string back typed through the remainder's `input` override, so the
+two mapped types never collide on one key — TypeScript intersects two object
+types with disjoint key sets, not one type that declares a key twice.
+
+No change reached the field packages: `image()`/`file()`/`embedding()`
+already declared `outputType`/`inputType` on their logical key and
+`getContractField`'s per-part `name`s, which is all the generator needed —
+the gap was entirely in core's generics and in `types.ts` collecting one more
+fact the contract cannot carry.

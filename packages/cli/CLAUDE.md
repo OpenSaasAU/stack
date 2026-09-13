@@ -165,6 +165,7 @@ export type Remainder = {
     computed: { excerpt: string }
     output: Record<never, never>
     input: Record<never, never>
+    columns: Record<never, never>
     needs: { excerpt: 'content' }
   }
 }

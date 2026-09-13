@@ -3,6 +3,8 @@ import type {
   ForeignKeyColumn,
   HasColumnDefault,
   ListId,
+  MultiColumnFieldKey,
+  MultiColumnPhysicalColumn,
   OwnedRelationKey,
   RelationsOf,
   RelationTarget,
@@ -13,12 +15,14 @@ import type {
 /**
  * Every column a caller may write: the contract's input columns minus the ones
  * the system fills (the primary key, an ORM-side create generator, a database
- * function default). Foreign-key columns stay writable — `connect` lowers to
- * exactly such an assignment (ADR-0050).
+ * function default) and minus a multi-column field's own physical columns,
+ * which are never writable directly — only its assembled logical key is
+ * (#1195). Foreign-key columns stay writable — `connect` lowers to exactly
+ * such an assignment (ADR-0050).
  */
-export type WritableColumn<C, K extends string> = Exclude<
+export type WritableColumn<C, R extends RemainderBase, K extends keyof R & string> = Exclude<
   keyof ColumnInputTypes<C, K> & string,
-  SystemFilledColumn<C, K>
+  SystemFilledColumn<C, K> | MultiColumnPhysicalColumn<R, K>
 >
 
 type ColumnInput<
@@ -38,8 +42,8 @@ type ColumnInput<
  * that obligation instead, so a caller is not asked for both spellings of the
  * same value.
  */
-type RequiredCreateColumn<C, K extends string> = {
-  [F in Exclude<WritableColumn<C, K>, ForeignKeyColumn<C, K>>]: null extends ColumnInputTypes<
+type RequiredCreateColumn<C, R extends RemainderBase, K extends keyof R & string> = {
+  [F in Exclude<WritableColumn<C, R, K>, ForeignKeyColumn<C, K>>]: null extends ColumnInputTypes<
     C,
     K
   >[F & keyof ColumnInputTypes<C, K>]
@@ -47,7 +51,7 @@ type RequiredCreateColumn<C, K extends string> = {
     : HasColumnDefault<C, K, F> extends true
       ? never
       : F
-}[Exclude<WritableColumn<C, K>, ForeignKeyColumn<C, K>>]
+}[Exclude<WritableColumn<C, R, K>, ForeignKeyColumn<C, K>>]
 
 type ForeignKeyOf<C, K extends string, Rel> = Rel extends keyof RelationsOf<C, K>
   ? RelationsOf<C, K>[Rel] extends { readonly on: { readonly localFields: infer L } }
@@ -90,25 +94,33 @@ type RelationInput<C, K extends string, Rel> = null extends ColumnInputTypes<C, 
 /**
  * The create payload for one list: scalars from the contract's input types
  * with the remainder's `input` overrides applied, `connect` on exactly the
- * relations the contract shows own a foreign key, and required members exactly
- * where the contract shows a non-nullable column with no default.
+ * relations the contract shows own a foreign key, required members exactly
+ * where the contract shows a non-nullable column with no default, and a
+ * multi-column field's assembled logical key, always optional — every part
+ * column is nullable (ADR-0006), so there is no all-parts-required case to
+ * mirror `RequiredCreateColumn`'s column-default logic for.
  */
 export type CreateInput<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in Extract<WritableColumn<C, K>, RequiredCreateColumn<C, K>>]: ColumnInput<C, R, K, F>
+  [F in Extract<WritableColumn<C, R, K>, RequiredCreateColumn<C, R, K>>]: ColumnInput<C, R, K, F>
 } & {
-  [F in Exclude<WritableColumn<C, K>, RequiredCreateColumn<C, K>>]?: ColumnInput<C, R, K, F>
+  [F in Exclude<WritableColumn<C, R, K>, RequiredCreateColumn<C, R, K>>]?: ColumnInput<C, R, K, F>
 } & {
   [Rel in Extract<OwnedRelationKey<C, K>, RequiredCreateRelation<C, K>>]: RelationInput<C, K, Rel>
 } & {
   [Rel in Exclude<OwnedRelationKey<C, K>, RequiredCreateRelation<C, K>>]?: RelationInput<C, K, Rel>
+} & {
+  [F in MultiColumnFieldKey<R, K>]?: ColumnInput<C, R, K, F>
 }
 
 /**
- * The update payload for one list: every writable column and every
- * foreign-key-owning relation, all optional — an update is partial.
+ * The update payload for one list: every writable column, every
+ * foreign-key-owning relation and every multi-column field's logical key, all
+ * optional — an update is partial.
  */
 export type UpdateInput<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in WritableColumn<C, K>]?: ColumnInput<C, R, K, F>
+  [F in WritableColumn<C, R, K>]?: ColumnInput<C, R, K, F>
 } & {
   [Rel in OwnedRelationKey<C, K>]?: RelationInput<C, K, Rel>
+} & {
+  [F in MultiColumnFieldKey<R, K>]?: ColumnInput<C, R, K, F>
 }
