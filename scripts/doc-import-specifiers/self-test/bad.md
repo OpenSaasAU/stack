@@ -26,3 +26,10 @@ A default import from a package with no default export:
 ```ts
 import Core from '@opensaas/stack-core'
 ```
+
+A named import from an opaque subpath — one whose export has no `.d.ts`
+entry to enumerate, so it has no exports at all:
+
+```ts
+import { globalCss } from '@opensaas/stack-ui/styles'
+```

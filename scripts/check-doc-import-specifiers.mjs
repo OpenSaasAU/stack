@@ -27,9 +27,11 @@
 //     real exports, read from its TypeScript source (`src/`, not `dist/`) by
 //     following the same `rootDir`/`outDir` convention every package's
 //     `tsconfig.json` uses. A subpath whose export has no `.d.ts` entry (a
-//     stylesheet, say) is resolved but not checked further: a bare or default
-//     import from it passes, a named import always fails.
-//   - A default import is checked for a default export; a namespace import
+//     stylesheet, say) is opaque: it has no exports to enumerate, so a bare
+//     or namespace import from it passes and a named or default import
+//     always fails.
+//   - A default import, and a named import spelled `{ default as X }`, are
+//     both checked against the subpath's default export; a namespace import
 //     (`import * as X`) and a bare side-effect import are never wrong once
 //     the subpath itself resolves.
 //   - Extraction is per fenced block (`ts`, `typescript`, `tsx`, `jsx`), and
@@ -283,8 +285,11 @@ function checkBlock(file, block) {
       continue
     }
     const resolved = exportedNames.get(specifier)
-    if (!resolved) continue // opaque entry (no .d.ts to enumerate, e.g. a stylesheet)
-    if (bindings.hasDefault && !resolved.hasDefault) {
+    // An opaque entry (no .d.ts to enumerate, e.g. a stylesheet) has nothing a
+    // named or default import could bind to; only a bare or namespace import
+    // survives it.
+    const hasDefault = resolved ? resolved.hasDefault : false
+    if (bindings.hasDefault && !hasDefault) {
       problems.push({
         file,
         line: blockLine,
@@ -293,7 +298,10 @@ function checkBlock(file, block) {
       })
     }
     for (const name of bindings.named) {
-      if (!resolved.names.has(name)) {
+      // `import { default as X }` names the default export through the named
+      // clause, so it is checked against `hasDefault`, not the named-export set.
+      const exportsIt = name === 'default' ? hasDefault : (resolved?.names.has(name) ?? false)
+      if (!exportsIt) {
         problems.push({
           file,
           line: blockLine,
@@ -334,8 +342,8 @@ if (selfTestMode) {
   const good = problems.filter((p) => p.file.endsWith('good.md'))
 
   const issues = []
-  if (bad.length !== 4) {
-    issues.push(`expected 4 findings in bad.md, got ${bad.length}: ${JSON.stringify(bad)}`)
+  if (bad.length !== 5) {
+    issues.push(`expected 5 findings in bad.md, got ${bad.length}: ${JSON.stringify(bad)}`)
   }
   if (good.length !== 0) {
     issues.push(`expected 0 findings in good.md, got ${good.length}: ${JSON.stringify(good)}`)
@@ -345,7 +353,7 @@ if (selfTestMode) {
     for (const issue of issues) console.error(`  - ${issue}`)
     process.exit(1)
   }
-  console.log('Self-test passed: 4 bad shapes reported, 0 good shapes reported.')
+  console.log('Self-test passed: 5 bad shapes reported, 0 good shapes reported.')
   process.exit(0)
 }
 
