@@ -6,7 +6,7 @@ import { checkbox, integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import {
-  ESCAPE_VARIABLE,
+  ESCAPE_VARIABLES,
   probePgvectorAvailability,
   readDatabaseEscape,
 } from '../testing/escape.js'
@@ -394,7 +394,7 @@ describe('each promised member answers', () => {
   test.skipIf(!pgvectorAvailable)(
     pgvectorAvailable
       ? 'nearest returns the row and its score'
-      : `nearest returns the row and its score [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+      : `nearest returns the row and its score [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
     async () => {
       await seed('Article', { title: 'near', embedding: [1, 0, 0] })
       await seed('Article', { title: 'far', embedding: [0, 1, 0] })

@@ -9,7 +9,7 @@ import { originTripwire } from '../origin.js'
 import type { StackContext } from '../types/context.js'
 import type { AccessControlledDB } from '../access/types.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
-import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
+import { ESCAPE_VARIABLES, readDatabaseEscape } from '../testing/escape.js'
 
 /**
  * The #614 capacity gate: N concurrent racers against a capacity-N slot admit
@@ -104,7 +104,7 @@ const escape = readDatabaseEscape()
 describe.skipIf(escape.kind !== 'postgres')(
   escape.kind === 'postgres'
     ? 'the #614 capacity gate under contention'
-    : `the #614 capacity gate under contention [escape-only: ${ESCAPE_VARIABLE} names no Postgres]`,
+    : `the #614 capacity gate under contention [escape-only: ${ESCAPE_VARIABLES.join('/')} names no Postgres]`,
   () => {
     let database: TestDatabase
     let racers: Racer[]

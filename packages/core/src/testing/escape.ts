@@ -1,22 +1,36 @@
-/** The variable the harness reads, and the only escape from in-process PGlite. */
-export const ESCAPE_VARIABLE = 'DATABASE_URL'
+import { CONNECTION_VARIABLES } from '../db/url.js'
+
+/**
+ * The variables the harness reads, in the same order `resolveDatabaseUrl()`
+ * does — `DIRECT_DATABASE_URL` first — and the only escape from in-process
+ * PGlite. Re-exported from `../db/url.js` rather than declared here, so the
+ * application's lookup and the harness's cannot drift apart again (issue
+ * #1210): with only `DIRECT_DATABASE_URL` set, both now agree it names a
+ * usable connection.
+ */
+export const ESCAPE_VARIABLES = CONNECTION_VARIABLES
 
 const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
 
 /**
- * What `DATABASE_URL` says. `'absent'` runs the suite on in-process PGlite;
- * `'postgres'` runs the identical suite against that server; `'unusable'` is a
- * misconfiguration the harness refuses rather than dials.
+ * What {@link ESCAPE_VARIABLES} say. `'absent'` runs the suite on in-process
+ * PGlite; `'postgres'` runs the identical suite against that server;
+ * `'unusable'` is a misconfiguration the harness refuses rather than dials.
  */
 export type DatabaseEscape =
   | { readonly kind: 'absent' }
   | { readonly kind: 'postgres'; readonly url: string }
-  | { readonly kind: 'unusable'; readonly url: string; readonly fault: string }
+  | {
+      readonly kind: 'unusable'
+      readonly variable: string
+      readonly url: string
+      readonly fault: string
+    }
 
 /**
- * Thrown when `DATABASE_URL` is set to something that is not a Postgres
- * connection string. Names the variable, its value, the fault and both
- * remedies.
+ * Thrown when one of {@link ESCAPE_VARIABLES} is set to something that is not
+ * a Postgres connection string. Names the variable, its value, the fault and
+ * both remedies.
  *
  * A set-but-unusable value is not the same as an unset one: node-postgres
  * quietly falls back to `localhost:5432` for a string it cannot parse, so a
@@ -26,11 +40,12 @@ export type DatabaseEscape =
  */
 export class UnusableDatabaseEscapeError extends Error {
   constructor(
+    readonly variable: string,
     readonly url: string,
     readonly fault: string,
   ) {
     super(
-      `${ESCAPE_VARIABLE} is set to \`${url}\`, which ${fault}. The test harness dials this ` +
+      `${variable} is set to \`${url}\`, which ${fault}. The test harness dials this ` +
         `variable when it is set, so either point it at a Postgres server (\`postgres://…\`) or ` +
         `unset it to run the suite on the in-process dev database.`,
     )
@@ -39,7 +54,10 @@ export class UnusableDatabaseEscapeError extends Error {
 }
 
 /**
- * Classify `DATABASE_URL` without dialling it.
+ * Classify {@link ESCAPE_VARIABLES} without dialling them. The first variable
+ * that is set and non-empty wins — the same rule `resolveDatabaseUrl()` uses —
+ * so a value in `DIRECT_DATABASE_URL` alone is classified exactly as the
+ * application would resolve it, rather than falling through to `'absent'`.
  *
  * Read this at module scope in a suite whose guarantee PGlite cannot exercise —
  * ADR-0047's row-lock contention, real pool concurrency — and skip on it by
@@ -49,36 +67,46 @@ export class UnusableDatabaseEscapeError extends Error {
  * ```typescript
  * const escape = readDatabaseEscape()
  * test.skipIf(escape.kind !== 'postgres')(
- *   `two bookings contend for one slot [escape-only: ${ESCAPE_VARIABLE} names no Postgres]`,
+ *   `two bookings contend for one slot [escape-only: ${ESCAPE_VARIABLES.join('/')} names no Postgres]`,
  *   async () => { … },
  * )
  * ```
  */
 export function readDatabaseEscape(): DatabaseEscape {
-  const url = process.env[ESCAPE_VARIABLE]
-  if (url === undefined || url.length === 0) return { kind: 'absent' }
+  for (const variable of ESCAPE_VARIABLES) {
+    const url = process.env[variable]
+    if (url === undefined || url.length === 0) continue
 
-  let scheme: string
-  try {
-    scheme = new URL(url).protocol
-  } catch {
-    return { kind: 'unusable', url, fault: 'is not a URL' }
+    let scheme: string
+    try {
+      scheme = new URL(url).protocol
+    } catch {
+      return { kind: 'unusable', variable, url, fault: 'is not a URL' }
+    }
+    if (!POSTGRES_SCHEMES.has(scheme)) {
+      return {
+        kind: 'unusable',
+        variable,
+        url,
+        fault: `names the \`${scheme}\` scheme, not Postgres`,
+      }
+    }
+    return { kind: 'postgres', url }
   }
-  if (!POSTGRES_SCHEMES.has(scheme)) {
-    return { kind: 'unusable', url, fault: `names the \`${scheme}\` scheme, not Postgres` }
-  }
-  return { kind: 'postgres', url }
+  return { kind: 'absent' }
 }
 
 /**
  * The escape's URL, or `undefined` to run on the dev database.
  *
- * @throws {UnusableDatabaseEscapeError} when the variable is set to anything
- *   that is not a Postgres connection string.
+ * @throws {UnusableDatabaseEscapeError} when one of {@link ESCAPE_VARIABLES}
+ *   is set to anything that is not a Postgres connection string.
  */
 export function requireUsableDatabaseEscape(): string | undefined {
   const escape = readDatabaseEscape()
-  if (escape.kind === 'unusable') throw new UnusableDatabaseEscapeError(escape.url, escape.fault)
+  if (escape.kind === 'unusable') {
+    throw new UnusableDatabaseEscapeError(escape.variable, escape.url, escape.fault)
+  }
   return escape.kind === 'postgres' ? escape.url : undefined
 }
 
@@ -153,7 +181,7 @@ export async function probePgvectorAvailability(url: string): Promise<boolean> {
   } while (Date.now() < until)
 
   throw new Error(
-    `Could not reach the ${ESCAPE_VARIABLE} server to probe for pgvector after ${attempts} ` +
+    `Could not reach the ${ESCAPE_VARIABLES.join('/')} server to probe for pgvector after ${attempts} ` +
       `attempts over ${PROBE_DEADLINE}ms. This is a broken connection, not a server without ` +
       `pgvector, so the caller should fail rather than skip. Last fault: ${describeFault(unreachable)}`,
   )

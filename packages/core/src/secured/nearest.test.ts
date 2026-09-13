@@ -12,7 +12,7 @@ import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
-import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
+import { ESCAPE_VARIABLES, readDatabaseEscape } from '../testing/escape.js'
 
 const BOOT = 120_000
 
@@ -215,7 +215,9 @@ const available =
   })())
 
 describe.skipIf(!available)(
-  available ? 'nearest()' : `nearest() [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+  available
+    ? 'nearest()'
+    : `nearest() [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
   () => {
     beforeAll(async () => {
       database = await createTestDatabase(config, { middleware: [recorder.middleware] })

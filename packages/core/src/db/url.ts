@@ -4,8 +4,13 @@ import { readDevDatabaseState, type DevDatabaseStateLocation } from './state-fil
  * The environment variables consulted, in order. `DIRECT_DATABASE_URL` wins so
  * a schema command reaches the direct connection rather than a pooler that
  * cannot run DDL (ADR-0003).
+ *
+ * This is the one place the list is written down — the test harness's escape
+ * (`@opensaas/stack-core/testing`'s `ESCAPE_VARIABLES`) imports it rather than
+ * keeping its own, so the two lookups cannot disagree about which variable
+ * counts (issue #1210).
  */
-const CONNECTION_VARIABLES = ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const
+export const CONNECTION_VARIABLES = ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const
 
 /** Thrown by {@link resolveDatabaseUrl} when neither remedy has been taken. */
 export class DatabaseUrlUnresolvedError extends Error {

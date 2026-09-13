@@ -12,7 +12,7 @@ import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { text, checkbox } from '@opensaas/stack-core/fields'
 import {
   createTestDatabase,
-  ESCAPE_VARIABLE,
+  ESCAPE_VARIABLES,
   readDatabaseEscape,
   type TestDatabase,
 } from '@opensaas/stack-core/testing'
@@ -142,7 +142,7 @@ const available =
 describe.skipIf(!available)(
   available
     ? 'the search helpers'
-    : `the search helpers [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+    : `the search helpers [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
   () => {
     beforeAll(async () => {
       database = await createTestDatabase(await defineConfig(source))

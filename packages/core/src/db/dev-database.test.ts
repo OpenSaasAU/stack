@@ -9,6 +9,7 @@ import { DevDatabaseInUseError, startDevDatabase, type DevDatabase } from './dev
 import { processStartTime } from './process-identity.js'
 import { readDevDatabaseState, writeDevDatabaseState, type DevDatabaseState } from './state-file.js'
 import { resolveDatabaseUrl } from './url.js'
+import { readDatabaseEscape } from '../testing/escape.js'
 
 /**
  * The claim fields `readDevDatabaseState` returns for this process, for an
@@ -363,44 +364,17 @@ describe('startDevDatabase', () => {
   )
 })
 
-const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
-
-type Escape =
-  | { kind: 'absent' }
-  | { kind: 'postgres'; name: string; url: string }
-  | { kind: 'unusable'; name: string; url: string; fault: string }
-
 /**
- * `pg` parses any string it is handed, defaulting whatever it cannot read to
- * `localhost:5432`, so a connection string that names no Postgres surfaces as a
- * refused connection several frames from its cause. Classifying it here keeps
- * the misconfiguration named where it is made.
- */
-function readEscape(): Escape {
-  for (const name of ['DIRECT_DATABASE_URL', 'DATABASE_URL'] as const) {
-    const url = process.env[name]
-    if (url === undefined || url.length === 0) continue
-    let scheme: string
-    try {
-      scheme = new URL(url).protocol
-    } catch {
-      return { kind: 'unusable', name, url, fault: 'is not a URL' }
-    }
-    if (!POSTGRES_SCHEMES.has(scheme))
-      return { kind: 'unusable', name, url, fault: `names the \`${scheme}\` scheme, not Postgres` }
-    return { kind: 'postgres', name, url }
-  }
-  return { kind: 'absent' }
-}
-
-/**
- * The escape: with a Postgres `DATABASE_URL` set this suite exercises whatever
- * server it names, so CI can run on a real one while a developer machine runs
- * with nothing installed. Set to anything else the variable is a
- * misconfiguration, and this suite says so rather than dialling it.
+ * The escape: with a Postgres `DATABASE_URL`/`DIRECT_DATABASE_URL` set this
+ * suite exercises whatever server it names, so CI can run on a real one while
+ * a developer machine runs with nothing installed. Set to anything else the
+ * variable is a misconfiguration, and this suite says so rather than dialling
+ * it. `readDatabaseEscape()` is the harness's own classification — reusing it
+ * here is what keeps this suite's notion of "the escape" from drifting away
+ * from `resolveDatabaseUrl()`'s, the bug issue #1210 fixed.
  */
 describe('the resolved database', () => {
-  const escape = readEscape()
+  const escape = readDatabaseEscape()
   let projectRoot: string
   let database: DevDatabase | undefined
 
@@ -408,8 +382,8 @@ describe('the resolved database', () => {
     projectRoot = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-'))
     if (escape.kind === 'unusable')
       throw new Error(
-        `${escape.name} is set to \`${escape.url}\`, which ${escape.fault}. This suite dials the ` +
-          `URL the lookup reports, so leave the variable unset to exercise the dev database or ` +
+        `${escape.variable} is set to \`${escape.url}\`, which ${escape.fault}. This suite dials ` +
+          `the URL the lookup reports, so leave the variable unset to exercise the dev database or ` +
           `point it at a Postgres server.`,
       )
     database = escape.kind === 'absent' ? await startDevDatabase({ cwd: projectRoot }) : undefined
