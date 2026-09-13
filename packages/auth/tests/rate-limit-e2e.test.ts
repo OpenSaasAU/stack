@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import { processGlobalKey } from '@opensaas/stack-core/internal'
 import { createAuth } from '../src/server/index.js'
 import { generateProject, toolchainPresent, type GeneratedProject } from './generated-project.js'
 
@@ -108,7 +109,7 @@ describe.skipIf(!prerequisitesPresent)(
       expect(process.env.BETTER_AUTH_SECRET).toBe(before.BETTER_AUTH_SECRET)
       expect(process.env.BETTER_AUTH_URL).toBe(before.BETTER_AUTH_URL)
       expect(process.env.DATABASE_URL).toBe(before.DATABASE_URL)
-      expect(Reflect.get(globalThis, 'opensaasClient')).toBeUndefined()
+      expect(Reflect.get(globalThis, Symbol.for(processGlobalKey('client')))).toBeUndefined()
     }, 120_000)
   },
 )

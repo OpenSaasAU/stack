@@ -77,5 +77,9 @@ export { findDatabaseConnection } from './db/url.js'
 
 // The process-wide singleton registry a bundler-duplicated module has to
 // share a value through — used by the origin store, the engine face, and the
-// generated context's client singleton (ADR-0070).
-export { processGlobal } from './lib/process-global.js'
+// generated context's client singleton (ADR-0070). `processGlobalKey` is
+// exported alongside it for a caller that needs to address the published
+// slot directly rather than through `processGlobal` itself — a test harness
+// resetting the client singleton between sequentially-generated projects in
+// one process, say.
+export { processGlobal, processGlobalKey } from './lib/process-global.js'

@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { processGlobalKey } from '@opensaas/stack-core/internal'
 import type { OpenSaasConfig, StackContext } from '@opensaas/stack-core'
 
 /**
@@ -24,10 +25,11 @@ import type { OpenSaasConfig, StackContext } from '@opensaas/stack-core'
  *
  * Known limits:
  * - One project at a time per process: the generated bundle caches its client
- *   on `globalThis`, and the working directory is process-wide. `close()`
- *   restores the working directory and every environment variable this module
- *   set, closes and drops the cached client, and removes the project — so
- *   projects are used in sequence, never concurrently.
+ *   under a process-wide registry key (ADR-0070), and the working directory
+ *   is process-wide. `close()` restores the working directory and every
+ *   environment variable this module set, closes and drops the cached
+ *   client, and removes the project — so projects are used in sequence,
+ *   never concurrently.
  */
 
 const run = promisify(execFile)
@@ -180,13 +182,18 @@ export async function generateProject(
 }
 
 /**
- * Close and drop the client the generated bundle memoised on `globalThis`.
- * Dropping it alone leaves its pool connected for the rest of the worker.
+ * Close and drop the client the generated bundle published under the
+ * process-wide registry key (`processGlobal('client', ...)`, ADR-0070).
+ * Dropping it alone leaves its pool connected for the rest of the worker —
+ * and leaving it published at all would have the NEXT generated project's
+ * own `getClient()` adopt this one's already-closed client instead of
+ * constructing its own, since the key names no particular project.
  */
 async function closeCachedClient(): Promise<void> {
-  const cached: unknown = Reflect.get(globalThis, 'opensaasClient')
+  const key = Symbol.for(processGlobalKey('client'))
+  const cached: unknown = Reflect.get(globalThis, key)
   if (isClosable(cached)) await cached.close()
-  Reflect.deleteProperty(globalThis, 'opensaasClient')
+  Reflect.deleteProperty(globalThis, key)
 }
 
 function isClosable(value: unknown): value is { close: () => PromiseLike<unknown> | unknown } {
