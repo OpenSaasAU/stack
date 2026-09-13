@@ -74,8 +74,8 @@ export class ResolveOutputCycleError extends Error {
  * the engine CAN compute the scope (denied) — passing that through as a
  * silently-empty match would itself be a distinguishable signal for a caller
  * probing which relations they may filter on. `include`'s equivalent case
- * (`buildAccessScopedInclude`) drops the relation silently instead, because a
- * `null`/missing key in a response is indistinguishable from "not requested";
+ * drops the relation silently instead, because a `null`/missing key in a
+ * response is indistinguishable from "not requested";
  * a `where` predicate has no such neutral outcome, so a relation filter on a
  * fully denied relation is refused instead. `sudo` bypasses this check
  * entirely, matching every other access-control escape hatch. See #916 and
@@ -96,60 +96,6 @@ export class RelationFilterAccessDeniedError extends Error {
     this.listKey = listKey
     this.fieldKey = fieldKey
     this.relatedListKey = relatedListKey
-  }
-}
-
-/**
- * Thrown when a caller-supplied `include` names a key that resolves to
- * neither a declared relationship, a synthetic back-relation (a list-only
- * `ref`'s ORM-required opposite field, which no list config declares — see
- * `resolveSyntheticReverseRelation`), nor `_count`. Before this,
- * `buildAccessScopedInclude`'s scoping walk passed an unrecognised key
- * straight through unscoped — the one surface among `data`/`where`/`orderBy`/
- * `include` that failed open rather than closed (issue #1082). `sudo` never
- * reaches this: it skips `buildAccessScopedInclude` entirely, matching every
- * other access-control escape hatch.
- */
-export class UndeclaredIncludeKeyError extends Error {
-  public listKey: string
-  public fieldKey: string
-
-  constructor(listKey: string, fieldKey: string) {
-    super(
-      `Cannot include "${listKey}.${fieldKey}" — it is not a field of this list. ` +
-        `Undeclared include keys are rejected, matching data/where/orderBy keys.`,
-    )
-    this.name = 'UndeclaredIncludeKeyError'
-    this.listKey = listKey
-    this.fieldKey = fieldKey
-  }
-}
-
-/**
- * Thrown when a caller-supplied `_count.select` in `include` names a key that
- * is not a countable to-many relation — undeclared, a scalar, a virtual, or a
- * to-one relationship. Mirrors `UndeclaredIncludeKeyError`'s rejection for the
- * ordinary `include` walk, for the one key shape that was allowlisted through
- * unscoped rather than rejected (#1082's "Out of scope", closed here by
- * #1087). A key naming a synthetic back-relation (#1082) is NOT rejected — it
- * is a genuine countable to-many, resolved the same way the ordinary
- * `include` walk resolves it. `sudo` never reaches this: it skips
- * `buildAccessScopedInclude` entirely, matching every other access-control
- * escape hatch.
- */
-export class UndeclaredCountKeyError extends Error {
-  public listKey: string
-  public fieldKey: string
-
-  constructor(listKey: string, fieldKey: string) {
-    super(
-      `Cannot count "${listKey}.${fieldKey}" — it is not a countable to-many relationship on this ` +
-        `list. A \`_count.select\` key must name a declared to-many relationship or a synthetic ` +
-        `back-relation, matching the ordinary include keys this list accepts.`,
-    )
-    this.name = 'UndeclaredCountKeyError'
-    this.listKey = listKey
-    this.fieldKey = fieldKey
   }
 }
 

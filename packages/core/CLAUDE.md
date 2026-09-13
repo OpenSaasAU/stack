@@ -58,7 +58,6 @@ Built-in fields:
 ### Access Control (`src/access/`)
 
 - `engine.ts` - `checkAccess`, `checkCreateAccess` and the access-rule evaluation the terminals call
-- `access-filter.ts` - The pre-query phase: the access-scoped predicate and the include scoping
 - `field-access.ts` - Field-level rules, and the row-independent-rule classifier
 - `field-visibility.ts` - The post-query phase: strip, compute, resolve
 - `query-validation.ts` - `validateQueryKeys` and `validateQueryFieldReadAccess`, the predicate-time checks
