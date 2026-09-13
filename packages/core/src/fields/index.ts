@@ -1262,9 +1262,13 @@ export function relationship<
 
     const labelField = getLabelFieldName(relatedListConfig)
     const labelFieldConfig = relatedListConfig.fields[labelField]
-    // A virtual label field has no queryable column, so `contains` can't run
-    // against it — the relationship is then not filterable.
-    if (labelFieldConfig?.virtual === true) return undefined
+    // `contains` only runs against a real text column (ADR-0055's `ilike`
+    // accessor). That rules out: a list with no `name`/`title`/`ui.labelField`,
+    // which resolves to `id` — a field absent from `fields` entirely, since
+    // it's never user-declared; a virtual label field, which has no backing
+    // column at all; and a non-text label (`ui.labelField` may point at an
+    // integer, checkbox, select, etc.). None of these is filterable (#1359).
+    if (labelFieldConfig?.type !== 'text' || labelFieldConfig.virtual === true) return undefined
 
     return {
       operators: ['eq'],

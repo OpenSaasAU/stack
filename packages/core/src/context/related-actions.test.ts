@@ -310,6 +310,119 @@ describe('the relationship table server actions over a real database', () => {
     BOOT,
   )
 
+  /**
+   * `parentId` names the parent the caller's own baseline believes the row is
+   * still linked to. When it still matches the stored value, the compare-and-set
+   * this enables must not change the ordinary deselect's outcome (#1358).
+   */
+  test(
+    'removeRelated disconnect with a matching parentId nulls the back-reference',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', author: { connect: { id: authorId } } },
+      })
+
+      const result = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: String(post?.id),
+        field: 'author',
+        parentId: authorId,
+      })
+
+      expect(result).toEqual({ removed: true })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: null }])
+    },
+    BOOT,
+  )
+
+  /**
+   * The compare-and-set must not read the row it is comparing through the
+   * SECURED surface: `narrowUnincludedForeignKeys` nulls an un-included
+   * to-one's foreign key whenever the related list's own `query` access
+   * denies this session — independent of any race at all — which would
+   * otherwise misread "still ada's, but ada is invisible to me" as "someone
+   * re-pointed this row" and refuse a disconnect that has nothing wrong with
+   * it. Author's `query` access denies every session here; Post's own
+   * `update` access (what actually decides this write) stays open.
+   */
+  test(
+    'removeRelated disconnect with a matching parentId succeeds even when the related list hides the parent row',
+    async () => {
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', author: { connect: { id: authorId } } },
+      })
+
+      const hiddenAuthorConfig: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          ...schemaConfig().lists,
+          Author: {
+            ...schemaConfig().lists.Author,
+            access: { operation: { ...OPEN, query: () => false } },
+          },
+        },
+      }
+      const blindToAuthor = contextAt(hiddenAuthorConfig, { userId: 'u1' })
+
+      const result = await blindToAuthor.serverAction({
+        listKey: 'Post',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: String(post?.id),
+        field: 'author',
+        parentId: authorId,
+      })
+
+      expect(result).toEqual({ removed: true })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: null }])
+    },
+    BOOT,
+  )
+
+  /**
+   * The lost-update race the issue describes: Alice's form rendered Post P as
+   * ada's, Bob re-points it to grace before Alice submits, and Alice's stale
+   * disconnect must not revert Bob's write. The row is locked and its CURRENT
+   * back-reference compared against Alice's baseline — a mismatch refuses the
+   * write and surfaces a conflict rather than nulling Bob's link.
+   */
+  test(
+    'removeRelated disconnect with a stale parentId is refused rather than reverting the newer link',
+    async () => {
+      const ada = await seedAuthor('ada')
+      const grace = await seedAuthor('grace')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', author: { connect: { id: ada } } },
+      })
+
+      // Bob re-points the row after Alice's form rendered it as ada's.
+      await harness.context.db.Post.update({
+        where: { id: String(post?.id) },
+        data: { author: { connect: { id: grace } } },
+      })
+
+      // Alice's stale form still believes the row is ada's and submits the
+      // deselect against that baseline.
+      const result = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: String(post?.id),
+        field: 'author',
+        parentId: ada,
+      })
+
+      expect(result).toMatchObject({ removed: false })
+      expect((result as { error?: string }).error).toBeTruthy()
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: grace }])
+    },
+    BOOT,
+  )
+
   test(
     'removeRelated delete removes the junction row itself',
     async () => {

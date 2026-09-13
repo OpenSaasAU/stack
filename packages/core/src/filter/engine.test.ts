@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
-import { relationship, text } from '../fields/index.js'
+import { integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { buildListFilterWhere } from './collect.js'
@@ -35,6 +35,13 @@ const config: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.ledger', many: true }),
       },
       access: { operation: { query: ({ session }) => String(session?.role ?? '') === 'auditor' } },
+    },
+    // No free-text field at all (#1356) — an undegradable token here has
+    // nowhere to search, and must narrow the read to nothing rather than
+    // silently dropping the token and returning every row.
+    Setting: {
+      fields: { priority: integer() },
+      access: { operation: { query: () => true } },
     },
   },
 }
@@ -94,6 +101,8 @@ beforeEach(async () => {
   await seed('Post', { title: 'On Looms', authorId: author.id })
   const ledger = await seed('Ledger', { name: 'private' })
   await seed('Post', { title: 'On Ledgers', ledgerId: ledger.id })
+  await seed('Setting', { priority: 1 })
+  await seed('Setting', { priority: 2 })
 })
 
 describe('the filter engine over the secured surface', () => {
@@ -154,6 +163,20 @@ describe('the filter engine over the secured surface', () => {
       // `posts:>5` cannot lower — the degraded token is searched as free text
       // over `name`, which matches nothing rather than throwing.
       await expect(filtered('User', 'posts:>5')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'an undegradable token on a list with no free-text field narrows to no rows, not every row',
+    async () => {
+      // `Setting` has no free-text field: `priority` isn't one, and `label`
+      // doesn't exist. Both rows seeded above would come back if the token
+      // were silently dropped instead of narrowing the read (#1356).
+      await expect(filtered('Setting', 'label:urgent')).resolves.toEqual([])
+      // Renders without error rather than throwing — the #1127 story 13
+      // "never break the page on a bookmarked filter" guarantee still holds.
+      await expect(filtered('Setting', 'priority:>lots')).resolves.toEqual([])
     },
     BOOT,
   )

@@ -105,6 +105,80 @@ export function ownsForeignKey(
   }
 }
 
+/**
+ * Thrown when a `create`/`update` tool's `data` argument names a key the
+ * advertised `data` schema does not carry. Caught in the MCP handler and
+ * turned into an `isError` tool result, exactly like `McpProjectionRefusedError`
+ * on the read side.
+ */
+export class McpWriteRefusedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'McpWriteRefusedError'
+  }
+}
+
+/**
+ * Refuses a `data` key the advertised `create`/`update` schema does not
+ * carry, with the IDENTICAL message whether the key names no field on this
+ * list at all or names a field whose `create`/`update` rule is
+ * row-independent and denies this session — the write-side counterpart of
+ * `resolveFieldsProjection`'s read-side masking (#1163). Without this, the
+ * two cases threw distinguishable messages (`field-level access denied` vs.
+ * `it is not a field of this list`), letting a caller enumerate the fields it
+ * may not write one probe at a time (#1360).
+ *
+ * A key that IS advertised — allowed outright, or row-dependent — is left
+ * for `context.db`'s own write pipeline to accept or refuse against the real
+ * row/payload, so a row-dependent denial still reaches the caller as the
+ * write pipeline's own message, unmasked: only row-independent withholding is
+ * masked here.
+ *
+ * A key naming a system field (`id`/`createdAt`/`updatedAt` — never
+ * advertised, silently dropped by the write pipeline) or a relationship that
+ * doesn't own its foreign key (refused by the write pipeline for a reason
+ * unrelated to field access) is left alone too, since masking either would
+ * recharacterise a refusal this issue isn't about.
+ */
+export async function assertWritableData(
+  data: Record<string, unknown>,
+  listKey: string,
+  fields: Record<string, FieldConfig>,
+  config: OpenSaasConfig,
+  operation: 'create' | 'update',
+  session: Session | null,
+  context: AccessContext,
+): Promise<void> {
+  const fieldSchemas = await generateFieldSchemas(
+    listKey,
+    fields,
+    config,
+    operation,
+    session,
+    context,
+  )
+  const available = Object.keys(fieldSchemas.properties)
+  const advertised = new Set(available)
+
+  for (const fieldName of Object.keys(data)) {
+    if (advertised.has(fieldName)) continue
+    if (fieldName === 'id' || fieldName === 'createdAt' || fieldName === 'updatedAt') continue
+
+    const fieldConfig = fields[fieldName]
+    if (
+      fieldConfig &&
+      isRelationshipField(fieldConfig) &&
+      !ownsForeignKey(listKey, fieldName, fieldConfig, config)
+    ) {
+      continue
+    }
+
+    throw new McpWriteRefusedError(
+      `"${listKey}" has no field "${fieldName}" to ${operation}. Available fields: ${available.join(', ')}.`,
+    )
+  }
+}
+
 export async function generateFieldSchemas(
   listKey: string,
   fields: Record<string, FieldConfig>,

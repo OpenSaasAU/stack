@@ -16,7 +16,12 @@ import { ValidationError } from '../hooks/index.js'
 import { DatabaseError } from '../lib/database-errors.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { decideAdvertisement } from './advertise.js'
-import { generateFieldSchemas, ownsForeignKey } from './field-schema.js'
+import {
+  McpWriteRefusedError,
+  assertWritableData,
+  generateFieldSchemas,
+  ownsForeignKey,
+} from './field-schema.js'
 import {
   listIdColumn,
   listIdJsonSchema,
@@ -624,6 +629,7 @@ function coerceConnectIds(
 function isSafeMcpError(error: unknown): error is Error {
   return (
     error instanceof McpProjectionRefusedError ||
+    error instanceof McpWriteRefusedError ||
     error instanceof ValidationError ||
     error instanceof AccessScopeDepthExceededError ||
     error instanceof RelationFilterAccessDeniedError ||
@@ -736,6 +742,17 @@ async function handleCrudTool(
       }
 
       case 'create': {
+        if (isPlainObject(args.data)) {
+          await assertWritableData(
+            args.data,
+            listKey,
+            listConfig.fields,
+            config,
+            'create',
+            context.session,
+            context,
+          )
+        }
         // A `connect.id` naming a value its related list's id column cannot
         // hold answers exactly as a missing row does — the same boundary
         // coercion `where.id` gets below, applied to the write's own edges
@@ -768,6 +785,17 @@ async function handleCrudTool(
           return createErrorResultResponse(
             'Failed to update record. Access denied or record not found.',
             id,
+          )
+        }
+        if (isPlainObject(args.data)) {
+          await assertWritableData(
+            args.data,
+            listKey,
+            listConfig.fields,
+            config,
+            'update',
+            context.session,
+            context,
           )
         }
         const data = isPlainObject(args.data)
