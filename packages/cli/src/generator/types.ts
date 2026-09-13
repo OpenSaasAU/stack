@@ -1,4 +1,9 @@
-import type { DependencyTable, FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import type {
+  ContractFieldDescriptor,
+  DependencyTable,
+  FieldConfig,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
@@ -31,6 +36,27 @@ function isVirtual(field: FieldConfig): boolean {
 }
 
 /**
+ * The `kind` of a field's contract descriptor, or `undefined` when it
+ * declares none or throws describing itself. A throw is swallowed here for
+ * the same reason `validateFieldConfig`'s own reader swallows it: this
+ * renderer only runs after `validateConfigFields` has already gated the
+ * config, so a field reaching here that still throws fails at the step
+ * designed to name it, not with an opaque stack trace out of this one.
+ */
+function descriptorKind(
+  field: FieldConfig,
+  fieldKey: string,
+  listKey: string,
+  config: OpenSaasConfig,
+): ContractFieldDescriptor['kind'] | undefined {
+  try {
+    return field.getContractField?.(fieldKey, listKey, config)?.kind
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Render `{ a: T; b: U }`, or the empty marker when there is nothing to say.
  */
 function renderMembers(members: string[], indent: string): string {
@@ -49,6 +75,7 @@ function generateRemainderEntry(
   fields: Record<string, FieldConfig>,
   dependencies: DependencyTable,
   isSingleton: boolean,
+  config: OpenSaasConfig,
 ): string {
   const computed: string[] = []
   const output: string[] = []
@@ -56,8 +83,12 @@ function generateRemainderEntry(
 
   for (const [fieldName, field] of Object.entries(fields)) {
     const outputType = readOutputType(field)
-    if (isVirtual(field)) {
-      // A virtual field has no column, so the contract has no type for it. An
+    // A field that stores nothing lands in `computed` by its descriptor's
+    // `kind`, not by the `virtual` flag alone: a third-party field can
+    // declare `kind: 'computed'` without also setting the flag, and the
+    // descriptor is the source of truth (mirrors `validateFieldConfig`).
+    if (isVirtual(field) || descriptorKind(field, fieldName, listName, config) === 'computed') {
+      // A computed field has no column, so the contract has no type for it. An
       // `unknown` here would compile for every consumer and guard none of them,
       // so the missing declaration is reported instead.
       if (outputType === null) {
@@ -335,7 +366,13 @@ export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTa
   lines.push(' */')
   lines.push('export type Remainder = {')
   const remainderEntries = Object.entries(config.lists).map(([listName, listConfig]) =>
-    generateRemainderEntry(listName, listConfig.fields, dependencies, !!listConfig.isSingleton),
+    generateRemainderEntry(
+      listName,
+      listConfig.fields,
+      dependencies,
+      !!listConfig.isSingleton,
+      config,
+    ),
   )
   lines.push(remainderEntries.join('\n'))
   lines.push('}')

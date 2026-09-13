@@ -75,6 +75,16 @@ jobs:
           pnpm check:client-side-effect-imports
           pnpm check:client-side-effect-imports --self-test
 
+      # A documentation sample importing from an @opensaas subpath, or a name,
+      # the package does not export builds green and ships wrong (#1301). This
+      # resolves every @opensaas/* import specifier straight from source, so
+      # it needs no build and runs over the whole documentation tree rather
+      # than a curated file list.
+      - name: Check documentation import specifiers
+        run: |
+          pnpm check:doc-import-specifiers
+          pnpm check:doc-import-specifiers --self-test
+
       - name: Lint codebase
         run: pnpm lint
 
