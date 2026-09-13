@@ -143,7 +143,9 @@ function scalarColumn(fieldName: string, column: ScalarColumn): ContractFieldDes
  */
 export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TextField<TTypeInfo>, 'type'>): TextField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<TextField<TTypeInfo, TKey>, 'type'>): TextField<TTypeInfo, TKey> {
   const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
     const validation = options?.validation
     const isRequired = validation?.isRequired
@@ -228,7 +230,9 @@ export function text<
  */
 export function integer<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<IntegerField<TTypeInfo>, 'type'>): IntegerField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<IntegerField<TTypeInfo, TKey>, 'type'>): IntegerField<TTypeInfo, TKey> {
   return {
     type: 'integer',
     ...options,
@@ -325,7 +329,9 @@ export function integer<
  */
 export function decimal<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<DecimalField<TTypeInfo>, 'type'>): DecimalField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<DecimalField<TTypeInfo, TKey>, 'type'>): DecimalField<TTypeInfo, TKey> {
   const precision = options?.precision ?? 18
   const scale = options?.scale ?? 4
 
@@ -420,7 +426,9 @@ export function decimal<
  */
 export function bigInt<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<BigIntField<TTypeInfo>, 'type'>): BigIntField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<BigIntField<TTypeInfo, TKey>, 'type'>): BigIntField<TTypeInfo, TKey> {
   return {
     type: 'bigInt',
     ...options,
@@ -510,7 +518,9 @@ export function bigInt<
  */
 export function checkbox<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<CheckboxField<TTypeInfo>, 'type'>): CheckboxField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<CheckboxField<TTypeInfo, TKey>, 'type'>): CheckboxField<TTypeInfo, TKey> {
   return {
     type: 'checkbox',
     ...options,
@@ -552,7 +562,9 @@ export function checkbox<
  */
 export function timestamp<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<TimestampField<TTypeInfo>, 'type'>): TimestampField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<TimestampField<TTypeInfo, TKey>, 'type'>): TimestampField<TTypeInfo, TKey> {
   return {
     type: 'timestamp',
     ...options,
@@ -646,7 +658,9 @@ export function timestamp<
  */
 export function calendarDay<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<CalendarDayField<TTypeInfo>, 'type'>): CalendarDayField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<CalendarDayField<TTypeInfo, TKey>, 'type'>): CalendarDayField<TTypeInfo, TKey> {
   return {
     type: 'calendarDay',
     outputType: 'string',
@@ -787,9 +801,11 @@ function formatCalendarDay(value: unknown): string | null | undefined {
  * @param options - Field configuration options
  * @returns Password field configuration
  */
-export function password<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  options?: Omit<PasswordField<TTypeInfo>, 'type'>,
-): PasswordField<TTypeInfo> {
+export function password<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<PasswordField<TTypeInfo, TKey>, 'type'>): PasswordField<TTypeInfo, TKey> {
   return {
     type: 'password',
     outputType: "import('@opensaas/stack-core/internal').HashedPassword",
@@ -882,7 +898,9 @@ const PRISMA_ENUM_VALUE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
  */
 export function select<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options: Omit<SelectField<TTypeInfo>, 'type'>): SelectField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options: Omit<SelectField<TTypeInfo, TKey>, 'type'>): SelectField<TTypeInfo, TKey> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
   }
@@ -1004,11 +1022,11 @@ export function isRelationshipField(field: FieldConfig | undefined): field is Re
  * when the ref's target list or field does not exist or is not a
  * relationship.
  */
-export function isOneToOneRelationship<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  fieldName: string,
-  field: RelationshipField<TTypeInfo>,
-  config: OpenSaasConfig,
-): boolean {
+export function isOneToOneRelationship<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(fieldName: string, field: RelationshipField<TTypeInfo, TKey>, config: OpenSaasConfig): boolean {
   const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
   if (!targetField) {
     return false
@@ -1041,9 +1059,11 @@ export function isOneToOneRelationship<TTypeInfo extends import('../config/types
  * `db.foreignKey: true`. The `{ map }` form renames the column without
  * claiming it.
  */
-export function claimsForeignKey<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  field: RelationshipField<TTypeInfo>,
-): boolean {
+export function claimsForeignKey<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(field: RelationshipField<TTypeInfo, TKey>): boolean {
   return field.db?.foreignKey === true
 }
 
@@ -1055,10 +1075,14 @@ export function claimsForeignKey<TTypeInfo extends import('../config/types.js').
  * (self-referential) the alphabetically smaller field name (ADR-0064).
  * Throws when both ends claim it.
  */
-export function shouldHaveForeignKey<TTypeInfo extends import('../config/types.js').TypeInfo>(
+export function shouldHaveForeignKey<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(
   listKey: string,
   fieldName: string,
-  field: RelationshipField<TTypeInfo>,
+  field: RelationshipField<TTypeInfo, TKey>,
   config: OpenSaasConfig,
 ): boolean {
   const { list: targetList, field: targetField } = parseRelationshipRef(field.ref)
@@ -1131,8 +1155,12 @@ function nullableOnNonOwningSideMessage(
   )
 }
 
-function getContractRelation<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  field: RelationshipField<TTypeInfo>,
+function getContractRelation<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(
+  field: RelationshipField<TTypeInfo, TKey>,
   fieldName: string,
   listKey: string,
   config: OpenSaasConfig,
@@ -1180,7 +1208,9 @@ function getContractRelation<TTypeInfo extends import('../config/types.js').Type
  */
 export function relationship<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options: Omit<RelationshipField<TTypeInfo>, 'type'>): RelationshipField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options: Omit<RelationshipField<TTypeInfo, TKey>, 'type'>): RelationshipField<TTypeInfo, TKey> {
   if (!options.ref) {
     throw new Error('Relationship field must have a ref')
   }
@@ -1217,7 +1247,7 @@ export function relationship<
     )
   }
 
-  const field: RelationshipField<TTypeInfo> = {
+  const field: RelationshipField<TTypeInfo, TKey> = {
     type: 'relationship',
     ...options,
   }
@@ -1326,7 +1356,9 @@ export function relationship<
  */
 export function json<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
->(options?: Omit<JsonField<TTypeInfo>, 'type'>): JsonField<TTypeInfo> {
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<JsonField<TTypeInfo, TKey>, 'type'>): JsonField<TTypeInfo, TKey> {
   return {
     type: 'json',
     ...options,
@@ -1465,11 +1497,15 @@ export function typeDescriptorToTypeString(
  * @param options - Virtual field configuration
  * @returns Virtual field configuration
  */
-export function virtual<TTypeInfo extends import('../config/types.js').TypeInfo>(
-  options: Omit<VirtualField<TTypeInfo>, 'virtual' | 'outputType' | 'type'> & {
+export function virtual<
+  TTypeInfo extends import('../config/types.js').TypeInfo,
+  TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
+    import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
+>(
+  options: Omit<VirtualField<TTypeInfo, TKey>, 'virtual' | 'outputType' | 'type'> & {
     type: import('../config/types.js').TypeDescriptor
   },
-): VirtualField<TTypeInfo> {
+): VirtualField<TTypeInfo, TKey> {
   if (!options.hooks?.resolveOutput) {
     throw new Error(
       'Virtual fields must provide a resolveOutput hook to compute their value. ' +

@@ -3,6 +3,7 @@ import type { FieldAccess } from '@opensaas/stack-core'
 import type {
   BaseFieldConfig,
   ContractFieldDescriptor,
+  FieldKeys,
   TypeInfo,
   VectorColumnDescriptor,
   VectorDistanceFunction,
@@ -67,7 +68,10 @@ const COLUMN_TYPE_CONSTRUCTOR: Record<VectorColumnType, string> = {
   halfvec: 'HalfVector',
 }
 
-export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type EmbeddingField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'embedding'
 
   /**
@@ -249,9 +253,10 @@ function indexParameters(index: EmbeddingIndexConfig): Record<string, number> {
  * }
  * ```
  */
-export function embedding<TTypeInfo extends TypeInfo = TypeInfo>(
-  options?: Omit<EmbeddingField<TTypeInfo>, 'type'>,
-): EmbeddingField<TTypeInfo> {
+export function embedding<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<EmbeddingField<TTypeInfo, TKey>, 'type'>): EmbeddingField<TTypeInfo, TKey> {
   const dimensions = options?.dimensions ?? DEFAULT_DIMENSIONS
   const distanceFunction: VectorDistanceFunction = options?.distanceFunction ?? 'cosine'
   const autoGenerate = options?.autoGenerate ?? options?.sourceField != null

@@ -2,6 +2,7 @@ import type {
   BaseFieldConfig,
   ContractColumnDescriptor,
   ContractFieldDescriptor,
+  FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
@@ -210,7 +211,8 @@ function isFileLike(value: unknown): value is File {
 
 export interface FileFieldConfig<
   TTypeInfo extends TypeInfo = TypeInfo,
-> extends BaseFieldConfig<TTypeInfo> {
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> extends BaseFieldConfig<TTypeInfo, TKey> {
   type: 'file'
   /** Name of the storage provider from config.storage */
   storage: string
@@ -241,7 +243,8 @@ export interface FileFieldConfig<
 
 export interface ImageFieldConfig<
   TTypeInfo extends TypeInfo = TypeInfo,
-> extends BaseFieldConfig<TTypeInfo> {
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> extends BaseFieldConfig<TTypeInfo, TKey> {
   type: 'image'
   /** Name of the storage provider from config.storage */
   storage: string
@@ -294,9 +297,10 @@ export interface ImageFieldConfig<
  * }
  * ```
  */
-export function file<TTypeInfo extends TypeInfo = TypeInfo>(
-  options: Omit<FileFieldConfig<TTypeInfo>, 'type'>,
-): FileFieldConfig<TTypeInfo> {
+export function file<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options: Omit<FileFieldConfig<TTypeInfo, TKey>, 'type'>): FileFieldConfig<TTypeInfo, TKey> {
   const { hooks: userHooks, ...restOptions } = options
 
   // Column map resolves lazily per field name so default `<field>_<part>`
@@ -308,7 +312,7 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').FileMetadata", nullable)
 
-  const fieldConfig: FileFieldConfig<TTypeInfo> = {
+  const fieldConfig: FileFieldConfig<TTypeInfo, TKey> = {
     type: 'file',
     outputType: faces.outputType,
     inputType: faces.inputType,
@@ -434,9 +438,10 @@ export function file<TTypeInfo extends TypeInfo = TypeInfo>(
  * }
  * ```
  */
-export function image<TTypeInfo extends TypeInfo = TypeInfo>(
-  options: Omit<ImageFieldConfig<TTypeInfo>, 'type'>,
-): ImageFieldConfig<TTypeInfo> {
+export function image<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options: Omit<ImageFieldConfig<TTypeInfo, TKey>, 'type'>): ImageFieldConfig<TTypeInfo, TKey> {
   const { hooks: userHooks, ...restOptions } = options
 
   // See ADR-0006.
@@ -446,7 +451,7 @@ export function image<TTypeInfo extends TypeInfo = TypeInfo>(
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').ImageMetadata", nullable)
 
-  const fieldConfig: ImageFieldConfig<TTypeInfo> = {
+  const fieldConfig: ImageFieldConfig<TTypeInfo, TKey> = {
     type: 'image',
     outputType: faces.outputType,
     inputType: faces.inputType,

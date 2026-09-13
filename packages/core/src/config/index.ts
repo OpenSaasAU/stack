@@ -144,6 +144,7 @@ export type {
   OperationAccess,
   Hooks,
   FieldHooks,
+  FieldKeys,
   FieldsWithTypeInfo,
   DatabaseConfig,
   DatabaseClientConfig,

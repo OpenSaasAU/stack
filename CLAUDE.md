@@ -877,7 +877,10 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
 1. **Define the field type** in `packages/core/src/config/types.ts`:
 
    ```typescript
-   export type MyCustomField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+   export type MyCustomField<
+     TTypeInfo extends TypeInfo = TypeInfo,
+     TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+   > = BaseFieldConfig<TTypeInfo, TKey> & {
      type: 'myCustom'
      customOption?: string
    }
@@ -886,7 +889,10 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
 2. **Create the field builder** in `packages/core/src/fields/index.ts`:
 
    ```typescript
-   export function myCustom(options?: Omit<MyCustomField, 'type'>): MyCustomField {
+   export function myCustom<
+     TTypeInfo extends TypeInfo = TypeInfo,
+     TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+   >(options?: Omit<MyCustomField<TTypeInfo, TKey>, 'type'>): MyCustomField<TTypeInfo, TKey> {
      return {
        type: 'myCustom',
        ...options,
@@ -900,6 +906,8 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
      }
    }
    ```
+
+   The second type parameter, `TKey`, is what lets a field-level `hooks.resolveOutput` on `myCustom()` see the mounted field's own precise value type instead of `unknown` once the config is annotated with a real, generated `TypeInfo` (`list<Lists.Post.TypeInfo>({ fields: { title: myCustom({ hooks: {...} }) } })`) — threading it through every field type and builder the same way `TTypeInfo` already was is what issue #1306 fixed.
 
 3. **Register UI component** (optional, for admin UI):
 
@@ -1038,21 +1046,28 @@ packages/my-field/
 
 **Key Requirements:**
 
-1. **Field Builder** - Must implement `BaseFieldConfig`:
+1. **Field Builder** - Must implement `BaseFieldConfig`, generic over `TTypeInfo` **and** `TKey` (issue #1306: a field builder written before it knows which key it will be mounted under can't type its own `hooks` — threading both through, exactly like every built-in field, is what lets `resolveOutput` see the mounted field's real value type instead of `unknown` once the config is annotated with a real `TypeInfo`):
 
    ```typescript
    import type {
      BaseFieldConfig,
      ContractFieldDescriptor,
+     FieldKeys,
      TypeInfo,
    } from '@opensaas/stack-core/extend'
    import { z } from 'zod'
 
-   export type MyField = BaseFieldConfig<TypeInfo> & {
+   export type MyField<
+     TTypeInfo extends TypeInfo = TypeInfo,
+     TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+   > = BaseFieldConfig<TTypeInfo, TKey> & {
      type: 'myField'
    }
 
-   export function myField(options?: Omit<MyField, 'type'>): MyField {
+   export function myField<
+     TTypeInfo extends TypeInfo = TypeInfo,
+     TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+   >(options?: Omit<MyField<TTypeInfo, TKey>, 'type'>): MyField<TTypeInfo, TKey> {
      return {
        type: 'myField',
        ...options,

@@ -1,10 +1,13 @@
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+import type { BaseFieldConfig, FieldKeys, TypeInfo } from '@opensaas/stack-core/extend'
 
 /**
  * Rich text field configuration using Tiptap editor
  * Stores content as JSON in the database
  */
-export type RichTextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type RichTextField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'richText'
   validation?: {
     isRequired?: boolean

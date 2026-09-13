@@ -202,18 +202,25 @@ This package demonstrates all requirements for third-party fields:
 import type {
   BaseFieldConfig,
   ContractFieldDescriptor,
+  FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type RichTextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type RichTextField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'richText'
   validation?: { isRequired?: boolean }
 }
 
 const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
 
-export function richText(options?: Omit<RichTextField, 'type'>): RichTextField {
+export function richText<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<RichTextField<TTypeInfo, TKey>, 'type'>): RichTextField<TTypeInfo, TKey> {
   const isRequired = options?.validation?.isRequired === true
   const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
 

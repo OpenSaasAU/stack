@@ -2203,17 +2203,24 @@ Custom field types must implement the `BaseFieldConfig` interface:
 import type {
   BaseFieldConfig,
   ContractFieldDescriptor,
+  FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type EmailField = BaseFieldConfig<TypeInfo> & {
+export type EmailField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'email'
   validation?: { isRequired?: boolean }
   requireVerification?: boolean
 }
 
-export function email(options?: Omit<EmailField, 'type'>): EmailField {
+export function email<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<EmailField<TTypeInfo, TKey>, 'type'>): EmailField<TTypeInfo, TKey> {
   return {
     type: 'email',
     ...options,

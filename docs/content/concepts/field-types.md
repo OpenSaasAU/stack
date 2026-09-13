@@ -828,16 +828,23 @@ You can create custom field types by implementing the `BaseFieldConfig` interfac
 import type {
   BaseFieldConfig,
   ContractFieldDescriptor,
+  FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 
-export type SlugField = BaseFieldConfig<TypeInfo> & {
+export type SlugField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'slug'
   from?: string // Field to generate slug from
 }
 
-export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+export function slug<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<SlugField<TTypeInfo, TKey>, 'type'>): SlugField<TTypeInfo, TKey> {
   return {
     type: 'slug',
     ...options,
