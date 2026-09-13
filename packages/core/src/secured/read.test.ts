@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import type { Session } from '../access/types.js'
+import type { OrmRow, Session } from '../access/types.js'
 import { checkbox, integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { ValidationError } from '../hooks/index.js'
 import { AccessFilterRecursionError, type Where } from './vocabulary.js'
+import type { VisibleRow } from './read.js'
 
 const BOOT = 120_000
 
@@ -887,4 +888,13 @@ describe('context.db is keyed by the PascalCase list name', () => {
     },
     BOOT,
   )
+})
+
+describe('the funnel is a compile error to bypass, not a review rule (issue #1386)', () => {
+  test('an unbranded row is not assignable where VisibleRow is expected', () => {
+    const raw: OrmRow[] = []
+    // @ts-expect-error `raw` carries no VisibleRow brand — only `visibleRows` mints one.
+    const asVisible: VisibleRow[] = raw
+    void asVisible
+  })
 })

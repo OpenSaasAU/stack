@@ -183,3 +183,93 @@ describe('a bare read narrows a to-one whose foreign-key column is renamed', () 
     BOOT,
   )
 })
+
+/**
+ * Regression coverage for issue #1386, item 2: `narrowUnincludedForeignKeys`'s
+ * companion existence check cannot tell "the row is gone" from "the row is
+ * denied" — both come back absent from it, and the code deliberately folds
+ * them into the same `null`. PGlite serialises every statement, so a real
+ * concurrent delete never lands inside the window between the main read and
+ * the companion check; this forces the window instead, by giving the
+ * relationship field's own `read` rule a side effect that deletes the related
+ * row. That rule runs once per row, strictly before the companion query
+ * (`narrowUnincludedForeignKeys`'s own ordering — see `read.ts`), which is
+ * what makes the deletion land inside the window on every run rather than
+ * racing it.
+ */
+describe('a related row deleted between the main read and the companion existence check', () => {
+  test(
+    'nulls the foreign key instead of leaking the id read before the row vanished',
+    async () => {
+      // Declared before `config` and assigned after: the closure below only
+      // runs later, during the read the test issues, by which point `scratch`
+      // is assigned. An access control function's own `context` argument is
+      // `AccessContext` — it has no `sudo()` of its own — so the side effect
+      // reaches an elevated context through this fixture instead.
+      let scratch: TestDatabase
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Org: {
+            fields: { handle: text({ validation: { isRequired: true } }) },
+            // A Where-vocabulary filter, not a boolean — a boolean answer
+            // short-circuits `narrowUnincludedForeignKeys` before it ever
+            // issues the companion existence check this test targets.
+            access: { operation: { query: () => ({ handle: { contains: '' } }) } },
+          },
+          Item: {
+            fields: {
+              title: text({ validation: { isRequired: true } }),
+              owner: relationship({
+                ref: 'Org',
+                // `setNull` so the delete below is a plain FK-constrained
+                // write rather than one this schema refuses outright.
+                db: { onDelete: 'setNull' },
+                access: {
+                  // Runs once per row, before the companion existence check
+                  // (read.ts's own ordering) — deletes the related row out
+                  // from under the read this session already issued.
+                  read: async ({ item }) => {
+                    const ownerId = item?.ownerId
+                    if (typeof ownerId === 'string') {
+                      await scratch
+                        .context(null)
+                        .sudo()
+                        .db.Org.delete({ where: { id: ownerId } })
+                    }
+                    return true
+                  },
+                },
+              }),
+            },
+            access: { operation: { query: () => true } },
+          },
+        },
+      }
+      scratch = await createTestDatabase(config)
+      try {
+        const sudo = scratch.context(null).sudo()
+        const org = await sudo.db.Org.create({ data: { handle: 'will-vanish' } })
+        if (!org) throw new Error('seed org')
+        const orgId = String(org.id)
+        const item = await sudo.db.Item.create({
+          data: { title: 'orphaned-mid-read', owner: { connect: { id: orgId } } },
+        })
+        if (!item) throw new Error('seed item')
+        const itemId = String(item.id)
+
+        const read = await scratch
+          .context(null)
+          .db.Item.where({ id: { equals: itemId } })
+          .first()
+        expect(read?.ownerId).toBeNull()
+
+        const stillThere = await sudo.db.Org.where({ id: { equals: orgId } }).first()
+        expect(stillThere).toBeNull()
+      } finally {
+        await scratch.close()
+      }
+    },
+    BOOT,
+  )
+})
