@@ -560,10 +560,11 @@ function embeddingWriter(context: AccessContext): EmbeddingWriter {
  * Visibility, so a session denied read on either column would see
  * `undefined` there whatever the row actually holds (#1282).
  * `readPluginOwnedRow` is the read-side twin of the escalated write below,
- * over the same engine-owned target-read machinery. Only the metadata
- * column is read for the embedding side: the vector itself is irrelevant to
- * the regeneration check, and reading just the metadata sidesteps
- * reassembling the field's own `StoredEmbedding` shape.
+ * over the same engine-owned target-read machinery — one extra id-scoped
+ * read per write, on every list with an `autoGenerate` field, whether or not
+ * it is read-restricted. It has no column projection, so it fetches the
+ * whole row; only the metadata column's `sourceHash` is used off it, which
+ * sidesteps reassembling the field's own `StoredEmbedding` shape.
  */
 async function readForRegenerationCheck(
   context: AccessContext,

@@ -4,6 +4,7 @@ import type { RAGConfig } from './types.js'
 import type { AccessContext, FieldConfig, OpenSaasConfig, StackContext } from '@opensaas/stack-core'
 import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
 import {
+  HandlelessPluginFieldReadError,
   HandlelessPluginFieldWriteError,
   UndefinedPluginFieldWriteError,
   UnknownPluginFieldWriteError,
@@ -805,6 +806,13 @@ describe('ragPlugin', () => {
       ],
       ['an undefined value', new UndefinedPluginFieldWriteError('Article', 'x')],
       ['an ORM client with no collection', new WriteCollectionMissingError('Article')],
+      // Thrown by the privileged read (#1282), not the write below it, but
+      // the reporter classifies both by name alike — a wiring defect fails
+      // the same way whichever side of the escalated access hits it.
+      [
+        'a context with no ORM handle (the privileged read)',
+        new HandlelessPluginFieldReadError('Article'),
+      ],
     ])(
       'reports a write core refused by name — %s — as a standing defect',
       async (_name, refusal) => {
