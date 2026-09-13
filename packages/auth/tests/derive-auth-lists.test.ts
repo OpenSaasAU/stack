@@ -701,6 +701,30 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       /widget\.ownerId.*relationship field.*"user\.id"/,
     )
   })
+
+  it('accepts and applies credentialFields on an id-referencing field whose name does not end in "Id"', async () => {
+    // Unlike `ownerId` above, `owner` derives to a scalar column (#1222) —
+    // stripping `Id` would be a no-op, so it never reaches the
+    // relationship() path withCredentialAccess can't apply to.
+    const plugin = {
+      id: 'test-fk-credential-no-id-suffix',
+      schema: {
+        widget: {
+          fields: {
+            owner: {
+              type: 'string' as const,
+              required: false,
+              references: { model: 'user', field: 'id' },
+            },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin], { widget: ['owner'] })
+
+    expect(await lists.Widget.fields.owner.access!.read!({} as never)).toBe(false)
+  })
 })
 
 describe('deriveAuthLists - extendUserList', () => {

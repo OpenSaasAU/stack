@@ -184,11 +184,15 @@ function buildCredentialFieldRegistry(
         )
       }
       // An id-referencing field derives to a relationship() (see the
-      // `references.field === 'id'` branch below), never a scalar field —
-      // withCredentialAccess is only ever applied on the scalar-field path,
-      // so a deny registered against one would silently never apply. Fail
-      // loudly instead of accepting a config that has no effect.
-      if (upstream.references?.field === 'id') {
+      // `references.field === 'id'` branch below) unless stripping a
+      // trailing `Id` off its own key is a no-op, in which case it falls
+      // back to a scalar column instead (#1222) — the same fallback as a
+      // non-`id`-target reference, and the one case where
+      // withCredentialAccess actually applies. Every other id-referencing
+      // field stays a relationship, never a scalar field, so a deny
+      // registered against one would silently never apply. Fail loudly
+      // instead of accepting a config that has no effect.
+      if (upstream.references?.field === 'id' && relationshipFieldName(fieldKey) !== fieldKey) {
         throw new Error(
           `deriveAuthLists: credentialFields names "${modelKey}.${fieldKey}", but "${fieldKey}" is a ` +
             `relationship field (references "${upstream.references.model}.id"), not a scalar credential column`,
