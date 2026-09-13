@@ -89,11 +89,9 @@ Error`; a monitoring example read `.message` off `unknown`; a cost table was
   package declares `SearchResult<T = unknown>`, making the bare `SearchResult`
   the reference uses elsewhere an arity error the package does not have.
 
-Three types spell chunking options, and the docs now keep them apart:
-`ChunkingOptions` (`chunkSize`/`chunkOverlap`) for `chunkText()` and
-`generateEmbedding()`; `ChunkingConfig` (`maxTokens`/`overlap`, in tokens) for a
-field's `chunking:`; and `BuildTimeConfig` (`chunkSize`/`chunkOverlap` again, in
-characters).
+Two types spell chunking options: `ChunkingOptions` (`chunkSize`/`chunkOverlap`)
+for `chunkText()` and `generateEmbedding()`; and `BuildTimeConfig`
+(`chunkSize`/`chunkOverlap` again, in characters).
 
 `ChunkingOptions`' unit depends on the strategy, so stating it flatly would be
 wrong. Under `recursive`, `sentence` and `sliding-window` its numbers are
@@ -103,14 +101,8 @@ the same to `chunkSize` when no `tokenLimit` is given. The `token-aware` example
 in the advanced guide already said so inline (`chunkOverlap: 50, // Overlap in
 tokens`) and was correct.
 
-An earlier round renamed three field-level `chunking:` blocks from the first
-spelling to the second but carried their numbers across the unit change, so
-`1000` characters became `1000` tokens. At the ~4 characters-per-token ratio the
-same page states, those are now `maxTokens: 250` / `overlap: 50` and
-`maxTokens: 125`, and the guide says which unit a field's `chunking:` is in.
-
-Correcting an earlier claim of ours about that rename: it did not break correct
-code. The field-config misuse dates to `afa865f6` (#741), and that sweep's only
-two chunking edits were both `chunkText` call sites moved in the correct
-direction. The accurate statement is that the earlier sweep went one direction
-only.
+(A field-level `chunking:` option, `ChunkingConfig`, existed at the time of this
+correction and is the third type this paragraph originally counted. A later
+patch removed it — it was accepted by `embedding()`/`searchable()` and never
+read by the generation hook — so the unit distinction this changeset drew for
+it no longer applies to anything shipped.)

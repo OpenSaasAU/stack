@@ -156,7 +156,6 @@ fields: {
 type SearchableOptions = {
   provider?: string // Embedding provider (e.g., 'openai', 'ollama')
   dimensions?: number // Vector dimensions (default: 1536)
-  chunking?: ChunkingConfig // Text chunking configuration
   embeddingFieldName?: string // Custom embedding field name (default: `${fieldName}Embedding`)
 }
 ```
@@ -406,15 +405,14 @@ its contents, so a session that cannot read the column is refused.
 
 ### RAG Plugin Configuration
 
-| Option           | Type                         | Default   | Description                                                      |
-| ---------------- | ---------------------------- | --------- | ---------------------------------------------------------------- |
-| `provider`       | `EmbeddingProviderConfig`    | —         | The single default provider                                      |
-| `providers`      | `Record<string, …Config>`    | `{}`      | Named providers, when fields choose between them                 |
-| `chunking`       | `ChunkingConfig`             | recursive | Project-wide chunking defaults                                   |
-| `enableMcpTools` | `boolean`                    | `true`    | Register a `semantic_search_<list>` MCP tool per searchable list |
-| `batchSize`      | `number`                     | `10`      | Texts per provider call during batch generation                  |
-| `rateLimit`      | `number`                     | `100`     | Provider requests per minute                                     |
-| `buildTime`      | `{ enabled, outputPath, … }` | off       | Build-step embedding generation into a JSON index                |
+| Option           | Type                         | Default | Description                                                      |
+| ---------------- | ---------------------------- | ------- | ---------------------------------------------------------------- |
+| `provider`       | `EmbeddingProviderConfig`    | —       | The single default provider                                      |
+| `providers`      | `Record<string, …Config>`    | `{}`    | Named providers, when fields choose between them                 |
+| `enableMcpTools` | `boolean`                    | `true`  | Register a `semantic_search_<list>` MCP tool per searchable list |
+| `batchSize`      | `number`                     | `10`    | Texts per provider call during batch generation                  |
+| `rateLimit`      | `number`                     | `100`   | Provider requests per minute                                     |
+| `buildTime`      | `{ enabled, outputPath, … }` | off     | Build-step embedding generation into a JSON index                |
 
 Name either `provider` or `providers`; with `providers`, a field selects one by
 key.
@@ -440,23 +438,17 @@ ragPlugin({
 `searchable(baseField, options)` keeps the base field as authored and adds the
 companion embedding column beside it.
 
-| Option               | Type             | Default                           |
-| -------------------- | ---------------- | --------------------------------- |
-| `provider`           | `string`         | the plugin's default              |
-| `dimensions`         | `number`         | the provider's, else `1536`       |
-| `chunking`           | `ChunkingConfig` | the plugin's                      |
-| `embeddingFieldName` | `string`         | the field's name plus `Embedding` |
+| Option               | Type     | Default                           |
+| -------------------- | -------- | --------------------------------- |
+| `provider`           | `string` | the plugin's default              |
+| `dimensions`         | `number` | the provider's, else `1536`       |
+| `embeddingFieldName` | `string` | the field's name plus `Embedding` |
 
 ```typescript
 content: searchable(text(), {
   provider: 'openai',
   dimensions: 1536,
   embeddingFieldName: 'customEmbedding',
-  chunking: {
-    strategy: 'recursive',
-    maxTokens: 250,
-    overlap: 50,
-  },
 })
 ```
 
@@ -470,7 +462,6 @@ content: searchable(text(), {
 | `distanceFunction`  | `'cosine' \| 'l2' \| 'inner_product'`               | `'cosine'`                       |
 | `index`             | `{ method, opclass?, m?, efConstruction?, lists? }` | none                             |
 | `allowManualWrites` | `boolean`                                           | `false`                          |
-| `chunking`          | `ChunkingConfig`                                    | the plugin's                     |
 | `autoGenerate`      | `boolean`                                           | `true` when `sourceField` is set |
 | `ui`                | `{ showVector?, showMetadata? }`                    | `false` / `true`                 |
 
@@ -487,10 +478,6 @@ contentEmbedding: embedding({
   dimensions: 1536,
   distanceFunction: 'cosine',
   autoGenerate: true,
-  chunking: {
-    strategy: 'sentence',
-    maxTokens: 125,
-  },
 })
 ```
 
@@ -711,8 +698,10 @@ const similar = await findSimilar({
 ### Text Chunking
 
 `chunkText` sizes in **characters** (`chunkSize`, `chunkOverlap`); only
-`'token-aware'` reads `tokenLimit`. This is the standalone runtime helper — the
-`chunking` option on a field is `ChunkingConfig`, which sizes in tokens.
+`'token-aware'` reads `tokenLimit`. It is a runtime helper you call yourself —
+neither `embedding()` nor `searchable()` chunks a source field for you. See
+[Chunking long documents](/docs/how-to/rag-advanced#chunking-long-documents)
+for the pattern that stores one embedding per chunk.
 
 Recursive chunking respects paragraph and sentence boundaries:
 

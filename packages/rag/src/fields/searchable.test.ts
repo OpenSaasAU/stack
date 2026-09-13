@@ -52,11 +52,6 @@ describe('searchable() field wrapper', () => {
     const options: SearchableOptions = {
       provider: 'ollama',
       dimensions: 768,
-      chunking: {
-        strategy: 'sentence',
-        maxTokens: 300,
-        overlap: 25,
-      },
       embeddingFieldName: 'customEmbedding',
     }
 
@@ -64,11 +59,6 @@ describe('searchable() field wrapper', () => {
 
     expect(wrapped._searchable.provider).toBe('ollama')
     expect(wrapped._searchable.dimensions).toBe(768)
-    expect(wrapped._searchable.chunking).toEqual({
-      strategy: 'sentence',
-      maxTokens: 300,
-      overlap: 25,
-    })
     expect(wrapped._searchable.embeddingFieldName).toBe('customEmbedding')
   })
 
@@ -123,18 +113,5 @@ describe('searchable() field wrapper', () => {
     const wrapped = searchable(field, { embeddingFieldName: '' })
 
     expect(wrapped._searchable.embeddingFieldName).toBe('')
-  })
-
-  it('should handle partial chunking config', () => {
-    const field = mockTextField()
-    const wrapped = searchable(field, {
-      chunking: {
-        strategy: 'recursive',
-      },
-    })
-
-    expect(wrapped._searchable.chunking).toEqual({
-      strategy: 'recursive',
-    })
   })
 })

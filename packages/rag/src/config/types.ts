@@ -4,6 +4,15 @@
 
 export type ChunkingStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-window'
 
+/**
+ * Not accepted by `embedding()`, `searchable()` or `ragPlugin()` — none of
+ * them chunk. A single `embedding()` field is one native vector column per
+ * row (ADR-0045), so a chunked document needs one row per chunk rather than
+ * one column holding several vectors; there is no config surface that turns
+ * a single field into several rows. For a long document, embed each chunk
+ * as its own row in a dedicated list instead — see "Chunking long documents"
+ * in the RAG how-to guide (#1322).
+ */
 export type ChunkingConfig = {
   /** @default 'recursive' */
   strategy?: ChunkingStrategy
@@ -102,9 +111,6 @@ export type RAGConfig = {
    */
   providers?: Record<string, EmbeddingProviderConfig>
 
-  /** Can be overridden per field. */
-  chunking?: ChunkingConfig
-
   /**
    * When enabled, embeddings are generated at build time and stored in a
    * JSON file instead of being generated at runtime via hooks.
@@ -130,7 +136,6 @@ export type RAGConfig = {
 export type NormalizedRAGConfig = {
   provider: EmbeddingProviderConfig | null
   providers: Record<string, EmbeddingProviderConfig>
-  chunking: Required<ChunkingConfig>
   buildTime: Required<BuildTimeConfig> | null
   enableMcpTools: boolean
   batchSize: number
@@ -173,8 +178,6 @@ export type SearchableOptions = {
    */
   dimensions?: number
 
-  chunking?: ChunkingConfig
-
   /**
    * If not provided, defaults to `${fieldName}Embedding`.
    * @example 'contentVector' instead of 'contentEmbedding'
@@ -191,7 +194,6 @@ export type SearchableMetadata = {
   embeddingFieldName: string
   provider?: EmbeddingProviderName
   dimensions?: number
-  chunking?: ChunkingConfig
 }
 
 /** Used in build-time generation output. */

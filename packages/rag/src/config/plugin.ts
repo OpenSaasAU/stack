@@ -191,7 +191,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
               sourceField: fieldName,
               provider: meta.provider,
               dimensions: meta.dimensions,
-              chunking: meta.chunking,
               autoGenerate: true,
             })
           }
