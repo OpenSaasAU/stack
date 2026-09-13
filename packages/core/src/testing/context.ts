@@ -16,7 +16,7 @@ import type { ContractData } from '../contract/types.js'
 import { getContext } from '../context/index.js'
 import { originTripwire } from '../origin.js'
 import type { StackContext } from '../types/context.js'
-import { ESCAPE_VARIABLE, requireUsableDatabaseEscape } from './escape.js'
+import { ESCAPE_VARIABLES, requireUsableDatabaseEscape } from './escape.js'
 import {
   contractPacks,
   loadExtensionPacks,
@@ -286,7 +286,7 @@ export class DevDatabaseUnavailableError extends Error {
     super(
       `The in-process test database could not start: ${cause instanceof Error ? cause.message : String(cause)}. ` +
         `PGlite is an optional peer of @opensaas/stack-core, so install ${DEV_DATABASE_PEERS.join(', ')} ` +
-        `as dev dependencies of this package, or set ${ESCAPE_VARIABLE} to a Postgres server and run the ` +
+        `as dev dependencies of this package, or set ${ESCAPE_VARIABLES.join(' or ')} to a Postgres server and run the ` +
         `suite against that instead.`,
     )
     this.name = 'DevDatabaseUnavailableError'

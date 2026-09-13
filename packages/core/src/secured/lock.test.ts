@@ -6,7 +6,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import type { Session } from '../access/types.js'
 import { integer, relationship, text } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
+import { ESCAPE_VARIABLES, readDatabaseEscape } from '../testing/escape.js'
 import {
   createRowLockLane,
   ROW_LOCK_MAX_KEYS,
@@ -470,7 +470,7 @@ const escape = readDatabaseEscape()
 describe.skipIf(escape.kind !== 'postgres')(
   escape.kind === 'postgres'
     ? 'forUpdate() under contention'
-    : `forUpdate() under contention [escape-only: ${ESCAPE_VARIABLE} names no Postgres]`,
+    : `forUpdate() under contention [escape-only: ${ESCAPE_VARIABLES.join('/')} names no Postgres]`,
   () => {
     let contended: TestDatabase
 

@@ -157,8 +157,12 @@ describe('the optional peers are reached only lazily', () => {
   test(
     'a missing PGlite install is reported by name, with both remedies',
     async () => {
-      const escape = process.env.DATABASE_URL
+      const saved = {
+        DATABASE_URL: process.env.DATABASE_URL,
+        DIRECT_DATABASE_URL: process.env.DIRECT_DATABASE_URL,
+      }
       delete process.env.DATABASE_URL
+      delete process.env.DIRECT_DATABASE_URL
       vi.doMock('@electric-sql/pglite', () => {
         const error = new Error("Cannot find package '@electric-sql/pglite'")
         Object.assign(error, { code: 'ERR_MODULE_NOT_FOUND' })
@@ -172,7 +176,10 @@ describe('the optional peers are reached only lazily', () => {
       } finally {
         vi.doUnmock('@electric-sql/pglite')
         vi.resetModules()
-        if (escape !== undefined) process.env.DATABASE_URL = escape
+        if (saved.DATABASE_URL !== undefined) process.env.DATABASE_URL = saved.DATABASE_URL
+        if (saved.DIRECT_DATABASE_URL !== undefined) {
+          process.env.DIRECT_DATABASE_URL = saved.DIRECT_DATABASE_URL
+        }
       }
     },
     GRAPH_WALK_TIMEOUT_MS,

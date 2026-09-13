@@ -17,7 +17,7 @@ export {
   type TestDatabaseOptions,
 } from './context.js'
 export {
-  ESCAPE_VARIABLE,
+  ESCAPE_VARIABLES,
   readDatabaseEscape,
   requireUsableDatabaseEscape,
   UnusableDatabaseEscapeError,

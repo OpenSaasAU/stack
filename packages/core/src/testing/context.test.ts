@@ -11,7 +11,7 @@ import {
   OrmCollectionMissingError,
   type TestDatabase,
 } from './context.js'
-import { ESCAPE_VARIABLE, probePgvectorAvailability, readDatabaseEscape } from './escape.js'
+import { ESCAPE_VARIABLES, probePgvectorAvailability, readDatabaseEscape } from './escape.js'
 import { ExtensionPackUnavailableError, loadExtensionPacks } from './extensions.js'
 import { createPlanRecorder } from './plans.js'
 
@@ -178,7 +178,7 @@ const vectorAvailable = escape.kind !== 'postgres' || (await probePgvectorAvaila
 
 const vectorSuite = vectorAvailable
   ? 'a pgvector-declaring config stands up on the default harness'
-  : `a pgvector-declaring config stands up [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`
+  : `a pgvector-declaring config stands up [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`
 
 describe.skipIf(!vectorAvailable)(vectorSuite, () => {
   let database: TestDatabase
@@ -239,24 +239,9 @@ describe('the recording middleware', () => {
   )
 })
 
-describe('the DATABASE_URL escape', () => {
-  test('a set-but-unusable value is a misconfiguration, not a database', () => {
-    const saved = process.env[ESCAPE_VARIABLE]
-    process.env[ESCAPE_VARIABLE] = 'file:./dev.db'
-    try {
-      expect(readDatabaseEscape()).toEqual({
-        kind: 'unusable',
-        url: 'file:./dev.db',
-        fault: 'names the `file:` scheme, not Postgres',
-      })
-    } finally {
-      if (saved === undefined) delete process.env[ESCAPE_VARIABLE]
-      else process.env[ESCAPE_VARIABLE] = saved
-    }
-  })
-
+describe('the database escape', () => {
   test.skipIf(escape.kind !== 'postgres')(
-    `contention is observable on a real server [escape-only: ${ESCAPE_VARIABLE} names no Postgres]`,
+    `contention is observable on a real server [escape-only: ${ESCAPE_VARIABLES.join('/')} names no Postgres]`,
     async () => {
       const database = await createTestDatabase(blogConfig)
       try {

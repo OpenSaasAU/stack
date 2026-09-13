@@ -13,7 +13,7 @@ import { text } from '@opensaas/stack-core/fields'
 import { withOrigin } from '@opensaas/stack-core/origin'
 import {
   createTestDatabase,
-  ESCAPE_VARIABLE,
+  ESCAPE_VARIABLES,
   readDatabaseEscape,
   type TestDatabase,
 } from '@opensaas/stack-core/testing'
@@ -190,7 +190,7 @@ const available =
 describe.skipIf(!available)(
   available
     ? 'the embedding column'
-    : `the embedding column [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+    : `the embedding column [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
   () => {
     beforeAll(async () => {
       database = await createTestDatabase(await defineConfig(source))
@@ -412,7 +412,7 @@ const combined: OpenSaasConfig = {
 describe.skipIf(!available)(
   available
     ? 'a denied embedding through the write pipeline'
-    : `a denied embedding through the write pipeline [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+    : `a denied embedding through the write pipeline [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
   () => {
     let db: TestDatabase
     const write = { content: 'red', contentEmbedding: { vector: [1, 0, 0], metadata } }
