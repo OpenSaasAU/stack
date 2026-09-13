@@ -80,7 +80,7 @@ export {
   registerCellComponent,
   getCellComponent,
 } from './components/cells/index.js'
-export type { CellComponent, CellComponentProps } from './components/cells/index.js'
+export type { CellComponent, CellComponentProps, CellValue } from './components/cells/index.js'
 
 // Types
 export type { AdminUIProps } from './components/AdminUI.js'

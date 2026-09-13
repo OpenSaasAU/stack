@@ -1,79 +1,55 @@
-import { describe, it, expect, vi } from 'vitest'
-import { getRelationshipOptions } from '../../src/lib/getRelationshipOptions.js'
+import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
+import { getRelationshipOptions } from '../../src/lib/getRelationshipOptions.js'
 
-interface DelegateStub {
-  where: (predicate: unknown) => DelegateStub
-  orderBy: (order: unknown) => DelegateStub
-  select: (...fields: readonly string[]) => DelegateStub
-  limit: (count: number) => DelegateStub
-  all: () => Promise<Array<Record<string, unknown>>>
-}
+const BOOT = 120_000
 
-/** A composed-read double: every member returns itself, and `all()` answers. */
-function makeDelegate(all: () => Promise<Array<Record<string, unknown>>>): DelegateStub {
-  const stub: DelegateStub = {
-    where: () => stub,
-    orderBy: () => stub,
-    select: () => stub,
-    limit: () => stub,
-    all,
+function makeConfig(): OpenSaasConfig {
+  return {
+    db: { provider: 'postgresql' },
+    lists: {
+      User: {
+        fields: { name: text() },
+        access: { operation: { query: () => true, create: () => true } },
+      },
+    },
   }
-  return stub
-}
-
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
-  const context = {
-    db: delegates,
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  return context as unknown as AccessContext
 }
 
 describe('getRelationshipOptions (stack-ui re-export)', () => {
-  it('resolves { id, label }[] for a relationship field against a full AccessContext', async () => {
-    const all = vi.fn(async () => [
-      { id: 'u1', name: 'Ada Lovelace' },
-      { id: 'u2', name: 'Alan Turing' },
-    ])
-    const select = vi.fn()
-    const user = makeDelegate(all)
-    user.select = (...fields: readonly string[]) => {
-      select(fields)
-      return user
-    }
-    const context = makeContext({ User: user })
+  let harness: TestContext
+  let context: AccessContext
 
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        User: {
-          fields: { name: { type: 'text' } },
-          access: { operation: { query: () => true } },
-        },
-      },
-    }
+  beforeAll(async () => {
+    harness = await createTestContext(makeConfig(), null)
+    context = harness.context as unknown as AccessContext
 
-    const result = await getRelationshipOptions(context, config, 'User', {})
+    const sudo = harness.context.sudo()
+    await sudo.db.User.create({ data: { name: 'Ada Lovelace' } })
+    await sudo.db.User.create({ data: { name: 'Alan Turing' } })
+  }, BOOT)
 
-    expect(result).toEqual([
-      { id: 'u1', label: 'Ada Lovelace' },
-      { id: 'u2', label: 'Alan Turing' },
-    ])
-    expect(select.mock.calls[0][0]).toEqual(['id', 'name'])
+  afterAll(async () => {
+    await harness?.close()
   })
 
-  it('returns [] for an unknown related list', async () => {
-    const context = makeContext({})
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {},
-    }
+  it(
+    'resolves { id, label }[] for a relationship field against a full AccessContext',
+    async () => {
+      const result = await getRelationshipOptions(context, makeConfig(), 'User', {})
 
-    expect(await getRelationshipOptions(context, config, 'Missing', {})).toEqual([])
-  })
+      expect(result.map((option) => option.label).sort()).toEqual(['Ada Lovelace', 'Alan Turing'])
+    },
+    BOOT,
+  )
+
+  it(
+    'returns [] for an unknown related list',
+    async () => {
+      expect(await getRelationshipOptions(context, makeConfig(), 'Missing', {})).toEqual([])
+    },
+    BOOT,
+  )
 })

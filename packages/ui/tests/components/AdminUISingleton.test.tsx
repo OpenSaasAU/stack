@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { createTestDatabase } from '@opensaas/stack-core/testing'
+import { createTestContext, createTestDatabase } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { SingletonView } from '../../src/components/SingletonView.js'
 import { ListView } from '../../src/components/ListView.js'
@@ -24,48 +24,27 @@ vi.mock('next/link.js', () => ({
   ),
 }))
 
+const BOOT = 120_000
+
 /**
  * A config with one singleton list (Settings) and one ordinary list (Post).
  * Built with the real `list()` + field builders so the components see the
- * same field shapes they would in a real app.
+ * same field shapes they would in a real app, and real operation access so
+ * the secured surface's own `get()` resolves rather than being stubbed.
  */
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql' },
   lists: {
     Settings: list({
       isSingleton: true,
-      fields: {
-        siteName: text(),
-      },
+      fields: { siteName: text() },
+      access: { operation: { query: () => true, create: () => true } },
     }),
     Post: list({
-      fields: {
-        title: text(),
-      },
+      fields: { title: text() },
+      access: { operation: { query: () => true } },
     }),
   },
-}
-
-interface DelegateStub {
-  get?: () => Promise<Record<string, unknown> | null>
-}
-
-/**
- * Build a minimal AccessContext whose db delegates return canned data.
- * Only the methods the views call are implemented.
- */
-function makeContext(delegates: Record<string, DelegateStub>): AccessContext {
-  const context = {
-    db: delegates,
-    session: null,
-    ormHandle: {},
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  // Cast: this is a stub for rendering tests, not a full Prisma-backed context.
-  return context as unknown as AccessContext
 }
 
 const noopServerAction = vi.fn(async () => ({ success: true }))
@@ -98,211 +77,250 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
 }
 
 describe('AdminUI singleton routing', () => {
-  it('routes a singleton bare [list] to SingletonView, a non-singleton to ListView', async () => {
-    const context = makeContext({
-      Settings: { get: vi.fn(async () => ({ id: '1', siteName: 'My Site' })) },
-    })
+  it(
+    'routes a singleton bare [list] to SingletonView, a non-singleton to ListView',
+    async () => {
+      const harness = await createTestContext(config, null)
+      try {
+        const context = harness.context as unknown as AccessContext
 
-    const singletonTree = await AdminUI({
-      context,
-      config,
-      params: ['settings'],
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    expect(routedContent(singletonTree).type).toBe(SingletonView)
+        const singletonTree = await AdminUI({
+          context,
+          config,
+          params: ['settings'],
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        expect(routedContent(singletonTree).type).toBe(SingletonView)
 
-    const listTree = await AdminUI({
-      context,
-      config,
-      params: ['post'],
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    expect(routedContent(listTree).type).toBe(ListView)
-  })
+        const listTree = await AdminUI({
+          context,
+          config,
+          params: ['post'],
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        expect(routedContent(listTree).type).toBe(ListView)
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
 
-  it('renders a single-record editor for a singleton list (SingletonView)', async () => {
-    const singletonGet = vi.fn(async () => ({ id: '1', siteName: 'My Site' }))
-    const context = makeContext({ Settings: { get: singletonGet } })
+  it(
+    'renders a single-record editor for a singleton list (SingletonView)',
+    async () => {
+      const harness = await createTestContext(config, null)
+      try {
+        await harness.context.sudo().db.Settings.create({ data: { siteName: 'My Site' } })
+        const context = harness.context as unknown as AccessContext
 
-    const element = await SingletonView({
-      context,
-      config,
-      listKey: 'Settings',
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    render(element)
+        const element = await SingletonView({
+          context,
+          config,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
 
-    // Resolved via the singleton get() (auto-create path).
-    expect(singletonGet).toHaveBeenCalledTimes(1)
+        // Editor header + the record's value rendered in a field input.
+        expect(screen.getByText('Edit Settings')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('My Site')).toBeInTheDocument()
 
-    // Editor header + the record's value rendered in a field input.
-    expect(screen.getByText('Edit Settings')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('My Site')).toBeInTheDocument()
+        // Save button (edit form), not a list-table "Create" affordance.
+        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+        expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
 
-    // Save button (edit form), not a list-table "Create" affordance.
-    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
-    expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
-  })
-
-  it('renders a create-on-save form for an autoCreate:false singleton with no row', async () => {
-    // autoCreate:false + no row → get() returns null. query+create are allowed,
-    // so the editor must offer a create-on-first-save form (mode="create").
-    const autoCreateFalseConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Settings: list({
-          isSingleton: { autoCreate: false },
-          access: {
-            operation: {
-              query: () => true,
-              create: () => true,
-              update: () => true,
-              delete: () => true,
+  it(
+    'renders a create-on-save form for an autoCreate:false singleton with no row',
+    async () => {
+      // autoCreate:false + no row → get() returns null. query+create are allowed,
+      // so the editor must offer a create-on-first-save form (mode="create").
+      const autoCreateFalseConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Settings: list({
+            isSingleton: { autoCreate: false },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => true,
+                update: () => true,
+                delete: () => true,
+              },
             },
-          },
-          fields: { siteName: text() },
-        }),
-      },
-    }
+            fields: { siteName: text() },
+          }),
+        },
+      }
 
-    const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ Settings: { get: singletonGet } })
+      const harness = await createTestContext(autoCreateFalseConfig, null)
+      try {
+        const context = harness.context as unknown as AccessContext
 
-    const element = await SingletonView({
-      context,
-      config: autoCreateFalseConfig,
-      listKey: 'Settings',
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    render(element)
+        const element = await SingletonView({
+          context,
+          config: autoCreateFalseConfig,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
 
-    expect(singletonGet).toHaveBeenCalledTimes(1)
+        // Create header + the create affordance ("Create" submit button), not an edit form.
+        expect(screen.getByText('Create Settings')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+        // An empty field input is rendered (no display value yet).
+        expect(screen.getByText('Site Name')).toBeInTheDocument()
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
 
-    // Create header + the create affordance ("Create" submit button), not an edit form.
-    expect(screen.getByText('Create Settings')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-    // An empty field input is rendered (no display value yet).
-    expect(screen.getByText('Site Name')).toBeInTheDocument()
-  })
-
-  it('renders a friendly message (not an editable form) for a read-denied singleton', async () => {
-    // query denied → get() returns null. A null is indistinguishable from an
-    // empty autoCreate:false singleton, so the editor disambiguates via access
-    // and must NOT show an editable/create form.
-    const readDeniedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Settings: list({
-          isSingleton: true,
-          access: {
-            operation: {
-              query: () => false,
-              create: () => true,
-              update: () => true,
-              delete: () => false,
+  it(
+    'renders a friendly message (not an editable form) for a read-denied singleton',
+    async () => {
+      // query denied → get() returns null. A null is indistinguishable from an
+      // empty autoCreate:false singleton, so the editor disambiguates via access
+      // and must NOT show an editable/create form.
+      const readDeniedConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Settings: list({
+            isSingleton: true,
+            access: {
+              operation: {
+                query: () => false,
+                create: () => true,
+                update: () => true,
+                delete: () => false,
+              },
             },
-          },
-          fields: { siteName: text() },
-        }),
-      },
-    }
+            fields: { siteName: text() },
+          }),
+        },
+      }
 
-    const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ Settings: { get: singletonGet } })
+      const harness = await createTestContext(readDeniedConfig, null)
+      try {
+        const context = harness.context as unknown as AccessContext
 
-    const element = await SingletonView({
-      context,
-      config: readDeniedConfig,
-      listKey: 'Settings',
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    render(element)
+        const element = await SingletonView({
+          context,
+          config: readDeniedConfig,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
 
-    // Friendly no-access message, no form affordances at all.
-    expect(screen.getByText("You don't have access to Settings.")).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
-    expect(screen.queryByText('Edit Settings')).not.toBeInTheDocument()
-  })
+        // Friendly no-access message, no form affordances at all.
+        expect(screen.getByText("You don't have access to Settings.")).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Create Settings')).not.toBeInTheDocument()
+        expect(screen.queryByText('Edit Settings')).not.toBeInTheDocument()
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
 
-  it('renders a "no record yet" message when create is denied (no editable form)', async () => {
-    // autoCreate:false + no row, query allowed but create denied → cannot offer
-    // a create form; show a friendly "no record yet" message instead.
-    const createDeniedConfig: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
-      lists: {
-        Settings: list({
-          isSingleton: { autoCreate: false },
-          access: {
-            operation: {
-              query: () => true,
-              create: () => false,
-              update: () => true,
-              delete: () => false,
+  it(
+    'renders a "no record yet" message when create is denied (no editable form)',
+    async () => {
+      // autoCreate:false + no row, query allowed but create denied → cannot offer
+      // a create form; show a friendly "no record yet" message instead.
+      const createDeniedConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Settings: list({
+            isSingleton: { autoCreate: false },
+            access: {
+              operation: {
+                query: () => true,
+                create: () => false,
+                update: () => true,
+                delete: () => false,
+              },
             },
-          },
-          fields: { siteName: text() },
-        }),
-      },
-    }
+            fields: { siteName: text() },
+          }),
+        },
+      }
 
-    const singletonGet = vi.fn(async () => null)
-    const context = makeContext({ Settings: { get: singletonGet } })
+      const harness = await createTestContext(createDeniedConfig, null)
+      try {
+        const context = harness.context as unknown as AccessContext
 
-    const element = await SingletonView({
-      context,
-      config: createDeniedConfig,
-      listKey: 'Settings',
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-    render(element)
+        const element = await SingletonView({
+          context,
+          config: createDeniedConfig,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
 
-    expect(screen.getByText('There is no Settings record yet.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
-  })
+        expect(screen.getByText('There is no Settings record yet.')).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Create' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
 
-  it('renders the list table for a non-singleton list (ListView)', async () => {
-    const postConfig: OpenSaasConfig = {
-      db: { provider: 'postgresql', timestamps: true },
-      lists: {
-        Post: list({
-          fields: { title: text({ validation: { isRequired: true } }) },
-          access: { operation: { query: () => true } },
-        }),
-      },
-    }
-    const database = await createTestDatabase(postConfig)
-    try {
-      const seeding = database.context(null).sudo().db.Post
-      await seeding.create({ data: { title: 'First Post' } })
-      await seeding.create({ data: { title: 'Second Post' } })
+  it(
+    'renders the list table for a non-singleton list (ListView)',
+    async () => {
+      const postConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql', timestamps: true },
+        lists: {
+          Post: list({
+            fields: { title: text({ validation: { isRequired: true } }) },
+            access: { operation: { query: () => true } },
+          }),
+        },
+      }
+      const database = await createTestDatabase(postConfig)
+      try {
+        const seeding = database.context(null).sudo().db.Post
+        await seeding.create({ data: { title: 'First Post' } })
+        await seeding.create({ data: { title: 'Second Post' } })
 
-      const element = await ListView({
-        context: database.context(null) as unknown as AccessContext,
-        config: postConfig,
-        listKey: 'Post',
-        basePath: '/admin',
-      })
-      render(element)
-    } finally {
-      await database.close()
-    }
+        const element = await ListView({
+          context: database.context(null) as unknown as AccessContext,
+          config: postConfig,
+          listKey: 'Post',
+          basePath: '/admin',
+        })
+        render(element)
+      } finally {
+        await database.close()
+      }
 
-    // The list table renders rows + the "Create" affordance.
-    expect(screen.getByText('First Post')).toBeInTheDocument()
-    expect(screen.getByText('Second Post')).toBeInTheDocument()
-    expect(screen.getByText('Create Post')).toBeInTheDocument()
+      // The list table renders rows + the "Create" affordance.
+      expect(screen.getByText('First Post')).toBeInTheDocument()
+      expect(screen.getByText('Second Post')).toBeInTheDocument()
+      expect(screen.getByText('Create Post')).toBeInTheDocument()
 
-    // It is NOT the singleton editor.
-    expect(screen.queryByText('Edit Post')).not.toBeInTheDocument()
-  }, 120_000)
+      // It is NOT the singleton editor.
+      expect(screen.queryByText('Edit Post')).not.toBeInTheDocument()
+    },
+    BOOT,
+  )
 })

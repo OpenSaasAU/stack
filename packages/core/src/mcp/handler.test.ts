@@ -261,6 +261,20 @@ function schemaConfig(): OpenSaasConfig {
           },
         },
       },
+      // Owns a foreign key onto an int-autoincrement list — the fixture for
+      // `connect.id`'s own boundary coercion, mirroring `Counter` above for
+      // the write side rather than `where.id`.
+      Tally: {
+        fields: { label: text(), counter: relationship({ ref: 'Counter' }) },
+        access: {
+          operation: {
+            query: () => true,
+            create: () => true,
+            update: () => true,
+            delete: () => true,
+          },
+        },
+      },
       // Opts out of the config-wide `db.timestamps: true` (#1316): the MCP
       // vocabulary must not advertise or accept createdAt/updatedAt here, the
       // way it would if it assumed every list carries them.
@@ -609,6 +623,104 @@ describe('the MCP surface', () => {
         // The relation targets that are out of reach are absent, not empty.
         expect(fields.properties.secretInfo).toBeUndefined()
         expect(fields.properties.draftRef).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    /**
+     * Story 6 (#1373): the `fields` wire shape — a scalar's boolean selector,
+     * a to-one relation's `{ fields }` (required, no paging), and a to-many
+     * relation's `{ fields, where, orderBy, take, skip, count }` (no
+     * `required`) — byte-pinned rather than left to rest on a diff.
+     */
+    test(
+      'the fields schema pins the exact wire shape for a scalar, a to-one and a to-many relation',
+      async () => {
+        const tools = await listTools()
+        const query = tools.find((tool) => tool.name === 'list_post_query')
+        const properties = query?.inputSchema.properties as Record<string, unknown>
+        const fields = properties.fields as { properties: Record<string, unknown> }
+
+        expect(fields.properties.title).toEqual({
+          type: 'boolean',
+          description: 'Include the "title" field',
+        })
+
+        expect(fields.properties.author).toEqual({
+          type: 'object',
+          description: 'Select fields from the related User record',
+          properties: {
+            fields: {
+              type: 'object',
+              description: 'Fields to return from User',
+              properties: {
+                id: {
+                  type: 'boolean',
+                  description: 'Include the "id" field (always returned regardless of selection)',
+                },
+                createdAt: { type: 'boolean', description: 'Include the "createdAt" field' },
+                updatedAt: { type: 'boolean', description: 'Include the "updatedAt" field' },
+                name: { type: 'boolean', description: 'Include the "name" field' },
+                email: { type: 'boolean', description: 'Include the "email" field' },
+              },
+              additionalProperties: false,
+            },
+          },
+          required: ['fields'],
+          additionalProperties: false,
+        })
+
+        expect(fields.properties.comments).toEqual({
+          type: 'object',
+          description: 'Select fields from the related Comment records',
+          properties: {
+            fields: {
+              type: 'object',
+              description: 'Fields to return from Comment',
+              properties: {
+                id: {
+                  type: 'boolean',
+                  description: 'Include the "id" field (always returned regardless of selection)',
+                },
+                createdAt: { type: 'boolean', description: 'Include the "createdAt" field' },
+                updatedAt: { type: 'boolean', description: 'Include the "updatedAt" field' },
+                body: { type: 'boolean', description: 'Include the "body" field' },
+                approved: { type: 'boolean', description: 'Include the "approved" field' },
+              },
+              additionalProperties: false,
+            },
+            where: {
+              type: 'object',
+              description: expect.stringContaining('Where vocabulary'),
+            },
+            orderBy: { type: 'object', description: expect.any(String) },
+            take: { type: 'number', description: expect.any(String) },
+            skip: { type: 'number', description: expect.any(String) },
+            count: { type: 'boolean', description: expect.any(String) },
+          },
+          additionalProperties: false,
+        })
+        // The to-many nested selector's own key set — no `required`, unlike the to-one above.
+        expect(fields.properties.comments).not.toHaveProperty('required')
+      },
+      BOOT,
+    )
+
+    /**
+     * Story 8 (#1373): `where`'s advertised schema names the vocabulary a
+     * caller must actually write — never the ORM underneath it.
+     */
+    test(
+      "the where argument's description names the Where vocabulary, not Prisma",
+      async () => {
+        const tools = await listTools()
+        const query = tools.find((tool) => tool.name === 'list_post_query')
+        const properties = query?.inputSchema.properties as {
+          where: { type: string; description: string }
+        }
+
+        expect(properties.where.description).toContain('Where vocabulary')
+        expect(properties.where.description).not.toContain('Prisma')
       },
       BOOT,
     )
@@ -1234,6 +1346,63 @@ describe('the MCP surface', () => {
         expect(idOf('list_post_update')).toBe('string')
         expect(idOf('list_counter_update')).toBe('integer')
         expect(idOf('list_counter_delete')).toBe('integer')
+      },
+      BOOT,
+    )
+
+    /**
+     * `connect.id`, inside a relationship field's `data` schema, is the write
+     * side of the same ADR-0048 boundary: it must name the RELATED list's own
+     * id type, not assume every list is string-keyed.
+     */
+    test(
+      "connect.id is advertised at the related list's own id type",
+      async () => {
+        const tools = await listTools()
+        const connectIdOf = (toolName: string, fieldName: string) => {
+          const data = (
+            tools.find((tool) => tool.name === toolName)?.inputSchema.properties as {
+              data: {
+                properties: Record<
+                  string,
+                  { properties: { connect: { properties: { id: { type: string } } } } }
+                >
+              }
+            }
+          ).data
+          return data.properties[fieldName].properties.connect.properties.id.type
+        }
+
+        expect(connectIdOf('list_comment_create', 'post')).toBe('string')
+        expect(connectIdOf('list_tally_create', 'counter')).toBe('integer')
+      },
+      BOOT,
+    )
+
+    test(
+      "a connect.id naming the related list's own integer id type is accepted, and a malformed one is refused",
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const counter = await context.db.Counter.create({ data: { label: 'seed' } })
+
+        const ok = await callTool('list_tally_create', {
+          data: { label: 'first', counter: { connect: { id: String(counter?.id) } } },
+        })
+        const okResult = ok.body?.result as { isError?: boolean; item?: { id: string } }
+        expect(okResult.isError).toBeUndefined()
+        expect(await context.db.Tally.all()).toMatchObject([{ label: 'first' }])
+
+        const malformed = await callTool('list_tally_create', {
+          data: { label: 'second', counter: { connect: { id: 'not-a-number' } } },
+        })
+        const malformedResult = malformed.body?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(malformedResult.isError).toBe(true)
+        expect(malformedResult.content[0].text).toContain('validation failed')
+        // The malformed connect never reached the write — still exactly one row.
+        expect(await context.db.Tally.all()).toMatchObject([{ label: 'first' }])
       },
       BOOT,
     )

@@ -17,6 +17,7 @@ import { Button } from '../primitives/button.js'
 import { Checkbox } from '../primitives/checkbox.js'
 import { EmptyState } from './EmptyState.js'
 import { CellRenderer } from './cells/CellRenderer.js'
+import type { CellValue } from './cells/registry.js'
 import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
@@ -320,7 +321,7 @@ export function ListViewClient({
   const renderCell = (column: string, item: Record<string, unknown>) => {
     const field = columnField(column)
     const cellProps = {
-      value: item[column],
+      value: item[column] as CellValue,
       field,
       fieldName: column,
       basePath,

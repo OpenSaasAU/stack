@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
+import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 
@@ -12,69 +14,54 @@ import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
  * the parent list wide open and moves only that list's rule.
  */
 
+const BOOT = 120_000
+
 interface Gates {
   junctionCreate?: () => boolean
   bookUpdate?: () => boolean
 }
 
-function config(gates: Gates = {}): OpenSaasConfig {
+function makeConfig(gates: Gates = {}): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
       Post: {
         fields: {
-          title: { type: 'text' },
-          tags: { type: 'relationship', ref: 'PostTag.post', many: true },
+          title: text(),
+          tags: relationship({ ref: 'PostTag.post', many: true }),
         },
-        access: { operation: { create: () => true } },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Tag: {
         fields: {
-          name: { type: 'text' },
-          posts: { type: 'relationship', ref: 'PostTag.tag', many: true },
+          name: text(),
+          posts: relationship({ ref: 'PostTag.tag', many: true }),
         },
+        access: { operation: { query: () => true, create: () => true } },
       },
       PostTag: {
         fields: {
-          post: { type: 'relationship', ref: 'Post.tags' },
-          tag: { type: 'relationship', ref: 'Tag.posts' },
+          post: relationship({ ref: 'Post.tags' }),
+          tag: relationship({ ref: 'Tag.posts' }),
         },
         access: { operation: { create: gates.junctionCreate ?? (() => true) } },
       },
       Author: {
         fields: {
-          name: { type: 'text' },
-          books: { type: 'relationship', ref: 'Book.author', many: true },
+          name: text(),
+          books: relationship({ ref: 'Book.author', many: true }),
         },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Book: {
         fields: {
-          title: { type: 'text' },
-          author: { type: 'relationship', ref: 'Author.books' },
+          title: text(),
+          author: relationship({ ref: 'Author.books' }),
         },
-        access: { operation: { update: gates.bookUpdate } },
+        access: { operation: { query: () => true, create: () => true, update: gates.bookUpdate } },
       },
     },
-  } as unknown as OpenSaasConfig
-}
-
-/** A query surface over one fixed window, standing in for the secured read. */
-function makeContext(rows: Array<Record<string, unknown>>): AccessContext {
-  const query = {
-    where: () => query,
-    orderBy: () => query,
-    select: () => query,
-    limit: () => query,
-    all: async () => rows,
   }
-  return {
-    db: new Proxy({}, { get: () => query }),
-    session: { userId: 'u1' },
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  } as unknown as AccessContext
 }
 
 function section(fieldName: string, ref: string): RelationshipTableSection {
@@ -93,65 +80,93 @@ function section(fieldName: string, ref: string): RelationshipTableSection {
 }
 
 describe('resolveLinkEdge', () => {
-  it('offers the control with the far endpoint options for an edge across a junction', async () => {
-    const edge = await resolveLinkEdge(
-      section('tags', 'PostTag.post'),
-      config(),
-      'Post',
-      makeContext([
-        { id: 't1', name: 'alpha' },
-        { id: 't2', name: 'beta' },
-      ]),
-    )
+  let harness: TestContext
+  let context: AccessContext
 
-    expect(edge).toEqual({
-      mode: 'junction',
-      junctionListKey: 'PostTag',
-      targetField: 'tag',
-      targetListKey: 'Tag',
-      options: [
-        { id: 't1', label: 'alpha' },
-        { id: 't2', label: 'beta' },
-      ],
+  beforeAll(async () => {
+    harness = await createTestContext(makeConfig(), { userId: 'u1' })
+    context = harness.context as unknown as AccessContext
+
+    const sudo = harness.context.sudo()
+    await sudo.db.Tag.create({ data: { name: 'alpha' } })
+    await sudo.db.Tag.create({ data: { name: 'beta' } })
+    const author = await sudo.db.Author.create({ data: { name: 'anonymous' } })
+    await sudo.db.Book.create({
+      data: { title: 'one', author: { connect: { id: author?.id } } },
     })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
   })
 
-  it("hides the control when the junction list's own create access is statically denied", async () => {
-    const edge = await resolveLinkEdge(
-      section('tags', 'PostTag.post'),
-      config({ junctionCreate: () => false }),
-      'Post',
-      makeContext([{ id: 't1', name: 'alpha' }]),
-    )
+  it(
+    'offers the control with the far endpoint options for an edge across a junction',
+    async () => {
+      const edge = await resolveLinkEdge(
+        section('tags', 'PostTag.post'),
+        makeConfig(),
+        'Post',
+        context,
+      )
 
-    expect(edge).toBeNull()
-  })
+      expect(edge?.mode).toBe('junction')
+      if (edge?.mode !== 'junction') throw new Error('expected a junction edge')
+      expect(edge.junctionListKey).toBe('PostTag')
+      expect(edge.targetField).toBe('tag')
+      expect(edge.targetListKey).toBe('Tag')
+      expect(edge.options.map((option) => option.label).sort()).toEqual(['alpha', 'beta'])
+    },
+    BOOT,
+  )
 
-  it("offers the control for an ordinary to-many, gated on the related list's update access", async () => {
-    const edge = await resolveLinkEdge(
-      section('books', 'Book.author'),
-      config({ bookUpdate: () => true }),
-      'Author',
-      makeContext([{ id: 'b1', title: 'one' }]),
-    )
+  it(
+    "hides the control when the junction list's own create access is statically denied",
+    async () => {
+      const edge = await resolveLinkEdge(
+        section('tags', 'PostTag.post'),
+        makeConfig({ junctionCreate: () => false }),
+        'Post',
+        context,
+      )
 
-    expect(edge).toEqual({
-      mode: 'foreignKey',
-      relatedListKey: 'Book',
-      backReferenceField: 'author',
-      targetListKey: 'Book',
-      options: [{ id: 'b1', label: 'one' }],
-    })
-  })
+      expect(edge).toBeNull()
+    },
+    BOOT,
+  )
 
-  it("hides the control when the related list's own update access is statically denied", async () => {
-    const edge = await resolveLinkEdge(
-      section('books', 'Book.author'),
-      config(),
-      'Author',
-      makeContext([{ id: 'b1', title: 'one' }]),
-    )
+  it(
+    "offers the control for an ordinary to-many, gated on the related list's update access",
+    async () => {
+      const edge = await resolveLinkEdge(
+        section('books', 'Book.author'),
+        makeConfig({ bookUpdate: () => true }),
+        'Author',
+        context,
+      )
 
-    expect(edge).toBeNull()
-  })
+      expect(edge?.mode).toBe('foreignKey')
+      if (edge?.mode !== 'foreignKey') throw new Error('expected a foreignKey edge')
+      expect(edge.relatedListKey).toBe('Book')
+      expect(edge.backReferenceField).toBe('author')
+      expect(edge.targetListKey).toBe('Book')
+      expect(edge.options.map((option) => option.label)).toEqual(['one'])
+    },
+    BOOT,
+  )
+
+  it(
+    "hides the control when the related list's own update access is statically denied",
+    async () => {
+      const edge = await resolveLinkEdge(
+        section('books', 'Book.author'),
+        makeConfig(),
+        'Author',
+        context,
+      )
+
+      expect(edge).toBeNull()
+    },
+    BOOT,
+  )
 })

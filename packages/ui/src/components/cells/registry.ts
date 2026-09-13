@@ -11,13 +11,23 @@ import { PasswordCell } from './PasswordCell.js'
 import { JsonCell } from './JsonCell.js'
 
 /**
+ * A field's resolved value as a Cell renders it: a JSON-safe scalar, a
+ * `bigint` (an integer/bigInt/decimal value survives the client JSON
+ * round-trip as one), a plain object or array (a relationship's `{ id, label
+ * }` ref, a `json()` payload, or a virtual field's own custom TypeScript type
+ * — CLAUDE.md's "Virtual Fields with Custom Scalar Types" can return any class
+ * instance an npm package exports, e.g. `Decimal`), or an absent value.
+ */
+export type CellValue = string | number | boolean | bigint | object | null | undefined
+
+/**
  * Props every Cell component receives — the list-table rendering of one
  * field's value (see `CONTEXT.md` — "Cell"). Kept serialisable so Cells stay
  * drop-in for the server-driven list view.
  */
 export type CellComponentProps = {
-  /** The access-filtered, JSON-serialisable field value for this row. */
-  value: unknown
+  /** The access-filtered field value for this row. */
+  value: CellValue
   /** Serialised config for this column's field — drives options, ref, etc. */
   field: SerializableFieldConfig
   /** Raw field/column key. */

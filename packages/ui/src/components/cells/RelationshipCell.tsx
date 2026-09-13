@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link.js'
 import { getUrlKey } from '@opensaas/stack-core'
-import type { CellComponentProps } from './registry.js'
+import type { CellComponentProps, CellValue } from './registry.js'
 
 /**
  * One related row's `{ id, label }`. The label is normally resolved server-side
@@ -15,14 +15,25 @@ interface RelatedRef {
   label: string
 }
 
-function toRelatedRef(value: unknown): RelatedRef | null {
-  if (!value || typeof value !== 'object') return null
-  const row = value as Record<string, unknown>
-  const id = 'id' in row && row.id != null ? String(row.id) : null
+/**
+ * A related-row object is never an array. Narrowing through this (rather than
+ * an `as` cast) is what makes deleting the `value === null` check below a type
+ * error: `object` excludes `null`, but `typeof null === 'object'` means a
+ * caller who forgets that check still has `null` in `value`'s type here, and
+ * this function's parameter type refuses it.
+ */
+function isRelatedRowShape(value: object): value is Record<string, unknown> {
+  return !Array.isArray(value)
+}
+
+function toRelatedRef(value: CellValue): RelatedRef | null {
+  if (value === null || value === undefined || typeof value !== 'object') return null
+  if (!isRelatedRowShape(value)) return null
+  const id = value.id != null ? String(value.id) : null
   let label: string | undefined
-  if (typeof row.label === 'string') label = row.label
-  else if (typeof row.name === 'string') label = row.name
-  else if (typeof row.title === 'string') label = row.title
+  if (typeof value.label === 'string') label = value.label
+  else if (typeof value.name === 'string') label = value.name
+  else if (typeof value.title === 'string') label = value.title
   else if (id !== null) label = id
   if (label === undefined) return null
   return { id, label }

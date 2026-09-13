@@ -14,4 +14,4 @@ export { CellRenderer } from './CellRenderer.js'
 // Registry for custom / third-party Cell components
 export { cellComponentRegistry, registerCellComponent, getCellComponent } from './registry.js'
 
-export type { CellComponent, CellComponentProps } from './registry.js'
+export type { CellComponent, CellComponentProps, CellValue } from './registry.js'
