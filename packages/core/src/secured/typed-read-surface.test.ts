@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
-import pg from 'pg'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { Session } from '../access/types.js'
 import type { ListQuery, ListRefinement, RemainderBase } from '../types/index.js'
 import { checkbox, integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
+import {
+  ESCAPE_VARIABLE,
+  probePgvectorAvailability,
+  readDatabaseEscape,
+} from '../testing/escape.js'
 import type { SecuredQuery } from './read.js'
 import type { SecuredRefinement } from './include.js'
 
@@ -57,19 +60,7 @@ function embedding(dimensions: number): BaseFieldConfig<TypeInfo> {
  */
 const escape = readDatabaseEscape()
 const pgvectorAvailable =
-  escape.kind !== 'postgres' ||
-  (await (async () => {
-    const client = new pg.Client({ connectionString: escape.url })
-    await client.connect()
-    try {
-      const result = await client.query(
-        `select 1 from pg_available_extensions where name = 'vector'`,
-      )
-      return result.rowCount === 1
-    } finally {
-      await client.end()
-    }
-  })())
+  escape.kind !== 'postgres' || (await probePgvectorAvailability(escape.url))
 
 const config: OpenSaasConfig = {
   db: {

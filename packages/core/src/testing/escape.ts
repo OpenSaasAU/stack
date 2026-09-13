@@ -81,3 +81,80 @@ export function requireUsableDatabaseEscape(): string | undefined {
   if (escape.kind === 'unusable') throw new UnusableDatabaseEscapeError(escape.url, escape.fault)
   return escape.kind === 'postgres' ? escape.url : undefined
 }
+
+/** How long {@link probePgvectorAvailability} keeps redialling a server it cannot reach yet. */
+const PROBE_DEADLINE = 30_000
+const PROBE_CONNECT_TIMEOUT = 5_000
+const PROBE_BACKOFF = 500
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** node-postgres reports a refused dial as an `AggregateError` whose own message is empty. */
+function describeFault(fault: unknown): string {
+  if (fault instanceof AggregateError) {
+    return fault.errors.map(describeFault).join('; ') || fault.name
+  }
+  return fault instanceof Error ? `${fault.name}: ${fault.message}` : String(fault)
+}
+
+/**
+ * `pg` is a real dependency of core, but a production install without the
+ * PGlite peers must still be able to load this subpath — so, like
+ * `testing/context.ts`'s own `pgModule`, it is reached only through a
+ * dynamic `import()`, never a static one.
+ */
+async function pgModule(): Promise<Pick<typeof import('pg'), 'Client'>> {
+  return (await import('pg')).default
+}
+
+/**
+ * Whether a Postgres server named by the escape carries the pgvector
+ * extension, for a suite that guards a config declaring it (ADR-0065).
+ *
+ * Only an answer from the server is an answer. A server that is not
+ * accepting connections yet is redialled until {@link PROBE_DEADLINE} and
+ * then thrown on, so a container still coming up can never be recorded as
+ * one without pgvector — the only skip this can produce is a server that
+ * answered and said no.
+ *
+ * @throws when the server stays unreachable for the whole deadline.
+ */
+export async function probePgvectorAvailability(url: string): Promise<boolean> {
+  const until = Date.now() + PROBE_DEADLINE
+  let attempts = 0
+  let unreachable: unknown
+
+  do {
+    attempts++
+    const pg = await pgModule()
+    const client = new pg.Client({
+      connectionString: url,
+      connectionTimeoutMillis: PROBE_CONNECT_TIMEOUT,
+    })
+    try {
+      await client.connect()
+    } catch (fault) {
+      unreachable = fault
+      await pause(PROBE_BACKOFF)
+      continue
+    }
+    // Connected: whatever the server says now is the truth about pgvector, and
+    // a query that fails from here is a real fault rather than a slow boot.
+    try {
+      const result = await client.query(
+        `select 1 from pg_available_extensions where name = 'vector'`,
+      )
+      return result.rowCount === 1
+    } finally {
+      await client.end()
+    }
+  } while (Date.now() < until)
+
+  throw new Error(
+    `Could not reach the ${ESCAPE_VARIABLE} server to probe for pgvector after ${attempts} ` +
+      `attempts over ${PROBE_DEADLINE}ms. This is a broken connection, not a server without ` +
+      `pgvector, so the caller should fail rather than skip. Last fault: ${describeFault(unreachable)}`,
+  )
+}
