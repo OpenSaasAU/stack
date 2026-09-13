@@ -312,6 +312,12 @@ const storedConfig: OpenSaasConfig = {
           needs: ['title'],
           hooks: { resolveOutput: ({ item }) => `${String(item.title)}!` },
         }),
+        // A virtual field whose builder never called `getContractField` —
+        // `deriveContract` skips it on the `virtual` flag alone (#1343: the
+        // guard against writing a virtual field must not depend on that
+        // method being present, since a virtual field's self-containment
+        // contract does not require it).
+        whisper: { type: 'virtual', virtual: true } as unknown as FieldConfig,
       },
       hooks: {
         resolveInput: ({ resolvedData }) => ({
@@ -703,6 +709,29 @@ describe('writePluginOwnedField (ADR-0068)', () => {
       // The name is what routes it to a consumer's standing-defect arm, exactly
       // as the sibling refusals do — never the database's own unknown-column
       // error, which a consumer would otherwise treat as transient (#1343).
+      await expect(write).rejects.toHaveProperty('name', 'NoColumnsPluginFieldWriteError')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+      expect(stored?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a virtual field whose builder never implemented getContractField',
+    async () => {
+      const id = await seed()
+
+      const write = writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'whisper',
+        value: 'PWNED',
+      })
+
+      await expect(write).rejects.toBeInstanceOf(NoColumnsPluginFieldWriteError)
       await expect(write).rejects.toHaveProperty('name', 'NoColumnsPluginFieldWriteError')
 
       const stored = await database.context(null).db.Owned.where({}).first()
