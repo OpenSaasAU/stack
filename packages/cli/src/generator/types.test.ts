@@ -106,6 +106,37 @@ describe('the generated types file', () => {
     expect(types).toContain('input: {\n      day: string\n    }')
   })
 
+  it('names a multi-column field’s physical columns, keyed by its logical name', () => {
+    const multiColumn = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Article: {
+          fields: {
+            title: text(),
+            hero: {
+              type: 'hero',
+              outputType: 'string | null',
+              inputType: 'string | null',
+              getZodSchema: () => text().getZodSchema!('hero', 'create'),
+              getContractField: () => ({
+                kind: 'columns',
+                columns: [
+                  { name: 'hero_url', type: { pack: 'pg', type: 'text' }, nullable: true },
+                  { name: 'hero_width', type: { pack: 'pg', type: 'int' }, nullable: true },
+                ],
+              }),
+            },
+          },
+        },
+      },
+    })
+    expect(multiColumn).toContain("columns: {\n      hero: 'hero_url' | 'hero_width'\n    }")
+  })
+
+  it('leaves `columns` empty for a list with no multi-column field', () => {
+    expect(types).toContain('columns: Record<never, never>')
+  })
+
   it('emits each computed field’s declared dependency set as a type', () => {
     expect(types).toContain("needs: {\n      displayName: 'name'\n    }")
   })
@@ -123,6 +154,7 @@ describe('the generated types file', () => {
         '    computed: Record<never, never>',
         '    output: Record<never, never>',
         '    input: Record<never, never>',
+        '    columns: Record<never, never>',
         '    needs: Record<never, never>',
       ].join('\n'),
     )

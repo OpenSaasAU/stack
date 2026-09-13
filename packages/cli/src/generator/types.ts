@@ -65,6 +65,31 @@ function renderMembers(members: string[], indent: string): string {
 }
 
 /**
+ * A multi-column field's physical column names, as its contract descriptor
+ * spells them — never `getColumnNames`, which is optional and, per
+ * `validateFieldConfig`, may legitimately disagree with the descriptor for a
+ * field that narrows to one column in some mode. `undefined` for anything
+ * that is not a `kind: 'columns'` descriptor, including a throw a field
+ * builder raises describing itself (swallowed for the same reason
+ * `descriptorKind` swallows it).
+ */
+function physicalColumnsOf(
+  field: FieldConfig,
+  fieldKey: string,
+  listKey: string,
+  config: OpenSaasConfig,
+): string[] | undefined {
+  try {
+    const descriptor = field.getContractField?.(fieldKey, listKey, config)
+    return descriptor?.kind === 'columns'
+      ? descriptor.columns.map((column) => column.name)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * One list's contract remainder: the facts the emitted Contract artifacts
  * cannot carry (ADR-0052). Everything else about the list — scalar types,
  * nullability, relation arity, foreign-key ownership, column defaults — is
@@ -80,6 +105,7 @@ function generateRemainderEntry(
   const computed: string[] = []
   const output: string[] = []
   const input: string[] = []
+  const columns: string[] = []
 
   for (const [fieldName, field] of Object.entries(fields)) {
     const outputType = readOutputType(field)
@@ -103,6 +129,12 @@ function generateRemainderEntry(
     if (outputType !== null) output.push(`${fieldName}: ${outputType}`)
     const inputType = readInputType(field)
     if (inputType !== null) input.push(`${fieldName}: ${inputType}`)
+
+    const physicalColumns = physicalColumnsOf(field, fieldName, listName, config)
+    if (physicalColumns !== undefined) {
+      const names = physicalColumns.map((name) => `'${name}'`)
+      columns.push(`${fieldName}: ${names.length === 0 ? 'never' : names.join(' | ')}`)
+    }
   }
 
   const needs = needsEntries(listName, fields, dependencies).map(
@@ -114,6 +146,7 @@ function generateRemainderEntry(
     `    computed: ${renderMembers(computed, '    ')}`,
     `    output: ${renderMembers(output, '    ')}`,
     `    input: ${renderMembers(input, '    ')}`,
+    `    columns: ${renderMembers(columns, '    ')}`,
     `    needs: ${renderMembers(needs, '    ')}`,
   ]
   if (isSingleton) lines.push('    singleton: true')
@@ -361,6 +394,8 @@ export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTa
   lines.push(' * - `computed` — a virtual field, which has no column to type it from')
   lines.push(' * - `output` / `input` — a stored field whose TypeScript face differs')
   lines.push(' *   from its codec (`password` reads as `HashedPassword`)')
+  lines.push(' * - `columns` — a multi-column field’s physical column names, hidden')
+  lines.push(' *   behind its assembled logical key')
   lines.push(' * - `needs` — each computed field’s declared dependency set')
   lines.push(' * - `singleton` — a config fact the contract cannot see')
   lines.push(' */')

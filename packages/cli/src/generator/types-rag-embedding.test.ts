@@ -37,6 +37,10 @@ const source: OpenSaasConfig = {
         // field from it, so generation has to carry both the wrapped text
         // column and the derived vector pair.
         summary: searchable(text(), { dimensions: 1536 }),
+        // `allowManualWrites` opens the field to an ordinary create/update,
+        // which is what exercises CreateInput/UpdateInput's logical key
+        // (#1195) — `contentEmbedding` above is plugin-written only.
+        manualEmbedding: embedding({ dimensions: 1536, allowManualWrites: true }),
       },
     },
   },
@@ -207,4 +211,69 @@ void run
 
     expect(output).toBe('')
   })
+
+  /**
+   * #1195: `embedding()` is a `kind: 'columns'` field — a vector column plus a
+   * jsonb metadata column beside it — so the metadata column used to leak onto
+   * the row type under `<field>Metadata`, alongside the assembled logical
+   * key. The runtime strips it (`assembleColumns`), so it compiled and was
+   * always `undefined`.
+   */
+  it('hides the metadata column behind the assembled logical key', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  const article = await context.db.Article.where({}).first()
+  if (article === null) return
+
+  // @ts-expect-error contentEmbeddingMetadata is a physical column, hidden behind \`contentEmbedding\`
+  article.contentEmbeddingMetadata
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
+  it(
+    'accepts the assembled value on create/update through a field open to manual writes',
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+import type { StoredEmbedding } from '@opensaas/stack-rag'
+
+declare const context: Context
+declare const stored: StoredEmbedding
+
+async function run() {
+  await context.db.Article.create({ data: { title: 'a', manualEmbedding: stored } })
+  await context.db.Article.update({ where: { id: '1' }, data: { manualEmbedding: null } })
+
+  await context.db.Article.create({
+    // @ts-expect-error the vector column is not writable directly — only the assembled logical key is
+    data: { title: 'a', manualEmbedding: stored.vector },
+  })
+
+  await context.db.Article.create({
+    // @ts-expect-error manualEmbeddingMetadata is a physical column, not writable directly
+    data: { title: 'a', manualEmbeddingMetadata: stored.metadata },
+  })
+  await context.db.Article.update({
+    where: { id: '1' },
+    // @ts-expect-error manualEmbeddingMetadata is a physical column, not writable directly
+    data: { manualEmbeddingMetadata: stored.metadata },
+  })
+}
+
+void run
+`)
+
+      expect(output).toBe('')
+    },
+  )
 })

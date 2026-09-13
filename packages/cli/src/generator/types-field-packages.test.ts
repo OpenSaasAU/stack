@@ -152,4 +152,66 @@ void run
 `)
     expect(output).toBe('')
   })
+
+  /**
+   * #1195: a multi-column field's raw physical columns (`hero_url`,
+   * `hero_width`, …) are contract columns, so they used to leak onto the row,
+   * create and update types beside the assembled logical key — the runtime
+   * strips them, so those keys compiled and were always `undefined`.
+   */
+  it(
+    'hides a multi-column field’s physical columns from the row type',
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  const legacy = await context.db.Legacy.where({ title: { contains: 'x' } }).first()
+  if (legacy === null) return
+
+  // @ts-expect-error hero_url is a physical column, hidden behind \`hero\`
+  legacy.hero_url
+  // @ts-expect-error hero_width is a physical column, hidden behind \`hero\`
+  legacy.hero_width
+  // @ts-expect-error attachment_filename is a physical column, hidden behind \`attachment\`
+  legacy.attachment_filename
+}
+void run
+`)
+      expect(output).toBe('')
+    },
+  )
+
+  it(
+    'accepts a multi-column field’s logical key on create and update, and refuses its physical columns',
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+declare const upload: File
+
+async function run() {
+  await context.db.Legacy.create({ data: { title: 'a', hero: upload } })
+  await context.db.Legacy.update({ where: { id: '1' }, data: { hero: null } })
+
+  await context.db.Legacy.create({
+    // @ts-expect-error hero_url is a physical column, not writable directly
+    data: { title: 'a', hero_url: 'https://x/y.jpg' },
+  })
+  await context.db.Legacy.update({
+    where: { id: '1' },
+    // @ts-expect-error hero_width is a physical column, not writable directly
+    data: { hero_width: 100 },
+  })
+}
+void run
+`)
+      expect(output).toBe('')
+    },
+  )
 })

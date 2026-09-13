@@ -2,14 +2,22 @@ import type {
   ColumnOutputTypes,
   IsToOne,
   ListId,
+  MultiColumnPhysicalColumn,
   RelationKey,
   RelationTarget,
   RemainderBase,
 } from './contract.js'
 
+/**
+ * A multi-column field's physical columns (`hero_url`, `hero_width`, …) are
+ * hidden here rather than merely overridden: they are still contract columns,
+ * but the runtime strips them from every read (`filterReadableFields`) so
+ * only the assembled logical key — added by `& R[K]['output']` below — ever
+ * reaches a caller (#1195).
+ */
 type StoredFields<C, R extends RemainderBase, K extends keyof R & string> = Omit<
   ColumnOutputTypes<C, K>,
-  keyof R[K]['output']
+  keyof R[K]['output'] | MultiColumnPhysicalColumn<R, K>
 > &
   R[K]['output']
 
