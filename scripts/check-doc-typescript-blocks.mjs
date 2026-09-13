@@ -12,16 +12,25 @@
 //   - Coverage is the file list, not the tree. A markdown file not named in
 //     files.txt is never compiled, and nothing detects that a new one was
 //     added.
-//   - Fragment entries are keyed `file:line`. The orphan check catches a key
-//     that has drifted off every block, but a key that drifts onto a different
-//     block's first line still excuses that block instead.
-//   - A fragment entry excuses only the diagnostics it names: an unresolved
+//   - A block's fragment classification lives in an HTML comment on the
+//     nearest non-blank line above its fence — `<!-- doc-check:
+//     excuses="TSnnnn 'token'" -->` (comma-separated, with an optional
+//     `reason="…"`), or `<!-- doc-check: whole="…" -->` for a block that is
+//     not a statement list at all (an object-literal body, a `...` elision) —
+//     and the summary counts whole-block fragments separately. It travels
+//     with the block: prose inserted anywhere else in the file re-keys
+//     nothing. A backtick inside `reason`, common when it names a symbol,
+//     rules out carrying this on the fence's own info string instead — a
+//     backtick-fenced code block's info string may not itself contain a
+//     backtick (CommonMark), and a marker two non-blank lines above a fence,
+//     or on the wrong side of a heading, silently classifies nothing. An
+//     `excuses` fragment excuses only the diagnostics it names: an unresolved
 //     bare name, or a `TSnnnn 'token'` code-and-token pair. Every other
-//     diagnostic in the block fails it. A `{ "whole": … }` entry excuses every
-//     compile diagnostic — that form is for a block that is not a statement
-//     list at all (an object-literal body, a `...` elision) — and the summary
-//     counts those blocks separately. No entry excuses a redeclared shipped
-//     name from agreeing with the package, or an unimported name.
+//     diagnostic in the block still fails it, and a named excuse that matches
+//     no diagnostic in the block is reported STALE rather than silently
+//     ignored. No entry excuses a redeclared shipped name from agreeing with
+//     the package, or an unimported name. A `doc-check` comment that fails to
+//     parse fails the run by name, rather than being silently dropped.
 //   - `context.db` is the prelude's hand-written surface, not a generated one:
 //     three lists (Article, Document, DocumentChunk) whose rows carry the
 //     fields the listed prose uses. `where` and `orderBy` take the package's
@@ -95,8 +104,7 @@
 //     compile nor the import check runs on it. It is reported as `UNCHECKED`
 //     and does not fail; a fragment entry on one is stale.
 //   - A listed path that cannot be read fails by name. The one exception is
-//     `.changeset/*`, which release consumes; that path is skipped and its
-//     fixture keys are exempted from the orphan report along with it.
+//     `.changeset/*`, which release consumes; that path is skipped.
 //   - A doc block whose code puts a diagnostic in a prelude — `declare global`
 //     colliding with a prelude binding, say — aborts the run with exit 2.
 //   - Block extraction is textual. The closing fence must match the opening
@@ -137,7 +145,7 @@ const format = (d) => `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageT
 const yieldToEventLoop = () => new Promise((resolve) => setImmediate(resolve))
 
 // ---------------------------------------------------------------------------
-// Inputs: the listed files and their fragment classifications.
+// Inputs: the listed files.
 
 function readListedFiles(listedPaths) {
   const sources = new Map()
@@ -149,54 +157,66 @@ function readListedFiles(listedPaths) {
       unreadable.push(relativePath)
     }
   }
-  // Release consumes a changeset, so its disappearance is expected and its
-  // fixture keys go with it. The path is normalised first: a raw prefix test
-  // lets `.changeset/../docs/absent.md` inherit the exemption.
+  // Release consumes a changeset, so its disappearance is expected. The path
+  // is normalised first: a raw prefix test lets `.changeset/../docs/absent.md`
+  // inherit the exemption.
   const isChangeset = (relativePath) =>
     /^\.changeset\/[^/]+\.md$/.test(toPosix(path.normalize(relativePath)))
   return {
     sources,
-    consumed: new Set(unreadable.filter(isChangeset)),
     missingFiles: unreadable.filter((relativePath) => !isChangeset(relativePath)),
     files: listedPaths.filter((relativePath) => sources.has(relativePath)),
   }
 }
 
 const EXCUSE = /^(?:TS\d+(?: '[^']+')?|[A-Za-z_$][\w$]*)$/
+const FRAGMENT_ATTRIBUTE = /(excuses|whole|reason)="([^"]*)"/g
+const FRAGMENT_SUFFIX = /^(?:\s*(?:excuses|whole|reason)="[^"]*")+$/
 
-// An entry is `{ "whole": reason }` or `{ "excuses": [...], "reason"?: … }`;
-// anything else is a tooling failure rather than a silently ignored key.
-function parseFragments(raw, origin) {
-  const fragments = new Map()
-  for (const [key, value] of Object.entries(raw)) {
-    const fail = (why) => {
-      throw new ToolingFailure(`${origin}: entry for ${key} ${why}`)
-    }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      fail('must be an object: { "whole": "reason" } or { "excuses": [...] }')
-    }
-    const keys = Object.keys(value).sort().join(',')
-    if (keys === 'whole') {
-      if (typeof value.whole !== 'string' || !value.whole.trim()) fail('has an empty "whole"')
-      fragments.set(key, { whole: value.whole })
-      continue
-    }
-    if (keys !== 'excuses' && keys !== 'excuses,reason') {
-      fail(`has keys [${keys}]; expected "whole", or "excuses" with an optional "reason"`)
-    }
-    if (!Array.isArray(value.excuses) || value.excuses.length === 0) {
-      fail('needs a non-empty "excuses" array')
-    }
-    for (const excuse of value.excuses) {
-      if (typeof excuse !== 'string' || !EXCUSE.test(excuse)) {
-        fail(
-          `has an excuse ${JSON.stringify(excuse)} that is neither a bare name nor \`TSnnnn 'token'\``,
-        )
-      }
-    }
-    fragments.set(key, { excuses: value.excuses, reason: value.reason ?? null })
+// A `doc-check` comment's payload is wholly a run of
+// `excuses="…"`/`whole="…"`/`reason="…"` attributes — anything else is a
+// tooling failure rather than a silently ignored comment. `excuses="a, b"` is
+// `{ excuses: [a, b] }`; `whole="…"` is `{ whole: "…" }`; combining the two,
+// an empty `whole`, or an excuse that is neither a bare name nor
+// `TSnnnn 'token'` all fail by name.
+function parseFragmentAttributes(rawSuffix, origin) {
+  const suffix = (rawSuffix ?? '').trim()
+  if (!suffix) return null
+  const fail = (why) => {
+    throw new ToolingFailure(`${origin}: doc-check comment ${why}`)
   }
-  return fragments
+  if (!FRAGMENT_SUFFIX.test(suffix)) {
+    fail(
+      `could not be parsed from \`${suffix}\` — expected \`excuses="…"\` (with an optional ` +
+        `\`reason="…"\`), or \`whole="…"\``,
+    )
+  }
+  const matches = [...suffix.matchAll(FRAGMENT_ATTRIBUTE)].map(([, key, value]) => [key, value])
+  const attributes = Object.fromEntries(matches)
+  if (matches.length !== Object.keys(attributes).length) {
+    fail(`repeats an attribute — each of "excuses", "whole" and "reason" may appear at most once`)
+  }
+  const keys = Object.keys(attributes).sort().join(',')
+  if (keys === 'whole') {
+    if (!attributes.whole.trim()) fail('has an empty "whole"')
+    return { whole: attributes.whole }
+  }
+  if (keys !== 'excuses' && keys !== 'excuses,reason') {
+    fail(`has attributes [${keys}]; expected "whole" alone, or "excuses" with an optional "reason"`)
+  }
+  const excuses = attributes.excuses
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+  if (excuses.length === 0) fail('needs a non-empty "excuses" list')
+  for (const excuse of excuses) {
+    if (!EXCUSE.test(excuse)) {
+      fail(
+        `has an excuse ${JSON.stringify(excuse)} that is neither a bare name nor \`TSnnnn 'token'\``,
+      )
+    }
+  }
+  return { excuses, reason: attributes.reason ?? null }
 }
 
 const UNRESOLVED_NAME = /^TS(?:2304|2552|2593): Cannot find name '([^']+)'/
@@ -268,22 +288,44 @@ if (missingEntries.length > 0) {
 // Block extraction.
 
 const FENCE = /^(\s*)```(typescript|ts|tsx)(?:\s+\S.*)?\s*$/
-const MARKER =
-  /^<!--\s*expect:\s*(fail|pass compared|pass not-compared|pass|excused)((?:\s+(?:excuses|whole)="[^"]*")*)\s*-->$/
-const MARKER_ATTRIBUTE = /(excuses|whole)="([^"]*)"/g
+const MARKER = /^<!--\s*expect:\s*(fail|pass compared|pass not-compared|pass|excused)\s*-->$/
+const DOC_CHECK = /^<!--\s*doc-check:(.*)-->$/
 
-function parseMarker(line) {
+const parseMarker = (line) => {
   const marker = line.match(MARKER)
-  if (!marker) return null
-  const attributes = Object.fromEntries(
-    [...marker[2].matchAll(MARKER_ATTRIBUTE)].map(([, key, value]) => [key, value]),
-  )
+  return marker ? { verdict: marker[1] } : null
+}
+
+// A block's fragment and the self-test fixture's own expectation are each a
+// distinct comment, so both can sit above the same fence. The scan climbs
+// past blank lines, taking at most one of each kind, and stops the moment it
+// meets a line that is neither — a heading or a paragraph of prose — so an
+// ordinary block one line under some unrelated comment picks up nothing.
+function scanMarkersAbove(lines, fenceIndex, origin) {
+  let i = fenceIndex - 1
+  let expectation = null
   let fragment = null
-  if (attributes.whole) fragment = { whole: attributes.whole }
-  else if (attributes.excuses) {
-    fragment = { excuses: attributes.excuses.split(',').map((e) => e.trim()), reason: null }
+  while (i >= 0) {
+    const trimmed = lines[i].trim()
+    if (trimmed === '') {
+      i--
+      continue
+    }
+    const marker = expectation === null ? parseMarker(trimmed) : null
+    if (marker) {
+      expectation = marker
+      i--
+      continue
+    }
+    const docCheck = fragment === null ? trimmed.match(DOC_CHECK) : null
+    if (docCheck) {
+      fragment = parseFragmentAttributes(docCheck[1], origin)
+      i--
+      continue
+    }
+    break
   }
-  return { verdict: marker[1], fragment }
+  return { expectation, fragment }
 }
 
 function extractBlocks(relativePath, text) {
@@ -299,15 +341,16 @@ function extractBlocks(relativePath, text) {
     let j = i + 1
     while (j < lines.length && lines[j] !== `${indent}\`\`\``) j++
     const body = lines.slice(i + 1, j).map((line) => line.slice(indent.length))
-    let above = i - 1
-    while (above > 0 && lines[above].trim() === '') above--
+    const line = i + 2
+    const { expectation, fragment } = scanMarkersAbove(lines, i, `${relativePath}:${line}`)
     blocks.push({
       file: relativePath,
-      line: i + 2,
+      line,
       language: fence[2],
       code: body.join('\n'),
       heading,
-      expectation: above >= 0 ? parseMarker(lines[above].trim()) : null,
+      fragment,
+      expectation,
     })
     i = j
   }
@@ -1179,7 +1222,7 @@ function compileShadowProbe(code, name, specifier, alreadyExported, plan) {
 // ---------------------------------------------------------------------------
 // One block.
 
-function checkBlock(block, exportedTypes, fragments) {
+function checkBlock(block, exportedTypes) {
   const key = `${block.file}:${block.line}`
   checking = key
   const base = {
@@ -1188,7 +1231,7 @@ function checkBlock(block, exportedTypes, fragments) {
     line: block.line,
     language: block.language,
     heading: block.heading,
-    fragment: fragments.get(key) ?? null,
+    fragment: block.fragment,
   }
   const describeCandidate = (c) => `${c.specifiers.join(' and ')}`
 
@@ -1325,14 +1368,8 @@ function verdictOf(result) {
   return staleExcuses(result).length > 0 ? 'stale' : 'excused'
 }
 
-function report(results, { fragments, consumed, missingFiles }) {
+function report(results, { missingFiles }) {
   const verdicts = results.map((result) => ({ ...result, verdict: verdictOf(result) }))
-  const extracted = new Set(results.map((r) => r.key))
-  const orphans = [...fragments.keys()].filter((key) => {
-    if (extracted.has(key)) return false
-    const separator = key.lastIndexOf(':')
-    return !(separator > 0 && consumed.has(key.slice(0, separator)))
-  })
   const count = (pick) => results.reduce((total, r) => total + pick(r).length, 0)
   const summary = {
     blocks: results.length,
@@ -1344,22 +1381,17 @@ function report(results, { fragments, consumed, missingFiles }) {
     failing: verdicts.filter((r) => r.verdict === 'fail').length,
     compared: count((r) => r.compared),
     notCompared: count((r) => r.uncompared),
-    orphans: orphans.length,
     missingFiles: missingFiles.length,
   }
-  const ok =
-    summary.failing === 0 &&
-    summary.stale === 0 &&
-    orphans.length === 0 &&
-    missingFiles.length === 0
-  return { verdicts, orphans, summary, ok }
+  const ok = summary.failing === 0 && summary.stale === 0 && missingFiles.length === 0
+  return { verdicts, summary, ok }
 }
 
 const comparedLine = (summary) =>
   `Redeclared exported names: ${summary.compared} compared against the package, ` +
   `${summary.notCompared} not compared.`
 
-function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFiles }) {
+function printReport({ verdicts, summary, ok }, { missingFiles }) {
   for (const relativePath of missingFiles) {
     console.error(`MISSING ${relativePath} — listed in files.txt but could not be read`)
   }
@@ -1367,8 +1399,8 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
     if (result.verdict === 'stale') {
       console.error(
         isCompiled(result)
-          ? `STALE  ${result.key} — fragments.json ${describeFragment(result.fragment)}:`
-          : `STALE  ${result.key} — never compiled, so fragments.json cannot classify it:`,
+          ? `STALE  ${result.key} — ${describeFragment(result.fragment)}:`
+          : `STALE  ${result.key} — never compiled, so its fence fragment cannot classify it:`,
       )
       for (const line of staleExcuses(result)) console.error(`         ${line}`)
     }
@@ -1385,10 +1417,6 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
     for (const note of result.uncompared) console.error(`NOT COMPARED ${result.key} — ${note}`)
     for (const note of result.partial) console.error(`PARTIAL ${result.key} — ${note}`)
   }
-  for (const key of orphans) {
-    console.error(`ORPHAN ${key} — fragments.json classifies no block at that line:`)
-    console.error(`         ${describeFragment(fragments.get(key))}`)
-  }
   console.log(
     `${summary.blocks} blocks: ${summary.compiling} compile, ${summary.notCompiled} not compiled; ` +
       `${summary.classified} carry a fragment entry (${summary.wholeBlock} whole-block, ` +
@@ -1396,8 +1424,8 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
   )
   if (!ok) {
     console.error(
-      `\n${summary.failing} failing, ${summary.stale} stale and ${orphans.length} orphaned ` +
-        `classification(s), ${missingFiles.length} listed file(s) missing.`,
+      `\n${summary.failing} failing and ${summary.stale} stale classification(s), ` +
+        `${missingFiles.length} listed file(s) missing.`,
     )
   }
 }
@@ -1407,11 +1435,11 @@ function printReport({ verdicts, orphans, summary, ok }, { fragments, missingFil
 
 // The checker's work is synchronous; the yield between blocks is what gives a
 // pending signal handler its turn.
-async function runBlocks(files, sources, exportedTypes, fragments) {
+async function runBlocks(files, sources, exportedTypes) {
   const results = []
   for (const file of files) {
     for (const block of extractBlocks(file, sources.get(file))) {
-      results.push(checkBlock(block, exportedTypes, fragments))
+      results.push(checkBlock(block, exportedTypes))
       await yieldToEventLoop()
     }
   }
@@ -1423,29 +1451,19 @@ async function realRun(exportedTypes) {
     .split('\n')
     .map((line) => line.replace(/#.*$/, '').trim())
     .filter(Boolean)
-  const fragments = parseFragments(
-    JSON.parse(readFileSync(path.join(blocksDir, 'fragments.json'), 'utf8')),
-    'scripts/doc-blocks/fragments.json',
-  )
-  const { sources, consumed, missingFiles, files } = readListedFiles(listedPaths)
-  const results = await runBlocks(files, sources, exportedTypes, fragments)
-  const reported = report(results, { fragments, consumed, missingFiles })
+  const { sources, missingFiles, files } = readListedFiles(listedPaths)
+  const results = await runBlocks(files, sources, exportedTypes)
+  const reported = report(results, { missingFiles })
   if (jsonMode) {
     console.log(
       JSON.stringify(
-        {
-          ok: reported.ok,
-          summary: reported.summary,
-          results: reported.verdicts,
-          orphans: reported.orphans,
-          missingFiles,
-        },
+        { ok: reported.ok, summary: reported.summary, results: reported.verdicts, missingFiles },
         null,
         2,
       ),
     )
   } else {
-    printReport(reported, { fragments, missingFiles })
+    printReport(reported, { missingFiles })
   }
   return reported.ok ? 0 : 1
 }
@@ -1467,18 +1485,12 @@ const EXPECTATIONS = {
 }
 
 async function selfTest(exportedTypes) {
-  const { sources, consumed, missingFiles, files } = readListedFiles([selfTestFixture])
+  const { sources, missingFiles, files } = readListedFiles([selfTestFixture])
   if (missingFiles.length > 0)
     throw new ToolingFailure(`self-test fixture missing: ${selfTestFixture}`)
   const blocks = extractBlocks(selfTestFixture, sources.get(selfTestFixture))
-  const fragments = new Map()
-  for (const block of blocks) {
-    if (block.expectation?.fragment) {
-      fragments.set(`${block.file}:${block.line}`, block.expectation.fragment)
-    }
-  }
-  const results = await runBlocks(files, sources, exportedTypes, fragments)
-  const reported = report(results, { fragments, consumed, missingFiles })
+  const results = await runBlocks(files, sources, exportedTypes)
+  const reported = report(results, { missingFiles })
   const expectations = new Map(blocks.map((b) => [`${b.file}:${b.line}`, b.expectation]))
   let mismatches = 0
   const rows = []

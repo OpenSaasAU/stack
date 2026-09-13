@@ -187,6 +187,8 @@ export default config({
 
 ### Multiple Providers
 
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
+
 ```typescript
 ragPlugin({
   providers: {
@@ -220,6 +222,8 @@ An embedding is a plugin output, so the field is write-denied to application
 code by default and a create or update naming it throws
 `Cannot create "contentEmbedding": field-level access denied.` A list that
 maintains its own vectors opts out on the field:
+
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
 
 ```typescript
 fields: {
@@ -560,6 +564,8 @@ const embedding: StoredEmbedding = {
 
 ### Text Chunking for Long Documents
 
+<!-- doc-check: excuses="provider" reason="a bare name the prose supplies" -->
+
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'
 
@@ -575,6 +581,8 @@ const vectors = await provider.embedBatch(chunks.map((chunk) => chunk.text))
 
 ### Hybrid Search (Keyword + Semantic)
 
+<!-- doc-check: excuses="query" reason="the caller's search string, a bare name the prose supplies" -->
+
 ```typescript
 // Combine traditional search with semantic search
 const keywordResults = await context.db.Article.where({
@@ -587,6 +595,8 @@ const semanticResults = await context.db.Article.nearest('contentEmbedding', que
 ```
 
 ### Find Similar Items
+
+<!-- doc-check: excuses="id" reason="a bare name the prose supplies" -->
 
 ```typescript
 // Find articles similar to a given article
@@ -603,6 +613,8 @@ const similar = stored
 ```
 
 ## Testing
+
+<!-- doc-check: excuses="TS2307 './openai.js'" reason="a relative import from inside the package's own test tree" -->
 
 ```typescript
 // packages/rag/src/providers/providers.test.ts

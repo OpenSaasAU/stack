@@ -193,9 +193,9 @@ jobs:
       # a reordering rather than an extra build.
       #
       # The doc-block fixtures describe THIS tree: `files.txt` names the
-      # repository's documents and `fragments.json` keys entries by
-      # `file:line`, so a fixture re-key is part of any change that moves a
-      # documented block (#1301).
+      # repository's documents and each fenced block carries its own excuse in
+      # a `doc-check:` comment directly above it, so no fixture re-key is
+      # needed when a change moves a documented block (#1301, #1382).
       - name: Build packages for the doc-block check
         run: turbo run build --filter='./packages/*'
 

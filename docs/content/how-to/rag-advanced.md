@@ -69,6 +69,8 @@ Simplified, that is: the writer closes over the context `runtime` is handed and
 is published on `context.plugins`, and the hook looks it up rather than writing
 with its own context.
 
+<!-- doc-check: whole="the body of an object literal: `runtime:` and `afterTransaction:` are bare properties, not statements, and the hook's parameters are typed by the list it is injected into" -->
+
 ```typescript
 runtime: (context) => ({
   [WRITE_EMBEDDING]: async (listName, id, fieldName, value) =>
@@ -241,6 +243,8 @@ interface EmbeddingProvider {
 
 ### Example: Cohere Provider
 
+<!-- doc-check: excuses="TS2307 'cohere-ai'" reason="a third-party SDK this repo does not install" -->
+
 ```typescript
 // lib/providers/cohere.ts
 import { Cohere } from 'cohere-ai'
@@ -301,6 +305,8 @@ export function cohereEmbeddings(config: Omit<CohereConfig, 'type'>): CohereConf
 
 **Usage:**
 
+<!-- doc-check: excuses="TS2307 '@/lib/providers/cohere'" reason="imports the file the reader wrote in the block above" -->
+
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
@@ -332,6 +338,8 @@ export default config({
 HuggingFace's inference API has no batch endpoint for feature extraction, so
 `embedBatch` fans out over `embed`. `featureExtraction` also returns a nested
 shape for some models, so the vector is narrowed rather than cast:
+
+<!-- doc-check: excuses="TS2307 '@huggingface/inference'" reason="a third-party SDK this repo does not install" -->
 
 ```typescript
 // lib/providers/huggingface.ts
@@ -544,6 +552,8 @@ A chunk row's vector is written by your code rather than by the plugin, so the
 field has to say so. Without `allowManualWrites`, `embedding()` denies writes and
 the create below throws `Cannot create "embedding": field-level access denied.`:
 
+<!-- doc-check: whole="a bare `DocumentChunk:` object-literal property — one entry of a `lists:` object — not a statement" -->
+
 ```typescript
 DocumentChunk: list({
   fields: {
@@ -712,6 +722,8 @@ export function clearEmbeddingCache() {
 
 Optimize search queries with filters and limits:
 
+<!-- doc-check: excuses="TS2451 'matches'" reason="a bad/good pair shares one fence and both snippets bind `matches`" -->
+
 ```typescript
 // ❌ Bad: no filters, large limit
 const matches = await context.db.Article.nearest('contentEmbedding', queryVector, {
@@ -849,6 +861,8 @@ export async function hybridSearch(
 
 Improve search quality by re-ranking results with a cross-encoder model.
 
+<!-- doc-check: excuses="TS2307 '@huggingface/inference'" reason="a third-party SDK this repo does not install" -->
+
 ```typescript
 // lib/rerank.ts
 import { HfInference } from '@huggingface/inference'
@@ -903,6 +917,8 @@ export async function rerankResults<T extends { id: string; content: string }>(
 ### Multi-Vector per Document
 
 Store multiple embeddings per document (e.g., title, summary, content) for better search.
+
+<!-- doc-check: whole="a bare `lists:` object-literal property, not a statement" -->
 
 ```typescript
 // opensaas.config.ts

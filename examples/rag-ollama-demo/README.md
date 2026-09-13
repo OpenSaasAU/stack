@@ -153,6 +153,8 @@ than filtering a ranked one.
 
 The RAG plugin is configured in `opensaas.config.ts`:
 
+<!-- doc-check: excuses="TS2345 'lists'" reason="a `config()` whose `lists` the prose elides" -->
+
 ```typescript
 import { config } from '@opensaas/stack-core'
 import { ragPlugin, ollamaEmbeddings } from '@opensaas/stack-rag'
@@ -178,6 +180,8 @@ export default config({
 
 Use the `searchable()` wrapper to automatically add embeddings to any field:
 
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
+
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
 import { searchable } from '@opensaas/stack-rag/fields'
@@ -199,6 +203,8 @@ fields: {
 - Cleaner, more concise syntax
 
 **Alternative (manual pattern):**
+
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
 
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
@@ -465,6 +471,8 @@ ollama pull nomic-embed-text
 
 1. **Use batch endpoints** — `embedBatch` is on the provider interface and both
    providers implement it:
+
+   <!-- doc-check: excuses="provider, text1, text2, text3" reason="bare names the prose supplies" -->
 
    ```typescript
    const vectors = await provider.embedBatch([text1, text2, text3])

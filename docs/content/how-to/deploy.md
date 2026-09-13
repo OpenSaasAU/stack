@@ -139,6 +139,8 @@ Reach for it when the resolved URL is the wrong one for the app process — the
 pooled-app / direct-CLI split above — or when you want a driver of your own,
 like Neon's WebSocket pool on a serverless runtime:
 
+<!-- doc-check: excuses="TS2307 '@neondatabase/serverless', TS2307 'ws'" reason="third-party packages this repo does not install" -->
+
 ```typescript
 import { config } from '@opensaas/stack-core'
 import { Pool, neonConfig } from '@neondatabase/serverless'
@@ -179,6 +181,8 @@ pnpm generate
 This rewrites the Contract module and the generated bundle, and regenerates the
 project-root `prisma.config.ts`. That file is CLI-only, never read by the running
 app, and you don't edit it:
+
+<!-- doc-check: excuses="TS2307 'prisma/config', TS2307 '@prisma/orm-postgres/config'" reason="Prisma's own CLI config entry points, which this repo does not depend on" -->
 
 ```typescript
 // ⚠️  GENERATED FILE - DO NOT EDIT
@@ -526,6 +530,8 @@ import { getContext } from '@/.opensaas/context'
 ```
 
 Do **not** push the bundle out of the compile graph with a `webpackIgnore`d dynamic `import()`. A bundler does not follow an ignored dynamic import, so the bundle's files never get traced and go missing from the serverless output (you'll see a runtime "Cannot find module" on Vercel even though local dev works):
+
+<!-- doc-check: excuses="TS2307 './.opensaas/context'" reason="the block is the `webpackIgnore` anti-pattern the prose tells the reader to avoid, and the relative specifier is the point of it" -->
 
 ```typescript
 // Avoid

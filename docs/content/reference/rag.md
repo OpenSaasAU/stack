@@ -165,6 +165,8 @@ type SearchableOptions = {
 
 For advanced use cases where you need more control:
 
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
+
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
@@ -261,6 +263,8 @@ are for standalone scripts.
 #### Multiple Providers
 
 You can configure multiple providers and choose which to use per field:
+
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
 
 ```typescript
 ragPlugin({

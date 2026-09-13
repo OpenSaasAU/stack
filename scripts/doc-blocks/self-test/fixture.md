@@ -10,11 +10,14 @@ is preceded by a marker saying what the checker must report for it:
 - `<!-- expect: pass not-compared -->` — clean, with at least one comparison
   reported NOT COMPARED.
 - `<!-- expect: excused -->` — every compile diagnostic is excused by the
-  fragment entry on the marker, and every redeclared name was compared.
+  fragment classifying it, and every redeclared name was compared.
 
-A marker carries its fragment entry as `excuses="a, b"` (the diagnostics it
-names) or `whole="reason"` (a whole-block fragment). Nothing here is
-documentation: the bad blocks are wrong on purpose.
+A block's own fragment classification is a second comment above the fence,
+exactly as it would appear in a real document: `<!-- doc-check:
+excuses="a, b" -->` (the diagnostics it names) or `<!-- doc-check: whole="…"
+-->` (a whole-block fragment). It can stack with the `expect:` marker above
+the same fence in either order. Nothing here is documentation: the bad blocks
+are wrong on purpose.
 
 ## A block that does not compile
 
@@ -160,20 +163,23 @@ export { context }
 
 ## A fragment entry excuses only the diagnostics it names
 
-<!-- expect: fail excuses="provider" -->
+<!-- expect: fail -->
+<!-- doc-check: excuses="provider" -->
 
 ```ts
 export const vector = provider.embed(document)
 export const count: number = 'one'
 ```
 
-<!-- expect: excused excuses="provider" -->
+<!-- expect: excused -->
+<!-- doc-check: excuses="provider" -->
 
 ```ts
 export const vector = provider.embed(document)
 ```
 
-<!-- expect: fail excuses="TS2307 'cohere-ai'" -->
+<!-- expect: fail -->
+<!-- doc-check: excuses="TS2307 'cohere-ai'" -->
 
 ```ts
 import { chunkText } from '@opensaas/stack-rag/does-not-exist'
@@ -181,7 +187,8 @@ import { chunkText } from '@opensaas/stack-rag/does-not-exist'
 export const chunks = chunkText(document)
 ```
 
-<!-- expect: excused excuses="TS2307 'cohere-ai'" -->
+<!-- doc-check: excuses="TS2307 'cohere-ai'" -->
+<!-- expect: excused -->
 
 ```ts
 import { CohereClient } from 'cohere-ai'
@@ -329,7 +336,8 @@ export type { X as ChunkingConfig }
 
 ## Shape (d): a fragment entry, an unresolved member, and an invented sibling
 
-<!-- expect: fail excuses="NotReal" -->
+<!-- expect: fail -->
+<!-- doc-check: excuses="NotReal" -->
 
 ```ts
 export type ChunkingConfig = {
@@ -340,7 +348,8 @@ export type ChunkingConfig = {
 }
 ```
 
-<!-- expect: excused excuses="NotReal" -->
+<!-- expect: excused -->
+<!-- doc-check: excuses="NotReal" -->
 
 ```ts
 export type ChunkingConfig = {
@@ -356,7 +365,8 @@ A whole-block entry excuses the parse failure; it does not excuse the invented
 member beside the elision, because the members the parser recovers are still
 held against the package's.
 
-<!-- expect: fail whole="a `...` elision inside the interface body" -->
+<!-- expect: fail -->
+<!-- doc-check: whole="a `...` elision inside the interface body" -->
 
 ```ts
 export interface TextChunk {
@@ -366,7 +376,8 @@ export interface TextChunk {
 }
 ```
 
-<!-- expect: excused whole="a `...` elision inside the interface body" -->
+<!-- expect: excused -->
+<!-- doc-check: whole="a `...` elision inside the interface body" -->
 
 ```ts
 export interface TextChunk {
