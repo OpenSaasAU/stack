@@ -393,8 +393,9 @@ describe('core field Filter specs', () => {
     expect(spec).toBeUndefined()
 
     // Both call paths degrade the same way — no spec means the token falls
-    // back to free text rather than reaching the engine, so `ListView` and a
-    // direct `buildListFilterWhere` caller behave identically instead of one
+    // back to free text where one exists, and to the never-matching
+    // fragment where none does (#1356/#1504), so `ListView` and a direct
+    // `buildListFilterWhere` caller behave identically instead of one
     // silently returning 0 results and the other throwing.
     const where = await buildListFilterWhere(
       'ledger:something',
@@ -403,7 +404,7 @@ describe('core field Filter specs', () => {
       gatedConfig,
       noAccessArgs,
     )
-    expect(where).toBeUndefined()
+    expect(where).toEqual({ NOT: {} })
   })
 
   it('declines the filter when ui.labelField names a non-text field (#1359)', () => {
