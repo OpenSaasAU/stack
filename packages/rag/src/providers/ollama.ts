@@ -19,6 +19,13 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   constructor(config: OllamaEmbeddingConfig) {
     this.baseURL = config.baseURL || 'http://localhost:11434'
     this.model = config.model || 'nomic-embed-text'
+
+    if (!Number.isInteger(config.dimensions) || config.dimensions < 1) {
+      throw new Error(
+        `Ollama embedding provider (model "${this.model}") requires a positive integer ` +
+          `"dimensions", got ${String(config.dimensions)}.`,
+      )
+    }
     this.dimensions = config.dimensions
 
     if (this.baseURL.endsWith('/')) {

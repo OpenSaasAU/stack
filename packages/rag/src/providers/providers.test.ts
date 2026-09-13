@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { OpenAIEmbeddingProvider } from './openai.js'
 import { OllamaEmbeddingProvider } from './ollama.js'
 import { createEmbeddingProvider } from './index.js'
+import type { OllamaEmbeddingConfig } from '../config/types.js'
 
 describe('Embedding Providers', () => {
   describe('OpenAIEmbeddingProvider', () => {
@@ -146,6 +147,30 @@ describe('Embedding Providers', () => {
         })
 
         expect(provider['baseURL']).toBe('http://localhost:11434')
+      })
+
+      it('refuses a dimensions value that is not a positive integer', () => {
+        for (const dimensions of [0, -1, 1.5, Number.NaN]) {
+          expect(() => new OllamaEmbeddingProvider({ type: 'ollama', dimensions })).toThrow(
+            /requires a positive integer "dimensions"/,
+          )
+        }
+      })
+
+      it('names the actual invalid value in the error, not JSON.stringify(NaN)’s "null"', () => {
+        expect(
+          () => new OllamaEmbeddingProvider({ type: 'ollama', dimensions: Number.NaN }),
+        ).toThrow('got NaN.')
+      })
+
+      it('refuses a missing dimensions value, naming the model', () => {
+        expect(
+          () =>
+            new OllamaEmbeddingProvider({
+              type: 'ollama',
+              model: 'llama2',
+            } as OllamaEmbeddingConfig),
+        ).toThrow('Ollama embedding provider (model "llama2") requires a positive integer')
       })
     })
 
