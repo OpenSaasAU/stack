@@ -2,4 +2,4 @@
 '@opensaas/stack-core': patch
 ---
 
-Fix `bindContextToTransaction` silently dropping `AccessContext` members it didn't explicitly list (e.g. `_config`) when rebuilding a hook's context inside a write's transaction. It now spreads the source context and overrides only what a transaction rebind must change.
+`bindContextToTransaction` now spreads the source `AccessContext` and overrides only what a transaction rebind must change, instead of rebuilding it by listing every member by hand — a shape that silently drops whichever member the next one forgets to add to the list.
