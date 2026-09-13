@@ -6,7 +6,8 @@ import { text } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
-import { withOrigin } from '../origin.js'
+import { UnmarkedQueryError, withOrigin } from '../origin.js'
+import { DatabaseError } from '../lib/database-errors.js'
 
 /**
  * #1205 / ADR-0010: every write through `context.db` opens a transaction, so a
@@ -209,6 +210,60 @@ describe('every write through context.db opens a transaction', () => {
 
       expect(await rows(database.url, 'Job')).toHaveLength(1)
       expect(await rows(database.url, 'Audit')).toHaveLength(1)
+    },
+    BOOT,
+  )
+
+  test(
+    'a tripwire refusal mid-write rolls back and reaches the caller unwrapped',
+    async () => {
+      // Same shape as the hook above, but this statement is issued with no
+      // origin entered at all (ADR-0059's tripwire is the whole of ADR-0038's
+      // enforcement) — the second statement of this write is refused rather
+      // than merely throwing an application error, which is #1209's guarantee.
+      const writeWithNoOrigin = async (
+        context: { ormHandle: Record<string, unknown> },
+        note: string,
+      ): Promise<void> => {
+        const collection = context.ormHandle.Audit
+        if (typeof collection !== 'object' || collection === null) {
+          throw new Error('the context carries no Audit collection')
+        }
+        const create = Reflect.get(collection, 'create')
+        if (typeof create !== 'function') throw new Error('the collection has no create')
+        await create.call(collection, { note })
+      }
+
+      const config: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          Job: {
+            fields: { name: text() },
+            access: { operation: OPEN },
+            hooks: {
+              afterOperation: async ({ context }) => {
+                await writeWithNoOrigin(context, 'job created')
+              },
+            },
+          },
+          Audit: { fields: { note: text() }, access: { operation: OPEN } },
+        },
+      }
+
+      const failure: unknown = await contextOver(database, config)
+        .db.Job.create({ data: { name: 'ship' } })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+
+      // Prototype identity, not message matching (#1209's acceptance criterion):
+      // a wrapped or re-classified error would still carry a plausible message.
+      expect(Object.getPrototypeOf(failure)).toBe(UnmarkedQueryError.prototype)
+      expect(failure).not.toBeInstanceOf(DatabaseError)
+
+      expect(await rows(database.url, 'Job')).toEqual([])
+      expect(await rows(database.url, 'Audit')).toEqual([])
     },
     BOOT,
   )
