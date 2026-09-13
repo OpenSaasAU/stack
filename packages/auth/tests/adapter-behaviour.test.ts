@@ -129,12 +129,19 @@ beforeAll(async () => {
       emailAndPassword: { enabled: true },
       user: { fields: { name: 'full_name' } },
       verification: { fields: { identifier: 'ident' } },
-      rateLimit: { enabled: true, storage: 'database', fields: { key: 'rate_key' } },
+      rateLimit: {
+        enabled: true,
+        storage: 'database',
+        fields: { key: 'rate_key', count: 'hit_count', lastRequest: 'last_seen' },
+      },
     },
     {
       user: { fields: { name: 'full_name' } },
       verification: { fields: { identifier: 'ident' } },
-      rateLimit: { storage: 'database', fields: { key: 'rate_key' } },
+      rateLimit: {
+        storage: 'database',
+        fields: { key: 'rate_key', count: 'hit_count', lastRequest: 'last_seen' },
+      },
     },
   )
 }, BOOT)
@@ -307,6 +314,49 @@ describe('both lanes address a mapped column the same way', () => {
       set: { lastRequest: 20 },
     })
     expect(bumped?.count).toBe(3)
+  })
+
+  test('incrementOne resolves a mapped increment column', async () => {
+    await mapped.adapter.create({
+      model: 'rateLimit',
+      data: { key: 'ip:incr', count: 1, lastRequest: 10 },
+    })
+
+    const bumped = await mapped.adapter.incrementOne<{ count: number }>({
+      model: 'rateLimit',
+      where: [{ field: 'key', value: 'ip:incr' }],
+      increment: { count: 5 },
+    })
+    expect(bumped?.count).toBe(6)
+
+    const found = await mapped.adapter.findOne<{ count: number }>({
+      model: 'rateLimit',
+      where: [{ field: 'key', value: 'ip:incr' }],
+    })
+    expect(found?.count).toBe(6)
+  })
+
+  test('incrementOne resolves a mapped set column and narrows a remapped int8 the same way the ORM lane does', async () => {
+    await mapped.adapter.create({
+      model: 'rateLimit',
+      data: { key: 'ip:set', count: 1, lastRequest: 10 },
+    })
+
+    const bumped = await mapped.adapter.incrementOne<{ lastRequest: number }>({
+      model: 'rateLimit',
+      where: [{ field: 'key', value: 'ip:set' }],
+      increment: {},
+      set: { lastRequest: 999 },
+    })
+    expect(bumped?.lastRequest).toBe(999)
+    expect(typeof bumped?.lastRequest).toBe('number')
+
+    const found = await mapped.adapter.findOne<{ lastRequest: number }>({
+      model: 'rateLimit',
+      where: [{ field: 'key', value: 'ip:set' }],
+    })
+    expect(found?.lastRequest).toBe(999)
+    expect(typeof found?.lastRequest).toBe('number')
   })
 
   test('consumeOne resolves a mapped field', async () => {
