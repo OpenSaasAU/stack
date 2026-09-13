@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
+    globalSetup: ['./vitest.global-setup.mjs'],
     setupFiles: ['./tests/setup.ts'],
     // Exclude browser tests from regular test runs
     exclude: process.env.BROWSER_TEST === 'true' ? [] : ['**/browser/**'],

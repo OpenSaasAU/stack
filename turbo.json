@@ -1,5 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // Every package's own `build` writes `dist/.build-hash` by running this
+  // script (see each package's `build` script and `assertDistFresh` in
+  // `packages/*/vitest.global-setup.mjs`, issue #1302). It sits outside every
+  // package's own directory, so without listing it here a change to its
+  // hashing algorithm would not invalidate an unrelated package's cached
+  // build — turbo would replay a `dist/.build-hash` written by the old
+  // algorithm, and `assertDistFresh` would misreport it as stale.
+  "globalDependencies": ["scripts/lib/dist-freshness.mjs", "scripts/lib/write-build-hash-cli.mjs"],
   "tasks": {
     "opensaas-stack-docs#build": {
       "dependsOn": ["^build"],

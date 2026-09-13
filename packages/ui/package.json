@@ -36,7 +36,7 @@
     "./styles": "./dist/styles/globals.css"
   },
   "scripts": {
-    "build": "npm run generate:css && tsc && npm run build:css",
+    "build": "npm run generate:css && tsc && npm run build:css && node ../../scripts/lib/write-build-hash-cli.mjs",
     "generate:css": "node --experimental-strip-types scripts/generate-globals-css.mts",
     "generate:css:check": "node --experimental-strip-types scripts/generate-globals-css.mts --check",
     "build:css": "mkdir -p dist/styles && postcss ./src/styles/globals.css -o ./dist/styles/globals.css",

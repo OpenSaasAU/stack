@@ -27,7 +27,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ../../scripts/lib/write-build-hash-cli.mjs",
     "dev": "tsc --watch",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest",

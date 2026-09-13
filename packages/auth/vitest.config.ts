@@ -4,6 +4,7 @@ import path from 'path'
 export default defineConfig({
   test: {
     globals: true,
+    globalSetup: ['./vitest.global-setup.mjs'],
     // The `test` turbo task depends on `build`, so a `dist/` directory is
     // present when tests run in CI. Without this exclusion Vitest would also
     // discover the compiled `dist/**/*.test.js` duplicate of the colocated

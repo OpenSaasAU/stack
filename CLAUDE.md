@@ -1158,6 +1158,10 @@ A guarantee the in-process database cannot exercise — row-lock contention, rea
 
 `examples/blog`'s access-control script exercises the paths a reviewer usually wants: anonymous vs. authenticated sessions, published vs. draft posts, author vs. non-author, and a field-level denial.
 
+### Suites that load built output, not `src/`
+
+`packages/cli`'s suites drive the real CLI through `bin/opensaas.js`, which loads `dist/`, and several packages (`cli`, `rag`, `auth`, `ui`, `storage`, `storage-s3`, `storage-vercel`, `tiptap`) import another workspace package by name (`@opensaas/stack-core`, …), which resolves through that package's own `dist/` too — there is no path alias back to `src/`. **A `src/` edit — including one made only to confirm a test is falsifiable by breaking the code it covers — has no effect on these suites until the affected package is rebuilt.** Each of those packages' `vitest.config.ts` runs `assertDistFresh` (`scripts/lib/dist-freshness.mjs`) as a `globalSetup`, which fails the run with the stale file(s) named when a `src/` edit has outrun the last `pnpm build` — so a mutation that never reached `dist/` is reported as a stale build, not a passing test (issue #1302). Run `pnpm build` (root or per-package) after editing a dependency's `src/`, before re-running one of these suites.
+
 ## Important Considerations
 
 ### TypeScript Module System

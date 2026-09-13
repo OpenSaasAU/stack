@@ -23,7 +23,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && npm run copy:css",
+    "build": "tsc && npm run copy:css && node ../../scripts/lib/write-build-hash-cli.mjs",
     "copy:css": "mkdir -p dist/styles && cp src/styles/tiptap.css dist/styles/",
     "dev": "tsc --watch",
     "typecheck": "tsc -p tsconfig.test.json",
