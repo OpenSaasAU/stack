@@ -363,6 +363,23 @@ describe.skipIf(!available)(
         expect(results[0].score).toBeCloseTo(0.8, 5)
       })
 
+      test("combines excludeSelf's exclusion with the caller's own id predicate", async () => {
+        await seedPalette()
+        const redId = await idOf('red')
+        const blueId = await idOf('blue')
+
+        const results = await findSimilar({
+          list: list(),
+          fieldName: 'contentEmbedding',
+          itemId: redId,
+          where: { id: { in: [redId, blueId] } },
+        })
+
+        // Without combining the two id constraints, the caller's own `in`
+        // restriction is clobbered and "reddish" (outside it) leaks back in.
+        expect(results.map((result) => result.item.content)).toEqual(['blue'])
+      })
+
       test('refuses an item with no embedding', async () => {
         // An empty source returns the generation hook early, so this is the row
         // an application gets when there was nothing to embed.
