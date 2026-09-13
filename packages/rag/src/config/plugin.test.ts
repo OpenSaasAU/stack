@@ -55,6 +55,28 @@ const flaky: EmbeddingProvider = {
 registerEmbeddingProvider('flaky', () => flaky)
 
 /**
+ * A provider that throws the way `OllamaEmbeddingProvider.embed()` does when
+ * the model's real output width doesn't match the field's declared
+ * `dimensions` (#1288) — a config defect, not a provider being down.
+ */
+const misdeclared: EmbeddingProvider = {
+  type: 'misdeclared',
+  model: 'misdeclared-1',
+  dimensions: 1,
+  embed: async () => {
+    throw new Error(
+      'Ollama embedding provider (model "misdeclared-1") declared dimensions of 1, but the ' +
+        'model returned a vector of length 4. Set "dimensions" (or OLLAMA_EMBEDDING_DIMENSIONS) to 4.',
+    )
+  },
+  embedBatch: async () => {
+    throw new Error('this member of the double was not expected to be reached')
+  },
+}
+
+registerEmbeddingProvider('misdeclared', () => misdeclared)
+
+/**
  * Two providers of different widths, so a query vector says which one embedded
  * it. `nearest()` validates the vector against the column's declared dimension,
  * so on a real database the wrong one is a hard error rather than a bad answer.
@@ -588,6 +610,7 @@ describe('ragPlugin', () => {
         providers: {
           counting: { type: 'counting', dimensions: 1 },
           flaky: { type: 'flaky', dimensions: 1 },
+          misdeclared: { type: 'misdeclared', dimensions: 1 },
           // Declared by ragPlugin, but no factory answers to the type — the
           // permanent configuration defect createEmbeddingProvider refuses.
           ghost: { type: 'ghost', dimensions: 1 },
@@ -823,6 +846,37 @@ describe('ragPlugin', () => {
       expect(first).toContain('registerEmbeddingProvider')
       expect(first).not.toContain('retry by writing the source field again')
       // Said in full once, then one line per row, like the other standing one.
+      expect(logged.mock.calls[1][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
+      expect(logged.mock.calls[1][0]).toContain('Article a2')
+      logged.mockRestore()
+    })
+
+    it('reports a declared-dimensions mismatch as a standing defect, not as transient', async () => {
+      // A dimension mismatch fails identically on every row until the
+      // declared width is corrected — retrying the source write can never
+      // clear it, so the generic transient arm's advice would be wrong here.
+      const { hook, writes, context } = await generationHook('misdeclared')
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const committed = async (id: string) =>
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id, content: 'four', contentEmbedding: null },
+          context,
+        })
+
+      await expect(committed('a1')).resolves.toBeUndefined()
+      await expect(committed('a2')).resolves.toBeUndefined()
+
+      expect(writes).toEqual([])
+      const first = logged.mock.calls[0][0]
+      expect(first).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+      expect(first).toContain('declared dimensions')
+      expect(first).not.toContain('retry by writing the source field again')
+      // Said in full once, then one line per row, like the other standing ones.
       expect(logged.mock.calls[1][0]).not.toContain('EMBEDDING GENERATION IS NOT RUNNING')
       expect(logged.mock.calls[1][0]).toContain('Article a2')
       logged.mockRestore()

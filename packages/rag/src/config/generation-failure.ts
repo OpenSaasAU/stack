@@ -25,6 +25,19 @@ export function isUnregisteredProviderType(error: unknown): boolean {
 }
 
 /**
+ * Whether a throw is a provider — `OllamaEmbeddingProvider.embed()` today —
+ * catching a returned vector whose width doesn't match the field's declared
+ * `dimensions` (#1288). Matched on message content, like
+ * `isUnregisteredProviderType`, because the provider throws a plain `Error`
+ * rather than a name this module could match on: the mismatch is between a
+ * declared number and a live API response, not something core's write path
+ * ever sees to refuse by name.
+ */
+export function isDimensionMismatch(error: unknown): boolean {
+  return messageOf(error).includes('declared dimensions of')
+}
+
+/**
  * The writes core refuses before they reach the database, by name. Matched on
  * `Error.name` rather than `instanceof` so a second copy of `stack-core` on
  * the resolved tree cannot make the classification silently fall through to
@@ -129,6 +142,21 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
           `column stays null, and there is no regeneration path (#1271), so rows written before ` +
           `it is registered stay null afterwards.`,
         'register the provider type',
+      )
+      return
+    }
+
+    if (isDimensionMismatch(failure.error)) {
+      standing(
+        failure,
+        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The ${failure.provider} ` +
+          `returned a vector whose width doesn't match its declared dimensions (see the error ` +
+          `below), and that is a configuration defect rather than a provider being down: it ` +
+          `fails the same way for every row until the declared width is corrected to match the ` +
+          `model's real output. Retrying the source write will not clear it. Rows commit ` +
+          `normally and the embedding column stays null, and there is no regeneration path ` +
+          `(#1271), so rows written before it is fixed stay null afterwards.`,
+        'correct the declared dimensions reported above',
       )
       return
     }

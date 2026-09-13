@@ -266,19 +266,23 @@ describe('Embedding Providers', () => {
         await expect(provider.embedBatch(['', '   ', '\n'])).rejects.toThrow()
       })
 
-      it('fails the whole batch with a named error rather than padding a ragged width', async () => {
-        vi.stubGlobal(
-          'fetch',
-          vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2], model: 'x' }))),
-        )
+      describe('when the model returns the wrong width', () => {
+        afterEach(() => {
+          vi.unstubAllGlobals()
+        })
 
-        const provider = new OllamaEmbeddingProvider({ type: 'ollama', dimensions: 768 })
+        it('fails the whole batch with a named error rather than padding a ragged width', async () => {
+          vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2], model: 'x' }))),
+          )
 
-        await expect(provider.embedBatch(['hello', ''])).rejects.toThrow(
-          'declared dimensions of 768, but the model returned a vector of length 2',
-        )
+          const provider = new OllamaEmbeddingProvider({ type: 'ollama', dimensions: 768 })
 
-        vi.unstubAllGlobals()
+          await expect(provider.embedBatch(['hello', ''])).rejects.toThrow(
+            'declared dimensions of 768, but the model returned a vector of length 2',
+          )
+        })
       })
     })
   })
