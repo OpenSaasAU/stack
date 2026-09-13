@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx'])
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.css'])
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', '.turbo'])
 const HASH_FILE_NAME = '.build-hash'
 
