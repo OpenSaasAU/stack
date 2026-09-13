@@ -4,6 +4,7 @@ import { getPluginData } from '../config/plugin-engine.js'
 import type { AccessContext } from '../access/types.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
+import { classifyRowIndependentCreateAccess } from '../access/field-access.js'
 import { pascalToCamel } from '../lib/case-utils.js'
 import { isRelationshipField } from '../fields/index.js'
 import {
@@ -14,6 +15,7 @@ import {
 import { ValidationError } from '../hooks/index.js'
 import { DatabaseError } from '../lib/database-errors.js'
 import type { McpSession, McpSessionProvider } from './types.js'
+import { decideAdvertisement } from './advertise.js'
 import { generateFieldSchemas, ownsForeignKey } from './field-schema.js'
 import {
   listIdColumn,
@@ -322,31 +324,50 @@ async function handleToolsList(
     }
 
     if (enabledTools.create) {
-      const fieldSchemas = await generateFieldSchemas(
-        listKey,
-        listConfig.fields,
-        config,
-        'create',
-        context.session,
-        context,
+      // A flat, row-independent `create` denial (`access: { operation: {
+      // create: () => false } }`) refuses every call before a row is even
+      // considered — the same defect #1163 closed for a denied required
+      // field, one level up (#1355). A row-dependent rule (most plausibly one
+      // shared with `update`/`delete`) cannot be classified ahead of a real
+      // request, so it still advertises the tool.
+      const createOperationAccess = listConfig.access?.operation?.create
+      const operationClassification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
+        `${listKey}.create`,
+        () =>
+          classifyRowIndependentCreateAccess(createOperationAccess, {
+            session: context.session,
+            context,
+          }),
+        'deny',
       )
-      if (fieldSchemas.deniedRequiredField === null) {
-        tools.push({
-          name: `list_${toolKey}_create`,
-          description: `Create a new ${listKey} record`,
-          inputSchema: {
-            type: 'object',
-            properties: {
-              data: {
-                type: 'object',
-                description: 'Record data with the following fields',
-                properties: fieldSchemas.properties,
-                required: fieldSchemas.required,
+
+      if (operationClassification !== 'deny') {
+        const fieldSchemas = await generateFieldSchemas(
+          listKey,
+          listConfig.fields,
+          config,
+          'create',
+          context.session,
+          context,
+        )
+        if (fieldSchemas.deniedRequiredField === null) {
+          tools.push({
+            name: `list_${toolKey}_create`,
+            description: `Create a new ${listKey} record`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                data: {
+                  type: 'object',
+                  description: 'Record data with the following fields',
+                  properties: fieldSchemas.properties,
+                  required: fieldSchemas.required,
+                },
               },
+              required: ['data'],
             },
-            required: ['data'],
-          },
-        })
+          })
+        }
       }
     }
 

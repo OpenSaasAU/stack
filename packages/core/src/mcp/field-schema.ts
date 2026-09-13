@@ -135,11 +135,17 @@ export async function generateFieldSchemas(
       continue
     }
 
+    // `validation.isRequired` is an application-layer check; `db.isNullable:
+    // false` is a column-level one — either makes the field impossible to
+    // omit from a create, so either drops the `create` tool when denied
+    // (#1355). Neither implies the other: a column can be non-null with no
+    // `isRequired`, or `isRequired` with a nullable column.
     const isRequired =
       operation === 'create' &&
-      'validation' in fieldConfig &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
-      !!(fieldConfig.validation as any)?.isRequired
+      (('validation' in fieldConfig &&
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
+        !!(fieldConfig.validation as any)?.isRequired) ||
+        fieldConfig.db?.isNullable === false)
 
     const classification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
       `${listKey}.${fieldName}`,
