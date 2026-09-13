@@ -462,6 +462,22 @@ describe('the MCP surface', () => {
       },
       BOOT,
     )
+
+    test(
+      'a custom session field resolved to undefined does not reach getContext (#1397)',
+      async () => {
+        const withUndefinedField: McpSessionProvider = async () => ({
+          userId: 'user-123',
+          role: undefined,
+        })
+
+        const { status, body } = await rpc('tools/list', undefined, undefined, withUndefinedField)
+
+        expect(status).toBe(200)
+        expect(body?.error).toBeUndefined()
+      },
+      BOOT,
+    )
   })
 
   /**

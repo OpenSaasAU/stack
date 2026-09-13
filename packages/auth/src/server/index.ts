@@ -655,7 +655,11 @@ export async function getSessionFromAuth<TResolvedSession>(
 
   for (const field of sessionFields) {
     const resolved = resolveSessionField(field, resolvedSessionRecord)
-    if (resolved.found) {
+    // `getContext` refuses a session holding `undefined` for one of its own
+    // keys (#1397) — treat a field resolved to `undefined` the same as one
+    // that wasn't found, rather than handing the factory a key it must
+    // reject, for a session that is genuinely signed in.
+    if (resolved.found && resolved.value !== undefined) {
       result[field] = resolved.value
     } else {
       warnUnresolvedSessionField(field, resolvedSessionRecord)

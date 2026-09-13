@@ -518,6 +518,45 @@ function rowLockSeat(
   return createRowLockLane(client.raw, client.contract, transaction) ?? unusableRowLockLane()
 }
 
+/**
+ * Thrown when a session handed to `getContext` — directly, through
+ * `withSession`, or through `createTestContext` — holds `undefined` for one
+ * of its own keys.
+ *
+ * `session ?? null` treats any non-null value as signed in, and an object
+ * is non-null even when every property on it is `undefined`. A session
+ * built from an unguarded optional identifier (`getContext({ userId })`
+ * where `userId` may be `undefined`) therefore type-checks against the
+ * deliberately open `Session` shape and reaches every access rule looking
+ * signed in, rather than anonymous (#1397). The fix is to not construct the
+ * key at all: `userId ? { userId } : undefined`, never `{ userId }` over a
+ * possibly-undefined value.
+ */
+export class InvalidSessionError extends Error {
+  constructor(readonly keys: readonly string[]) {
+    const plural = keys.length > 1
+    super(
+      `Session key${plural ? 's' : ''} ${keys.map((key) => `"${key}"`).join(', ')} ` +
+        `${plural ? 'are' : 'is'} \`undefined\`. getContext treats any non-null session as ` +
+        `signed in, so a key holding \`undefined\` reaches access control looking signed in ` +
+        `rather than anonymous. Omit the key instead of setting it to \`undefined\` — build the ` +
+        `session as \`userId ? { userId } : undefined\`, not \`{ userId }\` over a value that may ` +
+        `be \`undefined\`.`,
+    )
+    this.name = 'InvalidSessionError'
+  }
+}
+
+/**
+ * @throws {InvalidSessionError} when `session` is non-null and holds
+ *   `undefined` for one of its own keys.
+ */
+function assertValidSession(session: Session | null): void {
+  if (session === null) return
+  const undefinedKeys = Object.keys(session).filter((key) => session[key] === undefined)
+  if (undefinedKeys.length > 0) throw new InvalidSessionError(undefinedKeys)
+}
+
 export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
   ormHandle: OrmClient,
@@ -539,6 +578,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // when rebuilding the context inside `transaction()` (ADR-0056).
   _unsafeTransaction?: UnsafeTransactionScope,
 ): StackContext<AccessControlledDB> {
+  assertValidSession(session)
+
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
 

@@ -538,5 +538,13 @@ export async function createTestContext<
   options: TestDatabaseOptions = {},
 ): Promise<TestContext<TContext>> {
   const database = await createTestDatabase<TContext>(config, options)
-  return { ...database, context: database.context(session) }
+  try {
+    return { ...database, context: database.context(session) }
+  } catch (error) {
+    // `database.context` can now throw (`InvalidSessionError`), after the
+    // database is already up — close it rather than leaking the instance.
+    // A failure in `close()` itself must not mask the original error.
+    await database.close().catch(() => {})
+    throw error
+  }
 }

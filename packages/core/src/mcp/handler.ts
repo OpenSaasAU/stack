@@ -38,10 +38,26 @@ import {
  */
 type ContextSession = { userId: string; [key: string]: unknown }
 
-/** Strips transport-level fields; userId and any custom session fields flow through to access control. */
+/**
+ * Strips transport-level fields; userId and any custom session fields flow
+ * through to access control. A custom field resolved to `undefined` is
+ * dropped rather than passed through — `getContext` refuses a session
+ * holding `undefined` for one of its own keys (#1397), and `userId` itself
+ * is required and left untouched for that refusal to catch.
+ */
 function toContextSession(session: McpSession): ContextSession {
-  const { accessToken: _accessToken, expiresAt: _expiresAt, scopes: _scopes, ...rest } = session
-  return rest as ContextSession
+  const {
+    accessToken: _accessToken,
+    expiresAt: _expiresAt,
+    scopes: _scopes,
+    userId,
+    ...rest
+  } = session
+  const cleaned: ContextSession = { userId }
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) cleaned[key] = value
+  }
+  return cleaned
 }
 
 /**
