@@ -170,13 +170,14 @@ import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
   const model = typeof config.model === 'string' ? config.model : 'custom-embed'
-  const dimensions =
-    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+  if (!('dimensions' in config) || typeof config.dimensions !== 'number') {
+    throw new Error('custom embeddings require a numeric "dimensions"')
+  }
 
   return {
     type: 'custom',
     model,
-    dimensions,
+    dimensions: config.dimensions,
     async embed(text) {
       // Your implementation
       return [/* vector */]

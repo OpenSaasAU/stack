@@ -466,13 +466,14 @@ import { registerEmbeddingProvider } from '@opensaas/stack-rag/providers'
 
 registerEmbeddingProvider('custom', (config) => {
   const model = typeof config.model === 'string' ? config.model : 'custom-embed'
-  const dimensions =
-    'dimensions' in config && typeof config.dimensions === 'number' ? config.dimensions : 768
+  if (!('dimensions' in config) || typeof config.dimensions !== 'number') {
+    throw new Error('custom embeddings require a numeric "dimensions"')
+  }
 
   return {
     type: 'custom',
     model,
-    dimensions,
+    dimensions: config.dimensions,
     async embed(text) {
       // Your implementation
       return [/* vector */]
@@ -493,7 +494,9 @@ and supplied by the custom member's index signature, but it is absent from
 off the union — which is exactly why the `in` guard is the right narrowing.
 Narrow both, as above, rather than reading them straight onto the returned
 `EmbeddingProvider`, whose `model` and `dimensions` are a required `string` and
-`number`.
+`number`. `dimensions` decides the emitted column's width, so a factory that
+cannot determine it refuses rather than guessing — silently defaulting a
+mismeasured provider still generates a column, just the wrong one.
 
 ## Provisioning pgvector
 
