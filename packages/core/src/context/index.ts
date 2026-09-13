@@ -20,7 +20,10 @@ import {
   type UnsafeSurface,
   type UnsafeTransactionScope,
 } from '../unsafe.js'
-import { ENGINE_FACE, type EngineFaced } from './engine-context.js'
+import { ENGINE_FACE, engineContextOf, type EngineFaced } from './engine-context.js'
+import type { AnyExpression } from '@prisma/orm-postgres/relational-core'
+import type { PredicateAccessor } from '../secured/lower.js'
+import { withOrigin } from '../origin.js'
 import type { StackContext, StackTransactionContext } from '../types/context.js'
 import { getRelationshipOptions } from '../query/relationship-options.js'
 import {
@@ -194,6 +197,29 @@ function classifyBackReference(
   return resolveSyntheticReverseRelation(fieldName, listKey, config) !== null
     ? { kind: 'nonOwning' }
     : { kind: 'notRelationship' }
+}
+
+/**
+ * The one-row, one-column read `removeRelated`'s stale-baseline compare needs:
+ * unscoped, so it is unaffected by Field Visibility's own narrowing of the
+ * very column being compared (see the call site). Structural, matching
+ * `isDelegate`/`isReadableCollection`'s own rule elsewhere in the engine — a
+ * test double implementing only what it needs is not a defect to reject.
+ */
+interface RawRowCollection {
+  where(predicate: (model: PredicateAccessor) => AnyExpression): RawRowCollection
+  select(...fields: string[]): RawRowCollection
+  first(): Promise<Record<string, unknown> | null>
+}
+
+function isRawRowCollection(value: unknown): value is RawRowCollection {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).where === 'function' &&
+    typeof (value as Record<string, unknown>).select === 'function' &&
+    typeof (value as Record<string, unknown>).first === 'function'
+  )
 }
 
 /**
@@ -822,13 +848,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
             })
           } else {
             // Lock-then-compare (#1358): `props.parentId` is the caller's stale
-            // baseline for what this row points at. Locking first means the
-            // comparison below reads the row's CURRENT back-reference, not the
-            // value as of before the lock — so a concurrent re-point that
-            // committed between the caller's render and this call is what the
-            // comparison is guaranteed to see. The contract names the owning
-            // foreign-key column `<field>Id` (relationship-input.ts), which is
-            // the key a bare read (no `include`) returns it under.
+            // baseline for what this row points at. The contract names the
+            // owning foreign-key column `<field>Id` (relationship-input.ts),
+            // which is the key a bare read (no `include`) returns it under.
             const fieldName = props.field
             const foreignKeyColumn = `${fieldName}Id`
             const parentListKey = backRef.field.ref.split('.')[0]
@@ -838,12 +860,46 @@ export function getContext<TConfig extends OpenSaasConfig>(
             }
             const outcome = await transaction(async (tx) => {
               const relatedList = tx.db[props.listKey]
+              // The secured read establishes existence/visibility (Silent
+              // failure: absent-or-denied is `null` either way) and takes the
+              // row lock. Its OWN columns are unfit for the comparison below
+              // for two independent reasons: they are the row as of BEFORE
+              // the lock (ADR-0047), and — regardless of any race at all — a
+              // caller whose field- or relation-level read access is scoped
+              // sees this same column narrowed to `null` by Field Visibility
+              // (`narrowUnincludedForeignKeys`), which would misread a
+              // same-parent row as a conflict. So the value compared here
+              // comes from a second, unscoped statement issued directly
+              // against the transaction's own ORM handle (never the outer
+              // one — a second connection deadlocks the dev database's
+              // single-connection pool, ADR-0063) — after the lock is held,
+              // so it is the row's true current value and cannot go stale
+              // under a concurrent write (no one else can commit one while
+              // this transaction holds the lock).
               const locked = await relatedList
                 .where({ id: { equals: relatedId } })
                 .forUpdate()
                 .first()
               if (locked === null) return 'denied' as const
-              if (locked[foreignKeyColumn] !== expectedParentId) return 'conflict' as const
+              const rawModel = engineContextOf(tx).ormHandle[props.listKey]
+              if (!isRawRowCollection(rawModel)) return 'denied' as const
+              const current = await withOrigin('engine', () =>
+                rawModel
+                  .where((raw) => {
+                    const predicate = raw['id']?.eq?.(relatedId)
+                    if (predicate === undefined) {
+                      throw new Error(`Cannot query "id" on list "${props.listKey}"`)
+                    }
+                    return predicate
+                  })
+                  .select(foreignKeyColumn)
+                  .first(),
+              )
+              // `current` is absent only if the row vanished between the lock
+              // above and here, which the lock itself rules out — kept as a
+              // defensive branch rather than a non-null assertion.
+              if (current === null) return 'denied' as const
+              if (current[foreignKeyColumn] !== expectedParentId) return 'conflict' as const
               const updated = await relatedList.update({
                 where: { id: relatedId },
                 data: { [fieldName]: null },
