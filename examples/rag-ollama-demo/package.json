@@ -9,7 +9,8 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
-    "test:rag": "tsx --env-file-if-exists=.env test.ts"
+    "test:rag": "tsx --env-file-if-exists=.env test.ts",
+    "test:e2e": "opensaas dev -- tsx test-e2e.ts"
   },
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
@@ -24,10 +25,12 @@
   "devDependencies": {
     "@opensaas/stack-cli": "workspace:*",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^17.4.2",
+    "pg": "^8.22.0",
     "prisma": "8.0.0-rc.12",
     "tsx": "^4.23.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2"

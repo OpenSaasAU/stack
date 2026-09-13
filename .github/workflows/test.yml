@@ -434,6 +434,7 @@ jobs:
           --filter=@opensaas/stack-ui
           --filter=@opensaas/stack-cli
           --filter=@opensaas/stack-tiptap
+          --filter=@opensaas/stack-rag
           --filter=create-opensaas-app
 
       # Isolated first-run guard: scaffold the real CLI into an OS temp dir and
@@ -507,6 +508,26 @@ jobs:
         run: |
           psql "$DATABASE_URL" -c 'create database json_demo_example'
           psql "$DATABASE_URL" -c 'create database tiptap_demo_example'
+          psql "$DATABASE_URL" -c 'create database rag_ollama_example'
+
+      # Issue #1395: the two RAG examples previously only built in CI, so the
+      # path their acceptance rests on — pgvector present with no hand step,
+      # a write's embedding generated behind it, `nearest()` ranking inside
+      # the Access Filter — was proven only on a developer's machine. This
+      # runs `examples/rag-ollama-demo`'s own `opensaas dev -- tsx` script
+      # against each leg's real database (the Dev database here, a dedicated
+      # database above on the postgres leg — the same reason json-demo and
+      # tiptap-demo get one of their own). It registers a deterministic fake
+      # 'ollama' provider before ragPlugin ever calls one, so the guard proves
+      # the pack declaration → contract space → reconcile → engine-terminal
+      # chain rather than a live Ollama server. It also asserts, against
+      # `pg_indexes`, that no HNSW/IVFFlat index exists on the embedding
+      # column yet — the CI signal #1265's own re-check has nowhere else to
+      # appear, so this fails loudly the day that stops being true.
+      - name: Run the RAG pgvector e2e guard
+        run: pnpm --filter opensaas-rag-ollama-example test:e2e
+        env:
+          DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgres://postgres:postgres@localhost:5432/rag_ollama_example' || '' }}
 
       - name: Run E2E tests
         run: pnpm test:e2e
