@@ -62,6 +62,20 @@ describe('the migrations refs the loop owns', () => {
     fs.rmSync(path.join(cwd, 'migrations'), { recursive: true })
     expect(snapshotMigrationRefs(cwd)).toEqual([])
   })
+
+  it('leaves a new space’s own ref alone, since the snapshot never knew it', () => {
+    // Taken before the run seeds "pgvector" for the first time — exactly what
+    // `onConfigChange` does, per the comment at its own `snapshotMigrationRefs` call.
+    const snapshot = snapshotMigrationRefs(cwd)
+
+    const newSpaceRef = path.join(cwd, 'migrations', 'pgvector', 'refs', 'head.json')
+    fs.mkdirSync(path.dirname(newSpaceRef), { recursive: true })
+    fs.writeFileSync(newSpaceRef, JSON.stringify({ hash: 'seeded', invariants: [] }), 'utf-8')
+
+    restoreMigrationRefs(cwd, snapshot)
+
+    expect(fs.existsSync(newSpaceRef)).toBe(true)
+  })
 })
 
 describe('promoting a staged generation', () => {
