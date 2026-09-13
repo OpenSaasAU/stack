@@ -163,7 +163,7 @@ function renameKeys(
  * The ROOT factory instance (what `opensaasAuthAdapter` itself returns, and
  * therefore what better-auth's `AuthContext.adapter` is — reached via a
  * `databaseHooks` `before`/`after` hook's `GenericEndpointContext.context.adapter`,
- * as opposed to the transaction-bound instance `getCurrentAdapter` hands
+ * as opposed to the transaction-bound instance that `getCurrentAdapter` hands
  * `internalAdapter`) reads its lane from the SAME AsyncLocalStorage store as
  * the transaction-bound instance, not a closed-over `unsafe`. Both instances
  * run inside the same `boundLane.run(lane, …)` call for the life of the
