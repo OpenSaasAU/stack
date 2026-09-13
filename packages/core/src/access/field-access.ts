@@ -1,4 +1,4 @@
-import type { Session, AccessContext } from './types.js'
+import type { Session, AccessContext, AccessControl } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
 import type { OpenSaasConfig, RelationshipField } from '../config/types.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
@@ -6,7 +6,7 @@ import type { OpenSaasConfig, RelationshipField } from '../config/types.js'
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
-import { resolveSyntheticReverseRelation } from './engine.js'
+import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
 
 /**
@@ -271,6 +271,45 @@ export async function classifyRowIndependentWrite(
       inputData: createPoisonedItem(),
     })
     return writable ? 'allow' : 'deny'
+  } catch (err) {
+    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
+    throw err
+  }
+}
+
+/**
+ * The operation-level counterpart of {@link classifyRowIndependentWrite}: what
+ * a list's `create` operation rule (`access.operation.create`) answers when
+ * asked with no row to test — the question `tools/list` needs before
+ * advertising a `create` tool at all (#1355). A rule that never reaches into
+ * `item` (the common case — create has no existing row to depend on) is
+ * answered directly; one that does (most plausibly a rule shared with
+ * `update`/`delete`) cannot be classified ahead of a real request and is left
+ * `'row-dependent'` — the actual `create` call still enforces it.
+ *
+ * This does not call {@link checkCreateAccess} — that function's args carry no
+ * `item` to poison, since production create access is always evaluated
+ * without one. It instead calls {@link checkAccess} directly and applies the
+ * same boolean-only contract `checkCreateAccess` enforces (ADR-0030): a
+ * result that is neither `true` nor `false` (a filter, say) is a rule that
+ * would throw `InvalidCreateAccessResultError` at actual create time
+ * regardless of session, so it is classified as a denial rather than
+ * advertised.
+ */
+export async function classifyRowIndependentCreateAccess(
+  accessControl: AccessControl | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext
+  },
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  try {
+    const result = await checkAccess(accessControl, {
+      session: args.session,
+      context: args.context,
+      item: createPoisonedItem(),
+    })
+    return result === true ? 'allow' : 'deny'
   } catch (err) {
     if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
     throw err
