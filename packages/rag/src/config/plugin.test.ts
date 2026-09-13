@@ -563,7 +563,12 @@ describe('ragPlugin', () => {
   describe('the generation path', () => {
     /**
      * A context carrying the plugin's own escalated write, keyed by the symbol
-     * a live runtime uses — the only key the plugin's hook looks under.
+     * a live runtime uses — the only key the plugin's hook looks under — and an
+     * `ormHandle` double standing in for the row the hook's own privileged
+     * read (#1282) sees. `setLatestItem` is how a test's own `item` argument
+     * seeds that row: this double never exercises Field Visibility (a real
+     * database does, in `embedding-write.test.ts`) — it only stands in for the
+     * persisted row the read is scoped past.
      */
     function writeRecorder(onWrite?: () => void) {
       const writes: {
@@ -584,7 +589,28 @@ describe('ragPlugin', () => {
           writes.push({ listKey, id, fieldName, stored })
         },
       }
-      return { writes, context: stubContext({ plugins: { rag: services } }) }
+
+      let latestItem: Record<string, unknown> | undefined
+      const article = {
+        where: () => article,
+        first: async () => {
+          if (latestItem === undefined) return null
+          const stored = latestItem.contentEmbedding as StoredEmbedding | null | undefined
+          return {
+            content: latestItem.content,
+            contentEmbeddingMetadata: stored?.metadata ?? null,
+          }
+        },
+      }
+      const ormHandle: AccessContext['ormHandle'] = { Article: article }
+
+      return {
+        writes,
+        context: stubContext({ plugins: { rag: services }, ormHandle }),
+        setLatestItem: (item: Record<string, unknown> | undefined) => {
+          latestItem = item
+        },
+      }
     }
 
     /**
@@ -618,7 +644,20 @@ describe('ragPlugin', () => {
       }).init!(harness.context)
 
       const recorder = writeRecorder(onWrite)
-      const hook = harness.live.lists.Article.hooks?.afterTransaction
+      const realHook = harness.live.lists.Article.hooks?.afterTransaction
+
+      // Seeds the `ormHandle` double with this call's own `item` before
+      // running the real hook, so its privileged read (#1282) sees what
+      // these tests intend the persisted row to hold — invisibly to every
+      // test below, which still just calls `hook!({ ..., item })`.
+      const hook = realHook
+        ? async (args: Parameters<NonNullable<typeof realHook>>[0]) => {
+            recorder.setLatestItem(
+              'item' in args ? (args.item as Record<string, unknown>) : undefined,
+            )
+            return await realHook(args)
+          }
+        : undefined
 
       return { hook, writes: recorder.writes, context: recorder.context }
     }
