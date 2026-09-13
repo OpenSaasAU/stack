@@ -1,13 +1,27 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import pg from 'pg'
 import type { QueryResult } from 'pg'
-import { startDevDatabase, type DevDatabase } from './dev-database.js'
+import { DevDatabaseInUseError, startDevDatabase, type DevDatabase } from './dev-database.js'
+import { processStartTime } from './process-identity.js'
 import { readDevDatabaseState, writeDevDatabaseState, type DevDatabaseState } from './state-file.js'
 import { resolveDatabaseUrl } from './url.js'
+
+/**
+ * The claim fields `readDevDatabaseState` returns for this process, for an
+ * exact-match assertion. `startedAt` is asserted as "a number" rather than a
+ * precise value — its exact computation is `process-identity.test.ts`'s and
+ * `state-file.test.ts`'s job — and omitted where this platform cannot supply
+ * one at all.
+ */
+function ownClaim(): { pid: number; startedAt?: number } {
+  return processStartTime(process.pid) === undefined
+    ? { pid: process.pid }
+    : { pid: process.pid, startedAt: expect.any(Number) as unknown as number }
+}
 
 const stateFileHook = vi.hoisted(() => {
   const hook: { onWrite?: (state: DevDatabaseState) => void } = {}
@@ -102,15 +116,12 @@ describe('startDevDatabase', () => {
     async () => {
       const first = await start()
       expect(first.stateFile).toBe(path.join(projectRoot, '.opensaas', 'dev-db.json'))
-      expect(readDevDatabaseState({ cwd: projectRoot })).toEqual({
-        url: first.url,
-        pid: process.pid,
-      })
+      expect(readDevDatabaseState({ cwd: projectRoot })).toEqual({ url: first.url, ...ownClaim() })
 
       const second = await start()
       expect(readDevDatabaseState({ cwd: projectRoot })).toEqual({
         url: second.url,
-        pid: process.pid,
+        ...ownClaim(),
       })
       expect(resolveDatabaseUrl({ cwd: projectRoot })).toEqual({
         url: second.url,
@@ -219,6 +230,75 @@ describe('startDevDatabase', () => {
       } finally {
         await client.end()
       }
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a relative dataDir resolves against cwd, the same root the state file uses',
+    async () => {
+      const database = await startDevDatabase({
+        cwd: projectRoot,
+        dataDir: path.join('nested', 'dev-db'),
+      })
+      started.push(database)
+
+      const expectedDataDir = path.join(projectRoot, 'nested', 'dev-db')
+      expect(database.dataDir).toBe(expectedDataDir)
+      expect(existsSync(expectedDataDir)).toBe(true)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a second startDevDatabase against a dataDir already in use fails, leaving the first unharmed',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      const first = await startDevDatabase({ cwd: projectRoot, dataDir })
+      started.push(first)
+
+      const otherCwd = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-'))
+      await expect(startDevDatabase({ cwd: otherCwd, dataDir })).rejects.toThrow(
+        DevDatabaseInUseError,
+      )
+      await expect(startDevDatabase({ cwd: otherCwd, dataDir })).rejects.toThrow(
+        new RegExp(`pid ${process.pid}\\b`),
+      )
+
+      expect((await ask(first.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'stopping releases the dataDir lock, so a fresh start against it succeeds',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      const first = await startDevDatabase({ cwd: projectRoot, dataDir })
+      await first.stop()
+
+      const second = await startDevDatabase({ cwd: projectRoot, dataDir })
+      started.push(second)
+      expect((await ask(second.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a dataDir lock left by a pid nothing runs is replaced rather than honoured',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      mkdirSync(dataDir, { recursive: true })
+      writeFileSync(
+        path.join(dataDir, '.opensaas-dev-database.lock'),
+        JSON.stringify({ pid: 2 ** 30 }),
+        'utf8',
+      )
+
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      started.push(database)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
     },
     BOOT_TIMEOUT,
   )

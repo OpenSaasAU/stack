@@ -1,19 +1,28 @@
 /**
  * The Dev database: an in-process PGlite the stack runs itself (ADR-0063).
  *
- * Known limits of this primitive, all of them properties of the socket server
- * it runs PGlite behind:
+ * Known limits of this primitive:
  *
  * - Every TCP connection is multiplexed onto **one** PGlite session, so a
  *   client with a multi-connection pool corrupts its own session state.
  *   Clients bind a single connection; `maxConnections` only buys headroom for
  *   the several single-connection clients that share one sidecar.
  * - A connection holding an open transaction holds the whole query queue.
- * - PGlite opens a data directory in one process at a time. A second process
- *   reaches the database over the socket or not at all.
+ * - PGlite opens a data directory in one process at a time. `startDevDatabase`
+ *   enforces this against itself — a second call against the same `dataDir`
+ *   fails naming the first — but the guard is a lock file inside that
+ *   directory: a bare `new PGlite({ dataDir })` bypassing this primitive, or
+ *   the lock file being deleted out from under a running sidecar, is not
+ *   caught.
  * - There is no daemon, registry or cross-process lookup: the database dies
  *   with the process that started it, and other processes find it through the
  *   state file.
+ * - Stale-sidecar detection (the state file's pid, and the `dataDir` lock's)
+ *   compares process start times to tell a live pid from an unrelated process
+ *   that inherited it after a reboot or pid wrap. The comparison is
+ *   approximate — Linux assumes a 100 Hz clock, macOS's `ps` only carries
+ *   one-second resolution — and unavailable on any other platform, where a
+ *   live pid is trusted outright exactly as it was before this check existed.
  * - An IPv6 `host` is bracketed into the published URL, which is the RFC 3986
  *   form; node-postgres does not strip those brackets when it parses a
  *   connection string, so such a client takes `host` and `port` off the handle
@@ -24,6 +33,9 @@
  */
 
 import type { Extension } from '@electric-sql/pglite'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import * as path from 'node:path'
+import { identifiesLiveProcess, processClaimSchema, processStartTime } from './process-identity.js'
 import {
   clearDevDatabaseState,
   devDatabaseStatePath,
@@ -40,6 +52,10 @@ export interface StartDevDatabaseOptions {
    * The PGlite data directory. Omitted, the database is in-memory and nothing
    * survives the process — which is what the test harness wants and the dev
    * loop does not.
+   *
+   * Resolved against `cwd` (or `process.cwd()`, absent that) when relative —
+   * the same root the state file resolves against — so a relative `dataDir`
+   * and an explicit `cwd` never disagree about where the data directory is.
    */
   dataDir?: string
   /** Extensions loaded into the instance, ready for `CREATE EXTENSION`. */
@@ -65,7 +81,7 @@ export interface DevDatabase {
   readonly url: string
   readonly host: string
   readonly port: number
-  /** The data directory, or `undefined` when the instance is in-memory. */
+  /** The absolute data directory, or `undefined` when the instance is in-memory. */
   readonly dataDir: string | undefined
   /** Absolute path to the state file this instance wrote. */
   readonly stateFile: string
@@ -126,6 +142,81 @@ function portOf(connection: string): number {
   return port
 }
 
+/** Thrown by {@link startDevDatabase} when another sidecar already holds `dataDir`. */
+export class DevDatabaseInUseError extends Error {
+  constructor(dataDir: string, pid: number) {
+    super(
+      `The dev database data directory "${dataDir}" is already open in another process ` +
+        `(pid ${pid}). PGlite serves one process at a time, so a second sidecar racing the ` +
+        `first over the same files would corrupt it — stop that process or start this one ` +
+        `against a different \`dataDir\`.`,
+    )
+    this.name = 'DevDatabaseInUseError'
+  }
+}
+
+/**
+ * The lock file's name inside the data directory it claims. Distinct from
+ * anything PGlite itself writes there, so this primitive's own bookkeeping
+ * cannot collide with the emulated Postgres data directory it sits beside.
+ */
+const DATA_DIR_LOCK_FILE_NAME = '.opensaas-dev-database.lock'
+
+function readDataDirLock(lockFile: string) {
+  let contents: string
+  try {
+    contents = readFileSync(lockFile, 'utf8')
+  } catch {
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(contents)
+  } catch {
+    return undefined
+  }
+  const claim = processClaimSchema.safeParse(parsed)
+  return claim.success ? claim.data : undefined
+}
+
+function writeDataDirLock(lockFile: string): void {
+  const claim = { pid: process.pid, startedAt: processStartTime(process.pid) }
+  writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+}
+
+/**
+ * Claims `dataDir` for this process before PGlite ever opens it, so a second
+ * `startDevDatabase` against the same directory fails naming the first
+ * instead of racing it over the same files. A lock a dead or recycled pid
+ * left behind is replaced rather than honoured, mirroring the state file's
+ * own stale-record handling (`identifiesLiveProcess`).
+ *
+ * @throws {DevDatabaseInUseError} when a live sidecar already holds `dataDir`.
+ */
+function acquireDataDirLock(dataDir: string): () => void {
+  mkdirSync(dataDir, { recursive: true })
+  const lockFile = path.join(dataDir, DATA_DIR_LOCK_FILE_NAME)
+  const release = () => rmSync(lockFile, { force: true })
+
+  try {
+    writeDataDirLock(lockFile)
+    return release
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+  }
+
+  const existing = readDataDirLock(lockFile)
+  if (existing !== undefined && identifiesLiveProcess(existing)) {
+    throw new DevDatabaseInUseError(dataDir, existing.pid)
+  }
+
+  // Stale: the pid that wrote this lock is gone, or a reboot/wrap has handed
+  // it to an unrelated process. Replace it and proceed.
+  rmSync(lockFile, { force: true })
+  writeDataDirLock(lockFile)
+  return release
+}
+
 /**
  * Starts an in-process PGlite behind a socket server on a free loopback TCP
  * port and publishes it in the Generated bundle's state file, so that every
@@ -163,29 +254,34 @@ export async function startDevDatabase(
   const { PGLiteSocketServer } = await import('@electric-sql/pglite-socket')
 
   const host = options.host ?? '127.0.0.1'
+  const cwd = options.cwd ?? process.cwd()
+  const dataDir = options.dataDir !== undefined ? path.resolve(cwd, options.dataDir) : undefined
   const extensions = await loadExtensions(options.extensions ?? [])
-  const pglite = new PGlite({
-    ...(options.dataDir !== undefined && { dataDir: options.dataDir }),
-    extensions,
-  })
-  await pglite.waitReady
 
-  const server = new PGLiteSocketServer({
-    db: pglite,
-    host,
-    port: 0,
-    maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
-  })
-  const teardown: (() => Promise<void>)[] = [() => pglite.close()]
+  const teardown: (() => Promise<void>)[] = []
+  if (dataDir !== undefined) {
+    const releaseLock = acquireDataDirLock(dataDir)
+    teardown.push(async () => releaseLock())
+  }
 
   try {
+    const pglite = new PGlite({ ...(dataDir !== undefined && { dataDir }), extensions })
+    await pglite.waitReady
+    teardown.unshift(() => pglite.close())
+
+    const server = new PGLiteSocketServer({
+      db: pglite,
+      host,
+      port: 0,
+      maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
+    })
     await server.start()
     teardown.unshift(() => server.stop())
 
     const port = portOf(server.getServerConn())
     const url = `postgres://${DATABASE_NAME}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
     const location: DevDatabaseStateLocation = {
-      ...(options.cwd !== undefined && { cwd: options.cwd }),
+      cwd,
       ...(options.stateFile !== undefined && { stateFile: options.stateFile }),
     }
     const stateFile = devDatabaseStatePath(location)
@@ -196,7 +292,7 @@ export async function startDevDatabase(
       url,
       host,
       port,
-      dataDir: options.dataDir,
+      dataDir,
       stateFile,
       stop: async () => {
         if (stopped) return
