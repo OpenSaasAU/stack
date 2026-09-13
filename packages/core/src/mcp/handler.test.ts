@@ -164,11 +164,16 @@ function schemaConfig(): OpenSaasConfig {
       },
       // A column made non-null purely at the DB level (#1355) — no
       // `validation.isRequired` — is just as impossible to omit from a create
-      // as Ledger's field above, so a denied write drops the tool the same way.
+      // as Ledger's field above, so a denied write drops the tool the same
+      // way. Carries a `defaultValue` too: `applyCreateDefaults` fills it in
+      // whether or not the caller supplies it, and `filterWritableFields`
+      // then denies the write regardless — so the tool must stay dropped
+      // even though a value technically exists to fall back on.
       Invoice: {
         fields: {
           total: text({
             db: { isNullable: false },
+            defaultValue: 'unposted',
             access: { create: ({ session }) => session?.role === 'admin' },
           }),
         },
@@ -972,6 +977,39 @@ describe('the MCP surface', () => {
 
         const adminNames = (await toolsFor(admin)).map((tool) => tool.name)
         expect(adminNames).toContain('list_invoice_create')
+      },
+      BOOT,
+    )
+
+    test(
+      "a defaultValue doesn't rescue a denied db.isNullable: false field — the tool stays right to drop it",
+      async () => {
+        // Omitting `total` relies entirely on `defaultValue` — proving the
+        // dropped tool wasn't merely a false positive.
+        const { body: authorBody } = await rpc(
+          'tools/call',
+          { name: 'list_invoice_create', arguments: { data: {} } },
+          schemaConfig(),
+          author,
+        )
+        expect((authorBody?.result as { isError?: boolean }).isError).toBe(true)
+
+        // The same omitted-field create succeeds for a session the field
+        // access DOES allow — `applyCreateDefaults` fills it in.
+        const { body: adminBody } = await rpc(
+          'tools/call',
+          { name: 'list_invoice_create', arguments: { data: {} } },
+          schemaConfig(),
+          admin,
+        )
+        const adminResult = adminBody?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(adminResult.isError).toBeUndefined()
+        expect(JSON.parse(adminResult.content[0].text)).toMatchObject({
+          item: { total: 'unposted' },
+        })
       },
       BOOT,
     )

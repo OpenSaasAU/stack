@@ -136,10 +136,17 @@ export async function generateFieldSchemas(
     }
 
     // `validation.isRequired` is an application-layer check; `db.isNullable:
-    // false` is a column-level one — either makes the field impossible to
-    // omit from a create, so either drops the `create` tool when denied
-    // (#1355). Neither implies the other: a column can be non-null with no
+    // false` is a column-level one — either makes a denied write break every
+    // create for this session (#1355), so either drops the `create` tool.
+    // Neither implies the other: a column can be non-null with no
     // `isRequired`, or `isRequired` with a nullable column.
+    //
+    // A `defaultValue` does not need its own exception here: `applyCreateDefaults`
+    // (context/apply-defaults.ts) fills an omitted field's default into
+    // `resolvedData` before `filterWritableFields` checks write access
+    // (write-pipeline.ts), so a denied write on an `isNullable: false` field
+    // throws on every create — whether the caller supplied it or relied on
+    // the default — not only when the column is genuinely omittable.
     const isRequired =
       operation === 'create' &&
       (('validation' in fieldConfig &&
