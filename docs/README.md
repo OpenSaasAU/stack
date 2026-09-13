@@ -93,6 +93,27 @@ The site is ready to deploy to Vercel or any other Next.js hosting platform:
 pnpm build
 ```
 
+## Search / Embeddings
+
+The search API (`app/api/search/route.ts`) ranks documents against a
+build-time index committed at `.embeddings/docs.json`
+(`pnpm generate:embeddings`, via `scripts/generate-embeddings.ts`). That index
+is tied to whichever embedding provider generated it — the committed one is
+OpenAI's `text-embedding-3-small` (1536 dimensions). A query vector's
+dimensions have to match the index's, so running the site locally with
+`EMBEDDING_PROVIDER=ollama` set (768 dimensions for the default
+`nomic-embed-text` model) makes every search request fail until you
+regenerate the index under that same provider:
+
+```bash
+cd docs
+EMBEDDING_PROVIDER=ollama pnpm generate:embeddings
+```
+
+Regenerating overwrites `.embeddings/docs.json` for whichever provider you ran
+it under — don't commit an Ollama-generated index over the OpenAI one used in
+production.
+
 ## Screenshots
 
 Screenshots are generated from the blog example using Playwright MCP and stored in `public/screenshots/`.
