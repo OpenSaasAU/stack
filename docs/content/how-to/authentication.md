@@ -40,6 +40,8 @@ export default config({
 })
 ```
 
+<!-- doc-check: excuses="TS2307 '../opensaas.config', TS2305 'rawOpensaasContext'" reason="the reader's own config and the generated bundle's `rawOpensaasContext`, which only exist in a project `pnpm generate` has run" -->
+
 ```typescript
 // lib/auth.ts
 import { createAuth } from '@opensaas/stack-auth/server'
@@ -50,6 +52,8 @@ export const auth = createAuth(config, rawOpensaasContext)
 export const GET = auth.handler
 export const POST = auth.handler
 ```
+
+<!-- doc-check: excuses="TS2307 '@/lib/auth'" reason="the reader's own file, authored in the block above" -->
 
 ```typescript
 // app/api/auth/[...all]/route.ts
@@ -169,6 +173,8 @@ Plugin data is typed `Record<string, unknown>` — the config carries no plugin'
 own type — so the read below narrows rather than asserts, and falls back to the
 three default names when the plugin declared none:
 
+<!-- doc-check: excuses="TS2307 '../opensaas.config', TS2307 'next/headers', TS2305 'rawOpensaasContext'" reason="the reader's own config and the generated bundle's `rawOpensaasContext`, plus Next.js, none present in this repo" -->
+
 ```typescript
 // lib/auth.ts
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
@@ -225,6 +231,8 @@ export const { signIn, signUp, signOut, useSession } = authClient
 
 Create the catch-all auth route:
 
+<!-- doc-check: excuses="TS2307 '@/lib/auth'" reason="the reader's own file, authored in an earlier block" -->
+
 ```typescript
 // app/api/auth/[...all]/route.ts
 export { GET, POST } from '@/lib/auth'
@@ -253,6 +261,8 @@ An email action resolves to `AuthActionResult` (`{ success: true }` or
 `{ success: false, error }`, whose message the form renders) and leaves the
 redirect to the form's `redirectTo`. Social sign-in has to leave the app, so its
 action performs a server-side `redirect()` to the provider and resolves to `void`.
+
+<!-- doc-check: excuses="TS2307 'next/headers', TS2307 'next/navigation', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
 
 ```typescript
 // lib/actions/auth.ts
@@ -479,6 +489,8 @@ row", deliberately, so the caller cannot tell which. Check it before treating th
 write as done. The relation field takes `{ connect: { id } }`; there is no nested
 create:
 
+<!-- doc-check: excuses="TS2307 '@/lib/auth', TS2339 'Post'" reason="the reader's own file, and `Post` is not one of the three lists the prelude models" -->
+
 ```typescript
 // lib/actions/posts.ts
 'use server'
@@ -562,6 +574,8 @@ The object `getSession()` returns is **flat** — one key per name in
 `sessionFields`, projected off better-auth's own resolved session. With
 `sessionFields: ['userId', 'email', 'name']` it is:
 
+<!-- doc-check: whole="a bare object-shape illustration — the flat `getSession()` projection's keys written as pseudo-fields, not a statement" -->
+
 ```typescript
 {
   userId: string
@@ -620,6 +634,8 @@ export function UserProfile() {
 
 Configure which fields are available in the session:
 
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
+
 ```typescript
 authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role', 'company'],
@@ -673,6 +689,8 @@ Post: list({
 There is no separate `filter` block. A rule scopes rows by **returning** a
 Prisma-shaped filter, which is ANDed into whatever `where` the caller supplied —
 so a rule can only ever narrow what a session sees, never widen it:
+
+<!-- doc-check: excuses="TS2345" reason="elides `fields` deliberately — the section illustrates the returned-filter shape, not a complete list" -->
 
 ```typescript
 Post: list({
@@ -768,6 +786,8 @@ The auth plugin auto-generates a User list, but you can extend it with custom fi
 
 ### Adding Custom Fields
 
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
+
 ```typescript
 authPlugin({
   extendUserList: {
@@ -800,6 +820,8 @@ authPlugin({
 
 Make custom fields available in the session:
 
+<!-- doc-check: excuses="authPlugin, TS2345" reason="a bare name the prose supplies, and `select({/* ... */})` is a placeholder, not a complete field config" -->
+
 ```typescript
 authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role', 'company'],
@@ -814,6 +836,8 @@ authPlugin({
 ```
 
 `session.role` is now available in every access control function:
+
+<!-- doc-check: whole="a bare `access:` object-literal property, not a statement" -->
 
 ```typescript
 access: {
@@ -830,6 +854,8 @@ The User list ships closed by default (see
 `extendUserList.access` is the User-specific way to grant it — it predates
 the more general `authPlugin({ access: { user: ... } })` passthrough and
 takes precedence over `access.user` when both are set:
+
+<!-- doc-check: excuses="authPlugin, TS7031 'session'" reason="a bare name the prose supplies, and the hook's parameters are typed by the list it is attached to" -->
 
 ```typescript
 authPlugin({
@@ -858,6 +884,8 @@ over the operation — only `create` and `update` carry `item`, and `delete`
 carries `originalItem` instead — so narrow on `args.operation` before reaching
 for a row:
 
+<!-- doc-check: excuses="authPlugin, TS7006 'args', sendWelcomeEmail" reason="a bare name the prose supplies, plus a hook parameter and an application-side helper this repo does not define" -->
+
 ```typescript
 authPlugin({
   extendUserList: {
@@ -876,6 +904,8 @@ authPlugin({
 Add OAuth providers for social login.
 
 ### Configure OAuth Providers
+
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
 
 ```typescript
 authPlugin({
@@ -927,6 +957,8 @@ Supported providers: `github`, `google`, `discord`, `twitter`
 OAuth needs its own action, because it navigates away from your app instead of
 returning a result to the form: it asks better-auth for the provider URL and
 redirects there.
+
+<!-- doc-check: excuses="TS2307 'next/headers', TS2307 'next/navigation', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
 
 ```typescript
 // lib/actions/auth.ts
@@ -990,6 +1022,8 @@ Configure email flows for verification and password reset.
 
 `sendResetPassword`/`sendVerificationEmail` are forwarded straight through to better-auth's own `emailAndPassword`/`emailVerification` options — no stack wrapping. Each receives exactly what better-auth passes (`user`, `url`, `token`), so you build the subject line and body yourself:
 
+<!-- doc-check: excuses="authPlugin, TS7031 'user', TS7031 'url', resend" reason="a bare name the prose supplies, plus better-auth's own callback parameters and an email client this repo does not install" -->
+
 ```typescript
 authPlugin({
   emailVerification: {
@@ -1027,6 +1061,8 @@ authPlugin({
 
 ### Using Resend
 
+<!-- doc-check: excuses="TS2307 'resend'" reason="a third-party SDK this repo does not install" -->
+
 ```typescript
 import { Resend } from 'resend'
 import { authPlugin } from '@opensaas/stack-auth'
@@ -1060,6 +1096,8 @@ authPlugin({
 ```
 
 ### Using SendGrid
+
+<!-- doc-check: excuses="TS2307 '@sendgrid/mail'" reason="a third-party SDK this repo does not install" -->
 
 ```typescript
 import sgMail from '@sendgrid/mail'
@@ -1207,6 +1245,8 @@ pnpm generate
 
 The recipe takes options when your live tables diverge from the defaults:
 
+<!-- doc-check: excuses="adoptBetterAuthTables" reason="a bare name the prose supplies" -->
+
 ```typescript
 adoptBetterAuthTables({
   // Postgres schema the live tables live in (default: 'auth')
@@ -1231,6 +1271,8 @@ If your live install also runs better-auth's database-backed rate limiter,
 opt the recipe into adopting that table too with `rateLimit: true` — it's
 `false` by default since most installs use the in-memory limiter:
 
+<!-- doc-check: excuses="adoptBetterAuthTables" reason="a bare name the prose supplies" -->
+
 ```typescript
 adoptBetterAuthTables({ rateLimit: true })
 // → adds rateLimit: { enabled: true, storage: 'database', modelName: 'AuthRateLimit' }
@@ -1252,6 +1294,8 @@ reason: `modelName` sets the list key, and a separate `tableName` pins the
 name at better-auth's own defaults while keeping the `Auth`-prefixed list
 keys:
 
+<!-- doc-check: excuses="authPlugin, adoptBetterAuthTables" reason="bare names the prose supplies" -->
+
 ```typescript
 authPlugin({
   ...adoptBetterAuthTables({ schema: 'auth', useBetterAuthTableNames: true }),
@@ -1265,6 +1309,8 @@ For a mix — most tables use better-auth's defaults but one was renamed — use
 the per-model `tableNames` escape hatch instead (it takes precedence over
 `useBetterAuthTableNames` for any model it names):
 
+<!-- doc-check: excuses="adoptBetterAuthTables" reason="a bare name the prose supplies" -->
+
 ```typescript
 adoptBetterAuthTables({
   useBetterAuthTableNames: true,
@@ -1274,6 +1320,8 @@ adoptBetterAuthTables({
 
 The same knob is available directly on `authPlugin` without the recipe, for a
 single model:
+
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
 
 ```typescript
 authPlugin({
@@ -1301,6 +1349,8 @@ definitions — `User.email` and `Session.token` are unique, for example. If
 your live database's constraint has a different name than the one Prisma
 would derive, adopting it under its real name is a generate-clean diff away:
 
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
+
 ```typescript
 authPlugin({
   user: { indexes: [{ fields: ['email'], unique: true, name: 'user_email_key' }] },
@@ -1316,6 +1366,8 @@ declarations is derived, so there's nothing of yours to remove.
 
 The same seam lets you extend a derived column into a composite index — e.g.
 a per-identifier resend-cooldown check on the verification table:
+
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
 
 ```typescript
 authPlugin({
@@ -1340,6 +1392,8 @@ Because the Auth identity (`AuthUser`) and your domain `User` are separate
 models, **your application declares the link** — the plugin never imposes a
 single-User-model assumption. Add a relationship from your domain `User` to the
 Auth identity:
+
+<!-- doc-check: whole="a bare `lists:` object-literal property, not a statement" -->
 
 ```typescript
 lists: {
@@ -1382,6 +1436,8 @@ sessions and accounts are scoped to their owner by a returned filter. Crossing
 the `user` relationship needs a quantifier — `some` here — because a
 relationship key in a filter takes only `some`, `every` or `none`. Verification
 tokens stay closed: better-auth manages them directly.
+
+<!-- doc-check: excuses="authPlugin, TS7031 'session', TS7031 'item'" reason="a bare name the prose supplies, and each rule's parameters are typed by the list access config it is attached to" -->
 
 ```typescript
 authPlugin({
@@ -1431,6 +1487,8 @@ on these lists (and their admin UI pages) go from visible to empty.
 
 ### User List
 
+<!-- doc-check: whole="a bare object-shape illustration of the User list's row, not a statement" -->
+
 ```typescript
 {
   id: string              // Auto-generated UUID
@@ -1458,6 +1516,8 @@ better-auth creates the row through the raw client, bypassing access control.
 
 ### Session List
 
+<!-- doc-check: whole="a bare object-shape illustration of the Session list's row, not a statement" -->
+
 ```typescript
 {
   id: string // Auto-generated UUID
@@ -1479,6 +1539,8 @@ better-auth creates the row through the raw client, bypassing access control.
 ### Account List
 
 Stores OAuth provider information and password hashes:
+
+<!-- doc-check: whole="a bare object-shape illustration of the Account list's row, not a statement" -->
 
 ```typescript
 {
@@ -1510,6 +1572,8 @@ even when you grant operation access (see the example above).
 
 Stores email verification and password reset tokens:
 
+<!-- doc-check: whole="a bare object-shape illustration of the Verification list's row, not a statement" -->
+
 ```typescript
 {
   id: string // Auto-generated UUID
@@ -1531,6 +1595,8 @@ Only present when `rateLimit.storage: 'database'` is set — mirrors better-auth
 own rate-limit table exactly, so no `createdAt`/`updatedAt` and no defaults on
 any column (the limiter supplies `lastRequest` explicitly on every write):
 
+<!-- doc-check: whole="a bare object-shape illustration of the RateLimit list's row, not a statement" -->
+
 ```typescript
 {
   id: string // Auto-generated UUID
@@ -1539,6 +1605,8 @@ any column (the limiter supplies `lastRequest` explicitly on every write):
   lastRequest: bigint // Millisecond epoch of the last request
 }
 ```
+
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
 
 ```typescript
 authPlugin({
@@ -1565,6 +1633,8 @@ authPlugin({
    catch — a `null` covers both "no such row" and "not allowed", and that
    ambiguity is the point:
 
+   <!-- doc-check: whole="a fragment continuing the prose above — `id` and `data` are shorthand properties with nothing in scope to supply them, and `Post` is not one of the three lists the prelude models" -->
+
    ```typescript
    const post = await context.db.Post.update({ where: { id }, data })
    if (post === null) {
@@ -1575,6 +1645,8 @@ authPlugin({
 3. **Never Expose Sensitive Fields**
    A `password()` field is excluded from reads for you. Anything else you want
    hidden needs its own field-level `read` rule, which returns a boolean:
+
+   <!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
 
    ```typescript
    fields: {
@@ -1589,6 +1661,7 @@ authPlugin({
 
 4. **Validate on Both Client and Server**
    Always validate in server actions, even if client validates:
+   <!-- doc-check: excuses="postSchema" reason="a bare name the prose supplies" -->
    ```typescript
    'use server'
    export async function createPost(data: unknown) {
@@ -1602,6 +1675,8 @@ authPlugin({
 
 1. **Configure Session Expiration**
 
+   <!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
+
    ```typescript
    authPlugin({
      session: {
@@ -1613,6 +1688,7 @@ authPlugin({
 
 2. **Include Only Necessary Fields**
    Don't include sensitive data in session fields:
+   <!-- doc-check: whole="two `sessionFields:` alternatives shown side by side, not a statement" -->
    ```typescript
    sessionFields: ['userId', 'email', 'name', 'role'], // Good
    sessionFields: ['userId', 'password', 'apiKey'], // Bad!
@@ -1653,6 +1729,8 @@ opensaas.config.ts            # Config with authPlugin
 ### Environment Variables
 
 Always use environment variables for sensitive data:
+
+<!-- doc-check: excuses="authPlugin" reason="a bare name the prose supplies" -->
 
 ```typescript
 // Good
@@ -1805,6 +1883,8 @@ export default config({
 })
 ```
 
+<!-- doc-check: excuses="TS2307 '../opensaas.config', TS2305 'rawOpensaasContext', TS2307 'next/headers'" reason="the reader's own config and the generated bundle's `rawOpensaasContext`, plus Next.js, none present in this repo" -->
+
 ```typescript
 // lib/auth.ts
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
@@ -1831,6 +1911,8 @@ export async function getSession(): Promise<Session | null> {
 export const GET = auth.handler
 export const POST = auth.handler
 ```
+
+<!-- doc-check: excuses="TS2307 'next/headers', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
 
 ```typescript
 // lib/actions/auth.ts
@@ -1923,6 +2005,8 @@ passing the flat projection `getSession()` returns rather than better-auth's
 nested `{ user, session }` object — access rules read `session.userId`, which only
 the projection carries:
 
+<!-- doc-check: excuses="TS2451 'context', getContext, getSession" reason="a ❌/✅ pair shares one fence and both snippets redeclare `context`" -->
+
 ```typescript
 // ❌ Anonymous — no session reaches the access rules
 const context = await getContext()
@@ -1962,6 +2046,8 @@ Check your access control configuration:
 ### TypeScript Errors on Session Fields
 
 Make sure custom fields are included in `sessionFields`:
+
+<!-- doc-check: excuses="authPlugin, TS2345" reason="a bare name the prose supplies, and `select({/* ... */})` is a placeholder, not a complete field config" -->
 
 ```typescript
 authPlugin({

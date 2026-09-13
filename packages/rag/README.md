@@ -262,6 +262,8 @@ fields: {
 
 For advanced use cases where you need more control:
 
+<!-- doc-check: whole="a bare `fields:` object-literal property, not a statement" -->
+
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
 import { embedding } from '@opensaas/stack-rag/fields'
@@ -374,6 +376,8 @@ const similar = await findSimilar({
 ### Text Chunking
 
 Split long documents into smaller chunks for embedding:
+
+<!-- doc-check: excuses="TS2451 'chunks'" reason="three alternative snippets share one fence and each binds `chunks`" -->
 
 ```typescript
 import { chunkText } from '@opensaas/stack-rag/runtime'

@@ -10,6 +10,8 @@ example 439 lines below was not, and passed `maxTokens`/`overlap` — the
 field-level `ChunkingConfig` names, not `ChunkingOptions`. It also fed the
 returned `TextChunk[]` straight to `embedBatch(string[])`. Both now compile:
 
+<!-- doc-check: excuses="provider" reason="a bare name the prose supplies" -->
+
 ```typescript
 const chunks = chunkText(longDocument, {
   strategy: 'recursive',

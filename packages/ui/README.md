@@ -19,6 +19,8 @@ pnpm add @opensaas/stack-ui
 
 ## Package Exports
 
+<!-- doc-check: excuses="TS2882 '@opensaas/stack-ui/styles'" reason="the package does export the subpath, as the stylesheet itself — a CSS side-effect import carries no declarations for the compiler to find" -->
+
 ```typescript
 // Primitives (shadcn/ui components)
 import { Button, Input, Card, Table, Dialog } from '@opensaas/stack-ui/primitives'

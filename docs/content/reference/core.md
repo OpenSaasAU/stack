@@ -136,6 +136,8 @@ hooks and validation. Useful for admin operations, background jobs, and
 migrations. It still validates the Where vocabulary — `sudo()` skips access, not
 input checking.
 
+<!-- doc-check: excuses="session, TS2339 'Post'" reason="`session` is a bare name the prose supplies, and `Post` is not one of the three lists the prelude models" -->
+
 ```typescript
 import { getContext } from '@/.opensaas/context'
 

@@ -232,6 +232,8 @@ Replace direct Prisma calls with context. A read is composed on `context.db.<Lis
 
 **Before:**
 
+<!-- doc-check: excuses="TS2307 './lib/prisma'" reason="the reader's own pre-migration file" -->
+
 ```typescript
 import { prisma } from './lib/prisma'
 
@@ -241,6 +243,8 @@ const posts = await prisma.post.findMany({
 ```
 
 **After:**
+
+<!-- doc-check: excuses="session, TS2339 'Post'" reason="`session` is a bare name the prose supplies, and `Post` is not one of the three lists the prelude models" -->
 
 ```typescript
 import { getContext } from '@/.opensaas/context'
@@ -344,6 +348,8 @@ Options:
 
 - **Public read, authenticated write** - Most common for blogs, content sites
 
+  <!-- doc-check: whole="a bare `access:` object-literal property, not a statement" -->
+
   ```typescript
   access: {
     operation: {
@@ -356,6 +362,8 @@ Options:
   ```
 
 - **Private (owner-only)** - For user-specific data. `query` returns a filter, so users only ever see their own records; the guard is on `session?.userId` because a filter value of `undefined` is refused, not ignored.
+
+  <!-- doc-check: whole="a bare `access:` object-literal property, not a statement" -->
 
   ```typescript
   access: {
@@ -371,6 +379,8 @@ Options:
 
 - **Admin only** - For protected resources
 
+  <!-- doc-check: whole="a bare `access:` object-literal property, not a statement" -->
+
   ```typescript
   access: {
     operation: {
@@ -383,6 +393,7 @@ Options:
   ```
 
 - **Public** - For truly public data
+  <!-- doc-check: whole="a bare `access:` object-literal property, not a statement" -->
   ```typescript
   access: {
     operation: {
@@ -547,6 +558,8 @@ export default config({
 
 **Access Control Pattern:** the product catalogue is publicly readable and admin-writable; `Order.query` returns `true` for an admin and an owner filter for everybody else. The filter names the relationship's foreign-key column, `customerId`, not the relationship field.
 
+<!-- doc-check: whole="bare `Product:`/`Order:` object-literal properties — entries of a `lists:` object — not statements" -->
+
 ```typescript
 Product: list({
   fields: {
@@ -599,6 +612,8 @@ Order: list({
 4. Add role checks
 
 **Access Control Pattern:** an access rule may run its own read on `context.db` to resolve membership. Both rules below return `false` rather than a filter when there is no membership — building `{ teamId: undefined }` would be refused as a validation error, and returning it would be a security bug in any case.
+
+<!-- doc-check: whole="a bare `Project:` object-literal property — an entry of a `lists:` object — not a statement" -->
 
 ```typescript
 Project: list({
@@ -806,6 +821,8 @@ One command generates, reconciles the schema and starts the app. Mid-session con
 
 Replace Prisma calls with context. `context.db` is keyed by the list's PascalCase name, and a read is composed rather than passed a single args object:
 
+<!-- doc-check: whole="a before/after pair sharing one fence: both snippets bind `posts`, and `prisma`/`session` are bare names the prose supplies" -->
+
 ```typescript
 // Before
 const posts = await prisma.post.findMany()
@@ -856,6 +873,8 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 
 A denied read is silent, so verify by comparing what two sessions see rather than by expecting a throw:
 
+<!-- doc-check: excuses="getContext" reason="a bare name the prose supplies" -->
+
 ```typescript
 const anonContext = await getContext()
 const publicPosts = await anonContext.db.Post.all()
@@ -869,6 +888,8 @@ The anonymous read should come back with published posts only; the authenticated
 ### 7. Update API Routes
 
 Convert to server actions:
+
+<!-- doc-check: excuses="prisma, TS2307 '@/lib/auth', TS2339 'Post'" reason="`prisma` is a bare name the prose supplies, `@/lib/auth` is the reader's own file, and `Post` is not one of the three lists the prelude models" -->
 
 ```typescript
 // Before (API route)
@@ -911,6 +932,8 @@ The full set of `context.graphql.run` → `context.db.*` recipes — including t
 
 ### Simple list query
 
+<!-- doc-check: whole="a before/after Keystone pair sharing one fence, both binding `posts`, followed by a single-record example whose `return` sits outside a function" -->
+
 ```typescript
 // Before (Keystone)
 const { posts } = await context.graphql.run({
@@ -935,6 +958,8 @@ if (!post) return notFound()
 
 A relation is reached with `.include()`, whose refinement is a read of the related list — it takes its own `where`, `orderBy`, `limit`, `offset` and `.select()`:
 
+<!-- doc-check: excuses="TS2339 'Post', TS7006 'author', TS7006 'comments'" reason="`Post` is not one of the three lists the prelude models, and the `.include()` callbacks are typed by the relation they are attached to" -->
+
 ```typescript
 const posts = await context.db.Post.where({ published: { equals: true } })
   .orderBy({ publishedAt: 'desc' })
@@ -953,6 +978,8 @@ const posts = await context.db.Post.where({ published: { equals: true } })
 Arity decides nullability, not the foreign key's: a to-one include lands as `Row | null` and a to-many as `Row[]`, so `post.author?.name` stays a null-check even where the column is `NOT NULL`. The full statement, including why, is at [Cost: every to-one read off an included row is a null-check](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 
 Composability comes from the query value itself: it is immutable, so a partially composed read can be shared and narrowed at each call site.
+
+<!-- doc-check: excuses="TS2339 'Post'" reason="`Post` is not one of the three lists the prelude models" -->
 
 ```typescript
 const publishedPosts = context.db.Post.where({ published: { equals: true } })
@@ -1106,6 +1133,8 @@ model Tag {
 
 becomes a junction you author yourself — a list with a to-one relationship to each side, its own surrogate id, and a unique `db.indexes` entry over the two fields so the pair cannot be inserted twice. Both outer lists then point at the junction with `many: true`:
 
+<!-- doc-check: whole="bare `Post:`/`Tag:`/`PostTag:` object-literal properties — entries of a `lists:` object — not statements" -->
+
 ```typescript
 Post: list({
   fields: {
@@ -1133,6 +1162,8 @@ The join table Prisma used to manage invisibly becomes a model you name, own and
 ### Migrating Hooks
 
 KeystoneJS hooks map to OpenSaaS hooks:
+
+<!-- doc-check: whole="a KeystoneJS/OpenSaaS `hooks:` pair sharing one fence, both bare object-literal properties" -->
 
 ```typescript
 // KeystoneJS
