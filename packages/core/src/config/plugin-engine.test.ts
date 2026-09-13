@@ -390,6 +390,28 @@ describe('Plugin Engine', () => {
       )
     })
 
+    test.each(['__proto__', 'constructor', 'prototype'])(
+      'throws when adding a list named %s',
+      async (name) => {
+        const plugin: Plugin = {
+          name: 'test-plugin',
+          init: async (context) => {
+            context.addList(name, { fields: { title: text() } })
+          },
+        }
+
+        const config: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {},
+          plugins: [plugin],
+        }
+
+        await expect(executePlugins(config)).rejects.toThrow(
+          `Plugin "test-plugin" tried to add list "${name}", which is reserved`,
+        )
+      },
+    )
+
     test('multiple plugins can add different lists', async () => {
       const plugin1: Plugin = {
         name: 'plugin-1',
@@ -471,6 +493,31 @@ describe('Plugin Engine', () => {
         'Plugin "test-plugin" tried to extend list "User" but it doesn\'t exist',
       )
     })
+
+    test.each(['__proto__', 'constructor', 'prototype'])(
+      'throws when extending a list named %s, even when the config declares one',
+      async (name) => {
+        const plugin: Plugin = {
+          name: 'test-plugin',
+          init: async (context) => {
+            context.extendList(name, { fields: { views: integer() } })
+          },
+        }
+
+        // `Object.prototype` makes every plain object's `lists[name]` truthy for
+        // these three names, so a config that never declared the list must still
+        // be refused rather than treated as "found it".
+        const config: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {},
+          plugins: [plugin],
+        }
+
+        await expect(executePlugins(config)).rejects.toThrow(
+          `Plugin "test-plugin" tried to extend list "${name}", which is reserved`,
+        )
+      },
+    )
 
     test('merges fields from multiple plugins', async () => {
       const plugin1: Plugin = {
