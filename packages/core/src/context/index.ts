@@ -659,7 +659,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     },
     // Reuse already-initialised plugin services when rebinding to a transaction
     // client, otherwise start empty and populate via plugin runtimes below.
-    plugins: _sharedPlugins ?? {},
+    // Null-prototype: keyed by author-supplied plugin names, so a plugin named
+    // `__proto__` must not reach the object's actual prototype, and a lookup
+    // of a name nobody registered (`constructor`, `toString`, …) must come
+    // back `undefined` rather than an inherited function.
+    plugins: _sharedPlugins ?? (Object.create(null) as Record<string, unknown>),
     _isSudo,
     _resolveOutputChain: [],
     _transactionOwner,

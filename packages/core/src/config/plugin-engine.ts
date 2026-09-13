@@ -8,6 +8,19 @@ import type {
   BaseFieldConfig,
 } from './types.js'
 
+/**
+ * `context.plugins` is a registry keyed by `plugin.name`. It is built
+ * null-prototype so these names cannot reach the object's actual prototype or
+ * shadow one of its inherited members, but a plugin author picking one of
+ * them is still a mistake worth refusing by name rather than leaving them to
+ * debug a services lookup that behaves oddly around this name.
+ */
+const RESERVED_PLUGIN_NAMES: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+])
+
 function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   const pluginMap = new Map<string, Plugin>()
   const visited = new Set<string>()
@@ -15,6 +28,12 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   const sorted: Plugin[] = []
 
   for (const plugin of plugins) {
+    if (RESERVED_PLUGIN_NAMES.has(plugin.name)) {
+      throw new Error(
+        `Plugin name "${plugin.name}" is reserved and cannot be used — it is a property every ` +
+          `plain JavaScript object inherits, and context.plugins is keyed by plugin name. Rename the plugin.`,
+      )
+    }
     if (pluginMap.has(plugin.name)) {
       throw new Error(`Duplicate plugin name: ${plugin.name}`)
     }
@@ -128,7 +147,9 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
   let currentConfig: OpenSaasConfig = {
     ...config,
     lists: { ...config.lists }, // Clone lists object to avoid mutating original
-    _pluginData: {},
+    // Null-prototype: keyed by author-supplied plugin names, same hazard as
+    // context.plugins below.
+    _pluginData: Object.create(null) as Record<string, unknown>,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Registry must accept any field config builder
@@ -224,7 +245,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
       setPluginData: <T>(pluginName: string, data: T) => {
         if (!currentConfig._pluginData) {
-          currentConfig._pluginData = {}
+          currentConfig._pluginData = Object.create(null) as Record<string, unknown>
         }
         currentConfig._pluginData[pluginName] = data
       },
@@ -235,7 +256,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
   if (mcpToolsRegistry.length > 0) {
     if (!currentConfig._pluginData) {
-      currentConfig._pluginData = {}
+      currentConfig._pluginData = Object.create(null) as Record<string, unknown>
     }
     currentConfig._pluginData.__mcpTools = mcpToolsRegistry
   }

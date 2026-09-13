@@ -124,6 +124,21 @@ describe('Plugin Engine', () => {
       await expect(executePlugins(config)).rejects.toThrow('Duplicate plugin name: duplicate')
     })
 
+    test.each(['__proto__', 'constructor', 'prototype'])(
+      'throws on the reserved plugin name %s',
+      async (name) => {
+        const plugin: Plugin = { name, init: async () => {} }
+
+        const config: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {},
+          plugins: [plugin],
+        }
+
+        await expect(executePlugins(config)).rejects.toThrow(`Plugin name "${name}" is reserved`)
+      },
+    )
+
     test('handles complex dependency chains', async () => {
       const executionOrder: string[] = []
 
