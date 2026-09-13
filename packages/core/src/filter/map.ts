@@ -3,12 +3,13 @@ import type { FilterCondition, FilterSpec, FilterToken } from './types.js'
 /**
  * A Where fragment an `AND` chain can carry that never matches a row. `NOT`
  * on an empty predicate: the empty predicate resolves to the vacuous,
- * always-true `AND ()`, and negating it is `WherePlan`'s `kind: 'not'` over
- * `kind: 'and', nodes: []` — the same always-false shape a denied relation's
- * Access Filter lowers to (`resolveRelatedAccessPlan`'s `{ kind: 'false' }`).
- * Used for a word that survives to the free-text stage but still can't be
- * turned into a real condition, so the chain narrows to nothing rather than
- * silently dropping a term and widening the result.
+ * always-true `AND ()`, and negating it lowers to `ops.all().not()` —
+ * always-false by construction, though a different `WherePlan` shape than
+ * the `{ kind: 'false' }` a denied relation's Access Filter produces
+ * (`resolveRelatedAccessPlan`), which evaluates false the same way without
+ * going through `NOT`. Used for a word that survives to the free-text stage
+ * but still can't be turned into a real condition, so the chain narrows to
+ * nothing rather than silently dropping a term and widening the result.
  */
 const NEVER_MATCHES: FilterCondition = { NOT: {} }
 
