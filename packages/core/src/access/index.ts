@@ -36,23 +36,6 @@ export { validateQueryKeys } from './query-validation.js'
 // Read-path field-level access on `where`/`orderBy` keys — a field the
 // session cannot read cannot be named in a predicate either (#915).
 export { validateQueryFieldReadAccess } from './query-validation.js'
-// Phase 1 — Access Filter (pre-query row/relation scoping).
-export {
-  buildAccessScopedInclude,
-  buildAccessScopedWhere,
-  stripVirtualFieldsFromInclude,
-  resolveToOneAccessVisibility,
-  emptyToOneAccessFilterTree,
-  emptyToOneAccessVisibilityTree,
-  emptyCountAccessDenialTree,
-} from './access-filter.js'
-export type {
-  ToOneAccessFilterTree,
-  ToOneAccessFilterEntry,
-  ToOneAccessVisibilityTree,
-  ToOneVisibility,
-  CountAccessDenialTree,
-} from './access-filter.js'
 // The foreign-key column of a to-one relationship a read never named at all —
 // the legacy-surface counterpart of `narrowUnincludedForeignKeys` in
 // `secured/read.ts` (issue #1243).

@@ -14,12 +14,6 @@ import {
   noDependencyAdditions,
   noReducedDeclaredKeys,
 } from './declared-dependencies.js'
-import type { ToOneAccessVisibilityTree, CountAccessDenialTree } from './access-filter.js'
-import {
-  emptyToOneAccessVisibilityTree,
-  isToOneRelationship,
-  emptyCountAccessDenialTree,
-} from './access-filter.js'
 import type { ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
 import { emptyForeignKeyVisibilityMap, foreignKeyFieldAccess } from './foreign-key-visibility.js'
 // NOTE: `context/index.ts` imports `filterReadableFields` from this module
@@ -47,44 +41,13 @@ import { buildDbDelegate } from '../context/index.js'
  * neither its read-access evaluation nor its hook. The projection-aware skip
  * below shows this rule at each of the two places it applies.
  *
- * Phase 1 (pre-query row/relation scoping) lives in `access-filter.ts`. See
+ * A caller-directed `include` refinement scopes row/relation visibility
+ * before the query runs — a to-one carries the related list's own `query`
+ * access into the join, denial by arity — so what reaches this module is
+ * already the row a denied relation means everywhere else: `null` for a
+ * to-one, `[]` for a to-many. See
  * `docs/adr/0001-access-control-is-a-two-phase-read.md` and the access-control
  * glossary in `CONTEXT.md`.
- *
- * **To-one relation nulling (issue #974).** A to-one relation whose related
- * list's `query` access resolves to a filter cannot be scoped by Prisma's own
- * `where` (it only accepts one on a to-many include — see the "To-one
- * relations" section of `access-filter.ts`'s module doc), so
- * `buildAccessScopedInclude` fetches it unscoped and hands this module a
- * `ToOneAccessVisibilityTree` — already resolved, via one batched existence
- * check per relation across the whole read, by
- * `resolveToOneAccessVisibility`. This module is where that resolution
- * actually becomes the caller-visible `null`: a `kind: 'denied'` key is
- * forced to `null` even though it was never fetched at all (the key is
- * absent from `workingItem`), and a `kind: 'visible'` key's fetched row is
- * nulled out unless its id survived the existence check — in both branches,
- * before any field-level access check or `resolveOutput` hook runs, so the
- * rest of the pipeline sees exactly what a denied to-one read has always
- * meant elsewhere: `null`, never a thrown error.
- *
- * **A denied to-many relation is forced to `[]`, the same way (issue
- * #1103).** `buildAccessScopedInclude` drops a to-many relation from
- * `include` on the same outright `query` denial as a to-one one, and records
- * the same `kind: 'denied'` entry for it. The key is therefore just as absent
- * from `workingItem` as a denied to-one key, and the fix is the same fixup
- * loop — it now forces the key present using the field's own declared
- * arity: `null` for a to-one relation (unchanged), `[]` for a to-many one,
- * rather than leaving a to-many key silently missing.
- *
- * **`_count` denial injection (issue #1087).** A caller-supplied `_count.select`
- * key whose related list denies `query` access outright is omitted from the
- * select `buildAccessScopedInclude` sends to Prisma — there is no way to ask
- * Prisma for a guaranteed `0`, and no query is needed to know one (unlike the
- * to-one existence check above). This module is where that becomes the
- * caller-visible `0`: every key in a `CountAccessDenialTree` at this level is
- * written into `filtered._count` as `0`, whether or not `_count` came back
- * from the database at all — a count is a session-relative value, and `0` is
- * what "no visible rows" means for it, never an absent key.
  *
  * **A relation that is both reduced and a live declared dependency (issue
  * #1357).** `secured/read.ts`'s `maskReductions` hands this module the
@@ -255,15 +218,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // The fragment scope this level was reached under (ADR-0027, see module doc
   // above), and the same tree one level down for each nested relation.
   selection?: FieldSelectionScope,
-  // Resolved to-one existence checks at THIS level (issue #974, see module
-  // doc above), and the same tree one level down for each nested relation —
-  // regardless of that relation's own arity, since a filtered to-one can sit
-  // beneath a to-many hop.
-  toOneVisibility: ToOneAccessVisibilityTree = emptyToOneAccessVisibilityTree(),
-  // `_count.select` keys denied outright at THIS level (issue #1087, see
-  // module doc above), and the same tree one level down for each nested
-  // relation whose own nested include named a further `_count`.
-  countDenials: CountAccessDenialTree = emptyCountAccessDenialTree(),
   // Relation keys at THIS level whose value is a declared-dependency rows
   // stand-in rather than what the caller will see (issue #1357, see module
   // doc above) — a relation that is both reduced and a live declared
@@ -374,11 +328,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Row/relation-level access is already scoped at the DB level via
-    // buildAccessScopedInclude; this only handles field-level access (hiding
+    // Row/relation-level access is already scoped at the DB level by the
+    // include refinement; this only handles field-level access (hiding
     // sensitive fields).
     //
-    // Deliberately uncapped: the row/relation scoping in access-filter.ts bounds
+    // Deliberately uncapped: the pre-query row/relation scoping bounds
     // what gets FETCHED (a caller include past its depth cap is now a denial,
     // not a passthrough — see ADR-0022), so by the time a result reaches this
     // function it is already a finite, acyclic tree whose depth was decided at
@@ -462,20 +416,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // unrestricted — matching what naming a relation without narrowing it
       // further has always meant.
       const nestedSelection = selection?.nested[fieldName]
-      // This relation's own resolved to-one visibility, if
-      // `buildAccessScopedInclude` flagged anything beneath it (issue #974).
-      // Falls back to empty — the common case for a relation with no
-      // filtered to-one anywhere in its own nested include.
-      const nestedToOneVisibility =
-        toOneVisibility.nested[fieldName] ?? emptyToOneAccessVisibilityTree()
-      // This key's OWN to-one existence check, if `fieldName` itself is a
-      // filtered to-one relation (as opposed to one further down its tree).
-      const toOneEntry = toOneVisibility.filters[fieldName]
-      // This relation's own denied `_count` keys, if `buildAccessScopedInclude`
-      // flagged any beneath it (issue #1087). Falls back to empty — the
-      // common case for a relation with no denied `_count` anywhere in its
-      // own nested include.
-      const nestedCountDenials = countDenials.nested[fieldName] ?? emptyCountAccessDenialTree()
       // This relation's own reduced-declared keys, if its nested include
       // named a further relation that is both reduced and declared (#1357).
       // Falls back to empty — the common case.
@@ -494,32 +434,22 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 relatedConfig.listName,
                 nestedAdditions,
                 nestedSelection,
-                nestedToOneVisibility,
-                nestedCountDenials,
                 nestedReducedDeclared,
               ),
             ),
           )
         } else if (typeof value === 'object') {
-          const relatedId = (value as Record<string, unknown>).id
-          const isVisible =
-            !toOneEntry || toOneEntry.kind !== 'visible' || toOneEntry.ids.has(String(relatedId))
-
-          filtered[fieldName] = isVisible
-            ? await filterReadableFields(
-                value as Record<string, unknown>,
-                relatedConfig.listConfig.fields,
-                args,
-                config,
-                depth + 1,
-                relatedConfig.listName,
-                nestedAdditions,
-                nestedSelection,
-                nestedToOneVisibility,
-                nestedCountDenials,
-                nestedReducedDeclared,
-              )
-            : null
+          filtered[fieldName] = await filterReadableFields(
+            value as Record<string, unknown>,
+            relatedConfig.listConfig.fields,
+            args,
+            config,
+            depth + 1,
+            relatedConfig.listName,
+            nestedAdditions,
+            nestedSelection,
+            nestedReducedDeclared,
+          )
         }
       } else {
         filtered[fieldName] = value
@@ -543,50 +473,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     if (result.readable) {
       filtered[fieldName] = result.value
     }
-  }
-
-  // Relations `buildAccessScopedInclude` denied outright (to-one: issue #974,
-  // to-many: issue #1103) were never asked of Prisma at all, so `fieldName`
-  // has no entry in `workingItem` and the loop above never visits it. Force
-  // it present here — matching what a denied read means everywhere else in
-  // the context — rather than leaving the key silently absent: `null` for a
-  // to-one relation, `[]` for a to-many one. A synthetic back-relation
-  // (`fieldConfig` undefined — #1082) is always to-many, the same arity
-  // `buildAccessScopedInclude` assumes for it.
-  for (const [fieldName, entry] of Object.entries(toOneVisibility.filters)) {
-    if (entry.kind !== 'denied') continue
-    if (fieldName in filtered || fieldName in workingItem) continue
-    if (selection?.fields && !selection.fields.has(fieldName)) continue
-
-    const fieldConfig = fieldConfigs[fieldName]
-    const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
-      ...args,
-      item: workingItem,
-    })
-
-    if (!canRead) continue
-
-    const isToMany = !fieldConfig || !isToOneRelationship(fieldConfig)
-    filtered[fieldName] = isToMany ? [] : null
-  }
-
-  // `_count.select` keys `buildAccessScopedInclude` denied outright (issue
-  // #1087) were omitted from the select sent to Prisma, so `_count` may be
-  // absent from `workingItem` entirely, or present but missing exactly these
-  // keys. Write each denied key in as `0` — matching what a denied count has
-  // always meant for the admin list view's own scoped counts — unless a
-  // fragment's own selection excluded `_count` altogether, in which case
-  // there is nothing to inject it into.
-  if (countDenials.keys.size > 0 && !(selection?.fields && !selection.fields.has('_count'))) {
-    const existingCount =
-      filtered._count && typeof filtered._count === 'object'
-        ? (filtered._count as Record<string, unknown>)
-        : {}
-    const mergedCount = { ...existingCount }
-    for (const key of countDenials.keys) {
-      mergedCount[key] = 0
-    }
-    filtered._count = mergedCount
   }
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {

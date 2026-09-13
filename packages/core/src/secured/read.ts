@@ -9,8 +9,6 @@ import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '..
 import {
   checkAccess,
   checkFieldAccess,
-  emptyCountAccessDenialTree,
-  emptyToOneAccessVisibilityTree,
   filterReadableFields,
   getRelatedListConfig,
 } from '../access/index.js'
@@ -1204,8 +1202,6 @@ async function visibleRows(
         listName,
         plan.additions,
         plan.selection,
-        emptyToOneAccessVisibilityTree(),
-        emptyCountAccessDenialTree(),
         plan.reducedDeclared,
       )
       applyForeignKeys(filtered, plan.includes)
