@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { createStorageUtils } from '@opensaas/stack-storage/runtime'
 import config from '../opensaas.config.js'
+import type { Context } from '../.opensaas/types.js'
+import type { ImageMetadata, FileMetadata } from '@opensaas/stack-storage'
 
 const BOOT = 120_000
 
@@ -13,56 +15,9 @@ function present<T>(value: T | null, what: string): T {
   return value
 }
 
-/**
- * `createTestContext` is not generic over the config's lists — it hands back
- * `StackContext<AccessControlledDB>`, whose rows are untyped — so a stored file
- * field arrives as `unknown`. The three readers below are what earn the type;
- * a cast would only assert it, and the value came from the database.
- */
-function stringAt(source: unknown, key: string, what: string): string {
-  const value = typeof source !== 'object' || source === null ? undefined : Reflect.get(source, key)
-  if (typeof value !== 'string') throw new Error(`${what}.${key} is not a string`)
-  return value
-}
-
-function numberAt(source: unknown, key: string, what: string): number {
-  const value = typeof source !== 'object' || source === null ? undefined : Reflect.get(source, key)
-  if (typeof value !== 'number') throw new Error(`${what}.${key} is not a number`)
-  return value
-}
-
-function idOf(row: unknown, what: string): string {
-  return stringAt(row, 'id', what)
-}
-
-/** Exactly the part of the stored metadata these tests read back. */
-interface StoredUpload {
-  originalFilename: string
-  mimeType: string
-  size: number
-  url: string
-  transformations: Record<string, { url: string }>
-}
-
-function asStoredUpload(value: unknown, what: string): StoredUpload {
-  if (value === null || value instanceof File) {
-    throw new Error(`${what} did not resolve to stored metadata`)
-  }
-  const transformations: Record<string, { url: string }> = {}
-  const raw =
-    typeof value === 'object' && value !== null ? Reflect.get(value, 'transformations') : undefined
-  if (typeof raw === 'object' && raw !== null) {
-    for (const [name, entry] of Object.entries(raw)) {
-      transformations[name] = { url: stringAt(entry, 'url', `${what}.transformations.${name}`) }
-    }
-  }
-  return {
-    originalFilename: stringAt(value, 'originalFilename', what),
-    mimeType: stringAt(value, 'mimeType', what),
-    size: numberAt(value, 'size', what),
-    url: stringAt(value, 'url', what),
-    transformations,
-  }
+/** A stored upload always has a set of derived transformations to walk, even if empty. */
+function transformationsOf(upload: ImageMetadata): Record<string, { url: string }> {
+  return upload.transformations ?? {}
 }
 
 /** A 1x1 PNG — small, and a real image, so sharp's transformations can run. */
@@ -96,14 +51,16 @@ function diskPathFor(url: string): string {
 }
 
 describe('file and image uploads round-trip through the secured context', () => {
-  let harness: TestContext
+  let harness: TestContext<Context>
   const written: string[] = []
 
   /** Remember every file an upload put on disk, derivatives included, to remove after. */
-  function track(upload: StoredUpload): void {
+  function track(upload: ImageMetadata | FileMetadata): void {
     written.push(diskPathFor(upload.url))
-    for (const derivative of Object.values(upload.transformations)) {
-      written.push(diskPathFor(derivative.url))
+    if ('transformations' in upload) {
+      for (const derivative of Object.values(transformationsOf(upload))) {
+        written.push(diskPathFor(derivative.url))
+      }
     }
   }
 
@@ -111,7 +68,9 @@ describe('file and image uploads round-trip through the secured context', () => 
     const resolved = await config
     // The generated context wires this in an app; a test on the harness passes
     // the same surface, or a storage-backed field has nothing to write through.
-    harness = await createTestContext(resolved, null, { storage: createStorageUtils(resolved) })
+    harness = await createTestContext<Context>(resolved, null, {
+      storage: createStorageUtils(resolved),
+    })
   }, BOOT)
 
   afterAll(async () => {
@@ -129,7 +88,7 @@ describe('file and image uploads round-trip through the secured context', () => 
       'User.create',
     )
 
-    const stored = asStoredUpload(created.avatar, 'User.avatar')
+    const stored = present(created.avatar, 'User.avatar')
     expect(stored.originalFilename).toBe('avatar.png')
     expect(stored.mimeType).toBe('image/png')
     expect(stored.size).toBe(PNG.byteLength)
@@ -142,7 +101,7 @@ describe('file and image uploads round-trip through the secured context', () => 
 
     // The field declares thumbnail and profile transformations, so sharp ran
     // and each derivative is on disk beside the original.
-    const thumbnail = stored.transformations.thumbnail
+    const thumbnail = transformationsOf(stored).thumbnail
     if (thumbnail === undefined) throw new Error('thumbnail transformation missing')
     expect(await exists(diskPathFor(thumbnail.url))).toBe(true)
   })
@@ -157,10 +116,10 @@ describe('file and image uploads round-trip through the secured context', () => 
     )
 
     const read = present(
-      await harness.context.db.User.where({ id: { equals: idOf(created, 'created row') } }).first(),
+      await harness.context.db.User.where({ id: { equals: created.id } }).first(),
       'User read',
     )
-    const stored = asStoredUpload(read.avatar, 'User.avatar')
+    const stored = present(read.avatar, 'User.avatar')
     track(stored)
     expect(stored.originalFilename).toBe('second.png')
     expect(stored.url).toContain('/uploads/avatars/')
@@ -176,7 +135,7 @@ describe('file and image uploads round-trip through the secured context', () => 
       'Post.create',
     )
 
-    const stored = asStoredUpload(created.attachment, 'Post.attachment')
+    const stored = present(created.attachment, 'Post.attachment')
     expect(stored.originalFilename).toBe('brief.pdf')
     expect(stored.url).toContain('/uploads/documents/')
 
@@ -200,11 +159,11 @@ describe('file and image uploads round-trip through the secured context', () => 
       await harness.context.db.Post.create({ data: { title: 'Temporary', attachment } }),
       'Post.create',
     )
-    track(asStoredUpload(created.attachment, 'Post.attachment'))
+    track(present(created.attachment, 'Post.attachment'))
 
     const cleared = present(
       await harness.context.db.Post.update({
-        where: { id: idOf(created, 'created row') },
+        where: { id: created.id },
         data: { attachment: null },
       }),
       'Post.update',
