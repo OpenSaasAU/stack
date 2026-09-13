@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { validateDefaultValues } from './default-value.js'
 import {
+  bigInt,
   checkbox,
   integer,
   relationship,
@@ -100,6 +101,22 @@ describe('validateDefaultValues', () => {
     })
 
     expect(validateDefaultValues(config)).toEqual([])
+  })
+
+  it('refuses a bigInt field whose defaultValue is below its own minimum, describing the bigint by hand', () => {
+    const config = configFor({
+      count: bigInt({ validation: { isRequired: true, min: 1n }, defaultValue: 0n }),
+    })
+
+    const refusals = validateDefaultValues(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'Thing',
+      entry: 'fields.count',
+      reason: 'default-value-rejected-by-validation',
+    })
+    expect(refusals[0].message).toContain('0n')
   })
 
   it('accepts a checkbox defaultValue, which its validator never refuses', () => {

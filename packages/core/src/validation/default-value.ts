@@ -3,13 +3,16 @@ import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js
 import { isRelationshipField } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
+/**
+ * `field.defaultValue` reaching this point has already survived
+ * `literalDefault`'s JSON-literal check (a throw there is caught above and
+ * skips the field entirely) — with the one exception of `bigInt()`, whose
+ * `getContractField` stringifies the value before handing it to
+ * `literalDefault`, leaving the original `bigint` here. `JSON.stringify`
+ * cannot serialize a `bigint`, so it is described by hand instead.
+ */
 function describeDefaultValue(value: unknown): string {
-  if (typeof value === 'bigint') return `${value}n`
-  try {
-    return JSON.stringify(value) ?? String(value)
-  } catch {
-    return String(value)
-  }
+  return typeof value === 'bigint' ? `${value}n` : JSON.stringify(value)
 }
 
 /**
