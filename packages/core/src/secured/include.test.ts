@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import type { AccessContext, Session } from '../access/types.js'
+import type { Session } from '../access/types.js'
 import { checkbox, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
-import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
+import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { AccessScopeDepthExceededError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
-import { buildAccessScopedInclude } from '../access/access-filter.js'
 import {
   DECLARED_ROWS_BRANCH_KEY,
   DuplicateIncludeError,
@@ -612,56 +611,6 @@ describe('a relation named twice is refused', () => {
       await expect(top).rejects.toThrow(/author/)
       await expect(nested).rejects.toThrow(/category/)
       expect(recorder.plans).toEqual([])
-    },
-    BOOT,
-  )
-})
-
-describe('the two read surfaces scope a filtered to-one identically', () => {
-  test(
-    'both mechanisms scope Post.author by the same rule, and reach the same answer',
-    async () => {
-      // Two mechanisms, one answer. The legacy method surface flags a filtered
-      // to-one for a post-query existence check carrying the related list's
-      // own `query` filter; the secured surface pushes that same filter into
-      // the join. Both stay alive until `context/index.ts` is transformed
-      // (#1237), and nothing else pins them to each other.
-      //
-      // The legacy surface's own terminal cannot run here: it drives a
-      // Prisma 7 `findMany` the rc.8 client does not carry. So the comparison
-      // is made where both are observable — the filter each mechanism decides
-      // on, and the row the secured one returns under it.
-      const context = database.context(ada)
-      const accessContext: AccessContext = {
-        ...context,
-        ormHandle: ormClientFor(database.data, database.client.orm),
-        _resolveOutputChain: [],
-      }
-      const legacy = await buildAccessScopedInclude(
-        { author: true },
-        blogConfig.lists.Post.fields,
-        { session: ada, context: accessContext },
-        blogConfig,
-        'Post',
-      )
-
-      expect(legacy.toOneAccessFilters.filters.author).toEqual({
-        kind: 'scoped',
-        relatedListName: 'User',
-        accessWhere: { handle: { equals: 'ada' } },
-      })
-
-      const secured = await context.db.Post.where({ title: "bob's draft" }).include('author').all()
-      const plan = recorder.plans[0]
-
-      // The same rule, in the shape the secured path carries it: inside the
-      // include's own subquery rather than in a second round trip.
-      expect(includedRelations(plan).sort()).toEqual(['author', 'declaredEditor'])
-      expect(JSON.stringify(plan.ast)).toContain('"value":"ada"')
-      // And the same answer: bob is not a user ada may see, so the relation is
-      // absent for her by either route.
-      expect(secured).toHaveLength(1)
-      expect(secured[0].author).toBeNull()
     },
     BOOT,
   )

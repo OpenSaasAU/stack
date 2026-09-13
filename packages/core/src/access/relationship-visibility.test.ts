@@ -65,6 +65,12 @@ describe('Relationship Access Control', () => {
 
       expect(result).toBeNull()
     })
+
+    it('should return null for a ref with more than one dot', () => {
+      const result = getRelatedListConfig('Post.author.extra', config)
+
+      expect(result).toBeNull()
+    })
   })
 
   describe('filterReadableFields with relationships', () => {
@@ -114,48 +120,6 @@ describe('Relationship Access Control', () => {
         expect(result.title).toBe('Test Post')
         expect(result.author).toBeDefined()
         expect(result.author?.name).toBe('John Doe')
-      })
-
-      it('should filter out single relationship when access denied (via buildAccessScopedInclude)', async () => {
-        const config: OpenSaasConfig = {
-          db: { provider: 'postgresql' },
-          lists: {
-            User: {
-              fields: {
-                name: text(),
-              },
-              access: {
-                operation: {
-                  query: () => false, // Deny reading users
-                },
-              },
-            },
-            Post: {
-              fields: {
-                title: text(),
-                author: relationship({ ref: 'User.posts' }),
-              },
-            },
-          },
-        }
-
-        // Test that buildAccessScopedInclude excludes the denied relationship
-        const { buildAccessScopedInclude } = await import('./index.js')
-
-        const { include } = await buildAccessScopedInclude(
-          { author: true },
-          config.lists.Post.fields,
-          {
-            session: null,
-            context: mockContext,
-          },
-          config,
-          'Post',
-        )
-
-        // When access is denied, the relationship should not be included
-        expect(include).toBeDefined()
-        expect(include?.author).toBeUndefined()
       })
 
       it('should apply field-level access to single relationship', async () => {
@@ -262,57 +226,6 @@ describe('Relationship Access Control', () => {
         expect(result.posts?.[1].title).toBe('Post 2')
       })
 
-      it('should filter items in many relationships based on query access (via buildAccessScopedInclude)', async () => {
-        const config: OpenSaasConfig = {
-          db: { provider: 'postgresql' },
-          lists: {
-            User: {
-              fields: {
-                name: text(),
-                posts: relationship({ ref: 'Post.author', many: true }),
-              },
-            },
-            Post: {
-              fields: {
-                title: text(),
-                status: select({
-                  options: [
-                    { label: 'Published', value: 'published' },
-                    { label: 'Draft', value: 'draft' },
-                  ],
-                }),
-              },
-              access: {
-                operation: {
-                  // Only show published posts
-                  query: () => ({ status: { equals: 'published' } }),
-                },
-              },
-            },
-          },
-        }
-
-        // Test that buildAccessScopedInclude creates the right where clause
-        const { buildAccessScopedInclude } = await import('./index.js')
-
-        const { include } = await buildAccessScopedInclude(
-          { posts: true },
-          config.lists.User.fields,
-          {
-            session: null,
-            context: mockContext,
-          },
-          config,
-          'User',
-        )
-
-        // Should include posts with a where filter
-        expect(include).toBeDefined()
-        expect(include?.posts).toBeDefined()
-        // @ts-expect-error the test
-        expect(include?.posts.where).toEqual({ status: { equals: 'published' } })
-      })
-
       it('should apply field-level access to items in many relationships', async () => {
         const config: OpenSaasConfig = {
           db: { provider: 'postgresql' },
@@ -403,57 +316,6 @@ describe('Relationship Access Control', () => {
         )
 
         expect(result.posts).toEqual([])
-      })
-    })
-
-    describe('session-based access for relationships', () => {
-      it('should apply session-based access to relationships (via buildAccessScopedInclude)', async () => {
-        const config: OpenSaasConfig = {
-          db: { provider: 'postgresql' },
-          lists: {
-            User: {
-              fields: {
-                name: text(),
-                posts: relationship({ ref: 'Post.author', many: true }),
-              },
-            },
-            Post: {
-              fields: {
-                title: text(),
-                authorId: text(),
-              },
-              access: {
-                operation: {
-                  // Only show posts owned by current user
-                  query: ({ session }) => {
-                    if (!session) return false
-                    return { authorId: { equals: session.userId } }
-                  },
-                },
-              },
-            },
-          },
-        }
-
-        // Test that buildAccessScopedInclude creates session-based where clause
-        const { buildAccessScopedInclude } = await import('./index.js')
-
-        const { include } = await buildAccessScopedInclude(
-          { posts: true },
-          config.lists.User.fields,
-          {
-            session: { userId: '1' },
-            context: mockContext,
-          },
-          config,
-          'User',
-        )
-
-        // Should include posts with session-based where filter
-        expect(include).toBeDefined()
-        expect(include?.posts).toBeDefined()
-        // @ts-expect-error the test
-        expect(include?.posts.where).toEqual({ authorId: { equals: '1' } })
       })
     })
 

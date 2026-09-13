@@ -148,8 +148,6 @@ describe('filterReadableFields consuming a resolved ForeignKeyVisibilityMap', ()
       noDependencyAdditions(),
       undefined,
       undefined,
-      undefined,
-      undefined,
       { ownerId: { kind: 'denied' } },
     )
 
@@ -169,8 +167,6 @@ describe('filterReadableFields consuming a resolved ForeignKeyVisibilityMap', ()
       noDependencyAdditions(),
       undefined,
       undefined,
-      undefined,
-      undefined,
       { ownerId: { kind: 'scoped', ids: new Set(['o1']) } },
     )
     expect((visible as Record<string, unknown>).ownerId).toBe('o1')
@@ -183,8 +179,6 @@ describe('filterReadableFields consuming a resolved ForeignKeyVisibilityMap', ()
       0,
       'Item',
       noDependencyAdditions(),
-      undefined,
-      undefined,
       undefined,
       undefined,
       { ownerId: { kind: 'scoped', ids: new Set(['o1']) } },
@@ -203,8 +197,6 @@ describe('filterReadableFields consuming a resolved ForeignKeyVisibilityMap', ()
       0,
       'Item',
       noDependencyAdditions(),
-      undefined,
-      undefined,
       undefined,
       undefined,
       // `resolveForeignKeyVisibility` records "open" here — the related
@@ -228,8 +220,6 @@ describe('filterReadableFields consuming a resolved ForeignKeyVisibilityMap', ()
       0,
       'Item',
       noDependencyAdditions(),
-      undefined,
-      undefined,
       undefined,
       undefined,
       emptyForeignKeyVisibilityMap(),

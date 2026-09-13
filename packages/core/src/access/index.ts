@@ -21,7 +21,6 @@ export {
   isPrismaFilter,
   getRelatedListConfig,
   resolveSyntheticReverseRelation,
-  listSyntheticReverseRelationNames,
 } from './engine.js'
 export type { SyntheticReverseRelation } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).
@@ -30,29 +29,6 @@ export {
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
-// Read-path key validation — the read counterpart to the write
-// path's #564 undeclared-key reject.
-export { validateQueryKeys } from './query-validation.js'
-// Read-path field-level access on `where`/`orderBy` keys — a field the
-// session cannot read cannot be named in a predicate either (#915).
-export { validateQueryFieldReadAccess } from './query-validation.js'
-// Phase 1 — Access Filter (pre-query row/relation scoping).
-export {
-  buildAccessScopedInclude,
-  buildAccessScopedWhere,
-  stripVirtualFieldsFromInclude,
-  resolveToOneAccessVisibility,
-  emptyToOneAccessFilterTree,
-  emptyToOneAccessVisibilityTree,
-  emptyCountAccessDenialTree,
-} from './access-filter.js'
-export type {
-  ToOneAccessFilterTree,
-  ToOneAccessFilterEntry,
-  ToOneAccessVisibilityTree,
-  ToOneVisibility,
-  CountAccessDenialTree,
-} from './access-filter.js'
 // The foreign-key column of a to-one relationship a read never named at all —
 // the legacy-surface counterpart of `narrowUnincludedForeignKeys` in
 // `secured/read.ts` (issue #1243).
@@ -61,10 +37,8 @@ export {
   emptyForeignKeyVisibilityMap,
 } from './foreign-key-visibility.js'
 export type { ForeignKeyVisibility, ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
-// Access-scoped to-many relationship counts (admin list view, issue #732)
-// and the shared per-relation resolver `_count` scoping (issue #1087) reuses.
-export { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
-export type { CountAccessEntry } from './relationship-count.js'
+// Which fields carry a to-many relationship count (admin list view, issue #732).
+export { isToManyRelationshipField } from './relationship-count.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets
@@ -89,7 +63,3 @@ export { InvalidCreateAccessResultError } from './errors.js'
 export { UndefinedAccessFilterError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
 export { RelationFilterAccessDeniedError } from './errors.js'
-// Thrown when a caller `include` names a key that is neither declared, synthetic, nor `_count` (#1082).
-export { UndeclaredIncludeKeyError } from './errors.js'
-// Thrown when a caller `_count.select` names a key that is not a countable to-many relation (#1087).
-export { UndeclaredCountKeyError } from './errors.js'

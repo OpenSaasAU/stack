@@ -7,11 +7,9 @@ import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './er
  * Access engine — operation-level access control and shared helpers.
  *
  * This module holds the *operation-level* (list-level) access primitives and
- * the ref-parsing helper shared across both phases of the two-phase read:
- *
- *   - Phase 1, Access Filter (pre-query row/relation scoping): `access-filter.ts`
- *   - Phase 2, Field Visibility (post-query field stripping + resolveOutput +
- *     virtual fields): `field-visibility.ts`
+ * the ref-parsing helper the pre-query row/relation scoping (`secured/
+ * vocabulary.ts`) and the post-query Field Visibility phase (`field-
+ * visibility.ts`) both build on.
  *
  * Field-level access evaluation is centralized in `field-access.ts`
  * (`checkFieldAccess`). See `docs/adr/0001-access-control-is-a-two-phase-read.md`
@@ -91,34 +89,6 @@ export function resolveSyntheticReverseRelation(
     }
   }
   return null
-}
-
-/**
- * Enumerate every synthetic back-relation name a list-only `ref` elsewhere in
- * the config synthesizes onto `parentListName` — the same relations
- * `resolveSyntheticReverseRelation` resolves one at a time given a candidate
- * key, returned here as the full set for a caller that instead needs "every
- * relation this list carries" with no candidate to check (e.g. `_count:
- * true`'s "count every relation" expansion in `access-filter.ts`, issue
- * #1087 — a bare `_count: true` must include a synthetic back-relation's
- * count exactly as it always has, not only a caller-named one).
- */
-export function listSyntheticReverseRelationNames(
-  parentListName: string,
-  config: OpenSaasConfig,
-): string[] {
-  const names: string[] = []
-  for (const [sourceListName, sourceListConfig] of Object.entries(config.lists)) {
-    for (const [sourceFieldName, sourceFieldConfig] of Object.entries(sourceListConfig.fields)) {
-      if (sourceFieldConfig.type !== 'relationship') continue
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-      const rel = sourceFieldConfig as RelationshipField<any>
-      const refParts = rel.ref.split('.')
-      if (refParts.length !== 1 || refParts[0] !== parentListName) continue
-      names.push(getSyntheticFieldName(sourceListName, sourceFieldName))
-    }
-  }
-  return names
 }
 
 /**
