@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import pg from 'pg'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { checkbox, relationship, text } from '../fields/index.js'
@@ -137,6 +137,30 @@ describe('the test database stands a blog-shaped config up', () => {
     async () => {
       expect(await rows(database, 'User')).toEqual([])
       expect(await rows(database, 'Post')).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    "truncate() runs through the harness's own client, opening no pg.Client or pg.Pool of its own",
+    async () => {
+      await seed(database, 'User', { name: 'Grace', email: 'grace@example.test' })
+
+      const clientSpy = vi.spyOn(pg, 'Client')
+      const poolSpy = vi.spyOn(pg, 'Pool')
+      try {
+        await database.truncate()
+        // While a test body is executing, the harness's declared connection
+        // count (its own `max: 1` pool) is the ceiling — proven here by
+        // showing truncate() never reaches for a connection beside it.
+        expect(clientSpy).not.toHaveBeenCalled()
+        expect(poolSpy).not.toHaveBeenCalled()
+      } finally {
+        clientSpy.mockRestore()
+        poolSpy.mockRestore()
+      }
+
+      expect(await rows(database, 'User')).toEqual([])
     },
     BOOT,
   )

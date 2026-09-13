@@ -14,7 +14,7 @@ import { buildPrismaContract, toEmittedContract, type PrismaContract } from '../
 import { deriveContract } from '../contract/derive.js'
 import type { ContractData } from '../contract/types.js'
 import { getContext } from '../context/index.js'
-import { originTripwire } from '../origin.js'
+import { originTripwire, withOrigin } from '../origin.js'
 import type { StackContext } from '../types/context.js'
 import { ESCAPE_VARIABLE, requireUsableDatabaseEscape } from './escape.js'
 import {
@@ -215,6 +215,31 @@ async function onClient(url: string, statement: string): Promise<void> {
   }
 }
 
+/**
+ * A `TemplateStringsArray` for a fully-formed SQL string with no interpolated
+ * values, so a statement assembled entirely from server-derived identifiers
+ * (never caller input — {@link qualified}'s table names) can be handed to the
+ * contract-bound raw tag without it being treated as a bind parameter.
+ */
+function rawTemplate(sql: string): TemplateStringsArray {
+  return Object.assign([sql], { raw: [sql] })
+}
+
+/**
+ * Runs a statement-only raw plan through the client's own runtime — the same
+ * pool the client was constructed with, entering the unsafe origin the
+ * tripwire requires. This is how {@link TestDatabase.truncate} empties tables
+ * without opening a second connection to the target database (see the
+ * `Known limits` note on {@link createTestDatabase}).
+ */
+async function executeRaw(
+  client: PostgresClient<PrismaContract>,
+  statement: string,
+): Promise<void> {
+  const plan = client.raw.sql(rawTemplate(statement)).affectedCount().build()
+  await withOrigin('unsafe', () => client.runtime().execute(plan))
+}
+
 function withDatabase(url: string, name: string): string {
   const parsed = new URL(url)
   parsed.pathname = `/${name}`
@@ -399,7 +424,15 @@ async function startInstance(
  *   stamp to spare a run in flight, then execute what it returns.
  * - `truncate()` empties the tables the contract declares. It does not touch
  *   Prisma's own marker tables, which the schema apply owns. A contract
- *   declaring no model has nothing to empty and `truncate()` is a no-op.
+ *   declaring no model has nothing to empty and `truncate()` is a no-op. It
+ *   runs the statement through the harness's own client — the same `max: 1`
+ *   pool a write uses — rather than opening a client of its own, so the
+ *   database never sees more than the one declared connection while a test
+ *   is running. The only step that opens a second connection is
+ *   `startInstance`'s escape-path `CREATE DATABASE`/`DROP DATABASE`, and it
+ *   necessarily does: those statements run against the control database,
+ *   before the target database (and its pool) exist to route through, and
+ *   after `close()` releases that pool.
  * - {@link TestDatabase.client} is the raw Prisma collections, which carry none
  *   of the engine's access control or hooks. It is the construction option,
  *   not a seam on the secured wrapper: seed through it when a fixture must
@@ -483,7 +516,7 @@ export async function createTestDatabase<
       context: context as unknown as TestDatabase<TContext>['context'],
       truncate: async () => {
         if (tables.length === 0) return
-        await onClient(instance.url, `truncate table ${tables.join(', ')} restart identity cascade`)
+        await executeRaw(client, `truncate table ${tables.join(', ')} restart identity cascade`)
       },
       close: async () => {
         if (closed) return
