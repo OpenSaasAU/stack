@@ -152,6 +152,7 @@ export function generateContext(
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import { originTripwire } from '@opensaas/stack-core/origin'
+import { processGlobal } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 ${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
@@ -182,7 +183,22 @@ function createClient(config: OpenSaasConfig) {
   })
 }
 
-const globalForClient = globalThis as unknown as { opensaasClient: ReturnType<typeof createClient> | null }
+/**
+ * A duck-type check for the constructed client, used to decide whether a
+ * value already published under the process-wide registry key is one of
+ * these rather than trust it blindly.
+ */
+function isRuntimeClient(value: unknown): value is ReturnType<typeof createClient> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'orm' in value &&
+    'sql' in value &&
+    'raw' in value &&
+    'transaction' in value
+  )
+}
+
 let clientPromise: Promise<ReturnType<typeof createClient>> | null = null
 
 function getClient() {
@@ -192,13 +208,17 @@ function getClient() {
   // \`db.client.pg\` a second time. The memo is dropped again on failure, so a
   // process that starts before its database does can still reach one — the
   // connection URL is read at construction, not at import.
+  //
+  // \`processGlobal\` carries the constructed client past this module's own
+  // scope, in every environment: a bundler that compiles this file into more
+  // than one bundle gives each copy its own module scope, so \`clientPromise\`
+  // alone would let each construct its own client and its own pool against
+  // the same database. There is exactly one process to agree across, so this
+  // is unconditional rather than gated to development the way an earlier
+  // version of this file gated it (ADR-0070).
   const attempt = (async () => {
     const config = await getConfig()
-    const existing = globalForClient.opensaasClient
-    if (existing) return existing
-    const created = createClient(config)
-    if (process.env.NODE_ENV !== 'production') globalForClient.opensaasClient = created
-    return created
+    return processGlobal('client', isRuntimeClient, () => createClient(config))
   })().catch((error: unknown) => {
     if (clientPromise === attempt) clientPromise = null
     throw error

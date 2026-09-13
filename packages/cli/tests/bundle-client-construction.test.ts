@@ -14,15 +14,20 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
  * project, since the memo they turn on lives in the emitted module and nowhere
  * else.
  *
- * Two things make the concurrency probe able to fail rather than merely pass.
- * The config resolves behind a plugin that sleeps, which holds every caller
+ * One thing makes the concurrency probe able to fail rather than merely pass:
+ * the config resolves behind a plugin that sleeps, which holds every caller
  * inside `getClient`'s own `await getConfig()` at once — without it a fast
  * implementation could let one racer's construction finish before the next
  * one starts, proving only that they end up sharing a resolved value rather
- * than sharing the same in-flight attempt. And the probe runs as production,
- * because the dev-only `globalForClient` write would otherwise catch the
- * second and third callers on their way out of that await and hide the
- * missing memo.
+ * than sharing the same in-flight attempt.
+ *
+ * A second probe below proves the guarantee the module-local memo alone
+ * cannot: that two separate copies of the generated module — what a bundler
+ * produces when it compiles the same file into more than one bundle — share
+ * one client through the process-wide registry (`processGlobal`), in every
+ * environment (ADR-0070). The single-module race above would pass against a
+ * per-module-instance implementation too, since `clientPromise` already
+ * serialises callers that share one module scope.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules`, and outside `node_modules` itself so type stripping applies.
@@ -200,9 +205,6 @@ describe('the generated client is constructed once, from db.client', () => {
   })
 
   test('three racing consumers construct one client and call the factory once', () => {
-    // Under `NODE_ENV=production`, where the memo is the only thing holding the
-    // singleton: the dev-only `globalForClient` write would otherwise absorb
-    // the race, and every implementation would log one call whatever it did.
     const result = runProbe('probe.mjs', CONCURRENCY_PROBE, {
       NODE_ENV: 'production',
       OPENSAAS_TEST_POOL: '1',
@@ -215,6 +217,53 @@ describe('the generated client is constructed once, from db.client', () => {
     expect(output, output).toContain('CONTEXTS_READY')
     expect(result.status, output).toBe(0)
     expect(calls()).toBe(1)
+  }, 120_000)
+
+  test('two copies of the generated module share one client, under NODE_ENV=production', () => {
+    // A literal second copy of `context.ts`, at its own resolved specifier, is
+    // what stands in for what a bundler produces when it compiles the same
+    // generated file into more than one bundle: Node gives it its own module
+    // scope, so anything held in `context.ts`'s own module-local `clientPromise`
+    // would NOT be shared with the original — only the process-wide registry
+    // (ADR-0070) would be. Its sibling imports (`./types.ts`, `./tables.ts`)
+    // resolve unchanged, so both copies still describe the same config.
+    //
+    // Run under `NODE_ENV=production`: an earlier version of the generated
+    // file wrote its cross-instance registry (`globalForClient`) everywhere
+    // EXCEPT production, so this is the one environment where that
+    // implementation logs two calls instead of one — exactly the asymmetry
+    // this record removes (ADR-0070).
+    const opensaasDir = path.join(projectDir, '.opensaas')
+    fs.copyFileSync(path.join(opensaasDir, 'context.ts'), path.join(opensaasDir, 'context-copy.ts'))
+    const callsBefore = calls()
+
+    const result = runProbe(
+      'two-copies.mjs',
+      `const [first, second] = await Promise.all([
+  import('./.opensaas/context.ts'),
+  import('./.opensaas/context-copy.ts'),
+])
+const contexts = await Promise.all([first.getContext(), second.getContext()])
+if (contexts.some((context) => typeof context?.db !== 'object')) {
+  throw new Error('a context came back without a db surface')
+}
+console.log('TWO_COPIES_READY')
+`,
+      {
+        NODE_ENV: 'production',
+        OPENSAAS_TEST_POOL: '1',
+        DATABASE_URL: '',
+        DIRECT_DATABASE_URL: '',
+      },
+    )
+
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    expect(result.signal, output).toBe(null)
+    expect(output, output).toContain('TWO_COPIES_READY')
+    expect(result.status, output).toBe(0)
+    // One call for this process, whichever of the two copies got there first —
+    // not two, which is what a per-module-instance client would log.
+    expect(calls() - callsBefore).toBe(1)
   }, 120_000)
 
   test('a construction that failed for want of a URL does not poison the next', () => {

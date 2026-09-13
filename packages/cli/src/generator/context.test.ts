@@ -74,7 +74,18 @@ describe('generateContext', () => {
     expect(context).toContain(
       'let clientPromise: Promise<ReturnType<typeof createClient>> | null = null',
     )
-    expect(context).toContain('globalForClient.opensaasClient')
+  })
+
+  it('shares the client across module instances through the process-wide registry, unconditionally', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain("import { processGlobal } from '@opensaas/stack-core/internal'")
+    expect(context).toContain(
+      "processGlobal('client', isRuntimeClient, () => createClient(config))",
+    )
+    // The earlier, dev-only asymmetry this replaced (ADR-0070) must not come back.
+    expect(context).not.toContain('NODE_ENV')
+    expect(context).not.toContain('globalForClient')
   })
 
   it('drops the memo when a construction fails, so the next caller retries', () => {
