@@ -187,8 +187,8 @@ import { chunkText } from '@opensaas/stack-rag/does-not-exist'
 export const chunks = chunkText(document)
 ```
 
-<!-- expect: excused -->
 <!-- doc-check: excuses="TS2307 'cohere-ai'" -->
+<!-- expect: excused -->
 
 ```ts
 import { CohereClient } from 'cohere-ai'

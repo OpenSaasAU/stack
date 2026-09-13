@@ -191,9 +191,11 @@ function parseFragmentAttributes(rawSuffix, origin) {
         `\`reason="…"\`), or \`whole="…"\``,
     )
   }
-  const attributes = Object.fromEntries(
-    [...suffix.matchAll(FRAGMENT_ATTRIBUTE)].map(([, key, value]) => [key, value]),
-  )
+  const matches = [...suffix.matchAll(FRAGMENT_ATTRIBUTE)].map(([, key, value]) => [key, value])
+  const attributes = Object.fromEntries(matches)
+  if (matches.length !== Object.keys(attributes).length) {
+    fail(`repeats an attribute — each of "excuses", "whole" and "reason" may appear at most once`)
+  }
   const keys = Object.keys(attributes).sort().join(',')
   if (keys === 'whole') {
     if (!attributes.whole.trim()) fail('has an empty "whole"')

@@ -194,8 +194,8 @@ jobs:
       #
       # The doc-block fixtures describe THIS tree: `files.txt` names the
       # repository's documents and each fenced block carries its own excuse in
-      # its info string, so no fixture re-key is needed when a change moves a
-      # documented block (#1301, #1382).
+      # a `doc-check:` comment directly above it, so no fixture re-key is
+      # needed when a change moves a documented block (#1301, #1382).
       - name: Build packages for the doc-block check
         run: turbo run build --filter='./packages/*'
 
