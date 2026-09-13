@@ -30,6 +30,8 @@ export interface S3StorageConfig {
   acl?: 'private' | 'public-read' | 'public-read-write' | 'authenticated-read'
   /** Custom domain for public URLs (e.g., 'https://cdn.example.com') */
   customDomain?: string
+  /** Allow additional properties */
+  [key: string]: unknown
 }
 
 /**
@@ -185,7 +187,22 @@ export class S3StorageProvider implements StorageProvider {
  * })
  * ```
  */
-export function s3Storage(config: Omit<S3StorageConfig, 'type'>): S3StorageConfig {
+export function s3Storage(
+  config: Pick<S3StorageConfig, 'bucket' | 'region'> &
+    Partial<
+      Pick<
+        S3StorageConfig,
+        | 'accessKeyId'
+        | 'secretAccessKey'
+        | 'endpoint'
+        | 'forcePathStyle'
+        | 'pathPrefix'
+        | 'generateUniqueFilenames'
+        | 'acl'
+        | 'customDomain'
+      >
+    >,
+): S3StorageConfig {
   return {
     type: 's3',
     generateUniqueFilenames: true,
