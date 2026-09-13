@@ -299,7 +299,6 @@ export function RelationshipTableClient({
                     }
               }
               targetListTitle={formatListName(linkEdge.targetListKey)}
-              options={linkEdge.options}
               serverAction={serverAction}
             />
           )}

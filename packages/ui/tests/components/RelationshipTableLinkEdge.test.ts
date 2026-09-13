@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
-import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
+import {
+  createTestContext,
+  createPlanRecorder,
+  type TestContext,
+} from '@opensaas/stack-core/testing'
 import { resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 
@@ -101,7 +105,7 @@ describe('resolveLinkEdge', () => {
   })
 
   it(
-    'offers the control with the far endpoint options for an edge across a junction',
+    'offers the control for an edge across a junction',
     async () => {
       const edge = await resolveLinkEdge(
         section('tags', 'PostTag.post'),
@@ -115,7 +119,6 @@ describe('resolveLinkEdge', () => {
       expect(edge.junctionListKey).toBe('PostTag')
       expect(edge.targetField).toBe('tag')
       expect(edge.targetListKey).toBe('Tag')
-      expect(edge.options.map((option) => option.label).sort()).toEqual(['alpha', 'beta'])
     },
     BOOT,
   )
@@ -150,7 +153,6 @@ describe('resolveLinkEdge', () => {
       expect(edge.relatedListKey).toBe('Book')
       expect(edge.backReferenceField).toBe('author')
       expect(edge.targetListKey).toBe('Book')
-      expect(edge.options.map((option) => option.label)).toEqual(['one'])
     },
     BOOT,
   )
@@ -166,6 +168,38 @@ describe('resolveLinkEdge', () => {
       )
 
       expect(edge).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'reads nothing from the far endpoint — resolving the control defers that fetch to first open (#1365)',
+    async () => {
+      const recorder = createPlanRecorder()
+      const recorded = await createTestContext(
+        makeConfig(),
+        { userId: 'u1' },
+        {
+          middleware: [recorder.middleware],
+        },
+      )
+      try {
+        const sudo = recorded.context.sudo()
+        await sudo.db.Tag.create({ data: { name: 'gamma' } })
+        recorder.clear()
+
+        const edge = await resolveLinkEdge(
+          section('tags', 'PostTag.post'),
+          makeConfig(),
+          'Post',
+          recorded.context as unknown as AccessContext,
+        )
+
+        expect(edge?.mode).toBe('junction')
+        expect(recorder.plans).toEqual([])
+      } finally {
+        await recorded.close()
+      }
     },
     BOOT,
   )

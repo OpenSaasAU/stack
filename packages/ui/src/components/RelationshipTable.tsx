@@ -1,6 +1,5 @@
 import {
   getItemLabel,
-  getRelationshipOptions,
   getUrlKey,
   resolveJunctionEdge,
   engineContextOf,
@@ -208,14 +207,12 @@ export type LinkEdgeData =
       junctionListKey: string
       targetField: string
       targetListKey: string
-      options: Array<{ id: string; label: string }>
     }
   | {
       mode: 'foreignKey'
       relatedListKey: string
       backReferenceField: string
       targetListKey: string
-      options: Array<{ id: string; label: string }>
     }
 
 /**
@@ -232,9 +229,12 @@ export type LinkEdgeData =
  * ({@link resolveToManyEdgePlan} returning `null` — a list-only `ref`, a
  * required back-reference) gets no control.
  *
- * The far endpoint's options come through the same bounded, access-scoped fetch
- * the pickers use, so a row the session cannot read is never offered — and
- * picking one anyway is refused by the create's own reachability query.
+ * This resolves only whether the control is offered — it does NOT fetch the
+ * far endpoint's options. Reading those eagerly, on every render of every
+ * to-many section whether or not the user ever opens the control, was the
+ * defect issue #1365 fixed: the client now loads them itself, through the
+ * same bounded, access-scoped `relationshipOptions` op the live search uses,
+ * the first time the control opens (see {@link RelationshipLinkControl}).
  */
 export async function resolveLinkEdge(
   section: RelationshipTableSection,
@@ -252,13 +252,11 @@ export async function resolveLinkEdge(
     )
     if (!allowed) return null
 
-    const options = await getRelationshipOptions(context, config, edge.targetListKey, {})
     return {
       mode: 'junction',
       junctionListKey: edge.junctionListKey,
       targetField: edge.targetField,
       targetListKey: edge.targetListKey,
-      options: [...options],
     }
   }
 
@@ -273,13 +271,11 @@ export async function resolveLinkEdge(
   )
   if (!allowed) return null
 
-  const options = await getRelationshipOptions(context, config, plan.relatedListKey, {})
   return {
     mode: 'foreignKey',
     relatedListKey: plan.relatedListKey,
     backReferenceField: plan.backReferenceField,
     targetListKey: plan.relatedListKey,
-    options: [...options],
   }
 }
 
