@@ -877,8 +877,12 @@ describe('ragPlugin', () => {
       expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
     })
 
-    it('refuses to write when the context carries no rag services', async () => {
+    it('reports a missing rag context as a standing defect rather than throwing', async () => {
+      // The hook runs after its write's own transaction has committed, so a
+      // throw here would surface as a failure off an already-committed write —
+      // exactly the contract this hook exists to avoid (#1342).
       const { hook } = await generationHook()
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       await expect(
         hook!({
@@ -889,7 +893,13 @@ describe('ragPlugin', () => {
           item: { id: 'a1', content: 'four' },
           context: stubContext({}),
         }),
-      ).rejects.toThrow('context.plugins.rag is missing')
+      ).resolves.toBeUndefined()
+
+      const said = logged.mock.calls[0][0]
+      expect(said).toContain('EMBEDDING GENERATION IS NOT RUNNING for "Article.contentEmbedding"')
+      expect(said).toContain('ragPlugin()')
+      expect(said).not.toContain('retry by writing the source field again')
+      logged.mockRestore()
     })
 
     it('puts the escalated write on no string key of context.plugins.rag', () => {
