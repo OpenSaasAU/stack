@@ -1,5 +1,6 @@
 import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { ConfigRefusal } from './config-refusal.js'
+import { validateDefaultValues } from './default-value.js'
 import { validateExtensionPacks } from './extension-packs.js'
 import { validateFieldNames } from './field-names.js'
 
@@ -76,8 +77,10 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
  * `db.idField` on a singleton list (ADR-0048), the same extension pack
  * name declared from two packages, a field name the derivation reserves or
  * that collides with a derived column or relation ({@link validateFieldNames}),
- * a field that cannot describe its contract column, and a field typed by a
- * pack `db.extensions` does not declare (ADR-0049). Each refusal names the
+ * a field that cannot describe its contract column, a field typed by a
+ * pack `db.extensions` does not declare (ADR-0049), and an explicit
+ * `defaultValue` the field's own create validation would reject
+ * ({@link validateDefaultValues}, ADR-0052). Each refusal names the
  * list (when there is one), the entry and the fix.
  *
  * `sort` is absent from {@link ListIndexFieldRef}'s type; this catches the
@@ -93,6 +96,7 @@ export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] 
 
   refusals.push(...validateFieldNames(config))
   refusals.push(...validateExtensionPacks(config))
+  refusals.push(...validateDefaultValues(config))
 
   return refusals
 }
