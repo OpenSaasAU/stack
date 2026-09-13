@@ -470,15 +470,17 @@ export async function createTestDatabase<
     // — it has no way to know the app's generated `DB` shape. This cast is the
     // same one the generated `.opensaas/context.ts` performs on its own
     // `getContext()`, layering the caller-named `TContext` on top of the
-    // identical runtime object.
+    // identical runtime object. Scoped to `context` alone, so every other
+    // member here still gets checked structurally against `TestDatabase<TContext>`.
+    const context = (session: Session | null = null) =>
+      getContext(config, orm, session, options.storage, false, undefined, undefined, client)
     return {
       url: instance.url,
       provenance: instance.provenance,
       contract,
       data,
       client,
-      context: (session: Session | null = null) =>
-        getContext(config, orm, session, options.storage, false, undefined, undefined, client),
+      context: context as unknown as TestDatabase<TContext>['context'],
       truncate: async () => {
         if (tables.length === 0) return
         await onClient(instance.url, `truncate table ${tables.join(', ')} restart identity cascade`)
@@ -490,7 +492,7 @@ export async function createTestDatabase<
         await instance.release()
         rmSync(migrationsDir, { recursive: true, force: true })
       },
-    } as unknown as TestDatabase<TContext>
+    }
   } catch (error) {
     await pool?.end().catch(() => {})
     await instance.release().catch(() => {})
