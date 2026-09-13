@@ -348,6 +348,19 @@ describe('authPlugin', () => {
     expect(result.db.client?.pg).toBe(pg)
   })
 
+  it('pins uuid7 on every injected list even when the app default is a different strategy', async () => {
+    const result = await config({
+      db: { provider: 'postgresql', idField: 'cuid2' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    expect(result.db.idField).toBe('cuid2')
+    for (const listKey of ['User', 'Session', 'Account', 'Verification']) {
+      expect(result.lists[listKey]?.db?.idField).toBe('uuid7')
+    }
+  })
+
   it('should store normalized auth config in _pluginData', async () => {
     const result = await config({
       db: { provider: 'postgresql' },

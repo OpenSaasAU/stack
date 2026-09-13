@@ -95,7 +95,7 @@ export async function runPrismaCli(
   stdio: PrismaCliStdio = 'capture',
 ): Promise<PrismaCliRun> {
   const binary = resolvePrismaBinary(cwd)
-  const isScript = binary.endsWith('.js')
+  const isScript = /\.[mc]?js$/.test(binary)
   const command = isScript ? process.execPath : binary
   const commandArgs = isScript ? [binary, ...args] : [...args]
 

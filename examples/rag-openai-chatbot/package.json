@@ -2,6 +2,9 @@
   "name": "opensaas-rag-openai-chatbot-example",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "opensaas dev",

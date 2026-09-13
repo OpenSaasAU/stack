@@ -17,6 +17,7 @@ import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import {
   authConfig,
   blogConfig,
+  longIdentifierConfig,
   multiSchemaConfig,
   nativeTypesConfig,
   oneToOneConfig,
@@ -55,6 +56,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'multi-schema', config: multiSchemaConfig },
   { name: 'native-types', config: nativeTypesConfig },
   { name: 'hostile-names', config: hostileNamesConfig },
+  { name: 'long-identifiers', config: longIdentifierConfig },
   // `fieldPackageConfig` is typed against `@opensaas/stack-core`'s published
   // declarations (it mixes in `@opensaas/stack-storage`/`@opensaas/stack-tiptap`
   // fields, which are themselves built against that surface) while this file's
