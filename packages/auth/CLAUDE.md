@@ -128,7 +128,13 @@ lists cannot silently drift from what better-auth itself declares (issue
   A reference whose target field isn't the target's `id` (better-auth's own
   oidc-provider schema does this — `oauthAccessToken.clientId` references
   `oauthClient.clientId`, not its `id`) stays a plain scalar column,
-  since `relationship()` can only express an `id`-based FK. Plugin tables
+  since `relationship()` can only express an `id`-based FK. The same fallback
+  applies to an `id`-referencing field whose own name doesn't end in `Id`
+  (stripping the suffix to name the relation would be a no-op, so the
+  relation would need the exact name its own FK column physically maps to —
+  a self-collision the contract derivation refuses, #1236); better-auth's own
+  tables never hit this (every default reference name ends in `Id`), but a
+  plugin's could (issue #1222). Plugin tables
   ship closed like the base models, with no `access` passthrough at all —
   see ADR-0034 and "Access control on Auth lists" below
 
