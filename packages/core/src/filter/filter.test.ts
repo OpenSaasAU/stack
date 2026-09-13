@@ -224,9 +224,36 @@ describe('buildFilterWhere', () => {
     })
   })
 
-  it('drops a degraded token entirely when there are no free-text fields', () => {
+  it('narrows to no rows — never drops — a degraded token when there are no free-text fields', () => {
+    // `role:Editor` degrades (no spec for `role`), and there is nowhere to
+    // search it: dropping the token would silently widen the result set, so
+    // it must instead constrain the read to match nothing (#1356).
     const noFreeText = { orders: ordersSpec }
-    expect(buildFilterWhere(parseFilterQuery('role:Editor'), noFreeText)).toBeUndefined()
+    expect(buildFilterWhere(parseFilterQuery('role:Editor'), noFreeText)).toEqual({ NOT: {} })
+  })
+
+  it('narrows to no rows when every free-text field rejects the degraded word too', () => {
+    // A free-text field exists, but its own mapping still can't place the
+    // word — same "cannot be honoured" outcome as having no free-text field
+    // at all, so the result must be the same: narrowed, not widened (#1356).
+    const rejectsEverything: FilterSpec = {
+      operators: ['eq'],
+      freeText: true,
+      toCondition: () => null,
+      suggestions: { valueSource: { kind: 'none' } },
+    }
+    expect(buildFilterWhere(parseFilterQuery('role:Editor'), { title: rejectsEverything })).toEqual(
+      { NOT: {} },
+    )
+  })
+
+  it('ANDs a never-matching word in with real conditions rather than dropping only that word', () => {
+    // `status:Active` compiles; `role:Editor` cannot be honoured at all. The
+    // whole chain must narrow to nothing, not just drop the bad term.
+    const noFreeText = { orders: ordersSpec, status: statusSpec }
+    expect(buildFilterWhere(parseFilterQuery('status:Active role:Editor'), noFreeText)).toEqual({
+      AND: [{ status: { equals: 'active' } }, { NOT: {} }],
+    })
   })
 
   it('searches a pasted URL as whole free text (scheme not dropped)', () => {
