@@ -20,6 +20,7 @@ import {
 import { registerEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import { embedding } from '../fields/embedding.js'
+import { hashText } from '../runtime/embeddings.js'
 import { ragPlugin } from './plugin.js'
 
 const BOOT = 120_000
@@ -213,7 +214,11 @@ describe.skipIf(!available)(
       // row. `generatedAt` and `sourceHash` are the hook's own output.
       expect(stored?.contentEmbedding).toEqual({
         vector: [1, 0, 0],
-        metadata: { ...generatedMetadata, generatedAt: expect.any(String), sourceHash: '2f0x' },
+        metadata: {
+          ...generatedMetadata,
+          generatedAt: expect.any(String),
+          sourceHash: hashText('red'),
+        },
       })
       expect(stored).not.toHaveProperty('contentEmbeddingMetadata')
     })
@@ -273,7 +278,11 @@ describe.skipIf(!available)(
       expect(stored?.content).toBe('red hot')
       expect(stored?.contentEmbedding).toEqual({
         vector: [0, 0, 1],
-        metadata: { ...generatedMetadata, generatedAt: expect.any(String), sourceHash: 'hvoym6' },
+        metadata: {
+          ...generatedMetadata,
+          generatedAt: expect.any(String),
+          sourceHash: hashText('red hot'),
+        },
       })
     })
 
