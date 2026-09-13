@@ -1550,6 +1550,7 @@ customField: virtual({
     from: '@myorg/types',
     name: 'MyExportedType', // Optional
   },
+  needs: ['data'],
   hooks: {
     resolveOutput: ({ item }) => new MyClass(item.data),
   },
