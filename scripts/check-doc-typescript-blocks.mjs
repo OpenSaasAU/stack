@@ -97,8 +97,11 @@
 //   - The package's side of a comparison is trusted to resolve. Every program
 //     here sets `skipLibCheck`, so a `packages/*/dist` that is present but
 //     internally broken degrades an export to an error type with no diagnostic,
-//     and a wrong block then compares clean. The guard checks only that every
-//     `exports[*].types` file exists (#1350).
+//     and a wrong block then compares clean. The guard checks that every
+//     `exports[*].types` file exists, and that no exported alias resolves to a
+//     symbol with no declarations — the signature of a missing non-entry
+//     declaration file; a build broken some other way can still compare wrong
+//     silently.
 //   - A `tsx` fence is extracted but never compiled — no `jsx` option is set
 //     and React is not resolvable from the scratch project — so neither the
 //     compile nor the import check runs on it. It is reported as `UNCHECKED`
@@ -407,13 +410,26 @@ function collectExportedTypes() {
   )
   const checker = program.getTypeChecker()
   const names = new Map()
+  const brokenAliases = []
   for (const [specifier, relativePath] of entries) {
     const source = program.getSourceFile(path.join(repoRoot, relativePath))
     const moduleSymbol = source && checker.getSymbolAtLocation(source)
     if (!moduleSymbol) continue
     for (const symbol of checker.getExportsOfModule(moduleSymbol)) {
+      const isAlias = Boolean(symbol.getFlags() & ts.SymbolFlags.Alias)
       const target = resolveAlias(checker, symbol)
       const declarations = target.declarations ?? []
+      // An alias that resolves to a symbol with no declarations at all — as
+      // opposed to one that resolves cleanly to something that just isn't a
+      // type, like an exported function — means the declaration it points at
+      // is missing from the build, not that the export is legitimately
+      // untyped. `skipLibCheck` below hides this as a silently empty
+      // comparison basis rather than a diagnostic, so it is checked here
+      // instead (#1350).
+      if (isAlias && declarations.length === 0) {
+        brokenAliases.push(`${specifier}: ${symbol.getName()}`)
+        continue
+      }
       if (!(target.getFlags() & TYPE_SYMBOL) || declarations.length === 0) continue
       const name = symbol.getName()
       const key = declarationKey(declarations[0])
@@ -429,6 +445,14 @@ function collectExportedTypes() {
       }
       names.set(name, candidates)
     }
+  }
+  if (brokenAliases.length > 0) {
+    throw new ToolingFailure(
+      `${brokenAliases.length} exported name(s) resolve to a symbol with no declarations — the ` +
+        `build is incomplete, most likely a non-entry declaration file missing from a package's ` +
+        `dist:\n${brokenAliases.map((b) => `  ${b}`).join('\n')}\n\nRun \`pnpm build\` again; a ` +
+        `partial dist otherwise drops these names from the comparison instead of failing.`,
+    )
   }
   return names
 }
