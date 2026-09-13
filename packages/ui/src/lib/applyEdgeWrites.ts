@@ -60,6 +60,10 @@ export async function applyEdgeWrites({
           mode: 'disconnect',
           id,
           field: change.backReferenceField,
+          // The parent this form believes the row is still linked to (#1358):
+          // the server refuses the unlink, rather than reverting it silently,
+          // when a concurrent write has since re-pointed the row elsewhere.
+          parentId,
         }),
       )
       if (outcome.ok) linked.delete(id)
