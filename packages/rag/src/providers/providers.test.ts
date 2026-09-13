@@ -157,6 +157,12 @@ describe('Embedding Providers', () => {
         }
       })
 
+      it('names the actual invalid value in the error, not JSON.stringify(NaN)’s "null"', () => {
+        expect(
+          () => new OllamaEmbeddingProvider({ type: 'ollama', dimensions: Number.NaN }),
+        ).toThrow('got NaN.')
+      })
+
       it('refuses a missing dimensions value, naming the model', () => {
         expect(
           () =>

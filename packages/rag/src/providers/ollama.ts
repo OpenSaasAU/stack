@@ -23,7 +23,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     if (!Number.isInteger(config.dimensions) || config.dimensions < 1) {
       throw new Error(
         `Ollama embedding provider (model "${this.model}") requires a positive integer ` +
-          `"dimensions", got ${JSON.stringify(config.dimensions)}.`,
+          `"dimensions", got ${String(config.dimensions)}.`,
       )
     }
     this.dimensions = config.dimensions
