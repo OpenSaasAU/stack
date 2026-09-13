@@ -478,6 +478,7 @@ fields: {
   // Computed from other fields
   fullName: virtual({
     type: 'string', // TypeScript output type
+    needs: ['firstName', 'lastName'],
     hooks: {
       resolveOutput: ({ item }) => {
         return `${item.firstName} ${item.lastName}`
@@ -543,6 +544,7 @@ Virtual fields support custom scalar types (like `Decimal` for financial precisi
 ```typescript
 fullName: virtual({
   type: 'string',
+  needs: ['firstName', 'lastName'],
   hooks: {
     resolveOutput: ({ item }) => `${item.firstName} ${item.lastName}`,
   },
@@ -556,6 +558,7 @@ import Decimal from 'decimal.js'
 
 totalPrice: virtual({
   type: "import('decimal.js').Decimal",
+  needs: ['price', 'quantity'],
   hooks: {
     resolveOutput: ({ item }) => {
       return new Decimal(item.price).times(item.quantity)
@@ -571,6 +574,7 @@ import Decimal from 'decimal.js'
 
 totalPrice: virtual({
   type: { value: Decimal, from: 'decimal.js' },
+  needs: ['price', 'quantity'],
   hooks: {
     resolveOutput: ({ item }) => {
       return new Decimal(item.price).times(item.quantity)
