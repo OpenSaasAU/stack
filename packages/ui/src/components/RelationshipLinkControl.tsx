@@ -34,8 +34,6 @@ export interface RelationshipLinkControlProps {
   edge: LinkEdgeMode
   /** Display name of the far endpoint's list, used in the trigger's label. */
   targetListTitle: string
-  /** The server-rendered initial window of far-endpoint options. */
-  options: Array<{ id: string; label: string }>
   /** Server action that runs the edge write through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
 }
@@ -74,6 +72,14 @@ export function readAddOutcome(result: unknown): { ok: boolean; error?: string }
  * hide an option in one record and offer it in another. A junction that forbids
  * duplicate edges declares a unique pair index, and the violation surfaces here
  * as the create's own error.
+ *
+ * The far endpoint's options are not fetched until this control actually
+ * opens (issue #1365): an item view can carry several of these sections, and
+ * fetching each one's default 50-row window on every render — whether or not
+ * the user ever opens it — was pure waste on the admin's hottest route. The
+ * deferred fetch runs through the same `relationshipOptions` op the live
+ * search does, so it is bounded and access-scoped exactly as before; it is
+ * just no longer paid for up front.
  */
 export function RelationshipLinkControl({
   parentListKey,
@@ -81,7 +87,6 @@ export function RelationshipLinkControl({
   parentId,
   edge,
   targetListTitle,
-  options,
   serverAction,
 }: RelationshipLinkControlProps) {
   const router = useRouter()
@@ -91,12 +96,15 @@ export function RelationshipLinkControl({
 
   // A junction edge searches the junction's own far-endpoint field; a foreign
   // key edge searches the parent's to-many, which resolves to the same related
-  // list. Either way the options come back access-scoped.
+  // list. Either way the options come back access-scoped. `loadOnOpen` defers
+  // the empty-query window to the control's first open rather than fetching
+  // it before the user has shown any intent to use it.
   const { searchQuery, setSearchQuery, searchResults, isSearching } = useRelationshipSearch({
-    initialItems: options,
+    initialItems: [],
     listKey: edge.mode === 'junction' ? edge.junctionListKey : parentListKey,
     fieldName: edge.mode === 'junction' ? edge.targetField : fieldName,
     serverAction,
+    loadOnOpen: open,
   })
 
   // The popover stays open until the create succeeds, so its items keep taking
