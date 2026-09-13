@@ -230,16 +230,22 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * client `tx`, so a `context.db` write a hook performs runs inside — and rolls
  * back with — this write's transaction (ADR-0010).
  *
+ * Spreads the request context and overrides only what a transaction rebind
+ * must change, so a member added to `AccessContext` later is carried by
+ * default instead of by remembering to list it here (#1345).
+ *
  * The access-controlled `db` delegates capture their Prisma client at
- * construction, so swapping `context.ormHandle` alone would not rebind `db` — we
- * rebuild the delegates against `tx` via {@link buildDbDelegate}, reusing the
- * request context's `session`, `storage`, `plugins`, `_isSudo`, and
- * `_resolveOutputChain` as-is (so a write from inside a `resolveOutput` hook
- * keeps that hook's chain). Plugin runtimes are NOT re-executed.
+ * construction, so swapping `context.ormHandle` alone would not rebind `db` —
+ * we rebuild the delegates against `tx` via {@link buildDbDelegate}. Plugin
+ * runtimes are NOT re-executed.
  *
  * `transactionOwner` (ADR-0028) is carried onto the rebuilt context so a hook's
  * own `context.db` write defers its transaction-boundary bracket to that owner
  * instead of firing eagerly.
+ *
+ * `_transactionOpener` is explicitly cleared: a context rebound to a
+ * transaction runs directly against the handle it was given, never opening a
+ * second one of its own.
  *
  * The lock lane (ADR-0047) is carried only when `tx` IS the handle the context
  * already had — the joined-write shape, where this write runs inside a
@@ -260,14 +266,10 @@ function bindContextToTransaction(
 ): AccessContext {
   const { context, config } = args
   const txContext: AccessContext = {
-    session: context.session,
+    ...context,
     ormHandle: tx,
-    db: context.db,
-    storage: context.storage,
-    plugins: context.plugins,
-    _isSudo: context._isSudo,
-    _resolveOutputChain: context._resolveOutputChain,
     _transactionOwner: transactionOwner,
+    _transactionOpener: undefined,
     _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
     _config: config,
   }
