@@ -515,42 +515,20 @@ const chunks = chunkText(longDocument, {
 - Cost optimization
 - Large documents
 
-### Using Chunking with Embeddings
+### Chunking Long Documents
 
-#### Automatic Chunking in Field Definition
+Neither `searchable()` nor `embedding()` chunks a source field for you.
+`embedding()` emits one native `vector(n)` column per row (ADR-0045), and a
+chunked document needs several vectors — one per chunk — which does not fit
+in one column on one row. There is no config surface that turns a single
+field into several rows, so `chunkText()` above is a text-splitting utility
+you call yourself, and storing the resulting chunks is your list to design.
 
-```typescript
-content: searchable(text(), {
-  provider: 'openai',
-  dimensions: 1536,
-  chunking: {
-    strategy: 'recursive',
-    maxTokens: 250,
-    overlap: 50,
-  },
-})
-```
-
-A field's `chunking` is a `ChunkingConfig`, measured in **tokens** — not the
-`ChunkingOptions` that `chunkText()` above takes. They are separate types, and
-`ChunkingOptions` does not have one unit: `chunkSize` and `chunkOverlap` are
-characters under `recursive`, `sentence` and `sliding-window`, and tokens under
-`token-aware`, which scales them by the same ~4 characters per token. At that
-ratio, `maxTokens: 250` is about the same span of text as a recursive
-`chunkSize: 1000`.
-
-**How it works:**
-
-- Long content automatically chunked before embedding
-- Each chunk gets its own embedding
-- Multiple embeddings stored per document
-- Searches find best matching chunks
-
-#### Manual Chunking for Custom Workflows
-
-A chunk row's vector is written by your code rather than by the plugin, so the
-field has to say so. Without `allowManualWrites`, `embedding()` denies writes and
-the create below throws `Cannot create "embedding": field-level access denied.`:
+The pattern is a dedicated chunk list: one row per chunk, each with its own
+`embedding()` column. A chunk row's vector is written by your code rather
+than by the plugin, so the field has to say so. Without `allowManualWrites`,
+`embedding()` denies writes and the create below throws
+`Cannot create "embedding": field-level access denied.`:
 
 <!-- doc-check: whole="a bare `DocumentChunk:` object-literal property — one entry of a `lists:` object — not a statement" -->
 

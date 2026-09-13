@@ -9,11 +9,6 @@ export function normalizeRAGConfig(config: RAGConfig): NormalizedRAGConfig {
   return {
     provider: config.provider || null,
     providers: config.providers || {},
-    chunking: {
-      strategy: config.chunking?.strategy || 'recursive',
-      maxTokens: config.chunking?.maxTokens || 500,
-      overlap: config.chunking?.overlap || 50,
-    },
     buildTime: config.buildTime
       ? {
           enabled: config.buildTime.enabled,

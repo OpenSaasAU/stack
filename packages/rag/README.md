@@ -242,7 +242,6 @@ fields: {
 type SearchableOptions = {
   provider?: string // Embedding provider (e.g., 'openai', 'ollama')
   dimensions?: number // Vector dimensions (default: 1536)
-  chunking?: ChunkingConfig // Text chunking configuration
   embeddingFieldName?: string // Custom embedding field name (default: `${fieldName}Embedding`)
 }
 ```

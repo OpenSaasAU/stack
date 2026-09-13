@@ -7,7 +7,7 @@ import type {
   VectorColumnDescriptor,
   VectorDistanceFunction,
 } from '@opensaas/stack-core/extend'
-import type { EmbeddingProviderName, ChunkingConfig, StoredEmbedding } from '../config/types.js'
+import type { EmbeddingProviderName, StoredEmbedding } from '../config/types.js'
 import { redactEmbeddingForClient } from './embedding-display.js'
 
 /** The access methods pgvector builds a vector index with. */
@@ -125,11 +125,6 @@ export type EmbeddingField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldCon
    * @default false
    */
   allowManualWrites?: boolean
-
-  /**
-   * Only applies if sourceField is set.
-   */
-  chunking?: ChunkingConfig
 
   /**
    * @default true if sourceField is set

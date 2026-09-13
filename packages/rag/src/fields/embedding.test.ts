@@ -53,23 +53,6 @@ describe('Embedding Field', () => {
       expect(field.provider).toBe('openai')
     })
 
-    it('should support chunking configuration', () => {
-      const field = embedding({
-        sourceField: 'content',
-        chunking: {
-          strategy: 'recursive',
-          maxTokens: 500,
-          overlap: 50,
-        },
-      })
-
-      expect(field.chunking).toEqual({
-        strategy: 'recursive',
-        maxTokens: 500,
-        overlap: 50,
-      })
-    })
-
     it('should support UI configuration', () => {
       const field = embedding({
         ui: {
@@ -490,21 +473,6 @@ describe('Embedding Field', () => {
       expect(field.sourceField).toBe('content')
       expect(field.dimensions).toBe(1536)
       expect(field.provider).toBe('openai')
-    })
-
-    it('should support chunking for long documents', () => {
-      const field = embedding({
-        sourceField: 'content',
-        chunking: {
-          strategy: 'recursive',
-          maxTokens: 500,
-          overlap: 50,
-        },
-      })
-
-      expect(field.chunking?.strategy).toBe('recursive')
-      expect(field.chunking?.maxTokens).toBe(500)
-      expect(field.chunking?.overlap).toBe(50)
     })
 
     it('should support multiple providers via provider name', () => {

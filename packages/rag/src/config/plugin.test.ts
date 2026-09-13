@@ -629,6 +629,29 @@ describe('ragPlugin', () => {
       ])
     })
 
+    it('embeds a long source in one whole-text call — the field has no chunking option', async () => {
+      const { hook, writes, context } = await generationHook()
+      const longSource = 'lorem ipsum '.repeat(500) // 6000 characters
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'create',
+        status: 'committed',
+        inputData: { content: longSource },
+        item: { id: 'a1', content: longSource, contentEmbedding: null },
+        context,
+      })
+
+      // The `counting` provider's `embed` returns the whole input's length, so
+      // one write at that length is proof of one `embed()` call over the full
+      // source rather than several smaller calls over chunks of it.
+      expect(writes).toEqual([
+        expect.objectContaining({
+          stored: expect.objectContaining({ vector: [longSource.length] }),
+        }),
+      ])
+    })
+
     it('writes nothing for a rolled-back write', async () => {
       const { hook, writes, context } = await generationHook()
 

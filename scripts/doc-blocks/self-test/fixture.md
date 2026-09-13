@@ -528,11 +528,7 @@ import type {
   VectorDistanceFunction,
 } from '@opensaas/stack-core'
 import type { BaseFieldConfig, TypeDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
-import type {
-  ChunkingConfig,
-  EmbeddingIndexConfig,
-  ResolvedEmbeddingIndex,
-} from '@opensaas/stack-rag'
+import type { EmbeddingIndexConfig, ResolvedEmbeddingIndex } from '@opensaas/stack-rag'
 
 export type EmbeddingField = {
   type: 'embedding'
@@ -576,7 +572,6 @@ export type EmbeddingField = {
   distanceFunction?: VectorDistanceFunction
   index?: EmbeddingIndexConfig
   allowManualWrites?: boolean
-  chunking?: ChunkingConfig
   autoGenerate?: boolean
   getMetadataColumn?: (fieldName: string) => string
   getVectorIndex?: (fieldName: string, listKey?: string) => ResolvedEmbeddingIndex | undefined
@@ -595,11 +590,7 @@ import type {
   VectorDistanceFunction,
 } from '@opensaas/stack-core'
 import type { BaseFieldConfig, TypeDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
-import type {
-  ChunkingConfig,
-  EmbeddingIndexConfig,
-  ResolvedEmbeddingIndex,
-} from '@opensaas/stack-rag'
+import type { EmbeddingIndexConfig, ResolvedEmbeddingIndex } from '@opensaas/stack-rag'
 
 export type EmbeddingField = {
   type: 'embedding'
@@ -643,7 +634,6 @@ export type EmbeddingField = {
   distanceFunction?: VectorDistanceFunction
   index?: EmbeddingIndexConfig
   allowManualWrites?: boolean
-  chunking?: ChunkingConfig
   autoGenerate?: boolean
   getMetadataColumn?: (fieldName: string) => string
   getVectorIndex?: (fieldName: string, listKey?: string) => ResolvedEmbeddingIndex | undefined
