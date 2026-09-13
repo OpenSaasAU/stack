@@ -558,6 +558,67 @@ describe('ragPlugin', () => {
       await expect(tool.handler({ input, context })).rejects.toThrow(message)
       expect(calls).toEqual([])
     })
+
+    /**
+     * A search tool over a list carrying two embedding fields, whose
+     * `nearest()` double answers with a row still carrying both — the shape
+     * `nearest()` itself returns before this handler projects it (#1297).
+     */
+    async function searchToolWithMatches(
+      matches: { item: Record<string, unknown>; score: number }[],
+    ) {
+      const harness = pluginContext({
+        lists: {
+          Article: {
+            fields: {
+              title: text(),
+              content: text(),
+              contentEmbedding: embedding({
+                sourceField: 'content',
+                provider: 'wide',
+                dimensions: 4,
+              }),
+              titleEmbedding: embedding({ sourceField: 'title', provider: 'wide', dimensions: 4 }),
+            },
+          },
+        },
+      })
+
+      await ragPlugin({ provider: { type: 'wide', dimensions: 4 } }).init!(harness.context)
+
+      const surface: AccessContext['db'] = {}
+      const db = new Proxy(surface, {
+        get: (_target, _listKey) =>
+          new Proxy(
+            {},
+            {
+              get: (_delegate, member) =>
+                member === 'nearest' ? async () => matches : unreachable,
+            },
+          ),
+      })
+
+      return { tool: harness.mcpTools[0], context: stubContext({ db }) }
+    }
+
+    it('keeps every embedding column and its metadata out of the result, not only the searched one', async () => {
+      const item = {
+        id: '1',
+        title: 'Hello',
+        content: 'Hello world',
+        contentEmbedding: { vector: [0, 0, 0, 1], metadata: { model: 'wide-1' } },
+        titleEmbedding: { vector: [0, 0, 0, 1], metadata: { model: 'wide-1' } },
+      }
+      const { tool, context } = await searchToolWithMatches([{ item, score: 0.9 }])
+
+      const result = (await tool.handler({ input: { query: 'anything' }, context })) as {
+        results: unknown[]
+      }
+
+      expect(result.results).toEqual([
+        { id: '1', title: 'Hello', content: 'Hello world', _similarity: 0.9 },
+      ])
+    })
   })
 
   describe('the generation path', () => {

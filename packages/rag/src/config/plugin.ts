@@ -88,6 +88,11 @@ function numberArg(input: unknown, key: string, toolName: string): number | unde
   return value
 }
 
+/** `row` without the named keys — used to drop embedding columns from a search result. */
+function omit(row: Record<string, unknown>, keys: ReadonlySet<string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !keys.has(key)))
+}
+
 /**
  * A provider's output dimension where it is known without calling anything.
  * OpenAI's models each have a fixed size; Ollama declares its own; a custom
@@ -335,6 +340,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
             const providerNames = new Map(
               embeddingFields.map(([name, fieldConfig]) => [name, fieldConfig.provider]),
             )
+            // Every embedding field on this list, not only the one searched —
+            // a result still carries the OTHER embedding columns too, and each
+            // is a vector plus its metadata that the assistant never asked for
+            // (#1297).
+            const embeddingFieldNames = new Set(embeddingFields.map(([name]) => name))
 
             context.registerMcpTool({
               name: toolName,
@@ -401,7 +411,10 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 })
 
                 return {
-                  results: matches.map((match) => ({ ...match.item, _similarity: match.score })),
+                  results: matches.map((match) => ({
+                    ...omit(match.item, embeddingFieldNames),
+                    _similarity: match.score,
+                  })),
                   count: matches.length,
                 }
               },
