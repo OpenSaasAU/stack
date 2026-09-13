@@ -160,6 +160,6 @@ export async function findSimilar<TRow extends Row = Row>(
     throw new Error(`Item "${itemId}" does not have an embedding in field "${fieldName}"`)
   }
 
-  const predicate = excludeSelf ? { ...where, id: { not: itemId } } : where
+  const predicate = excludeSelf ? { AND: [where, { id: { not: itemId } }] } : where
   return await list.where(predicate).nearest(fieldName, vector, bounds(limit, minScore))
 }
