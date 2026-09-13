@@ -20,6 +20,7 @@
     "check:adr-duplicates": "node scripts/check-adr-duplicates.mjs",
     "check:prisma-error-codes": "node scripts/check-prisma-error-codes.mjs",
     "check:doc-ts-blocks": "node scripts/check-doc-typescript-blocks.mjs",
+    "check:doc-import-specifiers": "node scripts/check-doc-import-specifiers.mjs",
     "check:client-side-effect-imports": "node scripts/check-client-side-effect-imports.mjs",
     "release": "pnpm build && changeset publish",
     "test:e2e": "playwright test",
