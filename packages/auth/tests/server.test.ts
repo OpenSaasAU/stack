@@ -632,6 +632,43 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     )
     expect(betterAuthMock).not.toHaveBeenCalled()
   })
+
+  it('recovers after a context that rejects its first await and resolves its second, like the generated rawOpensaasContext (#1377)', async () => {
+    const authConfig = makeAuthConfig()
+    const opensaasConfig = makeOpensaasConfig(authConfig)
+    const resolvedContext = makeContext()
+
+    // A minimal double for the generated `rawOpensaasContext`: a stable
+    // `then`-able captured once by `createAuth`, whose first attempt fails
+    // (the database isn't reachable yet) and whose second succeeds. If
+    // `createAuth` ever goes back to pre-resolving this into a plain
+    // `Promise.resolve(context)` up front, that first rejection would settle
+    // permanently and this test's second call would replay it instead of
+    // recovering.
+    let attempts = 0
+    const flakyContext = {
+      then: (
+        onFulfilled?: ((value: AccessContext) => unknown) | null,
+        onRejected?: ((reason: unknown) => unknown) | null,
+      ) => {
+        attempts += 1
+        const attempt =
+          attempts === 1
+            ? Promise.reject(new Error('database not reachable yet'))
+            : Promise.resolve(resolvedContext)
+        return attempt.then(onFulfilled, onRejected)
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal test fixture
+    } as any
+
+    const auth = createAuth(opensaasConfig, flakyContext)
+
+    await expect(auth.api.getSession({})).rejects.toThrow('database not reachable yet')
+    expect(betterAuthMock).not.toHaveBeenCalled()
+
+    await auth.api.getSession({})
+    expect(betterAuthMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('buildBetterAuthOptions plugin-tuple argument', () => {

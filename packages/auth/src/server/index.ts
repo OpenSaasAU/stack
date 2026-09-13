@@ -493,27 +493,42 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   context: AnyStackContext | Promise<AnyStackContext>,
   plugins?: TPlugins,
 ): Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>> {
-  const configPromise = Promise.resolve(opensaasConfig)
-  const contextPromise = Promise.resolve(context)
-
   type AuthInstance = Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>>
   let authInstance: AuthInstance | null = null
   let authPromise: Promise<AuthInstance> | null = null
 
-  async function getAuthInstance() {
-    if (authInstance) return authInstance
+  async function buildAuthInstance(): Promise<AuthInstance> {
+    // `opensaasConfig`/`context` are passed straight through on every attempt,
+    // never pre-resolved into a memoised `Promise.resolve(...)` here: doing
+    // that once would settle a retryable `context` (the generated
+    // `rawOpensaasContext`, which drops its own memo on failure so a later
+    // `await` retries construction — see its doc comment) into a plain,
+    // permanently-settled Promise the first time it's awaited, reproducing
+    // issue #1377 one layer up. `buildBetterAuthOptions` does its own
+    // `Promise.resolve()` per call, so each retry here re-awaits the original
+    // value fresh.
+    const betterAuthConfig = plugins
+      ? await buildBetterAuthOptions(opensaasConfig, context, plugins)
+      : await buildBetterAuthOptions(opensaasConfig, context)
+    const instance = betterAuth(betterAuthConfig)
+    authInstance = instance
+    return instance
+  }
 
-    if (!authPromise) {
-      authPromise = (async () => {
-        const betterAuthConfig = plugins
-          ? await buildBetterAuthOptions(configPromise, contextPromise, plugins)
-          : await buildBetterAuthOptions(configPromise, contextPromise)
-        authInstance = betterAuth(betterAuthConfig)
-        return authInstance
-      })()
-    }
+  function getAuthInstance(): Promise<AuthInstance> {
+    if (authInstance) return Promise.resolve(authInstance)
+    if (authPromise) return authPromise
 
-    return authPromise
+    // Dropped on failure for the same reason the generated client singleton
+    // and `rawOpensaasContext` drop theirs: a boot that races the database
+    // (or any other transient construction failure) must not poison every
+    // later request for the life of the process.
+    const attempt = buildAuthInstance().catch((error: unknown) => {
+      if (authPromise === attempt) authPromise = null
+      throw error
+    })
+    authPromise = attempt
+    return attempt
   }
 
   return new Proxy({} as AuthInstance, {
