@@ -74,3 +74,8 @@ export {
 // the project itself (ADR-0063). The public accessor, `findDatabaseUrl`,
 // reports the URL alone.
 export { findDatabaseConnection } from './db/url.js'
+
+// The process-wide singleton registry a bundler-duplicated module has to
+// share a value through — used by the origin store, the engine face, and the
+// generated context's client singleton (ADR-0070).
+export { processGlobal } from './lib/process-global.js'

@@ -6,7 +6,11 @@
  * - Every TCP connection is multiplexed onto **one** PGlite session, so a
  *   client with a multi-connection pool corrupts its own session state.
  *   Clients bind a single connection; `maxConnections` only buys headroom for
- *   the several single-connection clients that share one sidecar.
+ *   the several single-connection clients that share one sidecar. That
+ *   headroom counts distinct PROCESSES (the app, the CLI, a seed, a `psql`) —
+ *   the generated context's own client is one process-wide singleton
+ *   regardless of how many times a bundler duplicates its module (ADR-0070),
+ *   so one running app never claims more than one of these slots on its own.
  * - A connection holding an open transaction holds the whole query queue.
  * - PGlite opens a data directory in one process at a time. `startDevDatabase`
  *   enforces this against itself — a second call against the same `dataDir`
