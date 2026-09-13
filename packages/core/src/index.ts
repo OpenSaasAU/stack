@@ -291,6 +291,7 @@ export { validateRelations } from './validation/relations.js'
 export { validateDatabaseConfig } from './validation/database-config.js'
 export { validateExtensionPacks } from './validation/extension-packs.js'
 export { validateFieldNames } from './validation/field-names.js'
+export { validateDefaultValues } from './validation/default-value.js'
 export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-refusal.js'
 
 // The stack's database URL lookup — the single place a connection string is

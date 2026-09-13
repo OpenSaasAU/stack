@@ -37,7 +37,7 @@ export function applyCreateDefaults(
   return resolvedData
 }
 
-function isNowSentinel(value: unknown): boolean {
+export function isNowSentinel(value: unknown): boolean {
   return (
     typeof value === 'object' &&
     value !== null &&

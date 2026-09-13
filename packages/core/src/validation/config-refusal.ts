@@ -16,6 +16,7 @@ export type ConfigRefusalReason =
   | 'foreign-key-column-collision'
   | 'synthetic-relation-collision'
   | 'field-descriptor-error'
+  | 'default-value-rejected-by-validation'
 
 /**
  * A config declaration the Prisma 8 contract cannot carry, found before
