@@ -1,4 +1,10 @@
-import type { DatabaseConfig, FieldConfig, ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  resolveJunctionEdge,
+  type DatabaseConfig,
+  type FieldConfig,
+  type ListConfig,
+  type OpenSaasConfig,
+} from '@opensaas/stack-core'
 import { computeDefaultColumns, withStructuralTimestampDefaults } from './defaultColumns.js'
 
 /**
@@ -52,9 +58,13 @@ export interface RelationshipTableSection {
   /** Numeric columns to sum in the totals footer (explicit opt-in only). */
   sumColumns: string[]
   /**
-   * The configured row-removal semantics (ADR-0018, issue #739), defaulting to
-   * the non-destructive `'disconnect'`. `'delete'` truly deletes the related
-   * row (confirmed); `'none'` hides the control.
+   * The configured row-removal semantics (ADR-0018, issue #739): `'disconnect'`
+   * nulls the back-reference, `'delete'` truly deletes the related row
+   * (confirmed), `'none'` hides the control. Defaults to `'delete'` when the
+   * section resolves as a junction edge (#1339) — the related row exists only
+   * to express the edge, so nulling one endpoint would orphan it — and to
+   * `'disconnect'` otherwise. An explicit `ui.itemView.removeAction` always
+   * wins over the default.
    */
   removeAction: 'disconnect' | 'delete' | 'none'
   /**
@@ -93,26 +103,43 @@ function readPositiveInteger(value: unknown): number {
     : DEFAULT_ITEM_VIEW_TAKE
 }
 
-/** `ui.itemView` is `unknown` (index-signature), so each property is narrowed at runtime instead of cast. */
-function readRelationshipItemView(field: FieldConfig): {
+/**
+ * `ui.itemView` is `unknown` (index-signature), so each property is narrowed at
+ * runtime instead of cast.
+ *
+ * The default `removeAction` depends on the section's shape (#1339): a section
+ * backed by an explicit junction list defaults to `'delete'` — the only remove
+ * that expresses anything, since nulling one of an edge row's two endpoints
+ * leaves an orphan pointing nowhere — while an ordinary to-many back-reference
+ * keeps `'disconnect'`, which correctly leaves the child record on its own. An
+ * explicit `removeAction` in config always wins over whichever default applies.
+ */
+function readRelationshipItemView(
+  field: FieldConfig,
+  isJunctionEdge: boolean,
+): {
   displayMode: 'table' | 'picker'
   columns?: string[]
   sum?: string[]
   take: number
   removeAction: 'disconnect' | 'delete' | 'none'
 } {
+  const defaultRemoveAction = isJunctionEdge ? 'delete' : 'disconnect'
   const raw: unknown = field.ui ? field.ui.itemView : undefined
   if (typeof raw !== 'object' || raw === null) {
-    return { displayMode: 'table', take: DEFAULT_ITEM_VIEW_TAKE, removeAction: 'disconnect' }
+    return { displayMode: 'table', take: DEFAULT_ITEM_VIEW_TAKE, removeAction: defaultRemoveAction }
   }
   const displayMode = 'displayMode' in raw && raw.displayMode === 'picker' ? 'picker' : 'table'
   const columns = 'columns' in raw ? readStringArray(raw.columns) : undefined
   const sum = 'sum' in raw ? readStringArray(raw.sum) : undefined
   const take = 'take' in raw ? readPositiveInteger(raw.take) : DEFAULT_ITEM_VIEW_TAKE
   const removeAction =
-    'removeAction' in raw && (raw.removeAction === 'delete' || raw.removeAction === 'none')
+    'removeAction' in raw &&
+    (raw.removeAction === 'delete' ||
+      raw.removeAction === 'disconnect' ||
+      raw.removeAction === 'none')
       ? raw.removeAction
-      : 'disconnect'
+      : defaultRemoveAction
   return { displayMode, columns, sum, take, removeAction }
 }
 
@@ -150,7 +177,8 @@ function isToManyRelationship(field: FieldConfig): boolean {
  */
 export function rendersAsRelationshipTable(field: FieldConfig): boolean {
   if (!isToManyRelationship(field) || !('ref' in field)) return false
-  return readRelationshipItemView(field).displayMode === 'table'
+  // `displayMode` never depends on the junction default, so the flag here is inert.
+  return readRelationshipItemView(field, false).displayMode === 'table'
 }
 
 /**
@@ -222,7 +250,8 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
       continue
     }
 
-    const overrides = readRelationshipItemView(field)
+    const isJunctionEdge = resolveJunctionEdge(config, listKey, fieldName) !== null
+    const overrides = readRelationshipItemView(field, isJunctionEdge)
     const ref = typeof field.ref === 'string' ? field.ref : ''
     const [relatedListKey, backReferenceField] = ref.split('.')
     const relatedListConfig = config.lists[relatedListKey]
