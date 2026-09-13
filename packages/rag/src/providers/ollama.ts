@@ -70,6 +70,24 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
         prompt: text,
       })
 
+      // The declared `dimensions` is never reconciled against reality anywhere
+      // else in the pipeline — it sizes the stored column and the zero-padding
+      // below. Catching a mismatch here, against the first real vector the
+      // model returns, fails at generation time with the actual width named;
+      // left unchecked, the same mismatch instead surfaces at search time as
+      // an opaque length comparison against a column that was already
+      // written wrong (#1288). Checked inside this try so a malformed
+      // response missing `embedding` entirely gets the same wrapped
+      // diagnosis as every other failure here, rather than a raw TypeError.
+      if (response.embedding.length !== this.dimensions) {
+        throw new Error(
+          `Ollama embedding provider (model "${this.model}") declared dimensions of ` +
+            `${this.dimensions}, but the model returned a vector of length ` +
+            `${response.embedding.length}. Set "dimensions" (or OLLAMA_EMBEDDING_DIMENSIONS) to ` +
+            `${response.embedding.length}.`,
+        )
+      }
+
       return response.embedding
     } catch (error) {
       throw new Error(`Ollama embedding generation failed: ${(error as Error).message}`)

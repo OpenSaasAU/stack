@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { OpenAIEmbeddingProvider } from './openai.js'
 import { OllamaEmbeddingProvider } from './ollama.js'
 import { createEmbeddingProvider } from './index.js'
@@ -198,6 +198,50 @@ describe('Embedding Providers', () => {
         // Just check that it throws an error
         await expect(provider.embed('test')).rejects.toThrow()
       })
+
+      describe('reconciling the declared dimensions against the real vector', () => {
+        afterEach(() => {
+          vi.unstubAllGlobals()
+        })
+
+        it('fails, naming the model, the declared width and the real one', async () => {
+          vi.stubGlobal(
+            'fetch',
+            vi.fn(
+              async () =>
+                new Response(
+                  JSON.stringify({ embedding: new Array(1024).fill(0.1), model: 'llama2' }),
+                ),
+            ),
+          )
+
+          const provider = new OllamaEmbeddingProvider({
+            type: 'ollama',
+            model: 'llama2',
+            dimensions: 768,
+          })
+
+          await expect(provider.embed('hello')).rejects.toThrow(
+            'Ollama embedding provider (model "llama2") declared dimensions of 768, but the ' +
+              'model returned a vector of length 1024.',
+          )
+        })
+
+        it('passes the vector through unchanged when the width matches', async () => {
+          const answer = new Array(768).fill(0.5)
+          vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response(JSON.stringify({ embedding: answer, model: 'nomic' }))),
+          )
+
+          const provider = new OllamaEmbeddingProvider({
+            type: 'ollama',
+            dimensions: 768,
+          })
+
+          await expect(provider.embed('hello')).resolves.toEqual(answer)
+        })
+      })
     })
 
     describe('embedBatch', () => {
@@ -220,6 +264,25 @@ describe('Embedding Providers', () => {
         // This test will fail if Ollama is not running, which is expected
         // The error could be about initialization or about empty texts
         await expect(provider.embedBatch(['', '   ', '\n'])).rejects.toThrow()
+      })
+
+      describe('when the model returns the wrong width', () => {
+        afterEach(() => {
+          vi.unstubAllGlobals()
+        })
+
+        it('fails the whole batch with a named error rather than padding a ragged width', async () => {
+          vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response(JSON.stringify({ embedding: [0.1, 0.2], model: 'x' }))),
+          )
+
+          const provider = new OllamaEmbeddingProvider({ type: 'ollama', dimensions: 768 })
+
+          await expect(provider.embedBatch(['hello', ''])).rejects.toThrow(
+            'declared dimensions of 768, but the model returned a vector of length 2',
+          )
+        })
       })
     })
   })
