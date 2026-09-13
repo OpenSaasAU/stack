@@ -65,6 +65,12 @@ describe('Relationship Access Control', () => {
 
       expect(result).toBeNull()
     })
+
+    it('should return null for a ref with more than one dot', () => {
+      const result = getRelatedListConfig('Post.author.extra', config)
+
+      expect(result).toBeNull()
+    })
   })
 
   describe('filterReadableFields with relationships', () => {

@@ -285,6 +285,11 @@ describe('Access Control', () => {
         const accessFilter = { createdAt: { lt: new Date(0) }, deletedAt: null }
         expect(mergeFilters(undefined, accessFilter)).toEqual(accessFilter)
       })
+
+      it('walks an array branch to the end without throwing when it has no undefined', () => {
+        const accessFilter = { OR: [{ published: true }, { authorId: 'a' }] }
+        expect(mergeFilters(undefined, accessFilter)).toEqual(accessFilter)
+      })
     })
   })
 

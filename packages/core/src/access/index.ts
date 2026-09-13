@@ -21,7 +21,6 @@ export {
   isPrismaFilter,
   getRelatedListConfig,
   resolveSyntheticReverseRelation,
-  listSyntheticReverseRelationNames,
 } from './engine.js'
 export type { SyntheticReverseRelation } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).
@@ -30,12 +29,6 @@ export {
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
-// Read-path key validation — the read counterpart to the write
-// path's #564 undeclared-key reject.
-export { validateQueryKeys } from './query-validation.js'
-// Read-path field-level access on `where`/`orderBy` keys — a field the
-// session cannot read cannot be named in a predicate either (#915).
-export { validateQueryFieldReadAccess } from './query-validation.js'
 // The foreign-key column of a to-one relationship a read never named at all —
 // the legacy-surface counterpart of `narrowUnincludedForeignKeys` in
 // `secured/read.ts` (issue #1243).
@@ -44,10 +37,8 @@ export {
   emptyForeignKeyVisibilityMap,
 } from './foreign-key-visibility.js'
 export type { ForeignKeyVisibility, ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
-// Access-scoped to-many relationship counts (admin list view, issue #732)
-// and the shared per-relation resolver `_count` scoping (issue #1087) reuses.
-export { isToManyRelationshipField, resolveCountAccessEntryForList } from './relationship-count.js'
-export type { CountAccessEntry } from './relationship-count.js'
+// Which fields carry a to-many relationship count (admin list view, issue #732).
+export { isToManyRelationshipField } from './relationship-count.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets
