@@ -439,7 +439,7 @@ const lists = {
 
 An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-foreign-key side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry and the bad field — never silently dropped. The same is true for an empty `fields` array, and for a single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes (the error names both — remove one of them).
 
-**Other generate-time refusals**, each naming the list, the entry and the fix: `many: true` on both sides of a relationship (implicit many-to-many is not generated — declare a junction list); `db.idField` on a singleton; a field type needing an undeclared extension pack; a pack missing a required subpath; a duplicate pack `name` with a differing `from`; `needs` on a field with no `resolveOutput`; `db.foreignKey: true` on both sides of a one-to-one; a relationship pointing at a composite-keyed list.
+**Other generate-time refusals**, each naming the list, the entry and the fix: `many: true` on both sides of a relationship (implicit many-to-many is not generated — declare a junction list); `db.idField` on a singleton; a field type needing an undeclared extension pack; a pack missing a required subpath; a duplicate pack `name` with a differing `from`; `needs` on a field with no `resolveOutput`; `db.foreignKey: true` on both sides of a one-to-one; a relationship pointing at a composite-keyed list; a non-nullable part column on a multi-column (`kind: 'columns'`) field — the secured surface always types its assembled logical key as optional on create, so there is no all-parts-required case for it to satisfy a NOT NULL part with.
 
 ### Migrations and the dev loop
 

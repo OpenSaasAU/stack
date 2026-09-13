@@ -36,21 +36,24 @@ function isVirtual(field: FieldConfig): boolean {
 }
 
 /**
- * The `kind` of a field's contract descriptor, or `undefined` when it
- * declares none or throws describing itself. A throw is swallowed here for
- * the same reason `validateFieldConfig`'s own reader swallows it: this
- * renderer only runs after `validateConfigFields` has already gated the
- * config, so a field reaching here that still throws fails at the step
- * designed to name it, not with an opaque stack trace out of this one.
+ * A field's contract descriptor, read once so its `kind` and (for a
+ * multi-column field) its `columns` are never fetched by separate calls into
+ * the same — possibly throwing — `getContractField()` (mirrors `derive.ts`'s
+ * single call). `undefined` when the field declares none or throws
+ * describing itself; a throw is swallowed here for the same reason
+ * `validateFieldConfig`'s own reader swallows it: this renderer only runs
+ * after `validateConfigFields` has already gated the config, so a field
+ * reaching here that still throws fails at the step designed to name it, not
+ * with an opaque stack trace out of this one.
  */
-function descriptorKind(
+function readDescriptor(
   field: FieldConfig,
   fieldKey: string,
   listKey: string,
   config: OpenSaasConfig,
-): ContractFieldDescriptor['kind'] | undefined {
+): ContractFieldDescriptor | undefined {
   try {
-    return field.getContractField?.(fieldKey, listKey, config)?.kind
+    return field.getContractField?.(fieldKey, listKey, config)
   } catch {
     return undefined
   }
@@ -62,31 +65,6 @@ function descriptorKind(
 function renderMembers(members: string[], indent: string): string {
   if (members.length === 0) return EMPTY
   return `{\n${members.map((m) => `${indent}  ${m}`).join('\n')}\n${indent}}`
-}
-
-/**
- * A multi-column field's physical column names, as its contract descriptor
- * spells them — never `getColumnNames`, which is optional and, per
- * `validateFieldConfig`, may legitimately disagree with the descriptor for a
- * field that narrows to one column in some mode. `undefined` for anything
- * that is not a `kind: 'columns'` descriptor, including a throw a field
- * builder raises describing itself (swallowed for the same reason
- * `descriptorKind` swallows it).
- */
-function physicalColumnsOf(
-  field: FieldConfig,
-  fieldKey: string,
-  listKey: string,
-  config: OpenSaasConfig,
-): string[] | undefined {
-  try {
-    const descriptor = field.getContractField?.(fieldKey, listKey, config)
-    return descriptor?.kind === 'columns'
-      ? descriptor.columns.map((column) => column.name)
-      : undefined
-  } catch {
-    return undefined
-  }
 }
 
 /**
@@ -109,11 +87,12 @@ function generateRemainderEntry(
 
   for (const [fieldName, field] of Object.entries(fields)) {
     const outputType = readOutputType(field)
+    const descriptor = readDescriptor(field, fieldName, listName, config)
     // A field that stores nothing lands in `computed` by its descriptor's
     // `kind`, not by the `virtual` flag alone: a third-party field can
     // declare `kind: 'computed'` without also setting the flag, and the
     // descriptor is the source of truth (mirrors `validateFieldConfig`).
-    if (isVirtual(field) || descriptorKind(field, fieldName, listName, config) === 'computed') {
+    if (isVirtual(field) || descriptor?.kind === 'computed') {
       // A computed field has no column, so the contract has no type for it. An
       // `unknown` here would compile for every consumer and guard none of them,
       // so the missing declaration is reported instead.
@@ -130,9 +109,8 @@ function generateRemainderEntry(
     const inputType = readInputType(field)
     if (inputType !== null) input.push(`${fieldName}: ${inputType}`)
 
-    const physicalColumns = physicalColumnsOf(field, fieldName, listName, config)
-    if (physicalColumns !== undefined) {
-      const names = physicalColumns.map((name) => `'${name}'`)
+    if (descriptor?.kind === 'columns') {
+      const names = descriptor.columns.map((column) => `'${column.name}'`)
       columns.push(`${fieldName}: ${names.length === 0 ? 'never' : names.join(' | ')}`)
     }
   }

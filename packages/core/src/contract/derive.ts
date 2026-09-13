@@ -583,6 +583,15 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         case 'columns':
           draft.multiColumnFields.add(fieldKey)
           for (const column of descriptor.columns) {
+            if (column.nullable === false) {
+              throw new Error(
+                `Field "${listKey}.${fieldKey}" (type "${field.type}") declares its multi-column ` +
+                  `part "${column.name}" as non-nullable. The secured surface always types a ` +
+                  `multi-column field's assembled logical key as optional on create — there is no ` +
+                  `all-parts-required case for it to satisfy a NOT NULL part with — so every part ` +
+                  `column must stay nullable. Remove nullable: false from this column.`,
+              )
+            }
             claimMember(listKey, draft, column.name, `fields.${fieldKey}`)
             draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
           }
