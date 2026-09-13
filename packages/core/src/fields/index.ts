@@ -1262,9 +1262,12 @@ export function relationship<
 
     const labelField = getLabelFieldName(relatedListConfig)
     const labelFieldConfig = relatedListConfig.fields[labelField]
-    // A virtual label field has no queryable column, so `contains` can't run
-    // against it — the relationship is then not filterable.
-    if (labelFieldConfig?.virtual === true) return undefined
+    // A virtual label field has no queryable column, and a list with no
+    // `name`/`title`/`ui.labelField` resolves to `id` — a field absent from
+    // `fields` entirely, since it's never user-declared. Neither has a
+    // queryable column `contains` can run against, so the relationship is
+    // then not filterable (#1359).
+    if (!labelFieldConfig || labelFieldConfig.virtual === true) return undefined
 
     return {
       operators: ['eq'],

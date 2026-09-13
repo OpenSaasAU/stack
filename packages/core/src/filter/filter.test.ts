@@ -346,6 +346,39 @@ describe('core field Filter specs', () => {
     })
   })
 
+  it('declines the filter when the related list has no conventional label field (#1359)', async () => {
+    // Ledger has neither `name` nor `title`, and no `ui.labelField` — its
+    // label resolves to `id`, which is never a declared field. A to-one
+    // filter against it must decline rather than emit `contains` on `id`
+    // (a Where-vocabulary refusal the engine would otherwise throw on).
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Ledger: list({ fields: { amount: integer() } }),
+        Entry: list({ fields: { ledger: relationship({ ref: 'Ledger' }) } }),
+      },
+    }
+    const spec = gatedConfig.lists.Entry.fields.ledger.getFilterSpec!(
+      'ledger',
+      'Entry',
+      gatedConfig,
+    )
+    expect(spec).toBeUndefined()
+
+    // Both call paths degrade the same way — no spec means the token falls
+    // back to free text rather than reaching the engine, so `ListView` and a
+    // direct `buildListFilterWhere` caller behave identically instead of one
+    // silently returning 0 results and the other throwing.
+    const where = await buildListFilterWhere(
+      'ledger:something',
+      gatedConfig.lists.Entry,
+      'Entry',
+      gatedConfig,
+      noAccessArgs,
+    )
+    expect(where).toBeUndefined()
+  })
+
   it('does not produce specs for password/json/virtual (absence degrades gracefully)', async () => {
     // A list of non-filterable fields yields no specs at all.
     const specsForUser = await collectFilterSpecs(config.lists.User, 'User', config, noAccessArgs)
