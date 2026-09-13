@@ -465,7 +465,10 @@ export type FieldHooks<
     | Promise<GetFieldValueType<TTypeInfo, TFieldKey> | undefined>
 }
 
-export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
+export type BaseFieldConfig<
+  TTypeInfo extends TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = {
   type: string
   access?: FieldAccess<
     TTypeInfo['item'],
@@ -473,7 +476,7 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
     TTypeInfo['inputs']['update']
   >
   defaultValue?: unknown
-  hooks?: FieldHooks<TTypeInfo>
+  hooks?: FieldHooks<TTypeInfo, TKey>
   /**
    * Marks this field as virtual — not stored in database, computed via
    * `resolveInput`/`resolveOutput` hooks, and excluded from the contract
@@ -759,16 +762,12 @@ export type BaseFieldConfig<TTypeInfo extends TypeInfo> = {
    * no `resolveOutput` hook is dead config and fails `pnpm generate`.
    *
    * Typed as a plain `string[]`, not narrowed to this list's own relation
-   * keys: `BaseFieldConfig` is the contextual type EVERY field builder's
-   * return type is checked against, including non-generic third-party ones
-   * (`richText(): RichTextField`, with no `TTypeInfo` parameter of its own —
-   * the documented third-party field pattern). Narrowing `needs` per-list
-   * would make `needs`'s type on a fixed, unparameterized third-party field
-   * config disagree with the narrower type this list's own slot expects,
-   * breaking assignability for every such field regardless of whether it
-   * uses `needs` at all. A misspelled or non-relation entry is instead
-   * caught by `pnpm generate` (`validateNeedsDeclarations`), which has no
-   * such constraint.
+   * keys, unlike {@link BaseFieldConfig}'s own `TKey` (issue #1306): a
+   * `needs` entry names a DIFFERENT field on the SAME list, so narrowing it
+   * would require threading that field's key too, for no reader-facing
+   * benefit `pnpm generate` (`validateNeedsDeclarations`) doesn't already
+   * provide by rejecting a misspelled or non-relation entry at generate
+   * time.
    *
    * @example
    * ```typescript
@@ -930,7 +929,10 @@ export type VectorColumnDescriptor = {
   distanceFunction: VectorDistanceFunction
 }
 
-export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type TextField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'text'
   validation?: {
     isRequired?: boolean
@@ -945,7 +947,10 @@ export type TextField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<T
   }
 }
 
-export type IntegerField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type IntegerField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'integer'
   validation?: {
     isRequired?: boolean
@@ -955,7 +960,10 @@ export type IntegerField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
   isIndexed?: boolean | 'unique'
 }
 
-export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type DecimalField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'decimal'
   defaultValue?: string
   precision?: number
@@ -976,7 +984,10 @@ export type DecimalField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfi
  * string over MCP — `bigint` is not JSON-serialisable, so the MCP handler
  * renders it as a string rather than throwing.
  */
-export type BigIntField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type BigIntField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'bigInt'
   defaultValue?: bigint | number | string
   validation?: {
@@ -987,17 +998,26 @@ export type BigIntField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig
   isIndexed?: boolean | 'unique'
 }
 
-export type CheckboxField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type CheckboxField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'checkbox'
 }
 
-export type TimestampField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type TimestampField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'timestamp'
   defaultValue?: { kind: 'now' } | Date
   isIndexed?: boolean | 'unique'
 }
 
-export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type CalendarDayField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'calendarDay'
   defaultValue?: string
   validation?: {
@@ -1006,7 +1026,10 @@ export type CalendarDayField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldC
   isIndexed?: boolean | 'unique'
 }
 
-export type PasswordField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type PasswordField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'password'
   validation?: {
     isRequired?: boolean
@@ -1038,7 +1061,10 @@ export type SelectOption = {
   }
 }
 
-export type SelectField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type SelectField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'select'
   options: Array<SelectOption>
   defaultValue?: string
@@ -1195,140 +1221,145 @@ export type RelationshipItemViewConfig = {
   removeAction?: 'disconnect' | 'delete' | 'none'
 }
 
-export type RelationshipField<TTypeInfo extends TypeInfo = TypeInfo> =
-  BaseFieldConfig<TTypeInfo> & {
-    type: 'relationship'
-    ref: string // Format: 'ListName.fieldName' or 'ListName'
-    many?: boolean
+export type RelationshipField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
+  type: 'relationship'
+  ref: string // Format: 'ListName.fieldName' or 'ListName'
+  many?: boolean
+  /**
+   * Controls whether the foreign key column carries a contract-level index
+   * or unique constraint. Defaults to true for all foreign key fields
+   * (matching Keystone behavior). Can be set to 'unique' for a unique
+   * constraint or false to leave the column unindexed.
+   *
+   * @default true (for foreign key fields)
+   *
+   * @example
+   * ```typescript
+   * // Standard indexed foreign key (default)
+   * author: relationship({ ref: 'User.posts' })
+   * // Contract: an index on the authorId column
+   *
+   * // Unique foreign key (one-to-one)
+   * author: relationship({ ref: 'User.posts', isIndexed: 'unique' })
+   * // Contract: a unique constraint on the authorId column
+   *
+   * // Disable indexing (not recommended, may cause performance issues)
+   * author: relationship({ ref: 'User.posts', isIndexed: false })
+   * // No index or constraint on the column
+   * ```
+   */
+  isIndexed?: boolean | 'unique'
+  db?: {
     /**
-     * Controls whether the foreign key column carries a contract-level index
-     * or unique constraint. Defaults to true for all foreign key fields
-     * (matching Keystone behavior). Can be set to 'unique' for a unique
-     * constraint or false to leave the column unindexed.
+     * Controls DB-level nullability of the foreign key column (and its
+     * relation field) independently of the many side's own shape. Only
+     * meaningful on the FK-owning (single) side of a relationship — the
+     * many side has no column of its own to make non-nullable and rejects
+     * this option.
      *
-     * @default true (for foreign key fields)
+     * @default true (nullable, matching every relationship generated before
+     * this option existed)
      *
      * @example
      * ```typescript
-     * // Standard indexed foreign key (default)
-     * author: relationship({ ref: 'User.posts' })
-     * // Contract: an index on the authorId column
-     *
-     * // Unique foreign key (one-to-one)
-     * author: relationship({ ref: 'User.posts', isIndexed: 'unique' })
-     * // Contract: a unique constraint on the authorId column
-     *
-     * // Disable indexing (not recommended, may cause performance issues)
-     * author: relationship({ ref: 'User.posts', isIndexed: false })
-     * // No index or constraint on the column
+     * // Every session genuinely belongs to a user — make the FK required
+     * user: relationship({
+     *   ref: 'User.sessions',
+     *   db: { isNullable: false },
+     * })
+     * // Contract: the userId column and the user relation are both
+     * // non-nullable (were nullable by default)
      * ```
      */
-    isIndexed?: boolean | 'unique'
-    db?: {
-      /**
-       * Controls DB-level nullability of the foreign key column (and its
-       * relation field) independently of the many side's own shape. Only
-       * meaningful on the FK-owning (single) side of a relationship — the
-       * many side has no column of its own to make non-nullable and rejects
-       * this option.
-       *
-       * @default true (nullable, matching every relationship generated before
-       * this option existed)
-       *
-       * @example
-       * ```typescript
-       * // Every session genuinely belongs to a user — make the FK required
-       * user: relationship({
-       *   ref: 'User.sessions',
-       *   db: { isNullable: false },
-       * })
-       * // Contract: the userId column and the user relation are both
-       * // non-nullable (were nullable by default)
-       * ```
-       */
-      isNullable?: boolean
-      /**
-       * Controls foreign key placement and column name.
-       * Can be a boolean or an object with a map property.
-       * Only valid on single (non-many) relationships.
-       * Cannot be true on both sides of a one-to-one relationship.
-       *
-       * The boolean form (the "which side owns the foreign key" sense) is only
-       * meaningful on a bidirectional ref (`ref: 'ListName.fieldName'`) — a
-       * list-only ref (`ref: 'ListName'`) always owns the foreign key, so a
-       * boolean here is rejected. The `{ map }` form (the column-name sense)
-       * works on both: it renames the foreign key column without changing
-       * ownership.
-       *
-       * When a boolean, defaults the foreign key column name to the field name.
-       * When an object with map, uses the provided column name.
-       *
-       * @example
-       * ```typescript
-       * // One-to-one: User has one Account (default foreign key name)
-       * User: list({
-       *   fields: {
-       *     account: relationship({ ref: 'Account.user', db: { foreignKey: true } })
-       *     // Contract: a unique accountId column
-       *   }
-       * })
-       *
-       * // One-to-one: User has one Account (custom foreign key name)
-       * User: list({
-       *   fields: {
-       *     account: relationship({ ref: 'Account.user', db: { foreignKey: { map: 'account_id' } } })
-       *     // Contract: a unique accountId column mapped to 'account_id'
-       *   }
-       * })
-       *
-       * Account: list({
-       *   fields: {
-       *     user: relationship({ ref: 'User.account' }) // No foreign key on this side
-       *   }
-       * })
-       *
-       * // List-only ref: rename the foreign key column (ownership is implicit)
-       * Post: list({
-       *   fields: {
-       *     category: relationship({ ref: 'Category', db: { foreignKey: { map: 'category_id' } } })
-       *     // Contract: the categoryId column mapped to 'category_id'
-       *   }
-       * })
-       * ```
-       */
-      foreignKey?: boolean | { map?: string }
-      /**
-       * What the database does to this row when the referenced row is
-       * deleted. Only meaningful on the foreign-key-owning side.
-       *
-       * @example Detach children when a parent category goes
-       * ```typescript
-       * parent: relationship({
-       *   ref: 'Category.children',
-       *   db: { foreignKey: true, onDelete: 'setNull' },
-       * })
-       * ```
-       */
-      onDelete?: ReferentialAction
-      /**
-       * What the database does to this row's foreign key when the referenced
-       * row's id changes. Only meaningful on the foreign-key-owning side.
-       */
-      onUpdate?: ReferentialAction
-    }
-    ui?: {
-      displayMode?: 'select' | 'cards'
-      /**
-       * Item-view (Relationship table) overrides for this to-many relationship
-       * — columns, summed columns, and demotion to the compact picker (issue
-       * #734). Ignored for single (`many: false`) relationships, which always
-       * render inside the details card.
-       */
-      itemView?: RelationshipItemViewConfig
-    }
+    isNullable?: boolean
+    /**
+     * Controls foreign key placement and column name.
+     * Can be a boolean or an object with a map property.
+     * Only valid on single (non-many) relationships.
+     * Cannot be true on both sides of a one-to-one relationship.
+     *
+     * The boolean form (the "which side owns the foreign key" sense) is only
+     * meaningful on a bidirectional ref (`ref: 'ListName.fieldName'`) — a
+     * list-only ref (`ref: 'ListName'`) always owns the foreign key, so a
+     * boolean here is rejected. The `{ map }` form (the column-name sense)
+     * works on both: it renames the foreign key column without changing
+     * ownership.
+     *
+     * When a boolean, defaults the foreign key column name to the field name.
+     * When an object with map, uses the provided column name.
+     *
+     * @example
+     * ```typescript
+     * // One-to-one: User has one Account (default foreign key name)
+     * User: list({
+     *   fields: {
+     *     account: relationship({ ref: 'Account.user', db: { foreignKey: true } })
+     *     // Contract: a unique accountId column
+     *   }
+     * })
+     *
+     * // One-to-one: User has one Account (custom foreign key name)
+     * User: list({
+     *   fields: {
+     *     account: relationship({ ref: 'Account.user', db: { foreignKey: { map: 'account_id' } } })
+     *     // Contract: a unique accountId column mapped to 'account_id'
+     *   }
+     * })
+     *
+     * Account: list({
+     *   fields: {
+     *     user: relationship({ ref: 'User.account' }) // No foreign key on this side
+     *   }
+     * })
+     *
+     * // List-only ref: rename the foreign key column (ownership is implicit)
+     * Post: list({
+     *   fields: {
+     *     category: relationship({ ref: 'Category', db: { foreignKey: { map: 'category_id' } } })
+     *     // Contract: the categoryId column mapped to 'category_id'
+     *   }
+     * })
+     * ```
+     */
+    foreignKey?: boolean | { map?: string }
+    /**
+     * What the database does to this row when the referenced row is
+     * deleted. Only meaningful on the foreign-key-owning side.
+     *
+     * @example Detach children when a parent category goes
+     * ```typescript
+     * parent: relationship({
+     *   ref: 'Category.children',
+     *   db: { foreignKey: true, onDelete: 'setNull' },
+     * })
+     * ```
+     */
+    onDelete?: ReferentialAction
+    /**
+     * What the database does to this row's foreign key when the referenced
+     * row's id changes. Only meaningful on the foreign-key-owning side.
+     */
+    onUpdate?: ReferentialAction
   }
+  ui?: {
+    displayMode?: 'select' | 'cards'
+    /**
+     * Item-view (Relationship table) overrides for this to-many relationship
+     * — columns, summed columns, and demotion to the compact picker (issue
+     * #734). Ignored for single (`many: false`) relationships, which always
+     * render inside the details card.
+     */
+    itemView?: RelationshipItemViewConfig
+  }
+}
 
-export type JsonField<TTypeInfo extends TypeInfo = TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type JsonField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'json'
   validation?: {
     isRequired?: boolean
@@ -1371,7 +1402,10 @@ export type TypeDescriptor =
       name?: string
     }
 
-export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+export type VirtualField<
+  TTypeInfo extends TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'virtual'
   virtual: true
 }
@@ -1384,11 +1418,41 @@ export type VirtualField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo
  */
 export type FieldConfig = BaseFieldConfig<TypeInfo>
 
-type WithTypeInfo<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo>
+type WithTypeInfo<
+  TTypeInfo extends TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey>
 
-export type FieldsWithTypeInfo<TTypeInfo extends TypeInfo> = {
-  [key: string]: WithTypeInfo<TTypeInfo>
-}
+/**
+ * The type every entry of `list()`'s `fields` object is checked against.
+ *
+ * Gated on `TTypeInfo['item']` being concrete (issue #1306): once a real,
+ * generated `TypeInfo` is in hand (`list<Lists.Post.TypeInfo>({...})`), each
+ * entry is checked against {@link WithTypeInfo} pinned to ITS OWN key, so a
+ * field builder written the same way as every field in this repo — generic
+ * over `TTypeInfo` — has that key flow all the way into its `hooks`, and
+ * `GetFieldValueType` resolves precisely rather than falling back to
+ * `unknown`.
+ *
+ * The pre-generation flow (`list({ fields: {...} })`, no explicit
+ * `TTypeInfo`) has no per-field key to pin — `TTypeInfo` defaults to the
+ * bare, unbound `TypeInfo`. The conditional keeps that flow on the untouched,
+ * unkeyed index signature: a naked conditional type blocks TypeScript's
+ * reverse-mapped-type inference from firing while `TTypeInfo` is itself
+ * still being inferred, so this flow types exactly as it did before
+ * `BaseFieldConfig` gained a key parameter at all.
+ *
+ * Each entry stays OPTIONAL, exactly as the index signature it replaces never
+ * required any key at all: `list<Lists.X.TypeInfo>({...})` is additive type
+ * safety over an already-generated config, not a completeness check, and a
+ * type-level fixture testing one field's hook in isolation is a legitimate
+ * partial `fields` object. A key outside `TTypeInfo['fields']` is still
+ * refused — the mapped type has no index signature of its own.
+ */
+export type FieldsWithTypeInfo<TTypeInfo extends TypeInfo> =
+  IsAny<TTypeInfo['item']> extends true
+    ? { [key: string]: WithTypeInfo<TTypeInfo> }
+    : { [K in FieldKeys<TTypeInfo['fields']>]?: WithTypeInfo<TTypeInfo, K> }
 
 /**
  * Parse TypeScript type string to actual type
@@ -1471,13 +1535,15 @@ type IsSeveralKeys<TKey, TAll = TKey> = TKey extends unknown
  * declares one, and otherwise the stored row's property — so a stored field is
  * typed by its contract column rather than left open.
  *
- * `unknown` when `TFieldKey` names several fields. {@link BaseFieldConfig}'s
- * `hooks` cannot pin a field key — a builder is written before it knows where
- * it is mounted — so `FieldHooks<TTypeInfo>` instantiates this with every key
- * on the list. Resolving that union would type each field's hook by the whole
- * row: a `text()` hook would accept a `Date` and reject its own `string`.
- * Narrowing it needs the field key threaded into `BaseFieldConfig`, tracked in
- * issue #1306.
+ * `unknown` when `TFieldKey` names several fields — the fallback for a
+ * `FieldHooks<TTypeInfo>` instantiated with no key of its own (a third-party
+ * field that doesn't thread {@link BaseFieldConfig}'s `TKey` through, or a
+ * hand-authored `TypeInfo` used generically). Resolving a genuine union would
+ * type each field's hook by the whole row: a `text()` hook would accept a
+ * `Date` and reject its own `string`. At the real, generated-`TypeInfo`
+ * instantiation (`list<Lists.Post.TypeInfo>({ fields: { title: text(...) } })`)
+ * {@link FieldsWithTypeInfo} pins each field's own key before it ever reaches
+ * here, so this guard is a fallback, not the common case (issue #1306).
  *
  * @example
  * GetFieldValueType<Lists.Post.TypeInfo, 'title'> => string

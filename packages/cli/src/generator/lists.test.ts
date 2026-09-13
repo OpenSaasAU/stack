@@ -386,19 +386,19 @@ describe('Lists Namespace Generator', () => {
       // Each built-in field type resolves from /fields (not the root barrel),
       // including decimal/calendarDay which were previously missing from the map.
       expect(lists).toContain(
-        "name: import('@opensaas/stack-core/fields').TextField<Lists.Thing.TypeInfo>",
+        "name: import('@opensaas/stack-core/fields').TextField<Lists.Thing.TypeInfo, 'name'>",
       )
       expect(lists).toContain(
-        "price: import('@opensaas/stack-core/fields').DecimalField<Lists.Thing.TypeInfo>",
+        "price: import('@opensaas/stack-core/fields').DecimalField<Lists.Thing.TypeInfo, 'price'>",
       )
       expect(lists).toContain(
-        "occurredAtMs: import('@opensaas/stack-core/fields').BigIntField<Lists.Thing.TypeInfo>",
+        "occurredAtMs: import('@opensaas/stack-core/fields').BigIntField<Lists.Thing.TypeInfo, 'occurredAtMs'>",
       )
       expect(lists).toContain(
-        "date: import('@opensaas/stack-core/fields').CalendarDayField<Lists.Thing.TypeInfo>",
+        "date: import('@opensaas/stack-core/fields').CalendarDayField<Lists.Thing.TypeInfo, 'date'>",
       )
       expect(lists).toContain(
-        "owner: import('@opensaas/stack-core/fields').RelationshipField<Lists.Thing.TypeInfo>",
+        "owner: import('@opensaas/stack-core/fields').RelationshipField<Lists.Thing.TypeInfo, 'owner'>",
       )
       // No built-in field should fall back to the generic BaseFieldConfig.
       expect(lists).not.toContain('BaseFieldConfig')
@@ -420,7 +420,7 @@ describe('Lists Namespace Generator', () => {
       const lists = generateListsNamespace(config, deriveDependencyTable(config))
 
       expect(lists).toContain(
-        "embedding: import('@opensaas/stack-core/extend').BaseFieldConfig<Lists.Doc.TypeInfo>",
+        "embedding: import('@opensaas/stack-core/extend').BaseFieldConfig<Lists.Doc.TypeInfo, 'embedding'>",
       )
     })
   })

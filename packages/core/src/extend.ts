@@ -26,6 +26,7 @@ export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
   BaseFieldConfig,
+  FieldKeys,
   TypeInfo,
   TypeDescriptor,
   ContractLiteral,

@@ -466,13 +466,19 @@ Add `needs` to the field config your builder returns, or accept it from the call
 
 ```typescript
 import { z } from 'zod'
-import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+import type { BaseFieldConfig, FieldKeys, TypeInfo } from '@opensaas/stack-core/extend'
 
-export type DisplayNameField = BaseFieldConfig<TypeInfo> & {
+export type DisplayNameField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'displayName'
 }
 
-export function displayName(options?: Omit<DisplayNameField, 'type'>): DisplayNameField {
+export function displayName<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<DisplayNameField<TTypeInfo, TKey>, 'type'>): DisplayNameField<TTypeInfo, TKey> {
   return {
     type: 'displayName',
     needs: ['firstName', 'lastName'],
@@ -495,7 +501,7 @@ The rules `opensaas generate` enforces:
 - Dependencies are **one hop and non-transitive**, and are **stripped from the result** unless the caller named them too — so declaring one never changes the shape of every read of the list.
 - A relation dependency is **scoped by the Access Filter** like any other read, so write the hook to tolerate a session that cannot see it.
 
-Because `needs` is typed as a plain `string[]` on `BaseFieldConfig` — third-party field builders are not generic over the list's `TypeInfo` — a misspelled entry is caught at `opensaas generate` rather than by the compiler. Test the field against a real config before publishing it. The full rules are in the [Fields API reference](/docs/reference/fields-api).
+`needs` itself stays a plain `string[]` on `BaseFieldConfig`, even though the builder above is generic over the list's `TypeInfo` and its own field key (`TKey`, threaded the same way for every built-in field so `hooks.resolveOutput` sees the mounted field's real value type — see the [Fields API reference](/docs/reference/fields-api)): a `needs` entry names a _different_ field on the same list, so narrowing it would need that field's own key threaded too, for no benefit `opensaas generate` (`validateNeedsDeclarations`) doesn't already provide by rejecting a misspelled or non-relation entry at generate time. Test the field against a real config before publishing it.
 
 ## Best Practices
 

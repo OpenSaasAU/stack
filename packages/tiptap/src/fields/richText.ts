@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { formatFieldName } from '@opensaas/stack-core/extend'
-import type { ContractFieldDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
+import type { ContractFieldDescriptor, FieldKeys, TypeInfo } from '@opensaas/stack-core/extend'
 import type { RichTextField } from '../config/types.js'
 
 /**
@@ -30,9 +30,10 @@ const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
  * }
  * ```
  */
-export function richText<TTypeInfo extends TypeInfo = TypeInfo>(
-  options?: Omit<RichTextField<TTypeInfo>, 'type'>,
-): RichTextField<TTypeInfo> {
+export function richText<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<RichTextField<TTypeInfo, TKey>, 'type'>): RichTextField<TTypeInfo, TKey> {
   const isRequired = options?.validation?.isRequired === true
   const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
 

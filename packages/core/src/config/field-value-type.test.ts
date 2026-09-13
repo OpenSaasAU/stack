@@ -3,6 +3,7 @@ import { list } from './index.js'
 import { text, timestamp, virtual } from '../fields/index.js'
 import type {
   BaseFieldConfig,
+  FieldKeys,
   GetFieldValueType,
   TextField,
   TimestampField,
@@ -27,18 +28,19 @@ type PostStoredRow = {
 
 /**
  * A `TypeInfo` shaped exactly as `packages/cli/src/generator/lists.ts` emits
- * one: every `fields` entry is the field *interface*, on which `outputType` is
- * optional, and a field type core does not know is `BaseFieldConfig`. No entry
- * here declares an `outputType` statically, whatever the builder set at
- * runtime — which is why every stored field below resolves through `item`.
+ * one: every `fields` entry is the field *interface*, pinned to its own key
+ * (issue #1306) — the second type argument `lists.ts` now emits alongside
+ * `Lists.<List>.TypeInfo`. No entry here declares an `outputType` statically,
+ * whatever the builder set at runtime — which is why every stored field below
+ * resolves through `item`.
  */
 type GeneratedTypeInfo = {
   key: 'Post'
   fields: {
-    title: TextField<GeneratedTypeInfo>
-    publishedAt: TimestampField<GeneratedTypeInfo>
-    badge: BaseFieldConfig<GeneratedTypeInfo>
-    wordCount: VirtualField<GeneratedTypeInfo>
+    title: TextField<GeneratedTypeInfo, 'title'>
+    publishedAt: TimestampField<GeneratedTypeInfo, 'publishedAt'>
+    badge: BaseFieldConfig<GeneratedTypeInfo, 'badge'>
+    wordCount: VirtualField<GeneratedTypeInfo, 'wordCount'>
   }
   item: PostStoredRow
   inputs: { create: unknown; update: unknown }
@@ -53,16 +55,19 @@ type GeneratedTypeInfo = {
 type GeneratedStoredTypeInfo = {
   key: 'Post'
   fields: {
-    title: TextField<GeneratedStoredTypeInfo>
-    publishedAt: TimestampField<GeneratedStoredTypeInfo>
-    badge: BaseFieldConfig<GeneratedStoredTypeInfo>
+    title: TextField<GeneratedStoredTypeInfo, 'title'>
+    publishedAt: TimestampField<GeneratedStoredTypeInfo, 'publishedAt'>
+    badge: BaseFieldConfig<GeneratedStoredTypeInfo, 'badge'>
   }
   item: PostStoredRow
   inputs: { create: unknown; update: unknown }
 }
 
 /** A field package's own type, which declares its face rather than inheriting it. */
-type BadgeField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
+type BadgeField<
+  TTypeInfo extends TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'badge'
   outputType: 'string'
 }
@@ -75,9 +80,9 @@ type BadgeField<TTypeInfo extends TypeInfo> = BaseFieldConfig<TTypeInfo> & {
 type MixedTypeInfo = {
   key: 'Post'
   fields: {
-    title: TextField<MixedTypeInfo>
-    publishedAt: TimestampField<MixedTypeInfo>
-    badge: BadgeField<MixedTypeInfo>
+    title: TextField<MixedTypeInfo, 'title'>
+    publishedAt: TimestampField<MixedTypeInfo, 'publishedAt'>
+    badge: BadgeField<MixedTypeInfo, 'badge'>
   }
   item: PostStoredRow
   inputs: { create: unknown; update: unknown }
@@ -86,7 +91,7 @@ type MixedTypeInfo = {
 /** A hand-authored TypeInfo: no generated `item` facts to read a field from. */
 type BareTypeInfo = {
   key: 'Post'
-  fields: { title: TextField<BareTypeInfo> }
+  fields: { title: TextField<BareTypeInfo, 'title'> }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- what a hand-authored TypeInfo leaves `item` as
   item: any
   inputs: { create: unknown; update: unknown }
@@ -122,9 +127,10 @@ describe('GetFieldValueType', () => {
   })
 
   /**
-   * `BaseFieldConfig.hooks` cannot pin a field key, so `FieldHooks<TTypeInfo>`
-   * instantiates this with every key on the list. Resolving that union would
-   * type each field's hook by the whole row.
+   * A field named with several keys at once has no single field to be
+   * precise about — the fallback `FieldHooks<TTypeInfo>` (no key of its own)
+   * still needs, e.g. a third-party field that hasn't threaded
+   * {@link BaseFieldConfig}'s `TKey` through.
    */
   it('is unknown when the key names several fields', () => {
     expectTypeOf<
@@ -139,66 +145,83 @@ describe('GetFieldValueType', () => {
 })
 
 /**
- * The instantiation the config surface actually produces. A field builder's
- * `hooks` reach `FieldHooks<TTypeInfo>` with no key pinned, so this is the
- * only shape that exercises the union — and the one that regressed when the
- * resolution distributed over it. `expectTypeOf` inside the hook pins what the
- * builder is handed, which merely compiling the surface does not: `String()`
- * accepts anything the resolution could produce.
+ * The instantiation the config surface actually produces:
+ * `list<Lists.Post.TypeInfo>({ fields: { title: text({ hooks: {...} }) } })`.
+ * `FieldsWithTypeInfo` (issue #1306) pins each field's own key before a
+ * builder's `hooks` ever reach `FieldHooks`, so a field-level `resolveOutput`
+ * sees the real column type rather than the whole row.
  */
-describe('a field builder’s hooks through the config surface', () => {
-  it('hands the hook an open value, and takes back a shape no column carries', () => {
+describe("a field builder's hooks through the config surface", () => {
+  it('types a stored field precisely, and rejects the wrong return type', () => {
     void list<GeneratedStoredTypeInfo>({
       fields: {
         title: text({
           hooks: {
             resolveOutput: ({ value }) => {
-              expectTypeOf(value).toEqualTypeOf<unknown>()
-              return { formatted: String(value) }
-            },
-          },
-        }),
-        publishedAt: timestamp(),
-      },
-    })
-  })
-
-  it('does the same on a list carrying a computed field', () => {
-    void list<GeneratedTypeInfo>({
-      fields: {
-        title: text({
-          hooks: {
-            resolveOutput: ({ value }) => {
-              expectTypeOf(value).toEqualTypeOf<unknown>()
-              return { formatted: String(value) }
-            },
-          },
-        }),
-        publishedAt: timestamp(),
-        wordCount: virtual({ type: 'number', hooks: { resolveOutput: () => 1 } }),
-      },
-    })
-  })
-
-  it('does the same over a record mixing in a field whose static type declares a face', () => {
-    void list<MixedTypeInfo>({
-      fields: {
-        title: text({
-          hooks: {
-            resolveOutput: ({ value }) => {
-              expectTypeOf(value).toEqualTypeOf<unknown>()
-              return { formatted: String(value) }
+              expectTypeOf(value).toEqualTypeOf<string>()
+              return value.toUpperCase()
             },
           },
         }),
         publishedAt: timestamp({
           hooks: {
             resolveOutput: ({ value }) => {
-              expectTypeOf(value).toEqualTypeOf<unknown>()
-              return new Date()
+              expectTypeOf(value).toEqualTypeOf<Date | null>()
+              return value
             },
           },
         }),
+        badge: text({
+          hooks: {
+            // @ts-expect-error -- a Date is not this field's stored `string`
+            resolveOutput: () => new Date(),
+          },
+        }),
+      },
+    })
+  })
+
+  it('leaves a virtual field unknown, since a generated TypeInfo carries no static face for it', () => {
+    void list<GeneratedTypeInfo>({
+      fields: {
+        title: text(),
+        publishedAt: timestamp(),
+        badge: text(),
+        wordCount: virtual({
+          type: 'number',
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<unknown>()
+              return 1
+            },
+          },
+        }),
+      },
+    })
+  })
+
+  it('lets a statically declared outputType win over the stored column', () => {
+    void list<MixedTypeInfo>({
+      fields: {
+        title: text(),
+        publishedAt: timestamp({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<Date | null>()
+              return value
+            },
+          },
+        }),
+        badge: {
+          type: 'badge',
+          outputType: 'string',
+          hooks: {
+            resolveOutput: ({ value }) => {
+              expectTypeOf(value).toEqualTypeOf<string>()
+              return value.toUpperCase()
+            },
+          },
+        },
       },
     })
   })

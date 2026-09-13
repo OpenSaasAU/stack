@@ -117,7 +117,9 @@ export function generateListsNamespace(
     lines.push(`    export type Fields = {`)
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       const { module, typeName } = getFieldTypeImport(fieldConfig.type)
-      lines.push(`      ${fieldName}: import('${module}').${typeName}<Lists.${listName}.TypeInfo>`)
+      lines.push(
+        `      ${fieldName}: import('${module}').${typeName}<Lists.${listName}.TypeInfo, '${fieldName}'>`,
+      )
     }
     lines.push(`    }`)
     lines.push('')
