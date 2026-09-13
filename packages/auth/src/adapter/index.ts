@@ -9,6 +9,7 @@ import type {
 } from 'better-auth/adapters'
 import type { BetterAuthOptions } from 'better-auth'
 import type { CodecRef, Expression, ScopeField } from '@prisma/orm-postgres/relational-core'
+import { listIdColumn } from '@opensaas/stack-core'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
 import {
@@ -23,6 +24,23 @@ import { applyOrmWhere, sqlWhere, type AuthFieldResolution } from './where.js'
 
 export { AuthModelUnreachableError } from './surface.js'
 export { AuthWhereError } from './where.js'
+
+/**
+ * The id capabilities to declare to better-auth's adapter factory, derived
+ * from the Auth lists' actual resolved `idField` strategy rather than
+ * assumed — so they can never contradict the emitted column type (#1239).
+ * Every Auth list mints ids the same way (`authPlugin`'s `init` throws at
+ * config time on any disagreement between an app-declared list and the
+ * plugin's own choice, ADR-0048/0060), so the `user` model's resolved
+ * strategy speaks for all of them.
+ */
+export function authIdCapabilities(
+  config: OpenSaasConfig,
+  registry: Record<string, string>,
+): { supportsUUIDs: boolean; supportsNumericIds: boolean } {
+  const strategy = listIdColumn(config, registry.user)?.strategy
+  return { supportsUUIDs: strategy === 'uuid7', supportsNumericIds: false }
+}
 
 /** Thrown when the adapter cannot carry out an operation better-auth asked for. */
 export class AuthAdapterError extends Error {
@@ -176,6 +194,7 @@ export function opensaasAuthAdapter(
   options: OpenSaasAuthAdapterOptions,
 ): AdapterFactory<BetterAuthOptions> {
   const { config, unsafe, registry, transaction } = options
+  const { supportsUUIDs, supportsNumericIds } = authIdCapabilities(config, registry)
 
   function coordinate(model: string, toModelKey: (model: string) => string): ModelCoordinate {
     const listKey = registry[toModelKey(model)]
@@ -195,12 +214,15 @@ export function opensaasAuthAdapter(
       config: {
         adapterId: 'opensaas-stack',
         adapterName: 'OpenSaaS Stack',
-        // The database mints every id: `authPlugin` pins `db.idField: 'uuid7'`
-        // on each list it injects, so the column carries its own default and
-        // better-auth must not send one of its own (ADR-0048, ADR-0060).
+        // The database mints every id: the Auth lists' resolved `idField`
+        // strategy (`authPlugin`'s own pin, or the app's `db.idField`
+        // default — always `uuid7` or `cuid2`, never `int autoincrement`,
+        // since this adapter treats every id as a string) gives the column
+        // its own default, so better-auth must not send one of its own
+        // (ADR-0048, ADR-0060).
         disableIdGeneration: true,
-        supportsUUIDs: true,
-        supportsNumericIds: false,
+        supportsUUIDs,
+        supportsNumericIds,
         // Prisma's `timestamptz` codec decodes to a string at 8.0.0-rc.8, so the
         // factory's own string↔Date conversion is what keeps better-auth's
         // contract (it hands out `Date`s) true.

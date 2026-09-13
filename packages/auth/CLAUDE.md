@@ -392,6 +392,35 @@ its derived keys. Combined with the derivation + schema placement above, the
 generated Auth lists reach **Schema parity** (an empty migration plan) against a live
 `auth`-schema install — they are modelled for runtime/types, not migrated.
 
+**Adopting a non-uuid7 id strategy (`idField`).** The Auth lists mint ids
+however `authPlugin({ idField })` resolves — an explicit override, else the
+app's own `db.idField` default, else `'uuid7'` — the same fallback chain any
+other list gets (ADR-0048, ADR-0060, #1239). A live better-auth install
+whose `id` columns are already text (a `cuid2`-shaped strategy, say, rather
+than `uuid7`) adopts cleanly by passing the strategy through the recipe:
+
+```typescript
+authPlugin({
+  ...adoptBetterAuthTables({ idField: 'cuid2' }),
+  emailAndPassword: { enabled: true },
+})
+```
+
+Only `'uuid7'` and `'cuid2'` are accepted — never `'int autoincrement'` — because
+the Auth adapter treats every id as a string (`isIdentity` in
+`src/adapter/index.ts`). An app whose own global `db.idField` default resolves
+to `'int autoincrement'` must set `idField` explicitly to pick a string
+strategy for just the Auth lists; `authPlugin`'s `init` throws a config-time
+error naming the mismatch otherwise. The same check also catches the
+`extendList` path: if an app declares one of the derived list keys itself
+(overriding one of the base models — see "App User ≠ Auth identity" above,
+though this applies to any base model, not only `User`) with its own
+`db.idField`, that list's resolved strategy must agree with the plugin's, or
+`init` throws naming both. The Auth adapter's `supportsUUIDs`/
+`supportsNumericIds` (`authIdCapabilities` in `src/adapter/index.ts`) are
+derived from this same resolved strategy, so they can never declare a
+capability the emitted column doesn't have.
+
 **App User ≠ Auth identity.** The plugin models the **Auth identity** (the
 better-auth user); it does not assume that list is the app's domain `User`.
 Linking an app's `User` to the Auth identity (e.g. a `relationship({ ref:

@@ -1,7 +1,36 @@
+import { listIdColumn } from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
 import type { AuthConfig, NormalizedAuthConfig } from './types.js'
 import { normalizeAuthConfig } from './index.js'
 import { getAuthLists } from '../lists/index.js'
+
+/**
+ * The id strategy every Auth list mints: an explicit `authPlugin({ idField })`
+ * wins, else the app's own `db.idField` default — the same fallback chain
+ * `resolveIdStrategy` (`packages/core/src/contract/derive.ts`) computes for
+ * any other list — else `'uuid7'`. Reimplemented here rather than imported
+ * because core doesn't re-export it; if that fallback chain ever changes,
+ * this copy needs to follow it. Never `'int autoincrement'`: the Auth
+ * adapter treats every id as a string (ADR-0048, ADR-0060), so an app whose
+ * own global default is `'int autoincrement'` must opt the Auth lists into a
+ * string strategy explicitly.
+ */
+function resolveAuthIdField(
+  idField: NormalizedAuthConfig['idField'],
+  appDefault: 'uuid7' | 'cuid2' | 'int autoincrement' | undefined,
+): 'uuid7' | 'cuid2' {
+  const resolved = idField ?? appDefault ?? 'uuid7'
+  if (resolved === 'int autoincrement') {
+    throw new Error(
+      "[@opensaas/stack-auth] the Auth lists cannot use `db.idField: 'int autoincrement'` — " +
+        "better-auth's adapter treats every id as a string (ADR-0048, ADR-0060), and the app's " +
+        `own \`db.idField\` default resolves to "int autoincrement". Pass ` +
+        "`authPlugin({ idField: 'uuid7' })` or `authPlugin({ idField: 'cuid2' })` to pick a " +
+        'string strategy for just the Auth lists.',
+    )
+  }
+  return resolved
+}
 
 /**
  * Auth plugin for OpenSaas Stack
@@ -53,6 +82,13 @@ export function authPlugin(config: AuthConfig): Plugin {
         normalized.credentialFields,
       )
 
+      // ADR-0048's per-list pin, named for the Auth lists: an explicit
+      // `authPlugin({ idField })` wins, else the Auth lists inherit the app's
+      // own `db.idField` default like any other list (#1239) — so an app
+      // already on a non-uuid7 default (adopting a live install whose ids are
+      // text, say) keeps its Auth lists on it without a separate override.
+      const idField = resolveAuthIdField(normalized.idField, context.config.db.idField)
+
       // Base models are always the first entries in `authLists` (see
       // `deriveAuthLists`), so a plugin table's reverse relation onto a base
       // model (e.g. `AuthUser.oauthApplications`) is already part of that
@@ -61,15 +97,29 @@ export function authPlugin(config: AuthConfig): Plugin {
       // an earlier iteration of this same loop) merges via `extendList`;
       // everything else registers via `addList`.
       for (const [listName, derived] of Object.entries(authLists)) {
-        // ADR-0048's per-list pin, named for the Auth lists: every id the
-        // adapter hands better-auth is minted by the database, and it is the
-        // same strategy every other list gets.
-        const listConfig = { ...derived, db: { ...derived.db, idField: 'uuid7' as const } }
+        const listConfig = { ...derived, db: { ...derived.db, idField } }
         if (context.config.lists[listName]) {
-          // A list already exists under this derived key — merge auth fields
-          // in only. Access control belongs to whoever owns the list (the
-          // application declared it first), so the plugin never forwards its
-          // own access here — see ADR-0013.
+          // A list already exists under this derived key. `extendList` never
+          // touches `db` (the application owns it, same as `access` —
+          // ADR-0013), so this list mints ids however its OWN `db.idField`
+          // resolves — which must agree with the strategy above, or the
+          // adapter's declared id capabilities (see `opensaasAuthAdapter`)
+          // would contradict what one of the two branches actually emits.
+          const existingIdField = listIdColumn(context.config, listName)?.strategy
+          if (existingIdField !== idField) {
+            throw new Error(
+              `[@opensaas/stack-auth] "${listName}" already exists (declared by the application, ` +
+                `or by another plugin that ran before authPlugin) with its own \`db.idField\` ` +
+                `resolving to "${existingIdField}", but authPlugin's Auth lists resolve to ` +
+                `"${idField}". Both must mint ids the same way — set "${listName}"'s own ` +
+                `\`db.idField\` to "${idField}", or pass \`authPlugin({ idField: ` +
+                `'${existingIdField}' })\` if that is 'uuid7' or 'cuid2'.`,
+            )
+          }
+
+          // Merge auth fields in only. Access control belongs to whoever owns
+          // the list (the application declared it first), so the plugin never
+          // forwards its own access here — see ADR-0013.
           context.extendList(listName, {
             fields: listConfig.fields,
             hooks: listConfig.hooks,

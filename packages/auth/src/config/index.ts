@@ -135,6 +135,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     session,
     models,
     schema: config.schema,
+    idField: config.idField,
     sessionFields,
     extendUserList: config.extendUserList || {},
     access: config.access || {},

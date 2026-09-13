@@ -339,6 +339,26 @@ export type AuthConfig = {
   schema?: string
 
   /**
+   * The id strategy for the generated Auth lists — `'uuid7'` or `'cuid2'`
+   * only, never `'int autoincrement'`: the Auth adapter treats every id as a
+   * string (ADR-0048, ADR-0060), and better-auth's own `consumeOne` reads
+   * the resolved row's `id` expecting exactly that.
+   *
+   * When unset, the Auth lists inherit the app's own `db.idField` default
+   * like any other list, falling back to `'uuid7'` when that too is unset.
+   * Set this explicitly when the Auth lists need a *different* strategy from
+   * the app's global default — most commonly to adopt a live better-auth
+   * install whose `id` columns already hold non-uuid text ids, while the
+   * app's own domain lists stay on their own default.
+   *
+   * @example Adopt a live install already on a text/`cuid2`-shaped id column
+   * ```typescript
+   * authPlugin({ idField: 'cuid2', ...adoptBetterAuthTables() })
+   * ```
+   */
+  idField?: 'uuid7' | 'cuid2'
+
+  /**
    * Which fields to include in the session object passed to access control
    * functions — a **flattened projection** of the resolved better-auth
    * session, not the session's own shape. `getSessionFromAuth` (the
@@ -594,6 +614,7 @@ export type NormalizedAuthConfig = Required<
     | 'account'
     | 'verification'
     | 'schema'
+    | 'idField'
   >
 > & {
   emailAndPassword: Required<EmailPasswordConfig>
@@ -608,6 +629,12 @@ export type NormalizedAuthConfig = Required<
    * default (used to wire the datasource `schemas` array during generation).
    */
   schema?: string
+  /**
+   * Explicit `authPlugin({ idField })` override, if any — unresolved against
+   * the app's own `db.idField` default, which `authPlugin`'s `init` reads
+   * from the config it receives there rather than here (ADR-0048/0060).
+   */
+  idField?: 'uuid7' | 'cuid2'
   betterAuthPlugins: BetterAuthPlugin[]
   rateLimit?: {
     enabled: boolean

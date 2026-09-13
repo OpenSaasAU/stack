@@ -114,6 +114,16 @@ export type AdoptBetterAuthTablesOptions = {
    * @default false
    */
   rateLimit?: boolean
+
+  /**
+   * The id strategy for the adopted Auth lists — `'uuid7'` or `'cuid2'` only
+   * (see `authPlugin({ idField })`). Pass this when the live install's `id`
+   * columns are not `uuid7` (a text/nanoid-shaped column adopted onto
+   * `'cuid2'`, say), so the generated lists diff clean against them. Left
+   * unset, the Auth lists fall back to the app's own `db.idField` default —
+   * the same behaviour as not adopting at all.
+   */
+  idField?: AuthConfig['idField']
 }
 
 const MODEL_DEFAULT_NAMES = {
@@ -144,6 +154,7 @@ export type AdoptBetterAuthTablesConfig = Pick<
   'schema' | 'user' | 'session' | 'account' | 'verification'
 > & {
   rateLimit?: AuthConfig['rateLimit']
+  idField?: AuthConfig['idField']
 }
 
 /**
@@ -163,6 +174,7 @@ export function adoptBetterAuthTables(
     useBetterAuthTableNames = false,
     tableNames = {},
     rateLimit = false,
+    idField,
   } = options
 
   const buildModel = (model: keyof typeof MODEL_DEFAULT_NAMES): AuthModelConfig => {
@@ -191,5 +203,6 @@ export function adoptBetterAuthTables(
     ...(rateLimit
       ? { rateLimit: { enabled: true, storage: 'database' as const, ...buildModel('rateLimit') } }
       : {}),
+    ...(idField !== undefined ? { idField } : {}),
   }
 }

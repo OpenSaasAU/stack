@@ -75,6 +75,11 @@ describe('adoptBetterAuthTables - recipe defaults', () => {
     const fragment = adoptBetterAuthTables({ schema: 'public' })
     expect(fragment.schema).toBe('public')
   })
+
+  it('omits idField by default, and carries it through when set (#1239)', () => {
+    expect(adoptBetterAuthTables().idField).toBeUndefined()
+    expect(adoptBetterAuthTables({ idField: 'cuid2' }).idField).toBe('cuid2')
+  })
 })
 
 describe('adoptBetterAuthTables - table names (issue #862)', () => {
@@ -273,6 +278,23 @@ describe('adoptBetterAuthTables - clean-diff adoption (Auth lists ≠ app User)'
 
     // The datasource lists both schemas so the multi-schema Prisma schema is valid.
     expect(result.db.schemas).toEqual(['public', 'auth'])
+  })
+
+  it('adopts a live install on a text/cuid2 id strategy via adoptBetterAuthTables({ idField }) (#1239)', async () => {
+    const result = await generationConfig({
+      db: { provider: 'postgresql' },
+      plugins: [
+        authPlugin({
+          ...adoptBetterAuthTables({ idField: 'cuid2' }),
+          emailAndPassword: { enabled: true },
+        }),
+      ],
+      lists: {},
+    })
+
+    for (const listKey of ['AuthUser', 'AuthSession', 'AuthAccount', 'AuthVerification']) {
+      expect(result.lists[listKey]?.db?.idField).toBe('cuid2')
+    }
   })
 
   it('carries field column maps through to the derived Auth lists for renamed columns', async () => {
