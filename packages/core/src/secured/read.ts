@@ -1170,7 +1170,9 @@ declare const VISIBLE_ROW: unique symbol
  * a plain `OrmRow`. A terminal added later that materialises rows without
  * calling {@link visibleRows} therefore fails to compile instead of shipping
  * the silent access-control regression this codebase has shipped four times
- * (issue #1386).
+ * (issue #1386). This closes the failure mode of *forgetting* the funnel, not
+ * the one of a future author deliberately reaching for `as VisibleRow` on an
+ * unfiltered row — no nominal brand in TypeScript stops that.
  */
 export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
 
