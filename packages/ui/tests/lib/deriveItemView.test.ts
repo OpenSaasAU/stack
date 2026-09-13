@@ -309,6 +309,59 @@ describe('deriveItemViewLayout', () => {
     expect(section.removeAction).toBe('none')
   })
 
+  it('defaults row removal to delete for a junction-backed section (#1339)', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          tags: { type: 'relationship', ref: 'UserTag.user', many: true },
+        },
+      },
+      Tag: {
+        fields: {
+          users: { type: 'relationship', ref: 'UserTag.tag', many: true },
+        },
+      },
+      UserTag: {
+        fields: {
+          user: { type: 'relationship', ref: 'User.tags' },
+          tag: { type: 'relationship', ref: 'Tag.users' },
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.removeAction).toBe('delete')
+  })
+
+  it('lets an explicit disconnect override win over the junction default', () => {
+    const config = makeConfig({
+      User: {
+        fields: {
+          tags: {
+            type: 'relationship',
+            ref: 'UserTag.user',
+            many: true,
+            ui: { itemView: { removeAction: 'disconnect' } },
+          },
+        },
+      },
+      Tag: {
+        fields: {
+          users: { type: 'relationship', ref: 'UserTag.tag', many: true },
+        },
+      },
+      UserTag: {
+        fields: {
+          user: { type: 'relationship', ref: 'User.tags' },
+          tag: { type: 'relationship', ref: 'Tag.users' },
+        },
+      },
+    })
+
+    const [section] = deriveItemViewLayout(config, 'User').sections
+    expect(section.removeAction).toBe('disconnect')
+  })
+
   it('marks a required-FK back-reference (db.isNullable:false) as not disconnectable', () => {
     const config = makeConfig({
       Order: {
