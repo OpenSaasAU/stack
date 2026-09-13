@@ -253,4 +253,41 @@ describe('Sudo context', () => {
     },
     BOOT,
   )
+
+  /**
+   * `context.plugins` is a registry keyed by author-supplied plugin names
+   * (issue #1341). Built as a plain `{}`, a lookup of a name nobody
+   * registered (`constructor`, `toString`, …) would silently resolve to an
+   * inherited `Object.prototype` member instead of `undefined` — reading as a
+   * corrupt registry rather than the absent plugin it actually is.
+   */
+  test(
+    'a plugin services lookup that finds nothing does not fall through to Object.prototype',
+    async () => {
+      await seed()
+
+      const plugin: Plugin = {
+        name: 'test-plugin',
+        init: async () => {},
+        runtime: () => ({ ping: () => 'pong' }),
+      }
+
+      const pluginConfig = await config({
+        db: { provider: 'postgresql', timestamps: true },
+        plugins: [plugin],
+        lists: {
+          Post: list({ fields: { title: text() } }),
+        },
+      })
+
+      const context = contextAt(pluginConfig, null)
+
+      expect(Object.getPrototypeOf(context.plugins)).toBeNull()
+      expect(context.plugins['test-plugin']).toEqual({ ping: expect.any(Function) })
+      expect(context.plugins.constructor).toBeUndefined()
+      expect(context.plugins.toString).toBeUndefined()
+      expect(context.plugins['nonexistent-plugin']).toBeUndefined()
+    },
+    BOOT,
+  )
 })
