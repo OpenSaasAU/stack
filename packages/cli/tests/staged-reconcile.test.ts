@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { afterAll, describe, expect, test } from 'vitest'
+import { startDevDatabase, type DevDatabase } from '@opensaas/stack-core/dev-database'
 
 /**
  * The staged reconcile as a user meets it: a real `opensaas dev` loop, a real
@@ -16,6 +18,13 @@ const fixtureConfig = path.join(
   'tests',
   'fixtures',
   'dev-loop-project',
+  'opensaas.config.ts',
+)
+const fixtureConfigNoPack = path.join(
+  packageRoot,
+  'tests',
+  'fixtures',
+  'dev-loop-new-pack-project',
   'opensaas.config.ts',
 )
 const cliEntry = path.join(packageRoot, 'bin', 'opensaas.js')
@@ -44,13 +53,17 @@ const server = createServer((request, response) => {
     .query(
       "select column_name from information_schema.columns where table_name = 'Note' order by column_name",
     )
-    .then((columns) => {
+    .then(async (columns) => {
+      const extensions = await client.query(
+        "select extname from pg_extension where extname = 'vector'",
+      )
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(
         JSON.stringify({
           pid: process.pid,
           contract: readFileSync('prisma/contract.json', 'utf8'),
           columns: columns.rows.map((row) => row.column_name),
+          extensions: extensions.rows.map((row) => row.extname),
         }),
       )
     })
@@ -69,14 +82,19 @@ interface AppState {
   pid: number
   contract: string
   columns: string[]
+  extensions: string[]
+}
+
+function createProjectFrom(fixture: string, name: string): string {
+  const projectDir = path.join(scratchRoot, name)
+  fs.mkdirSync(projectDir, { recursive: true })
+  fs.copyFileSync(fixture, path.join(projectDir, 'opensaas.config.ts'))
+  fs.writeFileSync(path.join(projectDir, 'app.mjs'), APP, 'utf-8')
+  return projectDir
 }
 
 function createProject(name: string): string {
-  const projectDir = path.join(scratchRoot, name)
-  fs.mkdirSync(projectDir, { recursive: true })
-  fs.copyFileSync(fixtureConfig, path.join(projectDir, 'opensaas.config.ts'))
-  fs.writeFileSync(path.join(projectDir, 'app.mjs'), APP, 'utf-8')
-  return projectDir
+  return createProjectFrom(fixtureConfig, name)
 }
 
 function cleanEnvironment(): typeof process.env {
@@ -90,11 +108,16 @@ interface Loop {
   stop(): Promise<void>
 }
 
-function startLoop(projectDir: string): Loop {
+/**
+ * `env` overrides the cleaned environment rather than replacing it, so a
+ * caller naming just `DATABASE_URL` (the Database escape) still inherits
+ * everything else a spawned Node process needs.
+ */
+function startLoop(projectDir: string, env: typeof process.env = {}): Loop {
   const child = spawn(process.execPath, [cliEntry, 'dev', '--', 'node', 'app.mjs'], {
     cwd: projectDir,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: cleanEnvironment(),
+    env: { ...cleanEnvironment(), ...env },
   })
 
   let output = ''
@@ -224,10 +247,34 @@ function writeConfig(projectDir: string, extraField: string): void {
   )
 }
 
+/**
+ * The fixture's own edit: adds pgvector as a declared pack for the first time
+ * and drops `note` — the sequence #1226 needs, in one config save.
+ */
+const ADD_PACK_AND_DROP_NOTE = `import { config, list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+export default config({
+  db: {
+    provider: 'postgresql',
+    extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+  },
+  lists: {
+    Note: list({
+      fields: {
+        title: text({ validation: { isRequired: true } }),
+      },
+    }),
+  },
+})
+`
+
 const loops: Loop[] = []
+const escapes: DevDatabase[] = []
 
 afterAll(async () => {
   for (const loop of loops) await loop.stop()
+  for (const escape of escapes) await escape.stop()
   fs.rmSync(scratchRoot, { recursive: true, force: true })
 })
 
@@ -329,4 +376,56 @@ describe('staged reconcile under opensaas dev', () => {
     expect(run.exitCode, run.output).not.toBe(0)
     expect(run.output).toContain('opensaas dev')
   }, 60_000)
+
+  // #1226: a config edit that both declares a pack for the first time and
+  // carries a destructive change parks the pack's seed alongside the parked
+  // plan. Restoring the pre-stage refs to discard that plan must not also
+  // strand the newly-seeded pack refless — `db update --confirm` later has
+  // nothing else to re-seed from.
+  //
+  // The dev loop's own PGlite freezes its loaded extensions at boot, and this
+  // project boots with none declared — `CREATE EXTENSION vector` would have
+  // nothing to install once the edit below declares pgvector. So the loop
+  // runs against a second PGlite, started here with `vector` already loaded,
+  // over the Database escape (ADR-0063) — the same technique `dev-loop.test.ts`
+  // uses for its own escape coverage. The escape carries the pack's real
+  // extension, not the bug: what's under test is whether the ref survives.
+  test('a pack seeded alongside a parked destructive change survives to `db update`', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-new-pack-escape-'))
+    const escape = await startDevDatabase({
+      stateFile: path.join(stateDir, 'dev-db.json'),
+      extensions: ['vector'],
+    })
+    escapes.push(escape)
+
+    const projectDir = createProjectFrom(fixtureConfigNoPack, 'new-pack')
+    const loop = startLoop(projectDir, { DATABASE_URL: escape.url })
+    loops.push(loop)
+
+    const booted = await waitForState(projectDir, loop, (state) => state.columns.length > 0, 'boot')
+    expect(booted.columns).toContain('note')
+    expect(booted.extensions).toEqual([])
+
+    const beforeEdit = loop.output().length
+    fs.writeFileSync(path.join(projectDir, 'opensaas.config.ts'), ADD_PACK_AND_DROP_NOTE, 'utf-8')
+    await waitForOutput(loop, 'pnpm db:update', { from: beforeEdit })
+
+    const pgvectorRefsDir = path.join(projectDir, 'migrations', 'pgvector', 'refs')
+    expect(
+      fs.existsSync(pgvectorRefsDir) && fs.readdirSync(pgvectorRefsDir).length > 0,
+      'the seed for the newly-declared pack must survive the parked plan',
+    ).toBe(true)
+
+    const update = await captureCli(projectDir, ['db', 'update', '--confirm', 'postgres'])
+    expect(update.exitCode, update.output).toBe(0)
+
+    const dropped = await waitForState(
+      projectDir,
+      loop,
+      (state) => !state.columns.includes('note'),
+      'the destructive change to be applied and promoted',
+    )
+    expect(dropped.columns).toContain('title')
+    expect(dropped.extensions).toEqual(['vector'])
+  }, 600_000)
 })

@@ -145,11 +145,34 @@ export function snapshotMigrationRefs(cwd: string): readonly RefSnapshot[] {
   return snapshots
 }
 
-/** Puts every snapshotted ref back, and removes any the run introduced. */
+/** The space directory a `refs/*.json` path belongs to. */
+function spaceOf(file: string): string {
+  return path.basename(path.dirname(path.dirname(file)))
+}
+
+/**
+ * Puts every snapshotted ref back, and removes any extra ref the run
+ * introduced into a space the snapshot already knew about.
+ *
+ * A space with no snapshotted ref at all was seeded by this run's own
+ * `generate` — a newly declared pack reaching `migrations/` for the first
+ * time — and is left untouched. That ref is not a discarded run's leftover;
+ * it is the new space's only record of itself, and deleting it strands the
+ * migration package `seedExtensionContractSpaces` just wrote refless (#1226).
+ *
+ * "No snapshotted ref" is a proxy for "space didn't exist yet," not a
+ * directly-checked fact: a space that existed before this run but already had
+ * no ref (already broken, by some other cause) reads the same way, and this
+ * run's own ref for it survives the prune too. That is no worse than the
+ * space already being broken.
+ */
 export function restoreMigrationRefs(cwd: string, snapshots: readonly RefSnapshot[]): void {
   const known = new Set(snapshots.map((snapshot) => snapshot.file))
+  const knownSpaces = new Set(snapshots.map((snapshot) => spaceOf(snapshot.file)))
   for (const snapshot of snapshotMigrationRefs(cwd)) {
-    if (!known.has(snapshot.file)) fs.rmSync(snapshot.file, { force: true })
+    if (known.has(snapshot.file)) continue
+    if (!knownSpaces.has(spaceOf(snapshot.file))) continue
+    fs.rmSync(snapshot.file, { force: true })
   }
   for (const snapshot of snapshots) {
     fs.mkdirSync(path.dirname(snapshot.file), { recursive: true })
