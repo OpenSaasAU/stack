@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsc && pnpm copy-templates",
     "copy-templates": "node dist/copy-templates.js",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist templates"

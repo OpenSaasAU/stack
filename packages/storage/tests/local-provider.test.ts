@@ -20,12 +20,26 @@ vi.mock('node:crypto', () => ({
   })),
 }))
 
+// The mock ships these six functions under a `default` key, matching the
+// module's CJS/ESM interop shape at runtime — a shape `@types/node`'s own
+// declarations don't model, since `node:fs/promises` has no `default` export
+// there. `fs.access.mockResolvedValue(...)` needs vitest's own mock type,
+// not the real (non-mocked) function signatures.
+type MockedFsPromises = {
+  access: ReturnType<typeof vi.fn>
+  mkdir: ReturnType<typeof vi.fn>
+  writeFile: ReturnType<typeof vi.fn>
+  readFile: ReturnType<typeof vi.fn>
+  unlink: ReturnType<typeof vi.fn>
+  stat: ReturnType<typeof vi.fn>
+}
+
 describe('LocalStorageProvider', () => {
-  let fs: typeof import('node:fs/promises').default
+  let fs: MockedFsPromises
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    fs = (await import('node:fs/promises')).default
+    fs = ((await import('node:fs/promises')) as unknown as { default: MockedFsPromises }).default
 
     // Default mock implementations
     fs.access.mockResolvedValue(undefined)

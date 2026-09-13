@@ -3,7 +3,9 @@ import type { BetterAuthOptions } from 'better-auth'
 import type { NormalizedAuthConfig } from '../src/config/types.js'
 import type { OpenSaasConfig, AccessContext } from '@opensaas/stack-core'
 
-const betterAuthMock = vi.fn(() => ({ api: { getSession: vi.fn(async () => null) } }))
+const betterAuthMock = vi.fn((_options: BetterAuthOptions) => ({
+  api: { getSession: vi.fn(async () => null) },
+}))
 const nextCookiesMock = vi.fn(() => ({ id: 'next-cookies' }))
 
 vi.mock('better-auth', () => ({
@@ -46,13 +48,14 @@ function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): Normaliz
     betterAuthPlugins: [],
     rateLimit: undefined,
     betterAuthOptions: {},
+    credentialFields: {},
     ...overrides,
   }
 }
 
 function makeOpensaasConfig(authConfig: NormalizedAuthConfig): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite' },
+    db: { provider: 'postgresql' },
     lists: {},
     _pluginData: { auth: authConfig },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal test fixture
@@ -97,7 +100,7 @@ async function buildBetterAuthConfig(authConfig: NormalizedAuthConfig): Promise<
   const auth = createAuth(makeOpensaasConfig(authConfig), makeContext())
   // Calling a nested method is what actually forces the lazy proxy to resolve
   // the underlying betterAuth() instance — merely accessing `auth.api` does not.
-  await auth.api.getSession({})
+  await auth.api.getSession({ headers: new Headers() })
   expect(betterAuthMock).toHaveBeenCalledTimes(1)
   return betterAuthMock.mock.calls[0][0] as BetterAuthOptions
 }
@@ -597,7 +600,7 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     const built = await buildBetterAuthOptions(opensaasConfig, context)
 
     const auth = createAuth(opensaasConfig, context)
-    await auth.api.getSession({})
+    await auth.api.getSession({ headers: new Headers() })
 
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
     expectSameOptions(betterAuthMock.mock.calls[0][0], built)
@@ -612,7 +615,7 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
     const built = await buildBetterAuthOptions(opensaasConfig, context, [pluginA])
 
     const auth = createAuth(opensaasConfig, context, [pluginA])
-    await auth.api.getSession({})
+    await auth.api.getSession({ headers: new Headers() })
 
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
     expectSameOptions(betterAuthMock.mock.calls[0][0], built)
@@ -627,7 +630,7 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
 
     const auth = createAuth(opensaasConfig, context, [differentInstance])
 
-    await expect(auth.api.getSession({})).rejects.toThrow(
+    await expect(auth.api.getSession({ headers: new Headers() })).rejects.toThrow(
       /does not match the plugin array resolved/,
     )
     expect(betterAuthMock).not.toHaveBeenCalled()
@@ -663,10 +666,12 @@ describe('buildBetterAuthOptions / createAuth parity', () => {
 
     const auth = createAuth(opensaasConfig, flakyContext)
 
-    await expect(auth.api.getSession({})).rejects.toThrow('database not reachable yet')
+    await expect(auth.api.getSession({ headers: new Headers() })).rejects.toThrow(
+      'database not reachable yet',
+    )
     expect(betterAuthMock).not.toHaveBeenCalled()
 
-    await auth.api.getSession({})
+    await auth.api.getSession({ headers: new Headers() })
     expect(betterAuthMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -290,14 +290,14 @@ async function drive(
     `http://127.0.0.1:${port}/?rounds=${rounds}&concurrency=${concurrency}`,
     { signal: AbortSignal.timeout(timeoutMs) },
   )
-  return await response.json()
+  return (await response.json()) as LoadResult
 }
 
 async function readCompleted(port: string): Promise<number> {
   const response = await fetch(`http://127.0.0.1:${port}/completed`, {
     signal: AbortSignal.timeout(COMPLETED_TIMEOUT_MS),
   })
-  const body: CompletedResult = await response.json()
+  const body = (await response.json()) as CompletedResult
   return body.completed
 }
 

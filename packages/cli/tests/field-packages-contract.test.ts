@@ -1,14 +1,20 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
-import { deriveContract } from '../../core/src/contract/index.js'
-import { deriveGeneratedTables } from '../../core/src/contract/dependencies.js'
-import { text, virtual } from '../../core/src/fields/index.js'
-import { withOrigin } from '../../core/src/origin.js'
-import { createTestDatabase, type TestDatabase } from '../../core/src/testing/context.js'
-import { createPlanRecorder, type RecordedPlan } from '../../core/src/testing/plans.js'
-import type { ContractModel } from '../../core/src/contract/types.js'
-import type { OpenSaasConfig } from '../../core/src/config/types.js'
-import { file, image } from '../../storage/src/fields/index.js'
-import { richText } from '../../tiptap/src/fields/richText.js'
+import {
+  deriveContract,
+  deriveGeneratedTables,
+  type ContractModel,
+} from '@opensaas/stack-core/contract'
+import { text, virtual } from '@opensaas/stack-core/fields'
+import { withOrigin } from '@opensaas/stack-core/origin'
+import {
+  createTestDatabase,
+  createPlanRecorder,
+  type TestDatabase,
+  type RecordedPlan,
+} from '@opensaas/stack-core/testing'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { file, image } from '@opensaas/stack-storage/fields'
+import { richText } from '@opensaas/stack-tiptap/fields'
 import { generateTypes } from '../src/generator/types.js'
 import { fieldPackageConfig } from './fixtures/field-package-configs.js'
 

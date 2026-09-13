@@ -43,7 +43,7 @@ function config(): OpenSaasConfig {
 }
 
 /** Recover the routed element from AdminUI's shell, past the Suspense boundary. */
-function routedContent(tree: React.ReactNode): React.ReactElement {
+function routedContent(tree: React.ReactNode): React.ReactElement<Record<string, unknown>> {
   const fragment = tree as React.ReactElement<{ children: React.ReactNode }>
   const wrapper = React.Children.toArray(fragment.props.children).find(
     (child): child is React.ReactElement<{ children: React.ReactNode }> =>
@@ -57,7 +57,7 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
   if (!main) throw new Error('AdminUI <main> not found')
   const boundary = main.props.children as React.ReactElement<{ children: React.ReactNode }>
   return React.isValidElement(boundary) && boundary.type === React.Suspense
-    ? (boundary.props.children as React.ReactElement)
+    ? (boundary.props.children as React.ReactElement<Record<string, unknown>>)
     : boundary
 }
 

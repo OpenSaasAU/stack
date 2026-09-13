@@ -47,7 +47,7 @@ const noopServerAction = vi.fn(async () => ({ success: true }))
  * router chose for the bare [list] route) so we can inspect the props AdminUI
  * passed to it.
  */
-function routedContent(tree: React.ReactNode): React.ReactElement {
+function routedContent(tree: React.ReactNode): React.ReactElement<Record<string, unknown>> {
   const fragment = tree as React.ReactElement<{ children: React.ReactNode }>
   const children = React.Children.toArray(fragment.props.children)
   const wrapper = children.find(
@@ -64,9 +64,9 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
   // to reach the routed screen component the router selected.
   const boundary = main.props.children as React.ReactElement<{ children: React.ReactNode }>
   if (React.isValidElement(boundary) && boundary.type === React.Suspense) {
-    return boundary.props.children as React.ReactElement
+    return boundary.props.children as React.ReactElement<Record<string, unknown>>
   }
-  return boundary
+  return boundary as React.ReactElement<Record<string, unknown>>
 }
 
 describe('ListView sort resolution over the Test context', () => {
@@ -147,7 +147,7 @@ describe('ListView sort resolution over the Test context', () => {
 describe('AdminUI ui.listView wiring', () => {
   it('passes initialColumns + initialSort from ui.listView to ListView', async () => {
     const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
+      db: { provider: 'postgresql' },
       lists: {
         Post: list({
           fields: {
@@ -185,7 +185,7 @@ describe('AdminUI ui.listView wiring', () => {
 
   it('passes undefined columns + initialSort when ui.listView is absent', async () => {
     const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
+      db: { provider: 'postgresql' },
       lists: {
         Post: list({
           fields: {

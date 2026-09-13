@@ -106,23 +106,23 @@ describe('loadOpenSaasConfig', () => {
     )
 
     const first = await loadOpenSaasConfig(tempDir, configPath)
-    expect((first.config as { client: number }).client).toBe(1)
+    expect((first.config as unknown as { client: number }).client).toBe(1)
 
     fs.writeFileSync(modulePath, 'export const client = 2\n')
 
     const second = await loadOpenSaasConfig(tempDir, configPath)
-    expect((second.config as { client: number }).client).toBe(2)
+    expect((second.config as unknown as { client: number }).client).toBe(2)
     expect(second.resolvedModules).toEqual([modulePath])
   })
 
   it('sees a config edit made between two loads — the pre-existing freshness guarantee still holds', async () => {
     fs.writeFileSync(configPath, 'export default { lists: {}, revision: 1 }\n')
     const first = await loadOpenSaasConfig(tempDir, configPath)
-    expect((first.config as { revision: number }).revision).toBe(1)
+    expect((first.config as unknown as { revision: number }).revision).toBe(1)
 
     fs.writeFileSync(configPath, 'export default { lists: {}, revision: 2 }\n')
     const second = await loadOpenSaasConfig(tempDir, configPath)
-    expect((second.config as { revision: number }).revision).toBe(2)
+    expect((second.config as unknown as { revision: number }).revision).toBe(2)
   })
 
   it('sees an edit to a node_modules dependency still on raw TypeScript form between two loads — excluded from the watch list is not exempt from the freshness guarantee', async () => {
@@ -144,12 +144,12 @@ describe('loadOpenSaasConfig', () => {
     )
 
     const first = await loadOpenSaasConfig(tempDir, configPath)
-    expect((first.config as { value: number }).value).toBe(1)
+    expect((first.config as unknown as { value: number }).value).toBe(1)
 
     fs.writeFileSync(path.join(packageDir, 'index.ts'), 'export const value: number = 2\n')
 
     const second = await loadOpenSaasConfig(tempDir, configPath)
-    expect((second.config as { value: number }).value).toBe(2)
+    expect((second.config as unknown as { value: number }).value).toBe(2)
     expect(second.resolvedModules).toEqual([])
   })
 })

@@ -10,6 +10,7 @@
   "scripts": {
     "build": "pnpm turbo build --filter=./packages/* --filter=opensaas-stack-docs",
     "build:examples": "pnpm turbo build --filter=./examples/*",
+    "typecheck": "pnpm turbo typecheck --filter=./packages/*",
     "dev": "pnpm -r --parallel dev",
     "clean": "pnpm -r clean",
     "lint": "eslint .",

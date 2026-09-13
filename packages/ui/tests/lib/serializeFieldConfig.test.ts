@@ -18,7 +18,7 @@ function makeFields(fields: Record<string, Record<string, unknown>>): Record<str
  */
 function makeConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
       User: {
         fields: { name: { type: 'text' }, profile: { type: 'relationship', ref: 'Profile.user' } },
@@ -98,7 +98,7 @@ describe('markUnwritableRelationships', () => {
  */
 function junctionConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite', url: 'file:./test.db' },
+    db: { provider: 'postgresql' },
     lists: {
       Post: {
         fields: {

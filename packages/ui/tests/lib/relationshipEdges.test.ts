@@ -74,7 +74,7 @@ describe('resolveToManyEdgePlan (ADR-0050)', () => {
     withRequiredValidation.lists.Post.fields.author = {
       ...relationship({ ref: 'User.posts' }),
       validation: { isRequired: true },
-    }
+    } as unknown as ReturnType<typeof relationship>
     expect(resolveToManyEdgePlan(withRequiredValidation, 'User', 'posts')).toBeNull()
   })
 

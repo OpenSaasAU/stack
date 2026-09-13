@@ -15,7 +15,7 @@ import { ItemEditForm } from '../../src/components/standalone/ItemEditForm.js'
  * a picker rendered for it would offer an edit the engine refuses at save.
  */
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql' },
   lists: {
     User: {
       fields: { name: { type: 'text' }, profile: { type: 'relationship', ref: 'Profile.user' } },

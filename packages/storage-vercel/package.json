@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage"

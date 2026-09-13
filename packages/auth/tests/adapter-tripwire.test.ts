@@ -23,7 +23,7 @@ import type { NormalizedAuthConfig } from '../src/config/types.js'
 const BOOT = 120_000
 
 const betterAuthOptions: BetterAuthOptions = {
-  rateLimit: { storage: 'database' },
+  rateLimit: { enabled: true, storage: 'database' },
 }
 
 let database: TestDatabase
@@ -35,7 +35,10 @@ beforeAll(async () => {
   recorder = createPlanRecorder()
   opensaasConfig = await defineConfig({
     plugins: [
-      authPlugin({ emailAndPassword: { enabled: true }, rateLimit: { storage: 'database' } }),
+      authPlugin({
+        emailAndPassword: { enabled: true },
+        rateLimit: { enabled: true, storage: 'database' },
+      }),
     ],
     db: { provider: 'postgresql' },
     lists: {},

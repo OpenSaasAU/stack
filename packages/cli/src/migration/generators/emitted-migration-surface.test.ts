@@ -15,7 +15,7 @@ import { validateConfigFields } from '../../../../core/src/validation/field-conf
 import { validateNeedsDeclarations } from '../../../../core/src/validation/needs-closure.js'
 import { validateDatabaseConfig } from '../../../../core/src/validation/database-config.js'
 import { validateRelations } from '../../../../core/src/validation/relations.js'
-import type { ListConfig, OpenSaasConfig } from '../../../../core/src/config/types.js'
+import type { ListConfig, OpenSaasConfig, TypeInfo } from '../../../../core/src/config/types.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '../../..')
@@ -216,8 +216,10 @@ ${body}
  * framework's synthetic back-relation is enough to make a list-only ref
  * resolve.
  */
-function withStandInTargets(declared: Record<string, unknown>): Record<string, ListConfig> {
-  const lists = { ...declared } as Record<string, ListConfig>
+function withStandInTargets(
+  declared: Record<string, unknown>,
+): Record<string, ListConfig<TypeInfo>> {
+  const lists = { ...declared } as Record<string, ListConfig<TypeInfo>>
   const missing = new Set<string>()
 
   for (const listConfig of Object.values(lists)) {
@@ -229,7 +231,7 @@ function withStandInTargets(declared: Record<string, unknown>): Record<string, L
   }
 
   for (const listKey of missing) {
-    lists[listKey] = list({ fields: {} }) as ListConfig
+    lists[listKey] = list({ fields: {} }) as ListConfig<TypeInfo>
   }
   return lists
 }

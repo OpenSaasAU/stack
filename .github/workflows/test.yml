@@ -81,6 +81,14 @@ jobs:
       - name: Check format
         run: pnpm format:check
 
+      # `tsc` for a package's own `build` only ever sees `src/**/*`, so a type
+      # error in a test file (or in a fixture only a test imports) reports
+      # green there. Each package's own `tsconfig.test.json` widens the same
+      # check to `src/**/*` + `tests/**/*` with `noEmit`, so this is the one
+      # gate that actually type-checks test code (#1340).
+      - name: Typecheck packages, including their tests
+        run: pnpm typecheck
+
       # `opensaas generate` must be deterministic: re-running it over a
       # committed project leaves contract.ts, prisma.config.ts, contract.json,
       # contract.d.ts and the seeded extension contract space under migrations/

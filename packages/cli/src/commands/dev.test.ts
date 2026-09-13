@@ -87,7 +87,7 @@ vi.mock('../generator/index.js', async (importOriginal) => {
       aliasWarnings: [],
       resolvedModules: [],
     }),
-    runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '' }),
+    runPrismaCli: vi.fn().mockResolvedValue({ exitCode: 0, signal: null, output: '', stdout: '' }),
   }
 })
 
@@ -545,7 +545,12 @@ describe('devCommand', () => {
   })
 
   it('does not start the app when reconciliation does not apply', async () => {
-    vi.mocked(runPrismaCli).mockResolvedValueOnce({ exitCode: 2, signal: null, output: '' })
+    vi.mocked(runPrismaCli).mockResolvedValueOnce({
+      exitCode: 2,
+      signal: null,
+      output: '',
+      stdout: '',
+    })
 
     await startLoop()
 
@@ -750,7 +755,7 @@ describe('devCommand', () => {
       })
       vi.mocked(runPrismaCli).mockImplementation(async () => {
         await reconcileGate
-        return { exitCode: 0, signal: null, output: '' }
+        return { exitCode: 0, signal: null, output: '', stdout: '' }
       })
 
       startLoop({ appCommand: ['node', 'server.mjs'] })
@@ -813,8 +818,8 @@ describe('devCommand', () => {
       let prismaCalls = 0
       vi.mocked(runPrismaCli).mockImplementation(async () => {
         prismaCalls += 1
-        if (prismaCalls === 1) return { exitCode: 0, signal: null, output: '' }
-        return { exitCode: 1, signal: null, output: 'database is not reachable' }
+        if (prismaCalls === 1) return { exitCode: 0, signal: null, output: '', stdout: '' }
+        return { exitCode: 1, signal: null, output: 'database is not reachable', stdout: '' }
       })
 
       const said: string[] = []

@@ -1,8 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
 import { twoFactor } from 'better-auth/plugins'
-import { deriveAuthLists } from '../src/config/derive-auth-lists.js'
+import {
+  deriveAuthLists as deriveAuthListsImpl,
+  type DerivedAuthLists,
+} from '../src/config/derive-auth-lists.js'
 import type { NormalizedAuthModels } from '../src/config/types.js'
+import type { AnyLists } from './helpers/field-types.js'
+
+type TestDerivedAuthLists = Omit<DerivedAuthLists, 'lists'> & { lists: AnyLists }
+
+function deriveAuthLists(...args: Parameters<typeof deriveAuthListsImpl>): TestDerivedAuthLists {
+  return deriveAuthListsImpl(...args) as unknown as TestDerivedAuthLists
+}
 
 const defaultModels: NormalizedAuthModels = {
   user: { modelName: 'User', fields: {} },

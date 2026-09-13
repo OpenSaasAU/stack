@@ -3,6 +3,7 @@ import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import type { Plugin } from '@opensaas/stack-core/extend'
+import type { RelationshipField } from '@opensaas/stack-core/fields'
 import { authPlugin } from '../src/config/plugin.js'
 import { adoptBetterAuthTables } from '../src/config/adopt-better-auth-tables.js'
 
@@ -293,7 +294,8 @@ describe('adoptBetterAuthTables - clean-diff adoption (Auth lists ≠ app User)'
     // Renamed columns flow through to the derived field-level @map / FK @map so
     // the lists match the live columns.
     expect(result.lists.AuthUser.fields.name.db?.map).toBe('full_name')
-    expect(result.lists.AuthSession.fields.user.db?.foreignKey).toEqual({ map: 'user_id' })
+    const userField = result.lists.AuthSession.fields.user as RelationshipField
+    expect(userField.db?.foreignKey).toEqual({ map: 'user_id' })
   })
 })
 

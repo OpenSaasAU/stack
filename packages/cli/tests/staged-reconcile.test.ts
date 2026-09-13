@@ -160,7 +160,7 @@ async function readState(projectDir: string): Promise<AppState | undefined> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/`)
     if (!response.ok) return undefined
-    return await response.json()
+    return (await response.json()) as AppState
   } catch {
     return undefined
   }

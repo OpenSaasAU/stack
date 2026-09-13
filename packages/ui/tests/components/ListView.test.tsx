@@ -297,8 +297,9 @@ describe('ListView excludes read-denied fields from filtering and sorting (#915)
     'drops a read-denied field from the collected filter suggestions',
     async () => {
       const props = await render(ada, { listKey: 'User' })
-      expect(props.filterSuggestions.map((s) => s.field)).not.toContain('billingAddress')
-      expect(props.filterSuggestions.map((s) => s.field)).toContain('name')
+      expect(props.filterSuggestions).toBeDefined()
+      expect(props.filterSuggestions!.map((s) => s.field)).not.toContain('billingAddress')
+      expect(props.filterSuggestions!.map((s) => s.field)).toContain('name')
     },
     BOOT,
   )

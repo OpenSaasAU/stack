@@ -23,7 +23,7 @@ vi.mock('next/link.js', () => ({
 }))
 
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({ fields: { title: text() } }),
     Author: list({ fields: { name: text() } }),
