@@ -379,6 +379,29 @@ describe('core field Filter specs', () => {
     expect(where).toBeUndefined()
   })
 
+  it('declines the filter when ui.labelField names a non-text field (#1359)', () => {
+    // `contains` needs a real text column (ADR-0055's `ilike` accessor) — a
+    // label explicitly pointed at an integer has none, the same failure
+    // direction as the id-fallback case above, just reached explicitly
+    // instead of by omission.
+    const gatedConfig: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Ledger: list({
+          fields: { balance: integer() },
+          ui: { labelField: 'balance' },
+        }),
+        Entry: list({ fields: { ledger: relationship({ ref: 'Ledger' }) } }),
+      },
+    }
+    const spec = gatedConfig.lists.Entry.fields.ledger.getFilterSpec!(
+      'ledger',
+      'Entry',
+      gatedConfig,
+    )
+    expect(spec).toBeUndefined()
+  })
+
   it('does not produce specs for password/json/virtual (absence degrades gracefully)', async () => {
     // A list of non-filterable fields yields no specs at all.
     const specsForUser = await collectFilterSpecs(config.lists.User, 'User', config, noAccessArgs)
