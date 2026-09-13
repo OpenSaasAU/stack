@@ -148,6 +148,8 @@ Hook types:
 - Returns a `StackContext`: `{ db, session, unsafe, storage, plugins, serverAction, sudo, withSession, transaction, _isSudo }`
 - `context.transaction(fn)` - Interactive, hook-firing transaction (see below)
 
+**`rawOpensaasContext` retries construction; it never stays poisoned.** The generated `.opensaas/context.ts` also exports `rawOpensaasContext`, for a module-init-time consumer (`@opensaas/stack-auth`'s `createAuth`) that captures the export once and holds it for the life of the process. It is not a plain `Promise` — a settled `Promise` can't be un-rejected — but a stable, `then`-able object whose underlying construction attempt is memoised only on success, exactly like the generated client singleton it wraps. A process that boots before its database is reachable sees the first `await rawOpensaasContext` reject, but the next one tries again rather than replaying that rejection forever; `getContext()` never had this problem, since it is a plain function re-invoked per call. See issue #1377.
+
 #### The composed read
 
 `context.db.<List>` is an opaque wrapper over the ORM's collection, keyed by the **config's own PascalCase list key** (`context.db.AuthUser`). There is no camelCase spelling anywhere on the surface and no helper that produces one.

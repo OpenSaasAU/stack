@@ -16,11 +16,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
  *
  * Two things make the concurrency probe able to fail rather than merely pass.
  * The config resolves behind a plugin that sleeps, which holds every caller
- * inside `getClient`'s own `await getConfig()` at once — without it the eager
- * `rawOpensaasContext` wins during module evaluation and any implementation
- * logs one call. And the probe runs as production, because the dev-only
- * `globalForClient` write would otherwise catch the second and third callers
- * on their way out of that await and hide the missing memo.
+ * inside `getClient`'s own `await getConfig()` at once — without it a fast
+ * implementation could let one racer's construction finish before the next
+ * one starts, proving only that they end up sharing a resolved value rather
+ * than sharing the same in-flight attempt. And the probe runs as production,
+ * because the dev-only `globalForClient` write would otherwise catch the
+ * second and third callers on their way out of that await and hide the
+ * missing memo.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules`, and outside `node_modules` itself so type stripping applies.
@@ -106,6 +108,35 @@ process.env.DATABASE_URL = 'postgres://nobody@127.0.0.1:1/never-dialled'
 const context = await mod.getContext()
 if (typeof context?.db !== 'object') throw new Error('the recovered context carried no db surface')
 console.log('RECOVERED')
+`
+
+/**
+ * `rawOpensaasContext` is exported once, at module scope, and handed to
+ * helpers like \`createAuth\` that hold onto that one reference for the life
+ * of the process — so unlike \`getContext()\`, which is just a function called
+ * fresh each time, there is no second call site to fall back on if the first
+ * \`await\` poisons it. This is issue #1377: confirm the same object recovers
+ * across two \`await\`s, the second made after the connection becomes
+ * resolvable, exactly as a caller holding the export across a database blip
+ * would experience it.
+ */
+const RAW_CONTEXT_RECOVERY_PROBE = `const mod = await import('./.opensaas/context.ts')
+
+const rawContext = mod.rawOpensaasContext
+
+let firstError = null
+try {
+  await rawContext
+} catch (error) {
+  firstError = error
+}
+if (firstError === null) throw new Error('the first rawOpensaasContext resolved with no connection URL')
+console.log('RAW_FIRST_FAILED:' + firstError.name)
+
+process.env.DATABASE_URL = 'postgres://nobody@127.0.0.1:1/never-dialled'
+const context = await rawContext
+if (typeof context?.db !== 'object') throw new Error('the recovered raw context carried no db surface')
+console.log('RAW_RECOVERED')
 `
 
 describe('the generated client is constructed once, from db.client', () => {
@@ -197,6 +228,20 @@ describe('the generated client is constructed once, from db.client', () => {
     expect(result.signal, output).toBe(null)
     expect(output, output).toContain('FIRST_FAILED:DatabaseUrlUnresolvedError')
     expect(output, output).toContain('RECOVERED')
+    expect(result.status, output).toBe(0)
+  }, 120_000)
+
+  test('the same rawOpensaasContext reference recovers after a failed first await (#1377)', () => {
+    const result = runProbe('raw-recovery.mjs', RAW_CONTEXT_RECOVERY_PROBE, {
+      OPENSAAS_TEST_POOL: '',
+      DATABASE_URL: '',
+      DIRECT_DATABASE_URL: '',
+    })
+
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    expect(result.signal, output).toBe(null)
+    expect(output, output).toContain('RAW_FIRST_FAILED:DatabaseUrlUnresolvedError')
+    expect(output, output).toContain('RAW_RECOVERED')
     expect(result.status, output).toBe(0)
   }, 120_000)
 })

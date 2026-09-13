@@ -14,12 +14,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
  * what it does *not* leave — is what is asserted.
  *
  * The probe stops at the point a connection would be opened. `DATABASE_URL` is
- * set so `resolveDatabaseUrl()` resolves, but nothing dials it: the module's
- * `rawOpensaasContext` promise is the only eager path and its rejection is
- * absorbed, so what is asserted is that the module graph — the bundle, the
- * config, `@opensaas/stack-core` and `@prisma/orm-postgres/runtime` — loads.
- * better-auth is not exercised here; ADR-0054's amendment says where that
- * anchor went.
+ * set so `resolveDatabaseUrl()` resolves, but nothing dials it: `getContext`
+ * is never called and `rawOpensaasContext` starts no attempt of its own until
+ * something `.then()`s or `.catch()`es it, so what is asserted is that the
+ * module graph — the bundle, the config, `@opensaas/stack-core` and
+ * `@prisma/orm-postgres/runtime` — loads. better-auth is not exercised here;
+ * ADR-0054's amendment says where that anchor went.
  *
  * The scratch tree lives inside this package so node resolution reaches its
  * `node_modules`, and outside `node_modules` itself so type stripping applies.
@@ -40,8 +40,8 @@ afterAll(() => {
  */
 const PROBE = `const mod = await import('./.opensaas/context.ts')
 
-// The eager context promise would otherwise reject unhandled at a connection
-// this probe never intends to open.
+// Nothing is eager anymore, but rawOpensaasContext must still expose a
+// catch() a caller can attach without it throwing synchronously.
 mod.rawOpensaasContext?.catch(() => {})
 
 if (typeof mod.getContext !== 'function') {
