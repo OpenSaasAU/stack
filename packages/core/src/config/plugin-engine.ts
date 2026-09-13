@@ -7,6 +7,18 @@ import type {
   McpCustomTool,
   BaseFieldConfig,
 } from './types.js'
+import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
+
+/**
+ * `context.plugins`, `config._pluginData` and `config.lists` are all plain
+ * objects keyed by an author-supplied name — a plugin name or a list name.
+ * Writing one of these under `__proto__` reaches the object's actual
+ * prototype instead of adding a member, and `constructor`/`prototype` shadow
+ * an inherited member on lookup. Refusing them by name at the point a plugin
+ * supplies one tells the author outright, rather than leaving them to debug a
+ * registry that behaves oddly around this one name.
+ */
+const RESERVED_OBJECT_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
 
 function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   const pluginMap = new Map<string, Plugin>()
@@ -15,6 +27,12 @@ function sortPluginsByDependencies(plugins: Plugin[]): Plugin[] {
   const sorted: Plugin[] = []
 
   for (const plugin of plugins) {
+    if (RESERVED_OBJECT_KEYS.has(plugin.name)) {
+      throw new Error(
+        `Plugin name "${plugin.name}" is reserved and cannot be used — it is a property every ` +
+          `plain JavaScript object inherits, and context.plugins is keyed by plugin name. Rename the plugin.`,
+      )
+    }
     if (pluginMap.has(plugin.name)) {
       throw new Error(`Duplicate plugin name: ${plugin.name}`)
     }
@@ -128,7 +146,9 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
   let currentConfig: OpenSaasConfig = {
     ...config,
     lists: { ...config.lists }, // Clone lists object to avoid mutating original
-    _pluginData: {},
+    // Null-prototype: keyed by author-supplied plugin names, same hazard as
+    // context.plugins below.
+    _pluginData: nullPrototypeRegistry(),
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Registry must accept any field config builder
@@ -142,7 +162,13 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plugin context must accept any list config
       addList: (name: string, listConfig: ListConfig<any>) => {
-        if (currentConfig.lists[name]) {
+        if (RESERVED_OBJECT_KEYS.has(name)) {
+          throw new Error(
+            `Plugin "${plugin.name}" tried to add list "${name}", which is reserved — it is a property every ` +
+              `plain JavaScript object inherits, and config.lists is keyed by list name. Use a different list name.`,
+          )
+        }
+        if (Object.hasOwn(currentConfig.lists, name)) {
           throw new Error(
             `Plugin "${plugin.name}" tried to add list "${name}" but it already exists. Use extendList() to modify existing lists.`,
           )
@@ -151,7 +177,15 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
       },
 
       extendList: (name, extension) => {
-        const existing = currentConfig.lists[name]
+        if (RESERVED_OBJECT_KEYS.has(name)) {
+          throw new Error(
+            `Plugin "${plugin.name}" tried to extend list "${name}", which is reserved — it is a property every ` +
+              `plain JavaScript object inherits, and config.lists is keyed by list name. Use a different list name.`,
+          )
+        }
+        const existing = Object.hasOwn(currentConfig.lists, name)
+          ? currentConfig.lists[name]
+          : undefined
         if (!existing) {
           throw new Error(
             `Plugin "${plugin.name}" tried to extend list "${name}" but it doesn't exist. Use addList() to create new lists.`,
@@ -224,7 +258,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
       setPluginData: <T>(pluginName: string, data: T) => {
         if (!currentConfig._pluginData) {
-          currentConfig._pluginData = {}
+          currentConfig._pluginData = nullPrototypeRegistry()
         }
         currentConfig._pluginData[pluginName] = data
       },
@@ -235,7 +269,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
   if (mcpToolsRegistry.length > 0) {
     if (!currentConfig._pluginData) {
-      currentConfig._pluginData = {}
+      currentConfig._pluginData = nullPrototypeRegistry()
     }
     currentConfig._pluginData.__mcpTools = mcpToolsRegistry
   }

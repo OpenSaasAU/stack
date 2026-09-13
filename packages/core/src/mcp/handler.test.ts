@@ -162,6 +162,45 @@ function schemaConfig(): OpenSaasConfig {
         },
         access: { operation: { query: () => true, create: () => true } },
       },
+      // A column made non-null purely at the DB level (#1355) — no
+      // `validation.isRequired` — is just as impossible to omit from a create
+      // as Ledger's field above, so a denied write drops the tool the same
+      // way. Carries a `defaultValue` too: `applyCreateDefaults` fills it in
+      // whether or not the caller supplies it, and `filterWritableFields`
+      // then denies the write regardless — so the tool must stay dropped
+      // even though a value technically exists to fall back on.
+      Invoice: {
+        fields: {
+          total: text({
+            db: { isNullable: false },
+            defaultValue: 'unposted',
+            access: { create: ({ session }) => session?.role === 'admin' },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true } },
+      },
+      // Operation-level `create` denial (#1355): row-independent — it never
+      // reaches into `item` — and always refuses, so no session gets a
+      // `create` tool for it, the same defect story #1163 closed for a
+      // denied required field, one level up.
+      Vault: {
+        fields: { secret: text() },
+        access: { operation: { query: () => true, create: () => false } },
+      },
+      // The row-dependent counterpart: an operation-level `create` rule
+      // reused from `update`, which legitimately depends on the existing row
+      // there. Unanswerable ahead of a request, so it stays advertised
+      // (#1355) — the actual `create` call still enforces it.
+      SharedGate: {
+        fields: { title: text() },
+        access: {
+          operation: {
+            query: () => true,
+            create: ({ item }) => item?.title !== 'locked',
+            update: ({ item }) => item?.title !== 'locked',
+          },
+        },
+      },
       // A unique-constraint fixture: `UniqueConstraintViolation`'s message is
       // documented as safe to show a user (ADR-0042), so it belongs in the
       // MCP write path's allowlist alongside the engine-refusal error types.
@@ -1083,6 +1122,81 @@ describe('the MCP surface', () => {
 
         const adminNames = (await toolsFor(admin)).map((tool) => tool.name)
         expect(adminNames).toContain('list_ledger_create')
+      },
+      BOOT,
+    )
+
+    test(
+      'a db.isNullable: false field the session cannot write removes the create tool the same way',
+      async () => {
+        const authorNames = (await toolsFor(author)).map((tool) => tool.name)
+        expect(authorNames).toContain('list_invoice_query')
+        expect(authorNames).not.toContain('list_invoice_create')
+
+        const adminNames = (await toolsFor(admin)).map((tool) => tool.name)
+        expect(adminNames).toContain('list_invoice_create')
+      },
+      BOOT,
+    )
+
+    test(
+      "a defaultValue doesn't rescue a denied db.isNullable: false field — the tool stays right to drop it",
+      async () => {
+        // Omitting `total` relies entirely on `defaultValue` — proving the
+        // dropped tool wasn't merely a false positive.
+        const { body: authorBody } = await rpc(
+          'tools/call',
+          { name: 'list_invoice_create', arguments: { data: {} } },
+          schemaConfig(),
+          author,
+        )
+        expect((authorBody?.result as { isError?: boolean }).isError).toBe(true)
+
+        // The same omitted-field create succeeds for a session the field
+        // access DOES allow — `applyCreateDefaults` fills it in.
+        const { body: adminBody } = await rpc(
+          'tools/call',
+          { name: 'list_invoice_create', arguments: { data: {} } },
+          schemaConfig(),
+          admin,
+        )
+        const adminResult = adminBody?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(adminResult.isError).toBeUndefined()
+        expect(JSON.parse(adminResult.content[0].text)).toMatchObject({
+          item: { total: 'unposted' },
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'a row-independent operation-level create denial removes the create tool for every session',
+      async () => {
+        for (const getSession of [anonymous, author, admin]) {
+          const names = (await toolsFor(getSession)).map((tool) => tool.name)
+          expect(names).toContain('list_vault_query')
+          expect(names).not.toContain('list_vault_create')
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a row-dependent operation-level create rule stays advertised',
+      async () => {
+        for (const getSession of [anonymous, author, admin]) {
+          const names = (await toolsFor(getSession)).map((tool) => tool.name)
+          expect(names).toContain('list_sharedGate_create')
+        }
+
+        // The rule's real answer for a create (no row exists to evaluate
+        // against) is a plain allow.
+        const { body } = await callTool('list_sharedGate_create', { data: { title: 'new' } })
+        const result = body?.result as { isError?: boolean }
+        expect(result.isError).toBeUndefined()
       },
       BOOT,
     )

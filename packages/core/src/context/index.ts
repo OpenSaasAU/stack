@@ -4,6 +4,7 @@ import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import {
@@ -659,7 +660,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     },
     // Reuse already-initialised plugin services when rebinding to a transaction
     // client, otherwise start empty and populate via plugin runtimes below.
-    plugins: _sharedPlugins ?? {},
+    // Null-prototype: keyed by author-supplied plugin names, so a plugin named
+    // `__proto__` must not reach the object's actual prototype, and a lookup
+    // of a name nobody registered (`constructor`, `toString`, …) must come
+    // back `undefined` rather than an inherited function.
+    plugins: _sharedPlugins ?? nullPrototypeRegistry(),
     _isSudo,
     _resolveOutputChain: [],
     _transactionOwner,

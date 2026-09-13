@@ -14,7 +14,10 @@ import { OPENAI_MODEL_DIMENSIONS } from '../providers/openai.js'
 import { embedding } from '../fields/embedding.js'
 import type { EmbeddingField } from '../fields/embedding.js'
 import type { RAGRuntimeServices } from '../runtime/types.js'
-import { createGenerationFailureReporter } from './generation-failure.js'
+import {
+  createGenerationFailureReporter,
+  MissingEmbeddingWriterError,
+} from './generation-failure.js'
 
 /** The pgvector extension pack, which the app author never has to name (ADR-0049). */
 const PGVECTOR_EXTENSION = {
@@ -241,7 +244,12 @@ export function ragPlugin(config: RAGConfig): Plugin {
               // round trip that has no business holding a connection.
               //
               // Known limits: the row is already committed by the time this
-              // runs, so none of the three gaps below can abort it.
+              // runs, so none of the three gaps below can abort it. Nothing in
+              // this hook is allowed to throw past the try/catch below,
+              // including the escalated-write lookup — a throw here would
+              // surface as an AfterTransactionError off a write whose row has
+              // already committed, and a caller reading that as "the write
+              // failed" would retry and duplicate the row (#1342).
               //  - #1271: a nested record is never embedded — `afterTransaction`
               //    carries a persisted `item` for the top-level record only.
               //  - #1271: a provider failure is logged, not thrown. The write
@@ -285,9 +293,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 const current = item[fieldName]
                 if (storedSourceHash(current) === sourceHash) return
 
-                const write = embeddingWriter(args.context)
-
                 try {
+                  const write = embeddingWriter(args.context)
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
@@ -528,10 +535,7 @@ function hasEmbeddingWriter(value: unknown): value is { [WRITE_EMBEDDING]: Embed
 function embeddingWriter(context: AccessContext): EmbeddingWriter {
   const services: unknown = context.plugins.rag
   if (!hasEmbeddingWriter(services)) {
-    throw new Error(
-      'RAG plugin: context.plugins.rag is missing, so a generated embedding has no escalated ' +
-        'write to reach its write-denied column through. The context was built without the plugin.',
-    )
+    throw new MissingEmbeddingWriterError()
   }
   return services[WRITE_EMBEDDING]
 }

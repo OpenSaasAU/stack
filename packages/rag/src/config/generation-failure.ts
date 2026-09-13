@@ -49,6 +49,33 @@ export function isRefusedWrite(error: unknown): boolean {
   return error instanceof Error && REFUSED_WRITE_ERRORS.has(error.name)
 }
 
+/**
+ * Thrown when the hook looks up its own escalated write and finds no RAG
+ * services on the context at all — the context was built without
+ * `ragPlugin()` in its config. Matched on `name`, like `REFUSED_WRITE_ERRORS`,
+ * for the same reason: a second copy of `stack-rag` on the resolved tree must
+ * not make the classification silently fall through to the transient arm.
+ */
+export class MissingEmbeddingWriterError extends Error {
+  constructor() {
+    super(
+      'RAG plugin: context.plugins.rag is missing, so a generated embedding has no escalated ' +
+        'write to reach its write-denied column through. The context was built without the plugin.',
+    )
+    this.name = 'MissingEmbeddingWriterError'
+  }
+}
+
+/**
+ * Whether a throw is the hook finding no RAG services on the context — a
+ * wiring defect the caller holds (the context was built without
+ * `ragPlugin()`), not the plugin. It fails identically on every row until the
+ * context is built correctly, so it is never something to retry.
+ */
+export function isMissingWriter(error: unknown): boolean {
+  return error instanceof Error && error.name === 'MissingEmbeddingWriterError'
+}
+
 export type GenerationFailure = {
   listName: string
   fieldName: string
@@ -116,6 +143,20 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
           `commit normally and the embedding column stays null, and there is no regeneration ` +
           `path (#1271), so rows written before it is fixed stay null afterwards.`,
         'fix the refused write reported above',
+      )
+      return
+    }
+
+    if (isMissingWriter(failure.error)) {
+      standing(
+        failure,
+        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The context this hook ` +
+          `ran on carries no RAG services at all, so there is no escalated write to reach the ` +
+          `column through. That is a wiring defect rather than a provider being down: it fails ` +
+          `the same way for every row until the context is built with ragPlugin() in its config. ` +
+          `Rows commit normally and the embedding column stays null, and there is no ` +
+          `regeneration path (#1271), so rows written before it is fixed stay null afterwards.`,
+        'build the context with ragPlugin() as reported above',
       )
       return
     }
