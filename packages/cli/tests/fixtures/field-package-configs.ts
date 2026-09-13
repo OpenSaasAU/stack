@@ -1,7 +1,7 @@
-import type { OpenSaasConfig } from '../../../core/src/config/types.js'
-import { text } from '../../../core/src/fields/index.js'
-import { file, image } from '../../../storage/src/fields/index.js'
-import { richText } from '../../../tiptap/src/fields/richText.js'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { file, image } from '@opensaas/stack-storage/fields'
+import { richText } from '@opensaas/stack-tiptap/fields'
 
 /**
  * The third-party field packages on the contract-shaped builder surface

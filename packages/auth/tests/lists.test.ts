@@ -1,12 +1,29 @@
 import { describe, it, expect } from 'vitest'
 import {
-  createUserList,
-  createSessionList,
-  createAccountList,
-  createVerificationList,
-  getAuthLists,
+  createUserList as createUserListImpl,
+  createSessionList as createSessionListImpl,
+  createAccountList as createAccountListImpl,
+  createVerificationList as createVerificationListImpl,
+  getAuthLists as getAuthListsImpl,
 } from '../src/lists/index.js'
 import { text } from '@opensaas/stack-core/fields'
+import type { AnyListConfig, AnyLists } from './helpers/field-types.js'
+
+function createUserList(...args: Parameters<typeof createUserListImpl>): AnyListConfig {
+  return createUserListImpl(...args) as unknown as AnyListConfig
+}
+function createSessionList(): AnyListConfig {
+  return createSessionListImpl() as unknown as AnyListConfig
+}
+function createAccountList(): AnyListConfig {
+  return createAccountListImpl() as unknown as AnyListConfig
+}
+function createVerificationList(): AnyListConfig {
+  return createVerificationListImpl() as unknown as AnyListConfig
+}
+function getAuthLists(...args: Parameters<typeof getAuthListsImpl>): AnyLists {
+  return getAuthListsImpl(...args) as unknown as AnyLists
+}
 
 describe('createUserList', () => {
   it('should create User list with required fields', () => {

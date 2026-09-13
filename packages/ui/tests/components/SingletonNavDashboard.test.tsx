@@ -23,7 +23,7 @@ vi.mock('next/link.js', () => ({
  * group heading.
  */
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql' },
   lists: {
     SiteConfig: list({
       isSingleton: true,
@@ -75,7 +75,7 @@ describe('Navigation singleton grouping', () => {
 
   it('does not render a "Settings" group when there are no singletons', () => {
     const noSingletons: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
+      db: { provider: 'postgresql' },
       lists: {
         Post: list({ fields: { title: text() } }),
       },
@@ -90,7 +90,7 @@ describe('Navigation singleton grouping', () => {
 
   it('does not render a "Lists" group when there are only singletons', () => {
     const onlySingletons: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
+      db: { provider: 'postgresql' },
       lists: {
         SiteConfig: list({ isSingleton: true, fields: { siteName: text() } }),
       },

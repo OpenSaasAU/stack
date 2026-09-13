@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mcp } from '@better-auth/mcp'
-import { deriveAuthLists } from '../src/config/derive-auth-lists.js'
+import type { BetterAuthPlugin } from 'better-auth'
+import {
+  deriveAuthLists as deriveAuthListsImpl,
+  type DerivedAuthLists,
+} from '../src/config/derive-auth-lists.js'
 import type { NormalizedAuthModels } from '../src/config/types.js'
+import type { AnyLists } from './helpers/field-types.js'
+
+type TestDerivedAuthLists = Omit<DerivedAuthLists, 'lists'> & { lists: AnyLists }
+
+function deriveAuthLists(...args: Parameters<typeof deriveAuthListsImpl>): TestDerivedAuthLists {
+  return deriveAuthListsImpl(...args) as unknown as TestDerivedAuthLists
+}
 
 /**
  * Coverage for the consolidated plugin-table derivation (issue #992):
@@ -79,7 +90,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
     expect(lists.Widget.fields.owner.db?.onDelete).toBe('restrict')
   })
@@ -130,7 +141,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
     const label = lists.Widget.fields.label
 
@@ -152,7 +163,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     const plugin = {
       id: 'test-passkey',
       schema: { passkey: { modelName: 'Passkey', fields: { publicKey: { type: 'string' } } } },
-    }
+    } as unknown as BetterAuthPlugin
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
 
     expect(lists).toHaveProperty('Passkey')
@@ -163,7 +174,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     const plugin = {
       id: 'test-snake-case',
       schema: { oauth_widget: { fields: { data: { type: 'string' } } } },
-    }
+    } as unknown as BetterAuthPlugin
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
 
     expect(lists).toHaveProperty('OauthWidget')
@@ -184,7 +195,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
 
     expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin])).toThrow(
       /widget\.ownerId.*references unknown model "nonexistentModel"/,
@@ -203,7 +214,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
 
     expect(() => deriveAuthLists(defaultModels, {}, {}, [plugin])).toThrow(
       /"widget" has more than one reference to "user".*"widgets"/,
@@ -218,7 +229,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
         schema: {
           widget: { modelName: 'widget', fields: { metadata: { type: 'json' } } },
         },
-      }
+      } as unknown as BetterAuthPlugin
 
       const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
 
@@ -235,7 +246,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     const anonymousPlugin = {
       id: 'anonymous',
       schema: { user: { fields: { isAnonymous: { type: 'boolean', required: false } } } },
-    }
+    } as unknown as BetterAuthPlugin
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [anonymousPlugin])
 
     expect(Object.keys(lists).sort()).toEqual(['Account', 'Session', 'User', 'Verification'])

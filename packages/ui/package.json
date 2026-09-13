@@ -41,6 +41,7 @@
     "generate:css:check": "node --experimental-strip-types scripts/generate-globals-css.mts --check",
     "build:css": "mkdir -p dist/styles && postcss ./src/styles/globals.css -o ./dist/styles/globals.css",
     "dev": "tsc --watch",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",

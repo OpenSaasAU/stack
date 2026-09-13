@@ -55,7 +55,13 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'multi-schema', config: multiSchemaConfig },
   { name: 'native-types', config: nativeTypesConfig },
   { name: 'hostile-names', config: hostileNamesConfig },
-  { name: 'field-packages', config: fieldPackageConfig },
+  // `fieldPackageConfig` is typed against `@opensaas/stack-core`'s published
+  // declarations (it mixes in `@opensaas/stack-storage`/`@opensaas/stack-tiptap`
+  // fields, which are themselves built against that surface) while this file's
+  // own fixtures are typed against core's own source tree — two structurally
+  // identical but nominally distinct compilations of the same types. The cast
+  // is a type-only bridge; `deriveContract` runs the same code either way.
+  { name: 'field-packages', config: fieldPackageConfig as OpenSaasConfig },
 ]
 
 describe('renderContractModule — the rendered module and the in-process derivation agree', () => {

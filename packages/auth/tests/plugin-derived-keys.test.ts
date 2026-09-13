@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { config, list } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import type { AccessContext } from '@opensaas/stack-core'
+import type { AccessContext, StackContext } from '@opensaas/stack-core'
+import type { BetterAuthPlugin } from 'better-auth'
 import { authPlugin } from '../src/config/plugin.js'
 import type { AuthRuntimeServices } from '../src/runtime/types.js'
 
@@ -11,7 +12,7 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     // better-auth user). The plugin renames its user model to `AuthUser`.
     const appUserHook = vi.fn()
     const result = await config({
-      db: { provider: 'sqlite' },
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           user: { modelName: 'AuthUser' },
@@ -55,7 +56,7 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     // Default keys: the plugin's user key is `User`, so an existing `User`
     // is intentionally extended with auth fields (the historical behaviour).
     const result = await config({
-      db: { provider: 'sqlite' },
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {
         User: list({
@@ -83,7 +84,7 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     const adminOnlyQuery = vi.fn(() => false)
 
     const result = await config({
-      db: { provider: 'sqlite' },
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {
         User: list({
@@ -120,11 +121,11 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
 
     const hostUserUpdate = vi.fn(() => false)
     const result = await config({
-      db: { provider: 'sqlite' },
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           user: { modelName: 'AuthUser' },
@@ -179,7 +180,7 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
 
     const userQuery = vi.fn(() => true)
     const result = await config({
@@ -230,7 +231,7 @@ describe('authPlugin - add-vs-extend with derived keys', () => {
     }
 
     const result = await config({
-      db: { provider: 'sqlite' },
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({ betterAuthPlugins: [mcpBetterAuthPlugin] })],
       lists: {
         OauthClient: list({
@@ -287,7 +288,7 @@ describe('authPlugin - runtime user-key resolution', () => {
         },
       },
     )
-    const sudoContext = { session, db: sudoDb, _isSudo: true } as unknown as AccessContext
+    const sudoContext = { session, db: sudoDb, _isSudo: true } as unknown as StackContext
     const context = { session, db } as unknown as AccessContext
     const sudo = () => sudoContext
     return { context, sudo, accessedKeys, sudoAccessedKeys }

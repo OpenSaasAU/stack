@@ -24,7 +24,7 @@ import { validateConfigFields } from '../../../../../core/src/validation/field-c
 import { validateNeedsDeclarations } from '../../../../../core/src/validation/needs-closure.js'
 import { validateDatabaseConfig } from '../../../../../core/src/validation/database-config.js'
 import { validateRelations } from '../../../../../core/src/validation/relations.js'
-import type { ListConfig, OpenSaasConfig } from '../../../../../core/src/config/types.js'
+import type { ListConfig, OpenSaasConfig, TypeInfo } from '../../../../../core/src/config/types.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const mcpSrc = path.resolve(here, '../..')
@@ -293,11 +293,13 @@ ${body}
  * it cannot paper over a bad shape *between two declared lists*: the Post↔Tag
  * many-to-many that #1424's review caught is exactly that case.
  */
-function withOppositeEnds(declared: Record<string, unknown>): Record<string, ListConfig> {
-  const lists = { ...declared } as Record<string, ListConfig>
-  const added: Record<string, Record<string, unknown>> = {}
+function withOppositeEnds(declared: Record<string, unknown>): Record<string, ListConfig<TypeInfo>> {
+  const lists = { ...declared } as Record<string, ListConfig<TypeInfo>>
+  const added: Record<string, ListConfig<TypeInfo>['fields']> = {}
 
-  for (const [listKey, listConfig] of Object.entries(declared as Record<string, ListConfig>)) {
+  for (const [listKey, listConfig] of Object.entries(
+    declared as Record<string, ListConfig<TypeInfo>>,
+  )) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields ?? {})) {
       if (field?.type !== 'relationship') continue
       const ref = (field as { ref?: string }).ref
@@ -315,7 +317,7 @@ function withOppositeEnds(declared: Record<string, unknown>): Record<string, Lis
   }
 
   for (const [listKey, fields] of Object.entries(added)) {
-    lists[listKey] = list({ fields }) as ListConfig
+    lists[listKey] = list({ fields }) as ListConfig<TypeInfo>
   }
   return lists
 }
@@ -457,7 +459,7 @@ describe('the code the feature wizard emits', () => {
       })) as OpenSaasConfig
 
       expect(refusals(config)).toEqual([])
-      expect((config.lists.Post as ListConfig).db?.timestamps).toBe(true)
+      expect((config.lists.Post as ListConfig<TypeInfo>).db?.timestamps).toBe(true)
     }
   })
 })

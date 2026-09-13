@@ -53,7 +53,11 @@ class FakeStorageProvider implements StorageProvider {
     filename: string,
     _options?: UploadOptions,
   ): Promise<UploadResult> {
-    return { filename, url: `/fake/${filename}`, size: 0 }
+    return { filename, url: `/fake/${filename}`, size: 0, contentType: 'application/octet-stream' }
+  }
+
+  async download(_filename: string): Promise<Buffer> {
+    return Buffer.from('')
   }
 
   async delete(filename: string): Promise<void> {

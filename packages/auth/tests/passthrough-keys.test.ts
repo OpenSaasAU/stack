@@ -59,7 +59,7 @@ describe('refused passthrough keys', () => {
 
 describe('accepted advanced.database.generateId values', () => {
   test.each([
-    ['false', false],
+    ['false', false as const],
     ["'uuid'", 'uuid' as const],
     ['undefined', undefined],
   ])('generateId: %s passes through', async (_label, generateId) => {

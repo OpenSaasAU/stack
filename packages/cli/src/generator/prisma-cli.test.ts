@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from 'vitest'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
+import type { SpawnOptions } from 'child_process'
 
 const spawnCalls = vi.hoisted(() => {
-  const calls: { command: string; args: string[]; options: { stdio?: unknown } }[] = []
+  const calls: { command: string; args: string[]; options: SpawnOptions }[] = []
   return calls
 })
 
@@ -11,7 +12,7 @@ vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>()
   return {
     ...actual,
-    spawn: (command: string, args: string[], options: { stdio?: unknown }) => {
+    spawn: (command: string, args: string[], options: SpawnOptions) => {
       spawnCalls.push({ command, args, options })
       return actual.spawn(command, args, options)
     },

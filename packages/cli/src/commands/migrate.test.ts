@@ -55,7 +55,7 @@ describe('migrate command discoverability', () => {
     })
 
     function capturedOutput(): string {
-      return logSpy.mock.calls.map((call) => call.join(' ')).join('\n')
+      return logSpy.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')
     }
 
     it('prints the published guide URL', () => {

@@ -26,7 +26,7 @@ vi.mock('next/navigation.js', () => ({
 }))
 
 const config: OpenSaasConfig = {
-  db: { provider: 'sqlite', url: 'file:./test.db' },
+  db: { provider: 'postgresql' },
   lists: { Post: list({ fields: { title: text() } }) },
 }
 

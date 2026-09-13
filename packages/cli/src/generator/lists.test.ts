@@ -18,7 +18,7 @@ describe('Lists Namespace Generator', () => {
     it('should generate Lists namespace for single list', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Post: {
@@ -66,7 +66,7 @@ describe('Lists Namespace Generator', () => {
     it('should generate Lists namespace for multiple lists', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           User: {
@@ -109,7 +109,7 @@ describe('Lists Namespace Generator', () => {
     it('should include header comment with usage examples', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Post: {
@@ -134,7 +134,7 @@ describe('Lists Namespace Generator', () => {
     it('should reference correct import paths', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           User: {
@@ -161,7 +161,7 @@ describe('Lists Namespace Generator', () => {
     it('should generate TypeInfo structure correctly', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Post: {
@@ -186,7 +186,7 @@ describe('Lists Namespace Generator', () => {
     it('should handle lists with relationships', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           User: {
@@ -220,7 +220,7 @@ describe('Lists Namespace Generator', () => {
     it('should handle lists with various field types', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Product: {
@@ -246,7 +246,7 @@ describe('Lists Namespace Generator', () => {
     it('should close namespace properly', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           User: {
@@ -266,7 +266,7 @@ describe('Lists Namespace Generator', () => {
     it('should generate for empty lists object', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {},
       }
@@ -282,7 +282,7 @@ describe('Lists Namespace Generator', () => {
     it('should maintain consistent formatting', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Post: {
@@ -310,7 +310,7 @@ describe('Lists Namespace Generator', () => {
     it('should handle list names with special casing', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           BlogPost: {
@@ -342,7 +342,7 @@ describe('Lists Namespace Generator', () => {
     it('should connect List type to TypeInfo via ListConfig generic', () => {
       const config: OpenSaasConfig = {
         db: {
-          provider: 'sqlite',
+          provider: 'postgresql',
         },
         lists: {
           Post: {
@@ -363,7 +363,7 @@ describe('Lists Namespace Generator', () => {
 
     it('emits built-in field-config types from the /fields entry point', () => {
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite' },
+        db: { provider: 'postgresql' },
         lists: {
           Thing: {
             fields: {
@@ -406,7 +406,7 @@ describe('Lists Namespace Generator', () => {
 
     it('falls back to BaseFieldConfig from /extend for unknown (plugin) field types', () => {
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite' },
+        db: { provider: 'postgresql' },
         lists: {
           Doc: {
             fields: {

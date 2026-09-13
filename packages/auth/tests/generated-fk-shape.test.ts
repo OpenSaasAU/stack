@@ -296,7 +296,9 @@ describe('derived RateLimit contract mirrors better-auth exactly (issue #909)', 
   it('emits key (unique, non-null), count (int), lastRequest (bigint) and no timestamps', async () => {
     const data = await deriveAuthContract({
       db: { provider: 'postgresql' },
-      plugins: [authPlugin({ ...emailAndPassword, rateLimit: { storage: 'database' } })],
+      plugins: [
+        authPlugin({ ...emailAndPassword, rateLimit: { enabled: true, storage: 'database' } }),
+      ],
       lists: {},
     })
 
@@ -316,6 +318,7 @@ describe('derived RateLimit contract mirrors better-auth exactly (issue #909)', 
         authPlugin({
           ...emailAndPassword,
           rateLimit: {
+            enabled: true,
             storage: 'database',
             modelName: 'ApiThrottle',
             tableName: 'api_throttle',

@@ -79,7 +79,7 @@ describe('ItemForm derived item-view pipeline (issue #797 regression)', () => {
     // issues: the real fields, plus the section key carrying the bounded rows
     // beside the footer's total.
     const itemData = await composeItemViewRead(
-      context.db.Post.where({ id: post?.id }),
+      context.db.Post.where({ id: post?.id as string }),
       config.lists.Post,
       layout,
     ).first()

@@ -356,7 +356,10 @@ describe('derived auth lists match better-auth’s own table definitions (issue 
 
   it('detects a real regression: removing isIndexed from Session.user', () => {
     const mutated = deriveAuthLists(defaultModels)
-    mutated.lists[mutated.keys.session].fields.user.isIndexed = false
+    const userField = mutated.lists[mutated.keys.session].fields.user
+    if (!isRelationshipField(userField))
+      throw new Error('expected Session.user to be a relationship')
+    userField.isIndexed = false
 
     const regressionDivergences: Divergence[] = []
     compareModel(
@@ -374,7 +377,10 @@ describe('derived auth lists match better-auth’s own table definitions (issue 
 
   it('detects a real regression: changing the userId FK column map', () => {
     const mutated = deriveAuthLists(defaultModels)
-    mutated.lists[mutated.keys.account].fields.user.db.foreignKey = { map: 'wrong_column' }
+    const userField = mutated.lists[mutated.keys.account].fields.user
+    if (!isRelationshipField(userField))
+      throw new Error('expected Account.user to be a relationship')
+    userField.db = { ...userField.db, foreignKey: { map: 'wrong_column' } }
 
     const regressionDivergences: Divergence[] = []
     compareModel(

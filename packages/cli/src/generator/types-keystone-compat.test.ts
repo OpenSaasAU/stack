@@ -1,8 +1,8 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { text } from '../../../core/src/fields/index.js'
-import type { OpenSaasConfig } from '../../../core/src/config/types.js'
+import { text } from '@opensaas/stack-core/fields'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import {
   CONSUMER_PRELUDE,
   emitTypeFixture,

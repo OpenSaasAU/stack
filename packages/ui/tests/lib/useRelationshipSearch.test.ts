@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useRelationshipSearch } from '../../src/lib/useRelationshipSearch.js'
+import type { ServerActionInput } from '../../src/server/types.js'
 
 /** A promise plus its own settle functions, for controlling resolution order in a test. */
 function deferred<T>() {
@@ -30,9 +31,12 @@ describe('useRelationshipSearch — loadOnOpen (#1365)', () => {
     // pending, flashing "no results" over a search that hasn't finished.
     const openFetch = deferred<unknown>()
     const searchFetch = deferred<unknown>()
+    // The mock only cares about `search`; the hook's real actions always
+    // carry `action: 'relationshipOptions'` plus `listKey`/`field`, which this
+    // test does not need to assert on.
     const serverAction = vi.fn((input: { search?: string }) =>
       input.search ? searchFetch.promise : openFetch.promise,
-    )
+    ) as unknown as (input: ServerActionInput) => Promise<unknown>
 
     const { result, rerender } = renderHook(
       (props: { loadOnOpen: boolean }) =>

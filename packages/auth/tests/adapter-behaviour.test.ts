@@ -262,12 +262,20 @@ describe('the shipped id configuration', () => {
   // its own id lands in the uuid column rather than being silently replaced.
   test('a caller-supplied id is written when the caller forces it', async () => {
     const id = randomUUID()
+    // `forceAllowId` unlocks `id` in `data` at runtime, but the adapter's own
+    // `create<T, R>` types `data` as `Omit<T, 'id'>` regardless — a non-fresh
+    // value sidesteps the excess-property check the inline literal would hit.
+    const data: { id: string; email: string; name: string } = {
+      id,
+      email: `${id}@example.com`,
+      name: 'Ada',
+    }
     const created = await plain.adapter.create<
       { id: string; email: string; name: string },
       { id: string }
     >({
       model: 'user',
-      data: { id, email: `${id}@example.com`, name: 'Ada' },
+      data,
       forceAllowId: true,
     })
     expect(created.id).toBe(id)

@@ -284,11 +284,7 @@ describe('Generate Command Integration', () => {
   describe('Field self-containment validation', () => {
     it('passes a compliant config with no errors', () => {
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Post: {
             fields: {
@@ -308,11 +304,7 @@ describe('Generate Command Integration', () => {
       delete brokenField.getContractField
 
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Post: {
             fields: {
@@ -347,11 +339,7 @@ describe('Generate Command Integration', () => {
       delete noZod.getZodSchema
 
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Post: { fields: { title: noContract as FieldConfig } },
           User: { fields: { name: noZod as FieldConfig } },
@@ -389,7 +377,7 @@ describe('Generate Command Integration', () => {
       }
 
       const config: OpenSaasConfig = {
-        db: { provider: 'sqlite' },
+        db: { provider: 'postgresql' },
         lists: { Article: { fields: { embedding: refusing } } },
       }
 
@@ -414,11 +402,7 @@ describe('Generate Command Integration', () => {
   describe('Declared dependency (`needs`, ADR-0025) validation', () => {
     it('passes a compliant config with no errors', () => {
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           LineItem: {
             fields: {
@@ -444,11 +428,7 @@ describe('Generate Command Integration', () => {
 
     it('accepts a `needs` entry naming a stored column (ADR-0051)', () => {
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prismaClientConstructor: (() => null) as any,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Post: {
             fields: {
@@ -468,10 +448,7 @@ describe('Generate Command Integration', () => {
 
     it('reports a `needs` declaration on a field with no resolveOutput hook', () => {
       const config: OpenSaasConfig = {
-        db: {
-          provider: 'sqlite',
-          prismaClientConstructor: () => null,
-        },
+        db: { provider: 'postgresql' },
         lists: {
           Post: {
             fields: {

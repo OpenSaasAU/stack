@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { betterAuth } from 'better-auth'
 import { buildBetterAuthOptions } from '../src/server/index.js'
 import { generateProject, toolchainPresent } from './generated-project.js'
+import type { Aggregations } from '@opensaas/stack-core'
 
 /**
  * Live end-to-end proof that consolidating the plugin-table derivation onto
@@ -82,7 +83,7 @@ describe.skipIf(!prerequisitesPresent)(
         const { adapter } = await auth.$context
         const seeded = project.context.sudo().db
         const count = async (list: 'OauthClient' | 'OauthAccessToken' | 'OauthConsent') =>
-          (await seeded[list].aggregate((aggregate) => ({ n: aggregate.count() }))).n
+          (await seeded[list].aggregate((aggregate: Aggregations) => ({ n: aggregate.count() }))).n
 
         const { headers: deletedHeaders } = await auth.api.signUpEmail({
           body: { email: 'deleted@example.com', password: 'password1234', name: 'Deleted User' },

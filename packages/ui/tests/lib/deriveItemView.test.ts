@@ -6,10 +6,17 @@ import { password } from '@opensaas/stack-core/fields'
 /**
  * Build a minimal config whose lists/fields carry just enough shape for the
  * pure item-view derivation (types, `many`, `ref`, `ui`). The derivation is
- * config-only, so no field-builder methods are needed.
+ * config-only, so no field-builder methods are needed — these are plain
+ * object literals rather than `FieldConfig`, which is why the parameter type
+ * here is looser than `OpenSaasConfig['lists']`.
  */
-function makeConfig(lists: OpenSaasConfig['lists']): OpenSaasConfig {
-  return { db: { provider: 'sqlite', url: 'file:./test.db' }, lists }
+type MinimalLists = Record<
+  string,
+  { fields: Record<string, Record<string, unknown>>; ui?: Record<string, unknown> }
+>
+
+function makeConfig(lists: MinimalLists, db: Partial<OpenSaasConfig['db']> = {}): OpenSaasConfig {
+  return { db: { provider: 'postgresql', ...db }, lists: lists as OpenSaasConfig['lists'] }
 }
 
 describe('deriveItemViewLayout', () => {
@@ -410,9 +417,8 @@ describe('deriveItemViewLayout', () => {
   })
 
   it("excludes the related list's structural createdAt/updatedAt columns, identified by its own timestamp config", () => {
-    const config: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db', timestamps: true },
-      lists: {
+    const config = makeConfig(
+      {
         Team: {
           fields: { members: { type: 'relationship', ref: 'Member', many: true } },
         },
@@ -424,7 +430,8 @@ describe('deriveItemViewLayout', () => {
           },
         },
       },
-    }
+      { timestamps: true },
+    )
 
     const [section] = deriveItemViewLayout(config, 'Team').sections
     expect(section.columns).toEqual(['name'])

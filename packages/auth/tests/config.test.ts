@@ -4,6 +4,7 @@ import { authPlugin } from '../src/config/plugin.js'
 import { config, list } from '@opensaas/stack-core'
 import { text, select } from '@opensaas/stack-core/fields'
 import type { NormalizedAuthConfig } from '../src/config/types.js'
+import type { BetterAuthPlugin } from 'better-auth'
 
 describe('normalizeAuthConfig', () => {
   it('should apply default values for disabled features', () => {
@@ -308,7 +309,7 @@ describe('authPlugin', () => {
   it('should inject all auth lists into config', async () => {
     const result = await config({
       db: {
-        provider: 'sqlite',
+        provider: 'postgresql',
       },
       plugins: [authPlugin({})],
       lists: {
@@ -349,6 +350,7 @@ describe('authPlugin', () => {
 
   it('should store normalized auth config in _pluginData', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           emailAndPassword: { enabled: true, minPasswordLength: 12 },
@@ -359,7 +361,7 @@ describe('authPlugin', () => {
     })
 
     expect(result._pluginData).toHaveProperty('auth')
-    const authConfig = result._pluginData.auth as NormalizedAuthConfig
+    const authConfig = result._pluginData!.auth as NormalizedAuthConfig
     expect(authConfig.emailAndPassword.enabled).toBe(true)
     expect(authConfig.emailAndPassword.minPasswordLength).toBe(12)
     expect(authConfig.sessionFields).toEqual(['userId', 'email', 'name', 'role'])
@@ -367,6 +369,7 @@ describe('authPlugin', () => {
 
   it('should extend User list with custom fields', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           extendUserList: {
@@ -396,6 +399,7 @@ describe('authPlugin', () => {
 
   it('should generate User list with correct fields', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -412,6 +416,7 @@ describe('authPlugin', () => {
 
   it('should generate Session list with correct fields', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -427,6 +432,7 @@ describe('authPlugin', () => {
 
   it('should generate Account list with correct fields', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -443,6 +449,7 @@ describe('authPlugin', () => {
 
   it('should generate Verification list with correct fields', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -456,6 +463,7 @@ describe('authPlugin', () => {
 
   it('should work with empty auth config', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {},
     })
@@ -468,6 +476,7 @@ describe('authPlugin', () => {
 
   it('should merge with other user-defined lists', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [authPlugin({})],
       lists: {
         Post: list({
@@ -495,6 +504,7 @@ describe('authPlugin', () => {
 
   it('should pass through config options to normalized config', async () => {
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           emailAndPassword: {
@@ -527,7 +537,7 @@ describe('authPlugin', () => {
       lists: {},
     })
 
-    const authConfig = result._pluginData.auth as NormalizedAuthConfig
+    const authConfig = result._pluginData!.auth as NormalizedAuthConfig
     expect(authConfig.emailAndPassword.enabled).toBe(true)
     expect(authConfig.emailAndPassword.minPasswordLength).toBe(10)
     expect(authConfig.emailAndPassword.requireConfirmation).toBe(false)
@@ -554,9 +564,10 @@ describe('authPlugin', () => {
           },
         },
       },
-    }
+    } as unknown as BetterAuthPlugin
 
     const result = await config({
+      db: { provider: 'postgresql' },
       plugins: [
         authPlugin({
           betterAuthPlugins: [mockPlugin],
@@ -579,6 +590,7 @@ describe('authPlugin', () => {
   describe('access control (ADR-0013)', () => {
     it('ships all four auth lists closed (no access) when no access is configured', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({})],
         lists: {},
       })
@@ -596,6 +608,7 @@ describe('authPlugin', () => {
       const verificationQuery = () => true
 
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             access: {
@@ -617,6 +630,7 @@ describe('authPlugin', () => {
 
     it('honors field-level access in the access passthrough (e.g. hiding Account tokens)', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             access: {
@@ -639,6 +653,7 @@ describe('authPlugin', () => {
       const userQuery = () => true
 
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             user: { modelName: 'AuthUser' },
@@ -655,6 +670,7 @@ describe('authPlugin', () => {
       const extendAccess = { operation: { query: () => false } }
 
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             extendUserList: { access: extendAccess },
@@ -671,6 +687,7 @@ describe('authPlugin', () => {
   describe('RateLimit list (issue #909)', () => {
     it('does not inject a RateLimit list when rateLimit is unconfigured', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({})],
         lists: {},
       })
@@ -680,12 +697,14 @@ describe('authPlugin', () => {
 
     it('does not inject a RateLimit list for storage "memory" or "secondary-storage"', async () => {
       const memory = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'memory' } })],
         lists: {},
       })
       expect(memory.lists).not.toHaveProperty('RateLimit')
 
       const secondary = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'secondary-storage' } })],
         lists: {},
       })
@@ -694,6 +713,7 @@ describe('authPlugin', () => {
 
     it('injects a RateLimit list when storage is "database"', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'database' } })],
         lists: {},
       })
@@ -707,6 +727,7 @@ describe('authPlugin', () => {
 
     it('injects a RateLimit list even when enabled is false, since better-auth still expects the table', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({ rateLimit: { enabled: false, storage: 'database' } })],
         lists: {},
       })
@@ -716,6 +737,7 @@ describe('authPlugin', () => {
 
     it('ships the RateLimit list closed by default (ADR-0013)', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [authPlugin({ rateLimit: { enabled: true, storage: 'database' } })],
         lists: {},
       })
@@ -726,6 +748,7 @@ describe('authPlugin', () => {
     it('applies access.rateLimit to the derived list', async () => {
       const rateLimitQuery = () => true
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             rateLimit: { enabled: true, storage: 'database' },
@@ -740,6 +763,7 @@ describe('authPlugin', () => {
 
     it('respects a custom modelName on the rateLimit config', async () => {
       const result = await config({
+        db: { provider: 'postgresql' },
         plugins: [
           authPlugin({
             rateLimit: { enabled: true, storage: 'database', modelName: 'AuthRateLimit' },

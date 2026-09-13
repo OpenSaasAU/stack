@@ -32,7 +32,7 @@ const noopServerAction = vi.fn(async () => ({ success: true }))
  * Drill into <main> to recover the routed content element so we can inspect
  * the props AdminUI passed to it.
  */
-function routedContent(tree: React.ReactNode): React.ReactElement {
+function routedContent(tree: React.ReactNode): React.ReactElement<Record<string, unknown>> {
   const fragment = tree as React.ReactElement<{ children: React.ReactNode }>
   const children = React.Children.toArray(fragment.props.children)
   const wrapper = children.find(
@@ -47,9 +47,9 @@ function routedContent(tree: React.ReactNode): React.ReactElement {
   if (!main) throw new Error('AdminUI <main> not found')
   const boundary = main.props.children as React.ReactElement<{ children: React.ReactNode }>
   if (React.isValidElement(boundary) && boundary.type === React.Suspense) {
-    return boundary.props.children as React.ReactElement
+    return boundary.props.children as React.ReactElement<Record<string, unknown>>
   }
-  return boundary
+  return boundary as React.ReactElement<Record<string, unknown>>
 }
 
 // A camelCase list key, matching what a better-auth plugin (e.g. the MCP

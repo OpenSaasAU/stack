@@ -172,7 +172,7 @@ describe('Dashboard create suppression for singletons', () => {
 
   it('hides the Quick Actions card entirely in a singleton-only admin', async () => {
     const singletonOnly: OpenSaasConfig = {
-      db: { provider: 'sqlite', url: 'file:./test.db' },
+      db: { provider: 'postgresql' },
       lists: {
         Settings: list({ isSingleton: true, fields: { siteName: text() } }),
       },

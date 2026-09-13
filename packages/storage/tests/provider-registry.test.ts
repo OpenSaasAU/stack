@@ -56,7 +56,7 @@ class FakeStorageProvider implements StorageProvider {
 /** Builds a minimal, strongly-typed config carrying a single storage provider. */
 function configWith(name: string, providerConfig: BaseStorageConfig): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite' },
+    db: { provider: 'postgresql' },
     lists: {},
     storage: { [name]: providerConfig },
   }

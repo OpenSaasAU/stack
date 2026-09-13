@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, expect, test } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
-import { betterAuth } from 'better-auth'
+import { betterAuth, type Auth } from 'better-auth'
 import { config as defineConfig } from '@opensaas/stack-core'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
@@ -26,7 +26,7 @@ import type { NormalizedAuthConfig } from '../src/config/types.js'
 const BOOT = 120_000
 
 let database: TestDatabase
-let auth: ReturnType<typeof betterAuth>
+let auth: Auth
 let opensaasConfig: OpenSaasConfig
 let registry: Record<string, string>
 
@@ -75,6 +75,11 @@ beforeAll(async () => {
   })
 
   const context = database.context()
+  // The literal options object below narrows `baseURL`/`secret`/etc. to
+  // concrete types, so `betterAuth()`'s return is `Auth<{ ...that literal
+  // shape... }>` — a different (invariant) instantiation from the bare
+  // `Auth` this module-scoped `auth` is declared as. Both describe the same
+  // real instance; the cast just bridges the two generic instantiations.
   auth = betterAuth({
     baseURL: 'http://localhost:3000',
     secret: 'sign-up-atomicity-test-secret',
@@ -85,7 +90,7 @@ beforeAll(async () => {
       registry,
       transaction: (body) => context.transaction((tx) => body(tx.unsafe)),
     }),
-  })
+  }) as unknown as Auth
 }, BOOT)
 
 afterAll(async () => {
