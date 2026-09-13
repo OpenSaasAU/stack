@@ -1,5 +1,5 @@
 import type { AccessContext } from '../access/types.js'
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import {
   identityPredicate,
   updateFirst,
@@ -48,6 +48,31 @@ export class UnknownPluginFieldWriteError extends Error {
 }
 
 /**
+ * Thrown when {@link writePluginOwnedField} is handed a virtual field. It is
+ * declared, so the list/field lookups both succeed, but it owns no column:
+ * nothing in the config's column layout names a place for this write to
+ * land. Left unrefused, the write falls through to `splitColumns`'s fallback
+ * (`{ [fieldName]: value }`) and reaches the ORM naming a column that does
+ * not exist, which the database rejects with its own error type — one the
+ * RAG plugin's failure classifier does not recognise as a refusal, so it
+ * reports the failure as transient and retries a write that can never
+ * succeed.
+ */
+export class NoColumnsPluginFieldWriteError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly fieldName: string,
+  ) {
+    super(
+      `Refused to write "${listName}.${fieldName}": this field is virtual and has no columns ` +
+        `to write to. writePluginOwnedField stores a value into the field's own columns, and a ` +
+        `virtual field's contract descriptor is "computed" — it has none.`,
+    )
+    this.name = 'NoColumnsPluginFieldWriteError'
+  }
+}
+
+/**
  * Thrown when {@link writePluginOwnedField} is handed `undefined`. It is the
  * one value whose meaning would depend on the field's column layout — a
  * multi-column field would split it into null columns and clear the field, a
@@ -79,6 +104,32 @@ export interface PluginOwnedFieldWrite {
   value: unknown
 }
 
+/**
+ * Whether `field` stores nothing — mirrors `validateFieldConfig`'s own
+ * three-way test (`src/validation/field-config.ts`): the `virtual` flag
+ * core's `virtual()` sets, the `'virtual'` type discriminator, or a
+ * `{ kind: 'computed' }` contract descriptor. A virtual field's
+ * self-containment contract does not require `getContractField` at all, so
+ * checking the descriptor alone would miss one that omits it — the first two
+ * checks are what catch that field before the third ever runs. Reading the
+ * descriptor is itself a field's own refusal seam (`embedding()` throws out
+ * of it for an impossible `dimensions`), so a throw here is swallowed rather
+ * than left to surface through a write path that did not ask about it.
+ */
+function isVirtualField(
+  field: FieldConfig,
+  fieldName: string,
+  listName: string,
+  config: OpenSaasConfig,
+): boolean {
+  if (field.virtual === true || field.type === 'virtual') return true
+  try {
+    return field.getContractField?.(fieldName, listName, config)?.kind === 'computed'
+  } catch {
+    return false
+  }
+}
+
 function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
   const refuse = (reason: string): never => {
     throw new UnknownPluginFieldWriteError(listName, fieldName, reason)
@@ -100,6 +151,10 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
     ? list.fields[fieldName]
     : undefined
   if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
+
+  if (isVirtualField(field, fieldName, listName, config)) {
+    throw new NoColumnsPluginFieldWriteError(listName, fieldName)
+  }
 
   return field
 }
@@ -130,7 +185,9 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
  * to the caller: the field is resolved against the config on `context`, and
  * the columns written are whatever that field's own `splitColumns` returns.
  * A list or a field the config does not declare is refused by name, as is a
- * context carrying no config. This is a narrower capability than the
+ * context carrying no config, and as is a virtual field — one storing
+ * nothing, by `virtual`, `type`, or a `{ kind: 'computed' }` contract
+ * descriptor. This is a narrower capability than the
  * escalated `db` update it replaces — that one could write any column on the
  * row — though not a privilege boundary: a plugin holding `context.ormHandle`
  * can already write anything, and this refuses the mistake, not the intent.
