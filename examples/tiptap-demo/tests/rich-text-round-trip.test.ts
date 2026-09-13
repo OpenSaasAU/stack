@@ -1,27 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import config from '../opensaas.config.js'
+import type { Context } from '../.opensaas/types.js'
 
 const BOOT = 120_000
 
 /** Narrows away the silent-denial `null` every secured read and write can return. */
 function present<T>(value: T | null, what: string): T {
   if (value === null) throw new Error(`${what} returned null — denied, or not found`)
-  return value
-}
-
-/**
- * `createTestContext` is not generic over the config's lists — it hands back
- * `StackContext<AccessControlledDB>`, whose rows are untyped — so a value read
- * off a row arrives as `unknown`. Checked at runtime rather than asserted, so a
- * shape change fails here instead of further down.
- */
-function stringField(row: unknown, key: string, what: string): string {
-  if (typeof row !== 'object' || row === null || !(key in row)) {
-    throw new Error(`${what} has no ${key}`)
-  }
-  const value = Reflect.get(row, key)
-  if (typeof value !== 'string') throw new Error(`${what}.${key} is not a string`)
   return value
 }
 
@@ -51,18 +37,18 @@ const DOC = {
 }
 
 describe('rich text round-trips through the secured context', () => {
-  let harness: TestContext
+  let harness: TestContext<Context>
   let authorId: string
 
   beforeAll(async () => {
-    harness = await createTestContext(await config, null)
+    harness = await createTestContext<Context>(await config, null)
     const author = present(
       await harness.context.sudo().db.User.create({
         data: { name: 'Ada', email: 'ada@example.com' },
       }),
       'User.create',
     )
-    authorId = stringField(author, 'id', 'User')
+    authorId = author.id
   }, BOOT)
 
   afterAll(async () => {
@@ -73,15 +59,15 @@ describe('rich text round-trips through the secured context', () => {
     const context = harness.context.withSession({ userId: authorId })
     const created = present(
       await context.db.Article.create({
-        data: { title: 'Rich text', content: DOC, author: { connect: { id: authorId } } },
+        // `slug` is a required column, filled by the list's own `resolveInput`
+        // hook when omitted — an empty string leaves that omission intact.
+        data: { title: 'Rich text', slug: '', content: DOC, author: { connect: { id: authorId } } },
       }),
       'Article.create',
     )
 
     const read = present(
-      await context.db.Article.where({
-        id: { equals: stringField(created, 'id', 'created row') },
-      }).first(),
+      await context.db.Article.where({ id: { equals: created.id } }).first(),
       'Article read',
     )
     expect(read.content).toEqual(DOC)
@@ -91,7 +77,7 @@ describe('rich text round-trips through the secured context', () => {
     const context = harness.context.withSession({ userId: authorId })
     const created = present(
       await context.db.Article.create({
-        data: { title: 'Draft', content: DOC, author: { connect: { id: authorId } } },
+        data: { title: 'Draft', slug: '', content: DOC, author: { connect: { id: authorId } } },
       }),
       'Article.create',
     )
@@ -107,9 +93,7 @@ describe('rich text round-trips through the secured context', () => {
     expect(updated.content).toEqual(edited)
 
     const read = present(
-      await context.db.Article.where({
-        id: { equals: stringField(created, 'id', 'created row') },
-      }).first(),
+      await context.db.Article.where({ id: { equals: created.id } }).first(),
       'Article read',
     )
     expect(read.content).toEqual(edited)
@@ -119,7 +103,12 @@ describe('rich text round-trips through the secured context', () => {
     const context = harness.context.withSession({ userId: authorId })
     const created = present(
       await context.db.Article.create({
-        data: { title: 'No excerpt', content: DOC, author: { connect: { id: authorId } } },
+        data: {
+          title: 'No excerpt',
+          slug: '',
+          content: DOC,
+          author: { connect: { id: authorId } },
+        },
       }),
       'Article.create',
     )
@@ -142,6 +131,7 @@ describe('rich text round-trips through the secured context', () => {
       await context.db.Article.create({
         data: {
           title: 'Hello, Rich Text World!',
+          slug: '',
           content: DOC,
           author: { connect: { id: authorId } },
         },
@@ -155,19 +145,19 @@ describe('rich text round-trips through the secured context', () => {
     const context = harness.context.withSession({ userId: authorId })
     const created = present(
       await context.db.Article.create({
-        data: { title: 'Related', content: DOC, author: { connect: { id: authorId } } },
+        data: { title: 'Related', slug: '', content: DOC, author: { connect: { id: authorId } } },
       }),
       'Article.create',
     )
 
     const read = present(
-      await context.db.Article.where({ id: { equals: stringField(created, 'id', 'created row') } })
+      await context.db.Article.where({ id: { equals: created.id } })
         .include('author')
         .first(),
       'Article read',
     )
     // A to-one include is `Row | null` whether or not its column is nullable.
     expect(read.author).not.toBeNull()
-    expect(stringField(read.author, 'name', 'included author')).toBe('Ada')
+    expect(read.author?.name).toBe('Ada')
   })
 })

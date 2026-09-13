@@ -9,7 +9,7 @@
 // ───────────────────────────────────────────────────────────────
 
 // Config builders
-export { config, list } from './config/index.js'
+export { config, list, getPluginData } from './config/index.js'
 
 // Config types a consumer annotates with.
 // Concrete field-config types (TextField, …) live on '@opensaas/stack-core/fields'

@@ -904,6 +904,12 @@ function relatedResolveContext(
  * rather than a fetched related row (there is no fetched related row here to
  * key off).
  *
+ * That existence check cannot tell a row the filter denies from a row deleted
+ * between the two statements — both come back absent from it. This function
+ * does not try to: absence nulls the column either way, so a vanished row
+ * fails exactly as closed as a denied one rather than surviving under the id
+ * this statement read before it vanished (issue #1386).
+ *
  * Runs AFTER {@link applyForeignKeys}, on its output — mutated in place —
  * and recurses into every relation THAT pass over its results the same way
  * {@link applyForeignKeys} does, so a related list reached only through an
@@ -1153,6 +1159,23 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
   }
 }
 
+declare const VISIBLE_ROW: unique symbol
+
+/**
+ * A row that has been through {@link visibleRows} — Field Visibility and both
+ * foreign-key passes — and nothing else. `OrmRow` has no property keyed by
+ * this module-private symbol, so an unbranded row is not assignable where a
+ * `VisibleRow` is expected: {@link visibleRows} is the only place that mints
+ * one, and every terminal below is typed to return what it mints rather than
+ * a plain `OrmRow`. A terminal added later that materialises rows without
+ * calling {@link visibleRows} therefore fails to compile instead of shipping
+ * the silent access-control regression this codebase has shipped four times
+ * (issue #1386). This closes the failure mode of *forgetting* the funnel, not
+ * the one of a future author deliberately reaching for `as VisibleRow` on an
+ * unfiltered row — no nominal brand in TypeScript stops that.
+ */
+export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
+
 /**
  * What every terminal returns rows through — the one place a row this engine
  * read becomes a row a caller may see, and the only place any foreign-key
@@ -1168,7 +1191,7 @@ async function visibleRows(
   binding: ReadBinding,
   rows: readonly OrmRow[],
   plan: ReadPlan,
-): Promise<OrmRow[]> {
+): Promise<VisibleRow[]> {
   const { listConfig, context, config, listName } = binding
   const results = await Promise.all(
     rows.map(async (row) => {
@@ -1191,7 +1214,7 @@ async function visibleRows(
     }),
   )
   await narrowUnincludedForeignKeys(binding, results, rows, listName, listConfig, plan.includes)
-  return results
+  return results as VisibleRow[]
 }
 
 /** `all()` is the terminal every plan member was designed for. */
@@ -1282,7 +1305,7 @@ async function locked(
   })
 }
 
-async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]> {
+async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
   const taken = lockLane(binding, plan, 'all().forUpdate()', plan.limit)
@@ -1298,7 +1321,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<OrmRow[]
   return await visibleRows(binding, rows, plan)
 }
 
-async function runFirst(binding: ReadBinding, state: QueryState): Promise<OrmRow | null> {
+async function runFirst(binding: ReadBinding, state: QueryState): Promise<VisibleRow | null> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return null
   const taken = lockLane(binding, plan, 'first().forUpdate()', 1)
@@ -1476,7 +1499,7 @@ async function runNearest(
   field: string,
   vector: readonly number[],
   options: NearestOptions,
-): Promise<NearestMatch<OrmRow>[]> {
+): Promise<NearestMatch<VisibleRow>[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
 
@@ -1531,7 +1554,15 @@ function score(near: NearestPlan, row: OrmRow): number {
   )
 }
 
-function query(binding: ReadBinding, state: QueryState): SecuredQuery {
+/**
+ * `SecuredQuery<VisibleRow>` rather than the default-instantiated
+ * `SecuredQuery` — the row type this function's own terminals promise is the
+ * branded one only {@link visibleRows} mints (issue #1386), so a future
+ * terminal wired in here that returns a plain `OrmRow` fails this function's
+ * own return type rather than merely the public one {@link createSecuredRead}
+ * widens to below.
+ */
+function query(binding: ReadBinding, state: QueryState): SecuredQuery<VisibleRow> {
   return {
     where: (predicate: Where) =>
       query(binding, { ...state, predicates: [...state.predicates, predicate] }),

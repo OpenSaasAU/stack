@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import config from '../opensaas.config.js'
+import type { Context } from '../.opensaas/types.js'
 
 const BOOT = 120_000
 
@@ -10,25 +11,11 @@ function present<T>(value: T | null, what: string): T {
   return value
 }
 
-/**
- * `createTestContext` is not generic over the config's lists — it hands back
- * `StackContext<AccessControlledDB>`, whose rows are untyped — so an id read
- * off a row arrives as `unknown` and cannot be fed straight back into a
- * `where`. Checked at runtime rather than asserted, so a shape change fails
- * here instead of further down.
- */
-function idOf(row: unknown, what: string): string {
-  if (typeof row !== 'object' || row === null || !('id' in row) || typeof row.id !== 'string') {
-    throw new Error(`${what} has no string id`)
-  }
-  return row.id
-}
-
 describe('json fields round-trip through the secured context', () => {
-  let harness: TestContext
+  let harness: TestContext<Context>
 
   beforeAll(async () => {
-    harness = await createTestContext(await config, null)
+    harness = await createTestContext<Context>(await config, null)
   }, BOOT)
 
   afterAll(async () => {
@@ -51,9 +38,7 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Product.where({
-        id: { equals: idOf(created, 'created row') },
-      }).first(),
+      await harness.context.db.Product.where({ id: { equals: created.id } }).first(),
       'Product read',
     )
     expect(read.metadata).toEqual(metadata)
@@ -92,9 +77,7 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Article.where({
-        id: { equals: idOf(created, 'created row') },
-      }).first(),
+      await harness.context.db.Article.where({ id: { equals: created.id } }).first(),
       'Article read',
     )
     expect(read.content).toBeNull()
@@ -113,9 +96,7 @@ describe('json fields round-trip through the secured context', () => {
     )
 
     const read = present(
-      await harness.context.db.Article.where({
-        id: { equals: idOf(created, 'created row') },
-      }).first(),
+      await harness.context.db.Article.where({ id: { equals: created.id } }).first(),
       'Article read',
     )
     expect(read.taxonomy).toEqual(taxonomy)

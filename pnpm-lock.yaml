@@ -559,6 +559,9 @@ importers:
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.4
       '@types/react':
         specifier: ^19.2.18
         version: 19.3.0
@@ -571,6 +574,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       prisma:
         specifier: 8.0.0-rc.12
         version: 8.0.0-rc.12(@types/node@26.1.1)(@types/react@19.3.0)(@typescript/typescript6@6.0.2)(@vercel/nft@1.11.0(rollup@4.63.1))(magicast@0.5.4)(pg@8.22.0)(rollup@4.63.1)(vite@7.3.1(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.11)(yaml@2.9.0))(vitest@4.1.11)(ws@8.21.3)

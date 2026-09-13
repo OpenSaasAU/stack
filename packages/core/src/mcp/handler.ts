@@ -1,5 +1,6 @@
 import * as z from 'zod'
 import type { OpenSaasConfig, McpCustomTool } from '../config/types.js'
+import { getPluginData } from '../config/plugin-engine.js'
 import type { AccessContext } from '../access/types.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
@@ -58,7 +59,7 @@ function toContextSession(session: McpSession): ContextSession {
  * (stored by the plugin engine under `_pluginData.__mcpTools`).
  */
 function getPluginMcpTools(config: OpenSaasConfig): McpCustomTool[] {
-  return (config._pluginData?.__mcpTools as McpCustomTool[] | undefined) ?? []
+  return getPluginData<McpCustomTool[]>(config, '__mcpTools') ?? []
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing across zod instances
