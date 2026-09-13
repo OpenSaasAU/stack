@@ -14,6 +14,7 @@ import { OPENAI_MODEL_DIMENSIONS } from '../providers/openai.js'
 import { embedding } from '../fields/embedding.js'
 import type { EmbeddingField } from '../fields/embedding.js'
 import type { RAGRuntimeServices } from '../runtime/types.js'
+import { hashText } from '../runtime/embeddings.js'
 import {
   createGenerationFailureReporter,
   MissingEmbeddingWriterError,
@@ -547,18 +548,4 @@ function storedSourceHash(value: unknown): string | undefined {
   if (metadata === null || typeof metadata !== 'object') return undefined
   const hash: unknown = Reflect.get(metadata, 'sourceHash')
   return typeof hash === 'string' ? hash : undefined
-}
-
-/**
- * Non-cryptographic hash of `text`, used to detect whether source text
- * changed since the last embedding was generated.
- */
-function hashText(text: string): string {
-  let hash = 0
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i)
-    hash = (hash << 5) - hash + char
-    hash = hash & hash
-  }
-  return hash.toString(36)
 }
