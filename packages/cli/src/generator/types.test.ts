@@ -73,6 +73,29 @@ describe('the generated types file', () => {
     expect(types).toContain('computed: {\n      displayName: string\n    }')
   })
 
+  it('names a `kind: "computed"` field in `computed` even without the `virtual` flag', () => {
+    // Core's own `virtual()` sets both the flag and the descriptor kind, so a
+    // fixture built from it can never tell the two markers apart (#1309) — this
+    // one declares only the descriptor, the shape a third-party field can reach.
+    const thirdPartyComputed = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            summary: {
+              type: 'summary',
+              outputType: 'string',
+              getContractField: () => ({ kind: 'computed' }),
+            },
+          },
+        },
+      },
+    })
+    expect(thirdPartyComputed).toContain('computed: {\n      summary: string\n    }')
+    expect(thirdPartyComputed).toContain('output: Record<never, never>')
+  })
+
   it('names a field whose read face differs from its codec in `output`', () => {
     expect(types).toContain(
       "output: {\n      secret: import('@opensaas/stack-core/internal').HashedPassword\n    }",
