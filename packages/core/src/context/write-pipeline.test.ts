@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
-import type { AccessControl, AccessControlledDB, Session } from '../access/index.js'
+import type { AccessContext, AccessControl, AccessControlledDB, Session } from '../access/index.js'
 import { InvalidCreateAccessResultError } from '../access/errors.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
+import { engineContextOf } from './engine-context.js'
 import { getContext } from './index.js'
 
 /**
@@ -423,6 +424,79 @@ describe('Write Pipeline', () => {
     )
   })
 
+  /**
+   * `bindContextToTransaction` rebuilds the `AccessContext` a hook's own
+   * `context` argument is (#1345) — proven here rather than by a unit test on
+   * that private function, per ADR-0057: no test-only seam, only the real
+   * surface. `_config` is the member #1345 found missing; the rest are every
+   * other member the rebuild is responsible for.
+   */
+  describe('the hook context bindContextToTransaction rebuilds', () => {
+    test(
+      'carries every member of the request context, not a hand-picked list',
+      async () => {
+        const seen: AccessContext[] = []
+        const config = withContextSpy(seen)
+        const context = contextAt(config, { userId: 'u1' })
+        const engine = engineContextOf(context)
+
+        await context.db.Post.create({ data: { title: 'target' } })
+
+        expect(seen).toHaveLength(1)
+        const rebuilt = seen[0]
+        // The member #1345 found dropped: fails the moment the carry is deleted.
+        expect(rebuilt._config).toBe(config)
+        expect(rebuilt.session).toBe(engine.session)
+        expect(rebuilt.storage).toBe(engine.storage)
+        expect(rebuilt.plugins).toBe(engine.plugins)
+        expect(rebuilt._isSudo).toBe(false)
+        expect(rebuilt._resolveOutputChain).toEqual([])
+        // A rebound context runs directly against the handle it was given —
+        // it never opens a second transaction of its own (ADR-0028).
+        expect(rebuilt._transactionOpener).toBeUndefined()
+        // This write opened its own transaction, so it becomes the owner.
+        expect(rebuilt._transactionOwner).toBeDefined()
+        // No enclosing lock lane to inherit at the top level (ADR-0047).
+        expect(rebuilt._rowLock).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'carries `_isSudo` through sudo()',
+      async () => {
+        const seen: AccessContext[] = []
+        const context = contextAt(withContextSpy(seen), { userId: 'u1' })
+
+        await context.sudo().db.Post.create({ data: { title: 'target' } })
+
+        expect(seen).toHaveLength(1)
+        expect(seen[0]._isSudo).toBe(true)
+      },
+      BOOT,
+    )
+
+    test(
+      'a write joined into an outer context.transaction() inherits its row-lock lane and owner instead of dropping them',
+      async () => {
+        const seen: AccessContext[] = []
+        const context = contextAt(withContextSpy(seen), { userId: 'u1' })
+
+        await context.transaction(async (tx) => {
+          const outer = engineContextOf(tx)
+
+          await tx.db.Post.create({ data: { title: 'target' } })
+
+          expect(seen).toHaveLength(1)
+          expect(outer._rowLock).toBeDefined()
+          expect(seen[0]._rowLock).toBe(outer._rowLock)
+          expect(seen[0]._transactionOwner).toBe(outer._transactionOwner)
+        })
+      },
+      BOOT,
+    )
+  })
+
   describe('afterOperation sees the persisted row and the original', () => {
     test(
       'create: the persisted item, and no originalItem',
@@ -500,6 +574,28 @@ function withAfterOperationSpy(
               item: 'item' in args ? args.item : undefined,
               originalItem: 'originalItem' in args ? args.originalItem : undefined,
             })
+          },
+        },
+      },
+    },
+  }
+}
+
+/** The schema config with one `beforeOperation` recording the context it was handed. */
+function withContextSpy(seen: AccessContext[]): OpenSaasConfig {
+  return {
+    db: { provider: 'postgresql', timestamps: true },
+    lists: {
+      Post: {
+        fields: {
+          title: text({ validation: { isRequired: true } }),
+          authorId: text(),
+          secret: text(),
+        },
+        access: { operation: OPEN },
+        hooks: {
+          beforeOperation: async ({ context }) => {
+            seen.push(context)
           },
         },
       },
