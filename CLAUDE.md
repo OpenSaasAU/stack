@@ -689,7 +689,7 @@ const result = await context.transaction(async (tx) => {
 **Getting the ORM client outside a request (module-init-time consumers):** there is no synchronous, framework-provided accessor. Config resolution is async — plugins can contribute config asynchronously — so the generated context's singleton client cannot be built without an `await`. Pick the shape that fits the consumer:
 
 - **Can `await`:** use `getContext()`, and reach the ORM through `context.unsafe` when the secured surface cannot express what you need. This is the framework's singleton — no second connection.
-- **Must construct synchronously at module scope, but only needs to defer method calls** (a library whose calls you can lazily forward): hand the generated `rawOpensaasContext` promise to a lazy `Proxy` that awaits it on first access. That is exactly what `@opensaas/stack-auth`'s `createAuth()` does to build better-auth's Auth adapter over the resolved context's Unsafe surface (`packages/auth/src/server/index.ts`):
+- **Must construct synchronously at module scope, but only needs to defer method calls** (a library whose calls you can lazily forward): hand the generated `rawOpensaasContext` to a lazy `Proxy` that awaits it on first access. That is exactly what `@opensaas/stack-auth`'s `createAuth()` does to build better-auth's Auth adapter over the resolved context's Unsafe surface (`packages/auth/src/server/index.ts`):
 
   ```typescript
   // lib/auth.ts
@@ -699,6 +699,8 @@ const result = await context.transaction(async (tx) => {
 
   export const auth = createAuth(config, rawOpensaasContext)
   ```
+
+  `rawOpensaasContext` is exported once and `createAuth` holds that reference for the life of the process, so it is not a plain `Promise` — a settled one can't be un-rejected. It is a stable, `then`-able object whose construction attempt is memoised only on success: a boot that races the database rejects the first `await`, but the next one tries again rather than replaying that rejection forever (issue #1377).
 
 - **Must construct synchronously with a resolved client value** (a third-party contract that builds an adapter at import time, where deferring behind a Proxy is not an option): construct a Prisma 8 client of your own from the same committed `contract.json` the generated bundle imports, binding whatever pool you need. Do not import from `opensaas.config.ts` to do it — its default export can be a `Promise` when plugins are present, which defeats the point of a synchronous accessor.
 

@@ -83,17 +83,20 @@ describe('generateContext', () => {
     expect(context).toMatch(/if \(clientPromise === attempt\) clientPromise = null\s+throw error/)
   })
 
-  it('marks the eager context handled, so a failed first pull is not fatal', () => {
+  it('drops the raw context memo on failure too, so a failed first pull is not fatal', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain('void rawOpensaasContext.catch(() => {})')
+    expect(context).toMatch(
+      /if \(rawContextPromise === attempt\) rawContextPromise = null\s+throw error/,
+    )
   })
 
-  it('exports getContext, rawOpensaasContext and config', () => {
+  it('exposes rawOpensaasContext as a then-able that re-attempts construction, not a plain Promise', () => {
     const context = generateContext(config, data)
 
     expect(context).toContain('export async function getContext<')
-    expect(context).toContain('export const rawOpensaasContext = (async () => {')
+    expect(context).toContain('export const rawOpensaasContext: Promise<Context> = {')
+    expect(context).toContain('getRawContext().then(onFulfilled, onRejected)')
     expect(context).toContain('export const config = getConfig()')
   })
 

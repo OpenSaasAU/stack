@@ -255,24 +255,58 @@ export async function getContext<TSession extends OpensaasSession = OpensaasSess
   return getOpensaasContext(config, ormHandleFor(config, db), session ?? null, storage, false, undefined, undefined, db) as unknown as Context<TSession>
 }
 
-/**
- * Raw context as a Promise, for module-init-time consumers that can't \`await\` directly
- * (e.g., Better-auth setup). Resolves once config and the client are ready.
- * Pass this promise itself to helpers like \`createAuth\` that defer real construction
- * behind a lazy Proxy until it resolves - do not await it at module scope.
- */
-export const rawOpensaasContext = (async () => {
+async function buildRawContext(): Promise<Context> {
   const config = await getConfig()
   const db = await getClient()
   return getOpensaasContext(config, ormHandleFor(config, db), null, storage, false, undefined, undefined, db) as unknown as Context
-})()
+}
 
-// This one is pulled during module evaluation, so a database that isn't up yet
-// rejects it before any consumer has attached a handler, and Node's default
-// \`--unhandled-rejections=throw\` would take the process down (Node >= 15) —
-// killing the retry the dropped memo above exists to allow. Marking it handled
-// changes nothing for a real consumer: awaiting it still throws.
-void rawOpensaasContext.catch(() => {})
+let rawContextPromise: Promise<Context> | null = null
+
+/**
+ * Memoised as the promise, not the resolved context, and dropped again on
+ * failure — same reason \`getClient\` drops its own memo. A single \`await\`ed
+ * IIFE settles once and stays settled forever, so a process that boots before
+ * its database does would otherwise poison \`rawOpensaasContext\` for every
+ * later request for the life of the process, even once the database comes up.
+ * Nothing here runs at module evaluation: the first attempt starts on the
+ * first \`.then()\`/\`.catch()\` a real consumer makes.
+ */
+function getRawContext(): Promise<Context> {
+  if (rawContextPromise) return rawContextPromise
+  const attempt = buildRawContext().catch((error: unknown) => {
+    if (rawContextPromise === attempt) rawContextPromise = null
+    throw error
+  })
+  rawContextPromise = attempt
+  return attempt
+}
+
+/**
+ * Raw context for module-init-time consumers that can't \`await\` directly
+ * (e.g., Better-auth setup). Pass this value itself to helpers like
+ * \`createAuth\` that defer real construction behind a lazy Proxy until it
+ * resolves - do not await it at module scope.
+ *
+ * Deliberately not a \`Promise\` instance: it is a stable, \`then\`-able object
+ * so a consumer that captures it once — exactly what \`createAuth\` does —
+ * keeps retrying construction on every subsequent \`await\` rather than
+ * replaying whatever outcome the first attempt happened to settle on. A
+ * rejected attempt drops the underlying memo (see \`getRawContext\` above), so
+ * a boot that races the database is not fatal for the rest of the process:
+ * the next \`await rawOpensaasContext\` tries again instead of replaying the
+ * first rejection.
+ */
+export const rawOpensaasContext: Promise<Context> = {
+  then: (
+    onFulfilled?: ((value: Context) => Context | PromiseLike<Context>) | null,
+    onRejected?: ((reason: unknown) => Context | PromiseLike<Context>) | null,
+  ): Promise<Context> => getRawContext().then(onFulfilled, onRejected),
+  catch: (
+    onRejected?: ((reason: unknown) => Context | PromiseLike<Context>) | null,
+  ): Promise<Context> => getRawContext().catch(onRejected),
+  finally: (onFinally?: (() => void) | null): Promise<Context> => getRawContext().finally(onFinally),
+} as unknown as Promise<Context>
 
 /**
  * Re-export resolved config for use in admin pages and server actions

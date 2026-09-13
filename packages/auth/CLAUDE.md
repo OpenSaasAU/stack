@@ -649,6 +649,8 @@ export const auth = createAuth(config, rawOpensaasContext)
 
 `createAuth()` returns a `Proxy` synchronously and defers the real `betterAuth()` construction (and the Unsafe surface it drives the Auth adapter over) until `rawOpensaasContext` resolves — the sanctioned pattern for a module-init-time consumer that only needs to defer method calls, not obtain a resolved client value. See ADR-0014 and root `CLAUDE.md`'s "Getting the ORM client outside a request" for the full decision record and the synchronous-client alternative.
 
+It never pre-resolves `config`/`rawOpensaasContext` into a fixed `Promise.resolve(...)` up front, and drops its own construction memo on failure: `rawOpensaasContext` retries construction on every `await` after a failed attempt (see its own doc comment), and `createAuth` re-awaits the original value fresh on each retry rather than replaying whatever the first attempt settled to — otherwise a boot that raced the database would poison every request for the rest of the process (issue #1377).
+
 ### With Better-auth
 
 - Direct wrapper around Better-auth core
