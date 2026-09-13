@@ -644,8 +644,8 @@ export function deriveAuthLists(
           )
         }
 
-        if (upstream.references.field === 'id') {
-          const relationFieldKey = relationshipFieldName(fieldKey)
+        const relationFieldKey = relationshipFieldName(fieldKey)
+        if (upstream.references.field === 'id' && relationFieldKey !== fieldKey) {
           const reverseName = reverseRelationName(modelKey)
           if (reverseRelationFields[targetModelKey]?.[reverseName]) {
             // The reverse name is derived from the *model* (pluralized), not
@@ -671,12 +671,17 @@ export function deriveAuthLists(
             many: true,
           })
         } else {
-          // relationship() always references the target's `id` column —
-          // better-auth's own oidc-provider schema (the MCP plugin's OAuth
+          // Two distinct reasons land here. (1) `upstream.references.field !==
+          // 'id'`: relationship() always references the target's `id` column
+          // — better-auth's own oidc-provider schema (the MCP plugin's OAuth
           // tables) references oauthApplication.clientId instead, which a
           // relation can't express without pointing Prisma at the wrong
-          // column. Left as a plain scalar column, same as pre-consolidation
-          // behavior (issue #992).
+          // column (issue #992). (2) `relationFieldKey === fieldKey`: the
+          // upstream field name doesn't end in `Id`, so stripping it is a
+          // no-op — the relation would need the exact name its own FK column
+          // physically maps to (`db.foreignKey.map`), which the contract
+          // derivation refuses as a self-collision (#1236). Both fall back to
+          // a plain scalar column, same as pre-consolidation behavior.
           ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
             credentialRegistry,
             modelKey,

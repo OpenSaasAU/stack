@@ -46,15 +46,11 @@ import type { AuthConfig, AuthModelConfig } from '../src/config/types.js'
  *   table-level, which `deriveAuthLists` does not yet emit (#986). A schema
  *   gap, not an adapter one — and a production one, stated as a known limit on
  *   `opensaasAuthAdapter` rather than only here.
- * - The nullable foreign key: a `deriveAuthLists` gap tracked as
- *   [#1222](https://github.com/OpenSaasAU/stack/issues/1222), not an adapter
- *   one.
  */
 const NOT_IMPLEMENTED: Record<string, boolean> = {
   ...Object.fromEntries(Object.keys(enableJoinTests).map((name) => [name, true])),
   'create - should use generateId if provided': true,
   'create - should enforce the issuer-scoped account identity key': true,
-  'create - should return null for nullable foreign keys': true,
 }
 
 /**
