@@ -159,6 +159,12 @@ function spaceOf(file: string): string {
  * time — and is left untouched. That ref is not a discarded run's leftover;
  * it is the new space's only record of itself, and deleting it strands the
  * migration package `seedExtensionContractSpaces` just wrote refless (#1226).
+ *
+ * "No snapshotted ref" is a proxy for "space didn't exist yet," not a
+ * directly-checked fact: a space that existed before this run but already had
+ * no ref (already broken, by some other cause) reads the same way, and this
+ * run's own ref for it survives the prune too. That is no worse than the
+ * space already being broken.
  */
 export function restoreMigrationRefs(cwd: string, snapshots: readonly RefSnapshot[]): void {
   const known = new Set(snapshots.map((snapshot) => snapshot.file))
