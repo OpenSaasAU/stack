@@ -222,8 +222,10 @@ test.describe('Admin UI', () => {
       await page.goto('/admin/user')
       await page.waitForLoadState('networkidle')
 
-      // Should show at least the current user
-      await expect(page.locator(`text=${testUser.email}`)).toBeVisible({
+      // Should show at least the current user in the table. Scoped to the
+      // table (rather than the whole page) because the signed-in user's own
+      // email also renders in the admin sidebar's user menu.
+      await expect(page.getByRole('table').getByText(testUser.email)).toBeVisible({
         timeout: 5000,
       })
     })
