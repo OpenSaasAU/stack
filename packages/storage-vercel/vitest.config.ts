@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    globalSetup: ['./vitest.global-setup.mjs'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'json-summary'],

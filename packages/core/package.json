@@ -60,7 +60,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ../../scripts/lib/write-build-hash-cli.mjs",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest",

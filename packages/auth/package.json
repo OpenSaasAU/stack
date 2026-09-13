@@ -39,7 +39,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ../../scripts/lib/write-build-hash-cli.mjs",
     "dev": "tsc --watch",
     "typecheck": "tsc -p tsconfig.test.json",
     "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo",

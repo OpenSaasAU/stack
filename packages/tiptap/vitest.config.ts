@@ -8,6 +8,7 @@ export default defineConfig({
     // TiptapField's behaviour lives in an effect against a real ProseMirror
     // document, so the component tests need a DOM rather than a node env.
     environment: 'happy-dom',
+    globalSetup: ['./vitest.global-setup.mjs'],
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
     coverage: {
