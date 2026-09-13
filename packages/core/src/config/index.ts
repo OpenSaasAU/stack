@@ -5,7 +5,7 @@ import type {
   OperationAccess,
   ListAccessControl,
 } from './types.js'
-import { executePlugins } from './plugin-engine.js'
+import { executePlugins, getPluginData } from './plugin-engine.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -42,6 +42,8 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
 
   return executePlugins(userConfig)
 }
+
+export { getPluginData }
 
 /**
  * Define a list with type safety.

@@ -109,6 +109,15 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
   return Object.keys(merged).length > 0 ? (merged as Hooks) : undefined
 }
 
+/**
+ * Read data a plugin stored via `context.setPluginData<T>(pluginName, data)`.
+ * The type parameter is asserted here, once, so a consumer reading a plugin's
+ * data back never has to cast `config._pluginData` itself.
+ */
+export function getPluginData<T>(config: OpenSaasConfig, pluginName: string): T | undefined {
+  return config._pluginData?.[pluginName] as T | undefined
+}
+
 export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasConfig> {
   if (!config.plugins || config.plugins.length === 0) {
     return config
