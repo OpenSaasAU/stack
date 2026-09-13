@@ -166,6 +166,39 @@ describe("the item form's to-many edges are writes against the related list", ()
     expect(await linkedPostTitles(allowed, seeded.userId)).toEqual([])
   })
 
+  /**
+   * The lost-update race #1358 closes: the form's baseline is what "Owned"
+   * pointed to when it rendered, and a concurrent write re-points it to a
+   * different user before this form saves. The stale deselect must not revert
+   * that write — the server refuses it and the form surfaces the conflict
+   * instead of silently either keeping or discarding the newer link.
+   */
+  it('reverts the selection and shows the reason when the row was re-pointed since the form rendered', async () => {
+    const config = blogConfig()
+    const seeded = await seed(allowed)
+    await renderUserForm(allowed, config, seeded.userId)
+
+    const other = await allowed.context.db.User.create({ data: { name: 'Bob' } })
+    const otherId = String(other?.id)
+    await allowed.context.db.Post.update({
+      where: { id: seeded.ownedId },
+      data: { author: { connect: { id: otherId } } },
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText(/linked elsewhere/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Owned' })).toBeInTheDocument()
+    })
+    expect(mockPush).not.toHaveBeenCalled()
+
+    const record = await allowed.context.db.Post.where({ id: seeded.ownedId }).first()
+    expect(record?.authorId).toBe(otherId)
+  })
+
   it('reverts the selection and shows the reason when the related list denies the write', async () => {
     const config = blogConfig(() => false)
     const seeded = await seed(denied)
