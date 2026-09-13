@@ -6,8 +6,11 @@ import { getAuthLists } from '../lists/index.js'
 
 /**
  * The id strategy every Auth list mints: an explicit `authPlugin({ idField })`
- * wins, else the app's own `db.idField` default — the same fallback chain any
- * other list gets — else `'uuid7'`. Never `'int autoincrement'`: the Auth
+ * wins, else the app's own `db.idField` default — the same fallback chain
+ * `resolveIdStrategy` (`packages/core/src/contract/derive.ts`) computes for
+ * any other list — else `'uuid7'`. Reimplemented here rather than imported
+ * because core doesn't re-export it; if that fallback chain ever changes,
+ * this copy needs to follow it. Never `'int autoincrement'`: the Auth
  * adapter treats every id as a string (ADR-0048, ADR-0060), so an app whose
  * own global default is `'int autoincrement'` must opt the Auth lists into a
  * string strategy explicitly.
@@ -105,10 +108,11 @@ export function authPlugin(config: AuthConfig): Plugin {
           const existingIdField = listIdColumn(context.config, listName)?.strategy
           if (existingIdField !== idField) {
             throw new Error(
-              `[@opensaas/stack-auth] "${listName}" is declared by the application, whose own ` +
-                `\`db.idField\` resolves to "${existingIdField}", but authPlugin's Auth lists ` +
-                `resolve to "${idField}". Both must mint ids the same way — set "${listName}"'s ` +
-                `own \`db.idField\` to "${idField}", or pass \`authPlugin({ idField: ` +
+              `[@opensaas/stack-auth] "${listName}" already exists (declared by the application, ` +
+                `or by another plugin that ran before authPlugin) with its own \`db.idField\` ` +
+                `resolving to "${existingIdField}", but authPlugin's Auth lists resolve to ` +
+                `"${idField}". Both must mint ids the same way — set "${listName}"'s own ` +
+                `\`db.idField\` to "${idField}", or pass \`authPlugin({ idField: ` +
                 `'${existingIdField}' })\` if that is 'uuid7' or 'cuid2'.`,
             )
           }

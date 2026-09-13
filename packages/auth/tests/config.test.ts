@@ -404,9 +404,7 @@ describe('authPlugin', () => {
           User: list({ fields: { name: text() }, db: { idField: 'uuid7' } }),
         },
       }),
-    ).rejects.toThrow(
-      /"User" is declared by the application.*resolves to "uuid7".*resolve to "cuid2"/s,
-    )
+    ).rejects.toThrow(/"User" already exists.*resolving to "uuid7".*resolve to "cuid2"/s)
   })
 
   it('should store normalized auth config in _pluginData', async () => {
