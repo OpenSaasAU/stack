@@ -5,6 +5,7 @@ import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
+import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import {
@@ -141,8 +142,6 @@ export type ServerActionProps =
       selectedIds?: string[]
     }
 
-const selectWarnings = new Set<string>()
-
 /**
  * Warn once per (list, operation) when a caller passes `select` to a read op
  * that ignores it. See "Narrowing Reads" in packages/core/CLAUDE.md.
@@ -154,11 +153,8 @@ function warnIfSelectIgnored(
 ): void {
   if (!args || args.select === undefined) return
 
-  const key = `${listName}.${operation}`
-  if (selectWarnings.has(key)) return
-  selectWarnings.add(key)
-
-  console.warn(
+  warnOnce(
+    `select-ignored:${listName}.${operation}`,
     `[@opensaas/stack-core] \`select\` is ignored by context.db.${listName}.${operation}() ` +
       `and the full (access-filtered) record is returned. ` +
       `Narrow a read with \`include\`, or with \`.select()\` on the secured surface, instead. ` +
@@ -620,9 +616,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // hand-built ORM double: `context.unsafe` then refuses rather than being
   // typed as absent, and — the costlier omission — every `context.db` write
   // runs with no transaction opener, so it commits directly against the
-  // handle with no rollback guarantee, silently, exactly the defect #1205
-  // fixed (a `console.warn` names it once per list and operation, but nothing
-  // stops the write). Pass the client whenever the caller can.
+  // handle with no rollback guarantee: exactly the defect #1205 fixed, left
+  // undiagnosed until now (a `console.warn` names it once per list and
+  // operation, but nothing stops the write itself). Pass the client whenever
+  // the caller can.
   client?: UnsafeCapableClient,
   // Internal: the transaction the Unsafe surface binds its executors to, set
   // when rebuilding the context inside `transaction()` (ADR-0056).

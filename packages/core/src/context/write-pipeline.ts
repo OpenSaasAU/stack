@@ -39,6 +39,7 @@ import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
+import { warnOnce } from '../lib/warn-once.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -124,8 +125,6 @@ async function runInTransaction(
   return opener((opened) => fn(opened.ormHandle))
 }
 
-const noTransactionWarnings = new Set<string>()
-
 /**
  * Warn once per (list, operation) when a write has neither an opener of its
  * own nor an enclosing transaction to join — a context built without
@@ -135,11 +134,8 @@ const noTransactionWarnings = new Set<string>()
  * against the handle, with no rollback guarantee — but no longer silently.
  */
 function warnNoTransactionCapability(listName: string, operation: WriteOperation): void {
-  const key = `${listName}.${operation}`
-  if (noTransactionWarnings.has(key)) return
-  noTransactionWarnings.add(key)
-
-  console.warn(
+  warnOnce(
+    `no-transaction:${listName}.${operation}`,
     `[@opensaas/stack-core] context.db.${listName}.${operation}() is running with no ` +
       `transaction and no rollback guarantee: this context was built without getContext's ` +
       `\`client\` argument. Pass the Prisma 8 client through (the generated context and ` +
