@@ -433,12 +433,15 @@ export function money<
   return {
     type: 'money',
     ...options,
-    // No single column to infer a TypeScript face from — both required. An
-    // import string names a plain interface directly; the `{ value, from }`
-    // object form (see the `Decimal` example in the root CLAUDE.md) is for a
-    // type with a real runtime constructor.
-    outputType: "import('./money.js').Money",
-    inputType: "import('./money.js').Money",
+    // No single column to infer a TypeScript face from — both required. These
+    // strings are emitted verbatim into the generated types, so they must
+    // name a package specifier the consuming project can resolve — never a
+    // path relative to this field package's own source. The `{ value, from }`
+    // object form (see the `Decimal` example in the root CLAUDE.md) is the
+    // alternative for a type with a real runtime constructor; `Money` here is
+    // a plain interface, so the import-string form names it directly.
+    outputType: "import('@myorg/money-field').Money",
+    inputType: "import('@myorg/money-field').Money",
 
     getZodSchema: () =>
       z.object({ amountCents: z.number().int(), currency: z.string() }).nullable().optional(),
@@ -476,7 +479,7 @@ export function money<
 
 A non-nullable part column is a generate-time error: the secured surface always types a `kind: 'columns'` field's logical key as optional on create, so there is no all-parts-required case for it to satisfy a `NOT NULL` part with — keep every part column `nullable: true` and enforce "required" through `getZodSchema`/`validation` instead.
 
-For a computed field with no column at all, `getContractField: () => ({ kind: 'computed' })` plus `outputType` and a `resolveOutput` hook is the replacement for KeystoneJS's `virtual({ field: graphql.field(...) })` — see the "Challenge: Virtual Fields" section above.
+For a computed field with no column at all, `getContractField: () => ({ kind: 'computed' })` plus `outputType` and a `resolveOutput` hook is the replacement for KeystoneJS's `virtual({ field: graphql.field(...) })` — see the "Challenge: Virtual Fields" section below.
 
 - Register UI components for the admin interface (`registerFieldComponent`, or `ui.component` per-field) — this part of the contract is unchanged
 - Worked reference implementations: `@opensaas/stack-rag`'s `embedding()` (multi-column: a vector column plus a `jsonb` metadata column) and `@opensaas/stack-storage`'s `image()`/`file()` (single-column by default, multi-column in `db.columns: 'keystone'` mode — exactly the shape a KeystoneJS migration with existing per-part columns needs)
