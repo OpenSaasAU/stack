@@ -19,6 +19,7 @@ export {
   HandlelessPluginFieldWriteError,
   UnknownPluginFieldWriteError,
   UndefinedPluginFieldWriteError,
+  NoColumnsPluginFieldWriteError,
 } from './context/plugin-field-write.js'
 export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 

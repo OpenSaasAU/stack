@@ -6,7 +6,7 @@ import {
   splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
-import { json, text } from '../fields/index.js'
+import { json, text, virtual } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import {
@@ -14,6 +14,7 @@ import {
   HandlelessPluginFieldWriteError,
   UnknownPluginFieldWriteError,
   UndefinedPluginFieldWriteError,
+  NoColumnsPluginFieldWriteError,
 } from '../context/plugin-field-write.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
@@ -306,6 +307,11 @@ const storedConfig: OpenSaasConfig = {
         title: text(),
         label: text(),
         avatar: storedMultiColumn({ update: () => false }),
+        shout: virtual({
+          type: 'string',
+          needs: ['title'],
+          hooks: { resolveOutput: ({ item }) => `${String(item.title)}!` },
+        }),
       },
       hooks: {
         resolveInput: ({ resolvedData }) => ({
@@ -671,6 +677,33 @@ describe('writePluginOwnedField (ADR-0068)', () => {
           value: 'PWNED',
         }),
       ).rejects.toThrow('list "Owned" declares no field "nowhere"')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+      expect(stored?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a virtual field, which is declared but has no columns to write to',
+    async () => {
+      const id = await seed()
+
+      const write = writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'shout',
+        value: 'PWNED',
+      })
+
+      await expect(write).rejects.toBeInstanceOf(NoColumnsPluginFieldWriteError)
+      await expect(write).rejects.toThrow('this field is virtual and has no columns to write to')
+      // The name is what routes it to a consumer's standing-defect arm, exactly
+      // as the sibling refusals do — never the database's own unknown-column
+      // error, which a consumer would otherwise treat as transient (#1343).
+      await expect(write).rejects.toHaveProperty('name', 'NoColumnsPluginFieldWriteError')
 
       const stored = await database.context(null).db.Owned.where({}).first()
       expect(stored?.label).toBe('label:ada')

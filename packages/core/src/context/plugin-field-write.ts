@@ -48,6 +48,32 @@ export class UnknownPluginFieldWriteError extends Error {
 }
 
 /**
+ * Thrown when {@link writePluginOwnedField} is handed a field whose
+ * {@link FieldConfig.getContractField} descriptor is `{ kind: 'computed' }` —
+ * a virtual field. It is declared, so the list/field lookups both succeed,
+ * but it owns no column: nothing in the config's column layout names a place
+ * for this write to land. Left unrefused, the write falls through to
+ * `splitColumns`'s fallback (`{ [fieldName]: value }`) and reaches the ORM
+ * naming a column that does not exist, which the database rejects with its
+ * own error type — one the RAG plugin's failure classifier does not
+ * recognise as a refusal, so it reports the failure as transient and retries
+ * a write that can never succeed.
+ */
+export class NoColumnsPluginFieldWriteError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly fieldName: string,
+  ) {
+    super(
+      `Refused to write "${listName}.${fieldName}": this field is virtual and has no columns ` +
+        `to write to. writePluginOwnedField stores a value into the field's own columns, and a ` +
+        `virtual field's contract descriptor is "computed" — it has none.`,
+    )
+    this.name = 'NoColumnsPluginFieldWriteError'
+  }
+}
+
+/**
  * Thrown when {@link writePluginOwnedField} is handed `undefined`. It is the
  * one value whose meaning would depend on the field's column layout — a
  * multi-column field would split it into null columns and clear the field, a
@@ -101,6 +127,10 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
     : undefined
   if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
 
+  if (field.getContractField?.(fieldName, listName, config)?.kind === 'computed') {
+    throw new NoColumnsPluginFieldWriteError(listName, fieldName)
+  }
+
   return field
 }
 
@@ -130,7 +160,9 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
  * to the caller: the field is resolved against the config on `context`, and
  * the columns written are whatever that field's own `splitColumns` returns.
  * A list or a field the config does not declare is refused by name, as is a
- * context carrying no config. This is a narrower capability than the
+ * context carrying no config, and as is a field that declares no column at
+ * all — a virtual field, whose contract descriptor is `{ kind: 'computed' }`.
+ * This is a narrower capability than the
  * escalated `db` update it replaces — that one could write any column on the
  * row — though not a privilege boundary: a plugin holding `context.ormHandle`
  * can already write anything, and this refuses the mistake, not the intent.

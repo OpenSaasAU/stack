@@ -34,6 +34,7 @@ const REFUSED_WRITE_ERRORS = new Set([
   'HandlelessPluginFieldWriteError',
   'UnknownPluginFieldWriteError',
   'UndefinedPluginFieldWriteError',
+  'NoColumnsPluginFieldWriteError',
   'WriteCollectionMissingError',
 ])
 
