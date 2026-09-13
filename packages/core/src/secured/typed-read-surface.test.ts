@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import pg from 'pg'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { Session } from '../access/types.js'
 import type { ListQuery, ListRefinement, RemainderBase } from '../types/index.js'
 import { checkbox, integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { ESCAPE_VARIABLE, readDatabaseEscape } from '../testing/escape.js'
 import type { SecuredQuery } from './read.js'
 import type { SecuredRefinement } from './include.js'
 
@@ -46,11 +48,36 @@ function embedding(dimensions: number): BaseFieldConfig<TypeInfo> {
   }
 }
 
+/**
+ * PGlite bundles pgvector, so the default harness always has it. A server
+ * reached through the escape must have been provisioned with it (ADR-0065);
+ * one that was not skips only `Article` and the one test that searches it,
+ * leaving this file's coverage of the rest of the read surface intact —
+ * unlike `nearest.test.ts`, nothing else here needs the extension.
+ */
+const escape = readDatabaseEscape()
+const pgvectorAvailable =
+  escape.kind !== 'postgres' ||
+  (await (async () => {
+    const client = new pg.Client({ connectionString: escape.url })
+    await client.connect()
+    try {
+      const result = await client.query(
+        `select 1 from pg_available_extensions where name = 'vector'`,
+      )
+      return result.rowCount === 1
+    } finally {
+      await client.end()
+    }
+  })())
+
 const config: OpenSaasConfig = {
   db: {
     provider: 'postgresql',
     timestamps: true,
-    extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+    ...(pgvectorAvailable
+      ? { extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }] }
+      : {}),
   },
   lists: {
     User: {
@@ -77,10 +104,14 @@ const config: OpenSaasConfig = {
         },
       },
     },
-    Article: {
-      fields: { title: text(), embedding: embedding(3) },
-      access: { operation: { query: () => true } },
-    },
+    ...(pgvectorAvailable
+      ? {
+          Article: {
+            fields: { title: text(), embedding: embedding(3) },
+            access: { operation: { query: () => true } },
+          },
+        }
+      : {}),
     Locked: {
       fields: { title: text() },
       access: { operation: { query: () => false } },
@@ -369,15 +400,20 @@ describe('each promised member answers', () => {
     expect(combined[0].posts).toEqual({ notes: 2, total: 3 })
   })
 
-  test('nearest returns the row and its score', async () => {
-    await seed('Article', { title: 'near', embedding: [1, 0, 0] })
-    await seed('Article', { title: 'far', embedding: [0, 1, 0] })
+  test.skipIf(!pgvectorAvailable)(
+    pgvectorAvailable
+      ? 'nearest returns the row and its score'
+      : `nearest returns the row and its score [skipped: the ${ESCAPE_VARIABLE} server has no pgvector]`,
+    async () => {
+      await seed('Article', { title: 'near', embedding: [1, 0, 0] })
+      await seed('Article', { title: 'far', embedding: [0, 1, 0] })
 
-    const hits = await database.context(null).db.Article.nearest('embedding', [1, 0, 0], {
-      limit: 1,
-    })
-    expect(hits).toHaveLength(1)
-    expect(hits[0].item.title).toBe('near')
-    expect(hits[0].score).toBeGreaterThan(0.99)
-  })
+      const hits = await database.context(null).db.Article.nearest('embedding', [1, 0, 0], {
+        limit: 1,
+      })
+      expect(hits).toHaveLength(1)
+      expect(hits[0].item.title).toBe('near')
+      expect(hits[0].score).toBeGreaterThan(0.99)
+    },
+  )
 })
