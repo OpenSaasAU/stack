@@ -348,7 +348,7 @@ describe('authPlugin', () => {
     expect(result.db.client?.pg).toBe(pg)
   })
 
-  it('pins uuid7 on every injected list even when the app default is a different strategy', async () => {
+  it('inherits the app default idField on every injected list when authPlugin sets none', async () => {
     const result = await config({
       db: { provider: 'postgresql', idField: 'cuid2' },
       plugins: [authPlugin({})],
@@ -357,8 +357,56 @@ describe('authPlugin', () => {
 
     expect(result.db.idField).toBe('cuid2')
     for (const listKey of ['User', 'Session', 'Account', 'Verification']) {
+      expect(result.lists[listKey]?.db?.idField).toBe('cuid2')
+    }
+  })
+
+  it('defaults to uuid7 when neither authPlugin nor the app set an idField', async () => {
+    const result = await config({
+      db: { provider: 'postgresql' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+
+    for (const listKey of ['User', 'Session', 'Account', 'Verification']) {
       expect(result.lists[listKey]?.db?.idField).toBe('uuid7')
     }
+  })
+
+  it('an explicit authPlugin idField wins over the app default', async () => {
+    const result = await config({
+      db: { provider: 'postgresql', idField: 'uuid7' },
+      plugins: [authPlugin({ idField: 'cuid2' })],
+      lists: {},
+    })
+
+    for (const listKey of ['User', 'Session', 'Account', 'Verification']) {
+      expect(result.lists[listKey]?.db?.idField).toBe('cuid2')
+    }
+  })
+
+  it('refuses an app default that resolves to int autoincrement', async () => {
+    await expect(
+      config({
+        db: { provider: 'postgresql', idField: 'int autoincrement' },
+        plugins: [authPlugin({})],
+        lists: {},
+      }),
+    ).rejects.toThrow(/cannot use `db\.idField: 'int autoincrement'`/)
+  })
+
+  it('refuses an app-declared list whose own idField disagrees with the Auth lists', async () => {
+    await expect(
+      config({
+        db: { provider: 'postgresql', idField: 'uuid7' },
+        plugins: [authPlugin({ idField: 'cuid2' })],
+        lists: {
+          User: list({ fields: { name: text() }, db: { idField: 'uuid7' } }),
+        },
+      }),
+    ).rejects.toThrow(
+      /"User" is declared by the application.*resolves to "uuid7".*resolve to "cuid2"/s,
+    )
   })
 
   it('should store normalized auth config in _pluginData', async () => {
