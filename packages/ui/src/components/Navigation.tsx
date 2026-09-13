@@ -193,8 +193,12 @@ export function Navigation({
           builds its own Navigation opts out simply by not rendering it. */}
       {context.session ? (
         <UserMenu
-          userName={String((context.session.data as Record<string, unknown>)?.name) || 'User'}
-          userEmail={String((context.session.data as Record<string, unknown>)?.email) || ''}
+          userName={
+            typeof context.session.name === 'string' && context.session.name.length > 0
+              ? context.session.name
+              : 'User'
+          }
+          userEmail={typeof context.session.email === 'string' ? context.session.email : ''}
           onSignOut={onSignOut}
         />
       ) : (
