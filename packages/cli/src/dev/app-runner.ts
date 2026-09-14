@@ -15,6 +15,8 @@ export interface AppRunnerOptions {
    * inherited variable puts it on the `'env'` branch instead (ADR-0063).
    */
   devDatabase: boolean
+  /** Defaults to `process.platform`; injectable so the shim/kill decision is testable on any host. */
+  platform?: typeof process.platform
 }
 
 /** The app child, and the two things the loop does to it. */
@@ -91,6 +93,9 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
   const [file, ...args] = options.command
   if (file === undefined) throw new Error('No app command to run.')
 
+  const platform = options.platform ?? process.platform
+  const usesShell = needsShell(file, platform)
+
   let child: ChildProcess | undefined
   let restarting = false
 
@@ -99,12 +104,19 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
     const pathExtension = extendPathEnv(options.cwd, env)
     env[pathExtension.key] = pathExtension.value
     if (options.devDatabase) delete env.DATABASE_URL
-    return spawn(file, args, {
-      cwd: options.cwd,
-      stdio: 'inherit',
-      env,
-      shell: needsShell(file, process.platform),
-    })
+    return spawn(file, args, { cwd: options.cwd, stdio: 'inherit', env, shell: usesShell })
+  }
+
+  // `shell: true` makes the tracked child cmd.exe, not the shim it runs —
+  // `next.cmd`'s own `next-server` process is cmd.exe's child, not ours.
+  // `target.kill()` would only stop the wrapper and orphan the real app.
+  // `taskkill /t` reaches the whole tree from the wrapper's pid.
+  const killChild = (target: ChildProcess, signal: 'SIGINT' | 'SIGTERM'): void => {
+    if (usesShell && target.pid !== undefined) {
+      spawn('taskkill', ['/pid', String(target.pid), '/t', '/f'])
+      return
+    }
+    target.kill(signal)
   }
 
   const isRunning = (): boolean =>
@@ -118,13 +130,13 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
       // yet: without this the pending `exit` respawns the app instead of
       // resolving `run()`, and the loop never reaches its shutdown.
       restarting = false
-      if (isRunning()) child?.kill(signal)
+      if (isRunning() && child !== undefined) killChild(child, signal)
     },
 
     restart() {
-      if (!isRunning()) return
+      if (!isRunning() || child === undefined) return
       restarting = true
-      child?.kill('SIGTERM')
+      killChild(child, 'SIGTERM')
     },
 
     async run(): Promise<number> {

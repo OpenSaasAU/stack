@@ -2,8 +2,10 @@ import * as path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 interface FakeChild {
+  pid: number
   exitCode: number | null
   signalCode: string | null
+  killCalls: string[]
   kill: (signal: string) => boolean
   once: (event: string, handler: (...args: unknown[]) => void) => FakeChild
   emit: (event: string, ...args: unknown[]) => void
@@ -12,20 +14,26 @@ interface FakeChild {
 interface SpawnCall {
   file: string
   args: readonly string[]
-  options: { shell?: boolean; env?: typeof process.env }
+  options?: { shell?: boolean; env?: typeof process.env }
 }
 
 const children = vi.hoisted(() => [] as FakeChild[])
 const spawnCalls = vi.hoisted(() => [] as SpawnCall[])
+const nextPid = vi.hoisted(() => ({ value: 1000 }))
 
 vi.mock('child_process', () => ({
-  spawn: (file: string, args: readonly string[], options: SpawnCall['options']) => {
+  spawn: (file: string, args: readonly string[] = [], options?: SpawnCall['options']) => {
     spawnCalls.push({ file, args, options })
     const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
     const child: FakeChild = {
+      pid: nextPid.value++,
       exitCode: null,
       signalCode: null,
-      kill: () => true,
+      killCalls: [],
+      kill(signal) {
+        child.killCalls.push(signal)
+        return true
+      },
       once(event, handler) {
         handlers.set(event, [...(handlers.get(event) ?? []), handler])
         return child
@@ -78,7 +86,7 @@ describe('the dev loop app child', () => {
   })
 
   it.skipIf(process.platform === 'win32')(
-    'spawns the app child with no shell on POSIX',
+    'spawns the app child with no shell on POSIX, and kills it directly',
     async () => {
       children.length = 0
       spawnCalls.length = 0
@@ -93,12 +101,74 @@ describe('the dev loop app child', () => {
       expect(spawnCalls).toHaveLength(1)
       expect(spawnCalls[0]?.file).toBe('node')
       expect(spawnCalls[0]?.args).toEqual(['app.mjs', '--flag'])
-      expect(spawnCalls[0]?.options.shell).toBe(false)
+      expect(spawnCalls[0]?.options?.shell).toBe(false)
 
-      children[0]?.emit('exit', 0, null)
-      expect(await run).toBe(0)
+      app.kill('SIGINT')
+      expect(children[0]?.killCalls).toEqual(['SIGINT'])
+      expect(spawnCalls.map((call) => call.file)).not.toContain('taskkill')
+
+      children[0]?.emit('exit', null, 'SIGINT')
+      expect(await run).toBe(1)
     },
   )
+
+  it("tree-kills the shell wrapper's process group on Windows instead of signaling it directly", async () => {
+    children.length = 0
+    spawnCalls.length = 0
+    const { createAppRunner } = await import('./app-runner.js')
+    const app = createAppRunner({
+      cwd: process.cwd(),
+      command: ['next', 'dev'],
+      devDatabase: true,
+      platform: 'win32',
+    })
+
+    const run = app.run()
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0]?.options?.shell).toBe(true)
+    const wrapperPid = children[0]?.pid
+
+    app.kill('SIGTERM')
+
+    // The wrapper (cmd.exe) is never signaled directly — only its whole
+    // process tree, via a separate `taskkill` spawn.
+    expect(children[0]?.killCalls).toEqual([])
+    expect(spawnCalls).toHaveLength(2)
+    expect(spawnCalls[1]?.file).toBe('taskkill')
+    expect(spawnCalls[1]?.args).toEqual(['/pid', String(wrapperPid), '/t', '/f'])
+
+    children[0]?.emit('exit', null, 'SIGTERM')
+    expect(await run).toBe(1)
+  })
+
+  it('tree-kills through a restart on Windows too', async () => {
+    children.length = 0
+    spawnCalls.length = 0
+    const { createAppRunner } = await import('./app-runner.js')
+    const app = createAppRunner({
+      cwd: process.cwd(),
+      command: ['next', 'dev'],
+      devDatabase: true,
+      platform: 'win32',
+    })
+
+    const run = app.run()
+    const firstPid = children[0]?.pid
+    app.restart()
+
+    // `restart()`'s taskkill goes through the same mocked `spawn`, so it
+    // lands in `children` too (index 1) — the respawned app is index 2,
+    // not 1.
+    expect(children[0]?.killCalls).toEqual([])
+    const taskkillCall = spawnCalls.find((call) => call.file === 'taskkill')
+    expect(taskkillCall?.args).toEqual(['/pid', String(firstPid), '/t', '/f'])
+
+    children[0]?.emit('exit', null, 'SIGTERM')
+    expect(children).toHaveLength(3)
+
+    children[2]?.emit('exit', 0, null)
+    expect(await run).toBe(0)
+  })
 })
 
 describe('extendPathEnv', () => {
