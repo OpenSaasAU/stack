@@ -137,6 +137,15 @@ lists cannot silently drift from what better-auth itself declares (issue
   plugin's could (issue #1222). Plugin tables
   ship closed like the base models, with no `access` passthrough at all —
   see ADR-0034 and "Access control on Auth lists" below
+- a base model's `fields` remap is refused when its target column string
+  equals another field's own default key on the same model — better-auth's
+  `getDefaultFieldName` resolves a column back to a field key with a
+  **direct hit against the model's own field keys first**, so a colliding
+  remap would make it resolve straight back to the wrong field's attributes
+  (in particular its `bigint` flag, silently skipping the `BigInt`
+  widening/narrowing a remapped `int8` column needs) rather than to the
+  field that was actually remapped there. A field remapped to its own key,
+  or to a string no field uses, is unaffected (#1545)
 
 With no `modelName`/`tableName`/`fields` overrides the base list/table shape
 is otherwise unchanged (`User`/`Session`/`Account`/`Verification`, original
