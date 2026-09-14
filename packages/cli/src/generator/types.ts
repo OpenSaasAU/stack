@@ -5,7 +5,7 @@ import type {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
-import { typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
+import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -29,10 +29,6 @@ function readOutputType(field: FieldConfig): string | null {
 function readInputType(field: FieldConfig): string | null {
   const declared: TypeDescriptor | undefined = field.inputType
   return declared === undefined ? null : typeDescriptorToTypeString(declared)
-}
-
-function isVirtual(field: FieldConfig): boolean {
-  return field.type === 'virtual' || field.virtual === true
 }
 
 /**
@@ -91,8 +87,10 @@ function generateRemainderEntry(
     // A field that stores nothing lands in `computed` by its descriptor's
     // `kind`, not by the `virtual` flag alone: a third-party field can
     // declare `kind: 'computed'` without also setting the flag, and the
-    // descriptor is the source of truth (mirrors `validateFieldConfig`).
-    if (isVirtual(field) || descriptor?.kind === 'computed') {
+    // descriptor is the source of truth (mirrors `validateFieldConfig`,
+    // `filterReadableFields`'s virtual-field pass, and `needsEntries` below —
+    // `isComputedField` is the one predicate all four share, issue #1531).
+    if (isComputedField(field, fieldName, listName, config, descriptor?.kind)) {
       // A computed field has no column, so the contract has no type for it. An
       // `unknown` here would compile for every consumer and guard none of them,
       // so the missing declaration is reported instead.
@@ -115,7 +113,7 @@ function generateRemainderEntry(
     }
   }
 
-  const needs = needsEntries(listName, fields, dependencies).map(
+  const needs = needsEntries(listName, fields, dependencies, config).map(
     ([fieldName, keys]) => `${fieldName}: ${keys}`,
   )
 
@@ -139,9 +137,11 @@ function generateRemainderEntry(
  * cannot disagree about which columns a hook is handed — including the
  * foreign-key column a declared relation implies on the owning side.
  *
- * Only a VIRTUAL field's row becomes a type. `field-visibility.ts` builds the
- * narrowed `computedFieldItem` for a virtual field's `resolveOutput` and hands
- * a stored field's the whole `workingItem`, which carries the field's own
+ * Only a COMPUTED field's row becomes a type — by `isComputedField`, the same
+ * flag-or-descriptor rule `generateRemainderEntry` sorts a field into
+ * `computed` by (issue #1531). `field-visibility.ts` builds the narrowed
+ * `computedFieldItem` for a computed field's `resolveOutput` and hands a
+ * stored field's the whole `workingItem`, which carries the field's own
  * column — a column `NeedsRow`'s `Pick` does not name. So a `NeedsItem` for a
  * stored field would reject a read that always succeeds. The table keeps those
  * rows because the widening still pays for their declarations.
@@ -153,13 +153,14 @@ export function needsEntries(
   listName: string,
   fields: Record<string, FieldConfig>,
   dependencies: DependencyTable,
+  config: OpenSaasConfig,
 ): Array<[string, string]> {
   const rows = dependencies[listName]?.fields ?? {}
   return Object.keys(rows)
     .sort()
     .filter((fieldName) => {
       const field = fields[fieldName]
-      return field !== undefined && isVirtual(field)
+      return field !== undefined && isComputedField(field, fieldName, listName, config)
     })
     .map((fieldName): [string, string] => {
       const { columns, relations } = rows[fieldName]
@@ -322,7 +323,7 @@ export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTa
   const listNames = Object.keys(config.lists)
   const needsFields: Array<[string, string]> = Object.entries(config.lists).flatMap(
     ([listName, listConfig]) =>
-      needsEntries(listName, listConfig.fields, dependencies).map(
+      needsEntries(listName, listConfig.fields, dependencies, config).map(
         ([fieldName]): [string, string] => [listName, fieldName],
       ),
   )

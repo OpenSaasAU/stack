@@ -1,5 +1,6 @@
 import type { AccessContext } from '../access/types.js'
-import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { FieldConfig } from '../config/types.js'
+import { isComputedField } from '../config/field-kind.js'
 import {
   identityPredicate,
   updateFirst,
@@ -104,32 +105,6 @@ export interface PluginOwnedFieldWrite {
   value: unknown
 }
 
-/**
- * Whether `field` stores nothing — mirrors `validateFieldConfig`'s own
- * three-way test (`src/validation/field-config.ts`): the `virtual` flag
- * core's `virtual()` sets, the `'virtual'` type discriminator, or a
- * `{ kind: 'computed' }` contract descriptor. A virtual field's
- * self-containment contract does not require `getContractField` at all, so
- * checking the descriptor alone would miss one that omits it — the first two
- * checks are what catch that field before the third ever runs. Reading the
- * descriptor is itself a field's own refusal seam (`embedding()` throws out
- * of it for an impossible `dimensions`), so a throw here is swallowed rather
- * than left to surface through a write path that did not ask about it.
- */
-function isVirtualField(
-  field: FieldConfig,
-  fieldName: string,
-  listName: string,
-  config: OpenSaasConfig,
-): boolean {
-  if (field.virtual === true || field.type === 'virtual') return true
-  try {
-    return field.getContractField?.(fieldName, listName, config)?.kind === 'computed'
-  } catch {
-    return false
-  }
-}
-
 function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
   const refuse = (reason: string): never => {
     throw new UnknownPluginFieldWriteError(listName, fieldName, reason)
@@ -152,7 +127,11 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
     : undefined
   if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
 
-  if (isVirtualField(field, fieldName, listName, config)) {
+  // A field storing nothing — the `virtual` flag, the `'virtual'` type
+  // discriminator, or a `{ kind: 'computed' }` contract descriptor a
+  // third-party field can declare without the flag (issue #1531) — has no
+  // column for this write to reach.
+  if (isComputedField(field, fieldName, listName, config)) {
     throw new NoColumnsPluginFieldWriteError(listName, fieldName)
   }
 

@@ -96,6 +96,34 @@ describe('the generated types file', () => {
     expect(thirdPartyComputed).toContain('output: Record<never, never>')
   })
 
+  it('gives the same `kind: "computed"`-without-`virtual` field a real `needs` entry and `NeedsItem`', () => {
+    // #1531: `needsEntries()` reopened the bug #1309/#1529 fixed for
+    // `computed` above — it gated on the `virtual` flag alone, so this exact
+    // field shape got `needs: Record<never, never>` and no generated
+    // `NeedsItem`, even though `deriveDependencyTable` already produces a
+    // real dependency-set row for any field with a `resolveOutput` hook,
+    // flagged `virtual` or not.
+    const types = render({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            summary: {
+              type: 'summary',
+              outputType: 'string',
+              needs: ['title'],
+              getContractField: () => ({ kind: 'computed' }),
+              hooks: { resolveOutput: ({ item }) => `${item.title}` },
+            },
+          },
+        },
+      },
+    })
+    expect(types).toContain("needs: {\n      summary: 'title'\n    }")
+    expect(types).toContain('export interface PostSummaryNeedsItem')
+  })
+
   it('names a field whose read face differs from its codec in `output`', () => {
     expect(types).toContain(
       "output: {\n      secret: import('@opensaas/stack-core/internal').HashedPassword\n    }",
