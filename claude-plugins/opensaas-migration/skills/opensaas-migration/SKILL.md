@@ -311,9 +311,9 @@ export default config({
 
 **Solution:**
 
-- Use `opensaas generate` to create Prisma schema
-- Use `prisma db push` instead of migrations for existing databases
-- Never use `prisma migrate dev` with existing data
+- `opensaas generate` produces the Contract module and the committed `migrations/` directory from your config — there is no Prisma schema language in this pipeline, so there's no `schema.prisma` to hand-edit
+- Don't point the interactive `opensaas dev` reconcile loop at a database with existing data — that loop is for the dev database. Apply the committed migrations to production data with Prisma's own migrate tooling instead, and review the generated migration the same way you'd review any schema change
+- Dev reconciles, production migrates — see CLAUDE.md's "Migrations and the dev loop"
 
 ### Challenge: Complex Access Control
 
@@ -564,9 +564,7 @@ List names are PascalCase, exactly as declared in config: `Post` → `context.db
 - [ ] Design access control patterns
 - [ ] Create `opensaas.config.ts` with `db: { provider: 'postgresql' }`
 - [ ] Set `DATABASE_URL`, or let `opensaas dev` run its own Dev database (ADR-0063)
-- [ ] Run `opensaas generate` (or `npx opensaas generate`)
-- [ ] Run `prisma generate` (or `npx prisma generate`)
-- [ ] Run `prisma db push` (or `npx prisma db push`)
+- [ ] Run `pnpm dev` (or `npx opensaas dev`) — starts the Dev database, generates, reconciles the schema, and runs the app in one loop
 - [ ] Test access control
 - [ ] Verify admin UI (if using @opensaas/stack-ui)
 - [ ] Update application code to use context
@@ -587,9 +585,7 @@ List names are PascalCase, exactly as declared in config: `Post` → `context.db
 - [ ] **Migrate virtual fields** (if any) — replace `graphql.field()` + `resolve()` with `hooks.resolveOutput`; invoke `keystone-virtual-fields-context` skill
 - [ ] **Migrate context.graphql calls** (if any) — for simple reads use `context.db.*`; for nested/related data compose a read narrowed by `.select()` / `.include()`; invoke `migrate-context-calls` skill for detailed patterns
 - [ ] Analyze and adapt access control patterns
-- [ ] Run `opensaas generate`
-- [ ] Run `prisma generate`
-- [ ] Run `prisma db push`
+- [ ] Run `pnpm dev` (or `npx opensaas dev`) — starts the Dev database, generates, reconciles the schema, and runs the app in one loop
 - [ ] Test existing API routes
 - [ ] Test existing pages/UI
 - [ ] Test all CRUD operations
