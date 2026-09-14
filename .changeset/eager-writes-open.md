@@ -43,8 +43,19 @@ not expose.
 
 A context built over a Prisma 8 client whose collections do not cover the
 config now refuses at construction rather than quietly downgrading its writes
-to non-transactional, and `context.transaction()` over a client that can
-neither open a transaction nor join one throws `TransactionUnavailableError`
-instead of running the callback with no atomicity. A context assembled from a
-hand-built ORM double — `getContext` called without its `client` argument —
-still writes directly against that double, and now says so.
+to non-transactional. This widens the blast radius of contract drift: before,
+a list the client couldn't reach only errored when that list was actually
+used (`OrmModelMissingError`, lazily, per operation) while every other list
+kept working; now the whole context fails to build — no list is usable —
+the moment any one of them is unresolvable. Reviewers judged that the right
+trade for #1262: a context that can silently downgrade every write's
+atomicity is a worse failure mode than refusing outright, and contract drift
+this severe should fail loudly rather than only on the paths a test happens
+to exercise.
+
+`context.transaction()` over a client that can neither open a transaction nor
+join one throws `TransactionUnavailableError` instead of running the callback
+with no atomicity. A context assembled from a hand-built ORM double —
+`getContext` called without its `client` argument — still writes directly
+against that double, with no such terminal to refuse from; it now warns once
+per list and operation via `console.warn` instead of staying silent.

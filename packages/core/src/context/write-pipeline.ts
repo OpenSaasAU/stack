@@ -39,6 +39,7 @@ import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
+import { warnOnce } from '../lib/warn-once.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -124,6 +125,24 @@ async function runInTransaction(
   return opener((opened) => fn(opened.ormHandle))
 }
 
+/**
+ * Warn once per (list, operation) when a write has neither an opener of its
+ * own nor an enclosing transaction to join — a context built without
+ * `getContext`'s `client` argument (#1273). `context.transaction()` refuses
+ * this shape outright (`TransactionUnavailableError`); a plain `context.db`
+ * write has no such terminal to refuse from, so it still runs — directly
+ * against the handle, with no rollback guarantee — but no longer silently.
+ */
+function warnNoTransactionCapability(listName: string, operation: WriteOperation): void {
+  warnOnce(
+    `no-transaction:${listName}.${operation}`,
+    `[@opensaas/stack-core] context.db.${listName}.${operation}() is running with no ` +
+      `transaction and no rollback guarantee: this context was built without getContext's ` +
+      `\`client\` argument. Pass the Prisma 8 client through (the generated context and ` +
+      `requireOrmHandle(config, client.orm) both do) to restore it.`,
+  )
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function isSingletonList(listConfig: ListConfig<any>): boolean {
   return !!listConfig.isSingleton
@@ -196,6 +215,12 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // below it enqueues into.
   const existingOwner = context._transactionOwner
   const opener = existingOwner ? undefined : context._transactionOpener
+  // Neither joining an enclosing transaction nor able to open one of its own —
+  // the silently non-transactional shape #1273 exists to flag (see
+  // `warnNoTransactionCapability`).
+  if (existingOwner === undefined && opener === undefined) {
+    warnNoTransactionCapability(listName, strategy.operation)
+  }
   const ownedRegistry = opener ? new TransactionRegistry() : undefined
   const transactionOwnerForBody = existingOwner ?? ownedRegistry
 

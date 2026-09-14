@@ -268,4 +268,28 @@ describe('context.transaction', () => {
       BOOT,
     )
   })
+
+  describe('a plain context.db write with no client (#1273)', () => {
+    test(
+      'runs anyway, but warns once per list and operation instead of staying silent',
+      async () => {
+        const orm = ormClientFor(harness.data, harness.client.orm)
+        const clientless = getContext(schemaConfig(), orm, { userId: 'u1' })
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        try {
+          const created = await clientless.db.User.create({ data: { name: 'jane' } })
+          expect(created?.name).toBe('jane')
+          expect(warn).toHaveBeenCalledTimes(1)
+          expect(warn.mock.calls[0]?.[0]).toContain('no transaction')
+
+          await clientless.db.User.create({ data: { name: 'again' } })
+          expect(warn).toHaveBeenCalledTimes(1)
+        } finally {
+          warn.mockRestore()
+        }
+      },
+      BOOT,
+    )
+  })
 })
