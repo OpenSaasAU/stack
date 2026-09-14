@@ -39,7 +39,7 @@
     "build": "npm run generate:css && tsc && npm run build:css && node ../../scripts/lib/write-build-hash-cli.mjs",
     "generate:css": "node --experimental-strip-types scripts/generate-globals-css.mts",
     "generate:css:check": "node --experimental-strip-types scripts/generate-globals-css.mts --check",
-    "build:css": "mkdir -p dist/styles && postcss ./src/styles/globals.css -o ./dist/styles/globals.css",
+    "build:css": "node -e \"require('fs').mkdirSync('dist/styles',{recursive:true})\" && postcss ./src/styles/globals.css -o ./dist/styles/globals.css",
     "dev": "tsc --watch",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest",
