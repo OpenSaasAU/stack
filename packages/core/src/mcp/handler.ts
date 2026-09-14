@@ -316,7 +316,10 @@ async function handleToolsList(
           type: 'object',
           properties: {
             where: { type: 'object', description: whereDescription(listKey) },
-            take: { type: 'number', description: 'Number of records to return (max 100)' },
+            take: {
+              type: 'number',
+              description: 'Number of records to return (max 100; 0 returns no rows)',
+            },
             skip: { type: 'number', description: 'Number of records to skip' },
             orderBy: {
               type: 'object',
@@ -690,11 +693,17 @@ async function handleCrudTool(
 
     switch (operation) {
       case 'query': {
+        if (args.take !== undefined && typeof args.take !== 'number') {
+          return createErrorResultResponse(`"${listKey}.take" must be a number.`, id)
+        }
         if (typeof args.take === 'number' && args.take < 0) {
           return createErrorResultResponse(
             `"${listKey}.take" must not be negative (reverse pagination isn't supported).`,
             id,
           )
+        }
+        if (args.skip !== undefined && typeof args.skip !== 'number') {
+          return createErrorResultResponse(`"${listKey}.skip" must be a number.`, id)
         }
         if (typeof args.skip === 'number' && args.skip < 0) {
           return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
@@ -726,7 +735,7 @@ async function handleCrudTool(
           }
 
           if (args.skip !== undefined) query = query.offset(args.skip)
-          const rows = await query.limit(Math.min(args.take || 10, 100)).all()
+          const rows = await query.limit(Math.min(args.take ?? 10, 100)).all()
           const items = projection ? projection.toWire(rows) : rows
 
           return createSuccessResponse({ items, count: items.length }, id)

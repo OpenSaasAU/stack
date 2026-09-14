@@ -1897,6 +1897,39 @@ describe('the MCP surface', () => {
       BOOT,
     )
 
+    /**
+     * `combinedCount` returning `undefined` is unreachable through a real
+     * read — `relationRefinement`'s `combine` always produces `{ items, count
+     * }` — but `toWire` is the count-only path's only defence against a
+     * shape it doesn't recognise, so it must fail toward no rows rather than
+     * pass the unrecognised value through with the relation's rows intact.
+     */
+    test(
+      'an unrecognised count-only shape falls back to zero, never to the rows it carried',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const projection = await resolveFieldsProjection(
+          { comments: { count: true } },
+          'Post',
+          schemaConfig().lists.Post,
+          schemaConfig(),
+          context.session,
+          context,
+        )
+
+        const malformed = [
+          { id: '1', comments: { items: [{ id: 'leaked', body: 'should not leak' }] } },
+          { id: '2', comments: { items: [{ id: 'leaked' }], count: 'three' } },
+          { id: '3', comments: [{ id: 'leaked' }] },
+        ]
+
+        for (const wired of projection.toWire(malformed)) {
+          expect(wired.comments).toBe(0)
+        }
+      },
+      BOOT,
+    )
+
     test(
       "a nested row's field the session cannot read never reaches the wire",
       async () => {
@@ -1955,12 +1988,26 @@ describe('the MCP surface', () => {
         expect(
           await refusal({ fields: { comments: { fields: { body: true }, skip: -5 } } }),
         ).toContain('"Post.comments.skip" must not be negative')
+      },
+      BOOT,
+    )
 
+    test(
+      'a root take/skip is type-checked, matching the nested selector',
+      async () => {
+        expect(await refusal({ take: '1' })).toContain('"Post.take" must be a number.')
+        expect(await refusal({ skip: '1' })).toContain('"Post.skip" must be a number.')
+      },
+      BOOT,
+    )
+
+    test(
+      'take: 0 at the root is honoured as zero rows, not the default of 10',
+      async () => {
         const context = await contextFor(schemaConfig())()
         await context.db.Post.create({ data: { title: 'alpha' } })
-        await expect(query({ take: 0, skip: 0, fields: { title: true } })).resolves.toBeInstanceOf(
-          Array,
-        )
+
+        await expect(query({ take: 0, skip: 0, fields: { title: true } })).resolves.toEqual([])
       },
       BOOT,
     )
