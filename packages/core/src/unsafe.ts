@@ -70,6 +70,41 @@ export interface UnsafeTransactionScope<
  *   collections, whole; a `prepare`-shaped member on one of them is proxied
  *   like any other call, which marks the preparation and not the executions
  *   that follow. Closing that needs Prisma's own middleware, not this proxy.
+ * - Every collection rc.8 hands back — off `unsafe.orm`, and off
+ *   `AccessContext.ormHandle`, which resolves the same collections unproxied
+ *   and is carried by every hook — has its own `ctx: { runtime, context }`,
+ *   named nowhere in this file's types. `ctx.runtime` is a live
+ *   {@link RuntimeScope}: `query`/`execute` as declared, plus a `connection()`
+ *   the published type does not. Reached through `unsafe.orm`, `.ctx` is
+ *   wrapped by the same proxy as everything else the lane hands back, so a
+ *   call through it enters the unsafe origin exactly as any other call the
+ *   lane returns does — it reaches nothing `unsafe` does not already grant.
+ *   Reached through `ormHandle`, which carries no proxy of its own, the same
+ *   call is unmarked and refused by the tripwire *unless* the caller imports
+ *   `withOrigin` from `./origin.js` and marks it themselves — reachable from
+ *   any module, so this containment rests on the tripwire catching an
+ *   actually-unmarked call, not on the path being unreachable. `ctx` is
+ *   deliberately left reachable rather than refused by either proxy: on the
+ *   `unsafe.orm` path refusing it would close nothing a caller with
+ *   `context.unsafe` does not already have, and on `ormHandle` it is a
+ *   property of the engine's own internal handle, not of this surface —
+ *   closing it needs that handle's own construction to carry marking, which
+ *   is `context/index.ts`'s concern, not this module's.
+ * - `runtime.connection()` — reached the same two ways as `ctx.runtime`
+ *   itself — returns a connection-scoped runtime object bound to one pooled
+ *   connection (`query`, `execute`, `transaction`, `release`, `destroy`).
+ *   Its return value is a `Promise`, which this proxy deliberately leaves
+ *   unwrapped (so an ordinary async CRUD result passes through untouched) —
+ *   so, unlike a call straight through `ctx.runtime`, the connection it
+ *   resolves to is NOT auto-marked even when reached off the auto-marking
+ *   `unsafe.orm` path. Assessed against rc.8: an execution reached through it
+ *   either way is still checked by the same `beforeCompile` tripwire as
+ *   `runtime` itself, so an unmarked call throws `UnmarkedQueryError` exactly
+ *   as one through `runtime` does, and succeeds once the caller marks it with
+ *   `withOrigin` — observable, not a separate escape from the marking
+ *   machinery, but the one member here that reaches a caller with only
+ *   `unsafe.orm` (never `unsafe.query`/`unsafe.execute` themselves) with no
+ *   free marking of its own.
  * - Prisma's raw guardrails (`lints()`, `budgets()`) are opt-in middleware and
  *   the stack installs none, here or on the client. A statement this surface
  *   runs meets whatever an application armed, and nothing else (ADR-0062).

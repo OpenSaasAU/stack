@@ -697,15 +697,25 @@ const stats = await context.unsafe.execute(
 )
 ```
 
-The surface hands out **neither the client nor `prepare()`/`runtime()`**, so
-there is no way to compile a plan that would execute unobserved. Scoping a
-statement written here is yours alone.
+The surface hands out **neither the client nor `prepare()`/`runtime()`** as
+one of its own members, so there is no way to compile a plan through it that
+would execute unobserved. Scoping a statement written here is yours alone.
 
 {% callout type="warning" %}
 A plugin's own hooks and its `runtime()` factory do **not** get `context.unsafe`.
 They are handed an `AccessContext`, which has no such member — their equivalent
 is `context.ormHandle`, engine plumbing with exactly the same absence of
 protection. `context.unsafe` is on the request context an application holds.
+
+Every collection either handle resolves also carries its own `ctx.runtime` —
+not `prepare()`/`runtime()` as members, but reachable by naming `.ctx`
+directly. Off `context.unsafe.orm` a call through it is auto-marked by the
+same proxy that wraps everything else the lane returns, so it grants nothing
+beyond `unsafe` itself. Off `context.ormHandle`, which carries no proxy, the
+same call is unmarked and refused by the tripwire unless the plugin's own
+code imports `withOrigin` and marks it — a plugin author already runs
+arbitrary code with the application's database credentials, so this is a
+containment note, not a claim that the path is unreachable.
 {% /callout %}
 
 ## Best Practices

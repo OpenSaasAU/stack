@@ -225,10 +225,14 @@ export function refuseUnmarkedQuery(draft: DraftPlanIdentity): void {
  *
  * Known limits, against Prisma `8.0.0-rc.8`: a prepared statement runs
  * `beforeCompile` once at `prepare()` and zero times per execution, so neither
- * surface exposes `prepare()` or `runtime()`; an already-compiled
- * `ExecutionPlan` handed to `runtime()` bypasses the middleware chain
- * entirely. Both are closed by keeping those entry points unreachable, not
- * here (ADR-0059).
+ * surface exposes `prepare()` or `runtime()` as one of its own members; an
+ * already-compiled `ExecutionPlan` handed to `runtime()` bypasses the
+ * middleware chain entirely. Both are addressed by keeping those entry points
+ * off each surface's own members, not here (ADR-0059) — narrower than
+ * "unreachable": a collection either surface's ORM lane hands back also
+ * carries its own `ctx.runtime`, reachable by naming it directly. See the
+ * `Known limits` block on `UnsafeSurface` in `./unsafe.js` for what that path
+ * does and does not open up.
  *
  * `beforeCompile` declares only the part of the draft it reads and ignores the
  * middleware context, which is what lets a test drive the installed value
