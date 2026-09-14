@@ -13,61 +13,6 @@ import type { CreateInput, UpdateInput } from './inputs.js'
 import type { RelationValue, Row, StoredRow, SystemFieldKey } from './rows.js'
 
 /**
- * One column's filter. The operator vocabulary is the one the engine lowers
- * today; ADR-0055 replaces it with the secured surface's own `where` grammar
- * in the runtime spec. What this type pins now is the **key** set: a `where`
- * naming a column the list does not have is a compile error.
- */
-export type ColumnFilter<V> =
-  | V
-  | {
-      equals?: V
-      not?: V
-      in?: V[]
-      notIn?: V[]
-      lt?: V
-      lte?: V
-      gt?: V
-      gte?: V
-      contains?: string
-      startsWith?: string
-      endsWith?: string
-      mode?: 'default' | 'insensitive'
-    }
-
-type RelationFilter<C, R extends RemainderBase, K extends keyof R & string, Rel> =
-  RelationTarget<C, K, Rel> extends infer Target
-    ? Target extends keyof R & string
-      ? IsToOne<C, K, Rel> extends true
-        ? { is?: ListWhere<C, R, Target> | null; isNot?: ListWhere<C, R, Target> | null }
-        : {
-            some?: ListWhere<C, R, Target>
-            every?: ListWhere<C, R, Target>
-            none?: ListWhere<C, R, Target>
-          }
-      : never
-    : never
-
-/** A `where` over the list's own columns and relations, plus the boolean combinators. */
-export type ListWhere<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in keyof StoredRow<C, R, K>]?: ColumnFilter<StoredRow<C, R, K>[F]>
-} & {
-  [Rel in RelationKey<C, K>]?: RelationFilter<C, R, K, Rel>
-} & {
-  AND?: ListWhere<C, R, K> | ListWhere<C, R, K>[]
-  OR?: ListWhere<C, R, K>[]
-  NOT?: ListWhere<C, R, K> | ListWhere<C, R, K>[]
-}
-
-export type ListOrderBy<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in keyof StoredRow<C, R, K>]?: 'asc' | 'desc'
-}
-
-export type ListUniqueWhere<C, R extends RemainderBase, K extends keyof R & string> = {
-  [F in keyof StoredRow<C, R, K>]?: StoredRow<C, R, K>[F]
-}
-
-/**
  * What `update` and `delete` target: the row's identity, and nothing else. The
  * engine lowers `id` alone into the write's predicate, so a secondary unique
  * column is a caller-shape error rather than a second way to name a row — a
@@ -150,16 +95,6 @@ export type QueryResult<C, R extends RemainderBase, K extends keyof R & string, 
 type Selection<C, R extends RemainderBase, K extends keyof R & string> = {
   select?: ListSelect<C, R, K>
   include?: ListInclude<C, R, K>
-}
-
-/** Filtering, ordering and paging — everything a many-read takes but selection. */
-export type ListFilterArgs<C, R extends RemainderBase, K extends keyof R & string> = {
-  where?: ListWhere<C, R, K>
-  orderBy?: ListOrderBy<C, R, K> | ListOrderBy<C, R, K>[]
-  take?: number
-  skip?: number
-  cursor?: ListUniqueWhere<C, R, K>
-  distinct?: (keyof StoredRow<C, R, K> & string) | (keyof StoredRow<C, R, K> & string)[]
 }
 
 export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
