@@ -259,14 +259,41 @@ function resolveDeferredOutcome(
  */
 export async function runWithTransactionBoundary(args: {
   involvedLists: InvolvedList[]
+  /**
+   * The context `beforeTransaction` runs with — unchanged from what the
+   * write itself was issued through. Left as-is deliberately: `beforeTransaction`
+   * is eager, so on a joined write it already runs while the enclosing
+   * transaction is open, same as it always has; issue #1348 is about the
+   * DEFERRED hook reaching a transaction that has since closed, not about
+   * this one, and giving it a base-client context instead would newly expose
+   * every joined `beforeTransaction` to the single-connection-pool contention
+   * ADR-0028 already documents as a `context.transaction()` hazard, for no
+   * problem it currently has.
+   */
   context: AccessContext
+  /**
+   * The context `afterTransaction` runs with — the same session/sudo/plugins
+   * as `context` (so `tx.sudo()`/`tx.withSession()` still elevates a joined
+   * write's own compensator), but rebound to the BASE client (ADR-0028): a
+   * compensating write must survive a transaction that may already be closed
+   * by flush time. Resolved once by the caller via
+   * `resolveAfterTransactionContext` (issue #1348).
+   */
+  afterTransactionContext: AccessContext
   /** Set when this write is nested in a transaction it did not open (ADR-0028). */
   joinedOwner?: TransactionRegistry
   /** Set when this write just opened the transaction joined writes below it share. */
   ownedRegistry?: TransactionRegistry
   runTransaction: () => Promise<Record<string, unknown> | null>
 }): Promise<Record<string, unknown> | null> {
-  const { involvedLists, context, joinedOwner, ownedRegistry, runTransaction } = args
+  const {
+    involvedLists,
+    context,
+    afterTransactionContext,
+    joinedOwner,
+    ownedRegistry,
+    runTransaction,
+  } = args
 
   // A list counts as "ran" the moment its beforeTransaction BEGINS (pushed
   // before the try below), not on success — so a list whose beforeTransaction
@@ -295,13 +322,13 @@ export async function runWithTransactionBoundary(args: {
       joinedOwner.enqueue(async (_settle, _errors) => {
         const discarded: unknown[] = []
         for (const involved of ran) {
-          await runAfterTransactionForList(involved, outcome, context, discarded)
+          await runAfterTransactionForList(involved, outcome, afterTransactionContext, discarded)
         }
       })
     } else {
       const afterErrors: unknown[] = []
       for (const involved of ran) {
-        await runAfterTransactionForList(involved, outcome, context, afterErrors)
+        await runAfterTransactionForList(involved, outcome, afterTransactionContext, afterErrors)
       }
     }
     throw beforeError
@@ -335,7 +362,7 @@ export async function runWithTransactionBoundary(args: {
     joinedOwner.enqueue(async (settle, errors) => {
       const finalOutcome = resolveDeferredOutcome(outcome, settle)
       for (const involved of ran) {
-        await runAfterTransactionForList(involved, finalOutcome, context, errors)
+        await runAfterTransactionForList(involved, finalOutcome, afterTransactionContext, errors)
       }
     })
     if (txError !== undefined) throw txError
@@ -345,7 +372,7 @@ export async function runWithTransactionBoundary(args: {
   // All compensators run even if one throws.
   const afterErrors: unknown[] = []
   for (const involved of ran) {
-    await runAfterTransactionForList(involved, outcome, context, afterErrors)
+    await runAfterTransactionForList(involved, outcome, afterTransactionContext, afterErrors)
   }
 
   // Owner: drain joined writes' deferred brackets with this write's own settle

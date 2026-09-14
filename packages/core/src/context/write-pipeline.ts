@@ -226,10 +226,18 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
 
   // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
   // afterTransaction fires when the transaction settles, deferred to the owner
-  // for a joined write (ADR-0028, symmetric-bracket rule).
+  // for a joined write (ADR-0028, symmetric-bracket rule). Its context is
+  // rebound to the BASE client (ADR-0028, issue #1348): `context` itself is
+  // already transaction-bound on a joined write (it is the context the caller
+  // handed to `context.db.*`, rebound by an enclosing
+  // `bindContextToTransaction`/`context.transaction()`), and a compensating
+  // write must be reachable after that transaction closes. `beforeTransaction`
+  // keeps running through `context` as given — see `runWithTransactionBoundary`'s
+  // own param doc for why that one is deliberately left alone.
   return runWithTransactionBoundary({
     involvedLists,
     context,
+    afterTransactionContext: resolveAfterTransactionContext(context, config),
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
@@ -268,6 +276,13 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * own `context.db` write defers its transaction-boundary bracket to that owner
  * instead of firing eagerly.
  *
+ * `_baseContext` (issue #1348) is set explicitly rather than left to the
+ * spread: `context` IS the base when it carries none of its own, so a
+ * transaction rebind one level deep must record `context` itself as the
+ * ancestor a further-nested joined write's `afterTransaction` resolves
+ * against (see {@link resolveAfterTransactionContext}) — the spread alone
+ * would just carry `undefined` forward.
+ *
  * `_transactionOpener` is explicitly cleared: a context rebound to a
  * transaction runs directly against the handle it was given, never opening a
  * second one of its own.
@@ -297,11 +312,48 @@ function bindContextToTransaction(
     _transactionOpener: undefined,
     _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
     _config: config,
+    _baseContext: context._baseContext ?? context,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
   txContext.db = buildDbDelegate(config, tx, txContext)
   return txContext
+}
+
+/**
+ * The context a write's `afterTransaction` bracket actually runs with
+ * (ADR-0028, issue #1348). `context` unchanged when it already IS the base
+ * (`_baseContext` unset — the top-level path, bit-for-bit as before). On a
+ * joined write, rebuilds `db`/`ormHandle` against the ancestor `_baseContext`
+ * names — never a transaction client, which may already be closed by flush
+ * time — while otherwise spreading `context` AS GIVEN, so this write's own
+ * `session`/`_isSudo`/`plugins` survive: a write issued through
+ * `tx.sudo()`/`tx.withSession()` must keep that elevation for its own
+ * `afterTransaction`, not fall back to the pre-elevation context the
+ * enclosing transaction was originally opened with.
+ *
+ * Deliberately NOT used for `beforeTransaction` — see
+ * {@link runWithTransactionBoundary}'s own param doc for why that one keeps
+ * running through `context` as given.
+ */
+function resolveAfterTransactionContext(
+  context: AccessContext,
+  config: OpenSaasConfig,
+): AccessContext {
+  const base = context._baseContext
+  if (base === undefined) return context
+
+  const afterTransactionContext: AccessContext = {
+    ...context,
+    ormHandle: base.ormHandle,
+    _transactionOwner: undefined,
+    _transactionOpener: base._transactionOpener,
+    _rowLock: undefined,
+    _baseContext: undefined,
+    _config: config,
+  }
+  afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
+  return afterTransactionContext
 }
 
 /**
