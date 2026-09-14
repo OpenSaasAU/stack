@@ -394,7 +394,7 @@ async function book(context: Context, slotId: string) {
 Two consequences follow, and both are taken knowingly ([ADR-0047](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0047-a-row-lock-is-an-engine-owned-two-statement-terminal.md), [ADR-0062](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0062-the-row-lock-statement-is-composed-by-the-engine-over-the-orms-raw-lane.md)):
 
 - **The row's columns are as of before the lock.** Each statement takes its own snapshot under Read Committed, so a column another transaction committed in between arrives stale. Only the identity is post-lock — the lock is a mutex token on the row, not protection for the row's own data. Read a gate's threshold in its own statement _after_ the lock, which is why the sample above re-reads `Slot` for `capacity` rather than taking it off the locked row.
-- **`all().forUpdate()` is bounded** at 1000 keys in one terminal — a fail-closed cost limit, raised rather than silently truncated.
+- **`forUpdate().all()` is bounded** at 1000 keys in one terminal — a fail-closed cost limit, raised rather than silently truncated.
 
 `advisoryLock` hashes its key with `hashtext()`, which is 32-bit, so two distinct keys can collide. A collision costs **spurious serialisation, never a missed lock**.
 

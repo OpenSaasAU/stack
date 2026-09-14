@@ -1304,7 +1304,7 @@ async function locked(
 async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
-  const taken = lockLane(binding, plan, 'all().forUpdate()', plan.limit)
+  const taken = lockLane(binding, plan, 'forUpdate().all()', plan.limit)
   const collection = scope(
     binding,
     plan,
@@ -1320,7 +1320,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleR
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<VisibleRow | null> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return null
-  const taken = lockLane(binding, plan, 'first().forUpdate()', 1)
+  const taken = lockLane(binding, plan, 'forUpdate().first()', 1)
   const collection = scope(
     binding,
     plan,
