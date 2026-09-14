@@ -475,3 +475,110 @@ describe.skipIf(!available)(
     )
   },
 )
+
+/**
+ * #1282: the regeneration skip used to read the stored hash off the write's
+ * own Field Visibility output — the caller's projection — rather than the
+ * row. A session denied read on the embedding field (a natural thing to
+ * write for it) always saw that hash as `undefined`, so every subsequent
+ * write, whatever it touched, paid for a fresh provider call forever.
+ */
+const restrictedCalls: string[] = []
+
+const restrictedProvider: EmbeddingProvider = {
+  type: 'restricted-fake',
+  model: 'restricted-fake-3',
+  dimensions: 3,
+  embed: async (input: string) => {
+    restrictedCalls.push(input)
+    const vector = VECTORS[input]
+    if (vector === undefined)
+      throw new Error(`the restricted fake provider has no vector for "${input}"`)
+    return vector
+  },
+  embedBatch: async (inputs: string[]) =>
+    await Promise.all(inputs.map((input) => restrictedProvider.embed(input))),
+}
+
+registerEmbeddingProvider('restricted-fake', () => restrictedProvider)
+
+const restrictedSource: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  plugins: [ragPlugin({ provider: { type: 'restricted-fake', dimensions: 3 } })],
+  lists: {
+    Restricted: {
+      fields: {
+        title: text(),
+        content: text(),
+        // A natural thing to write: an embedding column only an admin
+        // session may read, denied row-independently for everyone else.
+        contentEmbedding: embedding({
+          sourceField: 'content',
+          dimensions: 3,
+          access: { read: () => false },
+        }),
+      },
+      access: { operation: { query: () => true, create: () => true, update: () => true } },
+    },
+  },
+}
+
+describe.skipIf(!available)(
+  available
+    ? 'a read-restricted embedding field'
+    : `a read-restricted embedding field [skipped: the ${ESCAPE_VARIABLES.join('/')} server has no pgvector]`,
+  () => {
+    let restricted: TestDatabase
+
+    beforeAll(async () => {
+      restricted = await createTestDatabase(await defineConfig(restrictedSource))
+    }, BOOT)
+
+    afterAll(async () => {
+      await restricted?.close()
+    })
+
+    beforeEach(async () => {
+      await restricted.truncate()
+      restrictedCalls.length = 0
+    })
+
+    test('does not re-embed on a later write that leaves the source alone', async () => {
+      const created = await restricted
+        .context(null)
+        .db.Restricted.create({ data: { title: 'a', content: 'red' } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+      expect(restrictedCalls).toEqual(['red'])
+
+      // The caller cannot read `contentEmbedding` at all, so the row this
+      // update sees back carries none of it — exactly the projection the
+      // old, buggy comparison read its "current" hash through.
+      const updated = await restricted.context(null).db.Restricted.update({
+        where: { id },
+        data: { title: 'b' },
+      })
+      expect(updated).toMatchObject({ title: 'b' })
+      expect(updated).not.toHaveProperty('contentEmbedding')
+
+      // Second write leaving `content` alone: no second provider call.
+      expect(restrictedCalls).toEqual(['red'])
+    })
+
+    test('still regenerates when the source text actually changes', async () => {
+      const created = await restricted
+        .context(null)
+        .db.Restricted.create({ data: { title: 'a', content: 'red' } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+      expect(restrictedCalls).toEqual(['red'])
+
+      await restricted.context(null).db.Restricted.update({
+        where: { id },
+        data: { content: 'reddish' },
+      })
+
+      expect(restrictedCalls).toEqual(['red', 'reddish'])
+    })
+  },
+)

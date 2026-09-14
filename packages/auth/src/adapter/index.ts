@@ -160,6 +160,21 @@ function renameKeys(
  * roll back as one. ADR-0042's rule applies unchanged: no isolation level is
  * selectable, and auth transactions run at Read Committed.
  *
+ * The ROOT factory instance (what `opensaasAuthAdapter` itself returns, and
+ * therefore what better-auth's `AuthContext.adapter` is — reached via a
+ * `databaseHooks` `before`/`after` hook's `GenericEndpointContext.context.adapter`,
+ * as opposed to the transaction-bound instance that `getCurrentAdapter` hands
+ * `internalAdapter`) reads its lane from the SAME AsyncLocalStorage store as
+ * the transaction-bound instance, not a closed-over `unsafe`. Both instances
+ * run inside the same `boundLane.run(lane, …)` call for the life of the
+ * transaction — the outer `config.transaction` callback IS that call — so a
+ * hook awaiting `context.context.adapter.findOne(...)` during sign-up reaches
+ * the transaction-bound lane exactly like a call through `getCurrentAdapter`
+ * would, without better-auth's own ALS routing (`runWithTransaction` →
+ * `getCurrentAdapter`, which the root instance is never registered with)
+ * needing to change. Outside a transaction `boundLane` holds nothing and the
+ * outer lane answers, as before. See #1252.
+ *
  * Known limits:
  * - **No joins.** `advanced.database.joins` is refused at config time rather
  *   than left to the factory's silent per-model fallback.
@@ -173,20 +188,6 @@ function renameKeys(
  *   database stops two concurrent sign-ins through the same issuer identity
  *   from creating two accounts; better-auth's own existence check is all that
  *   stands between them.
- * - **A `databaseHooks` `before` hook runs outside the transaction.**
- *   better-auth swaps the transaction-bound adapter in only through its
- *   AsyncLocalStorage store (`runWithTransaction` → `als.run({ adapter: trx })`,
- *   read back by `getCurrentAdapter`). The `AuthContext` those hooks receive
- *   comes from `getCurrentAuthContext()`, and its `.adapter` is still the root
- *   instance on the outer lane. So a hook that awaits
- *   `context.adapter.findOne(...)` queries the outer lane while the sign-up
- *   transaction holds a connection: on the Dev database that is the only
- *   connection (ADR-0063), so the hook waits out Prisma's acquire timeout and
- *   sign-up hangs; on pooled Postgres it reads outside the transaction and
- *   survives the rollback the rest of sign-up gets. Inherited from
- *   better-auth's ALS routing — its own Kysely and Prisma adapters split the
- *   same way — and tracked in
- *   [#1252](https://github.com/OpenSaasAU/stack/issues/1252).
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */
@@ -510,7 +511,12 @@ export function opensaasAuthAdapter(
   // The lane is the only thing a transaction-bound instance varies, so it
   // travels in an AsyncLocalStorage store rather than being closed over:
   // concurrent transactions each read their own store, and outside one there is
-  // none, so the outer lane answers.
+  // none, so the outer lane answers. The ROOT instance (returned below) reads
+  // the same store, not a closed-over `unsafe` — that is what closes #1252: a
+  // `databaseHooks` hook reaches the root instance via better-auth's own
+  // `AuthContext.adapter`, never the transaction-bound one `getCurrentAdapter`
+  // hands out, but both instances execute inside the same `boundLane.run` call
+  // for the duration of the transaction, so both see the same store.
   const boundLane = new AsyncLocalStorage<UnsafeSurface>()
   const laneOf = (): UnsafeSurface => boundLane.getStore() ?? unsafe
 
@@ -522,11 +528,8 @@ export function opensaasAuthAdapter(
 
   return (betterAuthOptions) => {
     const boundAdapter = bound(betterAuthOptions)
-    return factoryOn(
-      () => unsafe,
-      transaction,
-      (callback) =>
-        transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
+    return factoryOn(laneOf, transaction, (callback) =>
+      transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
     )(betterAuthOptions)
   }
 }

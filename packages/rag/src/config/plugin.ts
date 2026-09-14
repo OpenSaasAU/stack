@@ -1,5 +1,5 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
-import { writePluginOwnedField } from '@opensaas/stack-core/extend'
+import { readPluginOwnedRow, writePluginOwnedField } from '@opensaas/stack-core/extend'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import type {
   EmbeddingProviderConfig,
@@ -11,7 +11,7 @@ import type {
 import { normalizeRAGConfig } from './index.js'
 import { createEmbeddingProvider } from '../providers/index.js'
 import { OPENAI_MODEL_DIMENSIONS } from '../providers/openai.js'
-import { embedding } from '../fields/embedding.js'
+import { embedding, embeddingMetadataColumn } from '../fields/embedding.js'
 import type { EmbeddingField } from '../fields/embedding.js'
 import type { RAGRuntimeServices } from '../runtime/types.js'
 import { hashText } from '../runtime/embeddings.js'
@@ -271,12 +271,6 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 }
                 const id = rowId(item.id)
                 if (id === undefined) return
-                // The persisted text, not the caller's input: a source field a
-                // resolveInput hook derived is embedded like any other. The
-                // stored source hash below is what stops an update that leaves
-                // the source alone from paying for a second provider call.
-                const sourceText = item[sourceField]
-                if (typeof sourceText !== 'string' || sourceText.length === 0) return
 
                 const providerConfig = providerFor(providerName)
                 if (!providerConfig) {
@@ -289,12 +283,30 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   return
                 }
 
-                const sourceHash = hashText(sourceText)
-                const current = item[fieldName]
-                if (storedSourceHash(current) === sourceHash) return
-
                 try {
                   const write = embeddingWriter(args.context)
+
+                  // `item` already passed through THIS write's own Field
+                  // Visibility, so a session denied read on `sourceField` or
+                  // the embedding sees `undefined` there regardless of the
+                  // row's real contents. Read both again, past every access
+                  // check, so the regeneration check below sees the row
+                  // rather than this session's projection of it (#1282).
+                  const persisted = await readForRegenerationCheck(
+                    args.context,
+                    listName,
+                    id,
+                    sourceField,
+                    fieldName,
+                  )
+                  if (persisted === null) return
+
+                  const sourceText = persisted.sourceText
+                  if (typeof sourceText !== 'string' || sourceText.length === 0) return
+
+                  const sourceHash = hashText(sourceText)
+                  if (storedSourceHash(persisted.metadata) === sourceHash) return
+
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
@@ -540,10 +552,35 @@ function embeddingWriter(context: AccessContext): EmbeddingWriter {
   return services[WRITE_EMBEDDING]
 }
 
-/** The `sourceHash` of an already-stored embedding, when there is one. */
-function storedSourceHash(value: unknown): string | undefined {
-  if (value === null || typeof value !== 'object') return undefined
-  const metadata: unknown = Reflect.get(value, 'metadata')
+/**
+ * Reads `sourceField` and the embedding's stored metadata for `id`, past
+ * every access-control layer — including the field-level read denial
+ * `embedding()` is a natural thing to write for itself. `item` on a
+ * transaction-boundary hook has already been through THIS write's own Field
+ * Visibility, so a session denied read on either column would see
+ * `undefined` there whatever the row actually holds (#1282).
+ * `readPluginOwnedRow` is the read-side twin of the escalated write below,
+ * over the same engine-owned target-read machinery — one extra id-scoped
+ * read per write, on every list with an `autoGenerate` field, whether or not
+ * it is read-restricted. It has no column projection, so it fetches the
+ * whole row; only the metadata column's `sourceHash` is used off it, which
+ * sidesteps reassembling the field's own `StoredEmbedding` shape.
+ */
+async function readForRegenerationCheck(
+  context: AccessContext,
+  listKey: string,
+  id: string | number,
+  sourceField: string,
+  fieldName: string,
+): Promise<{ sourceText: unknown; metadata: unknown } | null> {
+  const row = await readPluginOwnedRow({ context, listName: listKey, id })
+  if (row === null) return null
+  const metadataColumn = embeddingMetadataColumn(fieldName)
+  return { sourceText: row[sourceField], metadata: row[metadataColumn] }
+}
+
+/** The `sourceHash` on a stored embedding's metadata, when there is one. */
+function storedSourceHash(metadata: unknown): string | undefined {
   if (metadata === null || typeof metadata !== 'object') return undefined
   const hash: unknown = Reflect.get(metadata, 'sourceHash')
   return typeof hash === 'string' ? hash : undefined
