@@ -79,7 +79,7 @@
   },
   "devDependencies": {
     "@better-auth/mcp": "^1.7.1",
-    "@better-auth/test-utils": "1.7.1",
+    "@better-auth/test-utils": "1.7.4",
     "@opensaas/stack-cli": "workspace:*",
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.8",
