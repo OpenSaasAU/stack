@@ -457,6 +457,77 @@ describe('deriveAuthLists - RateLimit list (rateLimit.storage === "database")', 
   })
 })
 
+describe("deriveAuthLists - fields remap collision with another field's own key (issue #1545)", () => {
+  it("refuses a remap that sends a bigint field's column onto another field's own key", () => {
+    // The issue's own example: lastRequest (bigint) is remapped onto "count",
+    // which is also the rateLimit model's own (separately remapped) `count`
+    // field key. better-auth's `getDefaultFieldName` would resolve column
+    // "count" straight back to the `count` field's attributes — not bigint —
+    // so incrementOne would silently skip the BigInt widening `lastRequest`'s
+    // int8 column needs.
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: {
+        modelName: 'RateLimit',
+        fields: { count: 'total_count', lastRequest: 'count' },
+      },
+    }
+
+    expect(() => deriveAuthLists(models)).toThrow(
+      /"rateLimit\.fields" remaps "lastRequest" to "count".*"rateLimit\.count"/,
+    )
+  })
+
+  it('refuses the collision regardless of which field is remapped first', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: { key: 'count' } },
+    }
+
+    expect(() => deriveAuthLists(models)).toThrow(/"key" to "count".*"rateLimit\.count"/)
+  })
+
+  it('is unaffected by a remap target that collides with nothing', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: { count: 'total_count' } },
+    }
+
+    expect(() => deriveAuthLists(models)).not.toThrow()
+  })
+
+  it('does not treat a field remapped to its own key as a collision', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      rateLimit: { modelName: 'RateLimit', fields: { count: 'count', lastRequest: 'last_seen' } },
+    }
+
+    expect(() => deriveAuthLists(models)).not.toThrow()
+  })
+
+  it('also refuses the collision on the base models (not just rateLimit)', () => {
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      // "name" is remapped onto "email", which is also the user model's own
+      // (unmapped) `email` field key.
+      user: { modelName: 'User', fields: { name: 'email' } },
+    }
+
+    expect(() => deriveAuthLists(models)).toThrow(/"user\.fields" remaps "name" to "email"/)
+  })
+
+  it('leaves the #1236 self-collision refusal (a relation field colliding with its own FK column) unaffected', () => {
+    // A non-colliding `fields` remap on a base model still generates cleanly
+    // alongside the unrelated self-collision check this fix must not disturb.
+    const models: NormalizedAuthModels = {
+      ...defaultModels,
+      session: { modelName: 'Session', fields: { userId: 'user_id' } },
+    }
+
+    expect(() => deriveAuthLists(models)).not.toThrow()
+  })
+})
+
 describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue #981)', () => {
   it('denies read on Session.token, Verification.value, and the Account credential fields', async () => {
     const { lists } = deriveAuthLists(defaultModels)

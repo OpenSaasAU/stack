@@ -330,6 +330,44 @@ function claimedIndexFields(indexes: ListIndex[]): Set<string> {
 }
 
 /**
+ * Refuses a `fields` remap whose target column string equals another
+ * field's own default key in the same model (issue #1545).
+ *
+ * better-auth's own `getDefaultFieldName` resolves a physical column back to
+ * a field key with a **direct hit against the model's field keys first**,
+ * falling back to a reverse lookup by mapped column name only when that hit
+ * misses. When a remap sends one field's column to a string that happens to
+ * equal a *different* field's own (unmapped) key on the same model, the
+ * direct hit wins and every downstream resolution (`toFieldKey`, `isBigInt`,
+ * `resolveField` in `src/adapter/index.ts`) silently consults the wrong
+ * field's attributes instead of throwing. Banning the collision outright at
+ * generate time is cheaper and safer than teaching that resolution to
+ * disambiguate a config nobody should write.
+ *
+ * A field remapped to its own key is not a collision, and a target string
+ * matching nothing is unaffected.
+ */
+function assertNoFieldsRemapCollision(
+  baseKey: BaseModelKey,
+  model: NormalizedAuthModelConfig,
+  table: ResolvedTable,
+): void {
+  const fieldKeys = new Set(Object.keys(table.fields))
+  for (const [fieldKey, target] of Object.entries(model.fields)) {
+    if (target === fieldKey) continue
+    if (fieldKeys.has(target)) {
+      throw new Error(
+        `deriveAuthLists: "${baseKey}.fields" remaps "${fieldKey}" to "${target}", which ` +
+          `collides with "${baseKey}.${target}"'s own field key on the same model — ` +
+          `better-auth would resolve column "${target}" back to "${target}" instead of ` +
+          `"${fieldKey}", silently misattributing "${fieldKey}"'s attributes. Pick a target ` +
+          `for "${baseKey}.fields.${fieldKey}" that isn't another field's own key.`,
+      )
+    }
+  }
+}
+
+/**
  * `db.isNullable` is set explicitly from `required` rather than left to each
  * field builder's own default — `timestamp()` in particular defaults nullable
  * off of whether it carries a `now()` default, not off requiredness, so
@@ -610,6 +648,16 @@ export function deriveAuthLists(
     ResolvedTable
   >
   const { keys, registry } = buildModelRegistry(tables, models)
+
+  // Only the five base models carry an app-authored `fields` remap
+  // (`AuthModelConfig.fields`) — plugin tables have no per-model config block
+  // to remap columns through, so they can't hit this collision.
+  for (const baseKey of BASE_MODEL_KEYS) {
+    const model = models[baseKey]
+    const table = tables[baseKey]
+    if (model && table) assertNoFieldsRemapCollision(baseKey, model, table)
+  }
+
   const credentialRegistry = buildCredentialFieldRegistry(tables, credentialFieldsConfig)
 
   // Only the five base models carry an app-authored `db.indexes` passthrough
