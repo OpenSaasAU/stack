@@ -9,6 +9,7 @@ import type { SecuredQuery } from '../secured/read.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
+import { coerceWhereIds, idBoundaryRefusal } from './where-id-boundary.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
 function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
@@ -449,7 +450,7 @@ export async function resolveFieldsProjection(
       )
     }
 
-    const entry: Record<string, unknown> = rawValue
+    const entry: Record<string, unknown> = { ...rawValue }
     const many = isMany(related.fieldConfig)
     const allowedKeys = many
       ? new Set(['fields', 'where', 'orderBy', 'take', 'skip', 'count'])
@@ -467,6 +468,20 @@ export async function resolveFieldsProjection(
     // than about the selector shape that was expected.
     if (entry.where !== undefined && (entry.where === null || typeof entry.where !== 'object')) {
       throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.where" must be an object.`)
+    }
+    // The id boundary coercion (ADR-0048, #1368) reaches this nested `where`
+    // too: it filters the RELATED list's own rows, so a malformed id here
+    // refuses the whole request exactly as one at the root does.
+    if (entry.where !== undefined && !Array.isArray(entry.where)) {
+      const coercedWhere = coerceWhereIds(
+        entry.where as Record<string, unknown>,
+        config,
+        related.listName,
+      )
+      if (coercedWhere === null) {
+        throw new McpProjectionRefusedError(idBoundaryRefusal('query records'))
+      }
+      entry.where = coercedWhere
     }
     if (
       entry.orderBy !== undefined &&

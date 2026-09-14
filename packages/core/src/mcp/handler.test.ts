@@ -288,8 +288,17 @@ function schemaConfig(): OpenSaasConfig {
       },
       // An `int autoincrement` key: the wire still carries a string, and the
       // boundary coercion is what decides what the column gets (ADR-0048).
+      // The self-referencing `parent`/`children` pair is the fixture for the
+      // id boundary walk's own nested relation-entry `where`
+      // (`fields.children.where`, #1368), which needs a to-many relation
+      // whose RELATED list is int-keyed — `children`'s related list is
+      // Counter itself.
       Counter: {
-        fields: { label: text() },
+        fields: {
+          label: text(),
+          parent: relationship({ ref: 'Counter.children' }),
+          children: relationship({ ref: 'Counter.parent', many: true }),
+        },
         db: { idField: 'int autoincrement' },
         access: {
           operation: {
@@ -302,7 +311,10 @@ function schemaConfig(): OpenSaasConfig {
       },
       // Owns a foreign key onto an int-autoincrement list — the fixture for
       // `connect.id`'s own boundary coercion, mirroring `Counter` above for
-      // the write side rather than `where.id`.
+      // the write side rather than `where.id`. Also used as the id boundary
+      // walk's fixture for a relation quantifier's nested `where`
+      // (`where: { counter: { some: { id } } } }`, #1368), whose related
+      // list (Counter) is int-keyed.
       Tally: {
         fields: { label: text(), counter: relationship({ ref: 'Counter' }) },
         access: {
@@ -2018,6 +2030,19 @@ describe('the MCP surface', () => {
      * the string form here. Without the same coercion it reaches the driver as
      * a string against an `int` column.
      */
+    async function counterQuery(
+      args: Record<string, unknown>,
+    ): Promise<{ isError?: boolean; content: Array<{ text: string }> }> {
+      const { body } = await callTool('list_counter_query', args)
+      return body?.result as { isError?: boolean; content: Array<{ text: string }> }
+    }
+
+    async function counters(args: Record<string, unknown>): Promise<unknown[]> {
+      const result = await counterQuery(args)
+      if (result.isError) throw new Error(result.content[0].text)
+      return (JSON.parse(result.content[0].text) as { items: unknown[] }).items
+    }
+
     test(
       "a query's where.id is typed from the list's own id strategy",
       async () => {
@@ -2027,20 +2052,206 @@ describe('the MCP surface', () => {
         const numericId = counter?.id
         expect(numericId).toEqual(expect.any(Number))
 
-        async function counters(args: Record<string, unknown>): Promise<unknown[]> {
-          const { body } = await callTool('list_counter_query', args)
-          const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
-          if (result.isError) throw new Error(result.content[0].text)
-          return (JSON.parse(result.content[0].text) as { items: unknown[] }).items
-        }
-
         expect(await counters({ where: { id: String(numericId) } })).toMatchObject([
           { label: 'first' },
         ])
         expect(await counters({ where: { id: { in: [String(numericId)] } } })).toMatchObject([
           { label: 'first' },
         ])
-        expect(await counters({ where: { id: 'not-an-int' } })).toEqual([])
+      },
+      BOOT,
+    )
+
+    /**
+     * #1368: a malformed id used to answer as a missing row does — matching
+     * nothing, a plain empty `items: []` success. That is wrong once the walk
+     * reaches every position an id can appear in, because "matches nothing"
+     * inverts under `NOT` to "matches everything" — the one direction a
+     * denial must never move in. A malformed id now refuses the WHOLE
+     * request instead, at any position, agreeing with the answer `update`
+     * and `delete` already give a malformed `where.id`.
+     */
+    test(
+      'a malformed id refuses the whole request at the top level, inside AND/OR, and inside nested combinators',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        await context.db.Counter.create({ data: { label: 'first' } })
+
+        for (const where of [
+          { id: 'not-an-int' },
+          { id: { in: ['not-an-int'] } },
+          { AND: [{ id: 'not-an-int' }] },
+          { OR: [{ label: { equals: 'first' } }, { id: 'not-an-int' }] },
+          { AND: [{ OR: [{ id: 'not-an-int' }] }] },
+        ]) {
+          const result = await counterQuery({ where })
+          expect(result.isError, JSON.stringify(where)).toBe(true)
+          expect(result.content[0].text).toContain('Access denied or record not found')
+        }
+      },
+      BOOT,
+    )
+
+    /**
+     * The case the whole-request-refusal decision exists to close: a
+     * per-leaf "matches nothing" reading would invert under `NOT` to
+     * "matches everything", widening the result set past every row the
+     * caller could see without the malformed branch. Refusing the whole
+     * request closes that off — a malformed id under `NOT` must never
+     * return more rows than an equivalent query without it.
+     */
+    test(
+      'a malformed id under NOT does not widen the result set',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        await context.db.Counter.create({ data: { label: 'first' } })
+        await context.db.Counter.create({ data: { label: 'second' } })
+
+        const withoutNot = await counters({})
+        expect(withoutNot).toHaveLength(2)
+
+        const result = await counterQuery({ where: { NOT: { id: 'not-an-int' } } })
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('Access denied or record not found')
+      },
+      BOOT,
+    )
+
+    /**
+     * A relation quantifier's own nested predicate filters the RELATED
+     * list's rows, so a malformed id there is coerced (and refused) against
+     * the related list's own id strategy, not the root's.
+     */
+    test(
+      "a malformed id inside a relation quantifier's nested where refuses against the related list",
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const counter = await context.db.Counter.create({ data: { label: 'first' } })
+        await context.db.Tally.create({
+          data: { label: 'tally', counter: { connect: { id: counter?.id } } },
+        })
+
+        const { body: okBody } = await callTool('list_tally_query', {
+          where: { counter: { some: { id: String(counter?.id) } } },
+        })
+        const ok = okBody?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(ok.isError).toBeUndefined()
+        expect(JSON.parse(ok.content[0].text)).toMatchObject({ items: [{ label: 'tally' }] })
+
+        const { body: badBody } = await callTool('list_tally_query', {
+          where: { counter: { some: { id: 'not-an-int' } } },
+        })
+        const malformed = badBody?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(malformed.isError).toBe(true)
+        expect(malformed.content[0].text).toContain('Access denied or record not found')
+      },
+      BOOT,
+    )
+
+    /**
+     * A nested relation-entry `where` — `fields.<relation>.where`, used to
+     * filter an included relation's own rows — is the second uncovered
+     * position #1368 names. It filters the related list's own rows too, so
+     * it gets the same coercion and the same whole-request refusal.
+     */
+    test(
+      'a malformed id inside a nested relation-entry where (fields.<relation>.where) refuses the whole request',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const parent = await context.db.Counter.create({ data: { label: 'parent' } })
+        const child = await context.db.Counter.create({
+          data: { label: 'child', parent: { connect: { id: parent?.id } } },
+        })
+
+        const { body: okBody } = await callTool('list_counter_query', {
+          where: { id: String(parent?.id) },
+          fields: {
+            label: true,
+            children: { fields: { label: true }, where: { id: String(child?.id) } },
+          },
+        })
+        const ok = okBody?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(ok.isError).toBeUndefined()
+        expect(JSON.parse(ok.content[0].text)).toMatchObject({
+          items: [{ label: 'parent', children: [{ label: 'child' }] }],
+        })
+
+        const { body: badBody } = await callTool('list_counter_query', {
+          where: { id: String(parent?.id) },
+          fields: {
+            label: true,
+            children: { fields: { label: true }, where: { id: 'not-an-int' } },
+          },
+        })
+        const malformed = badBody?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(malformed.isError).toBe(true)
+        expect(malformed.content[0].text).toContain('Access denied or record not found')
+      },
+      BOOT,
+    )
+
+    /**
+     * String-keyed lists are unaffected by the walk: `contains` and the
+     * other string operators must keep working at every position the id
+     * boundary now reaches, not just the root.
+     */
+    test(
+      'a string-keyed list keeps contains working inside AND/OR and relation quantifiers',
+      async () => {
+        await seedBlog()
+
+        expect(await query({ where: { AND: [{ title: { contains: 'see' } }] } })).toMatchObject([
+          { title: 'seed' },
+        ])
+        expect(
+          await query({
+            where: { comments: { some: { body: { contains: 'alph' } } } },
+          }),
+        ).toMatchObject([{ title: 'seed' }])
+      },
+      BOOT,
+    )
+
+    /**
+     * `query`, `update` and `delete` all read a malformed id the same way —
+     * demonstrating the agreement #1368 asks for.
+     */
+    test(
+      'query, update and delete agree on the refusal for a malformed id',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        await context.db.Counter.create({ data: { label: 'first' } })
+
+        const queryResult = await counterQuery({ where: { id: 'not-an-int' } })
+        const { body: updateBody } = await callTool('list_counter_update', {
+          where: { id: 'not-an-int' },
+          data: { label: 'renamed' },
+        })
+        const { body: deleteBody } = await callTool('list_counter_delete', {
+          where: { id: 'not-an-int' },
+        })
+        const updateResult = updateBody?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        const deleteResult = deleteBody?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+
+        for (const result of [queryResult, updateResult, deleteResult]) {
+          expect(result.isError).toBe(true)
+          expect(result.content[0].text).toContain('Access denied or record not found')
+        }
+        expect(updateResult.content[0].text).toBe(
+          'Failed to update record. Access denied or record not found.',
+        )
+        expect(deleteResult.content[0].text).toBe(
+          'Failed to delete record. Access denied or record not found.',
+        )
+        expect(queryResult.content[0].text).toBe(
+          'Failed to query records. Access denied or record not found.',
+        )
       },
       BOOT,
     )
