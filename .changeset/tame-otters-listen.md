@@ -1,5 +1,5 @@
 ---
-'@opensaas/stack-cli': patch
+'@opensaas/stack-core': patch
 ---
 
-Narrow the staged-promotion window in which `.opensaas/tables.ts` could disagree with `prisma/contract.ts`, and document `prisma.config.ts` always landing last as the stated promotion-complete signal (ADR-0072).
+Fix a rejected lazy Prisma import in `secured/lower.ts` being cached permanently — a transient import failure no longer poisons every later secured read for the life of the process; the next call retries, and a successful import is still cached.
