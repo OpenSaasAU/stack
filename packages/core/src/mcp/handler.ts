@@ -22,15 +22,11 @@ import {
   generateFieldSchemas,
   ownsForeignKey,
 } from './field-schema.js'
-import {
-  listIdColumn,
-  listIdJsonSchema,
-  parseListId,
-  type ListIdValue,
-} from '../contract/id-boundary.js'
+import { listIdColumn, listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
+import { coerceWhereIds, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
@@ -505,61 +501,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * A `where.id` at the type its list's primary key actually carries, the way
- * `update`/`delete` already take one (ADR-0048). The Where vocabulary carries
- * a caller's JSON through unchanged, so a list keyed on an `int` column would
- * otherwise reach the driver with `"3"` against it. Only such a list needs
- * this: a string-keyed list's wire value is already the column's type, and
- * coercing there would refuse the partial values `contains` is for.
- *
- * `null` means the caller named an id this column cannot hold, so the read
- * matches nothing — the answer a missing row gets everywhere else.
- */
-function parseWhereIds(
-  where: Record<string, unknown>,
-  config: OpenSaasConfig,
-  listKey: string,
-): Record<string, unknown> | null {
-  const strategy = listIdColumn(config, listKey)?.strategy
-  if (strategy !== 'int autoincrement' && strategy !== 'singleton') return where
-  if (!Object.hasOwn(where, 'id')) return where
-
-  const parse = (raw: unknown): ListIdValue | null => {
-    const parsed = parseListId(config, listKey, raw)
-    return parsed.ok ? parsed.value : null
-  }
-
-  const raw = where.id
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    const value = parse(raw)
-    return value === null ? null : { ...where, id: value }
-  }
-
-  const operators: Record<string, unknown> = {}
-  for (const [operator, value] of Object.entries(raw)) {
-    if (operator === 'in' || operator === 'notIn') {
-      if (!Array.isArray(value)) return null
-      const ids: ListIdValue[] = []
-      for (const entry of value) {
-        const id = parse(entry)
-        if (id === null) return null
-        ids.push(id)
-      }
-      operators[operator] = ids
-      continue
-    }
-    if (operator === 'contains') {
-      operators[operator] = value
-      continue
-    }
-    const id = parse(value)
-    if (id === null) return null
-    operators[operator] = id
-  }
-  return { ...where, id: operators }
-}
-
 /** `{ connect: { id } }`, and nothing beside either key — the only shape {@link coerceConnectIds} parses. Any other shape is left alone for the write pipeline's own `MalformedRelationInputError` to refuse. */
 function connectCriterion(value: unknown): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) return undefined
@@ -575,7 +516,7 @@ function connectCriterion(value: unknown): Record<string, unknown> | undefined {
 /**
  * A `data` payload's own `{ connect: { id } }` values, each at the RELATED
  * list's own id type (ADR-0048) — the write half of the same boundary
- * coercion `parseWhereIds` applies to a `where.id`. The advertised schema
+ * coercion `coerceWhereIds` applies to a `where.id`. The advertised schema
  * (`fieldToJsonSchema`) already tells a well-behaved caller which type to
  * send; this is what refuses a malformed one rather than letting it reach the
  * reachability query as a value the target column cannot hold.
@@ -713,9 +654,11 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            const parsedWhere = parseWhereIds(args.where, config, listKey)
-            if (parsedWhere === null) return createSuccessResponse({ items: [], count: 0 }, id)
-            query = query.where(whereArgument(parsedWhere, listKey))
+            const coercedWhere = coerceWhereIds(args.where, config, listKey)
+            if (coercedWhere === null) {
+              return createErrorResultResponse(idBoundaryRefusal('query records'), id)
+            }
+            query = query.where(whereArgument(coercedWhere, listKey))
           } else if (args.where !== undefined) {
             query = query.where(whereArgument(args.where, listKey))
           }
@@ -791,10 +734,7 @@ async function handleCrudTool(
         // same answer everywhere else (ADR-0048, Silent failure).
         const parsed = parseListId(config, listKey, args.where?.id)
         if (!parsed.ok) {
-          return createErrorResultResponse(
-            'Failed to update record. Access denied or record not found.',
-            id,
-          )
+          return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
         if (isPlainObject(args.data)) {
           await assertWritableData(
@@ -811,20 +751,14 @@ async function handleCrudTool(
           ? coerceConnectIds(args.data, listKey, listConfig, config)
           : args.data
         if (data === null) {
-          return createErrorResultResponse(
-            'Failed to update record. Access denied or record not found.',
-            id,
-          )
+          return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
         result = await context.db[listKey].update({
           where: { id: parsed.value },
           data,
         })
         if (!result) {
-          return createErrorResultResponse(
-            'Failed to update record. Access denied or record not found.',
-            id,
-          )
+          return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
         return createSuccessResponse({ success: true, item: result }, id)
       }
@@ -832,17 +766,11 @@ async function handleCrudTool(
       case 'delete': {
         const parsed = parseListId(config, listKey, args.where?.id)
         if (!parsed.ok) {
-          return createErrorResultResponse(
-            'Failed to delete record. Access denied or record not found.',
-            id,
-          )
+          return createErrorResultResponse(idBoundaryRefusal('delete record'), id)
         }
         result = await context.db[listKey].delete({ where: { id: parsed.value } })
         if (!result) {
-          return createErrorResultResponse(
-            'Failed to delete record. Access denied or record not found.',
-            id,
-          )
+          return createErrorResultResponse(idBoundaryRefusal('delete record'), id)
         }
         return createSuccessResponse({ success: true, deletedId: parsed.value }, id)
       }
