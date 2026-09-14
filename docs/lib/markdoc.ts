@@ -29,6 +29,10 @@ export const markdocConfig = {
         },
       },
     },
+    unreleased: {
+      render: 'Unreleased',
+      attributes: {},
+    },
   },
 }
 

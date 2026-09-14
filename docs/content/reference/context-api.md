@@ -515,7 +515,14 @@ Backs a relationship field's combobox: a bounded, projected read of the target l
 
 ## Errors
 
-The stack owns its error classes, all exported from `@opensaas/stack-core`. A secured write normalises the driver's failure into one of them; there are no database error codes to switch on.
+{% unreleased %}
+On the published package, a secured write's failure arrives as the driver's
+own error — checking `error.code` against Prisma's own `P####` code is the
+working approach for a unique violation. None of the classes or predicates
+below are importable yet.
+{% /unreleased %}
+
+On `main`, the stack owns its error classes, all exported from `@opensaas/stack-core`. A secured write normalises the driver's failure into one of them; there are no database error codes to switch on.
 
 | Class                                                 | Carries                             |
 | ----------------------------------------------------- | ----------------------------------- |
