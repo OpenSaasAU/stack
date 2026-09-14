@@ -38,13 +38,14 @@ export function isDimensionMismatch(error: unknown): boolean {
 }
 
 /**
- * The writes core refuses before they reach the database, by name. Matched on
- * `Error.name` rather than `instanceof` so a second copy of `stack-core` on
- * the resolved tree cannot make the classification silently fall through to
- * the transient arm.
+ * The escalated read or write core refuses before it reaches the database,
+ * by name. Matched on `Error.name` rather than `instanceof` so a second copy
+ * of `stack-core` on the resolved tree cannot make the classification
+ * silently fall through to the transient arm.
  */
-const REFUSED_WRITE_ERRORS = new Set([
+const REFUSED_ACCESS_ERRORS = new Set([
   'HandlelessPluginFieldWriteError',
+  'HandlelessPluginFieldReadError',
   'UnknownPluginFieldWriteError',
   'UndefinedPluginFieldWriteError',
   'NoColumnsPluginFieldWriteError',
@@ -52,20 +53,20 @@ const REFUSED_WRITE_ERRORS = new Set([
 ])
 
 /**
- * Whether a throw is core refusing the escalated write itself — a wiring
- * defect the plugin holds: a context with no ORM handle, a field the config
- * does not declare, an `undefined` value, or an ORM client whose emitted
- * contract has no collection for the list. Each fails identically on every
- * row until the wiring is fixed, so none of them is something to retry.
+ * Whether a throw is core refusing the escalated read or write itself — a
+ * wiring defect the plugin holds: a context with no ORM handle, a field the
+ * config does not declare, an `undefined` value, or an ORM client whose
+ * emitted contract has no collection for the list. Each fails identically on
+ * every row until the wiring is fixed, so none of them is something to retry.
  */
-export function isRefusedWrite(error: unknown): boolean {
-  return error instanceof Error && REFUSED_WRITE_ERRORS.has(error.name)
+export function isRefusedAccess(error: unknown): boolean {
+  return error instanceof Error && REFUSED_ACCESS_ERRORS.has(error.name)
 }
 
 /**
  * Thrown when the hook looks up its own escalated write and finds no RAG
  * services on the context at all — the context was built without
- * `ragPlugin()` in its config. Matched on `name`, like `REFUSED_WRITE_ERRORS`,
+ * `ragPlugin()` in its config. Matched on `name`, like `REFUSED_ACCESS_ERRORS`,
  * for the same reason: a second copy of `stack-rag` on the resolved tree must
  * not make the classification silently fall through to the transient arm.
  */
@@ -161,16 +162,17 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
       return
     }
 
-    if (isRefusedWrite(failure.error)) {
+    if (isRefusedAccess(failure.error)) {
       standing(
         failure,
-        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". The provider answered ` +
-          `and core then refused the write that stores what it returned, by name. That is a ` +
-          `wiring defect rather than a provider being down: it fails the same way for every row ` +
-          `until the wiring is fixed, and retrying the source write will not clear it. Rows ` +
-          `commit normally and the embedding column stays null, and there is no regeneration ` +
-          `path (#1271), so rows written before it is fixed stay null afterwards.`,
-        'fix the refused write reported above',
+        `RAG plugin: EMBEDDING GENERATION IS NOT RUNNING for "${field}". Core refused, by name, ` +
+          `either the read that checks whether regeneration is needed or the write that stores ` +
+          `what the provider returned. That is a wiring defect rather than a provider being ` +
+          `down: it fails the same way for every row until the wiring is fixed, and retrying the ` +
+          `source write will not clear it. Rows commit normally and the embedding column stays ` +
+          `null, and there is no regeneration path (#1271), so rows written before it is fixed ` +
+          `stay null afterwards.`,
+        'fix the refused read or write reported above',
       )
       return
     }

@@ -16,6 +16,7 @@ import {
   UndefinedPluginFieldWriteError,
   NoColumnsPluginFieldWriteError,
 } from '../context/plugin-field-write.js'
+import { readPluginOwnedRow, HandlelessPluginFieldReadError } from '../context/plugin-field-read.js'
 import type { AccessContext, FieldAccess } from './types.js'
 
 /**
@@ -306,6 +307,9 @@ const storedConfig: OpenSaasConfig = {
       fields: {
         title: text(),
         label: text(),
+        // Row-independently denied to every session, the way a plugin's own
+        // output field is a natural thing to lock down (#1282).
+        secret: text({ access: { read: () => false } }),
         avatar: storedMultiColumn({ update: () => false }),
         shout: virtual({
           type: 'string',
@@ -853,6 +857,77 @@ describe('writePluginOwnedField (ADR-0068)', () => {
     },
     BOOT,
   )
+})
+
+describe('readPluginOwnedRow (#1282)', () => {
+  const BOOT = 120_000
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(storedConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  beforeEach(async () => {
+    await database.truncate()
+  })
+
+  /** The AccessContext core hands `Plugin.runtime`, over this database. */
+  function internalContext(): AccessContext {
+    const stack = database.context(null)
+    const internal: AccessContext = {
+      session: null,
+      ormHandle: ormClientFor(database.data, database.client.orm),
+      db: stack.db,
+      storage: stack.storage,
+      plugins: stack.plugins,
+      _isSudo: false,
+      _resolveOutputChain: [],
+      _config: storedConfig,
+    }
+    return internal
+  }
+
+  it(
+    'reads a field the caller’s own session cannot, past Field Visibility',
+    async () => {
+      const created = await database
+        .context(null)
+        .db.Owned.create({ data: { title: 'ada', secret: 'shh' } })
+      const id = created?.id
+      if (typeof id !== 'string') throw new Error('the create returned no row')
+
+      // The secured surface strips it — this is the row it strips it from.
+      expect(created).not.toHaveProperty('secret')
+
+      const row = await readPluginOwnedRow({ context: internalContext(), listName: 'Owned', id })
+      expect(row?.secret).toBe('shh')
+      expect(row?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it('returns null for a row that is gone, like every other engine read', async () => {
+    const row = await readPluginOwnedRow({
+      context: internalContext(),
+      listName: 'Owned',
+      id: '00000000-0000-7000-8000-000000000000',
+    })
+    expect(row).toBeNull()
+  })
+
+  it('refuses the returned StackContext, which carries no ORM handle', async () => {
+    await expect(
+      readPluginOwnedRow({
+        context: database.context(null) as unknown as AccessContext,
+        listName: 'Owned',
+        id: 'any',
+      }),
+    ).rejects.toBeInstanceOf(HandlelessPluginFieldReadError)
+  })
 })
 
 describe('multi-column write split respects field-level write access', () => {
