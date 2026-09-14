@@ -259,6 +259,12 @@ function resolveDeferredOutcome(
  */
 export async function runWithTransactionBoundary(args: {
   involvedLists: InvolvedList[]
+  /**
+   * The BASE-client context every boundary hook here is invoked with
+   * (ADR-0028) — never a transaction-bound one, on the top-level path or the
+   * joined one alike. The caller resolves it once, as
+   * `context._baseContext ?? context`, before calling in (issue #1348).
+   */
   context: AccessContext
   /** Set when this write is nested in a transaction it did not open (ADR-0028). */
   joinedOwner?: TransactionRegistry

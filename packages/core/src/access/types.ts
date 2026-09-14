@@ -269,6 +269,22 @@ export interface AccessContext<DB = AccessControlledDB> {
    */
   _transactionOwner?: TransactionRegistry
   /**
+   * The context a transaction-boundary hook (`beforeTransaction`/
+   * `afterTransaction`) is actually invoked with (ADR-0028): `undefined` means
+   * this context itself IS the base-client one, so a caller resolves the
+   * boundary context as `context._baseContext ?? context`. Set only when this
+   * context is bound to (or joins) a transaction — by
+   * `bindContextToTransaction` in `write-pipeline.ts` for a write's own
+   * transaction, and by `getContext`'s transaction-child construction for
+   * `context.transaction()` — and carried forward unchanged by `sudo()` /
+   * `withSession()` so a derived context still resolves to the same ultimate
+   * base. This is what lets a JOINED write's boundary hooks reach the base
+   * client instead of a transaction client that may already be closed by
+   * flush time (issue #1348).
+   * @internal
+   */
+  _baseContext?: AccessContext
+  /**
    * Opens the transaction a write brackets itself with (ADR-0010), when this
    * context is over a client that can open one and is not already inside one.
    * Absent on a context rebound to a transaction, on a joined write, and on a

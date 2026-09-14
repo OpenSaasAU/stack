@@ -659,6 +659,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // Internal: the transaction the Unsafe surface binds its executors to, set
   // when rebuilding the context inside `transaction()` (ADR-0056).
   _unsafeTransaction?: UnsafeTransactionScope,
+  // Internal (ADR-0028, issue #1348): the base-client context a
+  // transaction-boundary hook reached through this one must actually be
+  // invoked with. Set when this call builds a context bound to (or joining) a
+  // transaction — `context.transaction()`'s own transaction-child — and
+  // carried through by `sudo()`/`withSession()` unchanged; omitted for a
+  // fresh, non-transactional context, which is its own base.
+  _baseContext?: AccessContext,
 ): StackContext<AccessControlledDB> {
   assertValidSession(session)
 
@@ -715,6 +722,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _transactionOpener: openTransaction,
     _rowLock: lock,
     _config: config,
+    _baseContext,
   }
 
   populateDbDelegate(db, config, ormHandle, context, lock)
@@ -1297,6 +1305,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
       context._transactionOwner,
       client,
       _unsafeTransaction,
+      // Carry the same base-client context forward (issue #1348) — sudo()
+      // derives a new context, not a new transaction boundary.
+      context._baseContext,
     )
   }
 
@@ -1315,6 +1326,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
       context._transactionOwner,
       client,
       _unsafeTransaction,
+      // Carry the same base-client context forward (issue #1348) — withSession()
+      // derives a new context, not a new transaction boundary.
+      context._baseContext,
     )
   }
 
@@ -1364,6 +1378,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
           registry,
           client,
           unsafeTransaction,
+          // This transaction is opening fresh here, so its own base is this
+          // context — or, if this context already carries one (defence in
+          // depth; `context._transactionOwner` being unset here should
+          // already imply it doesn't), that same base (issue #1348).
+          context._baseContext ?? context,
         ),
         rowLockSeat(client, unsafeTransaction),
       )

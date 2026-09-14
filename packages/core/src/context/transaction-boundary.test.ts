@@ -467,33 +467,24 @@ describe('transaction-boundary hooks', () => {
     /**
      * ADR-0028 decides that a boundary hook receives a context bound to the
      * BASE client, so a compensating write survives the rollback it is
-     * compensating for. On a real database that is not what happens: the
-     * deferred hook is handed the joined write's own transaction-bound
-     * context, and by flush time that transaction is closed, so the write is
-     * refused. The old suite could not see this — its double handed the same
-     * ORM object in and out of the transaction, so a post-settle write worked.
-     *
-     * This pins the gap rather than the intent: a fix flips this assertion red,
-     * which is the signal to restore the ADR's own wording here. Which way it
-     * is resolved is open — issue #1348, and the amendment it is cited from at
-     * the foot of ADR-0028.
+     * compensating for. This used to fail on a real database: the deferred
+     * hook was handed the joined write's own transaction-bound context, and
+     * by flush time that transaction was closed, so the write was refused.
+     * The old suite could not see this — its double handed the same ORM
+     * object in and out of the transaction, so a post-settle write worked
+     * whichever context the hook was handed. Fixed by issue #1348.
      */
     test(
-      'a deferred compensator still runs on rollback, but its own write is refused (ADR-0028 gap)',
+      'a deferred compensator on a joined write runs its own write through the base client',
       async () => {
         const outcomes: string[] = []
-        const refusals: string[] = []
         const context = contextAt(
           withHooks({
             User: {
               afterTransaction: async ({ status, context: hookContext }) => {
                 outcomes.push(status)
                 if (status !== 'rolled-back') return
-                try {
-                  await hookContext.db.Comment.create({ data: { body: 'compensated' } })
-                } catch (error) {
-                  refusals.push(error instanceof Error ? error.message : String(error))
-                }
+                await hookContext.db.Comment.create({ data: { body: 'compensated' } })
               },
             },
           }),
@@ -508,9 +499,7 @@ describe('transaction-boundary hooks', () => {
 
         expect(outcomes).toEqual(['rolled-back'])
         expect(await rows('User')).toEqual([])
-        expect(refusals).toHaveLength(1)
-        expect(refusals[0]).toMatch(/after the transaction has ended/)
-        expect(await rows('Comment')).toEqual([])
+        expect(await rows('Comment')).toMatchObject([{ body: 'compensated' }])
       },
       BOOT,
     )
@@ -650,6 +639,41 @@ describe('transaction-boundary hooks', () => {
         expect(auditAfter).toHaveBeenCalledTimes(1)
         expect(auditAfter.mock.calls[0][0]).toMatchObject({ status: 'committed' })
         expect(auditAfter.mock.calls[0][0].item).toMatchObject({ note: 'audit' })
+      },
+      BOOT,
+    )
+
+    /**
+     * Same base-client guarantee as the `context.transaction()` case above
+     * (issue #1348), but reached through the OTHER joined-write shape: the
+     * Audit write here joins the User write's own transaction (opened by the
+     * Write Pipeline, not by `context.transaction()`), and its afterTransaction
+     * compensator's write must still land after that transaction has closed.
+     */
+    test(
+      'a deferred compensator on a hook-issued joined write runs through the base client',
+      async () => {
+        const context = contextAt(
+          withHooks({
+            User: {
+              afterOperation: async ({ operation, context: hookContext }) => {
+                if (operation !== 'create') return
+                await hookContext.db.Audit.create({ data: { note: 'audit' } })
+              },
+            },
+            Audit: {
+              afterTransaction: async ({ status, context: hookContext }) => {
+                if (status !== 'committed') return
+                await hookContext.db.Comment.create({ data: { body: 'compensated' } })
+              },
+            },
+          }),
+        )
+
+        await context.db.User.create({ data: { name: 'jane' } })
+
+        expect(await rows('Audit')).toHaveLength(1)
+        expect(await rows('Comment')).toMatchObject([{ body: 'compensated' }])
       },
       BOOT,
     )

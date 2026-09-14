@@ -226,10 +226,17 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
 
   // ── Bracket the transaction with beforeTransaction/afterTransaction (#590) ──
   // afterTransaction fires when the transaction settles, deferred to the owner
-  // for a joined write (ADR-0028, symmetric-bracket rule).
+  // for a joined write (ADR-0028, symmetric-bracket rule). Boundary hooks
+  // always run against the BASE client (ADR-0028, issue #1348): `context`
+  // itself is already transaction-bound on a joined write (it is the context
+  // the caller handed to `context.db.*`, rebound by an enclosing
+  // `bindContextToTransaction`/`context.transaction()`), so resolving through
+  // `_baseContext` here — rather than passing `context` straight through — is
+  // what keeps a compensating write reachable after that transaction closes.
+  const boundaryContext = context._baseContext ?? context
   return runWithTransactionBoundary({
     involvedLists,
-    context,
+    context: boundaryContext,
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
@@ -268,6 +275,12 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * own `context.db` write defers its transaction-boundary bracket to that owner
  * instead of firing eagerly.
  *
+ * `_baseContext` (issue #1348) is set explicitly rather than left to the
+ * spread: `context` IS the base when it carries none of its own, so a
+ * transaction rebind one level deep must record `context` itself as the base
+ * a further-nested joined write's boundary hooks resolve to — the spread
+ * alone would just carry `undefined` forward.
+ *
  * `_transactionOpener` is explicitly cleared: a context rebound to a
  * transaction runs directly against the handle it was given, never opening a
  * second one of its own.
@@ -297,6 +310,7 @@ function bindContextToTransaction(
     _transactionOpener: undefined,
     _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
     _config: config,
+    _baseContext: context._baseContext ?? context,
   }
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
