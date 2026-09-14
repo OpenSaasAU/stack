@@ -66,9 +66,10 @@ import type { AccessControl, FieldAccess, AccessContext, PrismaFilter } from '@o
 
 {% unreleased %}
 On the published package, a database failure surfaces as the driver's own
-error — `error.code === 'P2002'` is the working check for a unique violation.
-None of `DatabaseError`, `SerializationFailure`, `UniqueConstraintViolation`,
-`isSerializationFailure` or `isUniqueConstraintViolation` are importable yet.
+error — checking `error.code` against Prisma's own `P####` code is the
+working approach for a unique violation. None of `DatabaseError`,
+`SerializationFailure`, `UniqueConstraintViolation`, `isSerializationFailure`
+or `isUniqueConstraintViolation` are importable yet.
 {% /unreleased %}
 
 On `main`, every engine terminal raises a stack-owned error rather than the
