@@ -76,7 +76,7 @@ A plugin's `runtime(context, sudo)` factory receives a `sudo` helper as a plain 
 
 `AccessContext` — what a hook, an access rule and a plugin service see — carries `ormHandle`: the engine's own ORM client, which the terminals, the Write Pipeline and the access filter issue their queries through. The engine applies the Access Filter, Field Visibility and hooks **around** it, so the handle itself enforces none of them.
 
-`StackBaseContext` — what a server action and a page component hold — carries `unsafe` instead: the **Unsafe surface**, the application's documented bypass. `ormHandle` is not a member of it.
+`StackContext` — what a server action and a page component hold — carries `unsafe` instead: the **Unsafe surface**, the application's documented bypass. `ormHandle` is not a member of it, nor of `StackBaseContext`, the narrower shape `StackContext` extends.
 
 The two are different things under different names, and neither is a spelling of the other. See the "ORM handle" and "Unsafe surface" glossary entries in `CONTEXT.md`.
 
