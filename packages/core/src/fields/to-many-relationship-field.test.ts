@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { list } from '../config/index.js'
-import { text, relationship, integer } from '../fields/index.js'
+import { text, relationship, integer, isToManyRelationshipField } from './index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { isToManyRelationshipField } from './relationship-count.js'
-
-/**
- * Which fields carry a to-many relationship count (issue #732). The scoping of
- * the counts themselves belongs to the secured read's reducers and is proved
- * there (`secured/aggregate.test.ts`).
- */
 
 function makeConfig(): OpenSaasConfig {
   return {
@@ -25,10 +18,8 @@ function makeConfig(): OpenSaasConfig {
       }),
       Post: list({
         fields: { title: text(), views: integer(), author: relationship({ ref: 'User.posts' }) },
-        // Only published posts are visible → the count must be access-scoped.
         access: { operation: { query: () => ({ status: { equals: 'published' } }) } },
       }),
-      // Widget ships closed (no access block) → query denied by default.
       Widget: list({ fields: { name: text() } }),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test

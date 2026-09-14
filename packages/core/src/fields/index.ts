@@ -1017,6 +1017,22 @@ export function isRelationshipField(field: FieldConfig | undefined): field is Re
 }
 
 /**
+ * Whether a field is a to-many relationship — the only field kind that
+ * carries a relationship count (a to-one relationship has at most one
+ * related row).
+ */
+export function isToManyRelationshipField(field: FieldConfig | undefined): boolean {
+  return (
+    field?.type === 'relationship' &&
+    'many' in field &&
+    field.many === true &&
+    'ref' in field &&
+    typeof field.ref === 'string' &&
+    field.ref.length > 0
+  )
+}
+
+/**
  * Whether `field` declares one end of a one-to-one: a bidirectional ref with
  * `many: false` on both ends. A list-only ref is never one-to-one. Throws
  * when the ref's target list or field does not exist or is not a
