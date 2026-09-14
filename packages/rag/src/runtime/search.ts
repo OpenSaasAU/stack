@@ -21,18 +21,14 @@ type Row = Record<string, unknown>
  * `SecuredList<Contract, Remainder, K>`, which is *not* assignable to
  * `SecuredQuery` — `include`'s optional `refine` and `orderBy`'s array union
  * both fail the contravariance check. Naming only `where`, `nearest` and
- * `first` accepts the generated list and the engine's own delegate alike, and
- * infers `TRow` from whichever it is given.
+ * `first` accepts the generated list and the engine's own delegate alike.
  *
- * What it does *not* carry is the engine's refusal of a list that has no
- * vector column. Core types `nearest`'s field as a literal union of that
- * list's embedding columns, so on such a list the union is `never` and calling
- * `nearest` is a compile error. Method syntax makes the parameter comparison
- * bivariant — the same bivariance that lets a generated list through — and
- * bivariance admits `field: never`. So `semanticSearch` and `findSimilar`
- * accept a list with no embedding column and fail at runtime rather than at
- * the call site. Tracked as
- * {@link https://github.com/OpenSaasAU/stack/issues/1303 | #1303}.
+ * `nearest`'s `field` is declared as `string` here so this interface itself
+ * stays a loose bound — a generic constraint, never instantiated on its own.
+ * Core types the *real* `nearest` field as a literal union of that list's
+ * vector columns (`never` for a list with none), and a caller's precise `L`
+ * carries that literal union or `never` intact. `ListRow`/`ListField` below
+ * read it back off `L` directly.
  */
 export interface SearchableList<TRow extends Row = Row> {
   where(predicate: Where): SearchableList<TRow>
@@ -44,6 +40,40 @@ export interface SearchableList<TRow extends Row = Row> {
   first(): Promise<TRow | null>
 }
 
+/**
+ * The row a list's own `nearest()` returns, and the field name it actually
+ * accepts — pattern-matched off `L`'s own `nearest` signature rather than
+ * inferred through `SearchableList<TRow>` assignability.
+ *
+ * That distinction is the fix for
+ * {@link https://github.com/OpenSaasAU/stack/issues/1303 | #1303}: method
+ * syntax makes `SearchableList`'s own parameter comparison bivariant (needed
+ * so a generated list — whose `include`/`orderBy` are not otherwise
+ * assignable — still satisfies this interface as a constraint), and
+ * bivariance is exactly what let a list with no vector column through: its
+ * `nearest(field: never, …)` is bivariantly compatible with
+ * `nearest(field: string, …)`, so inferring a type parameter *from that
+ * assignability check* always lands on the parameter's declared bound
+ * (`string`) rather than the list's real, narrower field type. Matching `L`
+ * itself against a minimal `nearest` shape with `infer` sidesteps
+ * assignability entirely: TypeScript reads the literal union (or `never`)
+ * directly off `L`'s own method, so a list with no vector column makes
+ * `ListField<L>` `never` and `fieldName` uncallable at the call site, exactly
+ * as `context.db.<List>.nearest(...)` already refuses to compile.
+ */
+type ListRow<L extends SearchableList> = L extends {
+  nearest(...args: never[]): Promise<SearchResult<infer R>[]>
+}
+  ? R
+  : never
+
+/** See {@link ListRow}. */
+type ListField<L extends SearchableList> = L extends {
+  nearest(field: infer F extends string, ...args: never[]): unknown
+}
+  ? F
+  : never
+
 function bounds(limit: number | undefined, minScore: number | undefined) {
   return {
     ...(limit === undefined ? {} : { limit }),
@@ -51,10 +81,11 @@ function bounds(limit: number | undefined, minScore: number | undefined) {
   }
 }
 
-export interface SemanticSearchOptions<TRow extends Row = Row> {
+export interface SemanticSearchOptions<L extends SearchableList = SearchableList> {
   /** The list to search, off the secured `db` surface: `context.db.Article`. */
-  list: SearchableList<TRow>
-  fieldName: string
+  list: L
+  /** One of `list`'s own vector columns — `never` when it declares none. */
+  fieldName: ListField<L>
   query: string
   provider: EmbeddingProvider
 
@@ -92,21 +123,24 @@ export interface SemanticSearchOptions<TRow extends Row = Row> {
  * })
  * ```
  */
-export async function semanticSearch<TRow extends Row = Row>(
-  options: SemanticSearchOptions<TRow>,
-): Promise<SearchResult<TRow>[]> {
+export async function semanticSearch<L extends SearchableList>(
+  options: SemanticSearchOptions<L>,
+): Promise<SearchResult<ListRow<L>>[]> {
   const { list, fieldName, query, provider, limit, minScore, where } = options
 
   const queryVector = await provider.embed(query)
   const scoped = where === undefined ? list : list.where(where)
 
-  return await scoped.nearest(fieldName, queryVector, bounds(limit, minScore))
+  return (await scoped.nearest(fieldName, queryVector, bounds(limit, minScore))) as SearchResult<
+    ListRow<L>
+  >[]
 }
 
-export interface FindSimilarOptions<TRow extends Row = Row> {
+export interface FindSimilarOptions<L extends SearchableList = SearchableList> {
   /** The list to search, off the secured `db` surface: `context.db.Article`. */
-  list: SearchableList<TRow>
-  fieldName: string
+  list: L
+  /** One of `list`'s own vector columns — `never` when it declares none. */
+  fieldName: ListField<L>
   itemId: string
 
   /** @default 10 */
@@ -145,9 +179,9 @@ function storedVector(item: Row, fieldName: string): number[] | null {
  * })
  * ```
  */
-export async function findSimilar<TRow extends Row = Row>(
-  options: FindSimilarOptions<TRow>,
-): Promise<SearchResult<TRow>[]> {
+export async function findSimilar<L extends SearchableList>(
+  options: FindSimilarOptions<L>,
+): Promise<SearchResult<ListRow<L>>[]> {
   const { list, fieldName, itemId, limit, minScore, excludeSelf = true, where = {} } = options
 
   const item = await list.where({ id: { equals: itemId } }).first()
@@ -161,5 +195,7 @@ export async function findSimilar<TRow extends Row = Row>(
   }
 
   const predicate = excludeSelf ? { AND: [where, { id: { not: itemId } }] } : where
-  return await list.where(predicate).nearest(fieldName, vector, bounds(limit, minScore))
+  return (await list
+    .where(predicate)
+    .nearest(fieldName, vector, bounds(limit, minScore))) as SearchResult<ListRow<L>>[]
 }
