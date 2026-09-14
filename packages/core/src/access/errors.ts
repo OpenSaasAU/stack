@@ -1,4 +1,26 @@
+import { RELATION_QUANTIFIER_SET } from '../secured/operators.js'
 import { READ_INCLUDE_MAX_DEPTH } from './depth-limits.js'
+
+/**
+ * Renders a sample fix for an access filter's `undefined` condition at
+ * `path`, reconstructing the actual nesting rather than assuming the
+ * condition sits at the top level. A numeric segment means that level of
+ * `findUndefinedCondition`'s walk descended into an array (`AND`/`OR`), so it
+ * wraps in `[...]`; anything else is an object key, so it wraps in
+ * `{ key: ... }`. A path ending in a relation quantifier (`some`/`every`/
+ * `none`) gets an extra `{ id: ... }` layer, since the Where vocabulary
+ * requires a nested filter object there, never a bare value.
+ */
+function renderConditionSample(path: readonly string[]): string {
+  if (path.length === 0) return '{ ownerId: session.userId }'
+  const leaf = path[path.length - 1]
+  let sample = RELATION_QUANTIFIER_SET.has(leaf) ? '{ id: session.userId }' : 'session.userId'
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const segment = path[index]
+    sample = /^\d+$/.test(segment) ? `[${sample}]` : `{ ${segment}: ${sample} }`
+  }
+  return sample
+}
 
 /**
  * Thrown when a caller-supplied `include` names a relation nested deeper than
@@ -204,12 +226,13 @@ export class UndefinedAccessFilterError extends Error {
 
   constructor(path: readonly string[]) {
     const key = path.join('.')
+    const sample = renderConditionSample(path)
     super(
       `An access rule returned a filter whose condition on "${key}" is undefined. A filter may ` +
         `only narrow, so a condition that resolved to undefined is refused rather than dropped — ` +
         `dropping it would match every row. An access rule that has nothing to scope by must ` +
         `return \`false\` (deny) or \`true\` (allow) explicitly: write ` +
-        `\`({ session }) => (session ? { ${path[0] ?? 'ownerId'}: session.userId } : false)\`.`,
+        `\`({ session }) => (session ? ${sample} : false)\`.`,
     )
     this.name = 'UndefinedAccessFilterError'
     this.path = path

@@ -290,6 +290,49 @@ describe('Access Control', () => {
         const accessFilter = { OR: [{ published: true }, { authorId: 'a' }] }
         expect(mergeFilters(undefined, accessFilter)).toEqual(accessFilter)
       })
+
+      // #1443: the message's sample used to be built from `path[0]` alone, so
+      // a nested condition rendered a sample from the wrong level — e.g.
+      // `{ AND: session.userId }`, which `AND` does not accept as a bare
+      // value. The sample must reconstruct the real nesting instead.
+      describe('the suggested fix reconstructs the real nesting (#1443)', () => {
+        it('renders the full path for a condition nested in an array branch', () => {
+          expect(() => mergeFilters(undefined, { AND: [{ ownerId: undefined }] })).toThrow(
+            /`\(\{ session \}\) => \(session \? \{ AND: \[\{ ownerId: session\.userId \}\] \} : false\)`/,
+          )
+        })
+
+        it('renders the full path for a condition nested under an operator', () => {
+          expect(() => mergeFilters(undefined, { authorId: { equals: undefined } })).toThrow(
+            /`\(\{ session \}\) => \(session \? \{ authorId: \{ equals: session\.userId \} \} : false\)`/,
+          )
+        })
+
+        it('adds an extra field layer under a bare relation quantifier', () => {
+          expect(() => mergeFilters(undefined, { author: { some: undefined } })).toThrow(
+            /`\(\{ session \}\) => \(session \? \{ author: \{ some: \{ id: session\.userId \} \} \} : false\)`/,
+          )
+        })
+
+        it('is unchanged for the simple, top-level case', () => {
+          expect(() => mergeFilters(undefined, { authorId: undefined })).toThrow(
+            /`\(\{ session \}\) => \(session \? \{ authorId: session\.userId \} : false\)`/,
+          )
+        })
+
+        it('the rendered sample itself carries no undefined condition', () => {
+          let sample = ''
+          try {
+            mergeFilters(undefined, { AND: [{ ownerId: undefined }] })
+          } catch (error) {
+            sample = (error as Error).message
+          }
+          const match = sample.match(/\{ AND: \[\{ ownerId: session\.userId \}\] \}/)
+          expect(match).not.toBeNull()
+          const suggested = { AND: [{ ownerId: 'session.userId' }] }
+          expect(() => mergeFilters(undefined, suggested)).not.toThrow()
+        })
+      })
     })
   })
 
