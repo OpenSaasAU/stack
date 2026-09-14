@@ -1600,23 +1600,6 @@ function createDelete(
 }
 
 /**
- * A singleton's read. The composed read is not offered on a singleton
- * (`populateDbDelegate` wires it in the other branch), but the engine drives it
- * here: `get()` resolves the one row through the same secured path an ordinary
- * list reads through, so operation access, the Access Filter, Field Visibility
- * and the related lists' own `query` access are the composed read's and not a
- * second copy of them.
- *
- * `null` from the read is denied-or-absent, so the auto-create below runs only
- * once the read has answered nothing — a denied session gets `null`, not a row.
- *
- * Known limits: auto-create fires only for a `query` rule that answered a
- * strict `true`, or under `sudo`. A rule that answered a filter scopes the read
- * rather than opening it, and there is no row yet to test that filter against,
- * so the create is refused and `get()` answers `null` — the same `null` a
- * denied or an absent row answers with.
- */
-/**
  * A singleton's `get({ include })` has no refinement to hand a nested shape
  * to: there is one row, so `where`/`orderBy`/`take` on a related list have
  * nothing to scope against. A non-boolean entry — `{ posts: { take: 5 } }` —
@@ -1645,6 +1628,23 @@ function assertBooleanInclude(
   }
 }
 
+/**
+ * A singleton's read. The composed read is not offered on a singleton
+ * (`populateDbDelegate` wires it in the other branch), but the engine drives it
+ * here: `get()` resolves the one row through the same secured path an ordinary
+ * list reads through, so operation access, the Access Filter, Field Visibility
+ * and the related lists' own `query` access are the composed read's and not a
+ * second copy of them.
+ *
+ * `null` from the read is denied-or-absent, so the auto-create below runs only
+ * once the read has answered nothing — a denied session gets `null`, not a row.
+ *
+ * Known limits: auto-create fires only for a `query` rule that answered a
+ * strict `true`, or under `sudo`. A rule that answered a filter scopes the read
+ * rather than opening it, and there is no row yet to test that filter against,
+ * so the create is refused and `get()` answers `null` — the same `null` a
+ * denied or an absent row answers with.
+ */
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
