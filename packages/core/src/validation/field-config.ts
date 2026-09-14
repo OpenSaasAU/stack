@@ -115,7 +115,7 @@ export function validateFieldConfig(
 
   const descriptorKind = readContractDescriptorKind(field, fieldKey, listKey, config)
 
-  if (isComputedField(field, fieldKey, listKey, config, descriptorKind)) {
+  if (isComputedField(field, fieldKey, listKey, config, { kind: descriptorKind })) {
     requireMember('outputType', field.outputType !== undefined)
     requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
     return errors

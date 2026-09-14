@@ -481,28 +481,35 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // A field storing nothing — by the `virtual` flag, or a
-    // `{ kind: 'computed' }` contract descriptor a third-party field can
-    // declare without the flag (issue #1531) — is what this pass computes;
-    // every other field already went through the stored-field pass above,
-    // whether or not it produced a value.
-    if (!isComputedField(fieldConfig, fieldName, listKey, config)) {
-      continue
-    }
+    // Three conditions all have to hold for this pass to compute a value —
+    // ordered cheapest and most broadly-skipping first, since none has a
+    // side effect the others depend on (ADR-0027's "no work at all" holds
+    // for whichever one continues first):
 
-    // Projection-aware skip (ADR-0027): same rule as the stored-field pass
-    // above — a fragment that does not select this virtual field does no
-    // work for it at all.
+    // 1. Projection-aware skip: a fragment that does not select this field
+    // does no work for it at all, same rule as the stored-field pass above.
     if (selection?.fields && !selection.fields.has(fieldName)) {
       continue
     }
 
-    // A virtual field with no resolveOutput hook can never produce a value
-    // on ANY read — there is nothing to compute, so there is nothing to do,
+    // 2. A field with no resolveOutput hook can never produce a value on ANY
+    // read — there is nothing to compute, so there is nothing to do,
     // including evaluating its read access (ADR-0027 reconciles the
     // access-only evaluation this branch used to preserve: a field that
-    // never has output has no side effect worth preserving access for).
+    // never has output has no side effect worth preserving access for). This
+    // is also the cheapest of the three, and true for most fields, so it
+    // runs before the pricier check below.
     if (!(fieldConfig.hooks?.resolveOutput && listKey)) {
+      continue
+    }
+
+    // 3. A field storing nothing — by the `virtual` flag, or a
+    // `{ kind: 'computed' }` contract descriptor a third-party field can
+    // declare without the flag (issue #1531) — is what this pass computes;
+    // every other field already went through the stored-field pass above,
+    // whether or not it produced a value. Checked last: it is the only one
+    // of the three that can run a third-party field's own `getContractField`.
+    if (!isComputedField(fieldConfig, fieldName, listKey, config)) {
       continue
     }
 

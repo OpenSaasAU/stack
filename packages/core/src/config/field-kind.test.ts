@@ -68,7 +68,7 @@ describe('isComputedField', () => {
     // The pre-fetched kind says "computed" even though the field's own
     // descriptor (were it re-read) would say otherwise — proves the fast
     // path is taken rather than re-invoking getContractField.
-    expect(isComputedField(field, 'x', 'List', CONFIG, 'computed')).toBe(true)
+    expect(isComputedField(field, 'x', 'List', CONFIG, { kind: 'computed' })).toBe(true)
     expect(calls).toBe(0)
   })
 
@@ -83,6 +83,40 @@ describe('isComputedField', () => {
     }
     expect(isComputedField(field, 'x', undefined, undefined)).toBe(false)
     expect(called).toBe(false)
+  })
+
+  it('trusts an already-read descriptor whose kind came back `undefined` too — no second call', () => {
+    // A caller that pre-fetched the descriptor and got `undefined` back (no
+    // descriptor declared, or a swallowed throw) already has its answer: the
+    // field isn't computed by descriptor, full stop. `{ kind: undefined }` is
+    // how that gets passed through — distinct from omitting the argument
+    // entirely, which must still self-fetch (proved by the next test). A
+    // bare `descriptorKind: Kind | undefined` parameter could not make this
+    // distinction, because a JS default fires on `undefined` whether it was
+    // passed explicitly or omitted — this is why the argument is wrapped.
+    let calls = 0
+    const field: FieldConfig = {
+      type: 'thirdParty',
+      getContractField: () => {
+        calls++
+        throw new Error('boom')
+      },
+    }
+    expect(isComputedField(field, 'x', 'List', CONFIG, { kind: undefined })).toBe(false)
+    expect(calls).toBe(0)
+  })
+
+  it('omitting the argument entirely still self-fetches, even though the flag/omission both read as "no value"', () => {
+    let calls = 0
+    const field: FieldConfig = {
+      type: 'thirdParty',
+      getContractField: () => {
+        calls++
+        return { kind: 'computed' }
+      },
+    }
+    expect(isComputedField(field, 'x', 'List', CONFIG)).toBe(true)
+    expect(calls).toBe(1)
   })
 })
 
