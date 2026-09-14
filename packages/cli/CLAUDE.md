@@ -76,6 +76,8 @@ The config's default export may be a `Promise` when plugins are present, so ever
 
 On a config change, generation is **staged behind reconciliation**: it emits to a staging directory, plans the update, and promotes the contract and bundle only once the plan applies. A destructive plan stops at Prisma's consent prompt on boot; mid-session it leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving. The loop restarts the app child after a destructive promote, because a cached client survives HMR.
 
+Promotion moves the file set one atomic swap at a time, not as a single commit — a direct `prisma`/`psql` invocation or a hot-reloading app child can observe a mix of old and new artifacts for a small window. `prisma.config.ts` always lands last, which is why the loop's own end-of-promotion log line, not the app's own answer, is the correct signal that the whole set is in place. See ADR-0072.
+
 Reset the Dev database by deleting `.opensaas/dev-db/`. Setting `DATABASE_URL` is the **Database escape**: no Dev database starts (ADR-0063).
 
 ## CLI Usage
