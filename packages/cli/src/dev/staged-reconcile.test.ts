@@ -180,6 +180,55 @@ describe('promoting a staged generation', () => {
     expect(fs.readFileSync(live.prismaConfig, 'utf-8')).toBe('next')
   })
 
+  it('lands tables.ts right after the contract artifacts, and prisma.config.ts last of all', () => {
+    const { paths: live } = resolveOutputPaths(cwd)
+    const stagingDir = path.join(cwd, '.opensaas', 'staged')
+    const staged = stageWritePaths(live, stagingDir)
+
+    for (const file of [
+      staged.contractModule,
+      staged.contractJson,
+      staged.contractTypes,
+      staged.tables,
+      staged.types,
+      staged.context,
+    ]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, 'next', 'utf-8')
+    }
+    fs.mkdirSync(stagingDir, { recursive: true })
+    fs.writeFileSync(path.join(stagingDir, STAGED_ROOT_PRISMA_CONFIG), 'next', 'utf-8')
+
+    // A directory where prisma.config.ts belongs forces promotion to stop
+    // there, and `PartialPromotionError.promoted` — the accumulator built in
+    // swap order — is then the whole promotion order up to that point: proof
+    // that tables.ts (ADR-0051's pairing with the Contract module) and every
+    // other bundle file all land before the root config does, not just proof
+    // of a single pairing.
+    fs.mkdirSync(live.prismaConfig, { recursive: true })
+
+    let thrown: unknown
+    try {
+      promoteStagedGeneration(staged, live, stagingDir)
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(PartialPromotionError)
+    const promoted = thrown instanceof PartialPromotionError ? thrown.promoted : []
+    expect(promoted.slice(0, 4)).toEqual([
+      live.contractModule,
+      live.contractJson,
+      live.contractTypes,
+      live.tables,
+    ])
+    expect(promoted).toHaveLength(6)
+    expect(promoted).toEqual(expect.arrayContaining([live.types, live.context]))
+    expect(thrown instanceof PartialPromotionError ? thrown.failedOn : undefined).toBe(
+      live.prismaConfig,
+    )
+  })
+
   it('names the split when promotion stops after the first file', () => {
     const { paths: live } = resolveOutputPaths(cwd)
     const stagingDir = path.join(cwd, '.opensaas', 'staged')

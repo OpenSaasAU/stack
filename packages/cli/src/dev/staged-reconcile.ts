@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
-import { runPrismaCli, STAGED_ROOT_PRISMA_CONFIG } from '../generator/index.js'
+import { OPENSAAS_FILES, runPrismaCli, STAGED_ROOT_PRISMA_CONFIG } from '../generator/index.js'
 import type { ResolvedWritePaths } from '../generator/index.js'
 
 /** Where a staged generation lives, inside the Generated bundle. */
@@ -224,8 +224,22 @@ function swapIntoPlace(from: string, to: string): void {
  * Called only once the database carries the schema they describe.
  *
  * Each file lands atomically. The set of them does not: the filesystem offers
- * no multi-file commit, so a failure part-way through throws
- * {@link PartialPromotionError} naming the split rather than a bare copy error.
+ * no multi-file commit, and a mid-promotion reader from another process can
+ * observe a mix of old and new artifacts (ADR-0072). This order is a stated,
+ * not incidental, response to that:
+ *
+ * - `tables.ts` is derived from the same computation as the Contract module
+ *   (ADR-0051), so it lands immediately after the contract artifacts rather
+ *   than wherever the bundle directory's unordered `readdirSync` happens to
+ *   place it — narrowing, not closing, the window in which the two could
+ *   disagree.
+ * - `prisma.config.ts` lands **last**, so its landing is the one signal that
+ *   the whole set is in place — the ordering an outside observer's own
+ *   end-of-promotion signal (a log line printed after this function returns,
+ *   for instance) can rely on without inspecting anything else.
+ *
+ * A failure part-way through throws {@link PartialPromotionError} naming the
+ * split rather than a bare copy error.
  *
  * @throws {PartialPromotionError} when promotion stops after the first file.
  */
@@ -238,11 +252,12 @@ export function promoteStagedGeneration(
     [staged.contractModule, live.contractModule],
     [staged.contractJson, live.contractJson],
     [staged.contractTypes, live.contractTypes],
+    [staged.tables, live.tables],
   ]
 
   if (fs.existsSync(staged.opensaasDir)) {
     for (const entry of fs.readdirSync(staged.opensaasDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue
+      if (!entry.isFile() || entry.name === OPENSAAS_FILES.tables) continue
       moves.push([
         path.join(staged.opensaasDir, entry.name),
         path.join(live.opensaasDir, entry.name),
