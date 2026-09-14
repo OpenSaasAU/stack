@@ -68,9 +68,10 @@ fields: {
     type: 'number',
     hooks: {
       resolveOutput: async ({ item, context }) => {
-        return context.db.post.count({
-          where: { authorId: { equals: item.id } },
-        })
+        const { count } = await context.db.Post.where({
+          authorId: { equals: item.id },
+        }).aggregate((aggregate) => ({ count: aggregate.count() }))
+        return count
       },
     },
   }),
@@ -91,7 +92,7 @@ fields: {
 | -------------------------------------------------- | --------------------------------------------------------------------- |
 | `graphql.field({ type: graphql.String, resolve })` | `{ type: 'string', hooks: { resolveOutput } }`                        |
 | `resolve(item, args, context)`                     | `resolveOutput({ item, context })`                                    |
-| `context.query.Post.count(...)`                    | `context.db.post.count(...)`                                          |
+| `context.query.Post.count(...)`                    | `context.db.Post.where(...).aggregate((a) => ({ count: a.count() }))` |
 | Field arguments supported                          | Field arguments NOT supported                                         |
 | `graphql.Int`, `graphql.Boolean` etc.              | `'number'`, `'boolean'` etc.                                          |
 | Custom types via `graphql.object()`                | Custom types via type descriptor `{ value: MyClass, from: 'my-pkg' }` |
@@ -135,11 +136,11 @@ fields: {
 
 ## context.graphql → context.db
 
-Keystone provides `context.graphql.run()` and `context.graphql.raw()` for type-safe data access from API routes, server actions, and hooks. OpenSaaS Stack uses `context.db.{listName}.{method}()` directly — the same access control rules apply automatically.
+Keystone provides `context.graphql.run()` and `context.graphql.raw()` for type-safe data access from API routes, server actions, and hooks. OpenSaaS Stack's secured surface is `context.db.<List>` — a read is **composed** with `.where()` / `.orderBy()` / `.select()` / `.include()` / `.limit()` and only runs once a terminal (`.all()`, `.first()`, `.aggregate()`) is called; writes (`create`, `update`, `delete`) are members of the list itself, not terminals. The same access control rules apply automatically.
 
-List names are **camelCase** in `context.db`: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`.
+List names are **PascalCase**, exactly as declared in config: `Post` → `context.db.Post`, `BlogPost` → `context.db.BlogPost`. There is no camelCase or lowercase spelling of a list on `context.db`.
 
-### Query (findMany)
+### Query (list)
 
 ```typescript
 // Keystone
@@ -152,9 +153,7 @@ const { posts } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const posts = await context.db.post.findMany({
-  where: { status: { equals: 'published' } },
-})
+const posts = await context.db.Post.where({ status: { equals: 'published' } }).all()
 ```
 
 ### Query with filters and ordering
@@ -173,11 +172,10 @@ const { posts } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const posts = await context.db.post.findMany({
-  where: { authorId: { equals: userId } },
-  orderBy: { createdAt: 'desc' },
-  take: 10,
-})
+const posts = await context.db.Post.where({ authorId: { equals: userId } })
+  .orderBy({ createdAt: 'desc' })
+  .limit(10)
+  .all()
 ```
 
 ### Query single item
@@ -192,9 +190,7 @@ const { post } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const post = await context.db.post.findUnique({
-  where: { id: postId },
-})
+const post = await context.db.Post.where({ id: { equals: postId } }).first()
 ```
 
 ### Create
@@ -209,7 +205,7 @@ const { createPost } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const post = await context.db.post.create({
+const post = await context.db.Post.create({
   data: { title: 'Hello', content: '...' },
 })
 ```
@@ -226,7 +222,7 @@ const { updatePost } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const post = await context.db.post.update({
+const post = await context.db.Post.update({
   where: { id: postId },
   data: { title: 'Updated' },
 })
@@ -246,7 +242,7 @@ await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const deleted = await context.db.post.delete({
+const deleted = await context.db.Post.delete({
   where: { id: postId },
 })
 ```
@@ -260,9 +256,9 @@ const { postsCount } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const count = await context.db.post.count({
-  where: { status: { equals: 'published' } },
-})
+const { count } = await context.db.Post.where({ status: { equals: 'published' } }).aggregate(
+  (aggregate) => ({ count: aggregate.count() }),
+)
 ```
 
 ### Related data
@@ -298,26 +294,27 @@ const sudoContext = context.sudo()
 const { posts } = await sudoContext.graphql.run({ query: '...' })
 
 // OpenSaaS Stack
-const posts = await context.sudo().db.post.findMany()
+const posts = await context.sudo().db.Post.all()
 ```
 
 ### Key Differences
 
-| Keystone                                    | OpenSaaS Stack                                       |
-| ------------------------------------------- | ---------------------------------------------------- |
-| `context.graphql.run({ query, variables })` | `context.db.{list}.{method}(args)`                   |
-| `context.graphql.raw({ query, variables })` | `context.db.{list}.{method}(args)`                   |
-| Nested related data in one query            | Separate `context.db` calls per list                 |
-| Returns `{ data: { listName: [...] } }`     | Returns result directly (or `null` on access denial) |
-| GraphQL string queries                      | Prisma-style filter objects                          |
-| `context.query.*` (also Keystone)           | `context.db.*`                                       |
-| `context.sudo().graphql.*`                  | `context.sudo().db.*`                                |
+| Keystone                                    | OpenSaaS Stack                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members     |
+| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members     |
+| Nested related data in one query            | One `context.db` call, narrowed with `.select()` / `.include()`                                                 |
+| Returns `{ data: { listName: [...] } }`     | Returns result directly (or `null` / `[]` on access denial)                                                     |
+| GraphQL string queries                      | Where-vocabulary filter objects                                                                                 |
+| `context.query.*` (also Keystone)           | `context.db.*`                                                                                                  |
+| `context.sudo().graphql.*`                  | `context.sudo().db.*`                                                                                           |
 
 ### Checklist
 
 - [ ] Search for all `context.graphql.run(` and `context.graphql.raw(` calls
 - [ ] Search for all `context.query.` calls (another Keystone API)
-- [ ] Replace with `context.db.{camelCaseListName}.{method}()`
-- [ ] Break nested GraphQL queries into separate `context.db` calls
-- [ ] Handle `null` returns (OpenSaaS returns null on access denial, not errors)
+- [ ] Replace reads with `context.db.{PascalCaseListName}.where(...).all()` / `.first()`, narrowed with `.select()` / `.include()`
+- [ ] Replace writes with `context.db.{PascalCaseListName}.create()` / `.update()` / `.delete()` as list members, not terminals off a read
+- [ ] Collapse nested GraphQL queries into one composed read with `.select()` / `.include()` (see `migrate-context-calls`)
+- [ ] Handle `null` / `[]` returns (OpenSaaS returns the empty value on access denial, not errors)
 - [ ] Replace `context.sudo().graphql.*` with `context.sudo().db.*`

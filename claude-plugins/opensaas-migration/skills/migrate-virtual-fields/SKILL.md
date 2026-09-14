@@ -72,7 +72,10 @@ resolve: async (item, _, context) => {
 
 // After
 resolveOutput: async ({ item, context }) => {
-  return context.db.post.count({ where: { authorId: { equals: item.id } } })
+  const { count } = await context.db.Post.where({
+    authorId: { equals: item.id },
+  }).aggregate((aggregate) => ({ count: aggregate.count() }))
+  return count
 }
 ```
 

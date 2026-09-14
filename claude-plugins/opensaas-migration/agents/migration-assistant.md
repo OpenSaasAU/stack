@@ -62,17 +62,9 @@ export default config({
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -94,7 +86,7 @@ export default config({
 })
 ```
 
-**What changed:** imports and the database config. **The lists, fields, access, and hooks are identical.**
+**What changed:** imports and the database config — **PostgreSQL is the only supported provider**, and there is no `url` or adapter to configure; the connection resolves from `DATABASE_URL` (or the running Dev database during `opensaas dev` — see ADR-0063). **The lists, fields, access, and hooks are identical.**
 
 ### 2. Imports
 
@@ -107,36 +99,27 @@ export default config({
 
 ### 3. Database Config
 
-The only required addition is `prismaClientConstructor` (Prisma 7 uses driver adapters).
+`db.provider` is `'postgresql'` and nothing else — there is no SQLite provider, no `url` key, and no `prismaClientConstructor`. The connection URL is not part of the config: the runtime resolves it from `DATABASE_URL`, or — when that's unset — from the running Dev database's own state file during `opensaas dev` (ADR-0063). A Keystone project on SQLite has no direct equivalent; point `DATABASE_URL` at a Postgres instance, or use `opensaas dev`'s own in-process Postgres, which needs no `DATABASE_URL` at all.
 
-**SQLite:**
+**Default:**
 
 ```typescript
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
-db: {
-  provider: 'sqlite',
-  url: process.env.DATABASE_URL || 'file:./dev.db',
-  prismaClientConstructor: (PrismaClient) => {
-    const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-    return new PrismaClient({ adapter })
-  },
-},
+db: { provider: 'postgresql' },
 ```
 
-**PostgreSQL:**
+**Custom pool binding** (only needed for something like a serverless driver) uses `db.client.pg`, a **lazy** factory — the config is loaded by tooling that must never open a connection itself:
 
 ```typescript
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
+import { Pool, neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
 
 db: {
   provider: 'postgresql',
-  url: process.env.DATABASE_URL,
-  prismaClientConstructor: (PrismaClient) => {
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-    const adapter = new PrismaPg(pool)
-    return new PrismaClient({ adapter })
+  client: {
+    pg: () => {
+      neonConfig.webSocketConstructor = ws
+      return new Pool({ connectionString: process.env.DATABASE_URL })
+    },
   },
 },
 ```
@@ -263,7 +246,7 @@ If the project has virtual fields, **invoke the `keystone-virtual-fields-context
 
 ### 8. context.graphql → context.db
 
-Keystone apps commonly call `context.graphql.run()` or `context.query.*` in routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — use `context.db.{listName}.{method}()` directly.
+Keystone apps commonly call `context.graphql.run()` or `context.query.*` in routes, server actions, and hooks. OpenSaaS Stack has no GraphQL — reads are **composed** on `context.db.<List>` (PascalCase, exactly as declared in config — there is no camelCase or lowercase spelling) and run by a terminal (`.all()`, `.first()`, `.aggregate()`); writes (`create`, `update`, `delete`) are members of the list itself, not terminals chained off a read.
 
 **Keystone:**
 
@@ -277,34 +260,53 @@ const { posts } = await context.graphql.run({
 **OpenSaaS Stack:**
 
 ```typescript
-const posts = await context.db.post.findMany({
-  where: { authorId: { equals: userId } },
-})
+const posts = await context.db.Post.where({ authorId: { equals: userId } }).all()
 ```
 
 If the project uses `context.graphql.*` or `context.query.*`, **invoke the `keystone-virtual-fields-context` skill** for full patterns including related data queries and sudo access.
 
-### 9. Many-to-Many Join Table Names
+### 9. Many-to-Many Relationships → an Explicit Junction List
 
-Keystone uses field-location-based join table names (`_Lesson_teachers`). Prisma uses alphabetical names (`_LessonToTeacher`). To preserve your existing data:
+Keystone generates an implicit join table for a many-to-many relationship. OpenSaaS Stack has no implicit join table at all: `many: true` on both sides of a relationship is a generate-time error. Declare a junction list with its own surrogate id and a unique pair index instead, and point both original fields at it:
 
-```typescript
-db: {
-  provider: 'postgresql',
-  joinTableNaming: 'keystone', // Preserve Keystone join table names
-  prismaClientConstructor: (PrismaClient) => { ... },
-},
-```
-
-Or per-relationship:
+**Keystone:**
 
 ```typescript
-teachers: relationship({
-  ref: 'Teacher.lessons',
-  many: true,
-  db: { relationName: 'Lesson_teachers' },
+Lesson: list({
+  fields: {
+    teachers: relationship({ ref: 'Teacher.lessons', many: true }),
+  },
+}),
+Teacher: list({
+  fields: {
+    lessons: relationship({ ref: 'Lesson.teachers', many: true }),
+  },
 }),
 ```
+
+**OpenSaaS Stack:**
+
+```typescript
+Lesson: list({
+  fields: {
+    teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
+  },
+}),
+Teacher: list({
+  fields: {
+    lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
+  },
+}),
+LessonTeacher: list({
+  fields: {
+    lesson: relationship({ ref: 'Lesson.teachers' }),
+    teacher: relationship({ ref: 'Teacher.lessons' }),
+  },
+  db: { indexes: [{ fields: ['lesson', 'teacher'], unique: true }] },
+}),
+```
+
+To preserve data from Keystone's implicit join table (e.g. `_Lesson_teachers`), migrate its rows into the new junction list's table as part of the migration rather than trying to configure the generator to keep the old table shape — there is no naming option for this on `db`.
 
 ## Migration Approach: Update, Don't Rewrite
 
@@ -325,13 +327,9 @@ pnpm add @opensaas/stack-core @opensaas/stack-ui
 pnpm add -D @opensaas/stack-cli
 # If using auth:
 pnpm add @opensaas/stack-auth better-auth
-# SQLite adapter:
-pnpm add @prisma/adapter-better-sqlite3 better-sqlite3
-pnpm add -D @types/better-sqlite3
-# PostgreSQL adapter:
-pnpm add @prisma/adapter-pg pg
-pnpm add -D @types/pg
 ```
+
+No database driver package to install for the default case — `opensaas dev` runs its own Dev database, and production resolves the connection from `DATABASE_URL`. Only a custom pool binding (`db.client.pg`, e.g. for a serverless driver) needs its own package (`pg`, `@neondatabase/serverless`, etc.).
 
 ### Step 2: Update imports — delegate to subagent
 
@@ -341,7 +339,7 @@ pnpm add -D @types/pg
 
 ### Step 3: Update database config
 
-Add `prismaClientConstructor` to the `db` config (see examples above). If you have many-to-many relationships, add `joinTableNaming: 'keystone'` to preserve join table names.
+Set `db: { provider: 'postgresql' }` (see examples above) — drop `url` and any adapter setup entirely. If you have many-to-many relationships, migrate them to an explicit junction list (see section 9 above).
 
 ### Step 4: Update auth (if applicable)
 
@@ -397,10 +395,10 @@ If the user declines, skip this step and proceed to validation.
 ### Step 11: Run generation and validate
 
 ```bash
-pnpm opensaas generate   # Generates prisma schema
-npx prisma db push       # Syncs database
-pnpm dev                 # Start dev server
+pnpm dev   # Starts the Dev database, generates, reconciles the schema, and runs the app — the whole loop
 ```
+
+Run `pnpm generate` on its own only to regenerate the contract and `.opensaas` bundle without starting the app.
 
 ## Workflow
 
@@ -410,10 +408,10 @@ Your job is to plan and coordinate the migration, not to do all the editing your
 
 **Tasks you handle directly** (quick, bounded changes):
 
-- Add `prismaClientConstructor` to db config
+- Set `db: { provider: 'postgresql' }`, dropping `url` and any adapter setup
 - Replace auth setup with `authPlugin`
 - Update `session.data.id` → `session.userId`
-- Update M2M join table naming if needed
+- Migrate M2M relationships to an explicit junction list if needed
 
 **Tasks you delegate to subagents** (search-heavy or complex edits):
 
@@ -446,10 +444,10 @@ After assessing, show the user a numbered list of exactly what will change and w
 
 **Phase 3 — Execute simple changes yourself:**
 
-- Add `prismaClientConstructor` to db config
+- Set `db: { provider: 'postgresql' }`, dropping `url` and any adapter setup
 - Replace `createAuth`/`withAuth` with `authPlugin`
 - Update `session.data.id` → `session.userId`
-- Add `joinTableNaming: 'keystone'` if M2M detected
+- Migrate M2M relationships to an explicit junction list if detected
 
 **Phase 4 — Delegate to forked subagents** (one at a time, in this order):
 
@@ -535,8 +533,6 @@ If `.claude/opensaas-project.json` doesn't exist:
 Guide them through:
 
 1. Install dependencies (see Step 1 above)
-2. Run `pnpm opensaas generate`
-3. Run `npx prisma db push`
-4. Start dev server: `pnpm dev`
-5. If Admin UI was set up: visit `http://localhost:3000/{adminPath}` (e.g. `http://localhost:3000/admin`)
-6. If Admin UI was skipped: mention that they can set it up any time — see https://stack.opensaas.au/docs/reference/ui
+2. Run `pnpm dev` — starts the Dev database, generates, reconciles the schema, and runs the app in one loop
+3. If Admin UI was set up: visit `http://localhost:3000/{adminPath}` (e.g. `http://localhost:3000/admin`)
+4. If Admin UI was skipped: mention that they can set it up any time — see https://stack.opensaas.au/docs/reference/ui
