@@ -11,13 +11,13 @@ $ARGUMENTS
 
 ## Migration Pattern
 
-| Keystone                                    | OpenSaaS Stack                                                         |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                      |
-| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                      |
-| `context.query.Post.findMany(...)`          | `context.db.Post.where(...).all()`                                     |
-| `context.query.Post.count(...)`             | `context.db.Post.where(...).aggregate((a) => ({ count: a.count() }))`  |
-| `context.sudo().graphql.run(...)`           | `context.sudo().db.Post.where(...).all()`                              |
+| Keystone                                    | OpenSaaS Stack                                                        |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                     |
+| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                     |
+| `context.query.Post.findMany(...)`          | `context.db.Post.where(...).all()`                                    |
+| `context.query.Post.count(...)`             | `context.db.Post.where(...).aggregate((a) => ({ count: a.count() }))` |
+| `context.sudo().graphql.run(...)`           | `context.sudo().db.Post.where(...).all()`                             |
 
 **List names are PascalCase, exactly as declared in config**: `Post` → `context.db.Post`, `BlogPost` → `context.db.BlogPost`, `AuthUser` → `context.db.AuthUser`. There is no camelCase or lowercase spelling of a list anywhere on the secured surface.
 
@@ -376,14 +376,14 @@ Writing several of these atomically belongs inside `context.transaction` (ADR-00
 
 ### Nested-write translation table
 
-| Keystone nested write               | OpenSaaS Stack                                                | Applies to                                       |
-| ------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------- |
-| `author: { connect: { id } }`       | `author: { connect: { id } }`                                  | create / update — only the FK-owning field         |
-| `author: { disconnect: true }`      | `author: null`                                                 | update (nullable single relation)                  |
-| `tags: { connect: [{ id }, …] }`    | create a row in the junction list                              | many-to-many — a junction-list write, not a field  |
-| `tags: { disconnect: [{ id }, …] }` | find and `delete` the junction row                             | many-to-many — a junction-list write, not a field  |
-| `tags: { set: [{ id }, …] }`        | delete the existing junction rows, create the new ones         | many-to-many — no direct `set`, no nested write    |
-| `author: { create: { … } }`         | not supported — create the related row first, then `connect`  | no nested create on `context.db`                   |
+| Keystone nested write               | OpenSaaS Stack                                               | Applies to                                        |
+| ----------------------------------- | ------------------------------------------------------------ | ------------------------------------------------- |
+| `author: { connect: { id } }`       | `author: { connect: { id } }`                                | create / update — only the FK-owning field        |
+| `author: { disconnect: true }`      | `author: null`                                               | update (nullable single relation)                 |
+| `tags: { connect: [{ id }, …] }`    | create a row in the junction list                            | many-to-many — a junction-list write, not a field |
+| `tags: { disconnect: [{ id }, …] }` | find and `delete` the junction row                           | many-to-many — a junction-list write, not a field |
+| `tags: { set: [{ id }, …] }`        | delete the existing junction rows, create the new ones       | many-to-many — no direct `set`, no nested write   |
+| `author: { create: { … } }`         | not supported — create the related row first, then `connect` | no nested create on `context.db`                  |
 
 > **Never write the scalar FK directly.** Use the relation field (`author: { connect: { id } }`), not `authorId: …`. `filterWritableFields` strips `<field>Id` keys when a relationship field exists, so writing the FK directly is silently dropped.
 

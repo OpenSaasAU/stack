@@ -299,15 +299,15 @@ const posts = await context.sudo().db.Post.all()
 
 ### Key Differences
 
-| Keystone                                    | OpenSaaS Stack                                                                                              |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members     |
-| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members     |
-| Nested related data in one query            | One `context.db` call, narrowed with `.select()` / `.include()`                                                 |
-| Returns `{ data: { listName: [...] } }`     | Returns result directly (or `null` / `[]` on access denial)                                                     |
-| GraphQL string queries                      | Where-vocabulary filter objects                                                                                 |
-| `context.query.*` (also Keystone)           | `context.db.*`                                                                                                  |
-| `context.sudo().graphql.*`                  | `context.sudo().db.*`                                                                                           |
+| Keystone                                    | OpenSaaS Stack                                                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members |
+| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`, `.create()` / `.update()` / `.delete()` as list members |
+| Nested related data in one query            | One `context.db` call, narrowed with `.select()` / `.include()`                                            |
+| Returns `{ data: { listName: [...] } }`     | Returns result directly (or `null` / `[]` on access denial)                                                |
+| GraphQL string queries                      | Where-vocabulary filter objects                                                                            |
+| `context.query.*` (also Keystone)           | `context.db.*`                                                                                             |
+| `context.sudo().graphql.*`                  | `context.sudo().db.*`                                                                                      |
 
 ### Checklist
 
