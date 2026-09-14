@@ -43,24 +43,10 @@ bun add @opensaas/stack-core
 - `@opensaas/stack-storage` - If the project needs file storage
 - `@opensaas/stack-rag` - If the project needs semantic search/RAG
 
-**Database adapters (required for Prisma 7):**
-
-SQLite:
+**No database driver package to install for the default case.** `db.provider` is `'postgresql'` and nothing else — the connection resolves from `DATABASE_URL`, or from `opensaas dev`'s own in-process Postgres. Only a custom pool binding (`db.client.pg`, e.g. for a serverless driver) needs its own package:
 
 ```bash
-npm install better-sqlite3 @prisma/adapter-better-sqlite3
-```
-
-PostgreSQL:
-
-```bash
-npm install pg @prisma/adapter-pg
-```
-
-Neon (serverless PostgreSQL):
-
-```bash
-npm install @neondatabase/serverless @prisma/adapter-neon ws
+npm install @neondatabase/serverless ws
 ```
 
 ### 2. Uninstall Old Packages (KeystoneJS Only)
@@ -169,9 +155,7 @@ OpenSaaS Stack supports **PostgreSQL only** — `db.provider` is `'postgresql'` 
 ```typescript
 export default config({
   db: { provider: 'postgresql' },
-  lists: {
-    /* ... */
-  },
+  lists: {/* ... */},
 })
 ```
 
@@ -191,9 +175,7 @@ export default config({
       },
     },
   },
-  lists: {
-    /* ... */
-  },
+  lists: {/* ... */},
 })
 ```
 
