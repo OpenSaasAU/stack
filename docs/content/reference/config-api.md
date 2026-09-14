@@ -562,7 +562,7 @@ Marks a list that holds exactly one row — application settings, a feature-flag
 
 **Type:** `boolean`
 
-A singleton derives its id from `isSingleton` and refuses `db.idField`. On the secured surface it carries **`get()`** in place of the composed read: there is nothing to filter, order or page.
+A singleton derives its id from `isSingleton` and refuses `db.idField`. On the secured surface it carries **`get()`** in place of the composed read: there is nothing to filter, order or page. `get({ include })` accepts a boolean per relation only — there is one row, so a nested refinement has nothing to scope, and a non-boolean value is refused (see [`include()`](/docs/reference/context-api#include)).
 
 ##### `db.map`
 

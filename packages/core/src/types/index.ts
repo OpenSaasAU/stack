@@ -36,6 +36,7 @@ export type {
   ListIdentityWhere,
   ListSelect,
   ListInclude,
+  SingletonInclude,
   ListReduction,
   ListCursor,
   StoredKey,
