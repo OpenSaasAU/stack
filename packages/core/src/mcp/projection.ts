@@ -557,9 +557,15 @@ export async function resolveFieldsProjection(
       if (countOnly.length === 0) return [...rows]
       return rows.map((row) => {
         const wire: OrmRow = { ...row }
+        // A key Field Visibility stripped (a denied relation) is absent from
+        // `wire` entirely and must stay that way. A key that IS present but
+        // whose value `combinedCount` doesn't recognise as `{ items, count }`
+        // is the unreached case this guards: the fallback must not be the raw
+        // value, which can carry the relation's own rows — a count-only field
+        // must never put rows on the wire (issue #1369).
         for (const name of countOnly) {
-          const count = combinedCount(wire[name])
-          if (count !== undefined) wire[name] = count
+          if (!Object.hasOwn(wire, name)) continue
+          wire[name] = combinedCount(wire[name]) ?? 0
         }
         return wire
       })
