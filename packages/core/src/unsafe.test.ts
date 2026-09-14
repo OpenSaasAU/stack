@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
 import type { OpenSaasConfig } from './config/types.js'
+import { engineContextOf } from './context/engine-context.js'
 import { checkbox, relationship, text } from './fields/index.js'
 import { UnmarkedQueryError, withOrigin } from './origin.js'
 import { createTestDatabase, type TestDatabase } from './testing/context.js'
@@ -580,6 +581,96 @@ describe('the Unsafe surface', () => {
       expect(unsafe.prepare).toBeUndefined()
       // @ts-expect-error the surface exposes no `runtime`
       expect(unsafe.runtime).toBeUndefined()
+    })
+  })
+
+  describe('the ctx path a collection carries (issue #1208)', () => {
+    function rawSelectOnePlan(): SqlOrmPlan<Bag> {
+      return plan(
+        call(chain(asBag(rawTag(database.client.raw)`select 1`), 'affectedCount'), 'build'),
+      )
+    }
+
+    function ormHandlePost(): Bag {
+      const ormHandle = engineContextOf(database.context()).ormHandle
+      return asBag(ormHandle['Post'])
+    }
+
+    test('ctx.runtime is reachable, named nowhere in the type, off both paths', () => {
+      const throughUnsafe = at(model(unsafe, 'Post'), 'ctx')
+      const throughOrmHandle = at(ormHandlePost(), 'ctx')
+
+      for (const ctx of [throughUnsafe, throughOrmHandle]) {
+        const runtime = at(ctx, 'runtime')
+        expect(typeof runtime.query).toBe('function')
+        expect(typeof runtime.execute).toBe('function')
+        // Not among RuntimeScope's own declared members (unsafe.test.ts's
+        // "prepare and runtime are absent from the type" above covers the
+        // surface itself) — reachable at runtime regardless.
+        expect(typeof Reflect.get(runtime, 'connection')).toBe('function')
+      }
+      // Neither `ctx` nor `runtime` appears where the rest of this file
+      // already asserts the surface's own advertised shape.
+      expect(Object.keys(unsafe).sort()).toEqual(['execute', 'orm', 'query', 'raw', 'sql'])
+    })
+
+    test('reached off unsafe.orm, ctx.runtime is auto-marked by the same proxy as everything else the lane hands back', async () => {
+      recorder.clear()
+      const runtime = at(at(model(unsafe, 'Post'), 'ctx'), 'runtime')
+      const stats = await call(runtime, 'execute', rawSelectOnePlan())
+      expect(stats).toBeDefined()
+      expect(origins(recorder)).toEqual(['unsafe'])
+    })
+
+    test('reached off AccessContext.ormHandle, ctx.runtime is unmarked and the tripwire refuses it — exactly as reaching the client directly does', async () => {
+      const runtime = at(at(ormHandlePost(), 'ctx'), 'runtime')
+      await expect(call(runtime, 'execute', rawSelectOnePlan())).rejects.toBeInstanceOf(
+        UnmarkedQueryError,
+      )
+    })
+
+    test('the ormHandle path runs once the caller marks it themselves, proving the tripwire — not unreachability — is what refused it above', async () => {
+      const runtime = at(at(ormHandlePost(), 'ctx'), 'runtime')
+      const stats = await withOrigin('unsafe', async () =>
+        call(runtime, 'execute', rawSelectOnePlan()),
+      )
+      expect(stats).toBeDefined()
+    })
+
+    test('runtime.connection() is reachable off both paths; its returned scope is unmarked even off unsafe.orm, and the tripwire still catches it', async () => {
+      // Unlike a plain call through `ctx.runtime` (marked above by the same
+      // proxy as everything else `unsafe.orm` hands back), the object
+      // `connection()` resolves to is NOT auto-marked: the proxy leaves a
+      // thenable's resolved value untouched so an ordinary async CRUD result
+      // passes through unwrapped, and that is exactly what `connection()`
+      // returns. So even reached off the auto-marking `unsafe.orm` path, an
+      // execution through the connection it hands back needs its own mark.
+      const unsafeRuntime = at(at(model(unsafe, 'Post'), 'ctx'), 'runtime')
+      const unsafeConnection = asBag(await call(unsafeRuntime, 'connection'))
+      try {
+        await expect(call(unsafeConnection, 'execute', rawSelectOnePlan())).rejects.toBeInstanceOf(
+          UnmarkedQueryError,
+        )
+
+        recorder.clear()
+        const stats = await withOrigin('unsafe', async () =>
+          call(unsafeConnection, 'execute', rawSelectOnePlan()),
+        )
+        expect(stats).toBeDefined()
+        expect(origins(recorder)).toEqual(['unsafe'])
+      } finally {
+        await call(unsafeConnection, 'release')
+      }
+
+      const ormHandleRuntime = at(at(ormHandlePost(), 'ctx'), 'runtime')
+      const ormHandleConnection = asBag(await call(ormHandleRuntime, 'connection'))
+      try {
+        await expect(
+          call(ormHandleConnection, 'execute', rawSelectOnePlan()),
+        ).rejects.toBeInstanceOf(UnmarkedQueryError)
+      } finally {
+        await call(ormHandleConnection, 'release')
+      }
     })
   })
 })

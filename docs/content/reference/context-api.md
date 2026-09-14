@@ -667,11 +667,12 @@ async function archiveEveryPost(context: Context) {
 
 Inside `context.transaction(...)`, the transaction context's `unsafe` runs through the transaction's own executor, so a script need not close over the outer client.
 
-Neither the bare client nor `prepare()`/`runtime()` is reachable through it, in the type or in the runtime value: a prepared statement runs `beforeCompile` once at `prepare()` and never per execution, and an already-compiled plan handed to `runtime()` bypasses the middleware chain — either would execute unobserved.
+Neither the bare client nor `prepare()`/`runtime()` is among the surface's own members, in the type or in the runtime value: a prepared statement runs `beforeCompile` once at `prepare()` and never per execution, and an already-compiled plan handed to `runtime()` bypasses the middleware chain — either would execute unobserved.
 
 ### Known limits
 
 - That is a statement about the surface's own members, not a claim that nothing reachable through the ORM lane can prepare. The lane is the ORM's collections, whole; a `prepare`-shaped member on one of them is proxied like any other call, which marks the preparation and not the executions that follow.
+- Every collection the ORM hands back — off `unsafe.orm`, and off `context.ormHandle`, the plugin-facing engine plumbing described above, which resolves the same collections unproxied — carries its own `ctx: { runtime, context }`, not part of any published type. `ctx.runtime` exposes `query`/`execute` plus a `connection()` the type doesn't declare. Reached through `unsafe.orm`, `.ctx` is wrapped by the same marking proxy as everything else the lane hands back, so a call straight through `ctx.runtime` reaches nothing `unsafe` doesn't already grant. Reached through `context.ormHandle`, which carries no proxy of its own, the same call is unmarked and refused by the tripwire unless the caller marks it themselves — a real reachability gap in a plugin's hands, left open rather than closed here because closing it is `context.ormHandle`'s own construction to do, not this surface's. `runtime.connection()` was assessed the same way, with one wrinkle: it resolves to a connection-scoped object through a `Promise`, which this proxy leaves unwrapped, so that connection is unmarked on **either** path — but an execution through it is still checked by the same tripwire as `runtime` itself, so it's observable rather than a separate escape.
 - The ORM's raw guardrails (`lints()`, `budgets()`) are opt-in middleware and the stack installs none. A statement this surface runs meets whatever your application armed, and nothing else.
 
 ### When to reach for it
