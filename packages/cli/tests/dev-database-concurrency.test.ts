@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
@@ -193,6 +193,26 @@ function createProject(name: string): string {
   return projectDir
 }
 
+// A signal-killed child reports `exitCode === null` and carries the signal in
+// `signalCode`, so exit code alone does not answer "already gone" — and
+// `close` will never fire again to settle the promise below.
+async function stopChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  await new Promise<void>((resolve) => {
+    // Inside vitest's default 10 s hook timeout: a wedged child must not turn
+    // a reported failure into an unexplained hook timeout on top of it.
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      resolve()
+    }, 5_000)
+    child.once('close', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+    child.kill('SIGINT')
+  })
+}
+
 function startLoop(projectDir: string): Loop {
   const child = spawn(process.execPath, [cliEntry, 'dev', '--', 'node', 'app.mjs'], {
     cwd: projectDir,
@@ -210,34 +230,28 @@ function startLoop(projectDir: string): Loop {
 
   return {
     output: () => output,
-    stop: async () => {
-      // A signal-killed child reports `exitCode === null` and carries the
-      // signal in `signalCode`, so exit code alone does not answer "already
-      // gone" — and `close` will never fire again to settle the promise below.
-      if (child.exitCode !== null || child.signalCode !== null) return
-      await new Promise<void>((resolve) => {
-        // Inside vitest's default 10 s hook timeout: a wedged sidecar must not
-        // turn a reported failure into an unexplained hook timeout on top of it.
-        const timer = setTimeout(() => {
-          child.kill('SIGKILL')
-          resolve()
-        }, 5_000)
-        child.once('close', () => {
-          clearTimeout(timer)
-          resolve()
-        })
-        child.kill('SIGINT')
-      })
-    },
+    stop: async () => await stopChild(child),
   }
 }
 
-async function runDbUpdate(projectDir: string): Promise<CliRun> {
+// Tracked so `afterAll` can stop a `db update` child left running by a path
+// that never awaits `runDbUpdate`'s own promise — `diagnose()` throwing while
+// the second process is still mid-run, for one. Without this, that child keeps
+// a connection open against a sidecar the test is tearing down, which makes
+// the *next* run's failure harder to read than the original one.
+const dbUpdateChildren = new Set<ChildProcess>()
+
+async function runDbUpdate(
+  projectDir: string,
+  onSpawn?: (child: ChildProcess) => void,
+): Promise<CliRun> {
   const child = spawn(process.execPath, [cliEntry, 'db', 'update'], {
     cwd: projectDir,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: cleanEnvironment(),
   })
+  dbUpdateChildren.add(child)
+  onSpawn?.(child)
 
   let output = ''
   for (const stream of [child.stdout, child.stderr]) {
@@ -254,10 +268,12 @@ async function runDbUpdate(projectDir: string): Promise<CliRun> {
     }, DB_UPDATE_TIMEOUT_MS)
     child.once('error', (error: Error) => {
       clearTimeout(timer)
+      dbUpdateChildren.delete(child)
       resolve({ exitCode: null, output: `${output}\n${error.message}` })
     })
     child.once('close', (exitCode) => {
       clearTimeout(timer)
+      dbUpdateChildren.delete(child)
       resolve({ exitCode, output })
     })
   })
@@ -305,6 +321,7 @@ const loops: Loop[] = []
 
 afterAll(async () => {
   for (const loop of loops) await loop.stop()
+  for (const child of dbUpdateChildren) await stopChild(child)
   fs.rmSync(scratchRoot, { recursive: true, force: true })
 })
 
@@ -324,9 +341,16 @@ describe('the Dev database under app load and a concurrent second-process db upd
 
     const secondProcess = (async () => {
       for (let index = 0; index < SECOND_PROCESS_UPDATES; index++) {
-        const before = await readCompleted(port)
-        updates.push(await runDbUpdate(projectDir))
-        overlappingCycles += (await readCompleted(port)) - before
+        // Sampled from `onSpawn`, not before calling `runDbUpdate`, so the
+        // window this measures starts at the child's own lifetime rather than
+        // one loopback round trip earlier.
+        let beforePromise: Promise<number> = Promise.resolve(0)
+        updates.push(
+          await runDbUpdate(projectDir, () => {
+            beforePromise = readCompleted(port)
+          }),
+        )
+        overlappingCycles += (await readCompleted(port)) - (await beforePromise)
       }
     })()
       .catch((error: unknown) => {
@@ -384,6 +408,13 @@ describe('the Dev database under app load and a concurrent second-process db upd
         `for went unasserted (${observed.timeouts.length} cycles timed out waiting for ` +
         `the pool)\n\n${loop.output()}`,
     ).toBeGreaterThanOrEqual(MIN_OVERLAPPING_CYCLES)
+    // Otherwise the margin above `MIN_OVERLAPPING_CYCLES` is invisible unless
+    // the test fails, so a drift toward the threshold goes unnoticed until it
+    // goes red.
+    console.log(
+      `${overlappingCycles} cycles completed while a \`db update\` child was alive ` +
+        `(threshold: ${MIN_OVERLAPPING_CYCLES})`,
+    )
 
     for (const update of updates) {
       expect(update.exitCode, update.output).toBe(0)
