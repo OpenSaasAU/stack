@@ -6,6 +6,8 @@ import { markdocConfig } from '@/lib/markdoc'
 import { DocLayout } from '@/components/DocLayout'
 import { CodeBlockServer } from '@/components/CodeBlockServer'
 import { Callout } from '@/components/Callout'
+import { Unreleased } from '@/components/Unreleased'
+import { getPublishedCoreVersion } from '@/lib/package-version'
 
 interface DocPageProps {
   params: Promise<{
@@ -31,10 +33,15 @@ export default async function DocPage({ params }: DocPageProps) {
   const ast = Markdoc.parse(doc.content)
   const content = Markdoc.transform(ast, markdocConfig)
 
+  const publishedCoreVersion = getPublishedCoreVersion()
+
   // Custom components for Markdoc
   const components = {
     CodeBlock: CodeBlockServer,
     Callout,
+    Unreleased: (props: { children: React.ReactNode }) => (
+      <Unreleased {...props} publishedVersion={publishedCoreVersion} />
+    ),
   }
 
   return (
