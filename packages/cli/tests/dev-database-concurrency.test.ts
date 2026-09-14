@@ -320,8 +320,10 @@ async function readCompleted(port: string): Promise<number> {
 const loops: Loop[] = []
 
 afterAll(async () => {
-  for (const loop of loops) await loop.stop()
-  for (const child of dbUpdateChildren) await stopChild(child)
+  // Concurrently: two sequential 5 s teardown waits can together approach
+  // Vitest's 10 s default `hookTimeout`, in exactly the failure scenario this
+  // cleanup exists for (a wedged loop alongside a leaked `db update` child).
+  await Promise.all([...loops.map((loop) => loop.stop()), ...[...dbUpdateChildren].map(stopChild)])
   fs.rmSync(scratchRoot, { recursive: true, force: true })
 })
 
@@ -348,6 +350,11 @@ describe('the Dev database under app load and a concurrent second-process db upd
         updates.push(
           await runDbUpdate(projectDir, () => {
             beforePromise = readCompleted(port)
+            // The `await beforePromise` below can be up to DB_UPDATE_TIMEOUT_MS
+            // away: swallow here so a rejection settling before then isn't
+            // reported as unhandled. The real value or error still comes from
+            // that later await, which attaches its own handler to this promise.
+            beforePromise.catch(() => {})
           }),
         )
         overlappingCycles += (await readCompleted(port)) - (await beforePromise)
