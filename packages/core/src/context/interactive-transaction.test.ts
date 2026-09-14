@@ -269,6 +269,58 @@ describe('context.transaction', () => {
     )
   })
 
+  describe('the list-to-namespace reconciliation runs once per context (#1266)', () => {
+    test(
+      'several writes on one context reuse the shape resolved at construction',
+      async () => {
+        // `listConfig.db` (the namespace/schema a list's collection is reconciled
+        // against) is read at runtime ONLY by the shape derivation this test
+        // targets — nothing else in the write path touches it — so counting
+        // `get('db')` on each list config is a precise proxy for how many times
+        // that derivation ran, without reaching into a private function.
+        const base = schemaConfig()
+        let dbAccesses = 0
+        const lists: OpenSaasConfig['lists'] = {}
+        for (const [listKey, listConfig] of Object.entries(base.lists)) {
+          lists[listKey] = new Proxy(listConfig, {
+            get(target, prop, receiver) {
+              if (prop === 'db') dbAccesses++
+              return Reflect.get(target, prop, receiver)
+            },
+          })
+        }
+        const config: OpenSaasConfig = { ...base, lists }
+
+        const orm = ormClientFor(harness.data, harness.client.orm)
+        const context = getContext(
+          config,
+          orm,
+          { userId: 'u1' },
+          undefined,
+          false,
+          undefined,
+          undefined,
+          harness.client,
+        )
+
+        // The opener's own up-front validation (`transactionOpenerFor`) derives
+        // the shape once, at construction — one `db` read per declared list.
+        const afterConstruction = dbAccesses
+        expect(afterConstruction).toBe(Object.keys(base.lists).length)
+
+        await context.db.User.create({ data: { name: 'a' } })
+        await context.db.User.create({ data: { name: 'b' } })
+        await context.db.Post.create({ data: { title: 'c' } })
+
+        // Three writes opened three transactions, each resolving a fresh handle
+        // against that transaction's own `orm` root — but against the shape
+        // derived once above, not by re-walking `config.lists`.
+        expect(dbAccesses).toBe(afterConstruction)
+      },
+      BOOT,
+    )
+  })
+
   describe('a plain context.db write with no client (#1273)', () => {
     test(
       'runs anyway, but warns once per list and operation instead of staying silent',
