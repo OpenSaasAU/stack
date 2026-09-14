@@ -70,13 +70,13 @@ Access control functions receive `{ session, context, item, operation }` and ret
 
 The access filter is not hand-merged into a caller's `where`: it rides into the query as a second, engine-owned predicate the ORM ANDs natively, and into every include refinement the same way (ADR-0039, ADR-0044). `checkAccess` and `mergeFilters` are exported from the root entry point so no other package carries a copy.
 
-A plugin's `runtime(context, sudo)` factory receives a `sudo` helper as a plain **second argument** — `sudo(): AccessContext` returns an access-bypassing (but still hook-firing) context, for reads and writes that must not depend on the caller's own list access policy (an auth plugin resolving "who is this session" independent of the User list's rules, say). It's the same escape hatch as `StackContext.sudo()`, exposed one layer lower. It is deliberately **not** a method on `AccessContext` itself — a self-referential `sudo(): AccessContext` field on that shared, widely-instantiated interface broke TypeScript's structural checking of unrelated generated types in a downstream app.
+A plugin's `runtime(context, sudo)` factory receives a `sudo` helper as a plain **second argument** — `sudo(): StackContext` returns an access-bypassing (but still hook-firing) context, for reads and writes that must not depend on the caller's own list access policy (an auth plugin resolving "who is this session" independent of the User list's rules, say). It's the same escape hatch as `StackContext.sudo()`, exposed one layer lower. It is a `StackContext`, not the `AccessContext` of the first argument: `StackContext` omits `ormHandle`, so a core surface that needs the engine's own plumbing — `writePluginOwnedField`, say — takes the first argument, never this one (ADR-0068). It is deliberately **not** a method on `AccessContext` itself — a self-referential `sudo(): AccessContext` field on that shared, widely-instantiated interface broke TypeScript's structural checking of unrelated generated types in a downstream app.
 
 ### The two surfaces
 
 `AccessContext` — what a hook, an access rule and a plugin service see — carries `ormHandle`: the engine's own ORM client, which the terminals, the Write Pipeline and the access filter issue their queries through. The engine applies the Access Filter, Field Visibility and hooks **around** it, so the handle itself enforces none of them.
 
-`StackBaseContext` — what a server action and a page component hold — carries `unsafe` instead: the **Unsafe surface**, the application's documented bypass. `ormHandle` is not a member of it.
+`StackContext` — what a server action and a page component hold — carries `unsafe` instead: the **Unsafe surface**, the application's documented bypass. `ormHandle` is not a member of it, nor of `StackBaseContext`, the narrower shape `StackContext` extends.
 
 The two are different things under different names, and neither is a spelling of the other. See the "ORM handle" and "Unsafe surface" glossary entries in `CONTEXT.md`.
 
