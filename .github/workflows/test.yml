@@ -389,6 +389,50 @@ jobs:
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
 
+  # Narrow smoke test for #1219: proves `opensaas dev`'s app-child spawn
+  # actually works on Windows, where the project's `.bin` is written to
+  # `Path` (not `PATH`) and `next` resolves to a `.cmd` shim Node cannot
+  # spawn without a shell. This is the verification ADR-0063 leaves open —
+  # a unit-tested fix with nothing that runs it on Windows closes nothing.
+  #
+  # Deliberately not a second full matrix: no lint/format/regeneration/
+  # coverage here, just install, build the CLI, and confirm `next dev`
+  # answers under `opensaas dev` with no command named. Service containers
+  # don't run on Windows runners, so this starts the runner image's own
+  # PostgreSQL service (ADR-0063's Database escape) instead of a container.
+  windows-dev-loop:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    env:
+      # windows-latest's PostgreSQL 14 service ships with this password
+      # (actions/runner-images' Windows2022 readme); nothing here resets it.
+      DATABASE_URL: 'postgres://postgres:root@localhost:5432/postgres'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Start the runner's PostgreSQL service
+        shell: powershell
+        run: |
+          Set-Service -Name postgresql-x64-14 -StartupType Manual
+          Start-Service -Name postgresql-x64-14
+          (Get-Service -Name postgresql-x64-14).WaitForStatus('Running', '00:00:30')
+
+      - name: Build the CLI and examples/starter's dependencies
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-cli
+          --filter=opensaas-starter-example^...
+
+      - name: Run opensaas dev and confirm next dev starts
+        run: node ../../scripts/windows-dev-smoke.mjs
+        working-directory: ./examples/starter
+
   # Every guard and the Playwright run below stands on `examples/starter-auth`
   # and the scaffold built from `examples/starter`, both on Prisma 8 (#1170).
   #
