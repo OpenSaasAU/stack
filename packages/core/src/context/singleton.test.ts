@@ -293,6 +293,66 @@ describe('a singleton list', () => {
     )
   })
 
+  describe('get({ include }) accepts only booleans (#1371)', () => {
+    test(
+      'true includes the relation whole',
+      async () => {
+        const owner = await harness.context.db.Post.create({ data: { title: 'Owner' } })
+        await harness.context.db.Settings.create({
+          data: { siteName: 'visible', owner: { connect: { id: owner?.id } } },
+        })
+
+        const settings = await harness.context.db.Settings.get?.({ include: { owner: true } })
+
+        expect(settings).toMatchObject({ owner: { id: owner?.id, title: 'Owner' } })
+      },
+      BOOT,
+    )
+
+    test(
+      'false leaves the relation out, same as omitting the key',
+      async () => {
+        await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
+
+        const settings = await harness.context.db.Settings.get?.({ include: { owner: false } })
+
+        expect(settings).not.toHaveProperty('owner')
+      },
+      BOOT,
+    )
+
+    test(
+      'a nested shape is refused rather than silently included whole',
+      async () => {
+        await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
+
+        // Cast past the compile-time refusal — this is exactly the shape an
+        // untyped caller (or one that bypasses the type) could still send, and
+        // the runtime is the backstop for it.
+        await expect(
+          harness.context.db.Settings.get?.({
+            include: { owner: { take: 5 } } as unknown as { owner: boolean },
+          }),
+        ).rejects.toThrow(/include\.owner/)
+      },
+      BOOT,
+    )
+
+    test(
+      'the refusal names the offending key and what is accepted',
+      async () => {
+        await harness.context.db.Settings.create({ data: { siteName: 'visible' } })
+
+        await expect(
+          harness.context.db.Settings.get?.({
+            include: { owner: {} } as unknown as { owner: boolean },
+          }),
+        ).rejects.toThrow(/accepts only `true`\/`false` per relation/)
+      },
+      BOOT,
+    )
+  })
+
   test(
     'the secured read surface is absent on it, and present on an ordinary list',
     async () => {

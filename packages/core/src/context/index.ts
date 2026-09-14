@@ -1616,6 +1616,35 @@ function createDelete(
  * so the create is refused and `get()` answers `null` — the same `null` a
  * denied or an absent row answers with.
  */
+/**
+ * A singleton's `get({ include })` has no refinement to hand a nested shape
+ * to: there is one row, so `where`/`orderBy`/`take` on a related list have
+ * nothing to scope against. A non-boolean entry — `{ posts: { take: 5 } }` —
+ * used to be treated as truthy and include the relation whole, silently
+ * discarding the bound the caller wrote. Refuse it instead of guessing at
+ * semantics for it (issue #1371).
+ */
+function assertBooleanInclude(
+  include: Record<string, unknown> | undefined,
+  listName: string,
+): asserts include is Record<string, boolean> | undefined {
+  if (!include) return
+
+  for (const [key, value] of Object.entries(include)) {
+    if (typeof value === 'boolean') continue
+
+    throw new ValidationError(
+      [
+        `get() on "${listName}" received a non-boolean value for include.${key}. A singleton's ` +
+          `get() accepts only \`true\`/\`false\` per relation — there is one row, so a nested ` +
+          `refinement (\`where\`, \`take\`, \`select\`, …) has nothing to scope. Pass ` +
+          `\`{ ${key}: true }\` to include the relation whole.`,
+      ],
+      {},
+    )
+  }
+}
+
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1630,6 +1659,7 @@ function createGet(
     select?: Record<string, unknown>
   }) => {
     warnIfSelectIgnored(args, listName, 'get')
+    assertBooleanInclude(args?.include, listName)
 
     const scoped = Object.entries(args?.include ?? {}).reduce(
       (query, [name, requested]) => (requested ? query.include(name) : query),

@@ -197,6 +197,16 @@ The related list's `query` access rides in as a refinement `where`, so a scoped-
 
 Includes are capped at **five levels** deep.
 
+#### A singleton's `get({ include })` takes booleans only
+
+`get()` has no refinement callback to hand a nested shape to — there is one row, so `where`/`take`/`orderBy` on a related list have nothing to scope against. Its `include` therefore accepts a plain boolean per relation:
+
+```typescript
+const settings = await context.db.Settings.get({ include: { owner: true } })
+```
+
+A non-boolean value — `{ owner: { take: 5 } }` — is a compile error for a typed caller and a thrown `ValidationError` naming the offending key for an untyped one. It is refused rather than silently included whole, which is what happened before this was decided (issue #1371).
+
 #### Cost: every to-one read off an included row is a null-check
 
 **Arity decides nullability, not foreign-key nullability.** A to-one relation types as `Row | null` and a to-many as `Row[]`, whatever the column's `NOT NULL` says — because access control can scope a row away that the schema guarantees exists.

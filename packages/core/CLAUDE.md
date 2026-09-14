@@ -503,6 +503,8 @@ A read on the secured surface is narrowed with `.select(...fields)`, which the e
 
 A singleton's `get()` takes no projection: passing `select` there is a visible no-op that logs a one-time `console.warn` and still returns the full, access-filtered record.
 
+A singleton's `get({ include })` takes a **boolean per relation, and nothing else**: there is one row, so a nested refinement (`where`, `take`, `select`, …) has nothing to scope. `SingletonInclude` (`src/types/secured-list.ts`) types the argument accordingly, so the common mistake — `{ posts: { take: 5 } }` — is a compile error for a typed caller; `assertBooleanInclude` in `src/context/index.ts` throws a `ValidationError` naming the offending key for one that reaches the engine untyped. Before this (issue #1371), a non-boolean value was truthy and silently included the relation whole, discarding whatever the caller wrote to bound it.
+
 ### Bare read and One hop are the ORM's (ADR-0043)
 
 A read that names no relations returns the row's own columns plus its computed fields, and a named relation fetches that relation's own columns and stops. Both are the ORM's own behaviour for the same call rather than something this codebase adds: ADR-0024 and ADR-0026, which used to state them as stack rules, are **withdrawn**.

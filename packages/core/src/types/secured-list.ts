@@ -44,6 +44,18 @@ export type ListInclude<C, R extends RemainderBase, K extends keyof R & string> 
   [Rel in RelationKey<C, K>]?: boolean | SubArgs<C, R, RelationTarget<C, K, Rel> & keyof R & string>
 }
 
+/**
+ * What a singleton's `get()` may `include`: a boolean per relation, and
+ * nothing else. There is one row, so a nested refinement has nothing to
+ * scope — unlike {@link ListInclude}, this admits no `SubArgs`, which makes
+ * the common mistake (`{ posts: { take: 5 } }`) a compile error here; the
+ * runtime refusal in `createGet` is the backstop for an untyped caller
+ * (issue #1371).
+ */
+export type SingletonInclude<C, R extends RemainderBase, K extends keyof R & string> = {
+  [Rel in RelationKey<C, K>]?: boolean
+}
+
 type SubResult<C, R extends RemainderBase, K extends keyof R & string, Rel, A> =
   RelationTarget<C, K, Rel> extends infer Target
     ? Target extends keyof R & string
@@ -115,7 +127,10 @@ export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> =
   K
 > & { where: ListIdentityWhere<C, K> }
 
-export type GetArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<C, R, K>
+export type GetArgs<C, R extends RemainderBase, K extends keyof R & string> = {
+  select?: ListSelect<C, R, K>
+  include?: SingletonInclude<C, R, K>
+}
 
 /**
  * `get` exists on a singleton list and nowhere else. The key union is empty
@@ -132,7 +147,7 @@ type SingletonOpKey<R extends RemainderBase, K extends keyof R & string> = R[K] 
 type SingletonOps<C, R extends RemainderBase, K extends keyof R & string> = {
   [Op in SingletonOpKey<R, K>]: <
     S extends ListSelect<C, R, K> = never,
-    I extends ListInclude<C, R, K> = never,
+    I extends SingletonInclude<C, R, K> = never,
   >(args?: {
     select?: S
     include?: I
