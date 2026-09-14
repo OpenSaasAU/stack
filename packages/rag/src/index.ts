@@ -16,7 +16,7 @@ export type {
   OpenAIEmbeddingConfig,
   OllamaEmbeddingConfig,
   ChunkingConfig,
-  ChunkingStrategy,
+  ChunkingConfigStrategy,
   EmbeddingMetadata,
   StoredEmbedding,
   SearchResult,

@@ -2,7 +2,14 @@
  * RAG (Retrieval-Augmented Generation) configuration types
  */
 
-export type ChunkingStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-window'
+/**
+ * The chunking vocabulary `ChunkingConfig` accepts. Distinct from
+ * `chunkText`'s own `ChunkingStrategy` (`@opensaas/stack-rag/runtime`): this
+ * union has `'none'`, that one doesn't, and that one has `'token-aware'`,
+ * this union doesn't — the two name overlapping but different sets of
+ * strategies and are not interchangeable. See issue #1374.
+ */
+export type ChunkingConfigStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-window'
 
 /**
  * Not accepted by `embedding()`, `searchable()` or `ragPlugin()` — none of
@@ -15,7 +22,7 @@ export type ChunkingStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-wind
  */
 export type ChunkingConfig = {
   /** @default 'recursive' */
-  strategy?: ChunkingStrategy
+  strategy?: ChunkingConfigStrategy
   /** @default 500 */
   maxTokens?: number
   /**
