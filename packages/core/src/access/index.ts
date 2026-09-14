@@ -37,8 +37,6 @@ export {
   emptyForeignKeyVisibilityMap,
 } from './foreign-key-visibility.js'
 export type { ForeignKeyVisibility, ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
-// Which fields carry a to-many relationship count (admin list view, issue #732).
-export { isToManyRelationshipField } from './relationship-count.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets

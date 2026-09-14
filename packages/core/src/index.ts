@@ -387,4 +387,4 @@ export type {
 // the secured read's reducers (`.count()` / `.combine()`), which scope by the
 // related list's own `query` access; no consumer builds a `_count` select of
 // its own (#1255).
-export { isToManyRelationshipField } from './access/relationship-count.js'
+export { isToManyRelationshipField } from './fields/index.js'
