@@ -43,6 +43,13 @@ const source: OpenSaasConfig = {
         manualEmbedding: embedding({ dimensions: 1536, allowManualWrites: true }),
       },
     },
+    // No vector column at all — what closes #1303: `nearest()` on this list
+    // is core's own `never`-field refusal, and the search helpers must carry
+    // that same refusal to their own `fieldName` rather than accepting any
+    // string and failing only at runtime.
+    Note: {
+      fields: { title: text() },
+    },
   },
 }
 
@@ -191,6 +198,52 @@ void run
 
     expect(output).toBe('')
   })
+
+  /**
+   * #1303: `SearchableList`'s `nearest` used method syntax's bivariance to
+   * accept both a real generated list and one with no vector column alike —
+   * `context.db.Note.nearest(...)` is already a compile error (`Note` has no
+   * vector column), and the search helpers have to refuse the same call the
+   * same way rather than accepting any string for `fieldName`.
+   */
+  it(
+    'refuses a list with no vector column, the same as nearest() itself',
+    { timeout: 300_000 },
+    () => {
+      const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+import { semanticSearch, findSimilar } from '@opensaas/stack-rag/runtime'
+import type { EmbeddingProvider } from '@opensaas/stack-rag/providers'
+
+declare const context: Context
+declare const provider: EmbeddingProvider
+
+async function run() {
+  // @ts-expect-error Note has no vector column of its own
+  context.db.Note.nearest('title', [1])
+
+  await semanticSearch({
+    list: context.db.Note,
+    // @ts-expect-error Note has no vector column, so fieldName is never
+    fieldName: 'title',
+    query: 'anything',
+    provider,
+  })
+
+  await findSimilar({
+    list: context.db.Note,
+    // @ts-expect-error Note has no vector column, so fieldName is never
+    fieldName: 'title',
+    itemId: 'note-123',
+  })
+}
+
+void run
+`)
+
+      expect(output).toBe('')
+    },
+  )
 
   it('reads the embedding back as the value the field declares', { timeout: 300_000 }, () => {
     const output = fixture.check(`${CONSUMER_PRELUDE}
