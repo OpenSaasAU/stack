@@ -505,6 +505,50 @@ describe('transaction-boundary hooks', () => {
     )
 
     /**
+     * `resolveAfterTransactionContext` rebinds `afterTransaction` to the base
+     * client but must keep THIS write's own session/sudo state — not the
+     * enclosing transaction's pre-elevation one. A write issued through
+     * `tx.sudo()` stays elevated for its own compensator; the same write
+     * issued through plain `tx` does not, so this also proves the rebind
+     * isn't accidentally granting sudo it was never given.
+     */
+    test(
+      "a joined write's own tx.sudo() elevation survives into its afterTransaction compensator",
+      async () => {
+        const base = withHooks({
+          User: {
+            afterTransaction: async ({ status, context: hookContext }) => {
+              if (status !== 'committed') return
+              await hookContext.db.Comment.create({ data: { body: 'compensated' } })
+            },
+          },
+        })
+        const config: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            Comment: {
+              ...base.lists.Comment,
+              access: { operation: { ...OPEN, create: ({ context }) => context._isSudo === true } },
+            },
+          },
+        }
+        const context = contextAt(config)
+
+        await context.transaction(async (tx) => {
+          await tx.sudo().db.User.create({ data: { name: 'jane' } })
+        })
+        expect(await rows('Comment')).toMatchObject([{ body: 'compensated' }])
+
+        await context.transaction(async (tx) => {
+          await tx.db.User.create({ data: { name: 'jane' } })
+        })
+        expect(await rows('Comment')).toMatchObject([{ body: 'compensated' }]) // unchanged: denied, not elevated
+      },
+      BOOT,
+    )
+
+    /**
      * The same hook on the top-level path, where the write's own context IS the
      * base one — the case ADR-0028 says the joined path should match.
      */

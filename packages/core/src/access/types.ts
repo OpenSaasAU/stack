@@ -269,18 +269,22 @@ export interface AccessContext<DB = AccessControlledDB> {
    */
   _transactionOwner?: TransactionRegistry
   /**
-   * The context a transaction-boundary hook (`beforeTransaction`/
-   * `afterTransaction`) is actually invoked with (ADR-0028): `undefined` means
-   * this context itself IS the base-client one, so a caller resolves the
-   * boundary context as `context._baseContext ?? context`. Set only when this
-   * context is bound to (or joins) a transaction — by
-   * `bindContextToTransaction` in `write-pipeline.ts` for a write's own
-   * transaction, and by `getContext`'s transaction-child construction for
-   * `context.transaction()` — and carried forward unchanged by `sudo()` /
-   * `withSession()` so a derived context still resolves to the same ultimate
-   * base. This is what lets a JOINED write's boundary hooks reach the base
-   * client instead of a transaction client that may already be closed by
-   * flush time (issue #1348).
+   * The nearest ancestor context that is itself base-client-bound — never a
+   * transaction client — or `undefined` when this context already is one
+   * (ADR-0028, issue #1348). Set only when this context is bound to (or
+   * joins) a transaction — by `bindContextToTransaction` in
+   * `write-pipeline.ts` for a write's own transaction, and by `getContext`'s
+   * transaction-child construction for `context.transaction()` — and carried
+   * forward unchanged by `sudo()`/`withSession()`, so it always names the
+   * ultimate base regardless of nesting depth.
+   *
+   * This is a source of an `ormHandle`/`_transactionOpener` to rebind to, NOT
+   * a context to hand a hook directly: `resolveAfterTransactionContext` in
+   * `write-pipeline.ts` rebuilds `db`/`ormHandle` from it while keeping THIS
+   * context's own `session`/`_isSudo`/`plugins` — otherwise a joined write
+   * issued through `tx.sudo()`/`tx.withSession()` would lose that elevation
+   * for its own `afterTransaction` the moment it resolved to this ancestor's
+   * (pre-elevation) session instead.
    * @internal
    */
   _baseContext?: AccessContext
