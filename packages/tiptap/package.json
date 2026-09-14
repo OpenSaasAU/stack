@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "tsc && npm run copy:css && node ../../scripts/lib/write-build-hash-cli.mjs",
-    "copy:css": "mkdir -p dist/styles && cp src/styles/tiptap.css dist/styles/",
+    "copy:css": "node -e \"const fs=require('fs');fs.mkdirSync('dist/styles',{recursive:true});fs.copyFileSync('src/styles/tiptap.css','dist/styles/tiptap.css')\"",
     "dev": "tsc --watch",
     "typecheck": "tsc -p tsconfig.test.json",
     "clean": "rm -rf .turbo dist tsconfig.tsbuildinfo",
