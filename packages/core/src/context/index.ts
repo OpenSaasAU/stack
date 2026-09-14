@@ -357,8 +357,28 @@ type OrmHandleResolution =
   | { readonly handle: OrmClient; readonly unresolved?: undefined }
   | { readonly handle?: undefined; readonly unresolved: { list: string; namespace: string } }
 
+/** A list key paired with the namespace its collection lives under — the part of the
+ * reconciliation below that is fixed by the config alone and never by the `orm` root
+ * it is resolved against. */
+type OrmListShape = ReadonlyArray<{ readonly listKey: string; readonly namespaceName: string }>
+
 /**
- * The engine's ORM handle, resolved off a Prisma 8 `orm` root.
+ * The config's own list-to-namespace shape, independent of any `orm` root. A
+ * config's lists don't change during a context's life, so a caller that will
+ * resolve the same config against more than one root (the client's own, then
+ * each transaction's) derives this once and reuses it, rather than re-walking
+ * `config.lists` on every resolution.
+ */
+function ormListShapeFor(config: OpenSaasConfig): OrmListShape {
+  return Object.entries(config.lists).map(([listKey, listConfig]) => ({
+    listKey,
+    namespaceName: listConfig.db?.schema ?? DEFAULT_NAMESPACE,
+  }))
+}
+
+/**
+ * The engine's ORM handle, resolved off a Prisma 8 `orm` root against an
+ * already-derived {@link OrmListShape}.
  *
  * A Prisma 8 client exposes its collections at `orm.<namespace>.<Model>` while
  * the engine reaches a model by db key, so a handle bound to a transaction has
@@ -374,10 +394,9 @@ type OrmHandleResolution =
  * `get` trap and no `has` trap, so `key in namespace` reports false for a
  * collection that is right there.
  */
-function ormHandleFor(config: OpenSaasConfig, orm: OrmRoot): OrmHandleResolution {
+function resolveOrmHandle(shape: OrmListShape, orm: OrmRoot): OrmHandleResolution {
   const models: Record<string, unknown> = {}
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const namespaceName = listConfig.db?.schema ?? DEFAULT_NAMESPACE
+  for (const { listKey, namespaceName } of shape) {
     const namespace = reachable(orm, namespaceName)
     const collection = reachable(namespace, listKey)
     if (
@@ -389,6 +408,10 @@ function ormHandleFor(config: OpenSaasConfig, orm: OrmRoot): OrmHandleResolution
     models[listKey] = collection
   }
   return { handle: models }
+}
+
+function ormHandleFor(config: OpenSaasConfig, orm: OrmRoot): OrmHandleResolution {
+  return resolveOrmHandle(ormListShapeFor(config), orm)
 }
 
 /**
@@ -445,6 +468,14 @@ export function requireOrmHandle(config: OpenSaasConfig, orm: OrmRoot): OrmClien
  * yielding no opener: an unresolvable handle downgrades every write to
  * non-transactional, which is the loss of the rollback guarantee this opener
  * exists to provide.
+ *
+ * The list-to-namespace shape is derived from `config` exactly ONCE, here —
+ * this function itself runs once per context construction — and the returned
+ * closure reuses it for every write's own transaction, rather than re-walking
+ * `config.lists` inside `client.transaction()` on each call. Only the `orm`
+ * root differs per write (`tx.orm` is a distinct object per transaction, so
+ * the resolved handle itself cannot be shared); the shape it is resolved
+ * against cannot change during the context's life (issue #1266).
  */
 function transactionOpenerFor(
   config: OpenSaasConfig,
@@ -452,10 +483,14 @@ function transactionOpenerFor(
   unsafeTransaction: UnsafeTransactionScope | undefined,
 ): TransactionOpener | undefined {
   if (client === undefined || unsafeTransaction !== undefined) return undefined
-  requireOrmHandle(config, client.orm)
+  const shape = ormListShapeFor(config)
+  const { unresolved } = resolveOrmHandle(shape, client.orm)
+  if (unresolved !== undefined) {
+    throw new OrmHandleUnresolvableError(unresolved.list, unresolved.namespace)
+  }
   return <T>(run: (opened: OpenedTransaction) => Promise<T>): Promise<T> =>
     client.transaction(async (tx) => {
-      const { handle } = ormHandleFor(config, tx.orm)
+      const { handle } = resolveOrmHandle(shape, tx.orm)
       if (handle === undefined) throw new TransactionOrmHandleError()
       return await run({ ormHandle: handle, unsafe: tx })
     })
