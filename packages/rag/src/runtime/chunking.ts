@@ -3,6 +3,13 @@
  * suitable for embedding generation.
  */
 
+/**
+ * The chunking algorithms `chunkText` implements. Distinct from
+ * `ChunkingConfig`'s `ChunkingConfigStrategy` at the package root: this
+ * union has `'token-aware'`, that one doesn't, and that one has `'none'`,
+ * this union doesn't — `chunkText` always chunks, so it has no "don't chunk"
+ * member to accept. See issue #1374.
+ */
 export type ChunkingStrategy = 'recursive' | 'sentence' | 'sliding-window' | 'token-aware'
 
 export interface ChunkingOptions {

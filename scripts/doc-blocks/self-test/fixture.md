@@ -204,10 +204,10 @@ difference on its own, and does not hide an invented member beside it.
 <!-- expect: fail -->
 
 ```ts
-import type { ChunkingStrategy } from '@opensaas/stack-rag'
+import type { ChunkingConfigStrategy } from '@opensaas/stack-rag'
 
 export type ChunkingConfig<X extends string = string> = {
-  strategy?: ChunkingStrategy
+  strategy?: ChunkingConfigStrategy
   maxTokens?: number
   overlap?: number
   minTokens?: number
@@ -217,10 +217,10 @@ export type ChunkingConfig<X extends string = string> = {
 <!-- expect: fail -->
 
 ```ts
-import type { ChunkingStrategy } from '@opensaas/stack-rag'
+import type { ChunkingConfigStrategy } from '@opensaas/stack-rag'
 
 export type ChunkingConfig<X extends string = string> = {
-  strategy?: ChunkingStrategy
+  strategy?: ChunkingConfigStrategy
   maxTokens?: number
   overlap?: number
 }
@@ -229,10 +229,10 @@ export type ChunkingConfig<X extends string = string> = {
 <!-- expect: pass compared -->
 
 ```ts
-import type { ChunkingStrategy } from '@opensaas/stack-rag'
+import type { ChunkingConfigStrategy } from '@opensaas/stack-rag'
 
 export type ChunkingConfig = {
-  strategy?: ChunkingStrategy
+  strategy?: ChunkingConfigStrategy
   maxTokens?: number
   overlap?: number
 }
@@ -672,36 +672,38 @@ export type ChunkingOptions = { chunkSize?: number; chunkOverlap?: number } & {
 
 ## A name two specifiers export as different types
 
-`ChunkingStrategy` is one union from `@opensaas/stack-rag` and another from
-`@opensaas/stack-rag/runtime`. A block is compared against the specifier it
-imports from, or against both when it imports from neither.
+`SessionConfig` is one shape from `@opensaas/stack-core/internal` (the
+custom-session escape hatch) and a different one from `@opensaas/stack-auth`
+(session expiry and refresh options for the auth plugin). A block is
+compared against the specifier it imports from, or against both when it
+imports from neither.
 
 <!-- expect: fail -->
 
 ```ts
-export type ChunkingStrategy = 'recursive' | 'bogus'
+export type SessionConfig = { totallyBogus: string }
 ```
 
 <!-- expect: fail -->
 
 ```ts
-import { chunkText } from '@opensaas/stack-rag/runtime'
+import { hashPassword } from '@opensaas/stack-core/internal'
 
-export type ChunkingStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-window'
-export const chunks = chunkText(document)
+export type SessionConfig = { expiresIn?: number; updateAge?: number | false }
+export const hashed = await hashPassword('secret')
 ```
 
 <!-- expect: pass compared -->
 
 ```ts
-import { chunkText } from '@opensaas/stack-rag/runtime'
+import { hashPassword } from '@opensaas/stack-core/internal'
 
-export type ChunkingStrategy = 'recursive' | 'sentence' | 'sliding-window' | 'token-aware'
-export const chunks = chunkText(document)
+export type SessionConfig = { getSession: () => Promise<any> }
+export const hashed = await hashPassword('secret')
 ```
 
 <!-- expect: pass compared -->
 
 ```ts
-export type ChunkingStrategy = 'none' | 'recursive' | 'sentence' | 'sliding-window'
+export type SessionConfig = { expiresIn?: number; updateAge?: number | false }
 ```
