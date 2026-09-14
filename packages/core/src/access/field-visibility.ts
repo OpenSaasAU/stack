@@ -1,5 +1,6 @@
 import type { Session, AccessContext } from './types.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
+import { isComputedField } from '../config/field-kind.js'
 import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.js'
 import { checkFieldAccess } from './field-access.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
@@ -480,7 +481,12 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    if (!fieldConfig.virtual) {
+    // A field storing nothing — by the `virtual` flag, or a
+    // `{ kind: 'computed' }` contract descriptor a third-party field can
+    // declare without the flag (issue #1531) — is what this pass computes;
+    // every other field already went through the stored-field pass above,
+    // whether or not it produced a value.
+    if (!isComputedField(fieldConfig, fieldName, listKey, config)) {
       continue
     }
 

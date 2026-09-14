@@ -29,6 +29,11 @@ export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 export { readPluginOwnedRow, HandlelessPluginFieldReadError } from './context/plugin-field-read.js'
 export type { PluginOwnedRowRead } from './context/plugin-field-read.js'
 
+// Whether a field stores nothing — the `virtual` flag, the `'virtual'` type
+// discriminator, or a `{ kind: 'computed' }` contract descriptor, the one
+// predicate every caller that needs this answer shares (issue #1531).
+export { isComputedField, readContractDescriptorKind } from './config/field-kind.js'
+
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
   BaseFieldConfig,

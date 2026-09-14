@@ -1,4 +1,5 @@
-import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import { isComputedField, readContractDescriptorKind } from '../config/field-kind.js'
 
 /**
  * A single self-containment violation found on a field.
@@ -112,9 +113,9 @@ export function validateFieldConfig(
     return errors
   }
 
-  const descriptorKind = contractDescriptorKind(field, fieldKey, listKey, config)
+  const descriptorKind = readContractDescriptorKind(field, fieldKey, listKey, config)
 
-  if (field.virtual === true || field.type === 'virtual' || descriptorKind === 'computed') {
+  if (isComputedField(field, fieldKey, listKey, config, descriptorKind)) {
     requireMember('outputType', field.outputType !== undefined)
     requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
     return errors
@@ -127,31 +128,6 @@ export function validateFieldConfig(
   requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
 
   return errors
-}
-
-/**
- * The `kind` of the field's contract descriptor, or `undefined` when it
- * declares none or refuses to describe itself.
- *
- * `getContractField` is a field's own refusal seam — `embedding()` throws out
- * of it for an impossible `dimensions` or a mismatched `opclass`. This gate is
- * the first thing `opensaas generate` runs, ahead of the config-surface step
- * whose `validateExtensionPacks` re-reads every descriptor and reports a throw
- * as a `field-descriptor-error` refusal carrying the field's own message. So a
- * throw is swallowed here: the field goes un-gated for one run, and the run
- * fails at the step designed to name it.
- */
-function contractDescriptorKind(
-  field: FieldConfig,
-  fieldKey: string,
-  listKey: string,
-  config: OpenSaasConfig,
-): ContractFieldDescriptor['kind'] | undefined {
-  try {
-    return field.getContractField?.(fieldKey, listKey, config)?.kind
-  } catch {
-    return undefined
-  }
 }
 
 /**

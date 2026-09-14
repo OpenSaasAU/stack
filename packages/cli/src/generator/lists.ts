@@ -130,7 +130,12 @@ export function generateListsNamespace(
     lines.push(`     * the contract — exactly what its \`resolveOutput\` hook is handed.`)
     lines.push(`     */`)
     lines.push(`    export type Needs = {`)
-    for (const [fieldName, union] of needsEntries(listName, listConfig.fields, dependencies)) {
+    for (const [fieldName, union] of needsEntries(
+      listName,
+      listConfig.fields,
+      dependencies,
+      config,
+    )) {
       const itemType = `import('./types.ts').${listName}${capitalize(fieldName)}NeedsItem`
       lines.push(`      ${fieldName}: { needs: ${union}; item: ${itemType} }`)
     }
