@@ -191,16 +191,19 @@ refused in `assertNoUnsupportedPassthroughKeys`), no `createSchema` (so
 better-auth's CLI is unsupported — the generator emits the contract), and no
 error normalisation (the Unsafe surface is excluded, ADR-0042).
 
-One more, newly reachable now that the transaction option is implemented: a
-`databaseHooks.<model>.create.before` hook receives the `AuthContext`, whose
-`.adapter` better-auth never swaps — only its AsyncLocalStorage store carries
-the transaction-bound adapter. A hook that awaits `context.adapter.findOne(...)`
-therefore runs on the **outer** lane while the sign-up transaction holds a
-connection: on the Dev database that is the only connection (ADR-0063), so
-sign-up hangs to the acquire timeout; on pooled Postgres the read happens
-outside the transaction and survives its rollback. Inherited from better-auth
-(its Kysely and Prisma adapters split the same way);
-[#1252](https://github.com/OpenSaasAU/stack/issues/1252) tracks it.
+A `databaseHooks.<model>.create.before` hook's second argument is a
+`GenericEndpointContext`, whose `.context.adapter` (the `AuthContext`)
+better-auth never swaps — only its own AsyncLocalStorage store carries the
+transaction-bound adapter (`runWithTransaction` → `getCurrentAdapter`), and
+hooks read `context.context.adapter` instead. The adapter closes this itself
+([#1252](https://github.com/OpenSaasAU/stack/issues/1252)) rather than relying
+on better-auth's routing: the ROOT instance reads its lane from the same
+AsyncLocalStorage store the transaction-bound instance does, and both run
+inside the same store-setting call for the life of the transaction, so a hook
+that awaits `context.context.adapter.findOne(...)` during sign-up reaches the
+transaction-bound lane — no hang on the Dev database's single connection, and
+no read outside the transaction on pooled Postgres. Outside a transaction the
+store is empty and the outer lane answers, unchanged.
 
 Conformance is better-auth's own suites — `@better-auth/test-utils`' normal,
 uuid, caseInsensitive, transactions and authFlow — over the Test context in
