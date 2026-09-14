@@ -13,6 +13,7 @@ build/
 .opensaas/
 prisma/migrations/
 next-env.d.ts
+.embeddings/
 
 # Generator output committed as a CI determinism fixture — reformatting it
 # would make every `opensaas generate` run report a dirty tree.
