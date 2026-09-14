@@ -2190,6 +2190,19 @@ describe('the MCP surface', () => {
       BOOT,
     )
 
+    test(
+      'an array-shaped nested relation-entry where is refused as a shape error, not silently passed through',
+      async () => {
+        const { body } = await callTool('list_counter_query', {
+          fields: { label: true, children: { fields: { label: true }, where: [] } },
+        })
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('must be an object')
+      },
+      BOOT,
+    )
+
     /**
      * String-keyed lists are unaffected by the walk: `contains` and the
      * other string operators must keep working at every position the id

@@ -466,13 +466,16 @@ export async function resolveFieldsProjection(
     // Type-check each key before it reaches the engine — a malformed value
     // here would otherwise surface as a refusal about the related list rather
     // than about the selector shape that was expected.
-    if (entry.where !== undefined && (entry.where === null || typeof entry.where !== 'object')) {
+    if (
+      entry.where !== undefined &&
+      (entry.where === null || typeof entry.where !== 'object' || Array.isArray(entry.where))
+    ) {
       throw new McpProjectionRefusedError(`"${listKey}.${fieldName}.where" must be an object.`)
     }
     // The id boundary coercion (ADR-0048, #1368) reaches this nested `where`
     // too: it filters the RELATED list's own rows, so a malformed id here
     // refuses the whole request exactly as one at the root does.
-    if (entry.where !== undefined && !Array.isArray(entry.where)) {
+    if (entry.where !== undefined) {
       const coercedWhere = coerceWhereIds(
         entry.where as Record<string, unknown>,
         config,

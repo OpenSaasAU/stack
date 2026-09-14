@@ -9,9 +9,9 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
+import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
 const LOGICAL_OPERATORS: ReadonlySet<string> = new Set(['AND', 'OR', 'NOT'])
-const RELATION_QUANTIFIERS = ['some', 'every', 'none'] as const
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
