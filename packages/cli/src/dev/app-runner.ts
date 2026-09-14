@@ -15,6 +15,8 @@ export interface AppRunnerOptions {
    * inherited variable puts it on the `'env'` branch instead (ADR-0063).
    */
   devDatabase: boolean
+  /** Defaults to `process.platform`; injectable so the shim/kill decision is testable on any host. */
+  platform?: typeof process.platform
 }
 
 /** The app child, and the two things the loop does to it. */
@@ -33,11 +35,23 @@ export interface AppRunner {
 }
 
 /**
- * `PATH` with every `node_modules/.bin` from the project up to the filesystem
- * root ahead of it, so `next dev` — and any command a caller passes — resolves
- * to the project's own binary without a shell.
+ * The path-extension env write: the key to assign under, and its extended
+ * value. Windows spells the variable `Path`; writing back under a fixed
+ * `PATH` would leave that alongside the host's own casing, and the child
+ * resolves against whichever one Windows happens to prefer (#1219).
  */
-function pathWithProjectBinaries(cwd: string): string {
+export interface PathExtension {
+  key: string
+  value: string
+}
+
+/**
+ * Every `node_modules/.bin` from the project up to the filesystem root, ahead
+ * of the existing path, under the host's own `PATH`/`Path` casing — so `next
+ * dev`, and any command a caller passes, resolves to the project's own binary
+ * without a shell.
+ */
+export function extendPathEnv(cwd: string, env: typeof process.env): PathExtension {
   const directories: string[] = []
   let directory = path.resolve(cwd)
   for (;;) {
@@ -46,7 +60,23 @@ function pathWithProjectBinaries(cwd: string): string {
     if (parent === directory) break
     directory = parent
   }
-  return [...directories, process.env.PATH ?? ''].join(path.delimiter)
+  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === 'PATH') ?? 'PATH'
+  return { key, value: [...directories, env[key] ?? ''].join(path.delimiter) }
+}
+
+/**
+ * Whether the app child needs a shell to launch. Node's `spawn` resolves an
+ * unresolved command straight to `CreateProcess` on Windows, which cannot run
+ * a `.cmd`/`.bat` batch shim — `next` and every other locally-installed bin
+ * are exactly that. An extension naming a real executable (`.exe`, `.js`, a
+ * shebang-free binary) needs no shell; anything else on Windows might be a
+ * shim, so it gets one. POSIX never does: `shell: true` there changes
+ * quoting and signal semantics for no Windows-only benefit.
+ */
+export function needsShell(file: string, platform: typeof process.platform): boolean {
+  if (platform !== 'win32') return false
+  const extension = path.extname(file).toLowerCase()
+  return extension === '' || extension === '.cmd' || extension === '.bat'
 }
 
 /**
@@ -63,16 +93,30 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
   const [file, ...args] = options.command
   if (file === undefined) throw new Error('No app command to run.')
 
+  const platform = options.platform ?? process.platform
+  const usesShell = needsShell(file, platform)
+
   let child: ChildProcess | undefined
   let restarting = false
 
   const spawnChild = (): ChildProcess => {
-    const env: typeof process.env = {
-      ...process.env,
-      PATH: pathWithProjectBinaries(options.cwd),
-    }
+    const env: typeof process.env = { ...process.env }
+    const pathExtension = extendPathEnv(options.cwd, env)
+    env[pathExtension.key] = pathExtension.value
     if (options.devDatabase) delete env.DATABASE_URL
-    return spawn(file, args, { cwd: options.cwd, stdio: 'inherit', env })
+    return spawn(file, args, { cwd: options.cwd, stdio: 'inherit', env, shell: usesShell })
+  }
+
+  // `shell: true` makes the tracked child cmd.exe, not the shim it runs —
+  // `next.cmd`'s own `next-server` process is cmd.exe's child, not ours.
+  // `target.kill()` would only stop the wrapper and orphan the real app.
+  // `taskkill /t` reaches the whole tree from the wrapper's pid.
+  const killChild = (target: ChildProcess, signal: 'SIGINT' | 'SIGTERM'): void => {
+    if (usesShell && target.pid !== undefined) {
+      spawn('taskkill', ['/pid', String(target.pid), '/t', '/f'])
+      return
+    }
+    target.kill(signal)
   }
 
   const isRunning = (): boolean =>
@@ -86,13 +130,13 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
       // yet: without this the pending `exit` respawns the app instead of
       // resolving `run()`, and the loop never reaches its shutdown.
       restarting = false
-      if (isRunning()) child?.kill(signal)
+      if (isRunning() && child !== undefined) killChild(child, signal)
     },
 
     restart() {
-      if (!isRunning()) return
+      if (!isRunning() || child === undefined) return
       restarting = true
-      child?.kill('SIGTERM')
+      killChild(child, 'SIGTERM')
     },
 
     async run(): Promise<number> {
