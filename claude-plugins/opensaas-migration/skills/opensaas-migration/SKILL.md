@@ -356,9 +356,133 @@ export default config({
 
 **Solution:**
 
-- Create custom field builders extending `BaseFieldConfig`
-- Implement `getZodSchema`, `getPrismaType`, `getTypeScriptType`
-- Register UI components for admin interface
+A field builder is a plain object satisfying `BaseFieldConfig<TTypeInfo, TKey>` (from `@opensaas/stack-core/extend`), generic over both type parameters so a field-level `hooks.resolveOutput` sees the mounted field's real value type instead of `unknown`. There is no Prisma schema language anywhere in the pipeline — the generator emits a TypeScript **Contract module**, and a field describes what it contributes to that contract through `getContractField()` rather than through `getPrismaType`/`getPrismaColumns`/`getPrismaRelation` (deleted — those named a `schema.prisma` line that no longer exists).
+
+Every field owes `getZodSchema(fieldName, operation)` and `getContractField(fieldName, listKey, config)`. The latter returns one of:
+
+- `{ kind: 'column', name, type: { pack, type, args? }, nullable, ... }` — a single physical column (`pack: 'pg'` for a built-in Postgres type; a third-party pack like `pgvector` names itself and must be declared via `context.addExtension` in the field's own plugin)
+- `{ kind: 'columns', columns: [...] }` — several physical columns backing one logical value (see below)
+- `{ kind: 'computed' }` — a virtual field with no column at all
+
+`outputType` (a `TypeDescriptor`: a primitive type string, an import string, or `{ value, from, name? }`) is **required** whenever the field has no single column to be typed from — every virtual field, and every `kind: 'columns'` field — because there `opensaas generate` has nothing to infer the TypeScript face from. `inputType` is never required: on a single-column field its absence means the column's own input type, but a `kind: 'columns'` field has no single column for that to name either, so declare it alongside `outputType` there too. A field leaving out a member it owes fails `pnpm generate`, naming the list and the field.
+
+**Single-column example** (`getPrismaType`/`getTypeScriptType`'s replacement):
+
+```typescript
+import { z } from 'zod'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  FieldKeys,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
+
+export type MyCustomField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & {
+  type: 'myCustom'
+}
+
+export function myCustom<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<MyCustomField<TTypeInfo, TKey>, 'type'>): MyCustomField<TTypeInfo, TKey> {
+  return {
+    type: 'myCustom',
+    ...options,
+    getZodSchema: () => z.string().nullable().optional(),
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'column',
+      name: fieldName,
+      type: { pack: 'pg', type: 'text' },
+      nullable: true,
+    }),
+  }
+}
+```
+
+**Multi-column example** (several physical columns behind one logical value — a shape KeystoneJS migrations run into often, e.g. reconstructing a Keystone `file`/`image` field's split columns, or `@opensaas/stack-rag`'s `embedding()` pairing a vector column with a `jsonb` metadata column). A `kind: 'columns'` descriptor owes three more members the engine cannot derive on its own:
+
+```typescript
+import { z } from 'zod'
+import type {
+  BaseFieldConfig,
+  ContractFieldDescriptor,
+  FieldKeys,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
+
+interface Money {
+  amountCents: number
+  currency: string
+}
+
+export type MoneyField<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+> = BaseFieldConfig<TTypeInfo, TKey> & { type: 'money' }
+
+export function money<
+  TTypeInfo extends TypeInfo = TypeInfo,
+  TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
+>(options?: Omit<MoneyField<TTypeInfo, TKey>, 'type'>): MoneyField<TTypeInfo, TKey> {
+  const amountColumn = (fieldName: string) => `${fieldName}AmountCents`
+  const currencyColumn = (fieldName: string) => `${fieldName}Currency`
+
+  return {
+    type: 'money',
+    ...options,
+    // No single column to infer a TypeScript face from — both required. These
+    // strings are emitted verbatim into the generated types, so they must
+    // name a package specifier the consuming project can resolve — never a
+    // path relative to this field package's own source. The `{ value, from }`
+    // object form (see the `Decimal` example in the root CLAUDE.md) is the
+    // alternative for a type with a real runtime constructor; `Money` here is
+    // a plain interface, so the import-string form names it directly.
+    outputType: "import('@myorg/money-field').Money",
+    inputType: "import('@myorg/money-field').Money",
+
+    getZodSchema: () =>
+      z.object({ amountCents: z.number().int(), currency: z.string() }).nullable().optional(),
+
+    getContractField: (fieldName): ContractFieldDescriptor => ({
+      kind: 'columns',
+      columns: [
+        { name: amountColumn(fieldName), type: { pack: 'pg', type: 'int' }, nullable: true },
+        { name: currencyColumn(fieldName), type: { pack: 'pg', type: 'text' }, nullable: true },
+      ],
+    }),
+
+    // The physical columns this field owns, so a read can strip the raw parts.
+    getColumnNames: (fieldName): string[] => [amountColumn(fieldName), currencyColumn(fieldName)],
+
+    // Build the logical value from the row's per-part columns (runs before field visibility).
+    assembleColumns: (fieldName, row): Money | null => {
+      const amountCents = row[amountColumn(fieldName)]
+      const currency = row[currencyColumn(fieldName)]
+      if (typeof amountCents !== 'number' || typeof currency !== 'string') return null
+      return { amountCents, currency }
+    },
+
+    // Split the logical value back into per-part columns for the write (runs after resolveInput).
+    splitColumns: (fieldName, value): Record<string, unknown> => {
+      const money = value as Money | null
+      return {
+        [amountColumn(fieldName)]: money?.amountCents ?? null,
+        [currencyColumn(fieldName)]: money?.currency ?? null,
+      }
+    },
+  }
+}
+```
+
+A non-nullable part column is a generate-time error: the secured surface always types a `kind: 'columns'` field's logical key as optional on create, so there is no all-parts-required case for it to satisfy a `NOT NULL` part with — keep every part column `nullable: true` and enforce "required" through `getZodSchema`/`validation` instead.
+
+For a computed field with no column at all, `getContractField: () => ({ kind: 'computed' })` plus `outputType` and a `resolveOutput` hook is the replacement for KeystoneJS's `virtual({ field: graphql.field(...) })` — see the "Challenge: Virtual Fields" section below.
+
+- Register UI components for the admin interface (`registerFieldComponent`, or `ui.component` per-field) — this part of the contract is unchanged
+- Worked reference implementations: `@opensaas/stack-rag`'s `embedding()` (multi-column: a vector column plus a `jsonb` metadata column) and `@opensaas/stack-storage`'s `image()`/`file()` (single-column by default, multi-column in `db.columns: 'keystone'` mode — exactly the shape a KeystoneJS migration with existing per-part columns needs)
 
 ### Challenge: KeystoneJS Document Field
 
