@@ -11,15 +11,19 @@ $ARGUMENTS
 
 ## Migration Pattern
 
-| Keystone                                    | OpenSaaS Stack                      |
-| ------------------------------------------- | ----------------------------------- |
-| `context.graphql.run({ query, variables })` | `context.db.{list}.{method}(args)`  |
-| `context.graphql.raw({ query, variables })` | `context.db.{list}.{method}(args)`  |
-| `context.query.Post.findMany(...)`          | `context.db.post.findMany(...)`     |
-| `context.query.Post.count(...)`             | `context.db.post.count(...)`        |
-| `context.sudo().graphql.run(...)`           | `context.sudo().db.post.findMany()` |
+| Keystone                                    | OpenSaaS Stack                                                        |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `context.graphql.run({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                     |
+| `context.graphql.raw({ query, variables })` | `context.db.{List}.where(...).all()` / `.first()`                     |
+| `context.query.Post.findMany(...)`          | `context.db.Post.where(...).all()`                                    |
+| `context.query.Post.count(...)`             | `context.db.Post.where(...).aggregate((a) => ({ count: a.count() }))` |
+| `context.sudo().graphql.run(...)`           | `context.sudo().db.Post.where(...).all()`                             |
 
-**List names are camelCase**: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`, `AuthUser` → `context.db.authUser`.
+**List names are PascalCase, exactly as declared in config**: `Post` → `context.db.Post`, `BlogPost` → `context.db.BlogPost`, `AuthUser` → `context.db.AuthUser`. There is no camelCase or lowercase spelling of a list anywhere on the secured surface.
+
+**Reads are composed, then run by a terminal.** `where`, `orderBy`, `select`, `include`, `limit`, `offset`, `cursor` build an immutable value; `.all()`, `.first()`, `.aggregate()` and `.nearest()` run it. There is no `findMany` / `findUnique` / `findFirst` / `count` — those are Prisma method names, not part of this surface.
+
+**Writes are members of the list, not terminals chained off a read.** `create({ data })`, `update({ where, data })` and `delete({ where })` take `where: { id }` — the row's identity alone, never a filter.
 
 **Access control** is automatically enforced by `context.db`. Use `context.sudo().db.*` to bypass it (equivalent to Keystone's `context.sudo()`).
 
@@ -41,11 +45,10 @@ const { posts } = await context.graphql.run({
 })
 
 // After
-const posts = await context.db.post.findMany({
-  where: { authorId: { equals: authorId } },
-  orderBy: { createdAt: 'desc' },
-  take: 10,
-})
+const posts = await context.db.Post.where({ authorId: { equals: authorId } })
+  .orderBy({ createdAt: 'desc' })
+  .limit(10)
+  .all()
 ```
 
 ### findOne / single item
@@ -58,7 +61,7 @@ const { post } = await context.graphql.run({
 })
 
 // After
-const post = await context.db.post.findUnique({ where: { id: postId } })
+const post = await context.db.Post.where({ id: { equals: postId } }).first()
 ```
 
 ### create
@@ -71,7 +74,10 @@ const { createPost } = await context.graphql.run({
 })
 
 // After
-const post = await context.db.post.create({ data: { title: 'Hello', content: '...' } })
+const post = await context.db.Post.create({ data: { title: 'Hello', content: '...' } })
+if (post === null) {
+  /* access denied */
+}
 ```
 
 ### update
@@ -84,7 +90,10 @@ await context.graphql.run({
 })
 
 // After
-const updated = await context.db.post.update({ where: { id: postId }, data: { title: 'Updated' } })
+const updated = await context.db.Post.update({
+  where: { id: postId },
+  data: { title: 'Updated' },
+})
 if (!updated) {
   /* access denied or not found */
 }
@@ -100,7 +109,7 @@ await context.graphql.run({
 })
 
 // After
-await context.db.post.delete({ where: { id: postId } })
+await context.db.Post.delete({ where: { id: postId } })
 ```
 
 ### count
@@ -112,7 +121,9 @@ const { postsCount } = await context.graphql.run({
 })
 
 // After
-const count = await context.db.post.count({ where: { status: { equals: 'published' } } })
+const { count } = await context.db.Post.where({ status: { equals: 'published' } }).aggregate(
+  (aggregate) => ({ count: aggregate.count() }),
+)
 ```
 
 ### Nested / related data (composed read — recommended)
@@ -195,9 +206,9 @@ const { post } = await context.graphql.run({
 })
 
 // After — separate calls
-const post = await context.db.post.findUnique({ where: { id: postId } })
+const post = await context.db.Post.where({ id: { equals: postId } }).first()
 const author = post?.authorId
-  ? await context.db.user.findUnique({ where: { id: post.authorId } })
+  ? await context.db.User.where({ id: { equals: post.authorId } }).first()
   : null
 const authorName = author?.name
 ```
@@ -209,7 +220,7 @@ const authorName = author?.name
 const allPosts = await context.sudo().graphql.run({ query: '...' })
 
 // After
-const allPosts = await context.sudo().db.post.findMany()
+const allPosts = await context.sudo().db.Post.all()
 ```
 
 ## Recipe 1 — `where`-shape translation (relation filters → scalar-FK / relation filters)
@@ -231,13 +242,11 @@ const { posts } = await context.graphql.run({
 
 // After — collapse the FK relation filter to the scalar field; keep genuine
 // relation filters nested; to-many uses some/every/none
-const posts = await context.db.post.findMany({
-  where: {
-    authorId: { equals: authorId }, // author.id → authorId scalar FK
-    status: { in: ['published', 'featured'] }, // enum string values, not GraphQL idents
-    tags: { some: { name: { equals: 'release' } } }, // to-many relation filter kept nested
-  },
-})
+const posts = await context.db.Post.where({
+  authorId: { equals: authorId }, // author.id → authorId scalar FK
+  status: { in: ['published', 'featured'] }, // enum string values, not GraphQL idents
+  tags: { some: { name: { equals: 'release' } } }, // to-many relation filter kept nested
+}).all()
 ```
 
 ### Translation table
@@ -267,83 +276,115 @@ const posts = await context.db.post.findMany({
 
 > **Enum gotcha:** Keystone GraphQL writes enum values as bare identifiers (`status: published`). Prisma/`context.db` uses **string literals** (`status: 'published'`). Always quote them in the rewrite.
 
-## Recipe 2 — `connect` / `disconnect` / `set` nested writes
+## Recipe 2 — relationship writes: `connect`, clearing an edge, and many-to-many junctions
 
-Keystone relationship mutations use nested-write operators inside `data`. Prisma uses the same _names_ but the shapes differ slightly, and OpenSaaS Stack passes `data` straight through to Prisma — so use Prisma's relation-operation shapes. Field-level access control still filters writable fields, and the foreign-key column is never written directly (use the relation field, not `authorId`).
+Keystone's GraphQL relationship mutations support `connect` / `disconnect` / `set` inside `data`, on either side of a relation. `context.db` writes are far narrower, and the shape depends on which side of the relation you're on:
+
+- **`connect` is legal only on the field that owns the foreign key** — a to-one relation field on _this_ list (e.g. `author` on `Post`, since `Post` carries `authorId`). It lowers to a reachability query against the target list's `query` access plus a scalar foreign-key write.
+- **Clearing a to-one edge is `field: null`**, not `disconnect: true`.
+- **There is no nested `create` / `update` / `delete` / `connectOrCreate` / `set`.** A to-many "replace the whole set of links" has no direct equivalent.
+- Keystone's implicit many-to-many becomes an **explicit junction list** on this stack (`many: true` on both sides of a relationship is a generate-time error) — write the junction list's own rows instead of nesting the write inside `data`.
+- `connect` on an inverse to-many, the non-owning side of a one-to-one, or a junction list is a generation error — there it would be N secured writes against another list wearing one field's name.
+
+### Reassigning / clearing a to-one relation
 
 ```typescript
-// Before — Keystone create with a connected author and connected tags
+// Before — Keystone create with a connected author
 const { createPost } = await context.graphql.run({
   query: `mutation CreatePost($data: PostCreateInput!) {
     createPost(data: $data) { id }
   }`,
-  variables: {
-    data: {
-      title: 'Hello',
-      author: { connect: { id: authorId } },
-      tags: { connect: [{ id: tagA }, { id: tagB }] },
-    },
-  },
+  variables: { data: { title: 'Hello', author: { connect: { id: authorId } } } },
 })
 
-// After — Prisma relation operations on create (note: connect-many takes an array)
-const post = await context.db.post.create({
-  data: {
-    title: 'Hello',
-    author: { connect: { id: authorId } },
-    tags: { connect: [{ id: tagA }, { id: tagB }] },
-  },
+// After — connect on the field that owns the foreign key (Post owns authorId)
+const post = await context.db.Post.create({
+  data: { title: 'Hello', author: { connect: { id: authorId } } },
 })
+if (post === null) {
+  /* access denied */
+}
 ```
 
 ```typescript
-// Before — Keystone update: swap author, add/remove tags
+// Before — Keystone update: reassign the author, then later clear it
+await context.graphql.run({
+  query: `mutation UpdatePost($id: ID!, $data: PostUpdateInput!) {
+    updatePost(where: { id: $id }, data: $data) { id }
+  }`,
+  variables: { id: postId, data: { author: { connect: { id: newAuthorId } } } },
+})
+// ...later, to remove the author
+await context.graphql.run({
+  query: `mutation { updatePost(where: { id: $id }, data: { author: { disconnect: true } }) { id } }`,
+  variables: { id: postId },
+})
+
+// After — reassign with connect; clear with a plain null
+const updated = await context.db.Post.update({
+  where: { id: postId },
+  data: { author: { connect: { id: newAuthorId } } },
+})
+if (!updated) {
+  /* access denied or not found — context.db returns null, never throws */
+}
+
+const cleared = await context.db.Post.update({
+  where: { id: postId },
+  data: { author: null },
+})
+```
+
+### Many-to-many: from an implicit Keystone relation to an explicit junction list
+
+Keystone's `tags: { connect: [...] }` / `disconnect: [...]` / `set: [...]` on a many-to-many field has no equivalent on `context.db`. Migrate the relation to a junction list (e.g. `PostTag`, with its own surrogate id and a unique pair index — see CLAUDE.md's Relationship Patterns section), then write its rows directly:
+
+```typescript
+// Before — Keystone: add/remove tags on a many-to-many field
 await context.graphql.run({
   query: `mutation UpdatePost($id: ID!, $data: PostUpdateInput!) {
     updatePost(where: { id: $id }, data: $data) { id }
   }`,
   variables: {
     id: postId,
-    data: {
-      author: { connect: { id: newAuthorId } }, // reassign single relation
-      tags: {
-        connect: [{ id: tagC }], // add
-        disconnect: [{ id: tagA }], // remove
-      },
-    },
+    data: { tags: { connect: [{ id: tagC }], disconnect: [{ id: tagA }] } },
   },
 })
 
-// After — Prisma update relation operations
-const updated = await context.db.post.update({
-  where: { id: postId },
-  data: {
-    author: { connect: { id: newAuthorId } },
-    tags: {
-      connect: [{ id: tagC }],
-      disconnect: [{ id: tagA }],
-    },
-  },
+// After — write the junction list's own rows. Config:
+//   PostTag = list({
+//     fields: {
+//       post: relationship({ ref: 'Post.tags' }),
+//       tag: relationship({ ref: 'Tag.posts' }),
+//     },
+//     db: { indexes: [{ fields: ['post', 'tag'], unique: true }] },
+//   })
+await context.db.PostTag.create({
+  data: { post: { connect: { id: postId } }, tag: { connect: { id: tagC } } },
 })
-if (!updated) {
-  /* access denied or not found — context.db returns null, never throws */
+
+const link = await context.db.PostTag.where({
+  postId: { equals: postId },
+  tagId: { equals: tagA },
+}).first()
+if (link) {
+  await context.db.PostTag.delete({ where: { id: link.id } })
 }
 ```
 
+Writing several of these atomically belongs inside `context.transaction` (ADR-0050) — see CLAUDE.md's Interactive transactions section.
+
 ### Nested-write translation table
 
-| Keystone nested write               | Prisma nested write                 | Applies to                                    |
-| ----------------------------------- | ----------------------------------- | --------------------------------------------- |
-| `author: { connect: { id } }`       | `author: { connect: { id } }`       | create / update                               |
-| `author: { disconnect: true }`      | `author: { disconnect: true }`      | update (nullable single relation)             |
-| `tags: { connect: [{ id }, …] }`    | `tags: { connect: [{ id }, …] }`    | create / update (to-many)                     |
-| `tags: { disconnect: [{ id }, …] }` | `tags: { disconnect: [{ id }, …] }` | update (to-many)                              |
-| `tags: { set: [{ id }, …] }`        | `tags: { set: [{ id }, …] }`        | update (to-many — **replaces** the whole set) |
-| `tags: { set: [] }`                 | `tags: { set: [] }`                 | update (clear all to-many links)              |
-| `author: { create: { … } }`         | `author: { create: { … } }`         | create / update (nested create)               |
+| Keystone nested write               | OpenSaaS Stack                                               | Applies to                                        |
+| ----------------------------------- | ------------------------------------------------------------ | ------------------------------------------------- |
+| `author: { connect: { id } }`       | `author: { connect: { id } }`                                | create / update — only the FK-owning field        |
+| `author: { disconnect: true }`      | `author: null`                                               | update (nullable single relation)                 |
+| `tags: { connect: [{ id }, …] }`    | create a row in the junction list                            | many-to-many — a junction-list write, not a field |
+| `tags: { disconnect: [{ id }, …] }` | find and `delete` the junction row                           | many-to-many — a junction-list write, not a field |
+| `tags: { set: [{ id }, …] }`        | delete the existing junction rows, create the new ones       | many-to-many — no direct `set`, no nested write   |
+| `author: { create: { … } }`         | not supported — create the related row first, then `connect` | no nested create on `context.db`                  |
 
-> **`set` replaces, `connect` adds.** On a to-many relation, Keystone's `set: [...]` and Prisma's `set: [...]` both _replace_ the entire list of links; `connect` only adds. To clear all links use `set: []`.
->
 > **Never write the scalar FK directly.** Use the relation field (`author: { connect: { id } }`), not `authorId: …`. `filterWritableFields` strips `<field>Id` keys when a relationship field exists, so writing the FK directly is silently dropped.
 
 ## Recipe 3 — gql.tada typed documents → a composed read
@@ -464,13 +505,13 @@ Access control runs at **every level**, and denial is silent (no throw):
    a. Read the file to understand the full query/mutation
    b. Identify the operation type:
    - **Read with nested data** → prefer a composed read narrowed with `.select()` / `.include()` (see pattern above)
-   - **Simple read** → `context.db.{list}.findMany()` / `findUnique()`
-   - **Create / update / delete** → `context.db.{list}.create()` / `update()` / `delete()`
-   - **Count** → `context.db.{list}.count()`
-     c. Identify the list name (convert to camelCase for `context.db`)
+   - **Simple read** → `context.db.{List}.where(...).all()` / `.first()`
+   - **Create / update / delete** → `context.db.{List}.create()` / `update()` / `delete()`, as members of the list itself, never chained off a read
+   - **Count** → `context.db.{List}.where(...).aggregate((a) => ({ count: a.count() }))`
+     c. Identify the list name — use it **exactly as declared in config, PascalCase** (there is no camelCase or lowercase spelling on `context.db`)
      d. Rewrite using the appropriate pattern above. Apply the relevant recipe:
    - **`where` clauses** → translate relation/scalar filters with **Recipe 1** (collapse `{ author: { id: { equals } } }` → `{ authorId: { equals } }`, quote enum values).
-   - **`connect` / `disconnect` / `set` in `data`** → keep Prisma's relation-operation shapes with **Recipe 2**; never write the scalar FK directly.
+   - **`connect` / `disconnect` / `set` in `data`** → rewrite per **Recipe 2**: `connect` only on the FK-owning field, `null` to clear a to-one, and a many-to-many becomes junction-list writes — never write the scalar FK directly, and never invent a nested `create`/`update`/`delete`/`connectOrCreate`/`set` that this surface doesn't have.
    - **gql.tada typed documents** (`graphql(...)`, `ResultOf`, `VariablesOf`) → replace with a composed read narrowed by `.select()` / `.include()` per **Recipe 3**.
    - **Nested reads** → map to `.select()` / `.include()` and keep null-guards per **Recipe 4**.
      e. For reused nested-read shapes: create a shared file of ordinary functions returning composed query values, and import from it

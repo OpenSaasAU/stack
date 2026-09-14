@@ -43,24 +43,10 @@ bun add @opensaas/stack-core
 - `@opensaas/stack-storage` - If the project needs file storage
 - `@opensaas/stack-rag` - If the project needs semantic search/RAG
 
-**Database adapters (required for Prisma 7):**
-
-SQLite:
+**No database driver package to install for the default case.** `db.provider` is `'postgresql'` and nothing else — the connection resolves from `DATABASE_URL`, or from `opensaas dev`'s own in-process Postgres. Only a custom pool binding (`db.client.pg`, e.g. for a serverless driver) needs its own package:
 
 ```bash
-npm install better-sqlite3 @prisma/adapter-better-sqlite3
-```
-
-PostgreSQL:
-
-```bash
-npm install pg @prisma/adapter-pg
-```
-
-Neon (serverless PostgreSQL):
-
-```bash
-npm install @neondatabase/serverless @prisma/adapter-neon ws
+npm install @neondatabase/serverless ws
 ```
 
 ### 2. Uninstall Old Packages (KeystoneJS Only)
@@ -162,39 +148,34 @@ operation: {
 
 ### 6. Database Configuration
 
-**SQLite (Development):**
+OpenSaaS Stack supports **PostgreSQL only** — `db.provider` is `'postgresql'` and nothing else. There is no SQLite provider, no `url` key, and no `prismaClientConstructor`: the connection URL is not part of the config. The runtime resolves it from `DATABASE_URL`, or — when that's unset — from the running Dev database's own state file during `opensaas dev` (ADR-0063). A KeystoneJS project on SQLite has no direct equivalent here; point `DATABASE_URL` at a Postgres instance, or rely on `opensaas dev`'s own in-process Postgres, which needs no `DATABASE_URL` at all.
+
+**Default:**
 
 ```typescript
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-
 export default config({
-  db: {
-    provider: 'sqlite',
-    url: process.env.DATABASE_URL || 'file:./dev.db',
-    prismaClientConstructor: (PrismaClient) => {
-      const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL || 'file:./dev.db' })
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
+  lists: {/* ... */},
 })
 ```
 
-**PostgreSQL (Production):**
+**Custom pool binding** (e.g. a serverless driver) uses `db.client.pg`, a **lazy** factory rather than an instance — the config is loaded by tooling that must never open a connection itself:
 
 ```typescript
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
+import { Pool, neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
 
 export default config({
   db: {
     provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
+    client: {
+      pg: () => {
+        neonConfig.webSocketConstructor = ws
+        return new Pool({ connectionString: process.env.DATABASE_URL })
+      },
     },
   },
+  lists: {/* ... */},
 })
 ```
 
@@ -280,19 +261,9 @@ export default config({
 ```typescript
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, timestamp } from '@opensaas/stack-core/fields'
-import { PrismaPg } from '@prisma/adapter-pg'
-import pg from 'pg'
 
 export default config({
-  db: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-    prismaClientConstructor: (PrismaClient) => {
-      const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-      const adapter = new PrismaPg(pool)
-      return new PrismaClient({ adapter })
-    },
-  },
+  db: { provider: 'postgresql' },
   lists: {
     Post: list({
       fields: {
@@ -315,7 +286,7 @@ export default config({
    - `@keystone-6/core` → `@opensaas/stack-core`
    - `@keystone-6/core/fields` → `@opensaas/stack-core/fields`
    - `@keystone-6/auth` → `@opensaas/stack-auth`
-5. **Add Prisma adapter** to database config (required for Prisma 7)
+5. **Set `db: { provider: 'postgresql' }`** — no adapter, no `url`, no `prismaClientConstructor`; the connection resolves from `DATABASE_URL`
 6. **Migrate virtual fields** — if any `virtual()` fields exist, invoke the `keystone-virtual-fields-context` skill
 7. **Migrate context.graphql calls** — search for `context.graphql.run(`, `context.graphql.raw(`, `context.query.`; for simple reads replace with `context.db.*`; for nested/joined data compose a read narrowed by `.select()` / `.include()`; invoke the `migrate-context-calls` skill for detailed patterns
 8. **Test** - the app structure should remain identical
@@ -340,9 +311,9 @@ export default config({
 
 **Solution:**
 
-- Use `opensaas generate` to create Prisma schema
-- Use `prisma db push` instead of migrations for existing databases
-- Never use `prisma migrate dev` with existing data
+- `opensaas generate` produces the Contract module and the committed `migrations/` directory from your config — there is no Prisma schema language in this pipeline, so there's no `schema.prisma` to hand-edit
+- Don't point the interactive `opensaas dev` reconcile loop at a database with existing data — that loop is for the dev database. Apply the committed migrations to production data with Prisma's own migrate tooling instead, and review the generated migration the same way you'd review any schema change
+- Dev reconciles, production migrates — see CLAUDE.md's "Migrations and the dev loop"
 
 ### Challenge: Complex Access Control
 
@@ -531,9 +502,7 @@ const { posts } = await context.graphql.run({
 })
 
 // OpenSaaS Stack
-const posts = await context.db.post.findMany({
-  where: { status: { equals: 'published' } },
-})
+const posts = await context.db.Post.where({ status: { equals: 'published' } }).all()
 ```
 
 **Queries with nested/related data (composed reads — recommended for Keystone migrations):**
@@ -582,7 +551,7 @@ const postsWithComments = await context.db.Post.select('id')
   .all()
 ```
 
-List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.db.blogPost`. Access control is enforced automatically. For detailed patterns including sudo access, **invoke the `migrate-context-calls` skill**.
+List names are PascalCase, exactly as declared in config: `Post` → `context.db.Post`, `BlogPost` → `context.db.BlogPost`. There is no camelCase or lowercase spelling of a list on `context.db`. Access control is enforced automatically. For detailed patterns including sudo access, **invoke the `migrate-context-calls` skill**.
 
 ## Migration Checklist
 
@@ -591,14 +560,11 @@ List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.
 - [ ] **Detect package manager** (npm, pnpm, yarn, or bun)
 - [ ] **Install required packages** (@opensaas/stack-cli, @opensaas/stack-core)
 - [ ] **Install optional packages** (auth, ui, etc. based on needs)
-- [ ] **Install database adapter** (better-sqlite3, pg, etc.)
 - [ ] Analyze existing schema
 - [ ] Design access control patterns
-- [ ] Create `opensaas.config.ts`
-- [ ] Configure database adapter in config
-- [ ] Run `opensaas generate` (or `npx opensaas generate`)
-- [ ] Run `prisma generate` (or `npx prisma generate`)
-- [ ] Run `prisma db push` (or `npx prisma db push`)
+- [ ] Create `opensaas.config.ts` with `db: { provider: 'postgresql' }`
+- [ ] Set `DATABASE_URL`, or let `opensaas dev` run its own Dev database (ADR-0063)
+- [ ] Run `pnpm dev` (or `npx opensaas dev`) — starts the Dev database, generates, reconciles the schema, and runs the app in one loop
 - [ ] Test access control
 - [ ] Verify admin UI (if using @opensaas/stack-ui)
 - [ ] Update application code to use context
@@ -611,18 +577,15 @@ List names are camelCase: `Post` → `context.db.post`, `BlogPost` → `context.
 - [ ] **Uninstall ALL KeystoneJS packages** (@keystone-6/\*)
 - [ ] **Install required packages** (@opensaas/stack-cli, @opensaas/stack-core)
 - [ ] **Install optional packages** (auth, ui, tiptap for document fields)
-- [ ] **Install database adapter** (pg, @prisma/adapter-pg for PostgreSQL)
 - [ ] **Rename** `keystone.config.ts` to `opensaas.config.ts`
 - [ ] **Update imports** in config file (KeystoneJS → OpenSaaS)
 - [ ] **Find and replace imports** in ALL project files
-- [ ] **Add Prisma adapter** to database config
+- [ ] **Set `db: { provider: 'postgresql' }`** — no `url`, no adapter, no `prismaClientConstructor`
 - [ ] **Update context creation** in API routes
 - [ ] **Migrate virtual fields** (if any) — replace `graphql.field()` + `resolve()` with `hooks.resolveOutput`; invoke `keystone-virtual-fields-context` skill
 - [ ] **Migrate context.graphql calls** (if any) — for simple reads use `context.db.*`; for nested/related data compose a read narrowed by `.select()` / `.include()`; invoke `migrate-context-calls` skill for detailed patterns
 - [ ] Analyze and adapt access control patterns
-- [ ] Run `opensaas generate`
-- [ ] Run `prisma generate`
-- [ ] Run `prisma db push`
+- [ ] Run `pnpm dev` (or `npx opensaas dev`) — starts the Dev database, generates, reconciles the schema, and runs the app in one loop
 - [ ] Test existing API routes
 - [ ] Test existing pages/UI
 - [ ] Test all CRUD operations
