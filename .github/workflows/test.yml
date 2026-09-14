@@ -405,8 +405,9 @@ jobs:
     timeout-minutes: 20
 
     env:
-      # windows-latest's PostgreSQL 14 service ships with this password
-      # (actions/runner-images' Windows2022 readme); nothing here resets it.
+      # windows-latest's built-in PostgreSQL service ships with this
+      # password (actions/runner-images' Windows readme); nothing here
+      # resets it, and the port is the standard 5432 regardless of version.
       DATABASE_URL: 'postgres://postgres:root@localhost:5432/postgres'
 
     steps:
@@ -417,11 +418,17 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Start the runner's PostgreSQL service
+        # The installed major version (and so the exact service name, e.g.
+        # `postgresql-x64-14` vs. `postgresql-x64-17`) moves with the runner
+        # image; matching by prefix survives that rather than pinning one.
         shell: powershell
         run: |
-          Set-Service -Name postgresql-x64-14 -StartupType Manual
-          Start-Service -Name postgresql-x64-14
-          (Get-Service -Name postgresql-x64-14).WaitForStatus('Running', '00:00:30')
+          $pgService = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          if ($null -eq $pgService) { throw 'No postgresql* service found on this runner image.' }
+          Write-Host "Starting $($pgService.Name)"
+          Set-Service -InputObject $pgService -StartupType Manual
+          Start-Service -InputObject $pgService
+          $pgService.WaitForStatus('Running', '00:00:30')
 
       - name: Build the CLI and examples/starter's dependencies
         run: >
