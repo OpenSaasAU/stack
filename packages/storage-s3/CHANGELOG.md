@@ -1,5 +1,29 @@
 # @opensaas/stack-storage-s3
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1499](https://github.com/OpenSaasAU/stack/pull/1499) [`bcea6de`](https://github.com/OpenSaasAU/stack/commit/bcea6dea0766f510da59188cb70fb41b2fd2573b) Thanks [@borisno2](https://github.com/borisno2)! - Add the missing `[key: string]: unknown` index member to `S3StorageConfig` so it matches `LocalStorageConfig` and `VercelBlobStorageConfig` and is assignable to core's `BaseStorageConfig`:
+
+  ```typescript
+  import type { BaseStorageConfig } from '@opensaas/stack-storage'
+  import { s3Storage } from '@opensaas/stack-storage-s3'
+
+  // Previously a type error: S3StorageConfig was not assignable to BaseStorageConfig.
+  const slot: BaseStorageConfig = s3Storage({ bucket: 'my-bucket', region: 'us-east-1' })
+  ```
+
+  `@opensaas/stack-storage` and `@opensaas/stack-storage-vercel` each gain a test pinning their own provider config's assignability to `BaseStorageConfig`, alongside the new S3 one, so a future provider can't regress this.
+
+### Patch Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Add a `typecheck` script to every package, covering `tests/**/*` alongside `src/**/*` (not just what `build` compiles), and fix the type errors it surfaced in existing test files.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Fail a package's vitest run with a named, actionable error when its `dist/` was not built from its current `src/`, instead of silently testing stale built output through a cross-package import or a spawned CLI binary.
+
 ## 0.43.0
 
 ## 0.42.3
