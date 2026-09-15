@@ -1,6 +1,7 @@
 import type { Session, AccessContext, AccessControl } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import type { OpenSaasConfig, RelationshipField } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import { isComputedField } from '../config/field-kind.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
@@ -324,6 +325,8 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       access?: FieldAccess
       type?: string
       getColumnNames?: (fieldName: string) => string[]
+      virtual?: boolean
+      getContractField?: FieldConfig['getContractField']
     }
   >,
   operation: 'create' | 'update',
@@ -399,9 +402,11 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Virtual fields don't store in the database — skipped here, but their
-    // resolveInput hooks still run as a separate side-effect step.
-    if (fieldConfig && 'virtual' in fieldConfig && fieldConfig.virtual) {
+    // A field storing nothing — the `virtual` flag, or a `{ kind: 'computed' }`
+    // contract descriptor a third-party field can declare without it
+    // (issue #1531) — doesn't store in the database, so it is skipped here;
+    // its resolveInput hook still runs as a separate side-effect step.
+    if (fieldConfig && isComputedField(fieldConfig, fieldName, args.listName, args.config)) {
       continue
     }
 

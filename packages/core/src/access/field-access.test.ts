@@ -7,7 +7,7 @@ import {
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 // A non-sudo access context. The cast is localized to test setup (mirrors the
@@ -921,5 +921,58 @@ describe('filterWritableFields — #978 tightened sudo undeclared-key guard', ()
     })
 
     expect(filtered).toHaveProperty('totallyBogusKey', 'value')
+  })
+})
+
+describe('the virtual-field write skip (issue #1531)', () => {
+  it('skips a field flagged `virtual`, whose value never reaches the write', async () => {
+    const fieldConfigs = {
+      title: { type: 'text' },
+      summary: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+    }
+    const data = { title: 'Test', summary: 'ignored' }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: sudoContext(),
+      inputData: data,
+    })
+
+    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).not.toHaveProperty('summary')
+  })
+
+  it('skips a `{ kind: "computed" }` field with no `virtual` flag, the same as a flagged one', async () => {
+    // A third-party field can declare the descriptor without the flag
+    // (mirrors the read-path fixture in field-visibility.ts's own test) —
+    // this has no column, so writing it through would hand the ORM a column
+    // name that does not exist.
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            summary: {
+              type: 'thirdPartyComputed',
+              outputType: 'string',
+              getContractField: () => ({ kind: 'computed' }),
+            },
+          },
+        },
+      },
+    }
+    const data = { title: 'Test', summary: 'ignored' }
+
+    const filtered = await filterWritableFields(data, config.lists.Post.fields, 'create', {
+      session: null,
+      context: sudoContext(),
+      inputData: data,
+      listName: 'Post',
+      config,
+    })
+
+    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).not.toHaveProperty('summary')
   })
 })

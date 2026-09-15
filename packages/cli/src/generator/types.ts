@@ -90,7 +90,7 @@ function generateRemainderEntry(
     // descriptor is the source of truth (mirrors `validateFieldConfig`,
     // `filterReadableFields`'s virtual-field pass, and `needsEntries` below —
     // `isComputedField` is the one predicate all four share, issue #1531).
-    if (isComputedField(field, fieldName, listName, config, descriptor?.kind)) {
+    if (isComputedField(field, fieldName, listName, config, { kind: descriptor?.kind })) {
       // A computed field has no column, so the contract has no type for it. An
       // `unknown` here would compile for every consumer and guard none of them,
       // so the missing declaration is reported instead.
