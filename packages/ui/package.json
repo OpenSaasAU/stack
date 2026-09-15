@@ -87,7 +87,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.44.0",
-    "react-hook-form": "^7.82.0",
+    "react-hook-form": "^7.88.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
