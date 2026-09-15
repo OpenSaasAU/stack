@@ -1336,8 +1336,8 @@ importers:
         specifier: ^1.44.0
         version: 1.44.0(react@19.2.8)
       react-hook-form:
-        specifier: ^7.82.0
-        version: 7.82.0(react@19.2.8)
+        specifier: ^7.88.0
+        version: 7.88.0(react@19.2.8)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -7981,8 +7981,8 @@ packages:
     peerDependencies:
       react: ^19.2.8
 
-  react-hook-form@7.82.0:
-    resolution: {integrity: sha512-Zw/uFZ2dO+02GHlBn7JFGn8kZJ7LdM33B/0BXOovzFay+CMhf94JMw5BVu+F1tVkUKjNvBuaE3fz5BJhga10Tg==}
+  react-hook-form@7.88.0:
+    resolution: {integrity: sha512-QRaLOWhX93YCnMiRfnOFRSwWXZNt8qhm2JTZwypoDvKpSffTJHmpzMXt8U6PV5UThvL3IiiLDUWe2nHMtz6Mmw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: ^16.8.0 || ^17 || ^18 || ^19
@@ -15911,7 +15911,7 @@ snapshots:
       react: 19.2.8
       scheduler: 0.27.0
 
-  react-hook-form@7.82.0(react@19.2.8):
+  react-hook-form@7.88.0(react@19.2.8):
     dependencies:
       react: 19.2.8
 
