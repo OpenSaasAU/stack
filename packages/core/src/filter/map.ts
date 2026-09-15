@@ -18,15 +18,18 @@ const NEVER_MATCHES: FilterCondition = { NOT: {} }
  * fields' {@link FilterSpec}s (ADR-0017).
  *
  * Pure — no DB/Prisma imports. This is the unit-tested half of the filter seam.
- * Tokens combine with implicit AND. A token degrades to free text (never an
- * error) when its field is unknown, has no spec, uses an unsupported operator,
- * has an empty value, or maps to `null`. Bare words (and degraded tokens) are
- * OR-matched across every free-text field, and each such word is ANDed with the
- * rest — so `beta gamma` requires both. A word that reaches this stage but
- * cannot be matched against any free-text field — because the list has none,
- * or because every free-text field's own mapping rejects it — narrows the
- * chain to {@link NEVER_MATCHES} instead of being dropped: a condition that
- * cannot be honoured must never widen the result set (#1356).
+ * Tokens combine with implicit AND. An empty-value token (`role:` or a bare
+ * `""`) is a deliberate no-op — incomplete input expresses no constraint, so it
+ * contributes nothing and is never handed to a free-text field (#1509). A
+ * token with a value degrades to free text (never an error) when its field is
+ * unknown, has no spec, uses an unsupported operator, or maps to `null`. Bare
+ * words (and degraded tokens) are OR-matched across every free-text field, and
+ * each such word is ANDed with the rest — so `beta gamma` requires both. A word
+ * that reaches this stage but cannot be matched against any free-text field —
+ * because the list has none, or because every free-text field's own mapping
+ * rejects it — narrows the chain to {@link NEVER_MATCHES} instead of being
+ * dropped: a condition that cannot be honoured must never widen the result set
+ * (#1356).
  *
  * @param tokens Parsed tokens from {@link parseFilterQuery}.
  * @param specs  Field-name → Filter spec (from {@link collectFilterSpecs}).
@@ -42,15 +45,25 @@ export function buildFilterWhere(
   const freeTextFields = Object.keys(specs).filter((field) => specs[field].freeText)
 
   for (const token of tokens) {
+    // An empty value is incomplete input, not a constraint the engine failed
+    // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
+    // inert by design rather than narrowed away (#1509). This must be checked
+    // before a token ever reaches `freeTextWords` — an empty value degrading
+    // through the free-text path would call `toCondition('eq', '')`, and a
+    // `contains`-style mapping over `''` matches every row, not none. That is
+    // the opposite of #1356's narrow-on-failure rule, which only ever applies
+    // to a token that DOES carry a value the system cannot compile.
+    if (token.value === '') continue
+
     if (token.field === null) {
-      if (token.value) freeTextWords.push(token.value)
+      freeTextWords.push(token.value)
       continue
     }
 
     const spec = specs[token.field]
 
-    if (!spec || !spec.operators.includes(token.operator) || token.value === '') {
-      if (token.value) freeTextWords.push(token.value)
+    if (!spec || !spec.operators.includes(token.operator)) {
+      freeTextWords.push(token.value)
       continue
     }
 

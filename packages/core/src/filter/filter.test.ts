@@ -269,6 +269,96 @@ describe('buildFilterWhere', () => {
 })
 
 // ─────────────────────────────────────────────────────────────
+// Empty-value tokens are a deliberate no-op, not narrowed (#1509)
+//
+// An empty value (`role:`, or a bare `""`) is incomplete input, not a
+// constraint the system failed to compile — it must never reach a real
+// free-text condition, because a `contains`-style mapping over `''` matches
+// every row (the opposite of #1356's narrow-on-failure rule, which only
+// applies to a token that DOES carry a value).
+// ─────────────────────────────────────────────────────────────
+
+describe('buildFilterWhere — empty-value tokens (#1509)', () => {
+  it('produces no condition for a bare empty-string token, and never calls toCondition', () => {
+    const calls: string[] = []
+    const trackingName: FilterSpec = {
+      ...nameSpec,
+      toCondition: (op, value) => {
+        calls.push(value)
+        return nameSpec.toCondition(op, value)
+      },
+    }
+    expect(buildFilterWhere(parseFilterQuery('""'), { name: trackingName })).toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  it('produces no condition for a named-field empty-value token (`status:`), and never calls toCondition', () => {
+    const calls: string[] = []
+    const trackingStatus: FilterSpec = {
+      ...statusSpec,
+      toCondition: (op, value) => {
+        calls.push(value)
+        return statusSpec.toCondition(op, value)
+      },
+    }
+    expect(
+      buildFilterWhere(parseFilterQuery('status:'), { status: trackingStatus }),
+    ).toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  it('would let an empty value match every row if the guard were relaxed — proving the trap the guard closes', () => {
+    // A realistic `contains`-style spec returns a non-null condition for ANY
+    // value, empty string included — this is exactly what #1509 warns against:
+    // `contains: ''` matches everything. If the early `token.value === ''`
+    // guard in buildFilterWhere is ever relaxed to let the empty string flow
+    // through to `freeTextWords`, this spec turns it into a real (wrong)
+    // condition instead of `undefined`, and this assertion catches it.
+    const containsEverything: FilterSpec = {
+      operators: ['eq'],
+      freeText: true,
+      toCondition: (_op, value) => ({ name: { contains: value } }),
+      suggestions: { valueSource: { kind: 'none' } },
+    }
+    expect(buildFilterWhere(parseFilterQuery('""'), { name: containsEverything })).toBeUndefined()
+  })
+
+  it('leaves a non-empty token on the same field completely unaffected (#1356/#1504 unchanged)', () => {
+    expect(buildFilterWhere(parseFilterQuery('status:Active'), specs)).toEqual({
+      status: { equals: 'active' },
+    })
+  })
+
+  it('contributes nothing when ANDed with a real condition, rather than narrowing the whole chain', () => {
+    // Unlike an undegradable non-empty token (#1356), an empty value is inert
+    // — it must not turn the chain into NEVER_MATCHES.
+    expect(buildFilterWhere(parseFilterQuery('status:Active role:'), specs)).toEqual({
+      status: { equals: 'active' },
+    })
+  })
+
+  it('matches the no-token result exactly — `?filter=role:` behaves as if untyped', async () => {
+    const config = makeConfig()
+    const withEmptyValue = await buildListFilterWhere(
+      'role:',
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
+    const withNoQuery = await buildListFilterWhere(
+      '',
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
+    expect(withEmptyValue).toEqual(withNoQuery)
+    expect(withEmptyValue).toBeUndefined()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
 // Field-builder Filter specs + collect helpers (config-aware layer)
 // ─────────────────────────────────────────────────────────────
 
