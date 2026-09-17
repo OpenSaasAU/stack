@@ -108,7 +108,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
@@ -119,7 +119,7 @@
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "@prisma/orm-toolchain": "8.0.0-rc.8",
     "@types/node": "^26.5.1",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.23.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
