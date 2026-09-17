@@ -42,15 +42,18 @@ import type { AuthConfig, AuthModelConfig } from '../src/config/types.js'
  *   turn better-auth's own fallback on is refused at config time (ADR-0060).
  * - `generateId`: the database mints every auth id, so an app-supplied
  *   generator is ignored here and refused at config time (ADR-0048).
- * - The issuer-scoped account key: better-auth declares that `@@unique`
- *   table-level, which `deriveAuthLists` does not yet emit (#986). A schema
- *   gap, not an adapter one — and a production one, stated as a known limit on
- *   `opensaasAuthAdapter` rather than only here.
+ * - The issuer-scoped account key: better-auth 1.7.0/1.7.1 declared that
+ *   `@@unique` table-level (#986), which `deriveAuthLists` never emitted, and
+ *   `@better-auth/test-utils`' own suite carried a matching test. Both the
+ *   column and the test are gone as of better-auth 1.7.4
+ *   (better-auth/better-auth#11153, see #1596) — there is no equivalent test
+ *   to disable any more, so no entry for it below. A schema limit, not an
+ *   adapter one, still holds for the un-scoped identity key; see
+ *   `opensaasAuthAdapter`'s own "No account-identity uniqueness" known limit.
  */
 const NOT_IMPLEMENTED: Record<string, boolean> = {
   ...Object.fromEntries(Object.keys(enableJoinTests).map((name) => [name, true])),
   'create - should use generateId if provided': true,
-  'create - should enforce the issuer-scoped account identity key': true,
 }
 
 /**
