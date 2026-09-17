@@ -106,8 +106,15 @@ describe('derived auth contract — Session/Account/Verification mirror better-a
   })
 })
 
-describe('derived auth contract — account.issuer (better-auth 1.7, issue #986)', () => {
-  it('carries a required issuer column on Account, positioned after providerId', async () => {
+describe('derived auth contract — account.issuer (better-auth 1.7, issue #986/#1596)', () => {
+  // better-auth 1.7.0/1.7.1 added a required `account.issuer` column (#986);
+  // 1.7.4 reverted it (better-auth/better-auth#11153) and committed to
+  // keeping the core schema unchanged for the rest of v1. Since the derived
+  // `Account` list is read from `getAuthTables()` at derive time rather than
+  // hand-transcribed (ADR-0033), it tracked the revert with no code change —
+  // this asserts that tracking rather than pinning a column that no longer
+  // exists. See #1596.
+  it('carries no issuer column on Account', async () => {
     const data = await deriveAuthContract({
       db: { provider: 'postgresql' },
       plugins: [authPlugin(emailAndPassword)],
@@ -115,9 +122,7 @@ describe('derived auth contract — account.issuer (better-auth 1.7, issue #986)
     })
 
     const columns = model(data, 'Account').columns.map((candidate) => candidate.name)
-    expect(columns).toContain('issuer')
-    expect(columns.indexOf('issuer')).toBe(columns.indexOf('providerId') + 1)
-    expect(column(data, 'Account', 'issuer').nullable).toBe(false)
+    expect(columns).not.toContain('issuer')
   })
 })
 

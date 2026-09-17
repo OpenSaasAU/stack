@@ -84,7 +84,6 @@ export const contract = defineContract(
         id: field.id.uuidv7Native(),
         accountId: field.text(),
         providerId: field.text(),
-        issuer: field.text(),
         userId: field.uuidNative(),
         accessToken: field.text().optional(),
         refreshToken: field.text().optional(),

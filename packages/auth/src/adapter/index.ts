@@ -181,13 +181,16 @@ function renameKeys(
  * - **No `createSchema`.** The Auth lists derive from `getAuthTables` and the
  *   stack's generator emits the contract, so better-auth's CLI (`generate`,
  *   `migrate`) is unsupported against this adapter.
- * - **No issuer-scoped account uniqueness.** better-auth declares the account
- *   identity key (`providerId` + `accountId`) as a table-level unique
- *   constraint, which `deriveAuthLists` does not emit yet
- *   ([#986](https://github.com/OpenSaasAU/stack/issues/986)). Nothing in the
- *   database stops two concurrent sign-ins through the same issuer identity
- *   from creating two accounts; better-auth's own existence check is all that
- *   stands between them.
+ * - **No account-identity uniqueness.** better-auth's own `getAuthTables()`
+ *   declares no table-level unique constraint on the account identity
+ *   (`providerId` + `accountId`) — it tried one scoped by a new `issuer`
+ *   column in 1.7.0/1.7.1 (issue #986) and reverted it in 1.7.4
+ *   ([better-auth/better-auth#11153](https://github.com/better-auth/better-auth/pull/11153),
+ *   see [#1596](https://github.com/OpenSaasAU/stack/issues/1596)), committing
+ *   to no further core schema changes for the rest of v1. Nothing in the
+ *   database stops two concurrent sign-ins through the same provider
+ *   identity from creating two accounts; better-auth's own existence check is
+ *   all that stands between them.
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */

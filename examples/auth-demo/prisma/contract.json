@@ -73,13 +73,6 @@
                   "kind": "scalar"
                 }
               },
-              "issuer": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
               "password": {
                 "nullable": true,
                 "type": {
@@ -166,9 +159,6 @@
                 },
                 "idToken": {
                   "column": "idToken"
-                },
-                "issuer": {
-                  "column": "issuer"
                 },
                 "password": {
                   "column": "password"
@@ -653,11 +643,6 @@
                   "nativeType": "text",
                   "nullable": true
                 },
-                "issuer": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
                 "password": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -1029,7 +1014,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "468899da0780e40fc7a5d7dc28ce037dfc771bd9c22b2349f5e6d7549d6c47d0"
+    "storageHash": "4e0477774ba0d6bde9278687838b295ef8ce21809dccbf8c780fcec534a8b48b"
   },
   "execution": {
     "executionHash": "2a37caf16f34ae2bd8b4f3e8090859f6cc1b6352bd7f085d1502541f7127f148",
