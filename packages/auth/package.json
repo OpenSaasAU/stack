@@ -87,13 +87,13 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.11",
-    "@vitest/ui": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/ui": "^5.0.1",
     "better-auth": "^1.7.4",
     "next": "^16.2.10",
     "pg": "^8.23.0",
     "react": "^19.2.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.1"
   }
 }

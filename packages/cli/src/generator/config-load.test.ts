@@ -16,7 +16,10 @@ describe('loadOpenSaasConfig', () => {
   let configPath: string
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'config-load-test-'))
+    // realpath'd: jiti reports the resolved module graph canonicalized, and on
+    // macOS os.tmpdir() is under a symlink (/var -> /private/var) — comparing
+    // against the un-resolved path would fail on every mac, never on CI's Linux.
+    tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'config-load-test-'))
     configPath = path.join(tempDir, 'opensaas.config.ts')
   })
 
