@@ -141,7 +141,7 @@ describe('RelationshipCreateDrawer', () => {
 
     // Denied: the drawer stays open with the generic reason; no refresh.
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(/access denied/i)
+    expect(screen.getByRole('alert').textContent).toMatch(/access denied/i)
     expect(mockRefresh).not.toHaveBeenCalled()
   })
 

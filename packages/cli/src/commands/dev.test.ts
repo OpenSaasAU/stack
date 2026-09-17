@@ -173,7 +173,11 @@ describe('devCommand', () => {
     originalDatabaseUrl = process.env.DATABASE_URL
     delete process.env.DATABASE_URL
 
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-test-'))
+    // realpath'd: the watched-module paths this suite asserts on come back
+    // canonicalized, and on macOS os.tmpdir() is under a symlink (/var ->
+    // /private/var) — comparing against the un-resolved path would fail on
+    // every mac, never on CI's Linux.
+    tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'dev-test-'))
     originalCwd = process.cwd()
     process.chdir(tempDir)
 
