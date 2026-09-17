@@ -114,7 +114,7 @@
     "pg": "^8.22.0",
     "playwright": "^1.61.1",
     "postcss": "^8.5.26",
-    "postcss-cli": "^11.0.1",
+    "postcss-cli": "^12.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
