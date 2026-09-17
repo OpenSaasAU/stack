@@ -44,7 +44,9 @@
       "better-auth>@prisma/client": "-",
       "better-auth>better-sqlite3": "-",
       "@better-auth/prisma-adapter>prisma": "-",
-      "@better-auth/prisma-adapter>@prisma/client": "-"
+      "@better-auth/prisma-adapter>@prisma/client": "-",
+      "pg": "^8.23.0",
+      "@types/pg": "^8.23.1"
     }
   },
   "devDependencies": {
