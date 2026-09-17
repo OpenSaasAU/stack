@@ -12,6 +12,9 @@ expect.extend(matchers)
 // toBeInTheDocument, ...) disappears from the type. Re-declaring it here with
 // the current arity is the fix until jest-dom ships one itself.
 declare module 'vitest' {
+  // The empty body is the point: this re-declares `Assertion` for TypeScript's
+  // interface merging, adding no members of its own.
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface Assertion<
     R extends void | Promise<void> = void,
     T = unknown,
