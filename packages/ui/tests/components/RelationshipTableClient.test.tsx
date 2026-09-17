@@ -172,7 +172,7 @@ describe('RelationshipTableClient', () => {
 
     // Denied: the row stays and the reason is shown (no leak of denied-vs-missing).
     expect(screen.getByText('First')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(/access denied/i)
+    expect(screen.getByRole('alert').textContent).toMatch(/access denied/i)
     expect(mockRefresh).not.toHaveBeenCalled()
   })
 

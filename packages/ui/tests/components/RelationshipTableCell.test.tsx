@@ -83,7 +83,7 @@ describe('RelationshipTableCell (inline cell edit, #737)', () => {
     // Reverted to the original value with the reason shown; no refresh.
     expect(screen.getByRole('button', { name: 'Old Title' })).toBeInTheDocument()
     expect(screen.queryByText('Nope')).not.toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(/access denied/i)
+    expect(screen.getByRole('alert').textContent).toMatch(/access denied/i)
     expect(mockRefresh).not.toHaveBeenCalled()
   })
 
@@ -102,7 +102,7 @@ describe('RelationshipTableCell (inline cell edit, #737)', () => {
     await user.type(input, 'spam{Enter}')
 
     // Field-specific message wins over the generic error.
-    expect(screen.getByRole('alert')).toHaveTextContent(/cannot contain the word "spam"/i)
+    expect(screen.getByRole('alert').textContent).toMatch(/cannot contain the word "spam"/i)
     expect(screen.getByRole('button', { name: 'Old Title' })).toBeInTheDocument()
     expect(mockRefresh).not.toHaveBeenCalled()
   })
