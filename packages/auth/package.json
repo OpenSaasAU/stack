@@ -89,7 +89,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^4.1.11",
     "@vitest/ui": "^4.1.11",
-    "better-auth": "^1.7.1",
+    "better-auth": "^1.7.4",
     "next": "^16.2.10",
     "pg": "^8.22.0",
     "react": "^19.2.8",
