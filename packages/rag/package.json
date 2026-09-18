@@ -69,7 +69,7 @@
   "peerDependencies": {
     "@opensaas/stack-core": "^0",
     "@opensaas/stack-ui": "^0",
-    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.11",
     "openai": "^6.8.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -94,7 +94,7 @@
   "devDependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.11",
     "@types/node": "^26.5.1",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",

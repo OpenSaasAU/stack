@@ -19,8 +19,8 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-extension-pgvector": "8.0.0-rc.8",
-    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.11",
+    "@prisma/orm-postgres": "8.0.0-rc.11",
     "next": "^16.2.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -34,7 +34,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^17.4.2",
     "pg": "^8.23.0",
-    "prisma": "8.0.0-rc.12",
+    "prisma": "8.0.0-rc.15",
     "tsx": "^4.23.11",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
