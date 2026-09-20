@@ -1,5 +1,6 @@
 import Markdoc from '@markdoc/markdoc'
 import { codeToHtml } from 'shiki'
+import { renderPlainCode, resolveCodeLanguage } from './code-highlighting'
 
 /**
  * Markdoc configuration with custom nodes and tags
@@ -63,15 +64,21 @@ export async function highlightCode(
   code: string,
   language: string = 'typescript',
 ): Promise<string> {
+  const shikiLanguage = resolveCodeLanguage(language)
+
+  if (!shikiLanguage) {
+    return renderPlainCode(code)
+  }
+
   try {
     const html = await codeToHtml(code, {
-      lang: language,
+      lang: shikiLanguage,
       theme: 'github-dark',
     })
     return html
   } catch (error) {
     console.error('Error highlighting code:', error)
-    return `<pre><code>${code}</code></pre>`
+    return renderPlainCode(code)
   }
 }
 
