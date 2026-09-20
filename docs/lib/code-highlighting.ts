@@ -4,9 +4,13 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   env: 'dotenv',
 }
 
+const SPECIAL_LANGUAGES = new Set(['text', 'plain', 'plaintext', 'txt', 'ansi'])
+
 export function resolveCodeLanguage(language: string) {
   const shikiLanguage = LANGUAGE_ALIASES[language] ?? language
-  return Object.hasOwn(bundledLanguages, shikiLanguage) ? shikiLanguage : undefined
+  return SPECIAL_LANGUAGES.has(shikiLanguage) || Object.hasOwn(bundledLanguages, shikiLanguage)
+    ? shikiLanguage
+    : undefined
 }
 
 function escapeHtml(value: string) {
