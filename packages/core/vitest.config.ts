@@ -32,13 +32,13 @@ export default defineConfig({
       // while normal variance does not. Other packages stay report-only.
       // Rationale: docs/adr/0002-testing-and-ci-strategy.md.
       thresholds: {
-        perFile: true,
         // Re-baselined once against the corpus rewritten by guarantee
         // (#1156, ADR-0057, ADR-0002). No number here was lowered.
         //
         // Lowest current files: query-validation.ts (stmts 78.90, branch
         // 73.27, lines 83.63) and field-access.ts (funcs 80).
         'src/access/**': {
+          perFile: true,
           statements: 76,
           branches: 71,
           functions: 78,
@@ -47,6 +47,7 @@ export default defineConfig({
         // Lowest current files: relationship-input.ts (stmts 88.49, funcs
         // 94.11, lines 92.13) and transaction-boundary.ts (branch 82).
         'src/context/**': {
+          perFile: true,
           statements: 86,
           branches: 80,
           functions: 92,
@@ -64,6 +65,7 @@ export default defineConfig({
         // this is the config validator, and the alternative is lowering a
         // threshold, which ADR-0002's ratchet does not do.
         'src/validation/**': {
+          perFile: true,
           statements: 92,
           branches: 86,
           functions: 98,

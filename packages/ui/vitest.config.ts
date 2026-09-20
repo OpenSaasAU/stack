@@ -5,6 +5,9 @@ import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    preTransformRequests: false,
+  },
   test: {
     environment: 'happy-dom',
     globals: true,
