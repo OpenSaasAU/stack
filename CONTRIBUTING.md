@@ -130,6 +130,10 @@ enforces this). Keep all types strongly typed — avoid `any` and type casting;
 
 ## Versioning
 
+`pnpm release` requires a successful live dependency advisory audit before it
+builds or publishes. See the [release security audit runbook](./specs/release-security-audit.md)
+for network requirements, exit statuses, retained reports and outage recovery.
+
 This monorepo uses two independent mechanisms:
 
 - **Changesets** for npm packages under `packages/*`. Every change to a package

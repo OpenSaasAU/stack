@@ -32,6 +32,7 @@ Thumbs.db
 # Testing
 coverage/
 .nyc_output/
+security-audit.json
 test-results/
 playwright-report/
 playwright/.cache/

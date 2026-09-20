@@ -34,7 +34,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: pnpm
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Create Release Pull Request or Publish to npm
         id: changesets
@@ -48,3 +48,12 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           OPENAI_API_KEY: 'sk-testing-key'
           DATABASE_URL: 'file:./dev.db'
+
+      - name: Preserve security advisory audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-advisory-audit-${{ github.sha }}
+          path: security-audit.json
+          if-no-files-found: ignore
+          retention-days: 30
