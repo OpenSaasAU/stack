@@ -51,7 +51,7 @@ jobs:
 
       - name: Preserve security advisory audit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-advisory-audit-${{ github.sha }}
           path: security-audit.json
