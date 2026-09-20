@@ -21,13 +21,13 @@ describe('Password Utilities', () => {
       expect(hashed).toBeDefined()
       expect(hashed).not.toBe(plain)
       expect(hashed.length).toBeGreaterThan(50)
-      expect(hashed).toMatch(/^\$2[aby]\$\d{2}\$/)
+      expect(hashed).toMatch(/^\$2[aby]\$10\$/)
     })
 
     it('should generate different hashes for same password', async () => {
       const plain = 'mypassword123'
-      const hash1 = await hashPassword(plain)
-      const hash2 = await hashPassword(plain)
+      const hash1 = await hashPassword(plain, 4)
+      const hash2 = await hashPassword(plain, 4)
 
       expect(hash1).not.toBe(hash2) // Different salts
       expect(await comparePassword(plain, hash1)).toBe(true)
@@ -59,7 +59,7 @@ describe('Password Utilities', () => {
   describe('comparePassword', () => {
     it('should return true for matching passwords', async () => {
       const plain = 'mypassword123'
-      const hashed = await hashPassword(plain)
+      const hashed = await hashPassword(plain, 4)
 
       const result = await comparePassword(plain, hashed)
       expect(result).toBe(true)
@@ -68,21 +68,21 @@ describe('Password Utilities', () => {
     it('should return false for non-matching passwords', async () => {
       const plain1 = 'mypassword123'
       const plain2 = 'wrongpassword'
-      const hashed = await hashPassword(plain1)
+      const hashed = await hashPassword(plain1, 4)
 
       const result = await comparePassword(plain2, hashed)
       expect(result).toBe(false)
     })
 
     it('should return false for empty strings', async () => {
-      const hashed = await hashPassword('test')
+      const hashed = await hashPassword('test', 4)
 
       expect(await comparePassword('', hashed)).toBe(false)
       expect(await comparePassword('test', '')).toBe(false)
     })
 
     it('should return false for non-string inputs', async () => {
-      const hashed = await hashPassword('test')
+      const hashed = await hashPassword('test', 4)
 
       // @ts-expect-error - Testing invalid input
       expect(await comparePassword(null, hashed)).toBe(false)
@@ -99,7 +99,7 @@ describe('Password Utilities', () => {
 
     it('should be case sensitive', async () => {
       const plain = 'MyPassword123'
-      const hashed = await hashPassword(plain)
+      const hashed = await hashPassword(plain, 4)
 
       expect(await comparePassword('MyPassword123', hashed)).toBe(true)
       expect(await comparePassword('mypassword123', hashed)).toBe(false)
@@ -109,7 +109,7 @@ describe('Password Utilities', () => {
 
   describe('isHashedPassword', () => {
     it('should return true for bcrypt hashes', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       expect(isHashedPassword(hash)).toBe(true)
     })
 
@@ -143,7 +143,7 @@ describe('Password Utilities', () => {
   describe('HashedPassword class', () => {
     it('should wrap a hash and provide compare method', async () => {
       const plain = 'mypassword123'
-      const hash = await hashPassword(plain)
+      const hash = await hashPassword(plain, 4)
       const wrapped = new HashedPassword(hash)
 
       const result = await wrapped.compare(plain)
@@ -151,7 +151,7 @@ describe('Password Utilities', () => {
     })
 
     it('should return false for wrong password', async () => {
-      const hash = await hashPassword('correct')
+      const hash = await hashPassword('correct', 4)
       const wrapped = new HashedPassword(hash)
 
       const result = await wrapped.compare('wrong')
@@ -159,7 +159,7 @@ describe('Password Utilities', () => {
     })
 
     it('should convert to string correctly', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       const wrapped = new HashedPassword(hash)
 
       expect(wrapped.toString()).toBe(hash)
@@ -168,7 +168,7 @@ describe('Password Utilities', () => {
     })
 
     it('should redact the hash when serialized to JSON', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       const wrapped = new HashedPassword(hash)
 
       expect(JSON.stringify(wrapped)).toBe(JSON.stringify({ isSet: true }))
@@ -179,7 +179,7 @@ describe('Password Utilities', () => {
     })
 
     it('should keep returning the raw hash from string-coercion surfaces', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       const wrapped = new HashedPassword(hash)
 
       expect(wrapped.toString()).toBe(hash)
@@ -190,7 +190,7 @@ describe('Password Utilities', () => {
     })
 
     it('should work with valueOf', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       const wrapped = new HashedPassword(hash)
 
       expect(wrapped.valueOf()).toBe(hash)
@@ -211,7 +211,7 @@ describe('Password Utilities', () => {
     })
 
     it('should work in comparisons and object operations', async () => {
-      const hash = await hashPassword('test')
+      const hash = await hashPassword('test', 4)
       const wrapped = new HashedPassword(hash)
 
       // Should be usable as a string
@@ -228,7 +228,7 @@ describe('Password Utilities', () => {
     it('should hash, store, retrieve, and verify password', async () => {
       // 1. Hash password (would happen in create operation)
       const plainPassword = 'userPassword123!'
-      const hashedPassword = await hashPassword(plainPassword)
+      const hashedPassword = await hashPassword(plainPassword, 4)
 
       // 2. Store in database (simulated)
       const storedUser = {
@@ -253,7 +253,7 @@ describe('Password Utilities', () => {
 
     it('should not re-hash already hashed passwords', async () => {
       const plain = 'password123'
-      const hash = await hashPassword(plain)
+      const hash = await hashPassword(plain, 4)
 
       // If password is already hashed, don't hash again
       if (isHashedPassword(hash)) {
@@ -261,7 +261,7 @@ describe('Password Utilities', () => {
         // Would skip hashing in actual implementation
       } else {
         // Would hash in actual implementation
-        await hashPassword(plain)
+        await hashPassword(plain, 4)
       }
     })
   })
