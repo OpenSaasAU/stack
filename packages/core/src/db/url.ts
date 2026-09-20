@@ -41,7 +41,8 @@ export interface ResolvedDatabaseUrl {
 
 /**
  * Where the Dev database state file is looked for when the environment names
- * no connection.
+ * no connection. In production, only an absolute `stateFile` option or
+ * `OPENSAAS_DEV_DATABASE_STATE_FILE` is read; `cwd` discovery is disabled.
  */
 export type DatabaseUrlLookupOptions = DevDatabaseStateLocation
 

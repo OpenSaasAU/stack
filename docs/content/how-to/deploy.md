@@ -501,6 +501,21 @@ Commit everything the command writes under `migrations/`, the refs included. It 
 
 ## Production Considerations
 
+### Database discovery in production
+
+Set `DATABASE_URL` (or `DIRECT_DATABASE_URL`, which takes precedence) explicitly in the build and runtime environments that need a database. With `NODE_ENV=production`, Stack never discovers the Dev database by searching the working directory for `.opensaas/dev-db.json`. A missing production URL produces the missing-connection error; offline commands using `findDatabaseUrl()` continue to receive `undefined`.
+
+To exercise a production build against the local Dev database, run:
+
+```bash
+pnpm build
+pnpm exec opensaas dev -- next start
+```
+
+The dev loop passes its exact, absolute state-file path to the app in `OPENSAAS_DEV_DATABASE_STATE_FILE`. This preserves the Dev database's single-connection pool and contract-marker behavior without making the deployment trace follow project-root discovery. A custom local runner may set this variable itself, or pass an absolute `stateFile` to `resolveDatabaseUrl()`/`findDatabaseUrl()`. The state must describe a live sidecar on the same machine. Relative paths, missing files and stale state are ignored without falling back to the working directory. An explicitly configured database URL always wins.
+
+`OPENSAAS_DEV_DATABASE_STATE_FILE` is for a locally served production build, not a production database connection. Do not copy `.opensaas/dev-db.json` into a deployment; configure the deployment's Postgres URL instead. Normal development continues to discover the Dev database from the project root.
+
 ### Bundling the Generated `.opensaas` bundle
 
 `opensaas generate` emits a **Generated bundle** under `.opensaas/` — `context.ts`, `types.ts`, `lists.ts` and the rest — that your app imports through `getContext`, alongside the Contract module and its emitted `contract.json`. The host build (`next build`) is responsible for compiling this bundle and **file-tracing** it into the serverless output. Two things make that work, and the first is automatic.

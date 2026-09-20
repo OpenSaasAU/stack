@@ -485,7 +485,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       ),
     )
 
-    app = createAppRunner({ cwd, command: appCommand, devDatabase: database !== undefined })
+    app = createAppRunner({
+      cwd,
+      command: appCommand,
+      devDatabase: database !== undefined,
+      stateFile: database?.stateFile,
+    })
     process.exitCode = await app.run()
   } finally {
     process.off('SIGINT', onSigint)

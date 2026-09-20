@@ -135,6 +135,20 @@ describe('opensaas dev', () => {
     expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db.json'))).toBe(false)
   }, 300_000)
 
+  test('a production app resolves the loop database from its explicit state path', async () => {
+    const projectDir = createProject(
+      'production-app',
+      `process.env.NODE_ENV = 'production'\n` + ROW_PROBE,
+    )
+
+    const run = await runDevLoop(projectDir)
+
+    expect(run.output, run.output).toContain('PROVENANCE dev-database')
+    expect(run.output, run.output).toContain('INJECTED_DATABASE_URL none')
+    expect(run.output, run.output).toContain('ROWS 1: read by the app')
+    expect(run.exitCode, run.output).toBe(0)
+  }, 300_000)
+
   test('a destructive plan on boot stops at the consent point and never starts the app', async () => {
     const projectDir = createProject('destructive-boot', MARKER_PROBE)
 
