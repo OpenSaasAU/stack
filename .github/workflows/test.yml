@@ -85,6 +85,9 @@ jobs:
           pnpm check:doc-import-specifiers
           pnpm check:doc-import-specifiers --self-test
 
+      - name: Test documentation code rendering
+        run: pnpm --filter opensaas-stack-docs test
+
       - name: Lint codebase
         run: pnpm lint
 

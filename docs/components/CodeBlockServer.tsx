@@ -1,4 +1,5 @@
 import { codeToHtml } from 'shiki'
+import { renderPlainCode, resolveCodeLanguage } from '@/lib/code-highlighting'
 import { CodeBlockWrapper } from './CodeBlockWrapper'
 
 interface CodeBlockServerProps {
@@ -7,21 +8,22 @@ interface CodeBlockServerProps {
 }
 
 export async function CodeBlockServer({ language = 'typescript', content }: CodeBlockServerProps) {
-  let html: string
+  const shikiLanguage = resolveCodeLanguage(language)
+  let html = renderPlainCode(content, language)
 
-  try {
-    html = await codeToHtml(content, {
-      lang: language,
-      themes: {
-        light: 'github-light',
-        dark: 'github-dark',
-      },
-      defaultColor: false,
-    })
-  } catch (error) {
-    console.error('Error highlighting code:', error)
-    // Fallback to plain code
-    html = `<pre><code class="language-${language}">${content}</code></pre>`
+  if (shikiLanguage) {
+    try {
+      html = await codeToHtml(content, {
+        lang: shikiLanguage,
+        themes: {
+          light: 'github-light',
+          dark: 'github-dark',
+        },
+        defaultColor: false,
+      })
+    } catch (error) {
+      console.error('Error highlighting code:', error)
+    }
   }
 
   return <CodeBlockWrapper html={html} code={content} language={language} />
