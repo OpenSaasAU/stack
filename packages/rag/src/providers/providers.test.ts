@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { OpenAIEmbeddingProvider } from './openai.js'
 import { OllamaEmbeddingProvider } from './ollama.js'
 import { createEmbeddingProvider } from './index.js'
@@ -6,6 +6,19 @@ import type { OllamaEmbeddingConfig } from '../config/types.js'
 
 describe('Embedding Providers', () => {
   describe('OpenAIEmbeddingProvider', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('Network access is disabled in OpenAI provider unit tests')
+        }),
+      )
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
     describe('constructor', () => {
       it('should initialize with default model', () => {
         const provider = new OpenAIEmbeddingProvider({
@@ -68,6 +81,71 @@ describe('Embedding Providers', () => {
         })
 
         expect(provider.dimensions).toBe(1536)
+      })
+
+      it('sends the embedding request and returns the local response', async () => {
+        const answer = [0.25, 0.5, 0.75]
+        const fetchMock = vi.fn<typeof fetch>(
+          async () =>
+            new Response(
+              JSON.stringify({
+                object: 'list',
+                data: [{ object: 'embedding', embedding: answer, index: 0 }],
+                model: 'text-embedding-3-small',
+                usage: { prompt_tokens: 2, total_tokens: 2 },
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            ),
+        )
+        vi.stubGlobal('fetch', fetchMock)
+
+        const provider = new OpenAIEmbeddingProvider({
+          type: 'openai',
+          apiKey: 'test-key',
+          baseURL: 'https://openai.test/v1',
+        })
+
+        await expect(provider.embed('local request')).resolves.toEqual(answer)
+
+        expect(fetchMock).toHaveBeenCalledOnce()
+        const [input, init] = fetchMock.mock.calls[0]
+        const request = new Request(input, init)
+        expect(request.url).toBe('https://openai.test/v1/embeddings')
+        expect(request.method).toBe('POST')
+        expect(request.headers.get('authorization')).toBe('Bearer test-key')
+        await expect(request.json()).resolves.toEqual({
+          model: 'text-embedding-3-small',
+          input: 'local request',
+          encoding_format: 'float',
+        })
+      })
+
+      it('wraps a local OpenAI error response', async () => {
+        const fetchMock = vi.fn<typeof fetch>(
+          async () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: 'invalid test key',
+                  type: 'invalid_request_error',
+                  code: 'invalid_api_key',
+                },
+              }),
+              { status: 401, headers: { 'content-type': 'application/json' } },
+            ),
+        )
+        vi.stubGlobal('fetch', fetchMock)
+
+        const provider = new OpenAIEmbeddingProvider({
+          type: 'openai',
+          apiKey: 'invalid-key',
+          baseURL: 'https://openai.test/v1',
+        })
+
+        await expect(provider.embed('local request')).rejects.toThrow(
+          'OpenAI embedding generation failed: 401 invalid test key',
+        )
+        expect(fetchMock).toHaveBeenCalledOnce()
       })
     })
 
@@ -364,17 +442,6 @@ describe('Embedding Providers', () => {
   })
 
   describe('Error handling', () => {
-    it('should handle API errors gracefully', async () => {
-      const provider = new OpenAIEmbeddingProvider({
-        type: 'openai',
-        apiKey: 'invalid-key',
-      })
-
-      // This will fail when actually calling the API
-      // but we're testing that it throws a descriptive error
-      await expect(provider.embed('test')).rejects.toThrow(/OpenAI embedding generation failed/)
-    })
-
     it('should handle network errors for Ollama', async () => {
       const provider = new OllamaEmbeddingProvider({
         type: 'ollama',
