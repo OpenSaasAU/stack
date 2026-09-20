@@ -27,7 +27,7 @@
     "openai": "^6.32.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@opensaas/stack-cli": "workspace:*",

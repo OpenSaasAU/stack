@@ -109,7 +109,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "pg": "^8.23.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
