@@ -117,6 +117,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       : DEFAULT_APP_COMMAND
 
   const stagingDir = path.join(cwd, STAGING_DIR)
+  const previousStateFile = process.env.OPENSAAS_DEV_DATABASE_STATE_FILE
 
   let database: DevDatabase | undefined
   let watcher: FSWatcher | undefined
@@ -414,6 +415,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         dataDir,
         extensions: declaredDevDatabaseExtensions(config),
       })
+      process.env.OPENSAAS_DEV_DATABASE_STATE_FILE = database.stateFile
       console.log(chalk.green(`Dev database listening on ${database.url}\n`))
     }
 
@@ -485,18 +487,20 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       ),
     )
 
-    app = createAppRunner({
-      cwd,
-      command: appCommand,
-      devDatabase: database !== undefined,
-      stateFile: database?.stateFile,
-    })
+    app = createAppRunner({ cwd, command: appCommand, devDatabase: database !== undefined })
     process.exitCode = await app.run()
   } finally {
     process.off('SIGINT', onSigint)
     process.off('SIGTERM', onSigterm)
     process.off('exit', onExit)
     if (app !== undefined) console.log(chalk.yellow('\nStopping dev mode...'))
-    await stop()
+    try {
+      await stop()
+    } finally {
+      if (database !== undefined) {
+        if (previousStateFile === undefined) delete process.env.OPENSAAS_DEV_DATABASE_STATE_FILE
+        else process.env.OPENSAAS_DEV_DATABASE_STATE_FILE = previousStateFile
+      }
+    }
   }
 }

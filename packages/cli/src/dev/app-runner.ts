@@ -15,8 +15,6 @@ export interface AppRunnerOptions {
    * inherited variable puts it on the `'env'` branch instead (ADR-0063).
    */
   devDatabase: boolean
-  /** Absolute state path for a production-built app served by the dev loop. */
-  stateFile?: string
   /** Defaults to `process.platform`; injectable so the shim/kill decision is testable on any host. */
   platform?: typeof process.platform
 }
@@ -105,10 +103,7 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
     const env: typeof process.env = { ...process.env }
     const pathExtension = extendPathEnv(options.cwd, env)
     env[pathExtension.key] = pathExtension.value
-    if (options.devDatabase) {
-      delete env.DATABASE_URL
-      env.OPENSAAS_DEV_DATABASE_STATE_FILE = options.stateFile
-    }
+    if (options.devDatabase) delete env.DATABASE_URL
     return spawn(file, args, { cwd: options.cwd, stdio: 'inherit', env, shell: usesShell })
   }
 

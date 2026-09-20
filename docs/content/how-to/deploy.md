@@ -512,7 +512,7 @@ pnpm build
 pnpm exec opensaas dev -- next start
 ```
 
-The dev loop passes its exact, absolute state-file path to the app in `OPENSAAS_DEV_DATABASE_STATE_FILE`. This preserves the Dev database's single-connection pool and contract-marker behavior without making the deployment trace follow project-root discovery. A custom local runner may set this variable itself, or pass an absolute `stateFile` to `resolveDatabaseUrl()`/`findDatabaseUrl()`. The state must describe a live sidecar on the same machine. Relative paths, missing files and stale state are ignored without falling back to the working directory. An explicitly configured database URL always wins.
+The dev loop exports its exact, absolute state-file path in `OPENSAAS_DEV_DATABASE_STATE_FILE` before generation and reconciliation, so both Prisma subprocesses and the app inherit it, even when the loop itself starts with `NODE_ENV=production`. The previous value is restored when the loop stops. This preserves the Dev database's single-connection pool and contract-marker behavior without making the deployment trace follow project-root discovery. A custom local runner may set this variable itself, or pass an absolute `stateFile` to `resolveDatabaseUrl()`/`findDatabaseUrl()`. The state must describe a live sidecar on the same machine. Relative paths, missing files and stale state are ignored without falling back to the working directory. An explicitly configured database URL always wins.
 
 `OPENSAAS_DEV_DATABASE_STATE_FILE` is for a locally served production build, not a production database connection. Do not copy `.opensaas/dev-db.json` into a deployment; configure the deployment's Postgres URL instead. Normal development continues to discover the Dev database from the project root.
 
