@@ -29,7 +29,11 @@ export interface DevDatabaseStateLocation {
    * Defaults to `process.cwd()`.
    */
   cwd?: string
-  /** An explicit state file path, bypassing `cwd` and the bundle directory. */
+  /**
+   * An explicit state file path, bypassing `cwd` and the bundle directory.
+   * Production requires an absolute path; when omitted, production reads
+   * `OPENSAAS_DEV_DATABASE_STATE_FILE` instead of discovering from `cwd`.
+   */
   stateFile?: string
 }
 
@@ -51,9 +55,18 @@ export function devDatabaseStatePath(location: DevDatabaseStateLocation = {}): s
 export function readDevDatabaseState(
   location: DevDatabaseStateLocation = {},
 ): DevDatabaseState | undefined {
+  // Keep the production branch beside the filesystem read so bundlers erase
+  // project-root discovery before tracing deployment files (issue #1602).
+  const stateFile =
+    process.env.NODE_ENV === 'production'
+      ? (location.stateFile ?? process.env.OPENSAAS_DEV_DATABASE_STATE_FILE)
+      : devDatabaseStatePath(location)
+  if (stateFile === undefined) return undefined
+  if (process.env.NODE_ENV === 'production' && !path.isAbsolute(stateFile)) return undefined
+
   let contents: string
   try {
-    contents = readFileSync(devDatabaseStatePath(location), 'utf8')
+    contents = readFileSync(stateFile, 'utf8')
   } catch {
     return undefined
   }
