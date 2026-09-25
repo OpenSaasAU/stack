@@ -23,7 +23,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "better-auth": "^1.7.4",
     "next": "^16.2.10",
-    "postcss": "^8.5.26",
+    "postcss": "^8.5.28",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
