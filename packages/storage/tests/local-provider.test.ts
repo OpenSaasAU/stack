@@ -374,5 +374,111 @@ describe('LocalStorageProvider', () => {
 
       expect(url).toBe('/uploads/my file (1).txt')
     })
+
+    it('should refuse a traversal name', () => {
+      const config: LocalStorageConfig = {
+        type: 'local',
+        uploadDir: './uploads',
+        serveUrl: '/uploads',
+      }
+      const provider = new LocalStorageProvider(config)
+
+      expect(() => provider.getUrl('../../etc/passwd')).toThrow()
+    })
+  })
+
+  // Issue #1619: a caller- or database-supplied name must never resolve
+  // outside `uploadDir`, whether it arrives as a traversal-shaped upload
+  // filename or as a stored value handed straight to download/delete.
+  describe('path containment', () => {
+    const TRAVERSAL_NAMES = ['../x', '..\\x', '/etc/x', 'a/../../x']
+
+    describe('upload with generateUniqueFilenames: false', () => {
+      it.each(TRAVERSAL_NAMES)(
+        'reduces %s to a safe basename inside uploadDir instead of writing outside it',
+        async (name) => {
+          const config: LocalStorageConfig = {
+            type: 'local',
+            uploadDir: './uploads',
+            serveUrl: '/uploads',
+            generateUniqueFilenames: false,
+          }
+          const provider = new LocalStorageProvider(config)
+
+          const result = await provider.upload(Buffer.from('x'), name)
+
+          expect(result.filename).toBe('x')
+          expect(fs.writeFile).toHaveBeenCalledWith('uploads/x', expect.any(Buffer))
+        },
+      )
+
+      it.each(['..', '.', ''])(
+        'refuses an upload name with nothing safe left: %s',
+        async (name) => {
+          const config: LocalStorageConfig = {
+            type: 'local',
+            uploadDir: './uploads',
+            serveUrl: '/uploads',
+            generateUniqueFilenames: false,
+          }
+          const provider = new LocalStorageProvider(config)
+
+          await expect(provider.upload(Buffer.from('x'), name)).rejects.toThrow()
+          expect(fs.writeFile).not.toHaveBeenCalled()
+        },
+      )
+    })
+
+    describe('upload with generateUniqueFilenames: true (default)', () => {
+      it('never lets a traversal filename smuggle a separator into the generated name', async () => {
+        const config: LocalStorageConfig = {
+          type: 'local',
+          uploadDir: './uploads',
+          serveUrl: '/uploads',
+        }
+        const provider = new LocalStorageProvider(config)
+
+        const result = await provider.upload(Buffer.from('x'), '../../evil.sh')
+
+        expect(result.filename).toMatch(/^\d+-[a-f0-9]+\.sh$/)
+        expect(fs.writeFile).toHaveBeenCalledWith(
+          expect.stringMatching(/^uploads\/\d+-[a-f0-9]+\.sh$/),
+          expect.any(Buffer),
+        )
+      })
+    })
+
+    it.each([...TRAVERSAL_NAMES, '..', '.'])('download refuses %s', async (name) => {
+      const provider = new LocalStorageProvider({
+        type: 'local',
+        uploadDir: './uploads',
+        serveUrl: '/uploads',
+      })
+
+      await expect(provider.download(name)).rejects.toThrow()
+      expect(fs.readFile).not.toHaveBeenCalled()
+    })
+
+    it.each([...TRAVERSAL_NAMES, '..', '.'])('delete refuses %s', async (name) => {
+      const provider = new LocalStorageProvider({
+        type: 'local',
+        uploadDir: './uploads',
+        serveUrl: '/uploads',
+      })
+
+      await expect(provider.delete(name)).rejects.toThrow()
+      expect(fs.unlink).not.toHaveBeenCalled()
+    })
+
+    it('the reproduction from #1619: a stored ../../victim.txt is refused by delete', async () => {
+      const provider = new LocalStorageProvider({
+        type: 'local',
+        uploadDir: './uploads',
+        serveUrl: '/uploads',
+      })
+
+      await expect(provider.delete('../../victim.txt')).rejects.toThrow()
+      expect(fs.unlink).not.toHaveBeenCalled()
+    })
   })
 })
