@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   getImageDimensions,
+  detectImage,
   transformImage,
   processImageTransformations,
 } from '../src/utils/image.js'
@@ -69,6 +70,57 @@ describe('Image Utilities', () => {
       const dimensions = await getImageDimensions(buffer)
 
       expect(dimensions).toEqual({ width: 0, height: 0 })
+    })
+  })
+
+  describe('detectImage (issue #1625: the effective type for image() is the sniffed bytes)', () => {
+    it('resolves the MIME type from mediaType when sharp reports one', async () => {
+      const { default: sharp } = await import('sharp')
+      const mockInstance: MockSharpInstance & { metadata: ReturnType<typeof vi.fn> } = {
+        metadata: vi
+          .fn()
+          .mockResolvedValue({ width: 10, height: 10, format: 'svg', mediaType: 'image/svg+xml' }),
+      }
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
+
+      const result = await detectImage(Buffer.from('<svg/>'))
+
+      expect(result).toEqual({ width: 10, height: 10, mimeType: 'image/svg+xml' })
+    })
+
+    it('falls back to a format→MIME map when sharp reports no mediaType', async () => {
+      const { default: sharp } = await import('sharp')
+      const mockInstance: MockSharpInstance & { metadata: ReturnType<typeof vi.fn> } = {
+        metadata: vi.fn().mockResolvedValue({ width: 800, height: 600, format: 'png' }),
+      }
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
+
+      const result = await detectImage(Buffer.from('fake-png-data'))
+
+      expect(result).toEqual({ width: 800, height: 600, mimeType: 'image/png' })
+    })
+
+    it('returns null when sharp cannot decode the bytes as an image at all', async () => {
+      const { default: sharp } = await import('sharp')
+      vi.mocked(sharp).mockImplementationOnce(() => {
+        throw new Error('Input buffer contains unsupported image format')
+      })
+
+      const result = await detectImage(Buffer.from('not an image'))
+
+      expect(result).toBeNull()
+    })
+
+    it('returns null when neither mediaType nor a known format is reported', async () => {
+      const { default: sharp } = await import('sharp')
+      const mockInstance: MockSharpInstance & { metadata: ReturnType<typeof vi.fn> } = {
+        metadata: vi.fn().mockResolvedValue({ width: 10, height: 10, format: 'made-up-format' }),
+      }
+      vi.mocked(sharp).mockReturnValueOnce(mockInstance as never)
+
+      const result = await detectImage(Buffer.from('data'))
+
+      expect(result).toBeNull()
     })
   })
 

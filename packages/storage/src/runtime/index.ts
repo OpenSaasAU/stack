@@ -8,11 +8,13 @@ import type {
 } from '../config/types.js'
 import {
   validateFile,
-  getMimeType,
+  checkFileSize,
+  resolveEffectiveMimeType,
+  withEffectiveExtension,
   isFileValidationOptions,
   type FileValidationOptions,
 } from '../utils/upload.js'
-import { getImageDimensions, processImageTransformations } from '../utils/image.js'
+import { detectImage, processImageTransformations } from '../utils/image.js'
 import { getStorageProviderFactory } from './registry.js'
 
 /**
@@ -94,26 +96,25 @@ export async function uploadFile(
 ): Promise<FileMetadata> {
   const { file, buffer } = data
 
-  if (options?.validation) {
-    const validation = validateFile(
-      {
-        size: file.size,
-        name: file.name,
-        type: file.type,
-      },
-      options.validation,
-    )
-
-    if (!validation.valid) {
-      throw new Error(validation.error)
-    }
+  // Validated (and, by default, refused for active content) against the
+  // EFFECTIVE type — the declared type, or the type looked up from the
+  // filename when none is declared — never the client's raw `type` alone.
+  // This runs even with no `validation` config, so an active type is
+  // refused for a `file()` field with no config at all (issue #1625).
+  const validation = validateFile(
+    { size: file.size, name: file.name, type: file.type },
+    options?.validation,
+  )
+  if (!validation.valid) {
+    throw new Error(validation.error)
   }
+
+  const contentType = resolveEffectiveMimeType(file)
+  const storedName = withEffectiveExtension(file.name, contentType)
 
   const provider = createStorageProvider(config, storageProviderName)
 
-  const contentType = file.type || getMimeType(file.name)
-
-  const result = await provider.upload(buffer, file.name, {
+  const result = await provider.upload(buffer, storedName, {
     contentType,
     metadata: options?.metadata,
   })
@@ -160,28 +161,39 @@ export async function uploadImage(
 ): Promise<ImageMetadata> {
   const { file, buffer } = data
 
-  if (options?.validation) {
-    const validation = validateFile(
-      {
-        size: file.size,
-        name: file.name,
-        type: file.type,
-      },
-      options.validation,
-    )
-
-    if (!validation.valid) {
-      throw new Error(validation.error)
-    }
+  // Checked before sharp ever touches the buffer: the size limit exists to
+  // bound the cost of processing an upload at all, and a large or malicious
+  // (e.g. deeply nested SVG) file that fails it shouldn't pay for decoding
+  // first.
+  const sizeError = checkFileSize(file.size, options?.validation?.maxFileSize)
+  if (sizeError) {
+    throw new Error(sizeError.error)
   }
+
+  // The effective type for an image is the format sharp actually decodes
+  // from the bytes, never the client's declared type — a PNG declared as
+  // `image/jpeg` is still detected and stored as PNG, and bytes that aren't
+  // a readable image at all (a `.png` that isn't one) are refused outright
+  // rather than trusted (issue #1625).
+  const detected = await detectImage(buffer)
+  if (detected === null) {
+    throw new Error(`File '${file.name}' is not a recognized image format`)
+  }
+
+  const validation = validateFile(
+    { size: file.size, name: file.name, type: detected.mimeType },
+    options?.validation,
+  )
+  if (!validation.valid) {
+    throw new Error(validation.error)
+  }
+
+  const contentType = detected.mimeType
+  const storedName = withEffectiveExtension(file.name, contentType)
 
   const provider = createStorageProvider(config, storageProviderName)
 
-  const contentType = file.type || getMimeType(file.name)
-
-  const { width, height } = await getImageDimensions(buffer)
-
-  const result = await provider.upload(buffer, file.name, {
+  const result = await provider.upload(buffer, storedName, {
     contentType,
     metadata: options?.metadata,
   })
@@ -191,7 +203,7 @@ export async function uploadImage(
   if (options?.transformations) {
     transformations = await processImageTransformations(
       buffer,
-      file.name,
+      storedName,
       options.transformations,
       provider,
       contentType,
@@ -204,8 +216,8 @@ export async function uploadImage(
     url: result.url,
     mimeType: contentType,
     size: result.size,
-    width,
-    height,
+    width: detected.width,
+    height: detected.height,
     uploadedAt: new Date().toISOString(),
     storageProvider: storageProviderName,
     metadata: result.metadata,
