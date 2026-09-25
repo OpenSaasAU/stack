@@ -329,10 +329,12 @@ export async function GET(request: NextRequest, { params }: { params: { filename
 
   const provider = createStorageProvider(config, 'documents')
 
-  // `download` refuses a name that isn't a plain filename strictly inside the
-  // provider's own upload directory — but that is defense in depth, not a
-  // reason to skip validating the route param yourself before trusting it for
-  // anything else (a lookup key, a header value, ...).
+  // `LocalStorageProvider.download` refuses a name that isn't a plain
+  // filename strictly inside its own upload directory — but `@opensaas/stack-storage-s3`
+  // and `-vercel` do not carry the equivalent check, so this is defense in
+  // depth for one provider, not a guarantee of every provider. Validate the
+  // route param yourself before trusting it for anything else (a lookup key,
+  // a header value, ...), whichever provider this route ends up naming.
   let buffer: Buffer
   try {
     buffer = await provider.download(params.filename)

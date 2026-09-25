@@ -473,8 +473,8 @@ describe('image() / file() multi-column mode', () => {
 
     it('image() does NOT upload when given an existing ImageMetadata on a sudo create (multi-column mode)', async () => {
       // A non-privileged create with metadata-shaped input is refused (see
-      // the "metadata trust" describe block below) — this is the legitimate
-      // sudo seed/migration case ADR-0006's no-re-upload guarantee covers.
+      // metadata-trust.test.ts) — this is the legitimate sudo seed/migration
+      // case ADR-0006's no-re-upload guarantee covers.
       const field = image({ storage: 'images', db: { columns: 'keystone' } })
       const { context, uploadImage } = makeContext()
       const existing: ImageMetadata = {
