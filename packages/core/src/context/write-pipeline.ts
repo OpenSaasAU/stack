@@ -403,7 +403,7 @@ async function runWriteInTransaction(
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
-  const { resolvedData } = await hookPipeline.run({
+  const { resolvedData, defaultedFields } = await hookPipeline.run({
     operation: writeOp,
     listName,
     listConfig,
@@ -425,6 +425,7 @@ async function runWriteInTransaction(
     inputData: input,
     listName,
     config,
+    defaultedFields,
   })
 
   // ── Phase 5.5: relationship resolution (ADR-0050) ──────────────────────────

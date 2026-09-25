@@ -80,6 +80,7 @@ export function authPlugin(config: AuthConfig): Plugin {
         normalized.access,
         normalized.betterAuthPlugins,
         normalized.credentialFields,
+        normalized.fieldAccess,
       )
 
       // ADR-0048's per-list pin, named for the Auth lists: an explicit

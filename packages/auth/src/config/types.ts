@@ -1,4 +1,4 @@
-import type { ListConfig, ListIndex } from '@opensaas/stack-core'
+import type { FieldAccess, ListConfig, ListIndex } from '@opensaas/stack-core'
 import type { BetterAuthOptions, BetterAuthPlugin, User } from 'better-auth'
 import type { ExtendUserListConfig } from '../lists/index.js'
 
@@ -448,6 +448,51 @@ export type AuthConfig = {
    * ```
    */
   credentialFields?: Record<string, string[]>
+
+  /**
+   * Override the field-level access the auth plugin seeds on a derived Auth
+   * list field (ADR-0073), keyed by better-auth's own **model key** (e.g.
+   * `'user'`, `'session'` — not the derived list key, so it stays
+   * remap-proof), each naming better-auth **field keys** (not mapped column
+   * names) mapped to a `FieldAccess` (`read`/`create`/`update`).
+   *
+   * The plugin seeds two kinds of field-level access before this option is
+   * applied: the credential read-deny ({@link credentialFields}, ADR-0036),
+   * and a write-deny on every field better-auth itself marks `input: false`
+   * — a client cannot set it through better-auth's own API either, and a
+   * signed-in user's own `context.db` write must not be able to (issue
+   * #1618). The base schema marks `user.emailVerified` this way
+   * unconditionally; the `admin()` plugin adds `user.role`, `user.banned`,
+   * `user.banReason`, `user.banExpires` and `session.impersonatedBy`.
+   *
+   * Each entry here **replaces** the seeded rule for exactly the operations
+   * it names — an operation it doesn't name keeps its seeded rule (or stays
+   * unrestricted, if nothing seeded one). This is the seam for reopening a
+   * seeded deny, most commonly letting an admin session change `role` from
+   * the admin UI.
+   *
+   * An entry cannot set `read` on a field {@link credentialFields} marks as a
+   * credential — that throws at config time naming the model and field,
+   * since ADR-0036's read-deny must never be reopened. Validation otherwise
+   * follows {@link credentialFields}: an entry naming a field that doesn't
+   * exist on a model the app actually derives throws, naming the model and
+   * field; an entry for a model the app doesn't derive at all is a silent
+   * no-op; an entry naming an id-referencing relationship field throws
+   * (that field derives to a `relationship()`, never a scalar column).
+   *
+   * @example Let an admin session change another user's role
+   * ```typescript
+   * authPlugin({
+   *   betterAuthPlugins: [admin()],
+   *   fieldAccess: {
+   *     user: {
+   *       role: { update: ({ session }) => session?.role === 'admin' },
+   *     },
+   *   },
+   * })
+   * ```
+   */
+  fieldAccess?: Record<string, Record<string, FieldAccess>>
 
   /**
    * Additional Better Auth plugins to enable

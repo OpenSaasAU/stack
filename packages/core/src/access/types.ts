@@ -419,4 +419,23 @@ export type FieldAccess<
   ) => boolean | Promise<boolean>
   create?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
   update?: FieldAccessControl<TItem, TCreateInput, TUpdateInput>
+  /**
+   * Exempts this field's OWN declared `defaultValue` from the `create` rule
+   * above, when the caller and every `resolveInput` hook left the field
+   * omitted (`applyCreateDefaults` filled it, not a write anyone made). Off
+   * by default: a `create` denial ordinarily blocks the whole create for any
+   * session it denies, even one relying on the field's default (deliberate —
+   * see `packages/core/src/access/field-access.test.ts`'s
+   * `defaultedFields` suite for the `total`-style counter-example this
+   * default preserves).
+   *
+   * Set this only when a `create` denial is UNCONDITIONAL — denies every
+   * session, sudo aside — and the field's own default is meant to always
+   * settle regardless (a plugin-derived column better-auth itself never
+   * accepts as client input is the motivating case, ADR-0073). A
+   * session-dependent `create` rule (allows one session, denies another)
+   * should leave this unset: the denied session should not create the row
+   * at all, the same as any other required field it cannot write.
+   */
+  allowCreateDefault?: boolean
 }

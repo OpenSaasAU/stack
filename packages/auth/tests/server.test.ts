@@ -49,6 +49,7 @@ function makeAuthConfig(overrides: Partial<NormalizedAuthConfig> = {}): Normaliz
     rateLimit: undefined,
     betterAuthOptions: {},
     credentialFields: {},
+    fieldAccess: {},
     ...overrides,
   }
 }

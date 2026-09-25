@@ -334,6 +334,91 @@ whether reading the value confers a live credential, not, say,
 (`storeTokens`/`storeClientSecret`) or `returned: false` flag, which is
 neither a reliable nor a complete signal (see ADR-0036).
 
+### `input: false` fields ship write-denied independent of operation access (ADR-0073)
+
+The write-side twin of the read-deny above: a whole-row owner-update rule
+(`update: ({ session, item }) => session?.userId === item.id`) says who may
+touch the row, not which columns — so it does not, on its own, stop a
+signed-in user from writing a column better-auth itself never lets a client
+set. `deriveAuthLists` reads the same upstream field attribute
+(`DBFieldAttribute.input`, better-auth's own signal for "clients can't send
+this") that `buildScalarField` already consults for type/nullability/default,
+and sets a field-level `access: { create: () => false, update: () => false,
+allowCreateDefault: true }` on every field where it is `false`, independent of
+whatever `accessConfig` an app supplies (issue #1618). `allowCreateDefault`
+(core, ADR-0073) is what keeps this from breaking an ordinary
+`context.db.User.create()`: `User.emailVerified` also carries a `false`
+default, and without it every create would throw the moment the omitted field
+got auto-filled — the flag exempts exactly that auto-filled value from the
+deny, so the field still settles to its own default for every session while
+an explicit attempt to set it (`data: { emailVerified: true }`) is still
+refused. See `packages/core/CLAUDE.md`'s "Hook Execution Order (Write)"
+section for the full mechanics of `FieldAccess.allowCreateDefault`. This
+covers `User.emailVerified` unconditionally,
+and — once `admin()` is registered — `User.role`, `User.banned`,
+`User.banReason`, `User.banExpires` and `Session.impersonatedBy`:
+
+```typescript
+// A whole-row owner rule alone is not enough once admin() is registered —
+// `role` is write-denied regardless, so this can't self-promote:
+authPlugin({
+  betterAuthPlugins: [admin()],
+  access: {
+    user: { operation: { update: ({ session, item }) => session?.userId === item.id } },
+  },
+})
+await context.db.User.update({ where: { id: me }, data: { role: 'admin' } }) // throws
+```
+
+Unlike the read-deny, a denied write **throws** rather than stripping — it's
+the same field-level write-access behaviour any other denied field gets
+(`packages/core/src/access/field-access.ts`), since a write has no "succeed
+anyway, minus one field" fallback the way a read does. `sudo()` and
+better-auth's own flows (sign-up, `setRole`, `banUser`, email verification)
+are unaffected, for the same reason as the read-deny: `sudo()` skips
+field-level access, and better-auth writes these through the Auth adapter
+over the Unsafe surface.
+
+A field that is both a credential (ADR-0036) and `input: false` (this
+decision) gets both denies — they compose rather than one overwriting the
+other.
+
+**Reopening a seeded deny — `authPlugin({ fieldAccess })`.** Keyed exactly
+like `credentialFields` (better-auth model key, then field key), each value a
+`FieldAccess` (`read`/`create`/`update`). An entry **replaces** exactly the
+operations it names, on top of whichever seeded rule already applies —
+unlike `credentialFields`, this is override, not additive-only. The one thing
+it can never do is set `read` on a credential field: that throws at config
+time, naming the model and field, because ADR-0036's read-deny must never be
+reopened. Validation otherwise matches `credentialFields`: a field missing
+from a model the app actually derives throws; a model the app doesn't derive
+at all is a silent no-op; an id-referencing relationship field throws (it
+derives to a `relationship()`, never a scalar column).
+
+```typescript
+// Let an admin session change another user's role. Both axes must agree:
+// the operation-level rule must let an admin touch someone else's row, AND
+// fieldAccess must reopen the field itself.
+authPlugin({
+  betterAuthPlugins: [admin()],
+  access: {
+    user: {
+      operation: {
+        update: ({ session, item }) => session?.userId === item.id || session?.role === 'admin',
+      },
+    },
+  },
+  fieldAccess: {
+    user: { role: { update: ({ session }) => session?.role === 'admin' } },
+  },
+})
+```
+
+See ADR-0073 for the full decision record, including why the signal is
+better-auth's own `input` flag rather than a stack-curated list — a plugin
+the stack has never specifically seen still gets its `input: false` fields
+write-denied automatically.
+
 ### Schema placement (relocatable Auth lists)
 
 A plugin-level `schema` option places all generated Auth lists in a non-`public`

@@ -30,6 +30,13 @@ export interface HookPipelineArgs {
 
 export interface HookPipelineResult {
   resolvedData: Record<string, unknown>
+  /**
+   * Every field key `applyCreateDefaults` filled on this run (empty for
+   * `update`, since that function only runs on create) — see its own doc
+   * comment for why the write pipeline exempts exactly these keys from
+   * field-level `create` access.
+   */
+  defaultedFields: Set<string>
 }
 
 export interface HookPipeline {
@@ -73,8 +80,9 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   // Must run after resolveInput hooks and before validation, so a
   // required-with-default field passes `isRequired` on an omitted input
   // instead of failing it (see applyCreateDefaults, issue #615).
+  const defaultedFields = new Set<string>()
   if (operation === 'create') {
-    resolvedData = applyCreateDefaults(resolvedData, listConfig.fields)
+    resolvedData = applyCreateDefaults(resolvedData, listConfig.fields, defaultedFields)
   }
 
   await executeValidate(
@@ -127,7 +135,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
     item,
   )
 
-  return { resolvedData }
+  return { resolvedData, defaultedFields }
 }
 
 export const hookPipeline: HookPipeline = {

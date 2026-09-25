@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
-import { twoFactor } from 'better-auth/plugins'
+import { admin, twoFactor } from 'better-auth/plugins'
 import {
   deriveAuthLists as deriveAuthListsImpl,
   type DerivedAuthLists,
@@ -673,12 +673,17 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
     }
   })
 
-  it('leaves twoFactor.verified open, and twoFactor.userId open despite carrying returned: false upstream', () => {
+  it('write-denies twoFactor.verified (input:false upstream, issue #1618), and leaves twoFactor.userId open despite carrying returned: false upstream', async () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [twoFactor()])
 
-    expect(lists.TwoFactor.fields.verified.access).toBeUndefined()
+    const verified = lists.TwoFactor.fields.verified
+    expect(verified.access?.read).toBeUndefined()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await verified.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await verified.access!.update!({} as any)).toBe(false)
     // userId is a relationship field (references user.id), not a scalar —
-    // it's never routed through the credential-deny path at all.
+    // it's never routed through the credential-deny or write-deny paths at all.
     expect(lists.TwoFactor.fields.user.access).toBeUndefined()
   })
 
@@ -795,6 +800,280 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin], { widget: ['owner'] })
 
     expect(await lists.Widget.fields.owner.access!.read!({} as never)).toBe(false)
+  })
+})
+
+describe('deriveAuthLists - input:false fields ship write-denied (issue #1618)', () => {
+  it('denies create and update on User.emailVerified, which better-auth marks input:false unconditionally', async () => {
+    const { lists } = deriveAuthLists(defaultModels)
+    const field = lists.User.fields.emailVerified
+
+    expect(field.access?.create).toBeTypeOf('function')
+    expect(field.access?.update).toBeTypeOf('function')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+    // Reads are unaffected — emailVerified is not a credential.
+    expect(field.access?.read).toBeUndefined()
+  })
+
+  it('denies create and update on the admin() plugin fields role/banned/banReason/banExpires/session.impersonatedBy', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [admin()])
+
+    const denied: Array<[string, string]> = [
+      ['User', 'role'],
+      ['User', 'banned'],
+      ['User', 'banReason'],
+      ['User', 'banExpires'],
+      ['Session', 'impersonatedBy'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      expect(field.access?.create).toBeTypeOf('function')
+      expect(field.access?.update).toBeTypeOf('function')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+      expect(await field.access!.create!({} as any)).toBe(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+      expect(await field.access!.update!({} as any)).toBe(false)
+    }
+  })
+
+  it('is keyed on the upstream input flag, not a hardcoded field list — a never-seen plugin field with input:false is write-denied automatically', async () => {
+    const plugin = {
+      id: 'test-input-false',
+      schema: {
+        widget: {
+          fields: {
+            secretFlag: { type: 'boolean' as const, required: false, input: false },
+            label: { type: 'string' as const, required: false },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await lists.Widget.fields.secretFlag.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await lists.Widget.fields.secretFlag.access!.update!({} as any)).toBe(false)
+    expect(lists.Widget.fields.label.access).toBeUndefined()
+  })
+
+  it('also write-denies an id-referencing FK field marked input:false (dormant today, no built-in plugin hits it — found in review)', async () => {
+    const plugin = {
+      id: 'test-input-false-fk',
+      schema: {
+        widget: {
+          fields: {
+            ownerId: {
+              type: 'string' as const,
+              required: false,
+              input: false,
+              references: { model: 'user', field: 'id' },
+            },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+    const field = lists.Widget.fields.owner
+
+    expect(field.access?.create).toBeTypeOf('function')
+    expect(field.access?.update).toBeTypeOf('function')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+  })
+
+  it('leaves every other User/Session field unaffected', () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [admin()])
+
+    expect(lists.User.fields.name.access).toBeUndefined()
+    expect(lists.User.fields.email.access).toBeUndefined()
+    expect(lists.User.fields.image.access).toBeUndefined()
+    expect(lists.Session.fields.ipAddress.access).toBeUndefined()
+  })
+
+  it('composes a write-deny with an existing credential read-deny on the same field, rather than overwriting it', async () => {
+    const plugin = {
+      id: 'test-input-false-credential',
+      schema: {
+        widget: {
+          fields: {
+            apiKey: { type: 'string' as const, required: false, input: false },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin], { widget: ['apiKey'] })
+    const field = lists.Widget.fields.apiKey
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.read!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+  })
+})
+
+describe('deriveAuthLists - fieldAccess override (issue #1618)', () => {
+  it('replaces the seeded update deny for one field, leaving the seeded create deny standing', async () => {
+    const isAdmin = () => true
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [admin()],
+      {},
+      {
+        user: { role: { update: isAdmin } },
+      },
+    )
+
+    const field = lists.User.fields.role
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(false)
+  })
+
+  it('throws at config time when an entry sets `read` on a credential field (ADR-0036 cannot be reopened)', () => {
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [],
+        {},
+        {
+          session: { token: { read: () => true } },
+        },
+      ),
+    ).toThrow(/fieldAccess.*"session\.token".*credential/)
+  })
+
+  it('throws even when the credential override explicitly sets `read: undefined` (ADR-0036 cannot be reopened by omission either)', () => {
+    // `{ read: undefined }` is a shape TypeScript's optional-property syntax
+    // accepts, and a naive `access.read !== undefined` check would let it
+    // through — only to have `withFieldAccess`'s merge clear the seeded
+    // DENY_READ with that same `undefined`, reopening the credential (found
+    // in review of #1618/ADR-0073).
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [],
+        {},
+        {
+          session: { token: { read: undefined } },
+        },
+      ),
+    ).toThrow(/fieldAccess.*"session\.token".*credential/)
+  })
+
+  it('never lets an override key explicitly set to `undefined` clear a seeded deny', async () => {
+    // Even if validation didn't reject it, the merge itself must not treat
+    // an own `undefined` value as "clear this rule" — otherwise
+    // `fieldAccess: { user: { role: { update: undefined } } }` would silently
+    // reopen the seeded input:false write-deny on a non-credential field too.
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [admin()],
+      {},
+      {
+        user: { role: { update: undefined } },
+      },
+    )
+
+    const field = lists.User.fields.role
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+  })
+
+  it('throws, naming the model and field, when fieldAccess names a field missing from a derived model', () => {
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [],
+        {},
+        {
+          user: { nickname: { update: () => true } },
+        },
+      ),
+    ).toThrow(/user\.nickname.*no field "nickname"/)
+  })
+
+  it('is a silent no-op when fieldAccess names a model that is not derived at all', () => {
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [],
+        {},
+        {
+          passkey: { publicKey: { update: () => true } },
+        },
+      ),
+    ).not.toThrow()
+  })
+
+  it('throws, naming the model and field, when fieldAccess names an id-referencing relationship field', () => {
+    const plugin = {
+      id: 'test-field-access-fk',
+      schema: {
+        widget: {
+          fields: {
+            ownerId: { type: 'string' as const, references: { model: 'user', field: 'id' } },
+          },
+        },
+      },
+    }
+
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [plugin],
+        {},
+        {
+          widget: { ownerId: { update: () => true } },
+        },
+      ),
+    ).toThrow(/widget\.ownerId.*relationship field.*"user\.id"/)
+  })
+
+  it('can reopen create as well as update, leaving unspecified operations at their seeded value', async () => {
+    const canWrite = () => true
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [admin()],
+      {},
+      {
+        user: { role: { create: canWrite, update: canWrite } },
+      },
+    )
+
+    const field = lists.User.fields.role
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(true)
   })
 })
 
