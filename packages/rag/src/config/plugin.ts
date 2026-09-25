@@ -1,6 +1,6 @@
 import type { Plugin } from '@opensaas/stack-core/extend'
 import { readPluginOwnedRow, writePluginOwnedField } from '@opensaas/stack-core/extend'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import type { AccessContext, FieldAccess, OpenSaasConfig } from '@opensaas/stack-core'
 import type {
   EmbeddingProviderConfig,
   RAGConfig,
@@ -28,6 +28,44 @@ const PGVECTOR_EXTENSION = {
 
 function isEmbeddingField(field: { type?: string }): field is EmbeddingField {
   return field.type === 'embedding'
+}
+
+/**
+ * An embedding field's effective `read` rule: its source field's own `read`
+ * rule AND its author's own, if it declared one — a session denied the
+ * source text may not read the vector, the hash or a `nearest()` ranking
+ * either, since all three are encodings of that text (ADR-0045).
+ *
+ * The source rule is resolved off `context._config` — the request's own
+ * fully resolved config — at CALL time, not captured here at plugin `init`
+ * time. `init` runs once per plugin in dependency order, and another plugin
+ * (or `extendList`) can still edit the source field's access after this one
+ * runs; reading it live is what keeps this correct regardless of that
+ * ordering, and it is the same config the running request itself was built
+ * from — never a snapshot.
+ */
+function composeSourceReadAccess(
+  listKey: string,
+  sourceFieldName: string,
+  authorRead: FieldAccess['read'] | undefined,
+): NonNullable<FieldAccess['read']> {
+  return async (args) => {
+    const config = args.context._config
+    if (config === undefined) {
+      // Same posture as `ownedField()` in core's `plugin-field-write.ts`: a
+      // context core built always carries `_config`, so this only fires for a
+      // hand-built double missing it — and defaulting to "no source rule" here
+      // would silently reopen the exact leak this function exists to close.
+      throw new Error(
+        `RAG plugin: cannot resolve "${listKey}.${sourceFieldName}"'s read access — the context ` +
+          `carries no config to resolve the source field against.`,
+      )
+    }
+    const sourceField = config.lists[listKey]?.fields[sourceFieldName]
+    const sourceRead = sourceField?.access?.read
+    if (sourceRead && !(await sourceRead(args))) return false
+    return authorRead ? await authorRead(args) : true
+  }
 }
 
 /**
@@ -204,6 +242,33 @@ export function ragPlugin(config: RAGConfig): Plugin {
         if (Object.keys(embeddingFieldsToInject).length > 0) {
           context.extendList(listName, {
             fields: embeddingFieldsToInject,
+          })
+        }
+      }
+
+      // Every embedding field that names a sourceField — searchable()-injected
+      // above, or declared directly as embedding({ sourceField }) — reads no
+      // more than its source does (ADR-0045). This also catches the fields
+      // injected by the pass above, since extendList mutates context.config.lists
+      // in place.
+      for (const [listName, listConfig] of Object.entries(context.config.lists)) {
+        for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+          if (!isEmbeddingField(fieldConfig) || fieldConfig.sourceField === undefined) continue
+
+          context.extendList(listName, {
+            fields: {
+              [fieldName]: embedding({
+                ...fieldConfig,
+                access: {
+                  ...fieldConfig.access,
+                  read: composeSourceReadAccess(
+                    listName,
+                    fieldConfig.sourceField,
+                    fieldConfig.access?.read,
+                  ),
+                },
+              }),
+            },
           })
         }
       }
