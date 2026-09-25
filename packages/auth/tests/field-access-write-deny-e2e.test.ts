@@ -115,7 +115,7 @@ describe.skipIf(!prerequisitesPresent)(
         // The row is unchanged — the whole write was refused, not partially applied.
         const unchanged = await context
           .sudo()
-          .db.User.where({ id: { equals: mallory!.id } })
+          .db.User.where({ id: { equals: String(mallory!.id) } })
           .first()
         expect(unchanged?.role).not.toBe('admin')
         expect(unchanged?.emailVerified).toBe(false)
