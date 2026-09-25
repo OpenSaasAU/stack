@@ -295,6 +295,81 @@ describe('ragPlugin', () => {
       expect(injected.type).toBe('embedding')
     })
 
+    describe('the composed read access', () => {
+      /** A minimal `AccessContext` double — `_config` is what's under test. */
+      function fakeContext(config: OpenSaasConfig | undefined): AccessContext {
+        return {
+          session: null,
+          ormHandle: {},
+          db: {},
+          storage: {
+            uploadFile: async () => {
+              throw new Error('unused')
+            },
+            uploadImage: async () => {
+              throw new Error('unused')
+            },
+            deleteFile: async () => {
+              throw new Error('unused')
+            },
+            deleteImage: async () => {
+              throw new Error('unused')
+            },
+          },
+          plugins: {},
+          _isSudo: false,
+          _resolveOutputChain: [],
+          _config: config,
+        }
+      }
+
+      function readArgs(session: { admin: boolean } | null, config: OpenSaasConfig | undefined) {
+        return {
+          session,
+          item: {},
+          context: fakeContext(config),
+          inputData: undefined,
+          operation: 'read' as const,
+        }
+      }
+
+      it('ANDs the source field’s read rule onto a searchable()-injected embedding', async () => {
+        const isAdmin = ({ session }: { session: { admin?: boolean } | null }) =>
+          session?.admin === true
+        const searchableField = {
+          ...text(),
+          access: { read: isAdmin },
+          _searchable: { embeddingFieldName: '' },
+        }
+        const harness = pluginContext({
+          lists: { Article: { fields: { content: searchableField } } },
+        })
+
+        await ragPlugin(openai).init!(harness.context)
+
+        const read = harness.live.lists.Article.fields.contentEmbedding.access?.read
+        expect(typeof read).toBe('function')
+        expect(await read!(readArgs({ admin: false }, harness.live))).toBe(false)
+        expect(await read!(readArgs({ admin: true }, harness.live))).toBe(true)
+      })
+
+      it('refuses, rather than silently allowing, when the context carries no config', async () => {
+        const harness = pluginContext({
+          lists: {
+            Article: {
+              fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
+            },
+          },
+        })
+
+        await ragPlugin(openai).init!(harness.context)
+
+        const read = harness.live.lists.Article.fields.contentEmbedding.access?.read
+        expect(typeof read).toBe('function')
+        await expect(read!(readArgs(null, undefined))).rejects.toThrow(/carries no config/)
+      })
+    })
+
     it('honours a custom embedding field name', async () => {
       const searchableField = { ...text(), _searchable: { embeddingFieldName: 'bodyVector' } }
       const harness = pluginContext({ lists: { Article: { fields: { body: searchableField } } } })

@@ -50,7 +50,18 @@ function composeSourceReadAccess(
   authorRead: FieldAccess['read'] | undefined,
 ): NonNullable<FieldAccess['read']> {
   return async (args) => {
-    const sourceField = args.context._config?.lists[listKey]?.fields[sourceFieldName]
+    const config = args.context._config
+    if (config === undefined) {
+      // Same posture as `ownedField()` in core's `plugin-field-write.ts`: a
+      // context core built always carries `_config`, so this only fires for a
+      // hand-built double missing it — and defaulting to "no source rule" here
+      // would silently reopen the exact leak this function exists to close.
+      throw new Error(
+        `RAG plugin: cannot resolve "${listKey}.${sourceFieldName}"'s read access — the context ` +
+          `carries no config to resolve the source field against.`,
+      )
+    }
+    const sourceField = config.lists[listKey]?.fields[sourceFieldName]
     const sourceRead = sourceField?.access?.read
     if (sourceRead && !(await sourceRead(args))) return false
     return authorRead ? await authorRead(args) : true
