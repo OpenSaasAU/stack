@@ -1485,7 +1485,7 @@ Fields](#adding-custom-fields) below) — the whole-row rule permits writing it
 too, so protect it explicitly with `authPlugin({ fieldAccess })`, keyed by
 better-auth model key then field key:
 
-<!-- doc-check: excuses="authPlugin, TS7031 'session'" reason="a bare name the prose supplies, and each rule's parameters are typed by the list access config it is attached to" -->
+<!-- doc-check: excuses="authPlugin, admin, TS7031 'session'" reason="bare names the prose supplies (admin() is better-auth's own plugin, imported from 'better-auth/plugins'), and each rule's parameters are typed by the list access config it is attached to" -->
 
 ```typescript
 authPlugin({
