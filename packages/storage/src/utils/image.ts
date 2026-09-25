@@ -88,6 +88,7 @@ export async function processImageTransformations(
       width,
       height,
       size: uploadResult.size,
+      filename: uploadResult.filename,
     }
   }
 

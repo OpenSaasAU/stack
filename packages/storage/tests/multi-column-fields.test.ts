@@ -471,7 +471,10 @@ describe('image() / file() multi-column mode', () => {
       expect(result).toBe(existing)
     })
 
-    it('image() does NOT upload when given an existing ImageMetadata (multi-column mode)', async () => {
+    it('image() does NOT upload when given an existing ImageMetadata on a sudo create (multi-column mode)', async () => {
+      // A non-privileged create with metadata-shaped input is refused (see
+      // the "metadata trust" describe block below) — this is the legitimate
+      // sudo seed/migration case ADR-0006's no-re-upload guarantee covers.
       const field = image({ storage: 'images', db: { columns: 'keystone' } })
       const { context, uploadImage } = makeContext()
       const existing: ImageMetadata = {
@@ -492,7 +495,7 @@ describe('image() / file() multi-column mode', () => {
         inputData: { image: existing },
         item: undefined,
         resolvedData: { image: existing },
-        context,
+        context: { ...context, _isSudo: true },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       expect(uploadImage).not.toHaveBeenCalled()
@@ -519,21 +522,28 @@ describe('image() / file() multi-column mode', () => {
     it('file() does NOT upload existing metadata but DOES upload a File-like input', async () => {
       const field = file({ storage: 'documents', db: { columns: 'keystone' } })
       const { context, uploadFile } = makeContext()
+      // The default multi-column `file()` parts carry no `contentType` column,
+      // so a real read of this row always assembles `mimeType` as the generic
+      // fallback below — matching that is what makes this the row's genuine
+      // currently-stored value rather than a forged one.
       const existing: FileMetadata = {
         filename: 'd.pdf',
         originalFilename: 'd.pdf',
         url: '/u/d.pdf',
-        mimeType: 'application/pdf',
+        mimeType: 'application/octet-stream',
         size: 1,
         uploadedAt: '',
         storageProvider: 'documents',
       }
+      // The raw multi-column row `resolveInput` actually sees in production —
+      // the physical per-part columns, not a `{ doc: existing }` shorthand.
+      const item = field.splitColumns?.('doc', existing) as Record<string, unknown>
       const kept = await field.hooks?.resolveInput?.({
         listKey: 'Post',
         fieldKey: 'doc',
         operation: 'update',
         inputData: { doc: existing },
-        item: { doc: existing },
+        item,
         resolvedData: { doc: existing },
         context,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

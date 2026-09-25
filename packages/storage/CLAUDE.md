@@ -327,17 +327,27 @@ export async function GET(request: NextRequest, { params }: { params: { filename
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get storage provider
   const provider = createStorageProvider(config, 'documents')
 
-  // Download file
-  const buffer = await provider.download(params.filename)
+  // `download` refuses a name that isn't a plain filename strictly inside the
+  // provider's own upload directory — but that is defense in depth, not a
+  // reason to skip validating the route param yourself before trusting it for
+  // anything else (a lookup key, a header value, ...).
+  let buffer: Buffer
+  try {
+    buffer = await provider.download(params.filename)
+  } catch {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
-  // Return file
+  // RFC 5987/6266 encoding — interpolating the raw filename into the header
+  // is both a header-injection risk and breaks on quotes/non-ASCII names.
+  const encodedFilename = encodeURIComponent(params.filename)
+
   return new NextResponse(buffer, {
     headers: {
       'Content-Type': 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${params.filename}"`,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
     },
   })
 }
@@ -516,11 +526,14 @@ Avoid `any` - all internal utilities use proper types.
 ## Security
 
 - **Developer-controlled routes** allow custom auth/validation
-- **MIME type validation** prevents file type spoofing
-- **File size limits** prevent DoS attacks
-- **Access control** enforced in upload routes
+- **MIME type validation** happens only when a field's `validation.acceptedMimeTypes` is configured — it is opt-in, not automatic
+- **File size limits** are opt-in via `validation.maxFileSize`
+- **Access control** is enforced by the field's own `access` rules and by whatever the developer's upload route checks — there is no implicit check beyond that
 - **Signed URLs** for private S3 files (optional)
 - **No direct file access** unless served through developer routes
+- **A metadata-shaped write is trusted only when it matches the field's own currently stored value, or runs under `sudo()`.** `file()`/`image()` upload a new `File` on write; an already-shaped `FileMetadata`/`ImageMetadata` value is accepted as-is only when it deep-equals the row's own current value (the admin form's resubmit-unchanged case) or the write is sudo (seed/migration scripts pointing a new row at an existing asset). Any other metadata-shaped value — a traversal filename, a copy of another row's real metadata, a changed `storageProvider` — is refused. This is what stops a non-privileged session from redirecting a later cleanup at an arbitrary path or another row's asset (issue #1619).
+- **Cleanup always uses the field's own configured `storage` provider**, never the `storageProvider` a stored value happens to name — a tampered or copied value cannot redirect a delete at a different provider.
+- **`LocalStorageProvider` enforces path containment.** Every method (`upload`, `download`, `delete`, `getUrl`) resolves its `filename` argument against `uploadDir` and refuses anything that is not a plain filename strictly inside it — a route handler that forwards a path param straight to `download()`/`delete()` cannot escape the upload directory. With `generateUniqueFilenames: false`, an upload's traversal-shaped name is reduced to a safe basename rather than written verbatim.
 
 ## Future Enhancements
 
