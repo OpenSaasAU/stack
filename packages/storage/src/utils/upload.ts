@@ -65,25 +65,54 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 /**
+ * The bare MIME type, with any `; charset=...`-style parameters and
+ * surrounding whitespace stripped, lowercased. A declared `type` of
+ * `text/html; charset=utf-8` must still be caught by the active-type set and
+ * the accept-list, both of which compare against the bare essence — checking
+ * the raw string let a parameterized active type slip past both, while
+ * `mime.extension` (used for the stored extension) already strips parameters
+ * internally, so the file would still land on disk as `.html`.
+ */
+function mimeEssence(type: string): string {
+  const semicolon = type.indexOf(';')
+  const essence = semicolon === -1 ? type : type.slice(0, semicolon)
+  return essence.trim().toLowerCase()
+}
+
+/**
  * The MIME type an upload is validated and stored under: the client's
- * declared `type`, or the type looked up from the filename when none is
- * declared. Never the sniffed bytes — that is `image()`'s own job, since only
- * an image has bytes sharp can read back a format from.
+ * declared `type` (its bare essence, parameters stripped), or the type
+ * looked up from the filename when none is declared. Never the sniffed
+ * bytes — that is `image()`'s own job, since only an image has bytes sharp
+ * can read back a format from.
  */
 export function resolveEffectiveMimeType(file: { name: string; type: string }): string {
-  return file.type || getMimeType(file.name)
+  const declared = file.type ? mimeEssence(file.type) : ''
+  return declared || getMimeType(file.name)
+}
+
+/**
+ * The file-size check alone, shared with a caller that must reject an
+ * oversized upload before doing any other work on it — `uploadImage` calls
+ * this before decoding the buffer with sharp, since a size limit exists
+ * precisely to bound the cost of processing an upload at all.
+ */
+export function checkFileSize(size: number, maxFileSize?: number): FileValidationResult | null {
+  if (maxFileSize !== undefined && size > maxFileSize) {
+    return {
+      valid: false,
+      error: `File size exceeds maximum allowed size of ${formatFileSize(maxFileSize)}`,
+    }
+  }
+  return null
 }
 
 export function validateFile(
   file: { size: number; name: string; type: string },
   options?: FileValidationOptions,
 ): FileValidationResult {
-  if (options?.maxFileSize && file.size > options.maxFileSize) {
-    return {
-      valid: false,
-      error: `File size exceeds maximum allowed size of ${formatFileSize(options.maxFileSize)}`,
-    }
-  }
+  const sizeError = checkFileSize(file.size, options?.maxFileSize)
+  if (sizeError) return sizeError
 
   const effectiveType = resolveEffectiveMimeType(file)
   const acceptedMimeTypes = options?.acceptedMimeTypes

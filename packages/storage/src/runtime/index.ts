@@ -8,6 +8,7 @@ import type {
 } from '../config/types.js'
 import {
   validateFile,
+  checkFileSize,
   resolveEffectiveMimeType,
   withEffectiveExtension,
   isFileValidationOptions,
@@ -159,6 +160,15 @@ export async function uploadImage(
   options?: UploadImageOptions,
 ): Promise<ImageMetadata> {
   const { file, buffer } = data
+
+  // Checked before sharp ever touches the buffer: the size limit exists to
+  // bound the cost of processing an upload at all, and a large or malicious
+  // (e.g. deeply nested SVG) file that fails it shouldn't pay for decoding
+  // first.
+  const sizeError = checkFileSize(file.size, options?.validation?.maxFileSize)
+  if (sizeError) {
+    throw new Error(sizeError.error)
+  }
 
   // The effective type for an image is the format sharp actually decodes
   // from the bytes, never the client's declared type — a PNG declared as

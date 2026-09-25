@@ -136,6 +136,14 @@ describe('uploadFile: effective MIME type drives storage, never the client exten
     expect(metadata.mimeType).toBe('text/html')
     expect(metadata.filename.endsWith('.html')).toBe(true)
   })
+
+  it('a charset parameter on an active type does not bypass the default refusal (review finding)', async () => {
+    const file = makeFile('x.txt', 'text/html; charset=utf-8', '<script>alert(1)</script>')
+    await expect(
+      uploadFile(config, 'fake', { file, buffer: Buffer.from(await file.arrayBuffer()) }),
+    ).rejects.toThrow(/active content/)
+    expect(uploads).toEqual([])
+  })
 })
 
 describe('uploadImage: the effective type is the bytes sharp decodes, never the declared type', () => {
@@ -178,6 +186,23 @@ describe('uploadImage: the effective type is the bytes sharp decodes, never the 
     await expect(
       uploadImage(config, 'fake', { file, buffer: Buffer.from(await file.arrayBuffer()) }),
     ).rejects.toThrow(/not a recognized image/)
+    expect(uploads).toEqual([])
+  })
+
+  it('rejects an oversized upload on size alone, before sharp ever runs (review finding)', async () => {
+    // Bytes that are NOT a decodable image: if `detectImage` ran before the
+    // size check, this would fail with "not a recognized image format"
+    // instead — the size-exceeded message proves the size check ran first
+    // and sharp was never invoked on this buffer at all.
+    const file = makeFile('huge.png', 'image/png', 'not an image, and also over the limit')
+    await expect(
+      uploadImage(
+        config,
+        'fake',
+        { file, buffer: Buffer.from(await file.arrayBuffer()) },
+        { validation: { maxFileSize: 4 } },
+      ),
+    ).rejects.toThrow(/File size exceeds maximum/)
     expect(uploads).toEqual([])
   })
 })

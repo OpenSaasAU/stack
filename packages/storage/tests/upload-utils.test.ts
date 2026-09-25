@@ -189,6 +189,31 @@ describe('Upload Utilities', () => {
       })
     })
 
+    describe('parameterized MIME types (PR #1674 review: charset must not bypass the active-type check)', () => {
+      it('still refuses a declared active type carrying a charset parameter', () => {
+        const file = { size: 10, name: 'x.txt', type: 'text/html; charset=utf-8' }
+        const result = validateFile(file)
+        expect(result.valid).toBe(false)
+        expect(result.error).toContain('text/html')
+      })
+
+      it('still refuses an SVG declared with a charset parameter', () => {
+        const file = { size: 10, name: 'x.txt', type: 'image/svg+xml; charset=utf-8' }
+        expect(validateFile(file).valid).toBe(false)
+      })
+
+      it('matches an accept-list entry against the bare essence, ignoring parameters', () => {
+        const file = { size: 10, name: 'x.pdf', type: 'application/pdf; charset=binary' }
+        const result = validateFile(file, { acceptedMimeTypes: ['application/pdf'] })
+        expect(result.valid).toBe(true)
+      })
+
+      it('is case-insensitive and tolerates surrounding whitespace', () => {
+        const file = { size: 10, name: 'x.txt', type: ' TEXT/HTML ; charset=utf-8' }
+        expect(validateFile(file).valid).toBe(false)
+      })
+    })
+
     describe('combined validation', () => {
       it('should validate all criteria when multiple options provided', () => {
         const file = { size: 1000, name: 'test.jpg', type: 'image/jpeg' }
@@ -343,6 +368,13 @@ describe('Upload Utilities', () => {
 
     it('falls back to application/octet-stream for an unrecognised name and no type', () => {
       expect(resolveEffectiveMimeType({ name: 'noext', type: '' })).toBe('application/octet-stream')
+    })
+
+    it('strips parameters and lowercases a declared type to its bare essence', () => {
+      expect(resolveEffectiveMimeType({ name: 'x.txt', type: 'text/html; charset=utf-8' })).toBe(
+        'text/html',
+      )
+      expect(resolveEffectiveMimeType({ name: 'x.txt', type: ' TEXT/HTML ' })).toBe('text/html')
     })
   })
 
