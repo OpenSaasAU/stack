@@ -237,15 +237,15 @@ authPlugin({
       company: text(),
     },
   },
-
-  // Reopen a seeded field-level deny (see "Field-level access on Auth lists" below)
-  fieldAccess: {
-    user: {
-      role: { update: ({ session }) => session?.role === 'admin' },
-    },
-  },
 })
 ```
+
+`fieldAccess` (see "Field-level access on Auth lists" below) only reaches
+fields better-auth itself derives — a plain `extendUserList.fields.role` like
+the one above is app-authored, so protect it with the field builder's own
+`access` option instead (`role: text({ access: { update: isAdmin } })`).
+`fieldAccess` becomes the right tool once `role` is a field the `admin()`
+plugin derives, rather than one your own config adds.
 
 ## Adopting an Existing better-auth Installation
 
@@ -481,15 +481,28 @@ no-op.
 Add custom fields to the User model:
 
 ```typescript
+const isAdmin = ({ session }: { session: { role?: string } | null }) => session?.role === 'admin'
+
 authPlugin({
   extendUserList: {
     fields: {
+      // A field YOU add via extendUserList carries its OWN access, the same
+      // way any other field does — `authPlugin({ fieldAccess })` (see "Field-
+      // level access on Auth lists" below) only reaches fields better-auth
+      // itself derives, never one your own config adds.
       role: select({
         options: [
           { label: 'User', value: 'user' },
           { label: 'Admin', value: 'admin' },
         ],
         defaultValue: 'user',
+        access: {
+          // A whole-row rule like the `update` below says who may update the
+          // ROW — it does not, on its own, say which COLUMNS. Without this,
+          // a signed-in user could self-promote by writing `role` through
+          // that same rule (issue #1618).
+          update: isAdmin,
+        },
       }),
       company: text(),
       phoneNumber: text(),
@@ -499,20 +512,9 @@ authPlugin({
       operation: {
         query: () => true,
         create: () => true,
-        // A whole-row rule like this says who may update the ROW — it does
-        // not, on its own, say which COLUMNS. Pair it with `fieldAccess`
-        // below so a signed-in user can't self-promote by writing `role`
-        // through the same rule (issue #1618).
-        update: ({ session, item }) => session?.userId === item?.id || session?.role === 'admin',
-        delete: ({ session }) => session?.role === 'admin',
+        update: ({ session, item }) => session?.userId === item?.id || isAdmin({ session }),
+        delete: ({ session }) => isAdmin({ session }),
       },
-    },
-  },
-  // Only an admin session may change `role` — never the row's own owner,
-  // even though the operation-level rule above lets an owner update the row.
-  fieldAccess: {
-    user: {
-      role: { update: ({ session }) => session?.role === 'admin' },
     },
   },
 })
@@ -520,11 +522,12 @@ authPlugin({
 
 **A whole-row owner-update rule does not imply every column is writable.**
 `role` here is a plain field, so nothing stops a self-write unless you add
-one — `fieldAccess` is that seam. Fields better-auth itself marks
+one — the field's own `access` is that seam. Fields better-auth itself marks
 `input: false` (`emailVerified` always; `role`/`banned`/`banReason`/
 `banExpires`/`Session.impersonatedBy` once you register the `admin()` plugin)
 already ship write-denied for you, independent of your own access rules — see
-"Field-level access on Auth lists" below.
+"Field-level access on Auth lists" below for `fieldAccess`, the equivalent
+seam for a field better-auth itself derives.
 
 ## Session Fields
 

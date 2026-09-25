@@ -243,7 +243,11 @@ function buildFieldAccessOverrideRegistry(
             `relationship field (references "${upstream.references.model}.id"), not a scalar column`,
         )
       }
-      if (access.read !== undefined && credentialRegistry[modelKey]?.has(fieldKey)) {
+      // `'read' in access` (not `access.read !== undefined`) so an explicit
+      // `{ read: undefined }` is rejected too — TypeScript's optional-property
+      // syntax accepts that shape, and letting it through here would only
+      // move the hole to the merge below.
+      if ('read' in access && credentialRegistry[modelKey]?.has(fieldKey)) {
         throw new Error(
           `deriveAuthLists: fieldAccess sets "read" on "${modelKey}.${fieldKey}", which is a credential ` +
             `field (ADR-0036) — its read-deny cannot be reopened`,
@@ -286,13 +290,23 @@ function withFieldAccess(
 
   if (!isCredential && !isWriteDenied && !override) return field
 
+  // A plain object spread would let an override key EXPLICITLY set to
+  // `undefined` (`{ read: undefined }`) clear a seeded rule — the key is
+  // still own-enumerable, so it overwrites `DENY_READ`/`DENY_WRITE` with
+  // `undefined`, which the access engine treats as "no rule" (allow). Only
+  // copy an override key whose value is actually a function, so a seeded
+  // deny can only be replaced, never silently unset.
+  const access: FieldAccess = {
+    ...(isCredential ? DENY_READ : {}),
+    ...(isWriteDenied ? DENY_WRITE : {}),
+  }
+  if (override?.read !== undefined) access.read = override.read
+  if (override?.create !== undefined) access.create = override.create
+  if (override?.update !== undefined) access.update = override.update
+
   return {
     ...field,
-    access: {
-      ...(isCredential ? DENY_READ : {}),
-      ...(isWriteDenied ? DENY_WRITE : {}),
-      ...override,
-    },
+    access,
     ...(isCredential
       ? {
           // Curated out of the admin's default table columns too (issue

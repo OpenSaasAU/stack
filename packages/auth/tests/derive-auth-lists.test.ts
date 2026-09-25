@@ -931,6 +931,47 @@ describe('deriveAuthLists - fieldAccess override (issue #1618)', () => {
     ).toThrow(/fieldAccess.*"session\.token".*credential/)
   })
 
+  it('throws even when the credential override explicitly sets `read: undefined` (ADR-0036 cannot be reopened by omission either)', () => {
+    // `{ read: undefined }` is a shape TypeScript's optional-property syntax
+    // accepts, and a naive `access.read !== undefined` check would let it
+    // through — only to have `withFieldAccess`'s merge clear the seeded
+    // DENY_READ with that same `undefined`, reopening the credential (found
+    // in review of #1618/ADR-0073).
+    expect(() =>
+      deriveAuthLists(
+        defaultModels,
+        {},
+        {},
+        [],
+        {},
+        {
+          session: { token: { read: undefined } },
+        },
+      ),
+    ).toThrow(/fieldAccess.*"session\.token".*credential/)
+  })
+
+  it('never lets an override key explicitly set to `undefined` clear a seeded deny', async () => {
+    // Even if validation didn't reject it, the merge itself must not treat
+    // an own `undefined` value as "clear this rule" — otherwise
+    // `fieldAccess: { user: { role: { update: undefined } } }` would silently
+    // reopen the seeded input:false write-deny on a non-credential field too.
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [admin()],
+      {},
+      {
+        user: { role: { update: undefined } },
+      },
+    )
+
+    const field = lists.User.fields.role
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+  })
+
   it('throws, naming the model and field, when fieldAccess names a field missing from a derived model', () => {
     expect(() =>
       deriveAuthLists(
