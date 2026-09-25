@@ -489,6 +489,8 @@ Field Visibility is the unconditional boundary. A missed pre-query omission is a
 
 Operation-level access is resolved first, **outside** the transaction: a denied write short-circuits to `null` before any hook fires. Every write opens a transaction, so a hook's database work rolls back with the write.
 
+**A create-denied field's own default can opt out of step 6 (`FieldAccess.allowCreateDefault`).** Between steps 5 and 6, an omitted field with a `defaultValue` is filled in by `applyCreateDefaults` so a required-with-default field passes `isRequired` before the database's own `@default(...)` would apply (issue #615) — and by default, step 6 then denies that filled-in value exactly as it would a caller-supplied one, so a session-dependent `create` rule (allows one session, denies another) still blocks the whole create for a denied session, `defaultValue` or not. A field whose `create` deny is **unconditional** (denies every session, sudo aside — a plugin-derived column the client-facing API never accepts as input, e.g. `@opensaas/stack-auth`'s `User.emailVerified`, ADR-0073) sets `access: { create: () => false, allowCreateDefault: true }` instead: step 6 then exempts exactly the keys `applyCreateDefaults` itself filled, so the field's own default still settles for every session while an explicit attempt to write it is still refused. Off by default, so this only ever changes behaviour for a field that opts in.
+
 ### Hook Execution Order (Read)
 
 Reads run no `afterOperation` (list or field):

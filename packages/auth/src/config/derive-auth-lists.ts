@@ -132,7 +132,22 @@ const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
 }
 
 const DENY_READ: FieldAccess = { read: () => false }
-const DENY_WRITE: FieldAccess = { create: () => false, update: () => false }
+/**
+ * `allowCreateDefault: true` because this deny is UNCONDITIONAL — it refuses
+ * every session, sudo aside, never just some — so a session that omits the
+ * field must still be able to create the row, settling to the field's own
+ * declared default (`User.emailVerified: false`, `User.banned: false`, …)
+ * exactly as better-auth's own client-facing API would produce. Without it,
+ * `context.db.User.create()` would throw for every non-sudo session the
+ * moment any derived field carries both `input: false` and a `defaultValue`
+ * (issue #1618; see `FieldAccess.allowCreateDefault`'s own doc comment for
+ * why this is opt-in rather than automatic).
+ */
+const DENY_WRITE: FieldAccess = {
+  create: () => false,
+  update: () => false,
+  allowCreateDefault: true,
+}
 
 /** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
 type CredentialFieldRegistry = Record<string, ReadonlySet<string>>

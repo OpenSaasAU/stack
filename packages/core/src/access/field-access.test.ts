@@ -846,6 +846,109 @@ describe('filterWritableFields', () => {
   })
 })
 
+// ── `defaultedFields`: a create-denied field's own declared default must
+// still persist when everyone (caller, hooks) left it omitted — the deny
+// stops the CALLER from writing the field, not the field's own default
+// (issue #1618/ADR-0073; see `applyCreateDefaults`'s own doc comment for the
+// full mechanics of how a key lands in this set) ──────────────────────────
+
+describe('filterWritableFields — defaultedFields exemption (opt-in via allowCreateDefault)', () => {
+  it('passes a create-denied field through when it opts in with allowCreateDefault and its key is in defaultedFields', async () => {
+    const fieldConfigs = {
+      emailVerified: {
+        type: 'checkbox',
+        access: { create: () => false, update: () => false, allowCreateDefault: true },
+      },
+    }
+    const data = { emailVerified: false }
+
+    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      session: null,
+      context: nonSudoContext(),
+      inputData: {}, // the caller never supplied it — applyCreateDefaults did
+      defaultedFields: new Set(['emailVerified']),
+    })
+
+    expect(filtered).toHaveProperty('emailVerified', false)
+  })
+
+  it('still throws for a create-denied field in defaultedFields when allowCreateDefault is NOT set (default, off)', async () => {
+    // The `total`-style case (packages/core/src/mcp/handler.test.ts): a
+    // session-dependent `create` rule must still block the WHOLE create for
+    // a denied session, defaultValue or not — `allowCreateDefault` is opt-in
+    // precisely so this existing, deliberate behaviour is unaffected.
+    const fieldConfigs = {
+      total: { type: 'text', access: { create: () => false } },
+    }
+    const data = { total: 'unposted' }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: {}, // omitted — applyCreateDefaults filled it
+        defaultedFields: new Set(['total']),
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('still throws when the caller explicitly supplies an allowCreateDefault field, even if its value matches the default', async () => {
+    const fieldConfigs = {
+      emailVerified: {
+        type: 'checkbox',
+        access: { create: () => false, update: () => false, allowCreateDefault: true },
+      },
+    }
+    const data = { emailVerified: false }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { emailVerified: false }, // the caller DID supply it
+        defaultedFields: new Set(), // applyCreateDefaults did not fill it — it was already defined
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('does not exempt the field on update, even if defaultedFields somehow named it', async () => {
+    const fieldConfigs = {
+      emailVerified: {
+        type: 'checkbox',
+        access: { create: () => false, update: () => false, allowCreateDefault: true },
+      },
+    }
+    const data = { emailVerified: true }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'update', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: {},
+        defaultedFields: new Set(['emailVerified']),
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('is unaffected when defaultedFields is omitted entirely (existing callers)', async () => {
+    const fieldConfigs = {
+      emailVerified: {
+        type: 'checkbox',
+        access: { create: () => false, update: () => false, allowCreateDefault: true },
+      },
+    }
+    const data = { emailVerified: false }
+
+    await expect(
+      filterWritableFields(data, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: {},
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+})
+
 // ── #978: under sudo, only a synthetic reverse-relation key is a recognised
 // undeclared key — anything else is refused, even under sudo ──────────────
 

@@ -343,9 +343,18 @@ signed-in user from writing a column better-auth itself never lets a client
 set. `deriveAuthLists` reads the same upstream field attribute
 (`DBFieldAttribute.input`, better-auth's own signal for "clients can't send
 this") that `buildScalarField` already consults for type/nullability/default,
-and sets a field-level `access: { create: () => false, update: () => false }`
-on every field where it is `false`, independent of whatever `accessConfig` an
-app supplies (issue #1618). This covers `User.emailVerified` unconditionally,
+and sets a field-level `access: { create: () => false, update: () => false,
+allowCreateDefault: true }` on every field where it is `false`, independent of
+whatever `accessConfig` an app supplies (issue #1618). `allowCreateDefault`
+(core, ADR-0073) is what keeps this from breaking an ordinary
+`context.db.User.create()`: `User.emailVerified` also carries a `false`
+default, and without it every create would throw the moment the omitted field
+got auto-filled — the flag exempts exactly that auto-filled value from the
+deny, so the field still settles to its own default for every session while
+an explicit attempt to set it (`data: { emailVerified: true }`) is still
+refused. See `packages/core/CLAUDE.md`'s "Hook Execution Order (Write)"
+section for the full mechanics of `FieldAccess.allowCreateDefault`. This
+covers `User.emailVerified` unconditionally,
 and — once `admin()` is registered — `User.role`, `User.banned`,
 `User.banReason`, `User.banExpires` and `Session.impersonatedBy`:
 

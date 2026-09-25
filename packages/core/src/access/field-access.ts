@@ -346,6 +346,11 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
      */
     listName?: string
     config?: OpenSaasConfig
+    /**
+     * Field keys `applyCreateDefaults` filled on this write (`create` only) —
+     * see the check below and `applyCreateDefaults`'s own doc comment.
+     */
+    defaultedFields?: ReadonlySet<string>
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
@@ -399,6 +404,24 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     const fieldConfig = fieldConfigs[fieldName]
 
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+      continue
+    }
+
+    // A value `applyCreateDefaults` filled because EVERYTHING upstream (the
+    // caller, every resolveInput hook) left it omitted — not a value anyone
+    // wrote — MAY be exempted from the `create` deny, but only when the field
+    // opts in via `access.allowCreateDefault` (see its doc comment): a
+    // session-dependent `create` rule must still block the whole create for a
+    // denied session, defaultValue or not (the `total`-style case below), so
+    // this is never inferred from `defaultedFields` membership alone. A key
+    // the caller or a hook actually supplied is never in `defaultedFields`,
+    // so the deny always applies to it regardless of this flag.
+    if (
+      operation === 'create' &&
+      args.defaultedFields?.has(fieldName) &&
+      fieldConfig?.access?.allowCreateDefault
+    ) {
+      filtered[fieldName] = value
       continue
     }
 
