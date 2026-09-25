@@ -400,12 +400,14 @@ describe('Image Utilities', () => {
           width: 100,
           height: 100,
           size: 5000,
+          filename: 'photo.jpg-thumbnail.webp',
         },
         medium: {
           url: 'https://example.com/photo-medium.jpeg',
           width: 500,
           height: 500,
           size: 15000,
+          filename: 'photo.jpg-medium.jpeg',
         },
       })
 

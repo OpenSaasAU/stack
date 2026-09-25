@@ -241,7 +241,12 @@ export async function deleteImage(config: OpenSaasConfig, metadata: ImageMetadat
 
   if (metadata.transformations) {
     for (const transformationResult of Object.values(metadata.transformations)) {
-      const filename = transformationResult.url.split('/').pop()
+      // Prefer the key the provider's own upload recorded (issue #1619) — a
+      // row written before `filename` existed on this shape falls back to
+      // parsing `url`, same as before. The fallback is not itself a
+      // containment boundary: `LocalStorageProvider.delete` (and any other
+      // provider) is what refuses a name that resolves outside its root.
+      const filename = transformationResult.filename ?? transformationResult.url.split('/').pop()
       if (filename) {
         await provider.delete(filename)
       }

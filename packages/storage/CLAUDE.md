@@ -340,14 +340,27 @@ export async function GET(request: NextRequest, { params }: { params: { filename
   }
 
   // Reject any segment that isn't the bare filename the provider generated —
-  // `basename` alone defeats a `../` traversal attempt.
+  // `basename` alone defeats a `../` traversal attempt, independent of
+  // whether the named provider itself checks (`LocalStorageProvider` does;
+  // `@opensaas/stack-storage-s3` and `-vercel` do not carry the equivalent
+  // check).
   const filename = path.basename(params.filename)
   if (filename !== params.filename) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
   const provider = createStorageProvider(config, 'documents')
-  const buffer = await provider.download(filename)
+
+  let buffer: Buffer
+  try {
+    buffer = await provider.download(filename)
+  } catch {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // RFC 5987/6266 encoding — interpolating the raw filename into the header
+  // is both a header-injection risk and breaks on quotes/non-ASCII names.
+  const encodedFilename = encodeURIComponent(filename)
 
   return new NextResponse(buffer, {
     headers: {
@@ -356,7 +369,7 @@ export async function GET(request: NextRequest, { params }: { params: { filename
       // upload (issue #1625's "serving guidance").
       'Content-Type': 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
     },
   })
 }
@@ -540,7 +553,7 @@ Avoid `any` - all internal utilities use proper types.
 
 ## Security
 
-What this package actually enforces, and what it leaves to you (issue #1625):
+What this package actually enforces, and what it leaves to you (issues #1625, #1619):
 
 - **Effective-type validation.** `acceptedMimeTypes` is checked against the
   EFFECTIVE type, never the client's raw claim alone: for `file()` that's the
@@ -565,6 +578,28 @@ What this package actually enforces, and what it leaves to you (issue #1625):
   hook, so it is gated by whatever `create`/`update` operation access the
   list already declares. There is no built-in HTTP upload endpoint to secure
   on its own.
+- **A metadata-shaped write is trusted only when it matches the field's own
+  currently stored value, or runs under `sudo()`.** `file()`/`image()` upload
+  a new `File` on write; an already-shaped `FileMetadata`/`ImageMetadata`
+  value is accepted as-is only when it deep-equals the row's own current
+  value (the admin form's resubmit-unchanged case) or the write is sudo
+  (seed/migration scripts pointing a new row at an existing asset). Any other
+  metadata-shaped value — a traversal filename, a copy of another row's real
+  metadata, a changed `storageProvider` — is refused. This is what stops a
+  non-privileged session from redirecting a later cleanup at an arbitrary
+  path or another row's asset (issue #1619).
+- **Cleanup always uses the field's own configured `storage` provider**,
+  never the `storageProvider` a stored value happens to name — a tampered or
+  copied value cannot redirect a delete at a different provider.
+- **`LocalStorageProvider` enforces path containment.** Every method
+  (`upload`, `download`, `delete`, `getUrl`) resolves its `filename` argument
+  against `uploadDir` and refuses anything that is not a plain filename
+  strictly inside it — a route handler that forwards a path param straight to
+  `download()`/`delete()` cannot escape the upload directory. With
+  `generateUniqueFilenames: false`, an upload's traversal-shaped name is
+  reduced to a safe basename rather than written verbatim. `-s3`/`-vercel` do
+  not carry the equivalent check, so a custom route is still responsible for
+  validating a path param itself.
 - **A file under a public `uploadDir` (e.g. `./public/uploads`) is served
   exactly like any other static asset** — anyone with the URL can read it,
   with no access control at read time. Put anything that needs read-time
@@ -574,8 +609,7 @@ What this package actually enforces, and what it leaves to you (issue #1625):
 - **Signed URLs** are available where the provider supports them (S3's
   `getSignedUrl`) for private files — optional, and not the default.
 - **Path traversal and header injection in a custom serving route are the
-  route author's job** — see the `basename` + `encodeURIComponent` pattern
-  in "Serving Private Files" above.
+  route author's job** — see the pattern in "Serving Private Files" above.
 
 ## Future Enhancements
 

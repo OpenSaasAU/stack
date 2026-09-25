@@ -26,6 +26,7 @@ import {
   type ImageColumnMap,
   type MultiColumnDescriptor,
 } from '../utils/multi-column.js'
+import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
@@ -193,6 +194,16 @@ function fileColumnPartsFor(columns: FileDbConfig['columns']): readonly FileColu
  * authoritative and must never trigger a re-upload (the no-re-upload
  * guarantee — see ADR-0006).
  */
+/** Shape-only detection of an already-uploaded `FileMetadata` value — see `authorizeStoredMetadata`. */
+function isFileMetadataShaped(value: unknown): value is FileMetadata {
+  return typeof value === 'object' && value !== null && 'filename' in value && 'url' in value
+}
+
+/** Shape-only detection of an already-uploaded `ImageMetadata` value. */
+function isImageMetadataShaped(value: unknown): value is ImageMetadata {
+  return isFileMetadataShaped(value) && 'width' in value && 'height' in value
+}
+
 function isFileLike(value: unknown): value is File {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Partial<Record<keyof File, unknown>>
@@ -322,7 +333,7 @@ export function file<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context, item, operation }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -330,9 +341,19 @@ export function file<
         }
 
         // An existing metadata value is AUTHORITATIVE and must never
-        // re-upload. See ADR-0006.
-        if (typeof inputValue === 'object' && 'filename' in inputValue && 'url' in inputValue) {
-          return inputValue as FileMetadata
+        // re-upload — but only when it is genuinely the row's own currently
+        // stored value, or the write is sudo. See ADR-0006 and issue #1619.
+        if (isFileMetadataShaped(inputValue)) {
+          return authorizeStoredMetadata({
+            value: inputValue,
+            fieldKey,
+            operation,
+            isSudo: context._isSudo === true,
+            currentValue: () =>
+              fieldConfig.assembleColumns
+                ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
+                : (item?.[fieldKey] ?? null),
+          })
         }
 
         if (isFileLike(inputValue)) {
@@ -348,7 +369,10 @@ export function file<
             const oldMetadata = item[fieldKey] as FileMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
-                await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
+                // The field's own configured provider, never the stored
+                // value's `storageProvider` — a forged/copied value must not
+                // be able to redirect the delete at another provider.
+                await context.storage.deleteFile(fieldConfig.storage, oldMetadata.filename)
               } catch (error) {
                 console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
               }
@@ -370,7 +394,7 @@ export function file<
 
           if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
             try {
-              await context.storage.deleteFile(fileMetadata.storageProvider, fileMetadata.filename)
+              await context.storage.deleteFile(fieldConfig.storage, fileMetadata.filename)
             } catch (error) {
               console.error(`Failed to cleanup file on delete: ${fileMetadata.filename}`, error)
             }
@@ -461,7 +485,7 @@ export function image<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context, item, operation }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -469,15 +493,19 @@ export function image<
         }
 
         // An existing metadata value is AUTHORITATIVE and must never
-        // re-upload. See ADR-0006.
-        if (
-          typeof inputValue === 'object' &&
-          'filename' in inputValue &&
-          'url' in inputValue &&
-          'width' in inputValue &&
-          'height' in inputValue
-        ) {
-          return inputValue as ImageMetadata
+        // re-upload — but only when it is genuinely the row's own currently
+        // stored value, or the write is sudo. See ADR-0006 and issue #1619.
+        if (isImageMetadataShaped(inputValue)) {
+          return authorizeStoredMetadata({
+            value: inputValue,
+            fieldKey,
+            operation,
+            isSudo: context._isSudo === true,
+            currentValue: () =>
+              fieldConfig.assembleColumns
+                ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
+                : (item?.[fieldKey] ?? null),
+          })
         }
 
         if (isFileLike(inputValue)) {
@@ -499,7 +527,12 @@ export function image<
             const oldMetadata = item[fieldKey] as ImageMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
-                await context.storage.deleteImage(oldMetadata)
+                // The field's own configured provider, never the stored
+                // value's `storageProvider` — see the matching note in file().
+                await context.storage.deleteImage({
+                  ...oldMetadata,
+                  storageProvider: fieldConfig.storage,
+                })
               } catch (error) {
                 console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
               }
@@ -521,7 +554,10 @@ export function image<
 
           if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
             try {
-              await context.storage.deleteImage(imageMetadata)
+              await context.storage.deleteImage({
+                ...imageMetadata,
+                storageProvider: fieldConfig.storage,
+              })
             } catch (error) {
               console.error(`Failed to cleanup image on delete: ${imageMetadata.filename}`, error)
             }
