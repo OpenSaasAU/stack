@@ -290,15 +290,22 @@ function buildFieldAccessOverrideRegistry(
  *    it names.
  *
  * A field touched by none of the three is returned unchanged.
+ *
+ * Generic over the field shape (`T extends FieldConfig`) so it applies to a
+ * `RelationshipField` (an id-referencing FK column) exactly as it does to a
+ * plain scalar field — no built-in better-auth plugin currently pairs an
+ * owned FK column with `input: false`, but the rule is keyed on that flag,
+ * not a hardcoded field-shape list, so a future one that does is covered
+ * automatically rather than shipping that column writable by accident.
  */
-function withFieldAccess(
+function withFieldAccess<T extends FieldConfig>(
   credentialRegistry: CredentialFieldRegistry,
   overrideRegistry: FieldAccessOverrideRegistry,
   modelKey: string,
   fieldKey: string,
   upstream: DBFieldAttribute,
-  field: FieldConfig,
-): FieldConfig {
+  field: T,
+): T {
   const isCredential = credentialRegistry[modelKey]?.has(fieldKey) ?? false
   const isWriteDenied = upstream.input === false
   const override = overrideRegistry[modelKey]?.[fieldKey]
@@ -832,12 +839,19 @@ export function deriveAuthLists(
                 `REVERSE_RELATION_NAME_OVERRIDES in derive-auth-lists.ts`,
             )
           }
-          ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = buildForeignKeyField(
+          ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = withFieldAccess(
+            credentialRegistry,
+            fieldAccessRegistry,
+            modelKey,
             fieldKey,
             upstream,
-            targetListKey,
-            reverseName,
-            claimedFieldsByModel[modelKey as BaseModelKey]?.has(relationFieldKey) ?? false,
+            buildForeignKeyField(
+              fieldKey,
+              upstream,
+              targetListKey,
+              reverseName,
+              claimedFieldsByModel[modelKey as BaseModelKey]?.has(relationFieldKey) ?? false,
+            ),
           )
           ;(reverseRelationFields[targetModelKey] ??= {})[reverseName] = relationship({
             ref: `${registry.get(modelKey)}.${relationFieldKey}`,

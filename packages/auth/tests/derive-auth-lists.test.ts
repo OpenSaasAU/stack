@@ -862,6 +862,34 @@ describe('deriveAuthLists - input:false fields ship write-denied (issue #1618)',
     expect(lists.Widget.fields.label.access).toBeUndefined()
   })
 
+  it('also write-denies an id-referencing FK field marked input:false (dormant today, no built-in plugin hits it — found in review)', async () => {
+    const plugin = {
+      id: 'test-input-false-fk',
+      schema: {
+        widget: {
+          fields: {
+            ownerId: {
+              type: 'string' as const,
+              required: false,
+              input: false,
+              references: { model: 'user', field: 'id' },
+            },
+          },
+        },
+      },
+    }
+
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+    const field = lists.Widget.fields.owner
+
+    expect(field.access?.create).toBeTypeOf('function')
+    expect(field.access?.update).toBeTypeOf('function')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.create!({} as any)).toBe(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field-access call fixture
+    expect(await field.access!.update!({} as any)).toBe(false)
+  })
+
   it('leaves every other User/Session field unaffected', () => {
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [admin()])
 
