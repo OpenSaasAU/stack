@@ -107,6 +107,7 @@ const userEmail = context.session?.email // ✅ Type: string
    ```
 
 3. Update `types/session.d.ts`:
+
    ```typescript
    interface Session {
      userId: string
@@ -115,6 +116,21 @@ const userEmail = context.session?.email // ✅ Type: string
      role: 'admin' | 'user' // Add this
    }
    ```
+
+4. **Protect it.** This config's `User` access grants a whole-row owner-update
+   rule (`update: ({ session, item }) => session?.userId === item.id`) — that
+   says who may update the row, not which columns, so it would let a
+   signed-in user write `role: 'admin'` to their own row unless you deny it
+   explicitly:
+   ```typescript
+   fieldAccess: {
+     user: {
+       role: { update: ({ session }) => session?.role === 'admin' },
+     },
+   }
+   ```
+   See [Fields are write-denied independent of operation
+   access](https://stack.opensaas.au/docs/reference/auth#fields-are-write-denied-independent-of-operation-access-adr-0073).
 
 ## Learn More
 

@@ -1,4 +1,4 @@
-import type { ListConfig, FieldConfig } from '@opensaas/stack-core'
+import type { ListConfig, FieldConfig, FieldAccess } from '@opensaas/stack-core'
 import type { BetterAuthPlugin } from 'better-auth'
 import type { AuthAccessConfig, NormalizedAuthModels } from '../config/types.js'
 import { deriveAuthLists } from '../config/derive-auth-lists.js'
@@ -92,6 +92,8 @@ export function createVerificationList(): ListConfig<any> {
  * @param plugins - The app's better-auth plugins (`authPlugin({ betterAuthPlugins })`)
  * @param credentialFieldsConfig - App-authored additions to the credential-field read-deny
  *   (`authPlugin({ credentialFields })`), keyed by better-auth model key
+ * @param fieldAccessConfig - App-authored field-access overrides (`authPlugin({ fieldAccess })`,
+ *   ADR-0073), keyed by better-auth model key then field key
  */
 export function getAuthLists(
   userConfig?: ExtendUserListConfig,
@@ -99,6 +101,7 @@ export function getAuthLists(
   accessConfig?: AuthAccessConfig,
   plugins?: BetterAuthPlugin[],
   credentialFieldsConfig?: Record<string, string[]>,
+  fieldAccessConfig?: Record<string, Record<string, FieldAccess>>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Record<string, ListConfig<any>> {
   return deriveAuthLists(
@@ -107,6 +110,7 @@ export function getAuthLists(
     accessConfig || {},
     plugins || [],
     credentialFieldsConfig || {},
+    fieldAccessConfig || {},
   ).lists
 }
 
