@@ -3,9 +3,13 @@ import {
   validateFile,
   formatFileSize,
   getMimeType,
+  extensionForMimeType,
+  withEffectiveExtension,
+  resolveEffectiveMimeType,
   fileToBuffer,
   parseFileFromFormData,
   isFileValidationOptions,
+  ACTIVE_MIME_TYPES,
   type FileValidationOptions,
 } from '../src/utils/upload.js'
 
@@ -127,6 +131,61 @@ describe('Upload Utilities', () => {
         }
         const result = validateFile(file, options)
         expect(result.valid).toBe(true)
+      })
+    })
+
+    describe('active content types (issue #1625)', () => {
+      it('refuses text/html by default, with no validation config at all', () => {
+        const file = { size: 10, name: 'x.html', type: 'text/html' }
+        const result = validateFile(file)
+        expect(result.valid).toBe(false)
+        expect(result.error).toContain('text/html')
+        expect(result.error).toContain('active content')
+      })
+
+      it('refuses an undeclared .html upload (type looked up from the name)', () => {
+        const file = { size: 10, name: 'x.html', type: '' }
+        const result = validateFile(file)
+        expect(result.valid).toBe(false)
+        expect(result.error).toContain('text/html')
+      })
+
+      it('refuses image/svg+xml by default', () => {
+        const file = { size: 10, name: 'x.svg', type: 'image/svg+xml' }
+        expect(validateFile(file).valid).toBe(false)
+      })
+
+      it('refuses application/javascript by default', () => {
+        const file = { size: 10, name: 'x.js', type: 'application/javascript' }
+        expect(validateFile(file).valid).toBe(false)
+      })
+
+      it('refuses an active type declared as something else once the client name resolves to it', () => {
+        // A field with acceptedMimeTypes restricted to a non-active type must
+        // still refuse an x.html declared under that same allowed type — the
+        // accept-list check catches this case directly (mismatch), independent
+        // of the active-type default.
+        const file = { size: 10, name: 'x.html', type: 'application/pdf' }
+        const result = validateFile(file, { acceptedMimeTypes: ['application/pdf'] })
+        expect(result.valid).toBe(true) // declared type wins as the effective type for file()
+      })
+
+      it('an active type not in the accept-list is rejected by the accept-list check, not silently allowed', () => {
+        const file = { size: 10, name: 'x.html', type: 'text/html' }
+        const result = validateFile(file, { acceptedMimeTypes: ['application/pdf'] })
+        expect(result.valid).toBe(false)
+        expect(result.error).toContain('not allowed')
+      })
+
+      it('accepts an active type once acceptedMimeTypes names it explicitly', () => {
+        const file = { size: 10, name: 'x.html', type: 'text/html' }
+        const result = validateFile(file, { acceptedMimeTypes: ['text/html'] })
+        expect(result.valid).toBe(true)
+      })
+
+      it('does not refuse an inactive type with no validation config', () => {
+        const file = { size: 10, name: 'test.pdf', type: 'application/pdf' }
+        expect(validateFile(file).valid).toBe(true)
       })
     })
 
@@ -268,6 +327,74 @@ describe('Upload Utilities', () => {
 
     it('should handle files with multiple dots', () => {
       expect(getMimeType('my.test.file.jpg')).toBe('image/jpeg')
+    })
+  })
+
+  describe('resolveEffectiveMimeType', () => {
+    it('prefers the declared type over the filename', () => {
+      expect(resolveEffectiveMimeType({ name: 'x.html', type: 'application/pdf' })).toBe(
+        'application/pdf',
+      )
+    })
+
+    it('falls back to the filename when no type is declared', () => {
+      expect(resolveEffectiveMimeType({ name: 'x.html', type: '' })).toBe('text/html')
+    })
+
+    it('falls back to application/octet-stream for an unrecognised name and no type', () => {
+      expect(resolveEffectiveMimeType({ name: 'noext', type: '' })).toBe('application/octet-stream')
+    })
+  })
+
+  describe('extensionForMimeType', () => {
+    it('reverses common types to their extension, with a leading dot', () => {
+      expect(extensionForMimeType('application/pdf')).toBe('.pdf')
+      expect(extensionForMimeType('text/html')).toBe('.html')
+      expect(extensionForMimeType('image/svg+xml')).toBe('.svg')
+      expect(extensionForMimeType('image/png')).toBe('.png')
+    })
+
+    it('returns undefined for a type with no known extension', () => {
+      expect(extensionForMimeType('application/x-totally-made-up')).toBeUndefined()
+    })
+  })
+
+  describe('withEffectiveExtension', () => {
+    it('renames the stored name to the extension of the effective type, not the client name', () => {
+      // The exact case from issue #1625: an .html upload declared as
+      // application/pdf must be stored under .pdf, not .html.
+      expect(withEffectiveExtension('x.html', 'application/pdf')).toBe('x.pdf')
+    })
+
+    it('keeps the base name when the extension already matches', () => {
+      expect(withEffectiveExtension('report.pdf', 'application/pdf')).toBe('report.pdf')
+    })
+
+    it('drops the extension entirely for a type with no known one', () => {
+      expect(withEffectiveExtension('x.bin', 'application/x-totally-made-up')).toBe('x')
+    })
+
+    it('handles a name with no extension at all', () => {
+      expect(withEffectiveExtension('noext', 'application/pdf')).toBe('noext.pdf')
+    })
+  })
+
+  describe('ACTIVE_MIME_TYPES', () => {
+    it('names the types the desired behavior requires at minimum', () => {
+      for (const type of [
+        'text/html',
+        'application/xhtml+xml',
+        'image/svg+xml',
+        'text/xml',
+        'application/xml',
+      ]) {
+        expect(ACTIVE_MIME_TYPES.has(type)).toBe(true)
+      }
+    })
+
+    it('names at least one JavaScript MIME type', () => {
+      const jsTypes = ['text/javascript', 'application/javascript', 'application/x-javascript']
+      expect(jsTypes.some((type) => ACTIVE_MIME_TYPES.has(type))).toBe(true)
     })
   })
 
