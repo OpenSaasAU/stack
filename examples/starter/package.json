@@ -22,7 +22,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "next": "^16.3.5",
     "postcss": "^8.5.28",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
   },
