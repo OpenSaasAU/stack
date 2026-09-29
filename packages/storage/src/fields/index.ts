@@ -376,14 +376,8 @@ export function file<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({
-        resolvedData,
-        inputData,
-        fieldKey,
-        context,
-        item,
-        operation,
-      }: any) => {
+      resolveInput: async (args: any) => {
+        const { resolvedData, inputData, fieldKey, context, item, operation } = args
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -549,14 +543,8 @@ export function image<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({
-        resolvedData,
-        inputData,
-        fieldKey,
-        context,
-        item,
-        operation,
-      }: any) => {
+      resolveInput: async (args: any) => {
+        const { resolvedData, inputData, fieldKey, context, item, operation } = args
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
