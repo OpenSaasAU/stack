@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.2",
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^5.0.1",
