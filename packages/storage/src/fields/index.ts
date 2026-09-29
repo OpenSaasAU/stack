@@ -290,6 +290,27 @@ export interface ImageFieldConfig<
   }
 }
 
+interface PendingUpload<TMetadata> {
+  uploaded: TMetadata
+  replaced: TMetadata | null
+}
+
+function createPendingUploads<TMetadata>() {
+  const pending = new WeakMap<File, PendingUpload<TMetadata>>()
+  return {
+    set: (upload: File, value: PendingUpload<TMetadata>) => void pending.set(upload, value),
+    take: (upload: unknown): PendingUpload<TMetadata> | undefined => {
+      if (!isFileLike(upload)) return undefined
+      const value = pending.get(upload)
+      pending.delete(upload)
+      return value
+    },
+  }
+}
+
+const pendingFileUploads = createPendingUploads<FileMetadata>()
+const pendingImageUploads = createPendingUploads<ImageMetadata>()
+
 /**
  * Creates a file upload field
  *
@@ -365,25 +386,34 @@ export function file<
             validation: fieldConfig.validation,
           })) as FileMetadata
 
-          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = item[fieldKey] as FileMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                // The field's own configured provider, never the stored
-                // value's `storageProvider` — a forged/copied value must not
-                // be able to redirect the delete at another provider.
-                await context.storage.deleteFile(fieldConfig.storage, oldMetadata.filename)
-              } catch (error) {
-                console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
-              }
-            }
-          }
+          const previous = item?.[fieldKey] as FileMetadata | null | undefined
+          pendingFileUploads.set(fileObj, {
+            uploaded: metadata,
+            replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
+          })
 
           return metadata
         }
 
         // Unknown type - return as-is and let validation catch it
         return inputValue
+      },
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      afterTransaction: async ({ status, inputData, fieldKey, context }: any) => {
+        const pending = pendingFileUploads.take(inputData?.[fieldKey])
+        if (!pending) return
+        const stale = status === 'committed' ? pending.replaced : pending.uploaded
+        if (
+          !stale?.filename ||
+          (status === 'committed' && stale.filename === pending.uploaded.filename)
+        )
+          return
+        try {
+          await context.storage.deleteFile(fieldConfig.storage, stale.filename)
+        } catch (error) {
+          console.error(`Failed to cleanup file: ${stale.filename}`, error)
+        }
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
@@ -523,27 +553,35 @@ export function image<
             },
           )) as ImageMetadata
 
-          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = item[fieldKey] as ImageMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                // The field's own configured provider, never the stored
-                // value's `storageProvider` — see the matching note in file().
-                await context.storage.deleteImage({
-                  ...oldMetadata,
-                  storageProvider: fieldConfig.storage,
-                })
-              } catch (error) {
-                console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
-              }
-            }
-          }
+          const previous = item?.[fieldKey] as ImageMetadata | null | undefined
+          pendingImageUploads.set(fileObj, {
+            uploaded: metadata,
+            replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
+          })
 
           return metadata
         }
 
         // Unknown type - return as-is and let validation catch it
         return inputValue
+      },
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+      afterTransaction: async ({ status, inputData, fieldKey, context }: any) => {
+        const pending = pendingImageUploads.take(inputData?.[fieldKey])
+        if (!pending) return
+        const stale = status === 'committed' ? pending.replaced : pending.uploaded
+        if (
+          !stale?.filename ||
+          (status === 'committed' && stale.filename === pending.uploaded.filename)
+        ) {
+          return
+        }
+        try {
+          await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+        } catch (error) {
+          console.error(`Failed to cleanup image: ${stale.filename}`, error)
+        }
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
