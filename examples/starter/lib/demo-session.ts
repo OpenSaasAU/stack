@@ -13,6 +13,6 @@ import { getContext } from '@/.opensaas/context'
  */
 export async function demoSession(): Promise<{ userId: string } | undefined> {
   const anonymous = await getContext()
-  const first = await anonymous.db.User.orderBy({ createdAt: 'asc' }).select('id').first()
+  const first = await anonymous.db.User.orderBy({ id: 'asc' }).select('id').first()
   return first === null ? undefined : { userId: first.id }
 }
