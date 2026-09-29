@@ -280,7 +280,9 @@ describe('a computed field that needs a to-one does not null its foreign key', (
     lists: {
       Person: {
         fields: { handle: text({ validation: { isRequired: true } }) },
-        access: { operation: { query: () => true } },
+        access: {
+          operation: { query: ({ session }) => session?.handle === 'reader' },
+        },
       },
       Order: {
         fields: {
@@ -315,9 +317,12 @@ describe('a computed field that needs a to-one does not null its foreign key', (
         await sudo.db.Order.create({
           data: { ref: 'o-1', customer: { connect: { id: person.id } } },
         })
-        const order = await db.context(null).db.Order.first()
+        const order = await db.context({ handle: 'reader' }).db.Order.first()
         expect(order?.customerId).toBe(person.id)
         expect(order?.customerName).toBe('u')
+
+        const denied = await db.context(null).db.Order.first()
+        expect(denied?.customerId).toBeNull()
       } finally {
         await db.close()
       }
