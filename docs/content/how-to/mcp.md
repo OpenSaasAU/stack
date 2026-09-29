@@ -206,12 +206,14 @@ Create `app/api/mcp/[[...transport]]/route.ts`:
 import { createMcpHandlers } from '@opensaas/stack-core/mcp'
 import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
 import config from '@/opensaas.config'
-import { auth } from '@/lib/auth'
 import { getContext } from '@/.opensaas/context'
 
 const { GET, POST, DELETE } = createMcpHandlers({
   config: await config,
-  getSession: createBetterAuthMcpAdapter(auth),
+  getSession: createBetterAuthMcpAdapter({
+    resource: 'https://example.com/api/mcp', // the `resource` passed to mcp()
+    baseURL: 'https://example.com/api/auth', // Better Auth's base URL, including its base path
+  }),
   getContext,
 })
 

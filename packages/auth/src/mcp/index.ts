@@ -13,4 +13,4 @@ export {
   createOAuthProtectedResourceHandler,
 } from './better-auth.js'
 
-export type { BetterAuthInstance } from './better-auth.js'
+export type { BetterAuthInstance, BetterAuthMcpOptions } from './better-auth.js'
