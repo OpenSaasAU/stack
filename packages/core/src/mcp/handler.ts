@@ -636,14 +636,13 @@ async function handleCrudTool(
   }
   const [listKey, listConfig] = listEntry
 
-  if (
-    !enabledToolsFor(config, listConfig)[operation as 'query' | 'create' | 'update' | 'delete'] ||
-    !(await listReachableOverMcp(listConfig, context))
-  ) {
-    return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
-  }
-
   try {
+    if (
+      !enabledToolsFor(config, listConfig)[operation as 'query' | 'create' | 'update' | 'delete'] ||
+      !(await listReachableOverMcp(listConfig, context))
+    ) {
+      return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
     let result: any
 
@@ -816,12 +815,20 @@ async function handleCustomTool(
   const context = await getContext(toContextSession(session))
 
   let customTool: McpCustomTool | undefined
-  for (const listConfig of Object.values(config.lists)) {
-    const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
-    if (found && (await listReachableOverMcp(listConfig, context))) {
-      customTool = found
-      break
+  try {
+    for (const listConfig of Object.values(config.lists)) {
+      const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
+      if (found && (await listReachableOverMcp(listConfig, context))) {
+        customTool = found
+        break
+      }
     }
+  } catch (error) {
+    console.error(`[opensaas] MCP custom tool "${toolName}" access check failed:`, error)
+    return createErrorResultResponse(
+      `Custom tool "${toolName}" failed due to an internal error.`,
+      id,
+    )
   }
   customTool ??= getPluginMcpTools(config).find((t) => t.name === toolName)
 

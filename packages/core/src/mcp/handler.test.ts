@@ -1575,6 +1575,52 @@ describe('the MCP surface', () => {
     )
   })
 
+  describe('a throwing query rule on tools/call', () => {
+    function throwing(): OpenSaasConfig {
+      const base = schemaConfig()
+      return {
+        ...base,
+        lists: {
+          ...base.lists,
+          Secret: {
+            ...base.lists.Secret,
+            access: {
+              operation: {
+                query: () => {
+                  throw new Error('boom internal detail')
+                },
+              },
+            },
+            mcp: {
+              customTools: [
+                {
+                  name: 'boomTool',
+                  description: 'b',
+                  inputSchema: z.object({}),
+                  handler: async () => ({ ran: true }),
+                },
+              ],
+            },
+          },
+        },
+      }
+    }
+
+    test(
+      'is redacted for a CRUD tool and a custom tool',
+      async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        for (const name of ['list_secret_query', 'boomTool']) {
+          const { body } = await callTool(name, {}, throwing())
+          expect(JSON.stringify(body)).not.toContain('boom internal detail')
+          expect(body?.result).toMatchObject({ isError: true })
+        }
+        vi.restoreAllMocks()
+      },
+      BOOT,
+    )
+  })
+
   describe('the writes tools/call dispatches', () => {
     async function seedPost(): Promise<string> {
       const context = await contextFor(schemaConfig())()
