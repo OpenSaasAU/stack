@@ -158,9 +158,8 @@ async function run(): Promise<void> {
     assert.equal(await anonymous.db.Post.where({ id: { equals: draft.id } }).first(), null)
     assert.deepEqual(await anonymous.db.Post.all(), [])
   })
-  await check('the server action reads a draft as anonymous when given no user id', async () => {
-    assert.equal(await getPost(draft.id), null)
-    assert.equal((await getPost(draft.id, alice.id))?.id, draft.id)
+  await check('the server action reads the draft as the demo session, the first user', async () => {
+    assert.equal((await getPost(draft.id))?.id, draft.id)
   })
 
   const published = await asAlice.db.Post.update({
