@@ -296,13 +296,18 @@ interface PendingUpload<TMetadata> {
 }
 
 function createPendingUploads<TMetadata>() {
-  const pending = new WeakMap<File, PendingUpload<TMetadata>>()
+  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>>>()
   return {
-    set: (upload: File, value: PendingUpload<TMetadata>) => void pending.set(upload, value),
-    take: (upload: unknown): PendingUpload<TMetadata> | undefined => {
-      if (!isFileLike(upload)) return undefined
-      const value = pending.get(upload)
-      pending.delete(upload)
+    set: (write: object, fieldKey: string, value: PendingUpload<TMetadata>) => {
+      const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>>()
+      forWrite.set(fieldKey, value)
+      pending.set(write, forWrite)
+    },
+    take: (write: unknown, fieldKey: string): PendingUpload<TMetadata> | undefined => {
+      if (typeof write !== 'object' || write === null) return undefined
+      const forWrite = pending.get(write)
+      const value = forWrite?.get(fieldKey)
+      forWrite?.delete(fieldKey)
       return value
     },
   }
@@ -344,6 +349,23 @@ export function file<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').FileMetadata", nullable)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+    const pending = pendingFileUploads.take(inputData, fieldKey)
+    if (!pending) return
+    const stale = status === 'committed' ? pending.replaced : pending.uploaded
+    if (
+      !stale?.filename ||
+      (status === 'committed' && stale.filename === pending.uploaded.filename)
+    )
+      return
+    try {
+      await context.storage.deleteFile(fieldConfig.storage, stale.filename)
+    } catch (error) {
+      console.error(`Failed to cleanup file: ${stale.filename}`, error)
+    }
+  }
+
   const fieldConfig: FileFieldConfig<TTypeInfo, TKey> = {
     type: 'file',
     outputType: faces.outputType,
@@ -354,7 +376,14 @@ export function file<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item, operation }: any) => {
+      resolveInput: async ({
+        resolvedData,
+        inputData,
+        fieldKey,
+        context,
+        item,
+        operation,
+      }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -387,7 +416,7 @@ export function file<
           })) as FileMetadata
 
           const previous = item?.[fieldKey] as FileMetadata | null | undefined
-          pendingFileUploads.set(fileObj, {
+          pendingFileUploads.set(inputData, fieldKey, {
             uploaded: metadata,
             replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
           })
@@ -397,23 +426,6 @@ export function file<
 
         // Unknown type - return as-is and let validation catch it
         return inputValue
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterTransaction: async ({ status, inputData, fieldKey, context }: any) => {
-        const pending = pendingFileUploads.take(inputData?.[fieldKey])
-        if (!pending) return
-        const stale = status === 'committed' ? pending.replaced : pending.uploaded
-        if (
-          !stale?.filename ||
-          (status === 'committed' && stale.filename === pending.uploaded.filename)
-        )
-          return
-        try {
-          await context.storage.deleteFile(fieldConfig.storage, stale.filename)
-        } catch (error) {
-          console.error(`Failed to cleanup file: ${stale.filename}`, error)
-        }
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
@@ -432,6 +444,10 @@ export function file<
         }
       },
       ...userHooks,
+      afterTransaction: async (args) => {
+        await cleanupAfterTransaction(args)
+        await userHooks?.afterTransaction?.(args)
+      },
     },
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
@@ -505,6 +521,24 @@ export function image<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').ImageMetadata", nullable)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+    const pending = pendingImageUploads.take(inputData, fieldKey)
+    if (!pending) return
+    const stale = status === 'committed' ? pending.replaced : pending.uploaded
+    if (
+      !stale?.filename ||
+      (status === 'committed' && stale.filename === pending.uploaded.filename)
+    ) {
+      return
+    }
+    try {
+      await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+    } catch (error) {
+      console.error(`Failed to cleanup image: ${stale.filename}`, error)
+    }
+  }
+
   const fieldConfig: ImageFieldConfig<TTypeInfo, TKey> = {
     type: 'image',
     outputType: faces.outputType,
@@ -515,7 +549,14 @@ export function image<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item, operation }: any) => {
+      resolveInput: async ({
+        resolvedData,
+        inputData,
+        fieldKey,
+        context,
+        item,
+        operation,
+      }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -554,7 +595,7 @@ export function image<
           )) as ImageMetadata
 
           const previous = item?.[fieldKey] as ImageMetadata | null | undefined
-          pendingImageUploads.set(fileObj, {
+          pendingImageUploads.set(inputData, fieldKey, {
             uploaded: metadata,
             replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
           })
@@ -564,24 +605,6 @@ export function image<
 
         // Unknown type - return as-is and let validation catch it
         return inputValue
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterTransaction: async ({ status, inputData, fieldKey, context }: any) => {
-        const pending = pendingImageUploads.take(inputData?.[fieldKey])
-        if (!pending) return
-        const stale = status === 'committed' ? pending.replaced : pending.uploaded
-        if (
-          !stale?.filename ||
-          (status === 'committed' && stale.filename === pending.uploaded.filename)
-        ) {
-          return
-        }
-        try {
-          await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
-        } catch (error) {
-          console.error(`Failed to cleanup image: ${stale.filename}`, error)
-        }
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
@@ -603,6 +626,10 @@ export function image<
         }
       },
       ...userHooks,
+      afterTransaction: async (args) => {
+        await cleanupAfterTransaction(args)
+        await userHooks?.afterTransaction?.(args)
+      },
     },
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {

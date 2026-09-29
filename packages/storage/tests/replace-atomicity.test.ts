@@ -47,8 +47,13 @@ describe('cleanupOnReplace only deletes once the write committed', () => {
         Doc: {
           fields: {
             title: text({ validation: { length: { max: 5 } } }),
-            attachment: file({ storage: 'files', cleanupOnReplace: true }),
+            attachment: file({
+              storage: 'files',
+              cleanupOnReplace: true,
+              hooks: { afterTransaction: () => undefined },
+            }),
             avatar: image({ storage: 'files', cleanupOnReplace: true }),
+            second: file({ storage: 'files', cleanupOnReplace: true }),
           },
           access: { operation: OPEN },
         },
@@ -108,6 +113,24 @@ describe('cleanupOnReplace only deletes once the write committed', () => {
     await harness.context.db.Doc.update({
       where: { id },
       data: { attachment: pdf('b.pdf'), avatar: png('b.png') },
+    })
+
+    const after = await readdir(uploadDir)
+    expect(after).toHaveLength(2)
+    expect(after.some((name) => before.includes(name))).toBe(false)
+  })
+
+  it('cleans up each field independently when one File instance feeds two fields', async () => {
+    const shared = pdf('shared.pdf')
+    const row = await harness.context.db.Doc.create({
+      data: { title: 'ok', attachment: pdf('a.pdf'), second: pdf('s.pdf') },
+    })
+    const id = (row as { id: string }).id
+    const before = await readdir(uploadDir)
+
+    await harness.context.db.Doc.update({
+      where: { id },
+      data: { attachment: shared, second: shared },
     })
 
     const after = await readdir(uploadDir)
