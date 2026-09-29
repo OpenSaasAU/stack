@@ -32,11 +32,12 @@ function verificationOptions(options: BetterAuthMcpOptions): McpProtectedRequest
 }
 
 function claimsToSession(
-  claims: { sub?: string; scope?: unknown; exp?: number },
+  claims: { sub?: string; scope?: unknown; exp?: number; [claim: string]: unknown },
   req: Request,
 ): McpSession | null {
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
-  const session: McpSession = { userId: claims.sub }
+  const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
+  const session: McpSession = { ...customClaims, userId: sub }
   if (typeof claims.scope === 'string') {
     session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')
   }

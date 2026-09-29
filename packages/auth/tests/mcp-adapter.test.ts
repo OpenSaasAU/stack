@@ -64,6 +64,20 @@ describe('Better Auth MCP Adapter', () => {
       expect(session?.expiresAt).toBeInstanceOf(Date)
     })
 
+    it('forwards signed custom claims into the session', async () => {
+      const token = mint({ sub: 'user-123', role: 'admin', email: 'a@b.co' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
+    })
+
+    it('does not let a claim override the userId', async () => {
+      const token = mint({ sub: 'user-123', userId: 'someone-else' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.userId).toBe('user-123')
+    })
+
     it('returns null without a token', async () => {
       expect(await createBetterAuthMcpAdapter(options)(new Headers())).toBeNull()
     })
@@ -120,11 +134,14 @@ describe('Better Auth MCP Adapter', () => {
       )(new Request(resource, { headers: bearer(mint({ sub: 'user-123' })) }))
 
       expect(response.status).toBe(200)
-      expect(handler).toHaveBeenCalledWith(expect.any(Request), {
-        userId: 'user-123',
-        accessToken: expect.any(String),
-        expiresAt: expect.any(Date),
-      })
+      expect(handler).toHaveBeenCalledWith(
+        expect.any(Request),
+        expect.objectContaining({
+          userId: 'user-123',
+          accessToken: expect.any(String),
+          expiresAt: expect.any(Date),
+        }),
+      )
     })
 
     it('withMcpAuth answers 401 with a challenge and skips the handler', async () => {
