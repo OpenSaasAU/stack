@@ -945,7 +945,7 @@ async function narrowUnincludedForeignKeys(
 
     for (let i = 0; i < filteredRows.length; i++) {
       const raw = rawRows[i]
-      if (!(owner.foreignKey in raw)) continue
+      if (!(owner.foreignKey in raw) || !(owner.foreignKey in filteredRows[i])) continue
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
@@ -959,7 +959,8 @@ async function narrowUnincludedForeignKeys(
     const idsByRow = rawRows.map((row) => row[owner.foreignKey])
     const idMap = new Map<string, unknown>()
     for (let i = 0; i < filteredRows.length; i++) {
-      if (filteredRows[i][owner.foreignKey] === null) continue
+      if (!(owner.foreignKey in filteredRows[i]) || filteredRows[i][owner.foreignKey] === null)
+        continue
       const value = idsByRow[i]
       if (value !== null && value !== undefined) idMap.set(String(value), value)
     }
@@ -976,7 +977,8 @@ async function narrowUnincludedForeignKeys(
     const visibleIds = new Set(visible.map((row) => String(row.id)))
 
     for (let i = 0; i < filteredRows.length; i++) {
-      if (filteredRows[i][owner.foreignKey] === null) continue
+      if (!(owner.foreignKey in filteredRows[i]) || filteredRows[i][owner.foreignKey] === null)
+        continue
       const value = idsByRow[i]
       if (value === null || value === undefined) continue
       if (!visibleIds.has(String(value))) filteredRows[i][owner.foreignKey] = null

@@ -323,6 +323,9 @@ describe('a computed field that needs a to-one does not null its foreign key', (
 
         const denied = await db.context(null).db.Order.first()
         expect(denied?.customerId).toBeNull()
+
+        const projected = await db.context(null).db.Order.select('customerName').first()
+        expect(projected).not.toHaveProperty('customerId')
       } finally {
         await db.close()
       }
