@@ -23,7 +23,7 @@ export const contract = defineContract(
         siteName: field.text().default('My Blog'),
         maintenanceMode: field.boolean().default(false),
         maxUploadSize: field.int().optional().default(10),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {},
@@ -35,7 +35,7 @@ export const contract = defineContract(
         name: field.text(),
         email: field.text().unique(),
         password: field.text(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -54,7 +54,7 @@ export const contract = defineContract(
         publishDate: field.column(dateStringColumn).optional().column('publish_date'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
         authorId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -67,7 +67,7 @@ export const contract = defineContract(
       fields: {
         id: field.id.uuidv7Native(),
         name: field.text().unique(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -80,7 +80,7 @@ export const contract = defineContract(
         id: field.id.uuidv7Native(),
         postId: field.uuidNative().optional(),
         tagId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {

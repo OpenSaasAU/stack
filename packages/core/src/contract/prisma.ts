@@ -229,7 +229,8 @@ function modelFields(
   for (const column of model.columns) {
     fields[column.name] = scalarField(helpers, model.name, column, enums)
   }
-  if (model.timestamps.createdAt) fields.createdAt = helpers.field.temporal.createdAtString()
+  if (model.timestamps.createdAt)
+    fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
   if (model.timestamps.updatedAt) fields.updatedAt = helpers.field.temporal.updatedAtString()
   return fields
 }

@@ -295,6 +295,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     expect(emittedModel(emitted, 'User').relations.profile).toEqual({
       to: { namespace: 'public', model: 'Profile' },
       cardinality: '1:1',
+      nullable: true,
       on: { localFields: ['id'], targetFields: ['userId'] },
     })
     expect(emittedModel(emitted, 'Profile').relations.user).toMatchObject({ cardinality: 'N:1' })
@@ -355,6 +356,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     expect(emittedModel(emitted, 'Person').relations.spouse).toEqual({
       to: { namespace: 'public', model: 'Person' },
       cardinality: '1:1',
+      nullable: true,
       on: { localFields: ['id'], targetFields: ['partnerId'] },
     })
   })
@@ -429,6 +431,7 @@ describe('multi-schema — db.schemas and db.schema place a model in its namespa
     expect(emitted.domain.namespaces.auth.models.Session.relations.user).toEqual({
       to: { namespace: 'public', model: 'User' },
       cardinality: 'N:1',
+      nullable: false,
       on: { localFields: ['userId'], targetFields: ['id'] },
     })
     expect(emitted.domain.namespaces.public.models.User.relations.sessions).toEqual({
