@@ -844,7 +844,12 @@ function relatedRowsOf(row: OrmRow, plan: IncludePlan): OrmRow[] {
  */
 function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   for (const plan of plans) {
-    if (plan.arity === 'one' && plan.foreignKey !== undefined && plan.foreignKey in row) {
+    if (
+      !plan.declared &&
+      plan.arity === 'one' &&
+      plan.foreignKey !== undefined &&
+      plan.foreignKey in row
+    ) {
       const value = row[plan.relation]
       row[plan.foreignKey] = isRow(value) ? value.id : null
     }
@@ -922,7 +927,9 @@ async function narrowUnincludedForeignKeys(
   resolvedIncludes: readonly IncludePlan[],
 ): Promise<void> {
   const ctx = relatedResolveContext(binding, listName, listConfig)
-  const alreadyIncluded = new Set(resolvedIncludes.map((plan) => plan.relation))
+  const alreadyIncluded = new Set(
+    resolvedIncludes.filter((plan) => !plan.declared).map((plan) => plan.relation),
+  )
 
   for (const owner of foreignKeyOwningRelations(ctx)) {
     if (alreadyIncluded.has(owner.relation)) continue
