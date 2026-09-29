@@ -770,7 +770,7 @@ constructs a real instance and does not have this gap.
 
 - Auth provides Better Auth MCP adapter via `@opensaas/stack-auth/mcp`
 - MCP plugin enables OAuth for AI assistants
-- `createBetterAuthMcpAdapter()` converts Better Auth instance to session provider
+- `createBetterAuthMcpAdapter({ resource, baseURL })` verifies the bearer JWT (signature, issuer, audience, expiry) against Better Auth's JWKS and returns a session provider; revocation takes effect at token expiry
 - Works with core MCP runtime from `@opensaas/stack-core/mcp`
 - Requires `rawOpensaasContext` from `.opensaas/context.ts`:
 

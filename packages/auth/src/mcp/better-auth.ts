@@ -1,3 +1,4 @@
+import type { McpProtectedRequestHandlerOptions } from '@better-auth/mcp'
 import type { McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
 
 export type BetterAuthInstance = {
@@ -7,69 +8,126 @@ export type BetterAuthInstance = {
   [key: string]: any
 }
 
+export type BetterAuthMcpOptions = {
+  /** The `resource` passed to Better Auth's `mcp()` plugin; the token audience. */
+  resource: string
+  /** Better Auth's base URL including its base path, e.g. `http://localhost:3000/api/auth`. */
+  baseURL: string
+  /** Expected token issuer. Defaults to `baseURL`. */
+  issuer?: string
+  /** The authorization server's JWKS URL. Defaults to `${baseURL}/jwks`. */
+  jwksUrl?: string
+  /** Scopes every accepted token must carry. */
+  requiredScopes?: readonly string[]
+}
+
+function verificationOptions(options: BetterAuthMcpOptions): McpProtectedRequestHandlerOptions {
+  const baseURL = options.baseURL.replace(/\/+$/, '')
+  return {
+    issuer: options.issuer ?? baseURL,
+    audience: options.resource,
+    jwksUrl: options.jwksUrl ?? `${baseURL}/jwks`,
+    requiredScopes: options.requiredScopes,
+  }
+}
+
+function claimsToSession(
+  claims: { sub?: string; scope?: unknown; exp?: number; [claim: string]: unknown },
+  req: Request,
+): McpSession | null {
+  if (typeof claims.sub !== 'string' || claims.sub === '') return null
+  const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
+  const session: McpSession = { ...customClaims, userId: sub }
+  if (typeof claims.scope === 'string') {
+    session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')
+  }
+  if (typeof claims.exp === 'number') session.expiresAt = new Date(claims.exp * 1000)
+  const authorization = req.headers.get('authorization')
+  if (authorization !== null) session.accessToken = authorization.replace(/^\S+\s+/, '')
+  return session
+}
+
+async function verifyMcpRequest(
+  options: BetterAuthMcpOptions,
+  req: Request,
+): Promise<{ session: McpSession } | { response: Response }> {
+  const { createMcpProtectedRequestHandler } = await import('@better-auth/mcp')
+  let session: McpSession | null = null
+  const response = await createMcpProtectedRequestHandler(
+    verificationOptions(options),
+    (request, claims) => {
+      session = claimsToSession(claims, request)
+      if (session === null) {
+        return new Response(null, {
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' },
+        })
+      }
+      return new Response(null, { status: 204 })
+    },
+  )(req)
+  return session === null ? { response } : { session }
+}
+
 /**
- * Create Better Auth MCP session adapter
- * Converts Better Auth instance into MCP session provider
+ * Create the MCP session provider for a Better Auth `mcp()` authorization server.
+ * The bearer token is verified against the JWKS for issuer, audience, expiry and
+ * signature; revocation takes effect at token expiry.
  *
  * @example
  * ```typescript
  * import { createMcpHandlers } from '@opensaas/stack-core/mcp'
  * import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
  * import config from '@/opensaas.config'
- * import { auth } from '@/lib/auth'
  * import { getContext } from '@/.opensaas/context'
  *
  * const { GET, POST, DELETE } = createMcpHandlers({
  *   config,
- *   getSession: createBetterAuthMcpAdapter(auth),
+ *   getSession: createBetterAuthMcpAdapter({
+ *     resource: 'http://localhost:3000/api/mcp',
+ *     baseURL: 'http://localhost:3000/api/auth',
+ *   }),
  *   getContext
  * })
  *
  * export { GET, POST, DELETE }
  * ```
  */
-export function createBetterAuthMcpAdapter(auth: BetterAuthInstance): McpSessionProvider {
+export function createBetterAuthMcpAdapter(options: BetterAuthMcpOptions): McpSessionProvider {
   return async (headers: Headers): Promise<McpSession | null> => {
-    return await auth.api.getMcpSession({ headers })
+    const result = await verifyMcpRequest(
+      options,
+      new Request(options.resource, { method: 'POST', headers }),
+    )
+    return 'session' in result ? result.session : null
   }
 }
 
 /**
  * Create MCP request handler with Better Auth OAuth authentication
- * Wraps an MCP handler to automatically authenticate and inject session
+ * Wraps an MCP handler to automatically authenticate and inject session.
+ * Unauthenticated requests get Better Auth's RFC 9728 `WWW-Authenticate` challenge.
  *
  * @example
  * ```typescript
  * import { withMcpAuth } from '@opensaas/stack-auth/mcp'
- * import { auth } from '@/lib/auth'
  *
- * const handler = withMcpAuth(auth, async (req, session) => {
- *   // session.userId is authenticated — handle the MCP request
- *   return new Response(JSON.stringify({ ok: true }))
- * })
+ * const handler = withMcpAuth(
+ *   { resource: 'http://localhost:3000/api/mcp', baseURL: 'http://localhost:3000/api/auth' },
+ *   async (req, session) => new Response(JSON.stringify({ userId: session.userId })),
+ * )
  *
  * export { handler as GET, handler as POST, handler as DELETE }
  * ```
  */
 export function withMcpAuth(
-  auth: BetterAuthInstance,
+  options: BetterAuthMcpOptions,
   handler: (req: Request, session: McpSession) => Promise<Response> | Response,
 ): (req: Request) => Promise<Response> {
   return async (req: Request) => {
-    const session = await auth.api.getMcpSession({
-      headers: req.headers,
-    })
-
-    if (!session) {
-      return new Response(null, {
-        status: 401,
-        headers: {
-          'WWW-Authenticate': 'Bearer realm="MCP", error="invalid_token"',
-        },
-      })
-    }
-
-    return handler(req, session)
+    const result = await verifyMcpRequest(options, req)
+    if ('response' in result) return result.response
+    return handler(req, result.session)
   }
 }
 
@@ -79,7 +137,7 @@ export function withMcpAuth(
  *
  * @example
  * ```typescript
- * const mcpSession = await auth.api.getMcpSession({ headers: req.headers })
+ * const mcpSession = await createBetterAuthMcpAdapter(options)(req.headers)
  * const context = await getContext(mcpSessionToContextSession(mcpSession))
  * const posts = await context.db.Post.all()
  * ```
