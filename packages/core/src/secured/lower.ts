@@ -206,7 +206,7 @@ export interface VectorLowering {
  * Load the expression builders a vector search needs, lazily, for the reason
  * {@link whereCombinators} is lazy.
  *
- * Known limits: at `8.0.0-rc.8` the pgvector pack registers `cosineDistance`
+ * Known limits: at `8.0.0-rc.12` the pgvector pack registers `cosineDistance`
  * and `cosineSimilarity` on the model accessor and nothing else, so `l2` and
  * `inner_product` have no accessor method to call. All three are therefore
  * built through the ORM's own operation builder against pgvector's operators,
@@ -230,7 +230,6 @@ export const vectorLowering = lazyImport(async (): Promise<VectorLowering> => {
       returns: { codecId: FLOAT8_CODEC, nullable: false },
       lowering: {
         targetFamily: 'sql',
-        strategy: 'function',
         template: DISTANCE_TEMPLATES[plan.distanceFunction],
       },
     }).buildAst()

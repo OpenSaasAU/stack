@@ -52,7 +52,7 @@ export const contract = defineContract(
         email: field.text().unique(),
         emailVerified: field.boolean().default(false),
         image: field.text().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -71,7 +71,7 @@ export const contract = defineContract(
         ipAddress: field.text().optional(),
         userAgent: field.text().optional(),
         userId: field.uuidNative(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -92,7 +92,7 @@ export const contract = defineContract(
         scope: field.text().optional(),
         idToken: field.text().optional(),
         password: field.text().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -106,7 +106,7 @@ export const contract = defineContract(
         identifier: field.text(),
         value: field.text(),
         expiresAt: field.column(timestamptzStringColumn),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {},
