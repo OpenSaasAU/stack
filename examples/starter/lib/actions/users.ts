@@ -40,7 +40,7 @@ export async function getUser(userId: string) {
  */
 export async function updateUser(data: { name?: string; email?: string }) {
   const session = await demoSession()
-  if (!session) return { success: false, error: 'User not found or access denied' }
+  if (!session?.userId) return { success: false, error: 'User not found or access denied' }
   const context = await getContext(session)
 
   const user = await context.db.User.update({

@@ -15,7 +15,7 @@ async function sessionContext() {
  */
 export async function createPost(data: Omit<PostCreateInput, 'author'>) {
   const session = await demoSession()
-  if (!session) return { success: false, error: 'Failed to create post - access denied' }
+  if (!session?.userId) return { success: false, error: 'Failed to create post - access denied' }
   const context = await getContext(session)
 
   const post = await context.db.Post.create({
@@ -118,7 +118,7 @@ export async function getPost(postId: string) {
  */
 export async function getUserPosts() {
   const session = await demoSession()
-  if (!session) return []
+  if (!session?.userId) return []
   const context = await getContext(session)
 
   return context.db.Post.where({ authorId: { equals: session.userId } }).all()
