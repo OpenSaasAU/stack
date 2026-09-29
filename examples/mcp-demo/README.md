@@ -79,7 +79,9 @@ mcp: {
 
 ```typescript
 Post: list({
-  fields: {/* ... */},
+  fields: {
+    /* ... */
+  },
   mcp: {
     tools: {
       read: true,
