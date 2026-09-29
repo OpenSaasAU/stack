@@ -100,6 +100,18 @@ describe('Better Auth MCP Adapter', () => {
       expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
     })
 
+    it('withMcpAuth challenges a verified token that has no subject', async () => {
+      const handler = vi.fn(async () => new Response('OK'))
+      const response = await withMcpAuth(
+        options,
+        handler,
+      )(new Request(resource, { headers: bearer(mint({})) }))
+
+      expect(response.status).toBe(401)
+      expect(response.headers.get('WWW-Authenticate')).toContain('Bearer')
+      expect(handler).not.toHaveBeenCalled()
+    })
+
     it('withMcpAuth calls the handler with the session', async () => {
       const handler = vi.fn(async () => new Response('OK'))
       const response = await withMcpAuth(

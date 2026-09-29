@@ -1,7 +1,4 @@
-import {
-  createMcpProtectedRequestHandler,
-  type McpProtectedRequestHandlerOptions,
-} from '@better-auth/mcp'
+import type { McpProtectedRequestHandlerOptions } from '@better-auth/mcp'
 import type { McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
 
 export type BetterAuthInstance = {
@@ -53,19 +50,22 @@ async function verifyMcpRequest(
   options: BetterAuthMcpOptions,
   req: Request,
 ): Promise<{ session: McpSession } | { response: Response }> {
+  const { createMcpProtectedRequestHandler } = await import('@better-auth/mcp')
   let session: McpSession | null = null
   const response = await createMcpProtectedRequestHandler(
     verificationOptions(options),
     (request, claims) => {
       session = claimsToSession(claims, request)
+      if (session === null) {
+        return new Response(null, {
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' },
+        })
+      }
       return new Response(null, { status: 204 })
     },
   )(req)
-  if (session !== null) return { session }
-  if (response.status === 204) {
-    return { response: new Response(null, { status: 401 }) }
-  }
-  return { response }
+  return session === null ? { response } : { session }
 }
 
 /**
