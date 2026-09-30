@@ -962,7 +962,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
               const linkHidden =
                 currentParentId !== null && visible[foreignKeyColumn] !== currentParentId
               if (currentParentId !== expectedParentId) {
-                return linkHidden ? ('denied' as const) : ('conflict' as const)
+                return visible[foreignKeyColumn] === null
+                  ? ('denied' as const)
+                  : ('conflict' as const)
               }
               try {
                 const updated = await relatedList.update({

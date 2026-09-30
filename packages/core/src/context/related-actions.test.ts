@@ -462,7 +462,20 @@ describe('the relationship table server actions over a real database', () => {
 
       expect(wrong).toEqual({ removed: false, error: 'Access denied or operation failed' })
       expect(right).toEqual(wrong)
-      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: ada }])
+      const unlinked = await harness.context.db.Post.create({ data: { title: 'loose' } })
+      const loose = await eve.serverAction({
+        listKey: 'Post',
+        action: 'removeRelated',
+        mode: 'disconnect',
+        id: String(unlinked?.id),
+        field: 'author',
+        parentId: grace,
+      })
+      expect(loose).toEqual(wrong)
+      expect(await storedLinks(harness.url)).toEqual([
+        { title: 'loose', author: null },
+        { title: 'ship it', author: ada },
+      ])
     },
     BOOT,
   )
