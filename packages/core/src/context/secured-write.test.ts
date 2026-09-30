@@ -470,6 +470,7 @@ describe('an update whose stored payload is empty', () => {
     ['an empty payload', {}],
     ['only a system key', { createdAt: new Date(0) }],
     ['only a virtual field', { note: 'x' }],
+    ['only undefined values', { title: undefined }],
   ])(
     'returns the target row for %s and fires afterOperation',
     async (_label, data) => {
