@@ -7,11 +7,7 @@ import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentCreateAccess } from '../access/field-access.js'
 import { pascalToCamel } from '../lib/case-utils.js'
 import { isRelationshipField } from '../fields/index.js'
-import {
-  AccessScopeDepthExceededError,
-  RelationFilterAccessDeniedError,
-  ResolveOutputCycleError,
-} from '../access/errors.js'
+import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
 import { DatabaseError } from '../lib/database-errors.js'
 import type { McpSession, McpSessionProvider } from './types.js'
@@ -584,7 +580,6 @@ function isSafeMcpError(error: unknown): error is Error {
     error instanceof McpWriteRefusedError ||
     error instanceof ValidationError ||
     error instanceof AccessScopeDepthExceededError ||
-    error instanceof RelationFilterAccessDeniedError ||
     error instanceof ResolveOutputCycleError ||
     error instanceof DatabaseError
   )

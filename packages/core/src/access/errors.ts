@@ -88,20 +88,8 @@ export class ResolveOutputCycleError extends Error {
 }
 
 /**
- * Thrown when a relation filter in a caller's `where` (`some`/`every`/`none`/
- * `is`/`isNot`) names a relationship whose related list denies operation-level
- * `query` access outright (`=== false`). Deliberately a loud failure, not a
- * silently narrowed `{ id: { in: [] } }` or a pass-through: ADR-0022 requires
- * an engine that cannot compute a scope to deny, never pass through, and here
- * the engine CAN compute the scope (denied) — passing that through as a
- * silently-empty match would itself be a distinguishable signal for a caller
- * probing which relations they may filter on. `include`'s equivalent case
- * drops the relation silently instead, because a `null`/missing key in a
- * response is indistinguishable from "not requested";
- * a `where` predicate has no such neutral outcome, so a relation filter on a
- * fully denied relation is refused instead. `sudo` bypasses this check
- * entirely, matching every other access-control escape hatch. See #916 and
- * `docs/adr/0022-access-control-fails-closed-when-it-cannot-scope.md`.
+ * @deprecated The secured surface lowers a relation filter on a denied related
+ * list to the empty set and never throws this. Kept so existing imports compile.
  */
 export class RelationFilterAccessDeniedError extends Error {
   public listKey: string
@@ -111,8 +99,7 @@ export class RelationFilterAccessDeniedError extends Error {
   constructor(listKey: string, fieldKey: string, relatedListKey: string) {
     super(
       `Cannot filter "${listKey}.${fieldKey}" — the related list "${relatedListKey}" denies ` +
-        `query access to this session, so this relation filter cannot be scoped. Denial is loud ` +
-        `rather than silently narrowed to match nothing (ADR-0022). Use sudo to bypass.`,
+        `query access to this session, so this relation filter cannot be scoped.`,
     )
     this.name = 'RelationFilterAccessDeniedError'
     this.listKey = listKey

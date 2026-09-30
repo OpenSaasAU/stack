@@ -2596,7 +2596,7 @@ describe('the MCP surface', () => {
    * `ResolveOutputCycleError` (#844, ADR-0023) is a loud, framework-authored
    * refusal whose message names only lists and fields on its own resolve
    * chain — no session or application data — so it belongs in the same
-   * allowlist as `AccessScopeDepthExceededError`/`RelationFilterAccessDeniedError`
+   * allowlist as `AccessScopeDepthExceededError`
    * rather than behind the generic "failed due to an internal error" text.
    */
   describe('a resolveOutput cycle on query and create', () => {

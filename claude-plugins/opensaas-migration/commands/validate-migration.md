@@ -23,8 +23,6 @@ Validate the generated opensaas.config.ts file.
 4. Report any errors and suggest fixes
 
 5. If validation passes, confirm next steps:
-   - `npx prisma generate`
-   - `npx prisma db push`
    - `pnpm dev`
 
 ## Common Issues

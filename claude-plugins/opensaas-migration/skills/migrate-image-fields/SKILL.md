@@ -118,25 +118,17 @@ The field's `storage` key references a provider in `config.storage`. The provide
 ### Step 3: Generate and verify a clean diff
 
 ```bash
-# Generate the Prisma schema from the OpenSaaS config
+# Regenerate the contract from the OpenSaaS config
 pnpm opensaas generate
 
-# Generate the Prisma Client
-npx prisma generate
-
 # Verify there are NO destructive changes — the multi-column field maps
-# onto the existing columns, so the diff against the live DB should be empty
-# (or additive only). Compare the generated schema to your live database:
-npx prisma migrate diff \
-  --from-url "$DATABASE_URL" \
-  --to-schema-datamodel prisma/schema.prisma \
-  --script
-
-# Or, for a SQLite dev loop:
-npx prisma db push
+# onto the existing columns, so the plan against the live DB should be empty
+# (or additive only). Run this in the dev loop, which prints the plan and
+# stages any destructive change instead of applying it:
+pnpm dev
 ```
 
-The generated schema emits the per-part columns with `@map` onto the live Keystone columns, so Prisma sees no drift:
+The generated contract maps the per-part columns onto the live Keystone columns, so Prisma sees no drift:
 
 ```prisma
 model Teacher {
@@ -220,7 +212,7 @@ Because the multi-column mode reads existing stored URLs in place, you can adopt
 
 > **DESTRUCTIVE — requires a verified backup. Do NOT do this unless the user explicitly asks to consolidate.**
 >
-> This path **drops the Keystone per-part columns** and replaces them with a single `Json?` column. If the SQL is not run correctly before `prisma db push`, **all existing image/file data is lost.** The non-destructive multi-column path above achieves the same functional field with none of this risk and is the recommended default.
+> This path **drops the Keystone per-part columns** and replaces them with a single `Json?` column. If the SQL is not run correctly before the schema change is applied, **all existing image/file data is lost.** The non-destructive multi-column path above achieves the same functional field with none of this risk and is the recommended default.
 
 Only choose this if the user has a specific reason to consolidate (e.g. they want the greenfield single-column layout) AND has confirmed a backup.
 
@@ -246,9 +238,9 @@ avatar: image({ storage: 'images' }) // single Json? column
 resume: file({ storage: 'files' }) // single Json? column
 ```
 
-### Step C: Run the consolidation SQL BEFORE `prisma db push`
+### Step C: Run the consolidation SQL BEFORE applying the schema change
 
-**CRITICAL: run this SQL first.** Running `prisma db push` before the SQL drops the Keystone columns and loses the data. Substitute the real model and field names.
+**CRITICAL: run this SQL first.** Applying the schema change (`pnpm db:update`, or a production migration) before the SQL drops the Keystone columns and loses the data. Substitute the real model and field names.
 
 #### PostgreSQL
 
@@ -373,8 +365,7 @@ WHERE resume_filename IS NOT NULL OR resume_url IS NOT NULL;
 
 ```bash
 pnpm opensaas generate
-npx prisma generate
-npx prisma db push   # the columns were already consolidated by the SQL above
+pnpm dev   # reconciles against the columns the SQL above already consolidated
 ```
 
 If anything goes wrong, restore from the backup taken in Step A.
@@ -385,5 +376,5 @@ If anything goes wrong, restore from the backup taken in Step A.
 
 1. Read the config; identify every `image()` / `file()` field and its model.
 2. **Default:** switch each field's import to `@opensaas/stack-storage/fields` and add `db: { columns: 'keystone' }` (with per-part `map` overrides only if needed). Confirm the `storage` provider. Run `opensaas generate` + `prisma migrate diff` to show a clean, non-destructive diff. No SQL, no re-upload.
-3. **Only if the user explicitly asks to consolidate to JSON:** back up first, drop the `db.columns` option, run the destructive SQL BEFORE `prisma db push`, then generate and push.
+3. **Only if the user explicitly asks to consolidate to JSON:** back up first, drop the `db.columns` option, run the destructive SQL BEFORE applying the schema change, then generate and reconcile.
 4. Report what changed in the config, which path was taken, and (for the destructive path only) the SQL location and the backup reminder.

@@ -14,7 +14,7 @@
  *       emailVerification: { enabled: true },
  *     })
  *   ],
- *   db: { provider: 'sqlite', url: 'file:./dev.db' },
+ *   db: { provider: 'postgresql' },
  *   lists: { ... }
  * })
  * ```
