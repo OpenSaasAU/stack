@@ -921,6 +921,7 @@ async function narrowUnincludedForeignKeys(
   listConfig: ListConfig<TypeInfo>,
   resolvedIncludes: readonly IncludePlan[],
 ): Promise<void> {
+  if (binding.context._isSudo === true) return
   const ctx = relatedResolveContext(binding, listName, listConfig)
   const alreadyIncluded = new Set(resolvedIncludes.map((plan) => plan.relation))
 
