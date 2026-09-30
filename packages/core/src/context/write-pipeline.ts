@@ -6,12 +6,7 @@ import type {
   PrismaFilter,
   TransactionOpener,
 } from '../access/types.js'
-import {
-  checkAccess,
-  checkCreateAccess,
-  filterReadableFields,
-  filterWritableFields,
-} from '../access/index.js'
+import { checkAccess, checkCreateAccess, filterWritableFields } from '../access/index.js'
 import {
   executeValidate,
   executeBeforeOperation,
@@ -34,6 +29,7 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
+import { visibleWrittenRow } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
@@ -382,6 +378,7 @@ async function runWriteInTransaction(
   // ── Delete path: skip input phases, run only validate/field-validate ────────
   if (!strategy.runInputPhases) {
     return runDeletePath({
+      ormHandle: tx,
       listName,
       listConfig,
       context,
@@ -522,17 +519,7 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
-  return filterReadableFields(
-    item,
-    listConfig.fields,
-    {
-      session: context.session,
-      context: { ...context, _isSudo: context._isSudo },
-    },
-    config,
-    0,
-    listName,
-  )
+  return visibleWrittenRow({ listName, listConfig, ormHandle: tx, context, config }, item)
 }
 
 /**
@@ -541,6 +528,7 @@ async function runWriteInTransaction(
  * Returns the deleted row through the Field Visibility pass.
  */
 async function runDeletePath(args: {
+  ormHandle: OrmClient
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
@@ -552,8 +540,18 @@ async function runDeletePath(args: {
   scope: WriteScope
   strategy: WriteStrategy
 }): Promise<OrmRow | null> {
-  const { listName, listConfig, context, config, originalItem, collection, ops, scope, strategy } =
-    args
+  const {
+    ormHandle,
+    listName,
+    listConfig,
+    context,
+    config,
+    originalItem,
+    collection,
+    ops,
+    scope,
+    strategy,
+  } = args
   const item = originalItem as Record<string, unknown>
 
   // ── Phase 3: list-level validate (delete) ──────────────────────────────────
@@ -618,17 +616,7 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return filterReadableFields(
-    deleted,
-    listConfig.fields,
-    {
-      session: context.session,
-      context: { ...context, _isSudo: context._isSudo },
-    },
-    config,
-    0,
-    listName,
-  )
+  return visibleWrittenRow({ listName, listConfig, ormHandle, context, config }, deleted)
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────
