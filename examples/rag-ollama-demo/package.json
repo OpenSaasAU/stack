@@ -35,7 +35,7 @@
     "dotenv": "^17.4.2",
     "pg": "^8.23.0",
     "prisma": "8.0.0-rc.17",
-    "tsx": "^4.23.11",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
