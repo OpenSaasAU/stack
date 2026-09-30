@@ -773,6 +773,7 @@ export function updateWriteStrategy(
     runInputPhases: true,
     resolveTarget: resolveExistingTarget(listName, listConfig, config, context, where, 'update'),
     async persist(collection, ops, scope, data) {
+      if (Object.keys(data).length === 0) return firstMatching(collection, scope, ops)
       return updateFirst(collection, scope, ops, data)
     },
   }

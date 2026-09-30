@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import type { AccessControlledDB, Session } from '../access/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { WriteMatchedNothingError } from '../index.js'
@@ -418,6 +418,70 @@ describe('the write terminals over a real collection', () => {
       ).rejects.toThrow('the hook rejected the update')
 
       expect(await storedTitles(harness.url)).toEqual(['before'])
+    },
+    BOOT,
+  )
+})
+
+describe('an update whose stored payload is empty', () => {
+  let harness: TestContext
+  const events: string[] = []
+
+  function emptyUpdateConfig(): OpenSaasConfig {
+    return {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: {
+        Post: {
+          fields: {
+            title: text(),
+            note: virtual({
+              type: 'string',
+              hooks: { resolveInput: async () => undefined, resolveOutput: () => 'v' },
+            }),
+          },
+          access: { operation: OPEN },
+          hooks: {
+            beforeOperation: async ({ operation }) => {
+              events.push(`before.${operation}`)
+            },
+            afterOperation: async ({ operation }) => {
+              events.push(`after.${operation}`)
+            },
+          },
+        },
+      },
+    }
+  }
+
+  beforeAll(async () => {
+    harness = await createTestContext(emptyUpdateConfig(), { userId: 'u1' })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+    events.length = 0
+  })
+
+  test.each([
+    ['an empty payload', {}],
+    ['only a system key', { createdAt: new Date(0) }],
+    ['only a virtual field', { note: 'x' }],
+  ])(
+    'returns the target row for %s and fires afterOperation',
+    async (_label, data) => {
+      const created = await harness.context.db.Post.create({ data: { title: 'keep' } })
+      if (created === null) throw new Error('create was denied')
+      events.length = 0
+
+      const updated = await harness.context.db.Post.update({ where: { id: created.id }, data })
+
+      expect(updated).toMatchObject({ id: created.id, title: 'keep' })
+      expect(events).toEqual(['before.update', 'after.update'])
+      expect(await storedTitles(harness.url)).toEqual(['keep'])
     },
     BOOT,
   )
