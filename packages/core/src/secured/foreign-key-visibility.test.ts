@@ -274,6 +274,89 @@ describe('a related row deleted between the main read and the companion existenc
   )
 })
 
+describe('a predicate, sort or column list on a to-one foreign key answers as the bare read does (#1621)', () => {
+  test(
+    'where on the hidden id matches nothing, and the visible id still matches',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      expect(await asMine.db.Item.where({ ownerId: { equals: othersId } }).all()).toEqual([])
+      const visible = await asMine.db.Item.where({ ownerId: { equals: mineId } }).all()
+      expect(visible.map((item) => item.title)).toEqual(['mine-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'count on the hidden id is zero',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const { n } = await asMine.db.Item.where({ ownerId: { equals: othersId } }).aggregate(
+        (aggregate) => ({ n: aggregate.count() }),
+      )
+      expect(n).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a session the related list denies entirely matches nothing',
+    async () => {
+      const anonymous = database.context(null)
+      expect(await anonymous.db.Item.where({ ownerId: { equals: mineId } }).all()).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'equals null matches a row whose related row is hidden, as the bare read shows it',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const rows = await asMine.db.Item.where({ ownerId: { equals: null } }).all()
+      expect(rows.map((item) => item.title)).toEqual(['others-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list access filter naming the foreign key is not scoped by the related list',
+    async () => {
+      let target = ''
+      const scratch = await createTestDatabase({
+        ...config,
+        lists: {
+          ...config.lists,
+          Item: {
+            ...config.lists.Item,
+            access: { operation: { query: () => ({ ownerId: { equals: target } }) } },
+          },
+        },
+      })
+      try {
+        const sudo = scratch.context(null).sudo()
+        const org = await sudo.db.Org.create({ data: { handle: 'others' } })
+        if (!org) throw new Error('seed org')
+        target = String(org.id)
+        await sudo.db.Item.create({ data: { title: 'x', owner: { connect: { id: target } } } })
+        const rows = await scratch.context({ handle: 'mine' }).db.Item.all()
+        expect(rows.map((item) => item.title)).toEqual(['x'])
+      } finally {
+        await scratch.close()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'orderBy and distinct on the foreign key are refused while the related list scopes reads',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      await expect(asMine.db.Item.orderBy({ ownerId: 'asc' }).all()).rejects.toThrow()
+      await expect(asMine.db.Item.distinct('ownerId').all()).rejects.toThrow()
+    },
+    BOOT,
+  )
+})
+
 describe('sudo is not narrowed by the session foreign-key rules', () => {
   test(
     'a bare sudo read returns every foreign key, agreeing with a sudo include',
