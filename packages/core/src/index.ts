@@ -261,6 +261,9 @@ export { InvalidCreateAccessResultError } from './access/index.js'
 // the read to every row, so it is refused (see #1147, ADR-0022, ADR-0055).
 export { UndefinedAccessFilterError } from './access/index.js'
 
+/** @deprecated Never thrown; kept so existing imports compile. */
+export { RelationFilterAccessDeniedError } from './access/index.js'
+
 // Field self-containment validation — checks each field implements the
 // generation contract (getContractField / getZodSchema, plus outputType where
 // the field has no single column to be typed from) so a misimplemented field fails early

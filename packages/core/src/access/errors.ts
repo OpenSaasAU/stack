@@ -87,6 +87,27 @@ export class ResolveOutputCycleError extends Error {
   }
 }
 
+/**
+ * @deprecated The secured surface lowers a relation filter on a denied related
+ * list to the empty set and never throws this. Kept so existing imports compile.
+ */
+export class RelationFilterAccessDeniedError extends Error {
+  public listKey: string
+  public fieldKey: string
+  public relatedListKey: string
+
+  constructor(listKey: string, fieldKey: string, relatedListKey: string) {
+    super(
+      `Cannot filter "${listKey}.${fieldKey}" — the related list "${relatedListKey}" denies ` +
+        `query access to this session, so this relation filter cannot be scoped.`,
+    )
+    this.name = 'RelationFilterAccessDeniedError'
+    this.listKey = listKey
+    this.fieldKey = fieldKey
+    this.relatedListKey = relatedListKey
+  }
+}
+
 function describeAccessResult(result: unknown): string {
   if (result === null) return 'null'
   if (result === undefined) return 'undefined'
