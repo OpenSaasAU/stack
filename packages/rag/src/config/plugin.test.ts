@@ -179,7 +179,7 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  stored: StoredEmbedding,
+  stored: StoredEmbedding | null,
 ) => Promise<void>
 
 /**
@@ -712,7 +712,7 @@ describe('ragPlugin', () => {
         listKey: string
         id: string | number
         fieldName: string
-        stored: StoredEmbedding
+        stored: StoredEmbedding | null
       }[] = []
       const { key } = writeEmbeddingOf(
         ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
@@ -879,7 +879,7 @@ describe('ragPlugin', () => {
         context,
       })
 
-      expect(writes.map((write) => write.stored.vector)).toEqual([[4]])
+      expect(writes.map((write) => write.stored?.vector)).toEqual([[4]])
     })
 
     it('logs rather than throws when the provider fails, since the row is committed', async () => {
@@ -1134,7 +1134,74 @@ describe('ragPlugin', () => {
         context,
       })
 
-      expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
+      expect(writes.map((write) => write.stored?.vector)).toEqual([[4], [6]])
+    })
+
+    it.each([
+      ['an empty string', ''],
+      ['a null value', null],
+    ])('clears an existing embedding when the source becomes %s', async (_label, source) => {
+      const { hook, writes, context } = await generationHook()
+      const existing: StoredEmbedding = {
+        vector: [4],
+        metadata: {
+          model: 'counting-1',
+          provider: 'counting',
+          dimensions: 1,
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceHash: 'old',
+        },
+      }
+
+      await hook!( {
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { content: source },
+        originalItem: { id: 'a1', content: 'four', contentEmbedding: existing },
+        item: { id: 'a1', content: source, contentEmbedding: existing },
+        context,
+      })
+
+      expect(writes).toEqual([
+        { listKey: 'Article', id: 'a1', fieldName: 'contentEmbedding', stored: null },
+      ])
+    })
+
+    it('clears a stale embedding when regeneration fails during an update', async () => {
+      const { hook, writes, context } = await generationHook('flaky')
+      const existing: StoredEmbedding = {
+        vector: [4],
+        metadata: {
+          model: 'counting-1',
+          provider: 'counting',
+          dimensions: 1,
+          generatedAt: '2026-01-01T00:00:00.000Z',
+          sourceHash: 'old',
+        },
+      }
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(
+        hook!({
+          listKey: 'Article',
+          operation: 'update',
+          status: 'committed',
+          inputData: { content: 'eleven' },
+          originalItem: { id: 'a1', content: 'four', contentEmbedding: existing },
+          item: { id: 'a1', content: 'eleven', contentEmbedding: existing },
+          context,
+        }),
+      ).resolves.toBeUndefined()
+
+      expect(writes).toEqual([
+        { listKey: 'Article', id: 'a1', fieldName: 'contentEmbedding', stored: null },
+      ])
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('retry by writing the source field again'),
+        expect.objectContaining({ message: '429 Too Many Requests' }),
+      )
+      logged.mockRestore()
     })
 
     it('reports a missing rag context as a standing defect rather than throwing', async () => {
