@@ -331,7 +331,7 @@ export function file<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -353,17 +353,6 @@ export function file<
             validation: fieldConfig.validation,
           })) as FileMetadata
 
-          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = logicalValue(fieldConfig, fieldKey, item) as FileMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
-              } catch (error) {
-                console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
-              }
-            }
-          }
-
           return metadata
         }
 
@@ -372,7 +361,28 @@ export function file<
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
+      afterOperation: async ({ operation, originalItem, item, fieldKey, context }: any) => {
+        if (operation === 'update' && fieldConfig.cleanupOnReplace) {
+          const oldMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as FileMetadata | null
+          const newMetadata = logicalValue(fieldConfig, fieldKey, item) as FileMetadata | null
+          if (
+            oldMetadata &&
+            oldMetadata.filename &&
+            newMetadata &&
+            newMetadata.filename !== oldMetadata.filename
+          ) {
+            try {
+              await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
+            } catch (error) {
+              console.error(`Failed to cleanup old file: ${oldMetadata.filename}`, error)
+            }
+          }
+        }
+
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const fileMetadata = logicalValue(
@@ -474,7 +484,7 @@ export function image<
       // Keystone-compliant field resolveInput args: the field value lives at
       // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async ({ resolvedData, fieldKey, context, item }: any) => {
+      resolveInput: async ({ resolvedData, fieldKey, context }: any) => {
         const inputValue = resolvedData?.[fieldKey]
 
         if (inputValue === null || inputValue === undefined) {
@@ -508,17 +518,6 @@ export function image<
             },
           )) as ImageMetadata
 
-          if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = logicalValue(fieldConfig, fieldKey, item) as ImageMetadata | null
-            if (oldMetadata && oldMetadata.filename) {
-              try {
-                await context.storage.deleteImage(oldMetadata)
-              } catch (error) {
-                console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
-              }
-            }
-          }
-
           return metadata
         }
 
@@ -527,7 +526,28 @@ export function image<
       },
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
+      afterOperation: async ({ operation, originalItem, item, fieldKey, context }: any) => {
+        if (operation === 'update' && fieldConfig.cleanupOnReplace) {
+          const oldMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as ImageMetadata | null
+          const newMetadata = logicalValue(fieldConfig, fieldKey, item) as ImageMetadata | null
+          if (
+            oldMetadata &&
+            oldMetadata.filename &&
+            newMetadata &&
+            newMetadata.filename !== oldMetadata.filename
+          ) {
+            try {
+              await context.storage.deleteImage(oldMetadata)
+            } catch (error) {
+              console.error(`Failed to cleanup old image: ${oldMetadata.filename}`, error)
+            }
+          }
+        }
+
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
           const imageMetadata = logicalValue(
