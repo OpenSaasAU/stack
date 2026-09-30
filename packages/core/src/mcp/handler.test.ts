@@ -1608,13 +1608,15 @@ describe('the MCP surface', () => {
     }
 
     test(
-      'is redacted for a CRUD tool and a custom tool',
+      'leaves the list unadvertised: both tools answer as unknown, leaking nothing',
       async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {})
         for (const name of ['list_secret_query', 'boomTool']) {
           const { body } = await callTool(name, {}, throwing())
           expect(JSON.stringify(body)).not.toContain('boom internal detail')
-          expect(body?.result ?? body?.error).toBeDefined()
+          expect((body?.error as { message: string } | undefined)?.message).toBe(
+            `Unknown tool: ${name}`,
+          )
         }
         vi.restoreAllMocks()
       },
