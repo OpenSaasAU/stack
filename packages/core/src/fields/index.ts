@@ -112,6 +112,20 @@ function literalDefault(
   return { kind: 'literal', value }
 }
 
+function decimalDefault(
+  value: unknown,
+  listKey: string,
+  fieldName: string,
+  precision: number,
+  scale: number,
+): ColumnDefaultDescriptor | undefined {
+  const literal = literalDefault(value, listKey, fieldName)
+  if (literal === undefined || literal.kind !== 'literal') return literal
+  const text = String(literal.value)
+  const operand = /^\d+(\.\d+)?$/.test(text) ? text : `'${text.replace(/'/g, "''")}'`
+  return { kind: 'sql', expression: `${operand}::numeric(${precision},${scale})` }
+}
+
 type ScalarColumn = {
   type: ColumnTypeDescriptor
   nullable: boolean
@@ -394,7 +408,7 @@ export function decimal<
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue, listKey, fieldName),
+        default: decimalDefault(options?.defaultValue, listKey, fieldName, precision, scale),
       }),
     // Decimals compare like integers, but the value stays a string so full
     // precision survives the filter. A non-numeric value degrades to free text.

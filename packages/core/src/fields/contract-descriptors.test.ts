@@ -120,7 +120,7 @@ describe('getContractField — every core builder describes its contract contrib
       ),
     ).toMatchObject({
       type: { pack: 'pg', type: 'decimal', args: [10, 2] },
-      default: { kind: 'literal', value: '0.00' },
+      default: { kind: 'sql', expression: '0.00::numeric(10,2)' },
     })
   })
 
