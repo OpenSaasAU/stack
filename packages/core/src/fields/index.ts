@@ -122,7 +122,11 @@ function decimalDefault(
   const literal = literalDefault(value, listKey, fieldName)
   if (literal === undefined || literal.kind !== 'literal') return literal
   const text = String(literal.value)
-  const operand = /^\d+(\.\d+)?$/.test(text) ? text : `'${text.replace(/'/g, "''")}'`
+  const operand = /^\d+$/.test(text)
+    ? `(${text})`
+    : /^\d+\.\d+$/.test(text)
+      ? text
+      : `'${text.replace(/'/g, "''")}'`
   return { kind: 'sql', expression: `${operand}::numeric(${precision},${scale})` }
 }
 
