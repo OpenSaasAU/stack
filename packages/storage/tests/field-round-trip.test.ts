@@ -81,6 +81,12 @@ function buildConfig(): OpenSaasConfig {
       },
       Cleaned: {
         fields: {
+          avatar: image({
+            storage: 'files',
+            db: { columns: 'keystone' },
+            cleanupOnReplace: true,
+            cleanupOnDelete: true,
+          }),
           attachment: file({
             storage: 'files',
             db: { columns: 'keystone' },
@@ -297,6 +303,31 @@ describe('image()/file() against a real column (Test context)', () => {
 
       present(await harness.context.db.Cleaned.delete({ where: { id: idOf(created) } }), 'delete')
       expect(await exists(second.filename)).toBe(false)
+    })
+  })
+
+  describe('image cleanup hooks in multi-column mode', () => {
+    it('removes the old image on replace and the current one on delete', async () => {
+      const created = present(
+        await harness.context.db.Cleaned.create({ data: { avatar: pngFile('one.png') } }),
+        'Cleaned.create',
+      )
+      const first = present(created.avatar, 'avatar') as ImageMetadata
+      await access(join(uploadDir, first.filename))
+
+      const updated = present(
+        await harness.context.db.Cleaned.update({
+          where: { id: idOf(created) },
+          data: { avatar: pngFile('two.png') },
+        }),
+        'Cleaned.update',
+      )
+      const second = present(updated.avatar, 'avatar') as ImageMetadata
+      await expect(access(join(uploadDir, first.filename))).rejects.toThrow()
+      await access(join(uploadDir, second.filename))
+
+      present(await harness.context.db.Cleaned.delete({ where: { id: idOf(created) } }), 'delete')
+      await expect(access(join(uploadDir, second.filename))).rejects.toThrow()
     })
   })
 
