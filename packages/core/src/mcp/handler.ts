@@ -261,6 +261,35 @@ function whereDescription(listKey: string): string {
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
+function enabledToolsFor(config: OpenSaasConfig, listConfig: ListConfig<any>) {
+  const defaultTools = config.mcp?.defaultTools || {
+    read: true,
+    create: true,
+    update: true,
+    delete: true,
+  }
+  return {
+    query: listConfig.mcp?.tools?.read ?? defaultTools.read ?? true,
+    create: listConfig.mcp?.tools?.create ?? defaultTools.create ?? true,
+    update: listConfig.mcp?.tools?.update ?? defaultTools.update ?? true,
+    delete: listConfig.mcp?.tools?.delete ?? defaultTools.delete ?? true,
+  }
+}
+
+async function listReachableOverMcp(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
+  listConfig: ListConfig<any>,
+  context: AccessContext,
+): Promise<boolean> {
+  if (listConfig.mcp?.enabled === false) return false
+  const accessResult = await checkAccess(listConfig.access?.operation?.query, {
+    session: context.session,
+    context,
+  })
+  return accessResult !== false
+}
+
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
@@ -272,31 +301,11 @@ async function handleToolsList(
     // The tool name stays camelCase: it is the identifier an assistant has
     // already bound to, and renaming it would break every registered client.
     const toolKey = pascalToCamel(listKey)
-    if (listConfig.mcp?.enabled === false) continue
+    if (!(await listReachableOverMcp(listConfig, context))) continue
 
-    // A session denied operation-level `query` outright sees none of this
-    // list's tools, nor any relation entry elsewhere pointing at it as a
-    // target (`relatedListIfVisible` in projection.ts applies the identical
-    // check there) — ADR-0033.
-    const queryAccess = listConfig.access?.operation?.query
-    const accessResult = await checkAccess(queryAccess, { session: context.session, context })
-    if (accessResult === false) continue
+    const enabledTools = enabledToolsFor(config, listConfig)
 
-    const defaultTools = config.mcp?.defaultTools || {
-      read: true,
-      create: true,
-      update: true,
-      delete: true,
-    }
-
-    const enabledTools = {
-      read: listConfig.mcp?.tools?.read ?? defaultTools.read ?? true,
-      create: listConfig.mcp?.tools?.create ?? defaultTools.create ?? true,
-      update: listConfig.mcp?.tools?.update ?? defaultTools.update ?? true,
-      delete: listConfig.mcp?.tools?.delete ?? defaultTools.delete ?? true,
-    }
-
-    if (enabledTools.read) {
+    if (enabledTools.query) {
       const fieldsSchema = await generateFieldsProjectionSchema(
         listKey,
         listConfig,
@@ -628,6 +637,12 @@ async function handleCrudTool(
   const [listKey, listConfig] = listEntry
 
   try {
+    if (
+      !enabledToolsFor(config, listConfig)[operation as 'query' | 'create' | 'update' | 'delete'] ||
+      !(await listReachableOverMcp(listConfig, context))
+    ) {
+      return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
     let result: any
 
@@ -797,10 +812,23 @@ async function handleCustomTool(
   id?: number | string,
 ): Promise<Response> {
   // Find the tool: list-level custom tools first, then plugin-registered tools
+  const context = await getContext(toContextSession(session))
+
   let customTool: McpCustomTool | undefined
-  for (const listConfig of Object.values(config.lists)) {
-    customTool = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
-    if (customTool) break
+  try {
+    for (const listConfig of Object.values(config.lists)) {
+      const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
+      if (found && (await listReachableOverMcp(listConfig, context))) {
+        customTool = found
+        break
+      }
+    }
+  } catch (error) {
+    console.error(`[opensaas] MCP custom tool "${toolName}" access check failed:`, error)
+    return createErrorResultResponse(
+      `Custom tool "${toolName}" failed due to an internal error.`,
+      id,
+    )
   }
   customTool ??= getPluginMcpTools(config).find((t) => t.name === toolName)
 
@@ -816,8 +844,6 @@ async function handleCustomTool(
     }
     input = parsed.data
   }
-
-  const context = await getContext(toContextSession(session))
 
   try {
     const result = await customTool.handler({
