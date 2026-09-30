@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
 const BOOT = 120_000
@@ -268,6 +268,66 @@ describe('a related row deleted between the main read and the companion existenc
         expect(stillThere).toBeNull()
       } finally {
         await scratch.close()
+      }
+    },
+    BOOT,
+  )
+})
+
+describe('a computed field that needs a to-one does not null its foreign key', () => {
+  const needsConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      Person: {
+        fields: { handle: text({ validation: { isRequired: true } }) },
+        access: {
+          operation: { query: ({ session }) => session?.handle === 'reader' },
+        },
+      },
+      Order: {
+        fields: {
+          ref: text({ validation: { isRequired: true } }),
+          customer: relationship({ ref: 'Person' }),
+          customerName: virtual({
+            type: 'string',
+            needs: ['customer'],
+            hooks: {
+              resolveOutput: ({ item }) => {
+                const customer = item.customer
+                return typeof customer === 'object' && customer !== null && 'handle' in customer
+                  ? String(customer.handle)
+                  : ''
+              },
+            },
+          }),
+        },
+        access: { operation: { query: () => true } },
+      },
+    },
+  }
+
+  test(
+    'keeps the visible foreign key on a bare read and nulls it when the related list is denied',
+    async () => {
+      const db = await createTestDatabase(needsConfig)
+      try {
+        const sudo = db.context(null).sudo()
+        const person = await sudo.db.Person.create({ data: { handle: 'u' } })
+        if (!person) throw new Error('seed person')
+        await sudo.db.Order.create({
+          data: { ref: 'o-1', customer: { connect: { id: person.id } } },
+        })
+        const order = await db.context({ handle: 'reader' }).db.Order.first()
+        expect(order?.customerId).toBe(person.id)
+        expect(order?.customerName).toBe('u')
+
+        const denied = await db.context(null).db.Order.first()
+        expect(denied?.customerId).toBeNull()
+
+        const projected = await db.context(null).db.Order.select('customerName').first()
+        expect(projected).not.toHaveProperty('customerId')
+      } finally {
+        await db.close()
       }
     },
     BOOT,
