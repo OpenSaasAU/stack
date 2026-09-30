@@ -956,12 +956,22 @@ export function getContext<TConfig extends OpenSaasConfig>(
               // above and here, which the lock itself rules out — kept as a
               // defensive branch rather than a non-null assertion.
               if (current === null) return 'denied' as const
-              if (current[foreignKeyColumn] !== expectedParentId) return 'conflict' as const
-              const updated = await relatedList.update({
-                where: { id: relatedId },
-                data: { [fieldName]: null },
-              })
-              return updated === null ? ('denied' as const) : ('ok' as const)
+              const currentParentId = current[foreignKeyColumn]
+              const linkHidden =
+                currentParentId !== null && locked[foreignKeyColumn] !== currentParentId
+              if (currentParentId !== expectedParentId) {
+                return linkHidden ? ('denied' as const) : ('conflict' as const)
+              }
+              try {
+                const updated = await relatedList.update({
+                  where: { id: relatedId },
+                  data: { [fieldName]: null },
+                })
+                return updated === null ? ('denied' as const) : ('ok' as const)
+              } catch (error) {
+                if (linkHidden && error instanceof ValidationError) return 'denied' as const
+                throw error
+              }
             })
             if (outcome === 'conflict') {
               return {

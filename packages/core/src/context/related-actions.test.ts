@@ -424,6 +424,50 @@ describe('the relationship table server actions over a real database', () => {
   )
 
   test(
+    'removeRelated disconnect answers a right and a wrong parentId alike when the link is hidden from the session',
+    async () => {
+      const ada = await seedAuthor('ada')
+      const grace = await seedAuthor('grace')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', author: { connect: { id: ada } } },
+      })
+
+      const hidden: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          ...schemaConfig().lists,
+          Author: {
+            ...schemaConfig().lists.Author,
+            access: { operation: { ...OPEN, query: () => false } },
+          },
+          Post: {
+            ...schemaConfig().lists.Post,
+            access: { operation: { ...OPEN, update: () => false } },
+          },
+        },
+      }
+      const eve = contextAt(hidden, { userId: 'eve' })
+      const probe = (parentId: string) =>
+        eve.serverAction({
+          listKey: 'Post',
+          action: 'removeRelated',
+          mode: 'disconnect',
+          id: String(post?.id),
+          field: 'author',
+          parentId,
+        })
+
+      const wrong = await probe(grace)
+      const right = await probe(ada)
+
+      expect(wrong).toEqual({ removed: false, error: 'Access denied or operation failed' })
+      expect(right).toEqual(wrong)
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: ada }])
+    },
+    BOOT,
+  )
+
+  test(
     'removeRelated delete removes the junction row itself',
     async () => {
       const authorId = await seedAuthor('ada')
