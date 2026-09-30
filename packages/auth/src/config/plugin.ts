@@ -48,7 +48,7 @@ function resolveAuthIdField(
  *       sessionFields: ['userId', 'email', 'name', 'role']
  *     })
  *   ],
- *   db: { provider: 'sqlite', url: 'file:./dev.db' },
+ *   db: { provider: 'postgresql' },
  *   lists: { Post: list({...}) }
  * })
  * ```
@@ -80,6 +80,7 @@ export function authPlugin(config: AuthConfig): Plugin {
         normalized.access,
         normalized.betterAuthPlugins,
         normalized.credentialFields,
+        normalized.fieldAccess,
       )
 
       // ADR-0048's per-list pin, named for the Auth lists: an explicit

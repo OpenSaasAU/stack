@@ -23,12 +23,12 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1132.0",
-    "@aws-sdk/s3-request-presigner": "^3.1132.0"
+    "@aws-sdk/client-s3": "^3.1141.0",
+    "@aws-sdk/s3-request-presigner": "^3.1141.0"
   },
   "devDependencies": {
     "@opensaas/stack-storage": "workspace:*",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^5.0.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2",

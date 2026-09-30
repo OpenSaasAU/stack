@@ -140,6 +140,7 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
     extendUserList: config.extendUserList || {},
     access: config.access || {},
     credentialFields: config.credentialFields || {},
+    fieldAccess: config.fieldAccess || {},
     betterAuthPlugins: config.betterAuthPlugins || [],
     rateLimit: config.rateLimit,
     betterAuthOptions: config.betterAuthOptions || {},

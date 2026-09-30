@@ -112,6 +112,28 @@ function literalDefault(
   return { kind: 'literal', value }
 }
 
+function decimalDefault(
+  value: unknown,
+  listKey: string,
+  fieldName: string,
+  precision: number,
+  scale: number,
+): ColumnDefaultDescriptor | undefined {
+  const literal = literalDefault(value, listKey, fieldName)
+  if (literal === undefined || literal.kind !== 'literal') return literal
+  const text = String(literal.value).trim()
+  const parts = /^([+-])?(\d*)(?:\.(\d*))?$/.exec(text)
+  let operand = `'${text.replace(/'/g, "''")}'`
+  if (parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '')) {
+    const integer = parts[2].replace(/^0+(?=\d)/, '') || '0'
+    const fraction = parts[3] ?? ''
+    const magnitude = fraction === '' ? integer : `${integer}.${fraction}`
+    if (parts[1] === '-') operand = `'-${magnitude}'`
+    else operand = fraction === '' ? `(${magnitude})` : magnitude
+  }
+  return { kind: 'sql', expression: `${operand}::numeric(${precision},${scale})` }
+}
+
 type ScalarColumn = {
   type: ColumnTypeDescriptor
   nullable: boolean
@@ -394,7 +416,7 @@ export function decimal<
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue, listKey, fieldName),
+        default: decimalDefault(options?.defaultValue, listKey, fieldName, precision, scale),
       }),
     // Decimals compare like integers, but the value stays a string so full
     // precision survives the filter. A non-numeric value degrades to free text.
@@ -1198,15 +1220,6 @@ function getContractRelation<
   }
 
   const explicitMap = typeof field.db?.foreignKey === 'object' ? field.db.foreignKey.map : undefined
-  if (explicitMap === fieldName) {
-    throw new Error(
-      `List "${listKey}": fields.${fieldName} maps its foreign key onto "${fieldName}" — the ` +
-        `relation's own name. rc.8 aliases an include by relation name and a scalar by physical ` +
-        `column name, so the two would collide again (#1236). Pick a different ` +
-        `db.foreignKey.map, or drop it to default to "${fieldName}Id".`,
-    )
-  }
-
   const foreignKey: ContractForeignKeyDescriptor = {
     name: `${fieldName}Id`,
     ...(explicitMap !== undefined ? { map: explicitMap } : {}),

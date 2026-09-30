@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
 const BOOT = 120_000
@@ -46,7 +46,7 @@ const config: OpenSaasConfig = {
         }),
         renamed: relationship({ ref: 'Org', db: { foreignKey: { map: 'org_ref' } } }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true, update: () => true } },
     },
   },
 }
@@ -269,6 +269,222 @@ describe('a related row deleted between the main read and the companion existenc
       } finally {
         await scratch.close()
       }
+    },
+    BOOT,
+  )
+})
+
+describe('a computed field that needs a to-one does not null its foreign key', () => {
+  const needsConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      Person: {
+        fields: { handle: text({ validation: { isRequired: true } }) },
+        access: {
+          operation: { query: ({ session }) => session?.handle === 'reader' },
+        },
+      },
+      Order: {
+        fields: {
+          ref: text({ validation: { isRequired: true } }),
+          customer: relationship({ ref: 'Person' }),
+          customerName: virtual({
+            type: 'string',
+            needs: ['customer'],
+            hooks: {
+              resolveOutput: ({ item }) => {
+                const customer = item.customer
+                return typeof customer === 'object' && customer !== null && 'handle' in customer
+                  ? String(customer.handle)
+                  : ''
+              },
+            },
+          }),
+        },
+        access: { operation: { query: () => true } },
+      },
+    },
+  }
+
+  test(
+    'keeps the visible foreign key on a bare read and nulls it when the related list is denied',
+    async () => {
+      const db = await createTestDatabase(needsConfig)
+      try {
+        const sudo = db.context(null).sudo()
+        const person = await sudo.db.Person.create({ data: { handle: 'u' } })
+        if (!person) throw new Error('seed person')
+        await sudo.db.Order.create({
+          data: { ref: 'o-1', customer: { connect: { id: person.id } } },
+        })
+        const order = await db.context({ handle: 'reader' }).db.Order.first()
+        expect(order?.customerId).toBe(person.id)
+        expect(order?.customerName).toBe('u')
+
+        const denied = await db.context(null).db.Order.first()
+        expect(denied?.customerId).toBeNull()
+
+        const projected = await db.context(null).db.Order.select('customerName').first()
+        expect(projected).not.toHaveProperty('customerId')
+      } finally {
+        await db.close()
+      }
+    },
+    BOOT,
+  )
+})
+
+describe('a predicate, sort or column list on a to-one foreign key answers as the bare read does (#1621)', () => {
+  test(
+    'where on the hidden id matches nothing, and the visible id still matches',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      expect(await asMine.db.Item.where({ ownerId: { equals: othersId } }).all()).toEqual([])
+      const visible = await asMine.db.Item.where({ ownerId: { equals: mineId } }).all()
+      expect(visible.map((item) => item.title)).toEqual(['mine-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'count on the hidden id is zero',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const { n } = await asMine.db.Item.where({ ownerId: { equals: othersId } }).aggregate(
+        (aggregate) => ({ n: aggregate.count() }),
+      )
+      expect(n).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a session the related list denies entirely matches nothing',
+    async () => {
+      const anonymous = database.context(null)
+      expect(await anonymous.db.Item.where({ ownerId: { equals: mineId } }).all()).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'equals null matches a row whose related row is hidden, as the bare read shows it',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const rows = await asMine.db.Item.where({ ownerId: { equals: null } }).all()
+      expect(rows.map((item) => item.title)).toEqual(['others-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list access filter naming the foreign key is not scoped by the related list',
+    async () => {
+      let target = ''
+      const scratch = await createTestDatabase({
+        ...config,
+        lists: {
+          ...config.lists,
+          Item: {
+            ...config.lists.Item,
+            access: { operation: { query: () => ({ ownerId: { equals: target } }) } },
+          },
+        },
+      })
+      try {
+        const sudo = scratch.context(null).sudo()
+        const org = await sudo.db.Org.create({ data: { handle: 'others' } })
+        if (!org) throw new Error('seed org')
+        target = String(org.id)
+        await sudo.db.Item.create({ data: { title: 'x', owner: { connect: { id: target } } } })
+        const rows = await scratch.context({ handle: 'mine' }).db.Item.all()
+        expect(rows.map((item) => item.title)).toEqual(['x'])
+      } finally {
+        await scratch.close()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'orderBy and distinct on the foreign key are refused while the related list scopes reads',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      await expect(asMine.db.Item.orderBy({ ownerId: 'asc' }).all()).rejects.toThrow()
+      await expect(asMine.db.Item.distinct('ownerId').all()).rejects.toThrow()
+    },
+    BOOT,
+  )
+})
+
+describe('sudo is not narrowed by the session foreign-key rules', () => {
+  test(
+    'a bare sudo read returns every foreign key, agreeing with a sudo include',
+    async () => {
+      for (const session of [null, { handle: 'mine' }]) {
+        const sudo = database.context(session).sudo()
+        const bare = await sudo.db.Item.all()
+        const included = await sudo.db.Item.include('owner').all()
+        const ids = (rows: typeof bare) =>
+          rows
+            .map((row) => [row.title, row.ownerId])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+        expect(ids(bare)).toEqual([
+          ['mine-item', mineId],
+          ['others-item', othersId],
+        ])
+        expect(ids(included)).toEqual(ids(bare))
+      }
+    },
+    BOOT,
+  )
+})
+
+describe('a write result narrows foreign keys exactly as a bare read does', () => {
+  test(
+    'update() returns the same owner and secret foreign keys first() does',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const read = await asMine.db.Item.where({ id: { equals: itemOthersId } }).first()
+      const written = await asMine.db.Item.update({
+        where: { id: itemOthersId },
+        data: { title: 'others-item' },
+      })
+      expect(read?.ownerId).toBeNull()
+      expect(written?.ownerId).toBe(read?.ownerId)
+      expect(written?.secretId).toBeNull()
+      expect(written?.secretId).toBe(read?.secretId)
+    },
+    BOOT,
+  )
+
+  test(
+    'update() keeps a foreign key the session can see',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const written = await asMine.db.Item.update({
+        where: { id: itemMineId },
+        data: { title: 'mine-item' },
+      })
+      expect(written?.ownerId).toBe(mineId)
+    },
+    BOOT,
+  )
+
+  test(
+    'create() nulls a foreign key the session cannot read back',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const created = await asMine.db.Item.create({
+        data: {
+          title: 'fresh',
+          owner: { connect: { id: mineId } },
+          secret: { connect: { id: mineId } },
+          renamed: { connect: { id: mineId } },
+        },
+      })
+      expect(created?.ownerId).toBe(mineId)
+      expect(created?.secretId).toBeNull()
     },
     BOOT,
   )

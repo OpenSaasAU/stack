@@ -27,7 +27,7 @@ export const contract = defineContract(
         name: field.text().optional(),
         active: field.boolean().default(true),
         managerId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -44,7 +44,7 @@ export const contract = defineContract(
         id: field.id.uuidv7Native(),
         bio: field.text().optional(),
         userId: field.uuidNative().optional().unique(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -63,7 +63,7 @@ export const contract = defineContract(
         attachment: field.json().optional(),
         authorId: field.uuidNative().optional(),
         categoryId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -87,7 +87,7 @@ export const contract = defineContract(
         id: field.id.uuidv7Native(),
         action: field.text(),
         actorId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -101,7 +101,7 @@ export const contract = defineContract(
         id: field.int().default(1).id(),
         siteName: field.text().optional().default('Fixture'),
         maintenanceMode: field.boolean().default(false),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {},

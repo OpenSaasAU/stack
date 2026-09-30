@@ -135,6 +135,14 @@ export default config({
       // The User list ships closed by default (ADR-0013) — grant access
       // explicitly. Signed-in users can browse the directory; only the
       // account owner can update or delete their own record.
+      //
+      // Operation-level `update` is a whole-row decision — it says who may
+      // update this row, not which columns. `emailVerified` is already
+      // write-denied unconditionally (better-auth marks it `input: false`;
+      // ADR-0073), so the owner rule above can't be used to self-verify. But
+      // `email` carries no such seeded deny, so it needs its own: changing an
+      // address must go through better-auth's own verified change-email
+      // flow, never a direct `context.db` write (issue #1618).
       access: {
         user: {
           operation: {
@@ -142,6 +150,11 @@ export default config({
             update: ({ session, item }) => session?.userId === item.id,
             delete: ({ session, item }) => session?.userId === item.id,
           },
+        },
+      },
+      fieldAccess: {
+        user: {
+          email: { update: () => false },
         },
       },
     }),

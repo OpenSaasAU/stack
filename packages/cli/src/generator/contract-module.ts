@@ -237,6 +237,8 @@ function columnExpression(model: string, column: ContractColumn): Rendered {
   if (column.unique) expression += '.unique()'
   if (column.default?.kind === 'literal') expression += `.default(${literal(column.default.value)})`
   if (column.default?.kind === 'now') expression += `.defaultSql('now()')`
+  if (column.default?.kind === 'sql')
+    expression += `.defaultSql(${literal(column.default.expression)})`
   return { expression, helpers: base.helpers }
 }
 
@@ -269,7 +271,8 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     fields.push(`        ${key(column.name)}: ${rendered.expression},`)
   }
   if (model.timestamps.createdAt) {
-    fields.push('        createdAt: field.temporal.createdAtString(),')
+    helpers.add('timestamptzStringColumn')
+    fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
   }
   if (model.timestamps.updatedAt) {
     fields.push('        updatedAt: field.temporal.updatedAtString(),')

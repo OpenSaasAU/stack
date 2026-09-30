@@ -1,7 +1,13 @@
 'use server'
 
 import { getContext } from '@/.opensaas/context'
+import { demoSession } from '@/lib/demo-session'
 import type { UserCreateInput } from '../../.opensaas/types'
+
+async function sessionContext() {
+  const session = await demoSession()
+  return session ? getContext(session) : getContext()
+}
 
 /**
  * Create a new user (sign up)
@@ -24,20 +30,21 @@ export async function createUser(data: UserCreateInput) {
  * Get a user by ID: `null` is not-found or denied
  */
 export async function getUser(userId: string) {
-  const context = await getContext()
+  const context = await sessionContext()
 
   return context.db.User.where({ id: { equals: userId } }).first()
 }
 
 /**
- * Update a user
- * Only the user themselves can update their own record
+ * Update the signed-in user's own record
  */
-export async function updateUser(userId: string, data: { name?: string; email?: string }) {
-  const context = await getContext({ userId })
+export async function updateUser(data: { name?: string; email?: string }) {
+  const session = await demoSession()
+  if (!session?.userId) return { success: false, error: 'User not found or access denied' }
+  const context = await getContext(session)
 
   const user = await context.db.User.update({
-    where: { id: userId },
+    where: { id: session.userId },
     data,
   })
 

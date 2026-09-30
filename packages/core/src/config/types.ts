@@ -812,12 +812,17 @@ export type ColumnTypeDescriptor = {
 
 /**
  * A column's default. `'literal'` carries a value the Contract module emits as
- * source; `'now'` is the database clock at insert. A `bigint` column's default
+ * source; `'now'` is the database clock at insert; `'sql'` is a database-side
+ * expression, for a column whose live default the verifier only recognises in
+ * its normalised SQL form. A `bigint` column's default
  * is carried as its decimal string — `42n`, `42` and `'42'` all become `'42'`,
  * the form the generator writes into `@default`. A default that is not a
  * JSON literal (a `Date`, a `Decimal`, a `Map`) is refused by the builder.
  */
-export type ColumnDefaultDescriptor = { kind: 'literal'; value: ContractLiteral } | { kind: 'now' }
+export type ColumnDefaultDescriptor =
+  | { kind: 'literal'; value: ContractLiteral }
+  | { kind: 'now' }
+  | { kind: 'sql'; expression: string }
 
 /**
  * One stored column a field contributes to the contract.
@@ -3175,6 +3180,15 @@ export interface ImageTransformationResult {
   height: number
   /** File size in bytes */
   size: number
+  /**
+   * The storage key the provider's own `upload()` returned for this
+   * transformation. Cleanup deletes by this key, never by parsing `url` —
+   * a stored `url` is not a trustworthy source of a storage key (issue
+   * #1619). Optional so a value written before this field existed still
+   * type-checks; such a row's transformations are left undeleted by cleanup
+   * rather than deleted by a parsed guess.
+   */
+  filename?: string
 }
 
 export type StorageConfig = Record<string, { type: string; [key: string]: unknown }>

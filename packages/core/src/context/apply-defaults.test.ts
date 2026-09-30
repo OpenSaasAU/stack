@@ -116,4 +116,56 @@ describe('applyCreateDefaults', () => {
 
     expect(result).toBe(input)
   })
+
+  describe('defaultedFields (issue #1618/ADR-0073)', () => {
+    it('adds a key only when it actually fills the default', () => {
+      const defaultedFields = new Set<string>()
+      applyCreateDefaults(
+        {},
+        fields({ label: text({ defaultValue: 'PLACEHOLDER' }) }),
+        defaultedFields,
+      )
+
+      expect(defaultedFields).toEqual(new Set(['label']))
+    })
+
+    it('does not add a key the caller (or a hook) already supplied', () => {
+      const defaultedFields = new Set<string>()
+      applyCreateDefaults(
+        { count: 99 },
+        fields({ count: integer({ defaultValue: 7 }) }),
+        defaultedFields,
+      )
+
+      expect(defaultedFields.size).toBe(0)
+    })
+
+    it('does not add a key for an explicit null (preserved, not defaulted)', () => {
+      const defaultedFields = new Set<string>()
+      applyCreateDefaults(
+        { note: null },
+        fields({ note: text({ defaultValue: 'DEFAULT_NOTE' }) }),
+        defaultedFields,
+      )
+
+      expect(defaultedFields.size).toBe(0)
+    })
+
+    it('does not add a key for the now-sentinel skip', () => {
+      const defaultedFields = new Set<string>()
+      applyCreateDefaults(
+        {},
+        fields({ when: timestamp({ defaultValue: { kind: 'now' } }) }),
+        defaultedFields,
+      )
+
+      expect(defaultedFields.size).toBe(0)
+    })
+
+    it('is a fully optional parameter — omitting it changes nothing', () => {
+      const resolved = applyCreateDefaults({}, fields({ label: text({ defaultValue: 'x' }) }))
+
+      expect(resolved).toEqual({ label: 'x' })
+    })
+  })
 })

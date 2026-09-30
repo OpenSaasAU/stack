@@ -345,6 +345,27 @@ authPlugin({
 })
 ```
 
+### `fieldAccess`
+
+Override the field-level access the auth plugin seeds on a derived Auth list field — reopening a
+seeded credential read-deny is refused, but a seeded write-deny (see [Fields are write-denied
+independent of operation access](#fields-are-write-denied-independent-of-operation-access-adr-0073)
+below) can be reopened per operation. Keyed by better-auth's own **model key** (not the derived list
+key) and naming better-auth's own **field keys** (not mapped column names), same as
+`credentialFields`. Each entry **replaces** exactly the operations it names — anything it doesn't
+name keeps its seeded rule.
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [admin()],
+  fieldAccess: {
+    user: {
+      role: { update: ({ session }) => session?.role === 'admin' },
+    },
+  },
+})
+```
+
 ### `betterAuthOptions`
 
 Escape hatch for any better-auth option the stack doesn't model as its own config field. Deep-merged into the options `createAuth()` builds, applied **last** — a plain-object value at a given key merges recursively with what the stack already set there (so a nested addition like `session.cookieCache` adds alongside the stack's own `session.expiresIn`/`updateAge` rather than replacing them), and on a genuine key collision `betterAuthOptions` wins. Arrays and any other value type replace the stack's value outright.
@@ -538,6 +559,66 @@ open to whatever operation-level access you grant.
 Better-auth's own sign-in/sign-up/session-refresh/password-reset flows are unaffected: they write and
 read through the raw Prisma adapter, never through the access-controlled `context.db` these denies
 gate.
+
+### Fields are write-denied independent of operation access (ADR-0073)
+
+A whole-row operation-level `update` rule (`update: ({ session, item }) => session?.userId ===
+item.id`) says who may write the row — not which columns. `User.emailVerified` is write-denied
+unconditionally (better-auth marks it `input: false` in its own schema), and once you register the
+`admin()` plugin, so are `User.role`, `User.banned`, `User.banReason`, `User.banExpires` and
+`Session.impersonatedBy`. These are exactly the fields better-auth's own client-facing API refuses to
+accept, so a signed-in user's `context.db` write can't set them either — a whole-row owner-update rule
+does not get around this:
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [admin()],
+  access: {
+    user: {
+      operation: { update: ({ session, item }) => session?.userId === item.id },
+    },
+  },
+})
+
+// Throws — role is write-denied regardless of the owner rule above.
+await context.db.User.update({ where: { id: me }, data: { role: 'admin' } })
+```
+
+Unlike the read-deny above, a denied write **throws** rather than silently stripping — the same
+field-level write-access behavior any other denied field gets. `sudo()` and better-auth's own flows
+(sign-up, `setRole`, `banUser`, email verification) are unaffected, for the same reason as the
+read-deny: they don't go through this access check. A field that is both a credential and
+`input: false` gets both denies, composed rather than one overwriting the other.
+
+Reopen a seeded write-deny with [`fieldAccess`](#fieldaccess). Unlike `credentialFields`, an entry
+**replaces** exactly the operations it names rather than only adding to a seeded set — but it can
+never set `read` on a credential field; that throws at config time, naming the model and field,
+because the read-deny above must never be reopened.
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [admin()],
+  access: {
+    user: {
+      operation: {
+        // Both axes must agree: the operation-level rule must let an admin
+        // touch someone else's row, AND fieldAccess must reopen the field.
+        update: ({ session, item }) => session?.userId === item.id || session?.role === 'admin',
+      },
+    },
+  },
+  fieldAccess: {
+    user: {
+      role: { update: ({ session }) => session?.role === 'admin' },
+    },
+  },
+})
+```
+
+Validation matches `credentialFields`: an entry naming a field that doesn't exist on a model your app
+actually derives throws, naming the model and field; an entry for a model your app doesn't derive at
+all is a silent no-op; an entry naming an id-referencing relationship field throws (it derives to a
+`relationship()`, never a scalar column).
 
 ### RateLimit
 

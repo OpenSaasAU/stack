@@ -557,6 +557,11 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
             const instance = await getAuthInstance()
             const parentValue = instance[prop as keyof typeof instance]
             if (parentValue && typeof parentValue === 'object') {
+              if (!(subProp in parentValue)) {
+                throw new Error(
+                  `Property ${String(prop)}.${String(subProp)} not found on auth instance`,
+                )
+              }
               const childValue = (parentValue as Record<string, unknown>)[subProp as string]
               if (typeof childValue === 'function') {
                 return (childValue as (...args: unknown[]) => unknown).apply(parentValue, args)

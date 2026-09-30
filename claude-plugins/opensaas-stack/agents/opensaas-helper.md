@@ -115,7 +115,7 @@ If they describe an app idea:
 After implementing features, help them verify:
 
 - Use `opensaas_validate_feature` for validation checklists
-- Guide through `pnpm generate` and `pnpm db:push`
+- Guide through `pnpm dev` (which generates and reconciles the schema)
 - Help troubleshoot any errors
 - Ensure they understand the generated code
 

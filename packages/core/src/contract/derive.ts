@@ -219,6 +219,21 @@ function claimMember(listKey: string, draft: ModelDraft, name: string, origin: s
   draft.members.set(name, origin)
 }
 
+function refuseColumnsAliasingRelations(model: ContractModel): void {
+  const relationNames = new Set(model.relations.map((relation) => relation.name))
+  for (const column of model.columns) {
+    const physical = column.map ?? column.name
+    if (relationNames.has(physical)) {
+      throw new Error(
+        `List "${model.name}": column "${column.name}" is stored as "${physical}", which is also the ` +
+          `name of the relation "${physical}" on the same list. An include is aliased by relation ` +
+          `name and a scalar by physical column name, so the two would collide (#1236, ADR-0069). ` +
+          `Pick a different db.map or db.foreignKey.map.`,
+      )
+    }
+  }
+}
+
 /** A `from_<List>_<field>` back-relation and the list-only ref that synthesised it. */
 type SyntheticRelation = { from: string; relation: ContractRelation }
 
@@ -628,6 +643,8 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       draft.model.relations.push(relation)
     }
   }
+
+  for (const draft of drafts.values()) refuseColumnsAliasingRelations(draft.model)
 
   const models = [...drafts.values()].map((draft) => draft.model)
   return {

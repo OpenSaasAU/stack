@@ -6,12 +6,7 @@ import type {
   PrismaFilter,
   TransactionOpener,
 } from '../access/types.js'
-import {
-  checkAccess,
-  checkCreateAccess,
-  filterReadableFields,
-  filterWritableFields,
-} from '../access/index.js'
+import { checkAccess, checkCreateAccess, filterWritableFields } from '../access/index.js'
 import {
   executeValidate,
   executeBeforeOperation,
@@ -34,6 +29,7 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
+import { visibleWrittenRow } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
@@ -178,7 +174,6 @@ export interface WritePipelineArgs {
  *   - sudo mode skips access checks and writable-field filtering.
  *   - `afterOperation` receives `originalItem` for update/delete (undefined for
  *     create).
- *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
 export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow | null> {
   const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
@@ -383,9 +378,11 @@ async function runWriteInTransaction(
   // ── Delete path: skip input phases, run only validate/field-validate ────────
   if (!strategy.runInputPhases) {
     return runDeletePath({
+      ormHandle: tx,
       listName,
       listConfig,
       context,
+      config,
       originalItem,
       collection,
       ops,
@@ -403,7 +400,7 @@ async function runWriteInTransaction(
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
-  const { resolvedData } = await hookPipeline.run({
+  const { resolvedData, defaultedFields } = await hookPipeline.run({
     operation: writeOp,
     listName,
     listConfig,
@@ -425,6 +422,7 @@ async function runWriteInTransaction(
     inputData: input,
     listName,
     config,
+    defaultedFields,
   })
 
   // ── Phase 5.5: relationship resolution (ADR-0050) ──────────────────────────
@@ -521,36 +519,39 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
-  return filterReadableFields(
-    item,
-    listConfig.fields,
-    {
-      session: context.session,
-      context: { ...context, _isSudo: context._isSudo },
-    },
-    config,
-    0,
-    listName,
-  )
+  return visibleWrittenRow({ listName, listConfig, ormHandle: tx, context, config }, item)
 }
 
 /**
  * The delete tail of the pipeline: skips the input-shaping phases and runs
  * only validate/field-validate before the DB delete, then the after-hooks.
- * Returns the deleted row as-is (no Field Visibility pass).
+ * Returns the deleted row through the Field Visibility pass.
  */
 async function runDeletePath(args: {
+  ormHandle: OrmClient
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   context: AccessContext
+  config: OpenSaasConfig
   originalItem: OrmRow | undefined
   collection: WriteCollection
   ops: WhereCombinators
   scope: WriteScope
   strategy: WriteStrategy
 }): Promise<OrmRow | null> {
-  const { listName, listConfig, context, originalItem, collection, ops, scope, strategy } = args
+  const {
+    ormHandle,
+    listName,
+    listConfig,
+    context,
+    config,
+    originalItem,
+    collection,
+    ops,
+    scope,
+    strategy,
+  } = args
   const item = originalItem as Record<string, unknown>
 
   // ── Phase 3: list-level validate (delete) ──────────────────────────────────
@@ -615,7 +616,7 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return deleted
+  return visibleWrittenRow({ listName, listConfig, ormHandle, context, config }, deleted)
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

@@ -58,9 +58,9 @@
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.31.3",
-    "@tiptap/pm": "^3.30.2",
-    "@tiptap/react": "^3.29.2",
-    "@tiptap/starter-kit": "^3.28.0",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -68,7 +68,7 @@
     "@opensaas/stack-ui": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",

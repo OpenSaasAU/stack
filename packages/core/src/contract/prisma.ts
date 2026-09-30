@@ -217,6 +217,7 @@ function scalarField(
   if (column.unique) builder = builder.unique()
   if (column.default?.kind === 'literal') builder = builder.default(column.default.value)
   if (column.default?.kind === 'now') builder = builder.defaultSql('now()')
+  if (column.default?.kind === 'sql') builder = builder.defaultSql(column.default.expression)
   return builder
 }
 
@@ -229,7 +230,8 @@ function modelFields(
   for (const column of model.columns) {
     fields[column.name] = scalarField(helpers, model.name, column, enums)
   }
-  if (model.timestamps.createdAt) fields.createdAt = helpers.field.temporal.createdAtString()
+  if (model.timestamps.createdAt)
+    fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
   if (model.timestamps.updatedAt) fields.updatedAt = helpers.field.temporal.updatedAtString()
   return fields
 }
