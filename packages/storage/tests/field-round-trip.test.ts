@@ -7,7 +7,7 @@
 // hook output, not a value the test hands it directly.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
@@ -78,6 +78,17 @@ function buildConfig(): OpenSaasConfig {
           attachment: file({ storage: 'files', db: { columns: 'keystone' } }),
         },
         access: { operation: OPEN },
+      },
+      Cleaned: {
+        fields: {
+          attachment: file({
+            storage: 'files',
+            db: { columns: 'keystone' },
+            cleanupOnReplace: true,
+            cleanupOnDelete: true,
+          }),
+        },
+        access: { operation: { ...OPEN, delete: () => true } },
       },
       // A multi-column field the logical key denies writes to.
       Locked: {
@@ -255,6 +266,37 @@ describe('image()/file() against a real column (Test context)', () => {
       expect(raw.avatar_height).toBeNull()
       expect(raw.avatar_filesize).toBeNull()
       expect(raw.avatar_contentType).toBeNull()
+    })
+  })
+
+  describe('cleanup hooks in multi-column mode', () => {
+    const exists = (filename: string) =>
+      access(join(uploadDir, filename)).then(
+        () => true,
+        () => false,
+      )
+
+    it('removes the old object on replace and the current one on delete', async () => {
+      const created = present(
+        await harness.context.db.Cleaned.create({ data: { attachment: pdfFile('one.pdf') } }),
+        'Cleaned.create',
+      )
+      const first = present(created.attachment, 'attachment') as FileMetadata
+      expect(await exists(first.filename)).toBe(true)
+
+      const updated = present(
+        await harness.context.db.Cleaned.update({
+          where: { id: idOf(created) },
+          data: { attachment: pdfFile('two.pdf') },
+        }),
+        'Cleaned.update',
+      )
+      const second = present(updated.attachment, 'attachment') as FileMetadata
+      expect(await exists(first.filename)).toBe(false)
+      expect(await exists(second.filename)).toBe(true)
+
+      present(await harness.context.db.Cleaned.delete({ where: { id: idOf(created) } }), 'delete')
+      expect(await exists(second.filename)).toBe(false)
     })
   })
 

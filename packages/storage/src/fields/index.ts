@@ -279,6 +279,15 @@ export interface ImageFieldConfig<
   }
 }
 
+function logicalValue(
+  fieldConfig: { assembleColumns?: (fieldName: string, row: Record<string, unknown>) => unknown },
+  fieldKey: string,
+  row: Record<string, unknown> | null | undefined,
+): unknown {
+  if (!row) return undefined
+  return fieldConfig.assembleColumns ? fieldConfig.assembleColumns(fieldKey, row) : row[fieldKey]
+}
+
 /**
  * Creates a file upload field
  *
@@ -345,7 +354,7 @@ export function file<
           })) as FileMetadata
 
           if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = item[fieldKey] as FileMetadata | null
+            const oldMetadata = logicalValue(fieldConfig, fieldKey, item) as FileMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteFile(oldMetadata.storageProvider, oldMetadata.filename)
@@ -366,7 +375,11 @@ export function file<
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const fileMetadata = originalItem?.[fieldKey] as FileMetadata | null
+          const fileMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as FileMetadata | null
 
           if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
             try {
@@ -496,7 +509,7 @@ export function image<
           )) as ImageMetadata
 
           if (fieldConfig.cleanupOnReplace && item && fieldKey) {
-            const oldMetadata = item[fieldKey] as ImageMetadata | null
+            const oldMetadata = logicalValue(fieldConfig, fieldKey, item) as ImageMetadata | null
             if (oldMetadata && oldMetadata.filename) {
               try {
                 await context.storage.deleteImage(oldMetadata)
@@ -517,7 +530,11 @@ export function image<
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const imageMetadata = originalItem?.[fieldKey] as ImageMetadata | null
+          const imageMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as ImageMetadata | null
 
           if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
             try {
