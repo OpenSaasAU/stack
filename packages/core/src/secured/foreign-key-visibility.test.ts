@@ -308,6 +308,45 @@ describe('a predicate, sort or column list on a to-one foreign key answers as th
   )
 
   test(
+    'equals null matches a row whose related row is hidden, as the bare read shows it',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const rows = await asMine.db.Item.where({ ownerId: { equals: null } }).all()
+      expect(rows.map((item) => item.title)).toEqual(['others-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list access filter naming the foreign key is not scoped by the related list',
+    async () => {
+      let target = ''
+      const scratch = await createTestDatabase({
+        ...config,
+        lists: {
+          ...config.lists,
+          Item: {
+            ...config.lists.Item,
+            access: { operation: { query: () => ({ ownerId: { equals: target } }) } },
+          },
+        },
+      })
+      try {
+        const sudo = scratch.context(null).sudo()
+        const org = await sudo.db.Org.create({ data: { handle: 'others' } })
+        if (!org) throw new Error('seed org')
+        target = String(org.id)
+        await sudo.db.Item.create({ data: { title: 'x', owner: { connect: { id: target } } } })
+        const rows = await scratch.context({ handle: 'mine' }).db.Item.all()
+        expect(rows.map((item) => item.title)).toEqual(['x'])
+      } finally {
+        await scratch.close()
+      }
+    },
+    BOOT,
+  )
+
+  test(
     'orderBy and distinct on the foreign key are refused while the related list scopes reads',
     async () => {
       const asMine = database.context({ handle: 'mine' })

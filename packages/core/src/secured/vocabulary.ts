@@ -477,8 +477,22 @@ async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Pro
   }
   const scope = await foreignKeyScope(key, resolved, ctx)
   if (scope === null) return scalar
-  if (scope.access.kind === 'false') return { kind: 'false' }
-  return { kind: 'and', nodes: [scalar, scope.exists] }
+  const visible: WherePlan =
+    scope.access.kind === 'false'
+      ? { kind: 'false' }
+      : { kind: 'and', nodes: [scalar, scope.exists] }
+  if (!matchesNull(value)) return visible
+  return {
+    kind: 'or',
+    nodes: [visible, { kind: 'not', node: scope.exists }],
+  }
+}
+
+function matchesNull(value: unknown): boolean {
+  if (value === null) return true
+  if (!isPlainObject(value)) return false
+  if (value.equals === null) return true
+  return Array.isArray(value.in) && value.in.includes(null)
 }
 
 async function foreignKeyScope(
@@ -487,8 +501,10 @@ async function foreignKeyScope(
   ctx: ResolveContext,
 ): Promise<{ access: WherePlan; exists: WherePlan } | null> {
   const field = resolved.fieldConfig
+  if (!ctx.checkFieldRead) return null
   if (resolved.isRelationship || field === undefined || field.type !== 'relationship') return null
-  if (ctx.listConfig.fields[key] !== undefined) return null
+  const relation = key.slice(0, -2)
+  if (!key.endsWith('Id') || ctx.listConfig.fields[relation] !== field) return null
   const related = getRelatedListConfig(field.ref, ctx.config)
   if (!related) return null
   const access = await resolveRelatedAccessPlan(related, ctx)
@@ -498,7 +514,7 @@ async function foreignKeyScope(
     exists: {
       kind: 'relation',
       listName: ctx.listName,
-      relation: key.slice(0, -2),
+      relation,
       relatedListName: related.listName,
       quantifier: 'some',
       node: access,
