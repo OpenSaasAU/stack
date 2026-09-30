@@ -121,12 +121,16 @@ function decimalDefault(
 ): ColumnDefaultDescriptor | undefined {
   const literal = literalDefault(value, listKey, fieldName)
   if (literal === undefined || literal.kind !== 'literal') return literal
-  const text = String(literal.value)
-  const operand = /^\d+$/.test(text)
-    ? `(${text})`
-    : /^\d+\.\d+$/.test(text)
-      ? text
-      : `'${text.replace(/'/g, "''")}'`
+  const text = String(literal.value).trim()
+  const parts = /^([+-])?(\d*)(?:\.(\d*))?$/.exec(text)
+  let operand = `'${text.replace(/'/g, "''")}'`
+  if (parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '')) {
+    const integer = parts[2].replace(/^0+(?=\d)/, '') || '0'
+    const fraction = parts[3] ?? ''
+    const magnitude = fraction === '' ? integer : `${integer}.${fraction}`
+    if (parts[1] === '-') operand = `'-${magnitude}'`
+    else operand = fraction === '' ? `(${magnitude})` : magnitude
+  }
   return { kind: 'sql', expression: `${operand}::numeric(${precision},${scale})` }
 }
 

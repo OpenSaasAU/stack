@@ -26,6 +26,11 @@ const config: OpenSaasConfig = {
         price: decimal({ validation: { isRequired: true }, defaultValue: '1.00' }),
         precise: decimal({ precision: 10, scale: 2, defaultValue: '-0.5' }),
         fraction: decimal({ precision: 10, scale: 2, defaultValue: '1.5' }),
+        signed: decimal({ precision: 10, scale: 2, defaultValue: '+1.0' }),
+        bare: decimal({ precision: 10, scale: 2, defaultValue: '.5' }),
+        trailing: decimal({ precision: 10, scale: 2, defaultValue: '2.' }),
+        padded: decimal({ precision: 10, scale: 2, defaultValue: '007' }),
+        negWhole: decimal({ precision: 10, scale: 2, defaultValue: '-3' }),
         whole: decimal({ precision: 10, scale: 2, defaultValue: '1' }),
         active: checkbox({ defaultValue: true }),
         day: calendarDay({ defaultValue: '2024-01-02' }),
@@ -57,5 +62,10 @@ describe('scalar defaults apply to a real database', () => {
     expect(String(created?.precise)).toBe('-0.50')
     expect(String(created?.whole)).toBe('1.00')
     expect(String(created?.fraction)).toBe('1.50')
+    expect(String(created?.signed)).toBe('1.00')
+    expect(String(created?.bare)).toBe('0.50')
+    expect(String(created?.trailing)).toBe('2.00')
+    expect(String(created?.padded)).toBe('7.00')
+    expect(String(created?.negWhole)).toBe('-3.00')
   })
 })
