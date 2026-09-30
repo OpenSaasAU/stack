@@ -46,7 +46,7 @@ const config: OpenSaasConfig = {
         }),
         renamed: relationship({ ref: 'Org', db: { foreignKey: { map: 'org_ref' } } }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: () => true, create: () => true, update: () => true } },
     },
   },
 }
@@ -292,6 +292,56 @@ describe('sudo is not narrowed by the session foreign-key rules', () => {
         ])
         expect(ids(included)).toEqual(ids(bare))
       }
+    },
+    BOOT,
+  )
+})
+
+describe('a write result narrows foreign keys exactly as a bare read does', () => {
+  test(
+    'update() returns the same owner and secret foreign keys first() does',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const read = await asMine.db.Item.where({ id: { equals: itemOthersId } }).first()
+      const written = await asMine.db.Item.update({
+        where: { id: itemOthersId },
+        data: { title: 'others-item' },
+      })
+      expect(read?.ownerId).toBeNull()
+      expect(written?.ownerId).toBe(read?.ownerId)
+      expect(written?.secretId).toBeNull()
+      expect(written?.secretId).toBe(read?.secretId)
+    },
+    BOOT,
+  )
+
+  test(
+    'update() keeps a foreign key the session can see',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const written = await asMine.db.Item.update({
+        where: { id: itemMineId },
+        data: { title: 'mine-item' },
+      })
+      expect(written?.ownerId).toBe(mineId)
+    },
+    BOOT,
+  )
+
+  test(
+    'create() nulls a foreign key the session cannot read back',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const created = await asMine.db.Item.create({
+        data: {
+          title: 'fresh',
+          owner: { connect: { id: mineId } },
+          secret: { connect: { id: mineId } },
+          renamed: { connect: { id: mineId } },
+        },
+      })
+      expect(created?.ownerId).toBe(mineId)
+      expect(created?.secretId).toBeNull()
     },
     BOOT,
   )

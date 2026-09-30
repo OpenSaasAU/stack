@@ -1214,6 +1214,28 @@ async function visibleRows(
   return results as VisibleRow[]
 }
 
+/**
+ * What a write hands back: the row Field Visibility leaves, then the
+ * foreign-key pass a read of the same row would give it, so `create()` and
+ * `update()` never return an id `first()` hides.
+ */
+export async function visibleWrittenRow(
+  binding: Omit<ReadBinding, 'lock'>,
+  row: OrmRow,
+): Promise<OrmRow> {
+  const { listConfig, context, config, listName } = binding
+  const filtered = await filterReadableFields(
+    row,
+    listConfig.fields,
+    { session: context.session, context: { ...context, _isSudo: context._isSudo } },
+    config,
+    0,
+    listName,
+  )
+  await narrowUnincludedForeignKeys(binding, [filtered], [row], listName, listConfig, [])
+  return filtered
+}
+
 /** `all()` is the terminal every plan member was designed for. */
 const ALL_DISPOSITIONS: PlanDispositions = {
   predicates: 'applied',
