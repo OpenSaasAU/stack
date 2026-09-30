@@ -290,6 +290,15 @@ export interface ImageFieldConfig<
   }
 }
 
+function logicalValue(
+  fieldConfig: { assembleColumns?: (fieldName: string, row: Record<string, unknown>) => unknown },
+  fieldKey: string,
+  row: Record<string, unknown> | null | undefined,
+): unknown {
+  if (!row) return undefined
+  return fieldConfig.assembleColumns ? fieldConfig.assembleColumns(fieldKey, row) : row[fieldKey]
+}
+
 interface PendingUpload<TMetadata> {
   uploaded: TMetadata
   replaced: TMetadata | null
@@ -409,7 +418,8 @@ export function file<
             validation: fieldConfig.validation,
           })) as FileMetadata
 
-          const previous = item?.[fieldKey] as FileMetadata | null | undefined
+          const previous = logicalValue(fieldConfig, fieldKey, item) as
+            FileMetadata | null | undefined
           pendingFileUploads.set(inputData, fieldKey, {
             uploaded: metadata,
             replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
@@ -426,7 +436,11 @@ export function file<
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const fileMetadata = originalItem?.[fieldKey] as FileMetadata | null
+          const fileMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as FileMetadata | null
 
           if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
             try {
@@ -582,7 +596,8 @@ export function image<
             },
           )) as ImageMetadata
 
-          const previous = item?.[fieldKey] as ImageMetadata | null | undefined
+          const previous = logicalValue(fieldConfig, fieldKey, item) as
+            ImageMetadata | null | undefined
           pendingImageUploads.set(inputData, fieldKey, {
             uploaded: metadata,
             replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
@@ -599,7 +614,11 @@ export function image<
       afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
         // The deleted row is `originalItem`.
         if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const imageMetadata = originalItem?.[fieldKey] as ImageMetadata | null
+          const imageMetadata = logicalValue(
+            fieldConfig,
+            fieldKey,
+            originalItem,
+          ) as ImageMetadata | null
 
           if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
             try {
