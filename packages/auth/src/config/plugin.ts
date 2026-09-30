@@ -48,7 +48,7 @@ function resolveAuthIdField(
  *       sessionFields: ['userId', 'email', 'name', 'role']
  *     })
  *   ],
- *   db: { provider: 'sqlite', url: 'file:./dev.db' },
+ *   db: { provider: 'postgresql' },
  *   lists: { Post: list({...}) }
  * })
  * ```

@@ -80,7 +80,7 @@ After implementing all features:
 
 - Ensure features work together (e.g., blog posts reference User)
 - Validate access control is properly configured
-- Guide through database migration (`pnpm generate`, `pnpm db:push`)
+- Guide through database migration (`pnpm dev` generates and reconciles; `pnpm generate` alone just regenerates)
 - Help test the implementation
 
 ## Example: Food Tracking App

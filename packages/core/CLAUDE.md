@@ -60,7 +60,7 @@ Built-in fields:
 - `engine.ts` - `checkAccess`, `checkCreateAccess` and the access-rule evaluation the terminals call
 - `field-access.ts` - Field-level rules, and the row-independent-rule classifier
 - `field-visibility.ts` - The post-query phase: strip, compute, resolve
-- `query-validation.ts` - `validateQueryKeys` and `validateQueryFieldReadAccess`, the predicate-time checks
+- `query-validation.ts` - `resolveQueryField`, the predicate-time check (with `isFieldReadableForPredicate` from `field-access.ts`)
 - `types.ts` - Type definitions (`AccessControl`, `OperationAccess`, `FieldAccess`, `Session`, `AccessContext`)
 
 Access control functions receive `{ session, context, item, operation }` and return:

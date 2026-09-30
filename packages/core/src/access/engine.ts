@@ -99,8 +99,8 @@ export function resolveSyntheticReverseRelation(
  * denies — access is opt-in, so a list that declares nothing is closed rather
  * than open.
  *
- * A filter result is not a decision on its own. Pass it to {@link mergeFilters}
- * to fold it into the caller's `where`, then check for `null` before querying.
+ * A filter result is not a decision on its own: the read composes it into the
+ * query as the engine-owned predicate. Only a boolean is a decision.
  * Gate a `create` with {@link checkCreateAccess} instead: create has no row to
  * test a filter against, so a rule that returns one must be refused rather than
  * read as an allow (ADR-0030). `checkCreateAccess` calls this and enforces that.
@@ -108,18 +108,7 @@ export function resolveSyntheticReverseRelation(
  * @param accessControl - The rule from `access.operation[...]`, or `undefined`.
  * @param args - The session, the existing row (update/delete), and the context
  * the rule may read through.
- *
- * @example
- * ```ts
- * const result = await checkAccess(config.lists.Post.access?.operation?.query, {
- *   session: context.session,
- *   context,
- * })
- * const where = mergeFilters(callerWhere, result)
- * if (where === null) return [] // denied — Silent failure
- * const rows = await ormModel(context.ormHandle, 'Post').findMany({ where })
- * ```
- */
+ * */
 export async function checkAccess<T = Record<string, unknown>>(
   accessControl: AccessControl<T> | undefined,
   args: {

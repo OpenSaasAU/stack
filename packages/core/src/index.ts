@@ -261,14 +261,6 @@ export { InvalidCreateAccessResultError } from './access/index.js'
 // the read to every row, so it is refused (see #1147, ADR-0022, ADR-0055).
 export { UndefinedAccessFilterError } from './access/index.js'
 
-// Thrown by a read when a caller-supplied `where` filters on a relation whose
-// related list denies operation-level `query` access outright (see #916 and
-// ADR-0022). Distinct from `ValidationError` for the same reason as
-// `AccessScopeDepthExceededError` — this is the engine declining to return a
-// silently-narrowed match on a relation it cannot scope, not a user-input
-// validation failure.
-export { RelationFilterAccessDeniedError } from './access/index.js'
-
 // Field self-containment validation — checks each field implements the
 // generation contract (getContractField / getZodSchema, plus outputType where
 // the field has no single column to be typed from) so a misimplemented field fails early

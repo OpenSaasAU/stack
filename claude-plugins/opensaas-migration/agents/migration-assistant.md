@@ -355,7 +355,7 @@ Change `session.data.id` → `session.userId` in access control functions.
 
 > Invoke `migrate-image-fields` with: "Config: /path/opensaas.config.ts. Database: postgresql. Models with image fields: Teacher (field: avatar), Post (field: coverImage)"
 
-**Important**: The non-destructive path needs no SQL — just `opensaas generate` and a `prisma migrate diff` to confirm a clean diff. Only if the user explicitly asks to consolidate the columns into a single JSON column will the subagent take the destructive opt-in path (which requires a backup and running SQL BEFORE `prisma db push`).
+**Important**: The non-destructive path needs no SQL — just `opensaas generate` and a `prisma migrate diff` to confirm a clean diff. Only if the user explicitly asks to consolidate the columns into a single JSON column will the subagent take the destructive opt-in path (which requires a backup and running SQL BEFORE applying the schema change).
 
 ### Step 7: Migrate document fields (if present) — delegate to subagent
 
@@ -470,7 +470,7 @@ If no → skip and go to Phase 6.
 **Phase 6 — Validate:**
 
 - Run `pnpm opensaas generate` and report any errors
-- If image/file fields were migrated with the default non-destructive multi-column mode, run `prisma migrate diff` against the live database to confirm a clean (non-destructive) diff — no SQL or re-upload needed. Only if the user chose the destructive JSON-consolidation opt-in should you remind them to back up and run the consolidation SQL BEFORE `prisma db push`
+- If image/file fields were migrated with the default non-destructive multi-column mode, run `prisma migrate diff` against the live database to confirm a clean (non-destructive) diff — no SQL or re-upload needed. Only if the user chose the destructive JSON-consolidation opt-in should you remind them to back up and run the consolidation SQL BEFORE applying the schema change
 
 ### What to say first:
 

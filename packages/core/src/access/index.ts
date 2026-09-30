@@ -29,14 +29,6 @@ export {
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
-// The foreign-key column of a to-one relationship a read never named at all —
-// the legacy-surface counterpart of `narrowUnincludedForeignKeys` in
-// `secured/read.ts` (issue #1243).
-export {
-  resolveForeignKeyVisibility,
-  emptyForeignKeyVisibilityMap,
-} from './foreign-key-visibility.js'
-export type { ForeignKeyVisibility, ForeignKeyVisibilityMap } from './foreign-key-visibility.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets
@@ -60,4 +52,3 @@ export { InvalidCreateAccessResultError } from './errors.js'
 // Thrown when an access rule returns a filter carrying an `undefined` condition (#1147).
 export { UndefinedAccessFilterError } from './errors.js'
 // Thrown when a relation filter's related list denies query access outright (#916).
-export { RelationFilterAccessDeniedError } from './errors.js'
