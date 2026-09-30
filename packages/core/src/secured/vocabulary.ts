@@ -13,7 +13,7 @@ import type {
 import type { AccessContext, PrismaFilter, Session } from '../access/types.js'
 import { checkAccess, getRelatedListConfig } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
-import { resolveQueryField } from '../access/query-validation.js'
+import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
 import { likeContainsPattern } from '../where/like.js'
 import {
@@ -469,12 +469,65 @@ async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Pro
   if (resolved.isRelationship) {
     return await resolveRelation(key, resolved.fieldConfig.ref, value, ctx)
   }
-  return {
+  const scalar: WherePlan = {
     kind: 'scalar',
     listName: ctx.listName,
     column: key,
     steps: resolveScalar(ctx.listName, key, value),
   }
+  const scope = await foreignKeyScope(key, resolved, ctx)
+  if (scope === null) return scalar
+  const visible: WherePlan =
+    scope.access.kind === 'false'
+      ? { kind: 'false' }
+      : { kind: 'and', nodes: [scalar, scope.exists] }
+  if (!matchesNull(value)) return visible
+  return {
+    kind: 'or',
+    nodes: [visible, { kind: 'not', node: scope.exists }],
+  }
+}
+
+function matchesNull(value: unknown): boolean {
+  if (value === null) return true
+  if (!isPlainObject(value)) return false
+  if (value.equals === null) return true
+  return Array.isArray(value.in) && value.in.includes(null)
+}
+
+async function foreignKeyScope(
+  key: string,
+  resolved: ResolvedQueryField,
+  ctx: ResolveContext,
+): Promise<{ access: WherePlan; exists: WherePlan } | null> {
+  const field = resolved.fieldConfig
+  if (!ctx.checkFieldRead) return null
+  if (resolved.isRelationship || field === undefined || field.type !== 'relationship') return null
+  const relation = key.slice(0, -2)
+  if (!key.endsWith('Id') || ctx.listConfig.fields[relation] !== field) return null
+  const related = getRelatedListConfig(field.ref, ctx.config)
+  if (!related) return null
+  const access = await resolveRelatedAccessPlan(related, ctx)
+  if (access.kind === 'true') return null
+  return {
+    access,
+    exists: {
+      kind: 'relation',
+      listName: ctx.listName,
+      relation,
+      relatedListName: related.listName,
+      quantifier: 'some',
+      node: access,
+    },
+  }
+}
+
+async function refuseUnlessForeignKeyVisible(
+  key: string,
+  resolved: ResolvedQueryField,
+  ctx: ResolveContext,
+): Promise<void> {
+  if ((await foreignKeyScope(key, resolved, ctx)) !== null) throw unqueryableKey(ctx.listName, key)
 }
 
 /**
@@ -535,6 +588,7 @@ export async function resolveOrderBy(
           `Cannot order "${ctx.listName}" by "${key}" — orderBy takes scalar columns only.`,
         ])
       }
+      await refuseUnlessForeignKeyVisible(key, resolved, ctx)
       plans.push({ listName: ctx.listName, column: key, direction })
     }
   }
@@ -590,6 +644,7 @@ export async function resolveColumns(
     if (descriptor !== undefined && descriptor.kind !== 'column') {
       throw unqueryableKey(ctx.listName, key)
     }
+    await refuseUnlessForeignKeyVisible(key, resolved, ctx)
     plans.push({ listName: ctx.listName, column: key })
   }
   return plans

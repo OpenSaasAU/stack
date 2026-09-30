@@ -891,6 +891,19 @@ function relatedResolveContext(
   }
 }
 
+function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['fields']): OrmRow {
+  const assembled: OrmRow = { ...row }
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (!fieldConfig.assembleColumns || !fieldConfig.getColumnNames) continue
+    const columnNames = fieldConfig.getColumnNames(fieldName)
+    if (!columnNames.some((name) => name in assembled)) continue
+    const value = fieldConfig.assembleColumns(fieldName, assembled)
+    for (const name of columnNames) delete assembled[name]
+    assembled[fieldName] = value
+  }
+  return assembled
+}
+
 /**
  * Narrow the foreign-key column of every to-one relationship this read did
  * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
@@ -926,6 +939,7 @@ async function narrowUnincludedForeignKeys(
   listConfig: ListConfig<TypeInfo>,
   resolvedIncludes: readonly IncludePlan[],
 ): Promise<void> {
+  if (binding.context._isSudo === true) return
   const ctx = relatedResolveContext(binding, listName, listConfig)
   const alreadyIncluded = new Set(
     resolvedIncludes.filter((plan) => !plan.declared).map((plan) => plan.relation),
@@ -949,7 +963,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: raw,
+        item: assembleColumnFields(raw, listConfig.fields),
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }
@@ -1220,6 +1234,28 @@ async function visibleRows(
   )
   await narrowUnincludedForeignKeys(binding, results, rows, listName, listConfig, plan.includes)
   return results as VisibleRow[]
+}
+
+/**
+ * What a write hands back: the row Field Visibility leaves, then the
+ * foreign-key pass a read of the same row would give it, so `create()` and
+ * `update()` never return an id `first()` hides.
+ */
+export async function visibleWrittenRow(
+  binding: Omit<ReadBinding, 'lock'>,
+  row: OrmRow,
+): Promise<OrmRow> {
+  const { listConfig, context, config, listName } = binding
+  const filtered = await filterReadableFields(
+    row,
+    listConfig.fields,
+    { session: context.session, context: { ...context, _isSudo: context._isSudo } },
+    config,
+    0,
+    listName,
+  )
+  await narrowUnincludedForeignKeys(binding, [filtered], [row], listName, listConfig, [])
+  return filtered
 }
 
 /** `all()` is the terminal every plan member was designed for. */

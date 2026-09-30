@@ -1490,6 +1490,137 @@ describe('the MCP surface', () => {
     )
   })
 
+  describe('the MCP opt-outs tools/call enforces', () => {
+    const errorMessage = (body: Record<string, unknown> | null) =>
+      (body?.error as { message: string } | undefined)?.message
+
+    function withOverrides(): OpenSaasConfig {
+      const base = schemaConfig()
+      return {
+        ...base,
+        lists: {
+          ...base.lists,
+          User: {
+            ...base.lists.User,
+            access: { operation: { query: () => true, update: () => true, delete: () => true } },
+            mcp: { tools: { update: false, delete: false } },
+          },
+          Draft: {
+            ...base.lists.Draft,
+            mcp: {
+              enabled: false,
+              customTools: [
+                {
+                  name: 'draftTool',
+                  description: 'd',
+                  inputSchema: z.object({}),
+                  handler: async () => ({ ran: true }),
+                },
+              ],
+            },
+          },
+          Secret: {
+            ...base.lists.Secret,
+            mcp: {
+              customTools: [
+                {
+                  name: 'secretTool',
+                  description: 's',
+                  inputSchema: z.object({}),
+                  handler: async () => ({ ran: true }),
+                },
+              ],
+            },
+          },
+        },
+      }
+    }
+
+    test(
+      'an operation switched off is refused as an unknown tool',
+      async () => {
+        const config = withOverrides()
+        for (const op of ['update', 'delete']) {
+          const { body } = await callTool(
+            `list_user_${op}`,
+            { where: { id: 'x' }, data: {} },
+            config,
+          )
+          expect(errorMessage(body)).toBe(`Unknown tool: list_user_${op}`)
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'every operation on an MCP-disabled list is refused',
+      async () => {
+        const config = withOverrides()
+        const { body } = await callTool('list_draft_query', {}, config)
+        expect(errorMessage(body)).toBe('Unknown tool: list_draft_query')
+      },
+      BOOT,
+    )
+
+    test(
+      'a custom tool on a disabled or query-denied list is refused',
+      async () => {
+        const config = withOverrides()
+        for (const name of ['draftTool', 'secretTool']) {
+          const { body } = await callTool(name, {}, config)
+          expect(errorMessage(body)).toBe(`Unknown tool: ${name}`)
+        }
+      },
+      BOOT,
+    )
+  })
+
+  describe('a throwing query rule on tools/call', () => {
+    function throwing(): OpenSaasConfig {
+      const base = schemaConfig()
+      return {
+        ...base,
+        lists: {
+          ...base.lists,
+          Secret: {
+            ...base.lists.Secret,
+            access: {
+              operation: {
+                query: () => {
+                  throw new Error('boom internal detail')
+                },
+              },
+            },
+            mcp: {
+              customTools: [
+                {
+                  name: 'boomTool',
+                  description: 'b',
+                  inputSchema: z.object({}),
+                  handler: async () => ({ ran: true }),
+                },
+              ],
+            },
+          },
+        },
+      }
+    }
+
+    test(
+      'is redacted for a CRUD tool and a custom tool',
+      async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        for (const name of ['list_secret_query', 'boomTool']) {
+          const { body } = await callTool(name, {}, throwing())
+          expect(JSON.stringify(body)).not.toContain('boom internal detail')
+          expect(body?.result).toMatchObject({ isError: true })
+        }
+        vi.restoreAllMocks()
+      },
+      BOOT,
+    )
+  })
+
   describe('the writes tools/call dispatches', () => {
     async function seedPost(): Promise<string> {
       const context = await contextFor(schemaConfig())()
