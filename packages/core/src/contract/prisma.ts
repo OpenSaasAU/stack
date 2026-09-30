@@ -217,6 +217,7 @@ function scalarField(
   if (column.unique) builder = builder.unique()
   if (column.default?.kind === 'literal') builder = builder.default(column.default.value)
   if (column.default?.kind === 'now') builder = builder.defaultSql('now()')
+  if (column.default?.kind === 'sql') builder = builder.defaultSql(column.default.expression)
   return builder
 }
 
