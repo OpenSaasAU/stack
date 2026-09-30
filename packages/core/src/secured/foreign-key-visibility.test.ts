@@ -273,3 +273,47 @@ describe('a related row deleted between the main read and the companion existenc
     BOOT,
   )
 })
+
+describe('a predicate, sort or column list on a to-one foreign key answers as the bare read does (#1621)', () => {
+  test(
+    'where on the hidden id matches nothing, and the visible id still matches',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      expect(await asMine.db.Item.where({ ownerId: { equals: othersId } }).all()).toEqual([])
+      const visible = await asMine.db.Item.where({ ownerId: { equals: mineId } }).all()
+      expect(visible.map((item) => item.title)).toEqual(['mine-item'])
+    },
+    BOOT,
+  )
+
+  test(
+    'count on the hidden id is zero',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      const { n } = await asMine.db.Item.where({ ownerId: { equals: othersId } }).aggregate(
+        (aggregate) => ({ n: aggregate.count() }),
+      )
+      expect(n).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a session the related list denies entirely matches nothing',
+    async () => {
+      const anonymous = database.context(null)
+      expect(await anonymous.db.Item.where({ ownerId: { equals: mineId } }).all()).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'orderBy and distinct on the foreign key are refused while the related list scopes reads',
+    async () => {
+      const asMine = database.context({ handle: 'mine' })
+      await expect(asMine.db.Item.orderBy({ ownerId: 'asc' }).all()).rejects.toThrow()
+      await expect(asMine.db.Item.distinct('ownerId').all()).rejects.toThrow()
+    },
+    BOOT,
+  )
+})
