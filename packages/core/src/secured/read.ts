@@ -886,6 +886,19 @@ function relatedResolveContext(
   }
 }
 
+function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['fields']): OrmRow {
+  const assembled: OrmRow = { ...row }
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (!fieldConfig.assembleColumns || !fieldConfig.getColumnNames) continue
+    const columnNames = fieldConfig.getColumnNames(fieldName)
+    if (!columnNames.some((name) => name in assembled)) continue
+    const value = fieldConfig.assembleColumns(fieldName, assembled)
+    for (const name of columnNames) delete assembled[name]
+    assembled[fieldName] = value
+  }
+  return assembled
+}
+
 /**
  * Narrow the foreign-key column of every to-one relationship this read did
  * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
@@ -943,7 +956,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: raw,
+        item: assembleColumnFields(raw, listConfig.fields),
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }

@@ -173,6 +173,7 @@ export async function resolveProjection(
       const owner = foreignKeyOwner(name, ctx)
       if (owner === undefined) throw unqueryableKey(ctx.listName, name)
       for (const column of contractColumns(owner.name, owner.fieldConfig, ctx)) columns.add(column)
+      if (await readsTheRow(owner.fieldConfig, ctx)) rowDependent = true
     }
 
     selected.add(name)
