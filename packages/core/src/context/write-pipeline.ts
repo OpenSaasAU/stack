@@ -178,7 +178,6 @@ export interface WritePipelineArgs {
  *   - sudo mode skips access checks and writable-field filtering.
  *   - `afterOperation` receives `originalItem` for update/delete (undefined for
  *     create).
- *   - delete returns the deleted row as-is (no Field Visibility pass).
  */
 export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow | null> {
   const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
@@ -386,6 +385,7 @@ async function runWriteInTransaction(
       listName,
       listConfig,
       context,
+      config,
       originalItem,
       collection,
       ops,
@@ -403,7 +403,7 @@ async function runWriteInTransaction(
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
-  const { resolvedData } = await hookPipeline.run({
+  const { resolvedData, defaultedFields } = await hookPipeline.run({
     operation: writeOp,
     listName,
     listConfig,
@@ -425,6 +425,7 @@ async function runWriteInTransaction(
     inputData: input,
     listName,
     config,
+    defaultedFields,
   })
 
   // ── Phase 5.5: relationship resolution (ADR-0050) ──────────────────────────
@@ -537,20 +538,22 @@ async function runWriteInTransaction(
 /**
  * The delete tail of the pipeline: skips the input-shaping phases and runs
  * only validate/field-validate before the DB delete, then the after-hooks.
- * Returns the deleted row as-is (no Field Visibility pass).
+ * Returns the deleted row through the Field Visibility pass.
  */
 async function runDeletePath(args: {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
   context: AccessContext
+  config: OpenSaasConfig
   originalItem: OrmRow | undefined
   collection: WriteCollection
   ops: WhereCombinators
   scope: WriteScope
   strategy: WriteStrategy
 }): Promise<OrmRow | null> {
-  const { listName, listConfig, context, originalItem, collection, ops, scope, strategy } = args
+  const { listName, listConfig, context, config, originalItem, collection, ops, scope, strategy } =
+    args
   const item = originalItem as Record<string, unknown>
 
   // ── Phase 3: list-level validate (delete) ──────────────────────────────────
@@ -615,7 +618,17 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return deleted
+  return filterReadableFields(
+    deleted,
+    listConfig.fields,
+    {
+      session: context.session,
+      context: { ...context, _isSudo: context._isSudo },
+    },
+    config,
+    0,
+    listName,
+  )
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

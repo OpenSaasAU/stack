@@ -269,7 +269,8 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     fields.push(`        ${key(column.name)}: ${rendered.expression},`)
   }
   if (model.timestamps.createdAt) {
-    fields.push('        createdAt: field.temporal.createdAtString(),')
+    helpers.add('timestamptzStringColumn')
+    fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
   }
   if (model.timestamps.updatedAt) {
     fields.push('        updatedAt: field.temporal.updatedAtString(),')

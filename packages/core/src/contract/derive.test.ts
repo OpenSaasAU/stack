@@ -291,7 +291,57 @@ describe('deriveContract — relations', () => {
         A: { fields: { b: relationship({ ref: 'B', db: { foreignKey: { map: 'b' } } }) } },
         B: { fields: { name: text() } },
       }),
-    ).toThrow(/fields\.b maps its foreign key onto "b" — the relation's own name/)
+    ).toThrow(/column "bId" is stored as "b", which is also the name of the relation "b"/)
+  })
+
+  test('a scalar mapped onto a relation field name is refused (#1628)', () => {
+    expect(() =>
+      single({
+        P: {
+          fields: {
+            note: text({ db: { map: 'author' } }),
+            author: relationship({ ref: 'U' }),
+          },
+        },
+        U: { fields: { name: text() } },
+      }),
+    ).toThrow(
+      /column "note" is stored as "author", which is also the name of the relation "author"/,
+    )
+  })
+
+  test("a foreign-key map onto another relation's name is refused (#1628)", () => {
+    expect(() =>
+      single({
+        P: {
+          fields: {
+            author: relationship({ ref: 'U', db: { foreignKey: { map: 'editor' } } }),
+            editor: relationship({ ref: 'U' }),
+          },
+        },
+        U: { fields: { name: text() } },
+      }),
+    ).toThrow(/column "authorId" is stored as "editor"/)
+  })
+
+  test('a scalar mapped onto an inverse or synthetic relation name is refused (#1628)', () => {
+    expect(() =>
+      single({
+        U: {
+          fields: {
+            bio: text({ db: { map: 'posts' } }),
+            posts: relationship({ ref: 'P.author', many: true }),
+          },
+        },
+        P: { fields: { author: relationship({ ref: 'U.posts' }) } },
+      }),
+    ).toThrow(/column "bio" is stored as "posts"/)
+    expect(() =>
+      single({
+        C: { fields: { label: text({ db: { map: 'from_P_owner' } }) } },
+        P: { fields: { owner: relationship({ ref: 'C' }) } },
+      }),
+    ).toThrow(/column "label" is stored as "from_P_owner"/)
   })
 
   test('isIndexed on a relationship shapes the FK column: false drops the index, unique replaces it', () => {

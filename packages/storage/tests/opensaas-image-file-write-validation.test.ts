@@ -162,9 +162,17 @@ describe('image()/file() write validation matrix (#790)', () => {
           uploadedAt: '',
           storageProvider: 'images',
         }
-        const columns = await resolveValidateAndSplit(field, 'image', 'update', existing, context, {
-          image: existing,
-        })
+        // The raw multi-column row `resolveInput` actually sees in production
+        // — the physical per-part columns, not a `{ image: existing }` shorthand.
+        const item = field.splitColumns?.('image', existing) as Record<string, unknown>
+        const columns = await resolveValidateAndSplit(
+          field,
+          'image',
+          'update',
+          existing,
+          context,
+          item,
+        )
         expect(uploadImage).not.toHaveBeenCalled()
         expect(columns).toEqual({
           image_url: '/u/a.jpg',
@@ -212,18 +220,28 @@ describe('image()/file() write validation matrix (#790)', () => {
 
       it('keeps an already-shaped FileMetadata unchanged (no re-upload) and splits it', async () => {
         const { context, uploadFile } = makeContext()
+        // The default multi-column `file()` parts carry no `contentType`
+        // column, so a real read of this row always assembles `mimeType` as
+        // the generic fallback below.
         const existing: FileMetadata = {
           filename: 'report.pdf',
           originalFilename: 'report.pdf',
           url: 'https://cdn/report.pdf',
-          mimeType: 'application/pdf',
+          mimeType: 'application/octet-stream',
           size: 4096,
           uploadedAt: '',
           storageProvider: 'documents',
         }
-        const columns = await resolveValidateAndSplit(field, 'doc', 'update', existing, context, {
-          doc: existing,
-        })
+        // The raw multi-column row `resolveInput` actually sees in production.
+        const item = field.splitColumns?.('doc', existing) as Record<string, unknown>
+        const columns = await resolveValidateAndSplit(
+          field,
+          'doc',
+          'update',
+          existing,
+          context,
+          item,
+        )
         expect(uploadFile).not.toHaveBeenCalled()
         expect(columns).toEqual({
           doc_filename: 'report.pdf',

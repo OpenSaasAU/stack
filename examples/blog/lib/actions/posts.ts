@@ -1,30 +1,27 @@
 'use server'
 
 import { getContext } from '@/.opensaas/context'
+import { demoSession } from '@/lib/demo-session'
 import { revalidatePath } from 'next/cache'
 import type { PostCreateInput, PostUpdateInput } from '../../.opensaas/types'
 
-/**
- * `getContext` stores what it is handed as `session ?? null`, so `{ userId: undefined }`
- * is a *signed-in* session with no user — an access rule that branches on `!session`
- * takes its authenticated branch and an anonymous caller reads rows it should not see.
- * Deriving the session from an optional id here keeps that shape out of the call sites.
- */
-function sessionFor(userId?: string) {
-  return userId ? { userId } : undefined
+async function sessionContext() {
+  const session = await demoSession()
+  return session ? getContext(session) : getContext()
 }
 
 /**
- * Create a new post
- * Requires authentication (will return null if not authenticated)
+ * Create a post authored by the signed-in user
  */
-export async function createPost(authorId: string, data: Omit<PostCreateInput, 'author'>) {
-  const context = await getContext(sessionFor(authorId))
+export async function createPost(data: Omit<PostCreateInput, 'author'>) {
+  const session = await demoSession()
+  if (!session?.userId) return { success: false, error: 'Failed to create post - access denied' }
+  const context = await getContext(session)
 
   const post = await context.db.Post.create({
     data: {
       ...data,
-      author: { connect: { id: authorId } },
+      author: { connect: { id: session.userId } },
     },
   })
 
@@ -40,8 +37,8 @@ export async function createPost(authorId: string, data: Omit<PostCreateInput, '
  * Update a post
  * Only the author can update their own posts
  */
-export async function updatePost(userId: string, postId: string, data: PostUpdateInput) {
-  const context = await getContext(sessionFor(userId))
+export async function updatePost(postId: string, data: PostUpdateInput) {
+  const context = await sessionContext()
 
   const post = await context.db.Post.update({
     where: { id: postId },
@@ -59,8 +56,8 @@ export async function updatePost(userId: string, postId: string, data: PostUpdat
 /**
  * Publish a post (set status to published)
  */
-export async function publishPost(userId: string, postId: string) {
-  const context = await getContext(sessionFor(userId))
+export async function publishPost(postId: string) {
+  const context = await sessionContext()
 
   const post = await context.db.Post.update({
     where: { id: postId },
@@ -82,8 +79,8 @@ export async function publishPost(userId: string, postId: string) {
  * Delete a post
  * Only the author can delete their own posts
  */
-export async function deletePost(userId: string, postId: string) {
-  const context = await getContext(sessionFor(userId))
+export async function deletePost(postId: string) {
+  const context = await sessionContext()
 
   const post = await context.db.Post.delete({
     where: { id: postId },
@@ -110,17 +107,19 @@ export async function getPublishedPosts() {
  * Get a single post by ID
  * Access control will determine what's visible: `null` is not-found or denied
  */
-export async function getPost(postId: string, userId?: string) {
-  const context = await getContext(sessionFor(userId))
+export async function getPost(postId: string) {
+  const context = await sessionContext()
 
   return context.db.Post.where({ id: { equals: postId } }).first()
 }
 
 /**
- * Get all posts for a user (including drafts)
+ * Get the signed-in user's posts (including drafts)
  */
-export async function getUserPosts(userId: string) {
-  const context = await getContext(sessionFor(userId))
+export async function getUserPosts() {
+  const session = await demoSession()
+  if (!session?.userId) return []
+  const context = await getContext(session)
 
-  return context.db.Post.where({ authorId: { equals: userId } }).all()
+  return context.db.Post.where({ authorId: { equals: session.userId } }).all()
 }

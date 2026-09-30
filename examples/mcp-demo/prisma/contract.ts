@@ -39,7 +39,7 @@ export const contract = defineContract(
         email: field.text().unique(),
         emailVerified: field.boolean().default(false),
         image: field.text().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -61,7 +61,7 @@ export const contract = defineContract(
         ipAddress: field.text().optional(),
         userAgent: field.text().optional(),
         userId: field.uuidNative(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -84,7 +84,7 @@ export const contract = defineContract(
         scope: field.text().optional(),
         idToken: field.text().optional(),
         password: field.text().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -98,7 +98,7 @@ export const contract = defineContract(
         identifier: field.text(),
         value: field.text(),
         expiresAt: field.column(timestamptzStringColumn),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {},
@@ -153,7 +153,7 @@ export const contract = defineContract(
         referenceId: field.text().optional(),
         metadata: field.text().optional(),
         userId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -176,7 +176,7 @@ export const contract = defineContract(
         disabled: field.boolean().optional().default(false),
         policyVersion: field.int().optional().default(1),
         metadata: field.text().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {},
@@ -255,7 +255,7 @@ export const contract = defineContract(
         requestedUserInfoClaims: field.text().optional(),
         scopes: field.text(),
         userId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {

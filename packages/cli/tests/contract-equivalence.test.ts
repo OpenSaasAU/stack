@@ -138,8 +138,8 @@ describe('renderContractModule — the lowering table', () => {
     expect(renderContractModule(deriveContract(oneToOneConfig))).toContain('id: field.id.cuid2()')
   })
 
-  test('auto-timestamps use the string temporal presets', () => {
-    expect(blog).toContain('createdAt: field.temporal.createdAtString()')
+  test('createdAt keeps a database now() default; updatedAt uses the string temporal preset', () => {
+    expect(blog).toContain("createdAt: field.column(timestamptzStringColumn).defaultSql('now()')")
     expect(blog).toContain('updatedAt: field.temporal.updatedAtString()')
   })
 

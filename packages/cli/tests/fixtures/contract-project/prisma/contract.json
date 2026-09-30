@@ -74,6 +74,7 @@
             "relations": {
               "actor": {
                 "cardinality": "N:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "actorId"
@@ -247,6 +248,7 @@
             "relations": {
               "author": {
                 "cardinality": "N:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "authorId"
@@ -262,6 +264,7 @@
               },
               "category": {
                 "cardinality": "N:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "categoryId"
@@ -357,6 +360,7 @@
             "relations": {
               "user": {
                 "cardinality": "N:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "userId"
@@ -524,6 +528,7 @@
               },
               "manager": {
                 "cardinality": "N:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "managerId"
@@ -554,6 +559,7 @@
               },
               "profile": {
                 "cardinality": "1:1",
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "id"
@@ -1249,6 +1255,8 @@
       "checkConstraint": true,
       "defaultInInsert": true,
       "enums": true,
+      "insertOnConflictSkip": true,
+      "insertOnConflictWithoutTarget": true,
       "lateral": true,
       "returning": true,
       "scalarList": true

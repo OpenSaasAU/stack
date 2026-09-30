@@ -23,7 +23,7 @@ export const contract = defineContract(
         name: field.text(),
         email: field.text().unique(),
         password: field.text(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {
@@ -41,7 +41,7 @@ export const contract = defineContract(
         status: field.text().default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
         authorId: field.uuidNative().optional(),
-        createdAt: field.temporal.createdAtString(),
+        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
         updatedAt: field.temporal.updatedAtString(),
       },
       relations: {

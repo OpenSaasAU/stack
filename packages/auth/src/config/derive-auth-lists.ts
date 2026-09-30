@@ -132,6 +132,22 @@ const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
 }
 
 const DENY_READ: FieldAccess = { read: () => false }
+/**
+ * `allowCreateDefault: true` because this deny is UNCONDITIONAL — it refuses
+ * every session, sudo aside, never just some — so a session that omits the
+ * field must still be able to create the row, settling to the field's own
+ * declared default (`User.emailVerified: false`, `User.banned: false`, …)
+ * exactly as better-auth's own client-facing API would produce. Without it,
+ * `context.db.User.create()` would throw for every non-sudo session the
+ * moment any derived field carries both `input: false` and a `defaultValue`
+ * (issue #1618; see `FieldAccess.allowCreateDefault`'s own doc comment for
+ * why this is opt-in rather than automatic).
+ */
+const DENY_WRITE: FieldAccess = {
+  create: () => false,
+  update: () => false,
+  allowCreateDefault: true,
+}
 
 /** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
 type CredentialFieldRegistry = Record<string, ReadonlySet<string>>
@@ -198,23 +214,133 @@ function buildCredentialFieldRegistry(
   return registry
 }
 
-function withCredentialAccess(
-  registry: CredentialFieldRegistry,
+/**
+ * App-authored field-level access overrides for derived Auth list fields
+ * (`authPlugin({ fieldAccess })`, ADR-0073), keyed by better-auth model key
+ * then field key, each value overriding one or more of a field's `read` /
+ * `create` / `update` rules. An operation an entry doesn't name keeps
+ * whatever the seeded write-deny/credential-read-deny below resolves it to.
+ */
+type FieldAccessOverrideRegistry = Record<string, Record<string, FieldAccess>>
+
+/**
+ * Validates an app's `authPlugin({ fieldAccess })` against the models
+ * actually being derived, mirroring {@link buildCredentialFieldRegistry}'s
+ * validation exactly (same missing-field and id-relationship-field checks),
+ * plus the one rule specific to this seam: an entry cannot set `read` on a
+ * field the credential registry already marks — ADR-0036's read-deny cannot
+ * be reopened, by this option or any other.
+ *
+ * A model not in `tables` at all (a plugin the app doesn't use) is a silent
+ * no-op, same as `credentialFields`.
+ */
+function buildFieldAccessOverrideRegistry(
+  tables: Record<string, ResolvedTable>,
+  credentialRegistry: CredentialFieldRegistry,
+  appConfig: Record<string, Record<string, FieldAccess>>,
+): FieldAccessOverrideRegistry {
+  const registry: FieldAccessOverrideRegistry = {}
+  for (const [modelKey, fields] of Object.entries(appConfig)) {
+    const table = tables[modelKey]
+    if (!table) continue // model not derived (plugin unused) -> silent no-op
+
+    const resolvedFields: Record<string, FieldAccess> = {}
+    for (const [fieldKey, access] of Object.entries(fields)) {
+      const upstream = table.fields[fieldKey]
+      if (!upstream) {
+        throw new Error(
+          `deriveAuthLists: fieldAccess names "${modelKey}.${fieldKey}", but "${modelKey}" has no field "${fieldKey}"`,
+        )
+      }
+      if (upstream.references?.field === 'id' && relationshipFieldName(fieldKey) !== fieldKey) {
+        throw new Error(
+          `deriveAuthLists: fieldAccess names "${modelKey}.${fieldKey}", but "${fieldKey}" is a ` +
+            `relationship field (references "${upstream.references.model}.id"), not a scalar column`,
+        )
+      }
+      // `'read' in access` (not `access.read !== undefined`) so an explicit
+      // `{ read: undefined }` is rejected too — TypeScript's optional-property
+      // syntax accepts that shape, and letting it through here would only
+      // move the hole to the merge below.
+      if ('read' in access && credentialRegistry[modelKey]?.has(fieldKey)) {
+        throw new Error(
+          `deriveAuthLists: fieldAccess sets "read" on "${modelKey}.${fieldKey}", which is a credential ` +
+            `field (ADR-0036) — its read-deny cannot be reopened`,
+        )
+      }
+      resolvedFields[fieldKey] = access
+    }
+    registry[modelKey] = resolvedFields
+  }
+  return registry
+}
+
+/**
+ * Resolves and applies a scalar field's final `access`, composing three
+ * layers in order (each one only overriding the keys it actually sets):
+ *
+ * 1. The credential read-deny ({@link CredentialFieldRegistry}, ADR-0036).
+ * 2. The seeded write-deny (ADR-0073): better-auth's own `input: false` on
+ *    the upstream field means a client cannot set it (`user.emailVerified`
+ *    unconditionally; `user.role`/`banned`/`banReason`/`banExpires` and
+ *    `session.impersonatedBy` once `admin()` is registered) — a signed-in
+ *    user's own `context.db` write must not be able to either.
+ * 3. An app's `authPlugin({ fieldAccess })` override
+ *    ({@link FieldAccessOverrideRegistry}), replacing exactly the operations
+ *    it names.
+ *
+ * A field touched by none of the three is returned unchanged.
+ *
+ * Generic over the field shape (`T extends FieldConfig`) so it applies to a
+ * `RelationshipField` (an id-referencing FK column) exactly as it does to a
+ * plain scalar field — no built-in better-auth plugin currently pairs an
+ * owned FK column with `input: false`, but the rule is keyed on that flag,
+ * not a hardcoded field-shape list, so a future one that does is covered
+ * automatically rather than shipping that column writable by accident.
+ */
+function withFieldAccess<T extends FieldConfig>(
+  credentialRegistry: CredentialFieldRegistry,
+  overrideRegistry: FieldAccessOverrideRegistry,
   modelKey: string,
   fieldKey: string,
-  field: FieldConfig,
-): FieldConfig {
-  if (!registry[modelKey]?.has(fieldKey)) return field
+  upstream: DBFieldAttribute,
+  field: T,
+): T {
+  const isCredential = credentialRegistry[modelKey]?.has(fieldKey) ?? false
+  const isWriteDenied = upstream.input === false
+  const override = overrideRegistry[modelKey]?.[fieldKey]
+
+  if (!isCredential && !isWriteDenied && !override) return field
+
+  // A plain object spread would let an override key EXPLICITLY set to
+  // `undefined` (`{ read: undefined }`) clear a seeded rule — the key is
+  // still own-enumerable, so it overwrites `DENY_READ`/`DENY_WRITE` with
+  // `undefined`, which the access engine treats as "no rule" (allow). Only
+  // copy an override key whose value is actually a function, so a seeded
+  // deny can only be replaced, never silently unset.
+  const access: FieldAccess = {
+    ...(isCredential ? DENY_READ : {}),
+    ...(isWriteDenied ? DENY_WRITE : {}),
+  }
+  if (override?.read !== undefined) access.read = override.read
+  if (override?.create !== undefined) access.create = override.create
+  if (override?.update !== undefined) access.update = override.update
+
   return {
     ...field,
-    access: DENY_READ,
-    // Curated out of the admin's default table columns too (issue #1018),
-    // via the same declared flag as everything else — a read-denied column
-    // would otherwise render permanently empty rather than simply absent.
-    ui: {
-      ...field.ui,
-      listView: { ...field.ui?.listView, defaultColumn: false },
-    },
+    access,
+    ...(isCredential
+      ? {
+          // Curated out of the admin's default table columns too (issue
+          // #1018), via the same declared flag as everything else — a
+          // read-denied column would otherwise render permanently empty
+          // rather than simply absent.
+          ui: {
+            ...field.ui,
+            listView: { ...field.ui?.listView, defaultColumn: false },
+          },
+        }
+      : {}),
   }
 }
 
@@ -628,6 +754,8 @@ function buildModelRegistry(
  * @param credentialFieldsConfig - App-authored additions to the credential-field read-deny
  *   (`authPlugin({ credentialFields })`), keyed by better-auth model key. Additive only — see
  *   {@link buildCredentialFieldRegistry}.
+ * @param fieldAccessConfig - App-authored field-access overrides (`authPlugin({ fieldAccess })`,
+ *   ADR-0073), keyed by better-auth model key then field key. See {@link buildFieldAccessOverrideRegistry}.
  * @returns The derived base-model list keys and every derived list config (base models and plugin tables)
  */
 export function deriveAuthLists(
@@ -636,6 +764,7 @@ export function deriveAuthLists(
   accessConfig: AuthAccessConfig = {},
   plugins: BetterAuthPlugin[] = [],
   credentialFieldsConfig: Record<string, string[]> = {},
+  fieldAccessConfig: Record<string, Record<string, FieldAccess>> = {},
 ): DerivedAuthLists {
   const tables = getAuthTables(buildBetterAuthTableOptions(models, plugins)) as Record<
     string,
@@ -653,6 +782,11 @@ export function deriveAuthLists(
   }
 
   const credentialRegistry = buildCredentialFieldRegistry(tables, credentialFieldsConfig)
+  const fieldAccessRegistry = buildFieldAccessOverrideRegistry(
+    tables,
+    credentialRegistry,
+    fieldAccessConfig,
+  )
 
   // Only the five base models carry an app-authored `db.indexes` passthrough
   // (`AuthModelConfig.indexes`) — plugin tables have no per-model config
@@ -705,12 +839,19 @@ export function deriveAuthLists(
                 `REVERSE_RELATION_NAME_OVERRIDES in derive-auth-lists.ts`,
             )
           }
-          ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = buildForeignKeyField(
+          ;(foreignKeyFields[modelKey] ??= {})[relationFieldKey] = withFieldAccess(
+            credentialRegistry,
+            fieldAccessRegistry,
+            modelKey,
             fieldKey,
             upstream,
-            targetListKey,
-            reverseName,
-            claimedFieldsByModel[modelKey as BaseModelKey]?.has(relationFieldKey) ?? false,
+            buildForeignKeyField(
+              fieldKey,
+              upstream,
+              targetListKey,
+              reverseName,
+              claimedFieldsByModel[modelKey as BaseModelKey]?.has(relationFieldKey) ?? false,
+            ),
           )
           ;(reverseRelationFields[targetModelKey] ??= {})[reverseName] = relationship({
             ref: `${registry.get(modelKey)}.${relationFieldKey}`,
@@ -728,10 +869,12 @@ export function deriveAuthLists(
           // physically maps to (`db.foreignKey.map`), which the contract
           // derivation refuses as a self-collision (#1236). Both fall back to
           // a plain scalar column, same as pre-consolidation behavior.
-          ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+          ;(scalarFields[modelKey] ??= {})[fieldKey] = withFieldAccess(
             credentialRegistry,
+            fieldAccessRegistry,
             modelKey,
             fieldKey,
+            upstream,
             buildScalarField(
               fieldKey,
               upstream,
@@ -740,10 +883,12 @@ export function deriveAuthLists(
           )
         }
       } else {
-        ;(scalarFields[modelKey] ??= {})[fieldKey] = withCredentialAccess(
+        ;(scalarFields[modelKey] ??= {})[fieldKey] = withFieldAccess(
           credentialRegistry,
+          fieldAccessRegistry,
           modelKey,
           fieldKey,
+          upstream,
           buildScalarField(
             fieldKey,
             upstream,

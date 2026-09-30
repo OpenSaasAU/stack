@@ -1473,6 +1473,35 @@ read-denied](/docs/reference/auth#credential-fields-are-read-denied-adr-0036) fo
 the full set. To deny a further field, declare the rule on the field itself —
 via `extendUserList.fields` for the `User` list.
 
+**A whole-row `update` rule does not imply every column is writable.** The
+`update` rule above says who may write the `User` row — it says nothing about
+which columns. `User.emailVerified` is already write-denied unconditionally
+(better-auth marks it `input: false`), and if you register the `admin()`
+plugin, so are `User.role`, `User.banned`, `User.banReason`, `User.banExpires`
+and `Session.impersonatedBy` — a signed-in user can't self-verify or
+self-promote through the rule above (ADR-0073). This matters if you add your
+own sensitive field via `extendUserList.fields` (see [Adding Custom
+Fields](#adding-custom-fields) below) — the whole-row rule permits writing it
+too, so protect it explicitly with `authPlugin({ fieldAccess })`, keyed by
+better-auth model key then field key:
+
+<!-- doc-check: excuses="authPlugin, admin, TS7031 'session'" reason="bare names the prose supplies (admin() is better-auth's own plugin, imported from 'better-auth/plugins'), and each rule's parameters are typed by the list access config it is attached to" -->
+
+```typescript
+authPlugin({
+  betterAuthPlugins: [admin()],
+  fieldAccess: {
+    user: {
+      role: { update: ({ session }) => session?.role === 'admin' },
+    },
+  },
+})
+```
+
+See [Fields are write-denied independent of operation access](/docs/reference/auth#fields-are-write-denied-independent-of-operation-access-adr-0073)
+for the full rules, including why `fieldAccess` can never reopen a credential's
+`read` deny.
+
 For the `user` model specifically, `extendUserList.access` (the pre-existing
 User customization surface — see
 [Custom Access Control on User List](#custom-access-control-on-user-list))

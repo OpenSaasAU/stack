@@ -9,7 +9,7 @@ Turn your OpenSaas app into a knowledge base with semantic search capabilities p
 - 🤖 **Multiple Embedding Providers**: OpenAI, Ollama (local), or bring your own
 - 🗄️ **Native Vector Column**: a pgvector `vector(n)` column declared by the field
 - 🔍 **Semantic Search**: Natural language queries with relevance scoring
-- 🔐 **Access Control**: All searches respect your existing access control rules
+- 🔐 **Access Control**: A search inherits its source field's read access — a session denied the text is denied its embedding, its stored hash and any `nearest()` ranking over it too
 - ⚡ **Automatic Embeddings**: Auto-generate embeddings when content changes
 - 🛠️ **MCP Integration**: Semantic search tools for AI assistants
 - 📊 **Multiple Abstraction Levels**: From automatic "magic" to low-level control
@@ -66,7 +66,7 @@ export default config({
 
 - The `searchable()` wrapper automatically creates a `contentEmbedding` field
 - Embeddings are auto-generated whenever `content` changes
-- The embedding field respects all your existing access control rules
+- The embedding field's `read` access is its source field's `read` access, combined with any rule you give the embedding itself — the combination can only narrow, never widen (see [ADR-0045](../../docs/adr/0045-vector-search-is-an-engine-owned-terminal-over-a-native-vector-column.md))
 
 ### 2. Generate the schema and update the database
 

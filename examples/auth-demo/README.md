@@ -170,7 +170,7 @@ The example includes Server Actions demonstrating common operations:
 ```typescript
 import { createPost } from './lib/actions/posts'
 
-const result = await createPost(userId, {
+const result = await createPost({
   title: 'Hello World',
   slug: 'hello-world',
   content: 'My first post',
@@ -182,7 +182,7 @@ const result = await createPost(userId, {
 ```typescript
 import { updatePost } from './lib/actions/posts'
 
-const result = await updatePost(userId, postId, {
+const result = await updatePost(postId, {
   title: 'Updated Title',
 })
 
@@ -194,7 +194,7 @@ const result = await updatePost(userId, postId, {
 ```typescript
 import { publishPost } from './lib/actions/posts'
 
-const result = await publishPost(userId, postId)
+const result = await publishPost(postId)
 ```
 
 ### Get Published Posts

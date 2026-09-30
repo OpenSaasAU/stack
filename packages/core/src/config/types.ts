@@ -3175,6 +3175,15 @@ export interface ImageTransformationResult {
   height: number
   /** File size in bytes */
   size: number
+  /**
+   * The storage key the provider's own `upload()` returned for this
+   * transformation. Cleanup deletes by this key, never by parsing `url` —
+   * a stored `url` is not a trustworthy source of a storage key (issue
+   * #1619). Optional so a value written before this field existed still
+   * type-checks; such a row's transformations are left undeleted by cleanup
+   * rather than deleted by a parsed guess.
+   */
+  filename?: string
 }
 
 export type StorageConfig = Record<string, { type: string; [key: string]: unknown }>

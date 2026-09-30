@@ -90,12 +90,19 @@ const userEmail = context.session?.email // ✅ Type: string
 
 **To add more session fields:**
 
-1. Add the field to User in `opensaas.config.ts`:
+1. Add the field to User in `opensaas.config.ts`, protecting it with its own
+   `access` right away — a field you add via `extendUserList` is app-authored,
+   so `authPlugin({ fieldAccess })` (which only reaches a field better-auth
+   itself derives) can't protect it; the field builder's own `access` is the
+   seam for this one:
 
    ```typescript
    extendUserList: {
      fields: {
-       role: select({ options: [...] })
+       role: select({
+         options: [...],
+         access: { update: ({ session }) => session?.role === 'admin' },
+       })
      }
    }
    ```
@@ -107,6 +114,7 @@ const userEmail = context.session?.email // ✅ Type: string
    ```
 
 3. Update `types/session.d.ts`:
+
    ```typescript
    interface Session {
      userId: string
@@ -115,6 +123,16 @@ const userEmail = context.session?.email // ✅ Type: string
      role: 'admin' | 'user' // Add this
    }
    ```
+
+**Why step 1 needed that `access`:** this config's `User` access grants a
+whole-row owner-update rule (`update: ({ session, item }) => session?.userId
+=== item.id`) — that says who may update the row, not which columns, so
+without the field's own `access` a signed-in user could write `role: 'admin'`
+to their own row through that same rule (issue #1618). See [Fields are
+write-denied independent of operation
+access](https://stack.opensaas.au/docs/reference/auth#fields-are-write-denied-independent-of-operation-access-adr-0073)
+for the equivalent protection on a field better-auth itself derives (e.g. once
+you register the `admin()` plugin).
 
 ## Learn More
 

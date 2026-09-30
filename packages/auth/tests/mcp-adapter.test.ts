@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { generateKeyPairSync, sign } from 'node:crypto'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import {
   createBetterAuthMcpAdapter,
   withMcpAuth,
@@ -8,116 +11,146 @@ import {
   createOAuthDiscoveryHandler,
   createOAuthProtectedResourceHandler,
 } from '../src/mcp/better-auth.js'
-import type { BetterAuthInstance } from '../src/mcp/better-auth.js'
+import type { BetterAuthInstance, BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
 import type { McpSession } from '@opensaas/stack-core/mcp'
 
 describe('Better Auth MCP Adapter', () => {
-  describe('createBetterAuthMcpAdapter', () => {
-    it('should create a session provider from Better Auth instance', async () => {
-      const mockSession: McpSession = {
+  describe('token verification', () => {
+    const resource = 'http://localhost:3000/api/mcp'
+    const baseURL = 'http://localhost:3000/api/auth'
+    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'ES256', use: 'sig' }
+    let server: Server
+    let options: BetterAuthMcpOptions
+
+    beforeAll(async () => {
+      server = createServer((_, res) => {
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ keys: [jwk] }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const { port } = server.address() as AddressInfo
+      options = { resource, baseURL, jwksUrl: `http://127.0.0.1:${port}/jwks` }
+    })
+
+    afterAll(() => {
+      server.close()
+    })
+
+    const b64 = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url')
+
+    function mint(claims: Record<string, unknown>): string {
+      const now = Math.floor(Date.now() / 1000)
+      const body = { iss: baseURL, aud: resource, iat: now, exp: now + 300, ...claims }
+      const signingInput = `${b64({ alg: 'ES256', typ: 'JWT', kid: 'k1' })}.${b64(body)}`
+      const signature = sign('sha256', Buffer.from(signingInput), {
+        key: privateKey,
+        dsaEncoding: 'ieee-p1363',
+      })
+      return `${signingInput}.${signature.toString('base64url')}`
+    }
+
+    const bearer = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
+
+    it('maps a valid token to a session', async () => {
+      const token = mint({ sub: 'user-123', scope: 'read write' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({
         userId: 'user-123',
         scopes: ['read', 'write'],
-      }
-
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => mockSession),
-        },
-      }
-
-      const adapter = createBetterAuthMcpAdapter(mockAuth)
-      expect(typeof adapter).toBe('function')
-
-      const headers = new Headers({ Authorization: 'Bearer token123' })
-      const session = await adapter(headers)
-
-      expect(session).toEqual(mockSession)
-      expect(mockAuth.api.getMcpSession).toHaveBeenCalledWith({ headers })
-    })
-
-    it('should return null when no session exists', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => null),
-        },
-      }
-
-      const adapter = createBetterAuthMcpAdapter(mockAuth)
-      const headers = new Headers()
-      const session = await adapter(headers)
-
-      expect(session).toBeNull()
-    })
-  })
-
-  describe('withMcpAuth', () => {
-    it('should wrap handler with authentication', async () => {
-      const mockSession: McpSession = {
-        userId: 'user-123',
-        scopes: ['read'],
-      }
-
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => mockSession),
-        },
-      }
-
-      const mockHandler = vi.fn(async () => new Response('OK'))
-      const wrappedHandler = withMcpAuth(mockAuth, mockHandler)
-
-      const request = new Request('http://localhost/api', {
-        headers: { Authorization: 'Bearer token123' },
+        accessToken: token,
       })
-
-      const response = await wrappedHandler(request)
-
-      expect(mockHandler).toHaveBeenCalledWith(request, mockSession)
-      expect(response.status).not.toBe(401)
+      expect(session?.expiresAt).toBeInstanceOf(Date)
     })
 
-    it('should return 401 when no session exists', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => null),
-        },
-      }
+    it('forwards signed custom claims into the session', async () => {
+      const token = mint({ sub: 'user-123', role: 'admin', email: 'a@b.co' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
 
-      const mockHandler = vi.fn(async () => new Response('OK'))
-      const wrappedHandler = withMcpAuth(mockAuth, mockHandler)
+      expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
+    })
 
-      const request = new Request('http://localhost/api')
-      const response = await wrappedHandler(request)
+    it('does not let a claim override the userId', async () => {
+      const token = mint({ sub: 'user-123', userId: 'someone-else' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.userId).toBe('user-123')
+    })
+
+    it('returns null without a token', async () => {
+      expect(await createBetterAuthMcpAdapter(options)(new Headers())).toBeNull()
+    })
+
+    it('rejects a token for another audience', async () => {
+      const token = mint({ sub: 'user-123', aud: 'http://localhost:3000/api/other' })
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it('rejects an expired token', async () => {
+      const past = Math.floor(Date.now() / 1000) - 3600
+      const token = mint({ sub: 'user-123', iat: past - 60, exp: past })
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it('rejects a token from another issuer', async () => {
+      const token = mint({ sub: 'user-123', iss: 'http://evil.example/api/auth' })
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it('rejects a token signed by another key', async () => {
+      const other = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+      const signingInput = `${b64({ alg: 'ES256', typ: 'JWT', kid: 'k1' })}.${b64({
+        iss: baseURL,
+        aud: resource,
+        sub: 'user-123',
+        exp: Math.floor(Date.now() / 1000) + 300,
+      })}`
+      const signature = sign('sha256', Buffer.from(signingInput), {
+        key: other.privateKey,
+        dsaEncoding: 'ieee-p1363',
+      })
+      const token = `${signingInput}.${signature.toString('base64url')}`
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it('withMcpAuth challenges a verified token that has no subject', async () => {
+      const handler = vi.fn(async () => new Response('OK'))
+      const response = await withMcpAuth(
+        options,
+        handler,
+      )(new Request(resource, { headers: bearer(mint({})) }))
 
       expect(response.status).toBe(401)
       expect(response.headers.get('WWW-Authenticate')).toContain('Bearer')
-      expect(mockHandler).not.toHaveBeenCalled()
+      expect(handler).not.toHaveBeenCalled()
     })
 
-    it('should pass through handler response', async () => {
-      const mockSession: McpSession = {
-        userId: 'user-123',
-        scopes: [],
-      }
+    it('withMcpAuth calls the handler with the session', async () => {
+      const handler = vi.fn(async () => new Response('OK'))
+      const response = await withMcpAuth(
+        options,
+        handler,
+      )(new Request(resource, { headers: bearer(mint({ sub: 'user-123' })) }))
 
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => mockSession),
-        },
-      }
+      expect(response.status).toBe(200)
+      expect(handler).toHaveBeenCalledWith(
+        expect.any(Request),
+        expect.objectContaining({
+          userId: 'user-123',
+          accessToken: expect.any(String),
+          expiresAt: expect.any(Date),
+        }),
+      )
+    })
 
-      const mockResponse = new Response('Custom Response', { status: 200 })
-      const mockHandler = vi.fn(async () => mockResponse)
-      const wrappedHandler = withMcpAuth(mockAuth, mockHandler)
+    it('withMcpAuth answers 401 with a challenge and skips the handler', async () => {
+      const handler = vi.fn(async () => new Response('OK'))
+      const response = await withMcpAuth(options, handler)(new Request(resource))
 
-      const request = new Request('http://localhost/api', {
-        headers: { Authorization: 'Bearer token123' },
-      })
-
-      const response = await wrappedHandler(request)
-
-      expect(response).toBe(mockResponse)
-      expect(await response.text()).toBe('Custom Response')
+      expect(response.status).toBe(401)
+      expect(response.headers.get('WWW-Authenticate')).toContain('Bearer')
+      expect(handler).not.toHaveBeenCalled()
     })
   })
 
@@ -277,76 +310,6 @@ describe('Better Auth MCP Adapter', () => {
 
       // Restore original fetch
       global.fetch = originalFetch
-    })
-  })
-
-  describe('Integration scenarios', () => {
-    it('should support full auth flow with scopes and expiration', async () => {
-      const futureDate = new Date()
-      futureDate.setHours(futureDate.getHours() + 1)
-
-      const mockSession: McpSession = {
-        userId: 'user-123',
-        scopes: ['read:posts', 'write:posts', 'admin'],
-        accessToken: 'token-abc-123',
-        expiresAt: futureDate,
-      }
-
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => mockSession),
-        },
-      }
-
-      const adapter = createBetterAuthMcpAdapter(mockAuth)
-      const headers = new Headers({ Authorization: 'Bearer token-abc-123' })
-      const session = await adapter(headers)
-
-      // Verify session was retrieved
-      expect(session).toBeTruthy()
-      expect(session?.userId).toBe('user-123')
-
-      // Verify scopes
-      expect(hasScopes(session!, ['read:posts'])).toBe(true)
-      expect(hasScopes(session!, ['read:posts', 'write:posts'])).toBe(true)
-      expect(hasScopes(session!, ['read:posts', 'write:posts', 'delete:posts'])).toBe(false)
-
-      // Verify expiration
-      expect(isSessionExpired(session!)).toBe(false)
-
-      // Verify context session conversion
-      const contextSession = mcpSessionToContextSession(session!)
-      expect(contextSession.userId).toBe('user-123')
-    })
-
-    it('should handle expired session with valid scopes', async () => {
-      const pastDate = new Date()
-      pastDate.setHours(pastDate.getHours() - 1)
-
-      const mockSession: McpSession = {
-        userId: 'user-123',
-        scopes: ['read', 'write'],
-        expiresAt: pastDate,
-      }
-
-      const mockAuth: BetterAuthInstance = {
-        api: {
-          getMcpSession: vi.fn(async () => mockSession),
-        },
-      }
-
-      const adapter = createBetterAuthMcpAdapter(mockAuth)
-      const headers = new Headers({ Authorization: 'Bearer expired-token' })
-      const session = await adapter(headers)
-
-      // Session is returned (Better Auth handles validity)
-      expect(session).toBeTruthy()
-
-      // But application can check expiration
-      expect(isSessionExpired(session!)).toBe(true)
-
-      // Scopes are still valid
-      expect(hasScopes(session!, ['read'])).toBe(true)
     })
   })
 })

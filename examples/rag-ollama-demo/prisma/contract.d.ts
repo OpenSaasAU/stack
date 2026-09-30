@@ -6,7 +6,6 @@ import type {
   Vector,
 } from '@prisma/orm-extension-pgvector/codec-types';
 import type { QueryOperationTypes as PgVectorQueryOperationTypes } from '@prisma/orm-extension-pgvector/operation-types';
-import type { QueryOperationTypes as PgAdapterQueryOps } from '@prisma/orm-postgres/adapter/operation-types';
 import type {
   Bit,
   Char,
@@ -24,9 +23,11 @@ import type {
   VarBit,
   Varchar,
 } from '@prisma/orm-postgres/target/codec-types';
+import type { QueryOperationTypes as PgTargetQueryOps } from '@prisma/orm-postgres/target/operation-types';
 
 import type {
   ContractWithTypeMaps,
+  RelationKeys,
   TypeMaps as TypeMapsType,
 } from '@prisma/orm-postgres/family-contract/types';
 import type {
@@ -46,7 +47,7 @@ export type ProfileHash =
 
 export type CodecTypes = PgTypes & PgVectorTypes;
 export type LaneCodecTypes = CodecTypes;
-export type QueryOperationTypes = PgAdapterQueryOps<CodecTypes> &
+export type QueryOperationTypes = PgTargetQueryOps<CodecTypes> &
   PgVectorQueryOperationTypes<CodecTypes>;
 export type AggregateTypes = {
   readonly avg: {
@@ -125,6 +126,10 @@ export type AggregateTypes = {
         readonly output: 'pg/timestamp-temporal@1';
         readonly nullable: true;
       };
+      readonly 'pg/timestamptz-date@1': {
+        readonly output: 'pg/timestamptz-date@1';
+        readonly nullable: true;
+      };
       readonly 'pg/timestamptz-string@1': {
         readonly output: 'pg/timestamptz-string@1';
         readonly nullable: true;
@@ -179,6 +184,10 @@ export type AggregateTypes = {
       };
       readonly 'pg/timestamp-temporal@1': {
         readonly output: 'pg/timestamp-temporal@1';
+        readonly nullable: true;
+      };
+      readonly 'pg/timestamptz-date@1': {
+        readonly output: 'pg/timestamptz-date@1';
         readonly nullable: true;
       };
       readonly 'pg/timestamptz-string@1': {
@@ -248,44 +257,44 @@ type DefaultLiteralValue<CodecId extends string, Encoded> = CodecId extends keyo
 export type FieldOutputTypes = {
   readonly public: {
     readonly Article: {
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly title: CodecTypes['pg/text@1']['output'];
       readonly body: CodecTypes['pg/text@1']['output'];
-      readonly category: CodecTypes['pg/text@1']['output'] | null;
-      readonly published: CodecTypes['pg/bool@1']['output'];
       readonly bodyEmbedding: Vector<768> | null;
       readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
+      readonly category: CodecTypes['pg/text@1']['output'] | null;
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly published: CodecTypes['pg/bool@1']['output'];
+      readonly title: CodecTypes['pg/text@1']['output'];
     };
     readonly Document: {
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly title: CodecTypes['pg/text@1']['output'];
       readonly content: CodecTypes['pg/text@1']['output'];
-      readonly summary: CodecTypes['pg/text@1']['output'] | null;
-      readonly published: CodecTypes['pg/bool@1']['output'];
       readonly contentEmbedding: Vector<768> | null;
       readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly published: CodecTypes['pg/bool@1']['output'];
+      readonly summary: CodecTypes['pg/text@1']['output'] | null;
+      readonly title: CodecTypes['pg/text@1']['output'];
     };
   };
 };
 export type FieldInputTypes = {
   readonly public: {
     readonly Article: {
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly title: CodecTypes['pg/text@1']['input'];
       readonly body: CodecTypes['pg/text@1']['input'];
-      readonly category: CodecTypes['pg/text@1']['input'] | null;
-      readonly published: CodecTypes['pg/bool@1']['input'];
       readonly bodyEmbedding: CodecTypes['pg/vector@1']['input'] | null;
       readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
+      readonly category: CodecTypes['pg/text@1']['input'] | null;
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly published: CodecTypes['pg/bool@1']['input'];
+      readonly title: CodecTypes['pg/text@1']['input'];
     };
     readonly Document: {
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly title: CodecTypes['pg/text@1']['input'];
       readonly content: CodecTypes['pg/text@1']['input'];
-      readonly summary: CodecTypes['pg/text@1']['input'] | null;
-      readonly published: CodecTypes['pg/bool@1']['input'];
       readonly contentEmbedding: CodecTypes['pg/vector@1']['input'] | null;
       readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly published: CodecTypes['pg/bool@1']['input'];
+      readonly summary: CodecTypes['pg/text@1']['input'] | null;
+      readonly title: CodecTypes['pg/text@1']['input'];
     };
   };
 };
@@ -333,6 +342,37 @@ export type StorageColumnInputTypes = {
     };
   };
 };
+
+export namespace Models {
+  export type public_Article = {
+    body: CodecTypes['pg/text@1']['output'];
+    bodyEmbedding: Vector<768> | null;
+    bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
+    category: CodecTypes['pg/text@1']['output'] | null;
+    id: CodecTypes['pg/uuid@1']['output'];
+    published: CodecTypes['pg/bool@1']['output'];
+    title: CodecTypes['pg/text@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
+  export type public_Document = {
+    content: CodecTypes['pg/text@1']['output'];
+    contentEmbedding: Vector<768> | null;
+    contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
+    id: CodecTypes['pg/uuid@1']['output'];
+    published: CodecTypes['pg/bool@1']['output'];
+    summary: CodecTypes['pg/text@1']['output'] | null;
+    title: CodecTypes['pg/text@1']['output'];
+    readonly [RelationKeys]?: never;
+  };
+}
+
+export declare const models: {
+  public: {
+    Article: Models.public_Article;
+    Document: Models.public_Document;
+  };
+};
+
 export type TypeMaps = TypeMapsType<
   CodecTypes,
   QueryOperationTypes,
@@ -353,34 +393,10 @@ type ContractBase = Omit<
           readonly table: {
             readonly Article: {
               columns: {
-                readonly id: {
-                  readonly nativeType: 'uuid';
-                  readonly codecId: 'pg/uuid@1';
-                  readonly nullable: false;
-                };
-                readonly title: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
                 readonly body: {
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
-                };
-                readonly category: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
-                };
-                readonly published: {
-                  readonly nativeType: 'bool';
-                  readonly codecId: 'pg/bool@1';
-                  readonly nullable: false;
-                  readonly default: {
-                    readonly kind: 'literal';
-                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
-                  };
                 };
                 readonly bodyEmbedding: {
                   readonly nativeType: 'vector';
@@ -393,33 +409,15 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/jsonb@1';
                   readonly nullable: true;
                 };
-              };
-              primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [];
-              indexes: readonly [];
-              foreignKeys: readonly [];
-            };
-            readonly Document: {
-              columns: {
+                readonly category: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly id: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: false;
-                };
-                readonly title: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly content: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly summary: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: true;
                 };
                 readonly published: {
                   readonly nativeType: 'bool';
@@ -429,6 +427,24 @@ type ContractBase = Omit<
                     readonly kind: 'literal';
                     readonly value: DefaultLiteralValue<'pg/bool@1', false>;
                   };
+                };
+                readonly title: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                };
+              };
+              primaryKey: { readonly columns: readonly ['id'] };
+              uniques: readonly [];
+              indexes: readonly [];
+              foreignKeys: readonly [];
+            };
+            readonly Document: {
+              columns: {
+                readonly content: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
                 };
                 readonly contentEmbedding: {
                   readonly nativeType: 'vector';
@@ -440,6 +456,30 @@ type ContractBase = Omit<
                   readonly nativeType: 'jsonb';
                   readonly codecId: 'pg/jsonb@1';
                   readonly nullable: true;
+                };
+                readonly id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                };
+                readonly published: {
+                  readonly nativeType: 'bool';
+                  readonly codecId: 'pg/bool@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
+                };
+                readonly summary: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly title: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
@@ -458,8 +498,8 @@ type ContractBase = Omit<
   readonly target: 'postgres';
   readonly targetFamily: 'sql';
   readonly roots: {
-    readonly Document: { readonly namespace: 'public' & NamespaceId; readonly model: 'Document' };
     readonly Article: { readonly namespace: 'public' & NamespaceId; readonly model: 'Article' };
+    readonly Document: { readonly namespace: 'public' & NamespaceId; readonly model: 'Document' };
   };
   readonly domain: {
     readonly namespaces: {
@@ -467,25 +507,9 @@ type ContractBase = Omit<
         readonly models: {
           readonly Article: {
             readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
-              };
-              readonly title: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly body: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly category: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly published: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
               };
               readonly bodyEmbedding: {
                 readonly nullable: true;
@@ -499,43 +523,43 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/jsonb@1' };
               };
+              readonly category: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly published: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
+              };
+              readonly title: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
             };
             readonly relations: Record<string, never>;
             readonly storage: {
               readonly table: 'Article';
               readonly namespaceId: 'public';
               readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly title: { readonly column: 'title' };
                 readonly body: { readonly column: 'body' };
-                readonly category: { readonly column: 'category' };
-                readonly published: { readonly column: 'published' };
                 readonly bodyEmbedding: { readonly column: 'bodyEmbedding' };
                 readonly bodyEmbeddingMetadata: { readonly column: 'bodyEmbeddingMetadata' };
+                readonly category: { readonly column: 'category' };
+                readonly id: { readonly column: 'id' };
+                readonly published: { readonly column: 'published' };
+                readonly title: { readonly column: 'title' };
               };
             };
           };
           readonly Document: {
             readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
-              };
-              readonly title: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
               readonly content: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly summary: {
-                readonly nullable: true;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly published: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
               };
               readonly contentEmbedding: {
                 readonly nullable: true;
@@ -549,19 +573,35 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/jsonb@1' };
               };
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly published: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
+              };
+              readonly summary: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly title: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
             };
             readonly relations: Record<string, never>;
             readonly storage: {
               readonly table: 'Document';
               readonly namespaceId: 'public';
               readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly title: { readonly column: 'title' };
                 readonly content: { readonly column: 'content' };
-                readonly summary: { readonly column: 'summary' };
-                readonly published: { readonly column: 'published' };
                 readonly contentEmbedding: { readonly column: 'contentEmbedding' };
                 readonly contentEmbeddingMetadata: { readonly column: 'contentEmbeddingMetadata' };
+                readonly id: { readonly column: 'id' };
+                readonly published: { readonly column: 'published' };
+                readonly summary: { readonly column: 'summary' };
+                readonly title: { readonly column: 'title' };
               };
             };
           };
@@ -583,6 +623,8 @@ type ContractBase = Omit<
       readonly checkConstraint: true;
       readonly defaultInInsert: true;
       readonly enums: true;
+      readonly insertOnConflictSkip: true;
+      readonly insertOnConflictWithoutTarget: true;
       readonly lateral: true;
       readonly returning: true;
       readonly scalarList: true;
@@ -641,20 +683,20 @@ type ContractBase = Omit<
     readonly mutations: {
       readonly defaults: readonly [
         {
+          readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
+            readonly column: 'id';
             readonly namespace: 'public';
             readonly table: 'Article';
-            readonly column: 'id';
           };
-          readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv7' };
         },
         {
+          readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
+            readonly column: 'id';
             readonly namespace: 'public';
             readonly table: 'Document';
-            readonly column: 'id';
           };
-          readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv7' };
         },
       ];
     };

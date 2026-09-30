@@ -13,9 +13,12 @@ import type {
   BaseStorageConfig,
 } from '../src/config/types.js'
 
+// `mediaType` stands in for the bytes sharp actually decodes, which
+// `uploadImage` now trusts over the caller's declared type (issue #1625) —
+// every test file here declares `image/png`, so the mock echoes it back.
 vi.mock('sharp', () => {
   const mockSharp = vi.fn(() => ({
-    metadata: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
+    metadata: vi.fn().mockResolvedValue({ width: 800, height: 600, mediaType: 'image/png' }),
     resize: vi.fn().mockReturnThis(),
     jpeg: vi.fn().mockReturnThis(),
     png: vi.fn().mockReturnThis(),

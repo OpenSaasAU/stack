@@ -317,3 +317,26 @@ describe('a predicate, sort or column list on a to-one foreign key answers as th
     BOOT,
   )
 })
+
+describe('sudo is not narrowed by the session foreign-key rules', () => {
+  test(
+    'a bare sudo read returns every foreign key, agreeing with a sudo include',
+    async () => {
+      for (const session of [null, { handle: 'mine' }]) {
+        const sudo = database.context(session).sudo()
+        const bare = await sudo.db.Item.all()
+        const included = await sudo.db.Item.include('owner').all()
+        const ids = (rows: typeof bare) =>
+          rows
+            .map((row) => [row.title, row.ownerId])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+        expect(ids(bare)).toEqual([
+          ['mine-item', mineId],
+          ['others-item', othersId],
+        ])
+        expect(ids(included)).toEqual(ids(bare))
+      }
+    },
+    BOOT,
+  )
+})

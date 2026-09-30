@@ -577,7 +577,7 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 
 1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`)
 2. Core runtime derives CRUD tools for each list (query, create, update, delete) at request time
-3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter` session provider
+3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter({ resource, baseURL })` session provider, which verifies the bearer JWT against the JWKS
 4. All tools respect existing access control rules, and the advertised vocabulary **omits** what a row-independent field rule denies this session — on reads and on writes alike, so a field a session can never see is not offered and asking for it anyway is refused exactly as an unknown name is (ADR-0053)
 5. A `where` argument is the Where vocabulary, the same grammar `context.db` takes
 6. Custom tools can be added per-list via `mcp.customTools` (Zod or JSON Schema inputSchema); plugins can register global tools via `registerMcpTool`
@@ -637,6 +637,8 @@ const posts = await anonymous.db.Post.where({ published: { equals: true } }).all
 const context = await getContext({ userId: 'user-123' })
 const mine = await context.db.Post.where({ authorId: { equals: 'user-123' } }).all()
 ```
+
+**The session comes from the server, never from action or route input.** A `'use server'` export is a public endpoint, so a `userId` parameter handed to `getContext` lets any caller act as any user. Read it inside the action (`getSession()`) and take no identity argument.
 
 **Pass the session's own fields, never a wrapper.** `getContext({ session })` is a bug that reads as signed in: the factory only distinguishes a session from `null`, and an object is truthy regardless of what its `session` property holds — wrapping a `null` session still reaches every access rule looking signed in. `getContext`/`withSession`/`createTestContext` throw `InvalidSessionError` for the narrower case of a key whose value is literally `undefined` (#1397) — `getContext({ userId })` over an unguarded `userId?: string` — but `getContext({ session: null })` is the same bug in a shape that error can't catch, because `null` is a value, not a missing one. When the session may be absent, branch on it instead of wrapping it at all:
 

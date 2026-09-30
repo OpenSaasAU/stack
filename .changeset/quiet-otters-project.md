@@ -4,9 +4,9 @@
 
 `.select()` is honoured exactly, and the fragment API is deleted
 
-The breaks below are real and are documented in full. They ship on `minor`
-because the whole Prisma 8 line is released as one major at the end of it,
-which is the convention every other changeset on this line follows.
+The breaks below are real and are documented in full. They ship on `minor`,
+as every other changeset on this line does: before 1.0, a minor release is
+where breaking changes go.
 
 A read on the secured surface is narrowed with `.select(...fields)`, which the
 engine honours exactly: it widens the query by the declared dependency sets of
