@@ -10,6 +10,11 @@ import { isRelationshipField } from '../fields/index.js'
 import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
 import { DatabaseError } from '../lib/database-errors.js'
+import {
+  MalformedRelationInputError,
+  NonOwningRelationInputError,
+} from '../context/relationship-input.js'
+import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { decideAdvertisement } from './advertise.js'
 import {
@@ -188,10 +193,11 @@ export function createMcpHandlers(options: {
         },
       )
     } catch (error) {
+      console.error('[opensaas] MCP request handling failed:', error)
       return new Response(
         JSON.stringify({
           error: 'Request handling failed',
-          message: error instanceof Error ? error.message : 'Unknown error',
+          message: 'Request handling failed due to an internal error.',
         }),
         {
           status: 500,
@@ -279,11 +285,17 @@ async function listReachableOverMcp(
   context: AccessContext,
 ): Promise<boolean> {
   if (listConfig.mcp?.enabled === false) return false
-  const accessResult = await checkAccess(listConfig.access?.operation?.query, {
-    session: context.session,
-    context,
-  })
-  return accessResult !== false
+  return decideAdvertisement(
+    'list query access',
+    async () => {
+      const accessResult = await checkAccess(listConfig.access?.operation?.query, {
+        session: context.session,
+        context,
+      })
+      return accessResult !== false
+    },
+    false,
+  )
 }
 
 async function handleToolsList(
@@ -581,7 +593,10 @@ function isSafeMcpError(error: unknown): error is Error {
     error instanceof ValidationError ||
     error instanceof AccessScopeDepthExceededError ||
     error instanceof ResolveOutputCycleError ||
-    error instanceof DatabaseError
+    error instanceof DatabaseError ||
+    error instanceof McpToolError ||
+    error instanceof NonOwningRelationInputError ||
+    error instanceof MalformedRelationInputError
   )
 }
 
@@ -703,24 +718,23 @@ async function handleCrudTool(
       }
 
       case 'create': {
-        if (isPlainObject(args.data)) {
-          await assertWritableData(
-            args.data,
-            listKey,
-            listConfig.fields,
-            config,
-            'create',
-            context.session,
-            context,
-          )
+        if (!isPlainObject(args.data)) {
+          return createErrorResultResponse('`data` must be an object of field values.', id)
         }
+        await assertWritableData(
+          args.data,
+          listKey,
+          listConfig.fields,
+          config,
+          'create',
+          context.session,
+          context,
+        )
         // A `connect.id` naming a value its related list's id column cannot
         // hold answers exactly as a missing row does — the same boundary
         // coercion `where.id` gets below, applied to the write's own edges
         // (ADR-0048, Silent failure).
-        const data = isPlainObject(args.data)
-          ? coerceConnectIds(args.data, listKey, listConfig, config)
-          : args.data
+        const data = coerceConnectIds(args.data, listKey, listConfig, config)
         if (data === null) {
           return createErrorResultResponse(
             'Failed to create record. Access denied or validation failed.',
@@ -745,20 +759,19 @@ async function handleCrudTool(
         if (!parsed.ok) {
           return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
-        if (isPlainObject(args.data)) {
-          await assertWritableData(
-            args.data,
-            listKey,
-            listConfig.fields,
-            config,
-            'update',
-            context.session,
-            context,
-          )
+        if (!isPlainObject(args.data)) {
+          return createErrorResultResponse('`data` must be an object of field values.', id)
         }
-        const data = isPlainObject(args.data)
-          ? coerceConnectIds(args.data, listKey, listConfig, config)
-          : args.data
+        await assertWritableData(
+          args.data,
+          listKey,
+          listConfig.fields,
+          config,
+          'update',
+          context.session,
+          context,
+        )
+        const data = coerceConnectIds(args.data, listKey, listConfig, config)
         if (data === null) {
           return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
@@ -848,10 +861,10 @@ async function handleCustomTool(
 
     return createSuccessResponse(result, id)
   } catch (error) {
-    return createErrorResultResponse(
-      'Custom tool execution failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
-      id,
-    )
+    if (error instanceof McpToolError) {
+      return createErrorResultResponse(error.message, id)
+    }
+    return redactMcpError(error, toolName, 'Tool', id)
   }
 }
 

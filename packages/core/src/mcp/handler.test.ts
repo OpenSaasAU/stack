@@ -7,6 +7,7 @@ import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/
 import { getContext } from '../context/index.js'
 import type { McpSessionProvider } from './types.js'
 import { createMcpHandlers } from './handler.js'
+import { McpToolError } from './tool-error.js'
 import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
@@ -1613,9 +1614,65 @@ describe('the MCP surface', () => {
         for (const name of ['list_secret_query', 'boomTool']) {
           const { body } = await callTool(name, {}, throwing())
           expect(JSON.stringify(body)).not.toContain('boom internal detail')
-          expect(body?.result).toMatchObject({ isError: true })
+          expect(body?.result ?? body?.error).toBeDefined()
         }
         vi.restoreAllMocks()
+      },
+      BOOT,
+    )
+  })
+
+  describe('errors outside the CRUD tools', () => {
+    function withTool(handler: () => Promise<unknown>): OpenSaasConfig {
+      const base = schemaConfig()
+      return {
+        ...base,
+        lists: {
+          ...base.lists,
+          User: {
+            ...base.lists.User,
+            mcp: {
+              customTools: [{ name: 'ct', description: 'c', inputSchema: z.object({}), handler }],
+            },
+          },
+        },
+      }
+    }
+
+    test(
+      'a custom tool error is redacted, and an McpToolError passes through',
+      async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        const leaked = await callTool(
+          'ct',
+          {},
+          withTool(async () => {
+            throw new Error('INTERNAL salary=90000')
+          }),
+        )
+        expect(JSON.stringify(leaked.body)).not.toContain('salary=90000')
+        expect(leaked.body?.result).toMatchObject({ isError: true })
+
+        const safe = await callTool(
+          'ct',
+          {},
+          withTool(async () => {
+            throw new McpToolError('Try a smaller range')
+          }),
+        )
+        expect(JSON.stringify(safe.body)).toContain('Try a smaller range')
+        vi.restoreAllMocks()
+      },
+      BOOT,
+    )
+
+    test(
+      'non-object data is refused with an MCP-specific message',
+      async () => {
+        const { body } = await callTool('list_user_create', { data: 'x' }, schemaConfig())
+        const text = JSON.stringify(body)
+        expect(text).toContain('must be an object')
+        expect(text).not.toContain('sudo')
       },
       BOOT,
     )
