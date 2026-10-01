@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import type { StorageProvider, UploadOptions, UploadResult } from '@opensaas/stack-storage'
 
 export interface S3StorageConfig {
@@ -64,7 +65,8 @@ export class S3StorageProvider implements StorageProvider {
       return originalFilename
     }
 
-    const ext = originalFilename.substring(originalFilename.lastIndexOf('.'))
+    const rawExt = path.extname(path.basename(originalFilename)).toLowerCase()
+    const ext = /^\.[a-z0-9]{1,10}$/.test(rawExt) ? rawExt : ''
     const uniqueId = randomBytes(16).toString('hex')
     const timestamp = Date.now()
     return `${timestamp}-${uniqueId}${ext}`

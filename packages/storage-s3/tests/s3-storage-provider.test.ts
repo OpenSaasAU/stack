@@ -115,6 +115,26 @@ describe('S3StorageProvider', () => {
   })
 
   describe('upload', () => {
+    it.each([
+      ['README', ''],
+      ['a.b/c', ''],
+      ['../../x', ''],
+      ['archive.tar.gz', '.gz'],
+      ['photo.JPG', '.jpg'],
+      ['file.' + 'x'.repeat(20), ''],
+      ['file.t$xt', ''],
+    ])('derives a safe extension for %s', async (name, ext) => {
+      const provider = new S3StorageProvider({
+        type: 's3',
+        bucket: 'test-bucket',
+        region: 'us-east-1',
+      })
+
+      const result = await provider.upload(Buffer.from('x'), name)
+
+      expect(result.filename).toBe(`${MOCK_TIMESTAMP}-${'a'.repeat(32)}${ext}`)
+    })
+
     it('should upload file successfully with Buffer', async () => {
       const config: S3StorageConfig = {
         type: 's3',
