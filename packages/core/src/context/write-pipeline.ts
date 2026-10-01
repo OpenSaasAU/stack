@@ -773,6 +773,8 @@ export function updateWriteStrategy(
     runInputPhases: true,
     resolveTarget: resolveExistingTarget(listName, listConfig, config, context, where, 'update'),
     async persist(collection, ops, scope, data) {
+      if (Object.values(data).every((value) => value === undefined))
+        return firstMatching(collection, scope, ops)
       return updateFirst(collection, scope, ops, data)
     },
   }
