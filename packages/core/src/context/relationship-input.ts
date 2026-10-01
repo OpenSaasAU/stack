@@ -407,8 +407,7 @@ export function refuseNestedRelationInput(
  * spent the reachability query to close.
  */
 export type RelationLowering =
-  | { status: 'linked'; data: Record<string, unknown> }
-  | { status: 'unreachable' }
+  { status: 'linked'; data: Record<string, unknown> } | { status: 'unreachable' }
 
 /**
  * Whether `id` names a row of `target` this caller may see: the target list's
