@@ -270,6 +270,7 @@ afterAll(async () => {
 test(
   'a databaseHooks before hook calling consumeOne through context.context.adapter does not hang sign-up',
   async () => {
+    consumeHookReturned = false
     await expect(
       consumeAuth.api.signUpEmail({
         body: {
