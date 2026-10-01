@@ -60,6 +60,20 @@ describe('validateFieldNames', () => {
     },
   )
 
+  it('refuses a multi-column field that emits a part column named AND', () => {
+    const location: BaseFieldConfig<TypeInfo> = {
+      type: 'location',
+      getContractField: () => ({
+        kind: 'columns',
+        columns: [{ name: 'AND', type: { pack: 'pg', type: 'text' }, nullable: true }],
+      }),
+    }
+    const refusals = validateFieldNames(configWith({ Post: { fields: { location } } }))
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ entry: 'fields.location', reason: 'reserved-field-name' })
+    expect(refusals[0].message).toContain('"AND"')
+  })
+
   it('refuses a field named id, naming the list and the fix', () => {
     const refusals = validateFieldNames(configWith({ Post: { fields: { id: text() } } }))
     expect(refusals).toHaveLength(1)

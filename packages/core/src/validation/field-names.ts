@@ -51,6 +51,29 @@ function memberNames(
 const LOGICAL_KEYS = new Set(['AND', 'OR', 'NOT'])
 const RELATION_OPERATORS = new Set(['some', 'every', 'none'])
 
+function refuseReservedPartColumns(
+  config: OpenSaasConfig,
+  listKey: string,
+  fieldKey: string,
+  field: OpenSaasConfig['lists'][string]['fields'][string],
+): ConfigRefusal[] {
+  if (isRelationshipField(field)) return []
+  const reserved = memberNames(config, listKey, fieldKey, field).find(
+    (name) => name !== fieldKey && LOGICAL_KEYS.has(name),
+  )
+  if (reserved === undefined) return []
+  return [
+    {
+      listKey,
+      entry: `fields.${fieldKey}`,
+      reason: 'reserved-field-name',
+      message:
+        `List "${listKey}": fields.${fieldKey} emits a column named "${reserved}", which is a key of the ` +
+        `Where vocabulary, so a where on it would be read as the operator instead. Rename that column.`,
+    },
+  ]
+}
+
 function refuseReservedName(
   listKey: string,
   fieldKey: string,
@@ -158,6 +181,7 @@ export function validateFieldNames(config: OpenSaasConfig): ConfigRefusal[] {
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       refusals.push(...refuseReservedName(listKey, fieldKey, field))
+      refusals.push(...refuseReservedPartColumns(config, listKey, fieldKey, field))
     }
     refusals.push(...refuseForeignKeyCollisions(config, listKey, listConfig))
   }
