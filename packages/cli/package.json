@@ -82,6 +82,6 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "^5.0.1",
     "pg": "^8.23.0",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.2"
   }
 }
