@@ -13,4 +13,10 @@ describe('simpleChunkText', () => {
   it('throws when chunkSize is below 1', () => {
     expect(() => simpleChunkText('abc', 0, 0)).toThrow('chunkSize must be at least 1')
   })
+
+  it('throws on negative or non-finite overlap and chunkSize', () => {
+    expect(() => simpleChunkText('abc', 2, -1)).toThrow('overlap must be a non-negative integer')
+    expect(() => simpleChunkText('abc', 2, NaN)).toThrow('overlap must be a non-negative integer')
+    expect(() => simpleChunkText('abc', NaN, 0)).toThrow('chunkSize must be at least 1')
+  })
 })

@@ -1,5 +1,5 @@
 ---
-'@opensaas/stack-rag': patch
+'@opensaas/stack-rag': minor
 ---
 
 `batchProcess` keeps `embeddings` aligned to `texts` (`null` where a batch failed), and `simpleChunkText` throws when `overlap >= chunkSize` instead of looping forever.

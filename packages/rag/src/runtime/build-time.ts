@@ -13,8 +13,11 @@ import type { EmbeddingsIndex, EmbeddedDocument, EmbeddingChunk } from '../confi
  * intended for build-time batch processing.
  */
 export function simpleChunkText(text: string, chunkSize: number, overlap: number): string[] {
-  if (chunkSize < 1) {
+  if (!Number.isInteger(chunkSize) || chunkSize < 1) {
     throw new Error('chunkSize must be at least 1')
+  }
+  if (!Number.isInteger(overlap) || overlap < 0) {
+    throw new Error('overlap must be a non-negative integer')
   }
   if (overlap >= chunkSize) {
     throw new Error('overlap must be less than chunkSize')

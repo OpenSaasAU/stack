@@ -125,6 +125,23 @@ describe('batchProcess', () => {
     expect(result.stats.successful).toBe(2)
   })
 
+  it('should treat a short provider response as a batch failure', async () => {
+    const provider = createMockProvider()
+    provider.embedBatch = vi.fn().mockResolvedValue([[1]])
+
+    const result = await batchProcess({
+      provider,
+      texts: ['a', 'b'],
+      batchSize: 2,
+      maxRetries: 0,
+      retryDelay: 0,
+      onError: () => {},
+    })
+
+    expect(result.embeddings).toEqual([null, null])
+    expect(result.failed).toHaveLength(2)
+  })
+
   it('should throw error without error callback', async () => {
     const provider = createMockProvider()
     provider.embedBatch = vi.fn().mockRejectedValue(new Error('API Error'))
