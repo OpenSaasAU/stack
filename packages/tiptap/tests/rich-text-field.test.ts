@@ -46,6 +46,20 @@ describe('richText() document shape', () => {
     expect(schema.safeParse({ content: big }).success).toBe(false)
   })
 
+  it('rejects a deeply nested document without throwing', () => {
+    let node: Record<string, unknown> = { type: 'paragraph' }
+    for (let i = 0; i < 20_000; i++) node = { type: 'paragraph', content: [node] }
+    const doc = { type: 'doc', content: [node] }
+    for (const isRequired of [true, false]) {
+      const schema = asKey(
+        'content',
+        richText({ validation: { isRequired } }).getZodSchema!('content', 'create'),
+      )
+      expect(() => schema.safeParse({ content: doc })).not.toThrow()
+      expect(schema.safeParse({ content: doc }).success).toBe(false)
+    }
+  })
+
   it('rejects an empty document when required, on create and update', () => {
     const field = richText({ validation: { isRequired: true } })
     for (const operation of ['create', 'update'] as const) {

@@ -25,11 +25,27 @@ const TEXT_CONTAINERS = new Set([
   'codeBlock',
 ])
 
+function isWithinSizeCap(value: unknown): boolean {
+  try {
+    return JSON.stringify(value).length <= MAX_DOCUMENT_LENGTH
+  } catch {
+    return false
+  }
+}
+
 function hasContent(node: unknown): boolean {
+  try {
+    return containsContent(node)
+  } catch {
+    return false
+  }
+}
+
+function containsContent(node: unknown): boolean {
   if (typeof node !== 'object' || node === null) return false
   const { type, text, content } = node as { type?: unknown; text?: unknown; content?: unknown }
   if (typeof text === 'string' && text.trim() !== '') return true
-  if (Array.isArray(content) && content.some(hasContent)) return true
+  if (Array.isArray(content) && content.some(containsContent)) return true
   return typeof type === 'string' && !TEXT_CONTAINERS.has(type)
 }
 
@@ -69,7 +85,7 @@ export function richText<
       const document = z
         .object({ type: z.literal('doc'), content: z.array(z.unknown()).optional() })
         .passthrough()
-        .refine((value) => JSON.stringify(value).length <= MAX_DOCUMENT_LENGTH, {
+        .refine(isWithinSizeCap, {
           message: `${formatFieldName(fieldName)} is too large`,
         })
 
