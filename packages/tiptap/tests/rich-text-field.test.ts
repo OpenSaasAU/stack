@@ -55,6 +55,16 @@ describe('richText() document shape', () => {
     }
   })
 
+  it('rejects empty container nodes when required', () => {
+    const field = richText({ validation: { isRequired: true } })
+    const empty = {
+      type: 'doc',
+      content: [{ type: 'bulletList', content: [{ type: 'listItem' }] }],
+    }
+    const schema = asKey('content', field.getZodSchema!('content', 'create'))
+    expect(schema.safeParse({ content: empty }).success).toBe(false)
+  })
+
   it('accepts a document of only a non-text node when required', () => {
     const field = richText({ validation: { isRequired: true } })
     const image = { type: 'doc', content: [{ type: 'image', attrs: { src: 'a.png' } }] }

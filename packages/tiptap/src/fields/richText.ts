@@ -13,12 +13,24 @@ const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
 
 const MAX_DOCUMENT_LENGTH = 1_000_000
 
+const TEXT_CONTAINERS = new Set([
+  'doc',
+  'text',
+  'paragraph',
+  'heading',
+  'blockquote',
+  'bulletList',
+  'orderedList',
+  'listItem',
+  'codeBlock',
+])
+
 function hasContent(node: unknown): boolean {
   if (typeof node !== 'object' || node === null) return false
   const { type, text, content } = node as { type?: unknown; text?: unknown; content?: unknown }
   if (typeof text === 'string' && text.trim() !== '') return true
   if (Array.isArray(content) && content.some(hasContent)) return true
-  return typeof type === 'string' && type !== 'doc' && type !== 'paragraph' && type !== 'text'
+  return typeof type === 'string' && !TEXT_CONTAINERS.has(type)
 }
 
 /**
