@@ -151,6 +151,13 @@ const statusSpec: FilterSpec = {
 const specs = { name: nameSpec, orders: ordersSpec, status: statusSpec }
 
 describe('buildFilterWhere', () => {
+  it.each(['constructor', '__proto__', 'toString'])(
+    'degrades the inherited name %s to free text',
+    (name) => {
+      expect(() => buildFilterWhere(parseFilterQuery(`${name}:x`), specs)).not.toThrow()
+    },
+  )
+
   it('returns undefined when nothing filters', () => {
     expect(buildFilterWhere([], specs)).toBeUndefined()
   })

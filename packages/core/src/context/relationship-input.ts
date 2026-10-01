@@ -279,7 +279,7 @@ function classifyKey(
   listName: string,
   config: OpenSaasConfig,
 ): PayloadKey {
-  const field = listConfig.fields[fieldKey]
+  const field = Object.hasOwn(listConfig.fields, fieldKey) ? listConfig.fields[fieldKey] : undefined
   if (field?.type !== 'relationship') {
     if (field === undefined) {
       const column = foreignKeyColumn(fieldKey, listConfig, listName, config)
@@ -407,7 +407,8 @@ export function refuseNestedRelationInput(
  * spent the reachability query to close.
  */
 export type RelationLowering =
-  { status: 'linked'; data: Record<string, unknown> } | { status: 'unreachable' }
+  | { status: 'linked'; data: Record<string, unknown> }
+  | { status: 'unreachable' }
 
 /**
  * Whether `id` names a row of `target` this caller may see: the target list's

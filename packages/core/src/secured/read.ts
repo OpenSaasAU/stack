@@ -27,6 +27,7 @@ import {
   resolveOrderBy,
   resolveRelatedAccessPlan,
   resolveWhere,
+  isWhereValue,
   unqueryableKey,
   type ColumnPlan,
   type NearestOptions,
@@ -640,7 +641,7 @@ function resolveCursor(
   requireOrder(listName, orders, 'cursor')
   const sorted = new Set(orders.map((order) => order.column))
   for (const key of Object.keys(values)) {
-    if (!sorted.has(key)) throw unqueryableKey(listName, key)
+    if (!sorted.has(key) || !isWhereValue(values[key])) throw unqueryableKey(listName, key)
   }
   return values
 }

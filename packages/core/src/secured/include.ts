@@ -786,7 +786,9 @@ export async function resolveIncludes(
 function declaredRelations(ctx: ResolveContext, selected?: ReadonlySet<string>): string[] {
   return [...resolveDeclaredDependencies(ctx.config, ctx.listName, selected).relations].filter(
     (name) => {
-      const fieldConfig = ctx.listConfig.fields[name]
+      const fieldConfig = Object.hasOwn(ctx.listConfig.fields, name)
+        ? ctx.listConfig.fields[name]
+        : undefined
       return fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
     },
   )
