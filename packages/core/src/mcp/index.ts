@@ -5,3 +5,4 @@
 
 export { createMcpHandlers } from './handler.js'
 export type { McpSession, McpSessionProvider } from './types.js'
+export { McpToolError } from './tool-error.js'
