@@ -531,7 +531,11 @@ export function opensaasAuthAdapter(
 
   return (betterAuthOptions) => {
     const boundAdapter = bound(betterAuthOptions)
-    return factoryOn(laneOf, transaction, (callback) =>
+    const rootBracket: AuthTransactionBracket = (body) => {
+      const lane = boundLane.getStore()
+      return lane === undefined ? transaction(body) : body(lane)
+    }
+    return factoryOn(laneOf, rootBracket, (callback) =>
       transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
     )(betterAuthOptions)
   }

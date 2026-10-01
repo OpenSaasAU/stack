@@ -225,3 +225,63 @@ test(
   },
   HANG_GUARD,
 )
+
+let consumeDb: TestDatabase
+let consumeAuth: Auth
+let consumeHookReturned = false
+
+beforeAll(async () => {
+  const stood = await standUpConfig()
+  consumeDb = stood.database
+
+  const context = consumeDb.context()
+  consumeAuth = betterAuth({
+    baseURL: 'http://localhost:3000',
+    secret: 'databasehooks-consume-test-secret',
+    emailAndPassword: { enabled: true },
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user, context) => {
+            if (context === null) throw new Error('no endpoint context reached the hook')
+            await context.context.adapter.consumeOne({
+              model: 'verification',
+              where: [{ field: 'identifier', value: 'nothing-here' }],
+            })
+            consumeHookReturned = true
+            return { data: user }
+          },
+        },
+      },
+    },
+    database: opensaasAuthAdapter({
+      config: stood.opensaasConfig,
+      unsafe: context.unsafe,
+      registry: stood.registry,
+      transaction: (body) => context.transaction((tx) => body(tx.unsafe)),
+    }),
+  }) as unknown as Auth
+}, BOOT)
+
+afterAll(async () => {
+  await consumeDb?.close()
+})
+
+test(
+  'a databaseHooks before hook calling consumeOne through context.context.adapter does not hang sign-up',
+  async () => {
+    consumeHookReturned = false
+    await expect(
+      consumeAuth.api.signUpEmail({
+        body: {
+          email: `hook-consume-${randomUUID()}@example.com`,
+          password: randomUUID(),
+          name: 'Hook Consume',
+        },
+      }),
+    ).resolves.toBeDefined()
+
+    expect(consumeHookReturned).toBe(true)
+  },
+  HANG_GUARD,
+)
