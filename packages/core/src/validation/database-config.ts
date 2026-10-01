@@ -46,6 +46,31 @@ function refuseIdFieldOnSingleton(
   ]
 }
 
+const ID_STRATEGIES = ['uuid7', 'cuid2', 'int autoincrement']
+
+function describeIdField(value: unknown): string {
+  return typeof value === 'string' ? `"${value}"` : JSON.stringify(value)
+}
+
+function refuseUnknownIdField(entry: string, value: unknown, listKey?: string): ConfigRefusal[] {
+  if (value === undefined || (typeof value === 'string' && ID_STRATEGIES.includes(value))) return []
+  const subject = listKey === undefined ? 'db.idField' : `List "${listKey}": db.idField`
+  const composite =
+    typeof value === 'object' && value !== null && 'fields' in value
+      ? ' Composite primary keys are out of scope (ADR-0048); declare a surrogate id and a unique index instead.'
+      : ''
+  return [
+    {
+      ...(listKey === undefined ? {} : { listKey }),
+      entry,
+      reason: 'unknown-id-field',
+      message:
+        `${subject} is ${describeIdField(value)}, but it must be one of 'uuid7' | 'cuid2' | 'int autoincrement' ` +
+        `(ADR-0048).${composite}`,
+    },
+  ]
+}
+
 function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   const firstByName = new Map<string, { index: number; from: string }>()
@@ -74,7 +99,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
 /**
  * Refuse the database-level declarations the Prisma 8 contract cannot carry:
  * a `sort` direction on a `db.indexes` field reference (ADR-0040),
- * `db.idField` on a singleton list (ADR-0048), the same extension pack
+ * `db.idField` on a singleton list or outside the three id strategies (ADR-0048), the same extension pack
  * name declared from two packages, a field name the derivation reserves or
  * that collides with a derived column or relation ({@link validateFieldNames}),
  * a field that cannot describe its contract column, a field typed by a
@@ -87,11 +112,17 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
  * runtime object that still carries one.
  */
 export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] {
-  const refusals: ConfigRefusal[] = [...refuseDuplicateExtensionPacks(config)]
+  const refusals: ConfigRefusal[] = [
+    ...refuseDuplicateExtensionPacks(config),
+    ...refuseUnknownIdField('db.idField', config.db?.idField),
+  ]
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     refusals.push(...refuseIndexSort(listKey, listConfig))
     refusals.push(...refuseIdFieldOnSingleton(listKey, listConfig))
+    if (!listConfig.isSingleton) {
+      refusals.push(...refuseUnknownIdField('db.idField', listConfig.db?.idField, listKey))
+    }
   }
 
   refusals.push(...validateFieldNames(config))
