@@ -641,7 +641,12 @@ function resolveCursor(
   requireOrder(listName, orders, 'cursor')
   const sorted = new Set(orders.map((order) => order.column))
   for (const key of Object.keys(values)) {
-    if (!sorted.has(key) || !isWhereValue(values[key])) throw unqueryableKey(listName, key)
+    if (!sorted.has(key)) throw unqueryableKey(listName, key)
+    if (!isWhereValue(values[key])) {
+      throw new ValidationError([
+        `Cannot page "${listName}" — the cursor value for "${key}" must be a scalar.`,
+      ])
+    }
   }
   return values
 }
