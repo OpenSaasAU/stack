@@ -57,7 +57,10 @@ export interface BatchError {
 }
 
 export interface BatchProcessResult {
-  embeddings: StoredEmbedding[]
+  /**
+   * Aligned to `texts`: `embeddings[i]` belongs to `texts[i]`, and is `null` where its batch failed.
+   */
+  embeddings: Array<StoredEmbedding | null>
 
   failed: Array<{ text: string; error: Error }>
 
@@ -84,7 +87,7 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
 
   const startTime = Date.now()
   const totalBatches = Math.ceil(texts.length / batchSize)
-  const embeddings: StoredEmbedding[] = []
+  const embeddings: Array<StoredEmbedding | null> = []
   const failed: Array<{ text: string; error: Error }> = []
 
   const delayBetweenBatches = calculateBatchDelay(rateLimit)
@@ -93,8 +96,9 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
     const batchNumber = Math.floor(i / batchSize) + 1
     const batch = texts.slice(i, i + batchSize)
 
+    let batchEmbeddings: StoredEmbedding[]
     try {
-      const batchEmbeddings = await retryWithBackoff(
+      batchEmbeddings = await retryWithBackoff(
         async () =>
           generateEmbeddings({
             provider,
@@ -105,24 +109,6 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
         maxRetries,
         retryDelay,
       )
-
-      embeddings.push(...batchEmbeddings)
-
-      if (onProgress) {
-        const processed = Math.min(i + batchSize, texts.length)
-        onProgress({
-          processed,
-          total: texts.length,
-          failed: failed.length,
-          percentage: Math.round((processed / texts.length) * 100),
-          currentBatch: batchNumber,
-          totalBatches,
-        })
-      }
-
-      if (batchNumber < totalBatches && delayBetweenBatches > 0) {
-        await sleep(delayBetweenBatches)
-      }
     } catch (error) {
       const batchError: BatchError = {
         batchNumber,
@@ -138,11 +124,31 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
       }
 
       for (const text of batch) {
+        embeddings.push(null)
         failed.push({
           text,
           error: batchError.error,
         })
       }
+      continue
+    }
+
+    embeddings.push(...batchEmbeddings)
+
+    if (onProgress) {
+      const processed = Math.min(i + batchSize, texts.length)
+      onProgress({
+        processed,
+        total: texts.length,
+        failed: failed.length,
+        percentage: Math.round((processed / texts.length) * 100),
+        currentBatch: batchNumber,
+        totalBatches,
+      })
+    }
+
+    if (batchNumber < totalBatches && delayBetweenBatches > 0) {
+      await sleep(delayBetweenBatches)
     }
   }
 
@@ -153,7 +159,7 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
     failed,
     stats: {
       total: texts.length,
-      successful: embeddings.length,
+      successful: texts.length - failed.length,
       failed: failed.length,
       duration,
     },

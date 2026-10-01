@@ -104,6 +104,61 @@ describe('batchProcess', () => {
     expect(result.stats.failed).toBe(2)
   })
 
+  it('should keep embeddings aligned to texts when a batch fails', async () => {
+    const provider = createMockProvider()
+    provider.embedBatch = vi.fn().mockImplementation(async (batch: string[]) => {
+      if (batch.includes('bad')) throw new Error('boom')
+      return batch.map((t) => [t.length])
+    })
+
+    const result = await batchProcess({
+      provider,
+      texts: ['a', 'bad', 'ccc'],
+      batchSize: 1,
+      maxRetries: 0,
+      retryDelay: 0,
+      onError: () => {},
+    })
+
+    expect(result.embeddings.map((e) => e?.vector ?? null)).toEqual([[1], null, [3]])
+    expect(result.failed.map((f) => f.text)).toEqual(['bad'])
+    expect(result.stats.successful).toBe(2)
+  })
+
+  it('should treat a short provider response as a batch failure', async () => {
+    const provider = createMockProvider()
+    provider.embedBatch = vi.fn().mockResolvedValue([[1]])
+
+    const result = await batchProcess({
+      provider,
+      texts: ['a', 'b'],
+      batchSize: 2,
+      maxRetries: 0,
+      retryDelay: 0,
+      onError: () => {},
+    })
+
+    expect(result.embeddings).toEqual([null, null])
+    expect(result.failed).toHaveLength(2)
+  })
+
+  it('should not pad embeddings when onProgress throws', async () => {
+    const provider = createMockProvider()
+
+    await expect(
+      batchProcess({
+        provider,
+        texts: ['a', 'b'],
+        batchSize: 1,
+        rateLimit: 6000,
+        onProgress: () => {
+          throw new Error('progress boom')
+        },
+        onError: () => {},
+      }),
+    ).rejects.toThrow('progress boom')
+  })
+
   it('should throw error without error callback', async () => {
     const provider = createMockProvider()
     provider.embedBatch = vi.fn().mockRejectedValue(new Error('API Error'))
@@ -168,7 +223,7 @@ describe('batchProcess', () => {
       includeSourceHash: true,
     })
 
-    expect(result.embeddings[0].metadata.sourceHash).toBeDefined()
+    expect(result.embeddings[0]?.metadata.sourceHash).toBeDefined()
   })
 })
 

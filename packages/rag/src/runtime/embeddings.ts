@@ -126,6 +126,10 @@ export async function generateEmbeddings(
 
     const vectors = await provider.embedBatch(batch)
 
+    if (vectors.length !== batch.length) {
+      throw new Error(`Provider returned ${vectors.length} embeddings for ${batch.length} texts`)
+    }
+
     for (let j = 0; j < batch.length; j++) {
       const text = batch[j]
       const vector = vectors[j]
