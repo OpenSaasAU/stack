@@ -39,7 +39,7 @@
     "autoprefixer": "^10.5.4",
     "dotenv": "^17.4.2",
     "postcss": "^8.5.28",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.9",
     "prisma": "8.0.0-rc.17",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
