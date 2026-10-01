@@ -177,7 +177,7 @@ export async function ListView({
   const context = engineContextOf(appContext)
   const key = listKey
   const urlKey = getUrlKey(listKey)
-  const listConfig = config.lists[listKey]
+  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
 
   if (!listConfig) {
     return (

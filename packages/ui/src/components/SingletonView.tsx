@@ -55,7 +55,7 @@ export async function SingletonView({
   serverAction,
 }: SingletonViewProps) {
   const context = engineContextOf(appContext)
-  const listConfig = config.lists[listKey]
+  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
   const urlKey = getUrlKey(listKey)
 
   if (!listConfig) {

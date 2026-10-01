@@ -279,7 +279,7 @@ function classifyKey(
   listName: string,
   config: OpenSaasConfig,
 ): PayloadKey {
-  const field = listConfig.fields[fieldKey]
+  const field = Object.hasOwn(listConfig.fields, fieldKey) ? listConfig.fields[fieldKey] : undefined
   if (field?.type !== 'relationship') {
     if (field === undefined) {
       const column = foreignKeyColumn(fieldKey, listConfig, listName, config)

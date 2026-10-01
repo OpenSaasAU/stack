@@ -60,7 +60,7 @@ export function buildFilterWhere(
       continue
     }
 
-    const spec = specs[token.field]
+    const spec = Object.hasOwn(specs, token.field) ? specs[token.field] : undefined
 
     if (!spec || !spec.operators.includes(token.operator)) {
       freeTextWords.push(token.value)
