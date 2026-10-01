@@ -13,7 +13,60 @@ function asKey(fieldName: string, schema: z.ZodType) {
   return z.object({ [fieldName]: schema })
 }
 
-const DOC = { type: 'doc', content: [{ type: 'paragraph' }] }
+const DOC = {
+  type: 'doc',
+  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] }],
+}
+const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] }
+
+describe('richText() document shape', () => {
+  const NON_DOCUMENTS = ['hello <img src=x onerror=alert(1)>', 5, [], {}, { type: 'paragraph' }]
+
+  for (const isRequired of [true, false]) {
+    for (const operation of ['create', 'update'] as const) {
+      const field = richText({ validation: { isRequired } })
+      it.each(NON_DOCUMENTS)(`rejects %j (required=${isRequired}, ${operation})`, (value) => {
+        const schema = asKey('content', field.getZodSchema!('content', operation))
+        expect(schema.safeParse({ content: value }).success).toBe(false)
+      })
+      it(`accepts a document (required=${isRequired}, ${operation})`, () => {
+        const schema = asKey('content', field.getZodSchema!('content', operation))
+        expect(schema.safeParse({ content: DOC }).success).toBe(true)
+      })
+    }
+  }
+
+  it('rejects a document over the size cap', () => {
+    const field = richText()
+    const big = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x'.repeat(1_100_000) }] }],
+    }
+    const schema = asKey('content', field.getZodSchema!('content', 'create'))
+    expect(schema.safeParse({ content: big }).success).toBe(false)
+  })
+
+  it('rejects an empty document when required, on create and update', () => {
+    const field = richText({ validation: { isRequired: true } })
+    for (const operation of ['create', 'update'] as const) {
+      const schema = asKey('content', field.getZodSchema!('content', operation))
+      expect(schema.safeParse({ content: EMPTY_DOC }).success).toBe(false)
+      expect(schema.safeParse({ content: { type: 'doc' } }).success).toBe(false)
+    }
+  })
+
+  it('accepts a document of only a non-text node when required', () => {
+    const field = richText({ validation: { isRequired: true } })
+    const image = { type: 'doc', content: [{ type: 'image', attrs: { src: 'a.png' } }] }
+    const schema = asKey('content', field.getZodSchema!('content', 'create'))
+    expect(schema.safeParse({ content: image }).success).toBe(true)
+  })
+
+  it('accepts an empty document when optional', () => {
+    const schema = asKey('content', richText().getZodSchema!('content', 'create'))
+    expect(schema.safeParse({ content: EMPTY_DOC }).success).toBe(true)
+  })
+})
 
 describe('richText() zod schema', () => {
   describe('required field', () => {
