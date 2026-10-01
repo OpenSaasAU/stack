@@ -104,7 +104,7 @@
     "@vitest/ui": "^5.0.1",
     "openai": "^6.32.0",
     "pg": "^8.23.0",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "react-dom": "^19.2.8",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^5.0.1"
