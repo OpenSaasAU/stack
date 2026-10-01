@@ -23,11 +23,15 @@ const withTools = (names: string[]) =>
 
 describe('MCP tool name uniqueness', () => {
   it('refuses a custom tool named like a CRUD tool', () => {
-    expect(() => withTools(['list_post_query'])).toThrow(/"list_post_query".*built-in query/)
+    expect(() => withTools(['list_post_query'])).toThrow(/"list_post_query".*reserved/)
   })
 
   it('refuses two custom tools with the same name', () => {
     expect(() => withTools(['search', 'search'])).toThrow(/"search"/)
+  })
+
+  it('refuses a reserved name for a list that does not exist', () => {
+    expect(() => withTools(['list_other_delete'])).toThrow(/reserved/)
   })
 
   it('accepts distinct names', () => {

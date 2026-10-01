@@ -1,16 +1,12 @@
 import type { OpenSaasConfig } from './types.js'
 import { getPluginData } from './plugin-engine.js'
-import { pascalToCamel } from '../lib/case-utils.js'
 
-const CRUD_OPERATIONS = ['query', 'create', 'update', 'delete'] as const
+const CRUD_TOOL_NAME = /^list_([a-z][a-zA-Z0-9]*)_(query|create|update|delete)$/
 
 export function assertUniqueMcpToolNames(config: OpenSaasConfig): OpenSaasConfig {
   const owners = new Map<string, string>()
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    for (const operation of CRUD_OPERATIONS) {
-      owners.set(`list_${pascalToCamel(listKey)}_${operation}`, `the built-in ${operation} tool`)
-    }
     for (const tool of listConfig.mcp?.customTools ?? []) {
       claim(owners, tool.name, `a custom tool on list "${listKey}"`)
     }
@@ -24,6 +20,11 @@ export function assertUniqueMcpToolNames(config: OpenSaasConfig): OpenSaasConfig
 }
 
 function claim(owners: Map<string, string>, name: string, owner: string): void {
+  if (CRUD_TOOL_NAME.test(name)) {
+    throw new Error(
+      `MCP tool name "${name}" is declared by ${owner} but matches the reserved list_<list>_<operation> pattern, which always runs a built-in tool. Rename the custom tool.`,
+    )
+  }
   const existing = owners.get(name)
   if (existing !== undefined) {
     throw new Error(
