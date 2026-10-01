@@ -159,7 +159,9 @@ export async function resolveProjection(
     if (resolved === undefined) throw unqueryableKey(ctx.listName, name)
     if (resolved.isRelationship) throw new RelationSelectError(ctx.listName, name)
 
-    const fieldConfig = ctx.listConfig.fields[name]
+    const fieldConfig = Object.hasOwn(ctx.listConfig.fields, name)
+      ? ctx.listConfig.fields[name]
+      : undefined
     if (fieldConfig !== undefined) {
       for (const column of contractColumns(name, fieldConfig, ctx)) columns.add(column)
       if (await readsTheRow(fieldConfig, ctx)) rowDependent = true
@@ -180,7 +182,10 @@ export async function resolveProjection(
   }
 
   for (const name of includeNames) {
-    if (await readsTheRow(ctx.listConfig.fields[name], ctx)) rowDependent = true
+    const included = Object.hasOwn(ctx.listConfig.fields, name)
+      ? ctx.listConfig.fields[name]
+      : undefined
+    if (await readsTheRow(included, ctx)) rowDependent = true
   }
 
   // A declared dependency names a FIELD KEY (`contract/dependencies.ts`), and

@@ -42,13 +42,14 @@ export function resolveQueryField(
     return { fieldConfig: undefined, isRelationship: false }
   }
 
-  const fieldConfig = fields[key]
+  const fieldConfig = Object.hasOwn(fields, key) ? fields[key] : undefined
   if (fieldConfig) {
     return { fieldConfig, isRelationship: fieldConfig.type === 'relationship' }
   }
 
   if (key.endsWith('Id')) {
-    const baseField = fields[key.slice(0, -2)]
+    const baseName = key.slice(0, -2)
+    const baseField = Object.hasOwn(fields, baseName) ? fields[baseName] : undefined
     if (baseField && baseField.type === 'relationship' && !baseField.many) {
       return { fieldConfig: baseField, isRelationship: false }
     }

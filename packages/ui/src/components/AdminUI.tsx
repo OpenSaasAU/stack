@@ -84,7 +84,10 @@ export async function AdminUI({
 
   if (!listKey) {
     content = <Dashboard context={context} config={config} basePath={basePath} />
-  } else if (config.lists[listKey]?.isSingleton && action) {
+  } else if (
+    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton &&
+    action
+  ) {
     // A singleton has a single record edited at its bare [list] route, so the
     // create/id sub-routes (`[list, 'create']` / `[list, id]`) don't apply.
     // Redirect them to the bare editor so old links keep working.
@@ -120,7 +123,9 @@ export async function AdminUI({
         serverAction={serverAction}
       />
     )
-  } else if (config.lists[listKey]?.isSingleton) {
+  } else if (
+    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton
+  ) {
     content = (
       <SingletonView
         context={context}
@@ -146,7 +151,8 @@ export async function AdminUI({
     // list-level `ui.listView` config (mirrors Keystone). When absent, the
     // ListView falls back to its existing defaults (all non-system fields,
     // no default sort).
-    const listView = config.lists[listKey]?.ui?.listView
+    const listView = (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.ui
+      ?.listView
 
     // Parse `?sort=field:direction` URL param for user-triggered column sorts.
     const sortParam = typeof searchParams.sort === 'string' ? searchParams.sort : undefined
@@ -184,7 +190,10 @@ export async function AdminUI({
   let fallback: React.ReactNode
   if (!listKey) {
     fallback = <DashboardSkeleton />
-  } else if (action || config.lists[listKey]?.isSingleton) {
+  } else if (
+    action ||
+    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton
+  ) {
     fallback = <ItemFormSkeleton />
   } else {
     fallback = <ListViewSkeleton />

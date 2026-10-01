@@ -674,6 +674,19 @@ describe('distinct, distinctOn and cursor', () => {
   )
 
   test(
+    'a cursor value that is a plain object is refused rather than returning an empty page',
+    async () => {
+      const sorted = database.context(ada).db.Post.orderBy({ views: 'asc' })
+      const refused = await sorted
+        .cursor({ views: { gt: 1 } })
+        .all()
+        .catch((error: unknown) => error)
+      expect(refused).toBeInstanceOf(ValidationError)
+    },
+    BOOT,
+  )
+
+  test(
     'distinct names columns through the same read gate a where does',
     async () => {
       const db = database.context(ada).db

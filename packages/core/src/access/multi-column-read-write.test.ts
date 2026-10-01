@@ -6,7 +6,7 @@ import {
   splitMultiColumnFields,
   ValidationError,
 } from '../hooks/index.js'
-import { json, text, virtual } from '../fields/index.js'
+import { json, relationship, text, virtual } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import {
@@ -303,10 +303,15 @@ const storedConfig: OpenSaasConfig = {
     // A list shaped like one a plugin writes into: a column denied to
     // application code, beside a field the list's own resolveInput derives
     // from other input, unguarded — the pattern the root CLAUDE.md documents.
+    Parent: {
+      fields: { children: relationship({ ref: 'Owned.parent', many: true }) },
+      access: { operation: OPEN },
+    },
     Owned: {
       fields: {
         title: text(),
         label: text(),
+        parent: relationship({ ref: 'Parent.children' }),
         // Row-independently denied to every session, the way a plugin's own
         // output field is a natural thing to lock down (#1282).
         secret: text({ access: { read: () => false } }),
@@ -718,6 +723,26 @@ describe('writePluginOwnedField (ADR-0068)', () => {
       const stored = await database.context(null).db.Owned.where({}).first()
       expect(stored?.label).toBe('label:ada')
       expect(stored?.title).toBe('ada')
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['Owned', 'parent'],
+    ['Parent', 'children'],
+  ])(
+    'refuses relationship field %s.%s by name rather than passing it to the ORM',
+    async (listName, fieldName) => {
+      const write = writePluginOwnedField({
+        context: internalContext(),
+        listName,
+        id: '00000000-0000-7000-8000-000000000000',
+        fieldName,
+        value: 'PWNED',
+      })
+
+      await expect(write).rejects.toBeInstanceOf(NoColumnsPluginFieldWriteError)
+      await expect(write).rejects.toThrow('relationship fields are not writable here')
     },
     BOOT,
   )

@@ -118,4 +118,31 @@ describe('validateDatabaseConfig', () => {
     expect(refusals[0].message).toContain('"@acme/vector-pack"')
     expect(refusals[0].message).toContain('"@prisma/orm-extension-pgvector"')
   })
+
+  it('refuses an unknown list-level db.idField, naming the list and the accepted strategies', () => {
+    const config = {
+      db: { provider: 'postgresql' },
+      lists: { A: { fields: { x: text() }, db: { idField: 'serial' } } },
+    } as unknown as OpenSaasConfig
+    const refusals = validateDatabaseConfig(config)
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'A',
+      entry: 'db.idField',
+      reason: 'unknown-id-field',
+    })
+    expect(refusals[0].message).toContain("'uuid7' | 'cuid2' | 'int autoincrement'")
+  })
+
+  it('refuses the composite id form with its own message, and an unknown config-level idField', () => {
+    const config = {
+      db: { provider: 'postgresql', idField: 'serial' },
+      lists: { A: { fields: { x: text() }, db: { idField: { fields: ['x', 'y'] } } } },
+    } as unknown as OpenSaasConfig
+    const refusals = validateDatabaseConfig(config)
+    expect(refusals).toHaveLength(2)
+    expect(
+      refusals.some((r) => r.message.includes('Composite primary keys are out of scope')),
+    ).toBe(true)
+  })
 })

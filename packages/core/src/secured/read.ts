@@ -632,6 +632,13 @@ function requireDistinctOnOrder(
  * and one the caller simply did not sort by all answer the same way
  * (ADR-0031).
  */
+function isPlainStructure(value: unknown): boolean {
+  if (Array.isArray(value)) return true
+  if (typeof value !== 'object' || value === null) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
 function resolveCursor(
   listName: string,
   values: Record<string, unknown>,
@@ -641,6 +648,11 @@ function resolveCursor(
   const sorted = new Set(orders.map((order) => order.column))
   for (const key of Object.keys(values)) {
     if (!sorted.has(key)) throw unqueryableKey(listName, key)
+    if (isPlainStructure(values[key])) {
+      throw new ValidationError([
+        `Cannot page "${listName}" — the cursor value for "${key}" must be a scalar.`,
+      ])
+    }
   }
   return values
 }

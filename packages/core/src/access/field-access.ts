@@ -401,7 +401,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   const isSudo = args.context._isSudo === true
 
   for (const [fieldName, value] of Object.entries(data)) {
-    const fieldConfig = fieldConfigs[fieldName]
+    const fieldConfig = Object.hasOwn(fieldConfigs, fieldName) ? fieldConfigs[fieldName] : undefined
 
     if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
       continue

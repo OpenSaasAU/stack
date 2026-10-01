@@ -1,6 +1,7 @@
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
+import { isRelationshipField } from '../fields/index.js'
 import {
   identityPredicate,
   updateFirst,
@@ -63,11 +64,16 @@ export class NoColumnsPluginFieldWriteError extends Error {
   constructor(
     readonly listName: string,
     readonly fieldName: string,
+    kind: 'virtual' | 'relationship' = 'virtual',
   ) {
     super(
-      `Refused to write "${listName}.${fieldName}": this field is virtual and has no columns ` +
-        `to write to. writePluginOwnedField stores a value into the field's own columns, and a ` +
-        `virtual field's contract descriptor is "computed" — it has none.`,
+      kind === 'relationship'
+        ? `Refused to write "${listName}.${fieldName}": relationship fields are not writable ` +
+            `here. writePluginOwnedField stores a value into the field's own scalar columns, and ` +
+            `a relationship is an edge, not a column.`
+        : `Refused to write "${listName}.${fieldName}": this field is virtual and has no columns ` +
+            `to write to. writePluginOwnedField stores a value into the field's own columns, and a ` +
+            `virtual field's contract descriptor is "computed" — it has none.`,
     )
     this.name = 'NoColumnsPluginFieldWriteError'
   }
@@ -133,6 +139,10 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
   // column for this write to reach.
   if (isComputedField(field, fieldName, listName, config)) {
     throw new NoColumnsPluginFieldWriteError(listName, fieldName)
+  }
+
+  if (isRelationshipField(field)) {
+    throw new NoColumnsPluginFieldWriteError(listName, fieldName, 'relationship')
   }
 
   return field
