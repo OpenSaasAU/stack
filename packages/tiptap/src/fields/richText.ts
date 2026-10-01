@@ -11,6 +11,44 @@ import type { RichTextField } from '../config/types.js'
  */
 const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
 
+const MAX_DOCUMENT_LENGTH = 1_000_000
+
+const TEXT_CONTAINERS = new Set([
+  'doc',
+  'text',
+  'paragraph',
+  'heading',
+  'blockquote',
+  'bulletList',
+  'orderedList',
+  'listItem',
+  'codeBlock',
+])
+
+function isWithinSizeCap(value: unknown): boolean {
+  try {
+    return JSON.stringify(value).length <= MAX_DOCUMENT_LENGTH
+  } catch {
+    return false
+  }
+}
+
+function hasContent(node: unknown): boolean {
+  try {
+    return containsContent(node)
+  } catch {
+    return false
+  }
+}
+
+function containsContent(node: unknown): boolean {
+  if (typeof node !== 'object' || node === null) return false
+  const { type, text, content } = node as { type?: unknown; text?: unknown; content?: unknown }
+  if (typeof text === 'string' && text.trim() !== '') return true
+  if (Array.isArray(content) && content.some(containsContent)) return true
+  return typeof type === 'string' && !TEXT_CONTAINERS.has(type)
+}
+
 /**
  * Rich text field using Tiptap editor
  * Stores content as JSON in the database
@@ -43,35 +81,21 @@ export function richText<
     inputType: face,
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const validation = options?.validation
-      const isRequired = validation?.isRequired
-
-      // Tiptap emits a complex nested JSONContent structure; accept any valid JSON.
-      const baseSchema = z.any()
-
-      if (isRequired && operation === 'create') {
-        // `z.any()` inside `z.object()` rejects an absent key but accepts a
-        // present `null` or explicit `undefined`, so a required field could be
-        // created empty and the write reached a non-nullable column with
-        // nothing in it. The refinement closes both. Same shape as core's
-        // `json()`.
-        return baseSchema.refine((value) => value !== undefined && value !== null, {
-          message: `${formatFieldName(fieldName)} is required`,
+      const message = `${formatFieldName(fieldName)} is required`
+      const document = z
+        .object({ type: z.literal('doc'), content: z.array(z.unknown()).optional() })
+        .passthrough()
+        .refine(isWithinSizeCap, {
+          message: `${formatFieldName(fieldName)} is too large`,
         })
-      } else if (isRequired && operation === 'update') {
-        // A union with `z.undefined()` is still a required key inside
-        // `z.object()`, so an update that never mentions this field was
-        // refused outright. `.optional()` is what makes the key absent-able;
-        // the refinement still rejects a present `null`, since required means
-        // non-null. Same shape as core's `json()`.
-        return baseSchema
-          .refine((value) => value !== null, {
-            message: `${formatFieldName(fieldName)} is required`,
-          })
-          .optional()
-      } else {
-        return baseSchema.optional()
-      }
+
+      if (!isRequired) return document.nullable().optional()
+
+      const required = z
+        .any()
+        .refine((value) => value !== undefined && value !== null, { message })
+        .pipe(document.refine(hasContent, { message }))
+      return operation === 'create' ? required : required.optional()
     },
     getContractField: (fieldName: string): ContractFieldDescriptor => ({
       kind: 'column',

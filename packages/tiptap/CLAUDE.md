@@ -51,9 +51,9 @@ export function richText(options) {
       nullable: !options?.validation?.isRequired,
     }),
     getZodSchema: (fieldName, operation) => {
-      return operation === 'create' && options?.validation?.isRequired
-        ? z.any().refine((val) => val, 'Required')
-        : z.any().optional()
+      // { type: 'doc', content?: unknown[] } with a size cap; a required field
+      // also rejects null and a document with no text or non-text node
+      return richTextDocumentSchema(fieldName, operation, options)
     },
   }
 }
@@ -230,11 +230,12 @@ export function richText<
     inputType: face,
     ...options,
     getZodSchema: (fieldName, operation) => {
-      // Tiptap emits a nested JSONContent structure; accept any valid JSON.
-      const base = z.any()
-      if (!isRequired) return base.optional()
-      // A partial update may omit a required field; a create may not.
-      return operation === 'update' ? z.union([base, z.undefined()]) : base
+      const document = z
+        .object({ type: z.literal('doc'), content: z.array(z.unknown()).optional() })
+        .passthrough()
+      if (!isRequired) return document.nullable().optional()
+      const required = document.refine(hasContent, 'Required')
+      return operation === 'update' ? required.optional() : required
     },
     getContractField: (fieldName): ContractFieldDescriptor => ({
       kind: 'column',
