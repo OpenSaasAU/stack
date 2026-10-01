@@ -142,6 +142,23 @@ describe('batchProcess', () => {
     expect(result.failed).toHaveLength(2)
   })
 
+  it('should not pad embeddings when onProgress throws', async () => {
+    const provider = createMockProvider()
+
+    await expect(
+      batchProcess({
+        provider,
+        texts: ['a', 'b'],
+        batchSize: 1,
+        rateLimit: 6000,
+        onProgress: () => {
+          throw new Error('progress boom')
+        },
+        onError: () => {},
+      }),
+    ).rejects.toThrow('progress boom')
+  })
+
   it('should throw error without error callback', async () => {
     const provider = createMockProvider()
     provider.embedBatch = vi.fn().mockRejectedValue(new Error('API Error'))

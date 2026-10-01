@@ -96,8 +96,9 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
     const batchNumber = Math.floor(i / batchSize) + 1
     const batch = texts.slice(i, i + batchSize)
 
+    let batchEmbeddings: StoredEmbedding[]
     try {
-      const batchEmbeddings = await retryWithBackoff(
+      batchEmbeddings = await retryWithBackoff(
         async () =>
           generateEmbeddings({
             provider,
@@ -108,24 +109,6 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
         maxRetries,
         retryDelay,
       )
-
-      embeddings.push(...batchEmbeddings)
-
-      if (onProgress) {
-        const processed = Math.min(i + batchSize, texts.length)
-        onProgress({
-          processed,
-          total: texts.length,
-          failed: failed.length,
-          percentage: Math.round((processed / texts.length) * 100),
-          currentBatch: batchNumber,
-          totalBatches,
-        })
-      }
-
-      if (batchNumber < totalBatches && delayBetweenBatches > 0) {
-        await sleep(delayBetweenBatches)
-      }
     } catch (error) {
       const batchError: BatchError = {
         batchNumber,
@@ -147,6 +130,25 @@ export async function batchProcess(options: BatchProcessOptions): Promise<BatchP
           error: batchError.error,
         })
       }
+      continue
+    }
+
+    embeddings.push(...batchEmbeddings)
+
+    if (onProgress) {
+      const processed = Math.min(i + batchSize, texts.length)
+      onProgress({
+        processed,
+        total: texts.length,
+        failed: failed.length,
+        percentage: Math.round((processed / texts.length) * 100),
+        currentBatch: batchNumber,
+        totalBatches,
+      })
+    }
+
+    if (batchNumber < totalBatches && delayBetweenBatches > 0) {
+      await sleep(delayBetweenBatches)
     }
   }
 
