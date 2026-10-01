@@ -277,9 +277,9 @@ export function integer<
             })
           : withMin
 
-      return !options?.validation?.isRequired || operation === 'update'
-        ? withMax.optional().nullable()
-        : withMax
+      const isRequired = options?.validation?.isRequired
+      if (isRequired && operation === 'update') return withMax.optional()
+      return !isRequired ? withMax.optional().nullable() : withMax
     },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
@@ -405,9 +405,9 @@ export function decimal<
         )
       }
 
-      return !options?.validation?.isRequired || operation === 'update'
-        ? schema.optional().nullable()
-        : schema
+      const isRequired = options?.validation?.isRequired
+      if (isRequired && operation === 'update') return schema.optional()
+      return !isRequired ? schema.optional().nullable() : schema
     },
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
@@ -503,7 +503,8 @@ export function bigInt<
         })
       }
 
-      return !isRequired || operation === 'update' ? schema.optional().nullable() : schema
+      if (isRequired && operation === 'update') return schema.optional()
+      return !isRequired ? schema.optional().nullable() : schema
     },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
@@ -954,7 +955,9 @@ export function select<
         message: `${formatFieldName(fieldName)} must be one of: ${values.join(', ')}`,
       })
 
-      if (!options.validation?.isRequired || operation === 'update') {
+      if (options.validation?.isRequired) {
+        if (operation === 'update') schema = schema.optional()
+      } else {
         schema = schema.optional().nullable()
       }
 

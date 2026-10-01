@@ -9,6 +9,7 @@ import {
   select,
   relationship,
   json,
+  decimal,
 } from './index.js'
 import type { ContractColumnDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 
@@ -1079,6 +1080,23 @@ describe('Field Types', () => {
 
       expect(field.ref).toBe('BlogPost.author')
       expect(field.type).toBe('relationship')
+    })
+  })
+
+  describe('isRequired on update rejects null', () => {
+    const builders = {
+      integer: integer({ validation: { isRequired: true } }),
+      decimal: decimal({ validation: { isRequired: true } }),
+      bigInt: bigInt({ validation: { isRequired: true } }),
+      select: select({ options: [{ label: 'A', value: 'a' }], validation: { isRequired: true } }),
+    }
+    const valid = { integer: 1, decimal: '1.5', bigInt: 1n, select: 'a' }
+
+    test.each(Object.keys(builders) as (keyof typeof builders)[])('%s', (name) => {
+      const schema = schemaOf(builders[name], 'f', 'update')
+      expect(schema.safeParse(null).success).toBe(false)
+      expect(schema.safeParse(undefined).success).toBe(true)
+      expect(schema.safeParse(valid[name]).success).toBe(true)
     })
   })
 })
