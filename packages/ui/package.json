@@ -86,7 +86,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.44.0",
+    "lucide-react": "^1.48.0",
     "react-hook-form": "^7.88.0",
     "tailwind-merge": "^3.6.0"
   },
