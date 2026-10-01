@@ -48,7 +48,52 @@ function memberNames(
     : [fieldKey]
 }
 
-function refuseReservedName(listKey: string, fieldKey: string): ConfigRefusal[] {
+const LOGICAL_KEYS = new Set(['AND', 'OR', 'NOT'])
+const RELATION_OPERATORS = new Set(['some', 'every', 'none'])
+
+function refuseReservedPartColumns(
+  config: OpenSaasConfig,
+  listKey: string,
+  fieldKey: string,
+  field: OpenSaasConfig['lists'][string]['fields'][string],
+): ConfigRefusal[] {
+  if (isRelationshipField(field)) return []
+  const reserved = memberNames(config, listKey, fieldKey, field).find(
+    (name) => name !== fieldKey && LOGICAL_KEYS.has(name),
+  )
+  if (reserved === undefined) return []
+  return [
+    {
+      listKey,
+      entry: `fields.${fieldKey}`,
+      reason: 'reserved-field-name',
+      message:
+        `List "${listKey}": fields.${fieldKey} emits a column named "${reserved}", which is a key of the ` +
+        `Where vocabulary, so a where on it would be read as the operator instead. Rename that column.`,
+    },
+  ]
+}
+
+function refuseReservedName(
+  listKey: string,
+  fieldKey: string,
+  field: OpenSaasConfig['lists'][string]['fields'][string],
+): ConfigRefusal[] {
+  if (
+    LOGICAL_KEYS.has(fieldKey) ||
+    (isRelationshipField(field) && RELATION_OPERATORS.has(fieldKey))
+  ) {
+    return [
+      {
+        listKey,
+        entry: `fields.${fieldKey}`,
+        reason: 'reserved-field-name',
+        message:
+          `List "${listKey}": fields.${fieldKey} is reserved — "${fieldKey}" is a key of the Where vocabulary, ` +
+          `so a where on this field would be read as the operator instead. Rename the field.`,
+      },
+    ]
+  }
   if (fieldKey !== 'id') return []
   return [
     {
@@ -122,7 +167,8 @@ function refuseSyntheticCollisions(config: OpenSaasConfig): ConfigRefusal[] {
 
 /**
  * Refuse the field names the contract derivation cannot keep apart from the
- * members it derives itself: `id` (the primary key comes from `db.idField`,
+ * members it derives itself: the Where vocabulary's `AND`/`OR`/`NOT` (and `some`/`every`/`none` on a
+ * relationship), `id` (the primary key comes from `db.idField`,
  * ADR-0048), a field whose column name is the `<field>Id` foreign-key column
  * another relationship on the same list owns, and a field named
  * `from_<List>_<field>` where a list-only ref synthesises that back-relation
@@ -133,8 +179,9 @@ function refuseSyntheticCollisions(config: OpenSaasConfig): ConfigRefusal[] {
 export function validateFieldNames(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    for (const fieldKey of Object.keys(listConfig.fields)) {
-      refusals.push(...refuseReservedName(listKey, fieldKey))
+    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+      refusals.push(...refuseReservedName(listKey, fieldKey, field))
+      refusals.push(...refuseReservedPartColumns(config, listKey, fieldKey, field))
     }
     refusals.push(...refuseForeignKeyCollisions(config, listKey, listConfig))
   }

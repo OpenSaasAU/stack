@@ -1,6 +1,7 @@
 export type ConfigRefusalReason =
   | 'index-sort'
   | 'id-field-on-singleton'
+  | 'unknown-id-field'
   | 'duplicate-extension-pack'
   | 'undeclared-extension-pack'
   | 'many-to-many'

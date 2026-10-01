@@ -36,6 +36,44 @@ describe('validateFieldNames', () => {
     expect(validateFieldNames(config)).toEqual([])
   })
 
+  it.each(['AND', 'OR', 'NOT'])('refuses a field named %s, naming the field', (name) => {
+    const refusals = validateFieldNames(configWith({ Post: { fields: { [name]: text() } } }))
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      listKey: 'Post',
+      entry: `fields.${name}`,
+      reason: 'reserved-field-name',
+    })
+  })
+
+  it.each(['some', 'every', 'none'])(
+    'refuses a relationship named %s but not a text field',
+    (name) => {
+      const lists = (field: BaseFieldConfig<TypeInfo>) => ({
+        Post: { fields: { [name]: field } },
+        Tag: { fields: { label: text() } },
+      })
+      expect(
+        validateFieldNames(configWith(lists(relationship({ ref: 'Tag', many: true })))),
+      ).toHaveLength(1)
+      expect(validateFieldNames(configWith(lists(text())))).toEqual([])
+    },
+  )
+
+  it('refuses a multi-column field that emits a part column named AND', () => {
+    const location: BaseFieldConfig<TypeInfo> = {
+      type: 'location',
+      getContractField: () => ({
+        kind: 'columns',
+        columns: [{ name: 'AND', type: { pack: 'pg', type: 'text' }, nullable: true }],
+      }),
+    }
+    const refusals = validateFieldNames(configWith({ Post: { fields: { location } } }))
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ entry: 'fields.location', reason: 'reserved-field-name' })
+    expect(refusals[0].message).toContain('"AND"')
+  })
+
   it('refuses a field named id, naming the list and the fix', () => {
     const refusals = validateFieldNames(configWith({ Post: { fields: { id: text() } } }))
     expect(refusals).toHaveLength(1)
