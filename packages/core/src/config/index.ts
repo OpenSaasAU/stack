@@ -6,6 +6,7 @@ import type {
   ListAccessControl,
 } from './types.js'
 import { executePlugins, getPluginData } from './plugin-engine.js'
+import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -37,10 +38,10 @@ function normalizeListAccess<T>(
  */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
-    return userConfig
+    return assertUniqueMcpToolNames(userConfig)
   }
 
-  return executePlugins(userConfig)
+  return executePlugins(userConfig).then(assertUniqueMcpToolNames)
 }
 
 export { getPluginData }
