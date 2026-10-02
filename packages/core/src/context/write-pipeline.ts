@@ -36,6 +36,7 @@ import { lowerRelationInput, refuseNestedRelationInput } from './relationship-in
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
+import type { RowLockLane } from '../secured/lock.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -115,10 +116,10 @@ export interface WriteStrategy {
 async function runInTransaction(
   opener: TransactionOpener | undefined,
   ormHandle: OrmClient,
-  fn: (tx: OrmClient) => Promise<OrmRow | null>,
+  fn: (tx: OrmClient, rowLock: RowLockLane | undefined) => Promise<OrmRow | null>,
 ): Promise<OrmRow | null> {
-  if (opener === undefined) return fn(ormHandle)
-  return opener((opened) => fn(opened.ormHandle))
+  if (opener === undefined) return fn(ormHandle, undefined)
+  return opener((opened) => fn(opened.ormHandle, opened.rowLock))
 }
 
 /**
@@ -236,7 +237,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
-      runInTransaction(opener, ormHandle, (tx) =>
+      runInTransaction(opener, ormHandle, (tx, openedLock) =>
         runWriteInTransaction(
           {
             ...args,
@@ -245,7 +246,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
             preResolvedTarget: gate,
             // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
             // transaction owner (ADR-0028) — see bindContextToTransaction below.
-            context: bindContextToTransaction(args, tx, transactionOwnerForBody),
+            context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
           },
           ops,
         ),
@@ -282,22 +283,15 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
  * transaction runs directly against the handle it was given, never opening a
  * second one of its own.
  *
- * The lock lane (ADR-0047) is carried only when `tx` IS the handle the context
- * already had — the joined-write shape, where this write runs inside a
- * transaction someone else opened and the lane is that transaction's. When
- * this write opened its own, the lane belongs to a different transaction than
- * `tx`, and a hook reaching `forUpdate()` through it would take the lock on
- * the wrong connection; it is dropped, and refused as unavailable.
- *
- * That drop is defence in depth rather than a live branch: `_rowLock` is set
- * only with an `_unsafeTransaction` and `_transactionOpener` only without one,
- * so a context that could open its own transaction here never carries a lane
- * to drop. Deleting the check changes no test.
+ * The lock lane (ADR-0047) is the one bound to `tx`: the lane of the transaction
+ * this write opened, or — on a joined write, where `tx` is the handle the
+ * context already had — the enclosing owner's.
  */
 function bindContextToTransaction(
   args: WritePipelineArgs,
   tx: OrmClient,
   transactionOwner: TransactionRegistry | undefined,
+  openedLock: RowLockLane | undefined,
 ): AccessContext {
   const { context, config } = args
   const txContext: AccessContext = {
@@ -305,7 +299,7 @@ function bindContextToTransaction(
     ormHandle: tx,
     _transactionOwner: transactionOwner,
     _transactionOpener: undefined,
-    _rowLock: tx === context.ormHandle ? context._rowLock : undefined,
+    _rowLock: openedLock ?? (tx === context.ormHandle ? context._rowLock : undefined),
     _config: config,
     _baseContext: context._baseContext ?? context,
   }

@@ -456,8 +456,8 @@ describe('Write Pipeline', () => {
         expect(rebuilt._transactionOpener).toBeUndefined()
         // This write opened its own transaction, so it becomes the owner.
         expect(rebuilt._transactionOwner).toBeDefined()
-        // No enclosing lock lane to inherit at the top level (ADR-0047).
-        expect(rebuilt._rowLock).toBeUndefined()
+        // The lane of the transaction this write opened (ADR-0047).
+        expect(rebuilt._rowLock).toBeDefined()
       },
       BOOT,
     )
