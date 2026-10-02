@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import { text } from '../fields/index.js'
+import { relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 import { TransactionRolledBackError } from './index.js'
@@ -17,7 +17,7 @@ function schemaConfig(): OpenSaasConfig {
     db: { provider: 'postgresql', timestamps: true },
     lists: {
       Bill: {
-        fields: { name: text() },
+        fields: { name: text(), credit: relationship({ ref: 'Credit' }) },
         access: { operation: OPEN },
         hooks: { afterTransaction },
       },
@@ -205,6 +205,23 @@ describe('a joined write that throws poisons its transaction owner', () => {
 
       const statuses = afterTransaction.mock.calls.map((call) => call[0].status)
       expect(statuses).toEqual(['rolled-back', 'rolled-back'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught refusal raised before the write bracket opens poisons the owner',
+    async () => {
+      await expect(
+        harness.context.transaction(async (tx) => {
+          await tx.db.Bill.create({ data: { name: 'a' } })
+          await tx.db.Bill.create({
+            data: { name: 'b', credit: { create: { code: 'x' } } } as never,
+          }).catch(() => null)
+        }),
+      ).rejects.toBeInstanceOf(TransactionRolledBackError)
+
+      expect(await count('Bill')).toBe(0)
     },
     BOOT,
   )

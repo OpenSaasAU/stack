@@ -186,14 +186,20 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
-  if (gate.status === 'denied') {
-    return null
-  }
+  let gate: TargetResolution
+  try {
+    gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
+    if (gate.status === 'denied') {
+      return null
+    }
 
-  // A payload-shape refusal, after the access gate so a denied caller learns
-  // nothing about this list's fields from it (ADR-0031).
-  refuseNestedRelationInput(listName, listConfig, config, inputData)
+    // A payload-shape refusal, after the access gate so a denied caller learns
+    // nothing about this list's fields from it (ADR-0031).
+    refuseNestedRelationInput(listName, listConfig, config, inputData)
+  } catch (err) {
+    context._transactionOwner?.poison(err)
+    throw err
+  }
 
   const involvedLists = enumerateInvolvedLists({
     listName,
