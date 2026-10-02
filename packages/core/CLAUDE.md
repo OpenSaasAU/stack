@@ -336,8 +336,11 @@ which a server action or page component holds. See ADR-0050 and ADR-0052.
 That `db` IS bound to the write's own transaction client, not the base one
 (ADR-0010): `bindContextToTransaction` in `write-pipeline.ts` rebuilds the
 delegates against `tx`, so a `context.db` write a hook performs is atomic with
-the write and rolls back with it. It carries the write's transaction owner
-(ADR-0028) and the hook's own resolve chain (ADR-0023), and does NOT re-execute
+the write and rolls back with it. It also carries a row-lock lane bound to
+that same transaction (ADR-0047), so an in-transaction hook can take
+`forUpdate()` on a root write; the lock is held through persistence. The
+boundary hooks run outside the transaction and still refuse it. It carries the
+write's transaction owner (ADR-0028) and the hook's own resolve chain (ADR-0023), and does NOT re-execute
 plugin runtimes.
 
 Because a hook cannot reach `sudo()`, an elevated write that must be atomic with

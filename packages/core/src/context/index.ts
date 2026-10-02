@@ -492,7 +492,7 @@ function transactionOpenerFor(
     client.transaction(async (tx) => {
       const { handle } = resolveOrmHandle(shape, tx.orm)
       if (handle === undefined) throw new TransactionOrmHandleError()
-      return await run({ ormHandle: handle, unsafe: tx })
+      return await run({ ormHandle: handle, unsafe: tx, rowLock: rowLockSeat(client, tx) })
     })
 }
 
