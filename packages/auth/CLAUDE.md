@@ -28,8 +28,8 @@ Auto-generated lists:
 
 ### Server (`src/server/index.ts`)
 
-- `createAuth(config, rawContext?, betterAuthPlugins?)` - Creates Better-auth instance with MCP plugin support
-- `buildBetterAuthOptions(config, rawContext?, betterAuthPlugins?)` - Returns the same `BetterAuthOptions` `createAuth()` builds, without constructing an instance — for apps that need to hand-wire their own `betterAuth()`. The optional third argument (the app's own `betterAuthPlugins` array) makes the return type carry that literal plugin tuple instead of the widened array type — see "Typed `auth.api.*` reads" below.
+- `createAuth(config, rawContext, betterAuthPlugins?)` - Creates Better-auth instance with MCP plugin support
+- `buildBetterAuthOptions(config, rawContext, betterAuthPlugins?)` - Returns the same `BetterAuthOptions` `createAuth()` builds, without constructing an instance — for apps that need to hand-wire their own `betterAuth()`. The optional third argument (the app's own `betterAuthPlugins` array) makes the return type carry that literal plugin tuple instead of the widened array type — see "Typed `auth.api.*` reads" below.
 - Returns `{ handler, signIn, signOut, ... }` - Better-auth methods
 
 ### Client (`src/client/index.ts`)
@@ -883,11 +883,6 @@ authPlugin({
 
 ## Type Safety
 
-Session type is inferred from `sessionFields`:
-
-```typescript
-authPlugin({ sessionFields: ['userId', 'email', 'role'] })
-// session: { userId: string, email: string, role: string } | null
-```
+The `Session` type is not generated from `sessionFields`. Declare it with the `Session` module augmentation described above and keep it matching your `sessionFields`; the context argument (`rawContext`) is required by `createAuth`, and one lacking `unsafe` or `transaction` throws `AuthUnsafeSurfaceMissingError`.
 
 All auth operations use Better-auth's type-safe client.
