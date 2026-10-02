@@ -6,7 +6,12 @@ import type {
   PrismaFilter,
   TransactionOpener,
 } from '../access/types.js'
-import { checkAccess, checkCreateAccess, filterWritableFields } from '../access/index.js'
+import {
+  assertAccessFilterConstrains,
+  checkAccess,
+  checkCreateAccess,
+  filterWritableFields,
+} from '../access/index.js'
 import {
   executeValidate,
   executeBeforeOperation,
@@ -686,6 +691,7 @@ async function accessFilterPlan(
   context: AccessContext,
   filter: PrismaFilter,
 ): Promise<WherePlan> {
+  assertAccessFilterConstrains(filter)
   return await resolveWhere(filter, {
     listName,
     listConfig,

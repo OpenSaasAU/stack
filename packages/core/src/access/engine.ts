@@ -1,7 +1,11 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import { getSyntheticFieldName } from '../fields/index.js'
-import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './errors.js'
+import {
+  InvalidCreateAccessResultError,
+  UndefinedAccessFilterError,
+  VacuousAccessFilterError,
+} from './errors.js'
 
 /**
  * Access engine — operation-level access control and shared helpers.
@@ -180,6 +184,56 @@ function findUndefinedCondition(value: unknown, trail: readonly string[]): strin
   return null
 }
 
+const RELATION_PREDICATE_KEYS: ReadonlySet<string> = new Set([
+  'some',
+  'every',
+  'none',
+  'is',
+  'isNot',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Date)
+  )
+}
+
+function findVacuousPredicate(where: Record<string, unknown>, trail: string[]): string[] | null {
+  if (Object.keys(where).length === 0) return trail
+  for (const [key, value] of Object.entries(where)) {
+    if (key === 'AND' || key === 'OR' || key === 'NOT') {
+      const branches = Array.isArray(value) ? value : [value]
+      if (key === 'AND' && Array.isArray(value) && value.length === 0) return [...trail, key]
+      for (const [index, branch] of branches.entries()) {
+        if (!isRecord(branch)) continue
+        const at = Array.isArray(value) ? [...trail, key, `${index}`] : [...trail, key]
+        const found = findVacuousPredicate(branch, at)
+        if (found !== null) return found
+      }
+      continue
+    }
+    if (!isRecord(value)) continue
+    if (Object.keys(value).length === 0) return [...trail, key]
+    for (const [operator, nested] of Object.entries(value)) {
+      if (!RELATION_PREDICATE_KEYS.has(operator) || !isRecord(nested)) continue
+      const found = findVacuousPredicate(nested, [...trail, key, operator])
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Refuses an Access Filter that constrains nothing at any depth. The caller's
+ * own `where` is never passed through this.
+ *
+ * @throws VacuousAccessFilterError
+ */
+export function assertAccessFilterConstrains(filter: PrismaFilter): void {
+  const at = findVacuousPredicate(filter, [])
+  if (at !== null) throw new VacuousAccessFilterError(at)
+}
+
 /**
  * Fold a {@link checkAccess} result into a caller's `where`, producing the
  * clause to hand the database — or `null` when access is denied.
@@ -187,7 +241,7 @@ function findUndefinedCondition(value: unknown, trail: readonly string[]): strin
  * `null` is the Silent failure signal, not an empty filter: a caller that
  * receives it returns `null`/`[]` without querying, so a denial is
  * indistinguishable from a miss and leaks no existence information. An empty
- * object (`{}`) means the opposite — allowed, unscoped.
+ * object (`{}`) is refused with {@link VacuousAccessFilterError}; `true` allows every row.
  *
  * The two filters are combined with `AND`, never merged key-by-key, so the
  * access filter can only ever narrow what the caller asked for. A caller
@@ -227,6 +281,7 @@ export function mergeFilters(
   if (accessFilter !== true) {
     const undefinedAt = findUndefinedCondition(accessFilter, [])
     if (undefinedAt !== null) throw new UndefinedAccessFilterError(undefinedAt)
+    assertAccessFilterConstrains(accessFilter)
   }
 
   if (accessFilter === true) {

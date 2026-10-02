@@ -259,7 +259,7 @@ export { InvalidCreateAccessResultError } from './access/index.js'
 // `undefined` condition — the shape `({ session }) => ({ authorId:
 // session?.userId })` yields for an anonymous caller. Dropping it would widen
 // the read to every row, so it is refused (see #1147, ADR-0022, ADR-0055).
-export { UndefinedAccessFilterError } from './access/index.js'
+export { UndefinedAccessFilterError, VacuousAccessFilterError } from './access/index.js'
 
 /** @deprecated Never thrown; kept so existing imports compile. */
 export { RelationFilterAccessDeniedError } from './access/index.js'
