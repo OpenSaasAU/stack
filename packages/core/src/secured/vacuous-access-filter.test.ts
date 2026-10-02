@@ -72,6 +72,7 @@ const vacuous: Record<string, () => unknown> = {
   'an empty AND': () => ({ AND: [] }),
   'an empty object nested in AND': () => ({ AND: [{}, { orgId: { equals: 'o1' } }] }),
   'an empty AND nested in OR': () => ({ OR: [{ AND: [] }, { orgId: { equals: 'o1' } }] }),
+  'an empty predicate under every': () => ({ tenant: { every: {} } }),
   'an empty operator object': () => ({ orgId: {} }),
 }
 
@@ -153,6 +154,17 @@ describe('an access rule that constrains nothing is refused', () => {
       await expect(db.Note.delete({ where: { id: noteId } })).rejects.toBeInstanceOf(
         VacuousAccessFilterError,
       )
+    },
+    BOOT,
+  )
+
+  test(
+    'an empty predicate under some or none is an existence test, not allow-all',
+    async () => {
+      rule = () => ({ tenant: { some: {} } })
+      expect(await database.context({ orgId: 'o1' }).db.Note.all()).toHaveLength(1)
+      rule = () => ({ tenant: { none: {} } })
+      expect(await database.context({ orgId: 'o1' }).db.Note.all()).toHaveLength(1)
     },
     BOOT,
   )

@@ -91,14 +91,14 @@ const blogConfig: OpenSaasConfig = {
         title: text({ validation: { isRequired: true } }),
         rights: relationship({ ref: 'Right.left', many: true }),
       },
-      access: { operation: { query: () => ({ rights: { some: { title: { equals: 'x' } } } }) } },
+      access: { operation: { query: () => ({ rights: { some: {} } }) } },
     },
     Right: {
       fields: {
         title: text({ validation: { isRequired: true } }),
         left: relationship({ ref: 'Left.rights' }),
       },
-      access: { operation: { query: () => ({ left: { some: { title: { equals: 'x' } } } }) } },
+      access: { operation: { query: () => ({ left: { some: {} } }) } },
     },
   },
 }

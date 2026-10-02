@@ -191,6 +191,8 @@ const RELATION_PREDICATE_KEYS: ReadonlySet<string> = new Set([
   'is',
   'isNot',
 ])
+// An empty predicate under `some`/`none`/`is`/`isNot` is an existence test; only `every` makes it allow-all.
+const EMPTY_IS_VACUOUS_UNDER = 'every'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return (
@@ -216,6 +218,7 @@ function findVacuousPredicate(where: Record<string, unknown>, trail: string[]): 
     if (Object.keys(value).length === 0) return [...trail, key]
     for (const [operator, nested] of Object.entries(value)) {
       if (!RELATION_PREDICATE_KEYS.has(operator) || !isRecord(nested)) continue
+      if (operator !== EMPTY_IS_VACUOUS_UNDER && Object.keys(nested).length === 0) continue
       const found = findVacuousPredicate(nested, [...trail, key, operator])
       if (found !== null) return found
     }
