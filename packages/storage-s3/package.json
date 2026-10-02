@@ -19,8 +19,7 @@
     "!dist/**/*.test.*",
     "!dist/**/__tests__",
     "README.md",
-    "CHANGELOG.md",
-    "LICENSE"
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",

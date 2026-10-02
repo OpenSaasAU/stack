@@ -14,7 +14,7 @@
     "!dist/**/__tests__",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "CLAUDE.md"
   ],
   "exports": {
     ".": {

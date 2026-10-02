@@ -9,4 +9,4 @@
 '@opensaas/stack-tiptap': patch
 ---
 
-Publish only `dist`, docs and license; tarballs no longer include src, tests, compiled test files or build logs.
+Publish only `dist`, and docs; tarballs no longer include src, tests, compiled test files or build logs.
