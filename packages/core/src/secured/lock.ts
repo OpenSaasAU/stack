@@ -381,3 +381,19 @@ export function createRowLockLane(
     },
   }
 }
+
+/**
+ * A statement that fails when the database has aborted the transaction, which
+ * a caught failure on the Unsafe surface can cause without any `context.db`
+ * write throwing. `undefined` for a client that cannot compose it.
+ */
+export function createLivenessProbe(
+  rawLane: unknown,
+  scope: RuntimeScope,
+): (() => Promise<void>) | undefined {
+  if (!isRawLane(rawLane)) return undefined
+  const plan = rawLane.sql`SELECT 1`.affectedCount().build()
+  return async () => {
+    await withOrigin('engine', () => scope.execute(plan))
+  }
+}

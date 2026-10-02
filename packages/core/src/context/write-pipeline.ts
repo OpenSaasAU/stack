@@ -34,7 +34,7 @@ import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
-import { TransactionRegistry } from '../access/transaction-registry.js'
+import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
@@ -236,8 +236,8 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
-      runInTransaction(opener, ormHandle, (tx) =>
-        runWriteInTransaction(
+      runInTransaction(opener, ormHandle, async (tx) => {
+        const written = await runWriteInTransaction(
           {
             ...args,
             ormHandle: tx,
@@ -248,8 +248,12 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
             context: bindContextToTransaction(args, tx, transactionOwnerForBody),
           },
           ops,
-        ),
-      ),
+        )
+        if (ownedRegistry?.isPoisoned) {
+          throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
+        }
+        return written
+      }),
   })
 }
 
