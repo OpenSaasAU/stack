@@ -883,6 +883,6 @@ authPlugin({
 
 ## Type Safety
 
-The `Session` type is not generated from `sessionFields`. Declare it with the `Session` module augmentation described above and keep it matching your `sessionFields`; `rawContext` is required by `createAuth` (it throws `AuthUnsafeSurfaceMissingError` without one).
+The `Session` type is not generated from `sessionFields`. Declare it with the `Session` module augmentation described above and keep it matching your `sessionFields`; the context argument (`rawContext`) is required by `createAuth`, and one lacking `unsafe` or `transaction` throws `AuthUnsafeSurfaceMissingError`.
 
 All auth operations use Better-auth's type-safe client.
