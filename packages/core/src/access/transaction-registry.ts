@@ -19,11 +19,6 @@
  */
 
 /**
- * The outcome the transaction OWNER observed for the transaction as a whole —
- * distinct from a single write's own {@link import('../hooks/index.js').TransactionOutcome},
- * which additionally carries that write's own persisted `item` or `error`.
- */
-/**
  * Thrown by a transaction owner that cannot commit: a joined `context.db`
  * write threw, or the database aborted the transaction, even though the
  * caller caught the failure and the callback resolved. `cause` is the first
@@ -40,6 +35,11 @@ export class TransactionRolledBackError extends Error {
   }
 }
 
+/**
+ * The outcome the transaction OWNER observed for the transaction as a whole —
+ * distinct from a single write's own {@link import('../hooks/index.js').TransactionOutcome},
+ * which additionally carries that write's own persisted `item` or `error`.
+ */
 export interface TransactionSettleOutcome {
   status: 'committed' | 'rolled-back'
   error?: unknown
