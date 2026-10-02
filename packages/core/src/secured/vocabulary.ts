@@ -11,7 +11,11 @@ import type {
   VectorDistanceFunction,
 } from '../config/types.js'
 import type { AccessContext, PrismaFilter, Session } from '../access/types.js'
-import { checkAccess, getRelatedListConfig } from '../access/engine.js'
+import {
+  assertAccessFilterConstrains,
+  checkAccess,
+  getRelatedListConfig,
+} from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
@@ -356,6 +360,7 @@ export async function resolveRelatedAccessPlan(
   if (access === false) return { kind: 'false' }
   if (access === true) return { kind: 'true' }
   const filter: PrismaFilter = access
+  assertAccessFilterConstrains(filter)
   const path = ctx.accessFilterPath
   if (path.includes(related.listName)) {
     throw new AccessFilterRecursionError([...path, related.listName], 'cycle')
