@@ -113,6 +113,42 @@ export function transformItemFormData(
   return transformed
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+/** Deep equality over the JSON-shaped values a form field holds. Anything else (a `File`) is equal only to itself. */
+function isEqualValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, i) => isEqualValue(item, b[i]))
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keys = Object.keys(a)
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => key in b && isEqualValue(a[key], b[key]))
+    )
+  }
+  return false
+}
+
+/** Keep only the entries of a submit payload whose value differs from the baseline payload. */
+export function pickDirtyFields(
+  payload: Record<string, unknown>,
+  baseline: Record<string, unknown>,
+): Record<string, unknown> {
+  const dirty: Record<string, unknown> = {}
+  for (const [fieldName, value] of Object.entries(payload)) {
+    if (!(fieldName in baseline) || !isEqualValue(value, baseline[fieldName])) {
+      dirty[fieldName] = value
+    }
+  }
+  return dirty
+}
+
 /**
  * The ids a to-many control holds, as the strings the server action's id
  * boundary parses back to the list's own key type. A custom control registered
@@ -277,6 +313,12 @@ export interface UseItemFormOptions {
    * no writer and the submit refuses rather than reporting a selection saved.
    */
   onEdgeWrites?: (changes: EdgeSelectionChange[]) => Promise<EdgeWriteOutcome>
+  /**
+   * Runs instead of `onSubmit` when an update changed nothing: no field differs
+   * from the loaded values and no edge changed. Wire it to the same success
+   * path `onSubmit` takes.
+   */
+  onUnchanged?: () => void
   /** Optional fallback message when a submit throws without a message. */
   errorFallback?: string
 }
@@ -307,6 +349,7 @@ export function useItemForm({
   mode,
   onSubmit,
   onEdgeWrites,
+  onUnchanged,
   errorFallback = 'Operation failed',
 }: UseItemFormOptions): UseItemFormResult {
   const [isPending, startTransition] = useTransition()
@@ -317,6 +360,7 @@ export function useItemForm({
   // actually persisted, so a second submit after a partial denial retries only
   // the edges that are still outstanding rather than the ones already stored.
   const edgeBaseline = useRef<Record<string, unknown>>(initialData)
+  const scalarBaseline = useRef<Record<string, unknown> | null>(null)
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     // A field the form rendered read-only has no input to accept: its control
@@ -371,12 +415,33 @@ export function useItemForm({
         // Inside the try: the transform refuses a payload it would otherwise
         // have to discard, and that refusal has to reach the user as the
         // form's error rather than as an unhandled rejection.
-        const data = transformItemFormData(fields, formData)
+        const full = transformItemFormData(fields, formData)
+        let data = full
+        if (mode === 'update') {
+          scalarBaseline.current ??= transformItemFormData(fields, initialData)
+          data = pickDirtyFields(full, scalarBaseline.current)
+          for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+            const clearable =
+              fieldConfig.type === 'relationship' &&
+              !fieldConfig.many &&
+              !fieldConfig.readOnly &&
+              !fieldConfig.edgeWrite
+            if (clearable && fieldName in scalarBaseline.current && !(fieldName in full)) {
+              data[fieldName] = null
+            }
+          }
+          if (Object.keys(data).length === 0) {
+            onUnchanged?.()
+            return
+          }
+        }
         const result = await onSubmit(data, mode)
         // void result → adapter handles its own success/navigation.
         if (result && result.success === false) {
           if (result.fieldErrors) setErrors(result.fieldErrors)
           report(result.error || errorFallback)
+        } else if (mode === 'update') {
+          scalarBaseline.current = { ...scalarBaseline.current, ...data }
         }
       } catch (error: unknown) {
         report(error instanceof Error && error.message ? error.message : errorFallback)
