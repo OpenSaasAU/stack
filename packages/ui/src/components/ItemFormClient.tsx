@@ -129,7 +129,10 @@ export function ItemFormClient({
   const readOnly = mode === 'edit' && fieldMode === 'read'
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form
+      onSubmit={(event) => (readOnly ? event.preventDefault() : handleSubmit(event))}
+      className="space-y-6"
+    >
       {generalError && (
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4">
           <p className="text-sm font-medium">{generalError}</p>
