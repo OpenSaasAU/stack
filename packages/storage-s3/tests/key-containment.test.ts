@@ -44,4 +44,8 @@ describe('S3StorageProvider key containment', () => {
     await expect(provider.delete('file.txt')).resolves.toBeUndefined()
     expect(provider.getUrl('file.txt')).toContain('private/file.txt')
   })
+
+  it('encodes a percent-encoded dot segment so the URL stays under the prefix', () => {
+    expect(new URL(provider.getUrl('%2e%2e')).pathname).toBe('/private/%252e%252e')
+  })
 })

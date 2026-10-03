@@ -157,7 +157,9 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   getUrl(filename: string): string {
-    const key = this.getFullKey(filename)
+    this.getFullKey(filename)
+    const encoded = filename.replace(/%/g, '%25')
+    const key = this.config.pathPrefix ? `${this.config.pathPrefix}/${encoded}` : encoded
 
     if (this.config.customDomain) {
       return `${this.config.customDomain}/${key}`

@@ -250,7 +250,9 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   getUrl(filename: string): string {
-    const pathname = this.getFullPath(filename)
+    this.getFullPath(filename)
+    const encoded = filename.replace(/%/g, '%25')
+    const pathname = this.config.pathPrefix ? `${this.config.pathPrefix}/${encoded}` : encoded
     const storeId = this.resolveStoreId()
     return `https://${storeId}.${this.getAccess()}.blob.vercel-storage.com/${pathname}`
   }
