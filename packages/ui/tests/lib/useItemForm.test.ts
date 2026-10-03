@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import {
   diffEdgeSelections,
@@ -276,6 +276,9 @@ describe('a record update that fails after its edges landed', () => {
     act(() => {
       result.current.handleFieldChange('posts', ['p1'])
     })
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+    })
     await act(async () => {
       result.current.handleSubmit({ preventDefault: () => {} })
     })
@@ -320,10 +323,131 @@ describe('a record update that fails after its edges landed', () => {
     act(() => {
       result.current.handleFieldChange('posts', ['p1'])
     })
+    act(() => {
+      result.current.handleFieldChange('title', 'Hi')
+    })
     await act(async () => {
       result.current.handleSubmit({ preventDefault: () => {} })
     })
 
     expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Network down`)
+  })
+})
+
+describe('useItemForm update sends only changed fields', () => {
+  it('writes edges without a scalar update when only edges changed', async () => {
+    const edgeFields: Record<string, SerializableFieldConfig> = {
+      title: text(),
+      posts: {
+        type: 'relationship',
+        many: true,
+        edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+      },
+    }
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const onUnchanged = vi.fn()
+    const onEdgeWrites = vi.fn(async () => ({ persisted: { posts: ['p1'] }, errors: [] }))
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields: edgeFields,
+        initialData: { title: 'Hi', posts: [] },
+        mode: 'update',
+        onSubmit,
+        onUnchanged,
+        onEdgeWrites,
+      }),
+    )
+    act(() => result.current.handleFieldChange('posts', ['p1']))
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+    expect(onEdgeWrites).toHaveBeenCalledTimes(1)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onUnchanged).toHaveBeenCalledTimes(1)
+  })
+
+  const json = (): SerializableFieldConfig => ({ type: 'json' })
+  const fields = { title: text(), version: text(), meta: json(), author: singleRel() }
+  const initialData = {
+    title: 'Hello',
+    version: '3',
+    meta: { a: { b: 1 }, list: [1, 2] },
+    author: 'u1',
+  }
+  const submit = (result: { current: ReturnType<typeof useItemForm> }) =>
+    act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+
+  it('sends exactly the edited field', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'update', onSubmit }),
+    )
+    act(() => result.current.handleFieldChange('title', 'Changed'))
+    await submit(result)
+    expect(onSubmit).toHaveBeenCalledWith({ title: 'Changed' }, 'update')
+  })
+
+  it('marks a nested JSON change dirty but not an equal reformatted value', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'update', onSubmit }),
+    )
+    act(() => result.current.handleFieldChange('meta', { list: [1, 2], a: { b: 1 } }))
+    await submit(result)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    act(() => result.current.handleFieldChange('meta', { a: { b: 2 }, list: [1, 2] }))
+    await submit(result)
+    expect(onSubmit).toHaveBeenCalledWith({ meta: { a: { b: 2 }, list: [1, 2] } }, 'update')
+  })
+
+  it('does not send a field changed and reverted, and calls onUnchanged when nothing changed', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const onUnchanged = vi.fn()
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'update', onSubmit, onUnchanged }),
+    )
+    act(() => result.current.handleFieldChange('title', 'Changed'))
+    act(() => result.current.handleFieldChange('title', 'Hello'))
+    await submit(result)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onUnchanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('diffs a second save against what the first persisted', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'update', onSubmit }),
+    )
+    act(() => result.current.handleFieldChange('title', 'One'))
+    await submit(result)
+    act(() => result.current.handleFieldChange('version', '4'))
+    await submit(result)
+    expect(onSubmit).toHaveBeenNthCalledWith(1, { title: 'One' }, 'update')
+    expect(onSubmit).toHaveBeenNthCalledWith(2, { version: '4' }, 'update')
+  })
+
+  it('sends a changed to-one as connect and every entered field on create', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'update', onSubmit }),
+    )
+    act(() => result.current.handleFieldChange('author', 'u2'))
+    await submit(result)
+    expect(onSubmit).toHaveBeenCalledWith({ author: { connect: { id: 'u2' } } }, 'update')
+
+    const create = vi.fn(async () => ({ success: true }) as const)
+    const created = renderHook(() =>
+      useItemForm({ fields, initialData, mode: 'create', onSubmit: create }),
+    )
+    act(() => created.result.current.handleFieldChange('title', 'T'))
+    act(() => created.result.current.handleFieldChange('version', '1'))
+    await submit(created.result)
+    expect(create).toHaveBeenCalledWith(
+      { title: 'T', version: '1', meta: initialData.meta, author: { connect: { id: 'u1' } } },
+      'create',
+    )
   })
 })

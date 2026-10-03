@@ -86,6 +86,10 @@ export function ItemFormClient({
     mode: mode === 'create' ? 'create' : 'update',
     errorFallback: 'Access denied or operation failed',
     onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
+    onUnchanged: () => {
+      router.push(`${basePath}/${urlKey}`)
+      router.refresh()
+    },
     onSubmit: async (data, action) => {
       const result =
         action === 'create'
