@@ -335,6 +335,23 @@ describe('a record update that fails after its edges landed', () => {
 })
 
 describe('useItemForm update sends only changed fields', () => {
+  it('sends null when a to-one relationship is cleared', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields: { title: text(), author: singleRel() },
+        initialData: { title: 'Hi', author: 'u1' },
+        mode: 'update',
+        onSubmit,
+      }),
+    )
+    act(() => result.current.handleFieldChange('author', ''))
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {} })
+    })
+    expect(onSubmit).toHaveBeenCalledWith({ author: null }, 'update')
+  })
+
   it('writes edges without a scalar update when only edges changed', async () => {
     const edgeFields: Record<string, SerializableFieldConfig> = {
       title: text(),

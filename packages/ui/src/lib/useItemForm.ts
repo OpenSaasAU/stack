@@ -420,6 +420,16 @@ export function useItemForm({
         if (mode === 'update') {
           scalarBaseline.current ??= transformItemFormData(fields, initialData)
           data = pickDirtyFields(full, scalarBaseline.current)
+          for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+            const clearable =
+              fieldConfig.type === 'relationship' &&
+              !fieldConfig.many &&
+              !fieldConfig.readOnly &&
+              !fieldConfig.edgeWrite
+            if (clearable && fieldName in scalarBaseline.current && !(fieldName in full)) {
+              data[fieldName] = null
+            }
+          }
           if (Object.keys(data).length === 0) {
             onUnchanged?.()
             return
