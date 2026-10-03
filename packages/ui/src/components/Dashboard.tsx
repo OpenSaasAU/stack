@@ -10,6 +10,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
+import { resolveListUi } from '../lib/resolveListUi.js'
 
 export interface DashboardProps {
   context: AnyStackContext
@@ -18,7 +19,8 @@ export interface DashboardProps {
 }
 
 export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
-  const { db } = engineContextOf(context)
+  const engine = engineContextOf(context)
+  const { db } = engine
   const lists = Object.keys(config.lists || {})
 
   // Split lists into standard lists (shown in the counted grid) and singletons
@@ -26,6 +28,17 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   // so the "N items" label is misleading — show a "Configure" affordance instead.
   const standardLists = lists.filter((listKey) => !config.lists[listKey]?.isSingleton)
   const singletonLists = lists.filter((listKey) => config.lists[listKey]?.isSingleton)
+
+  const creatableLists = (
+    await Promise.all(
+      standardLists.map(async (listKey) => ({
+        listKey,
+        hideCreate: (await resolveListUi(config.lists[listKey], engine)).hideCreate,
+      })),
+    )
+  )
+    .filter(({ hideCreate }) => !hideCreate)
+    .map(({ listKey }) => listKey)
 
   const listCounts = await Promise.all(
     standardLists.map(async (listKey) => {
@@ -140,7 +153,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
       {/* Quick Actions only contains "Create {list}" links for standard lists,
           so hide the whole card when there are no standard lists (e.g. a
           singleton-only admin). */}
-      {standardLists.length > 0 && (
+      {creatableLists.length > 0 && (
         <Card className="mt-12">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
@@ -150,7 +163,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {standardLists.map((listKey) => {
+              {creatableLists.map((listKey) => {
                 const urlKey = getUrlKey(listKey)
                 return (
                   <Link

@@ -18,6 +18,7 @@ export type {
   OpenSaasConfig,
   OutputConfig,
   ListConfig,
+  ListUIOption,
   DatabaseConfig,
   DatabaseClientConfig,
   ExtensionDescriptor,

@@ -29,6 +29,12 @@ export interface ItemFormClientProps {
    * suppressed for UX hygiene.
    */
   canDelete?: boolean
+  /**
+   * `'read'` renders every field read-only with no Save/Cancel, resolved
+   * server-side from `ui.itemView.defaultFieldMode`. Only applies in edit mode.
+   * Defaults to `'edit'`.
+   */
+  fieldMode?: 'edit' | 'read'
 }
 
 /**
@@ -65,6 +71,7 @@ export function ItemFormClient({
   serverAction,
   relationshipData = {},
   canDelete = true,
+  fieldMode = 'edit',
 }: ItemFormClientProps) {
   const router = useRouter()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -119,6 +126,7 @@ export function ItemFormClient({
   }
 
   const busy = isPending || isDeleting
+  const readOnly = mode === 'edit' && fieldMode === 'read'
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -138,7 +146,7 @@ export function ItemFormClient({
             onChange={(value) => handleFieldChange(fieldName, value)}
             error={errors[fieldName]}
             disabled={busy}
-            mode="edit"
+            mode={readOnly ? 'read' : 'edit'}
             relationshipItems={relationshipData[fieldName] || []}
             relationshipLoading={false}
             basePath={basePath}
@@ -149,25 +157,29 @@ export function ItemFormClient({
       </div>
 
       <div className="flex items-center justify-between pt-6 border-t border-border">
-        <div className="flex gap-3">
-          <Button type="submit" disabled={busy} className="gap-2">
-            {isPending && (
-              <LoadingSpinner
-                size="sm"
-                className="border-primary-foreground border-t-transparent"
-              />
-            )}
-            {isPending ? 'Saving...' : mode === 'create' ? 'Create' : 'Save'}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => router.push(`${basePath}/${urlKey}`)}
-            disabled={busy}
-          >
-            Cancel
-          </Button>
-        </div>
+        {readOnly ? (
+          <div />
+        ) : (
+          <div className="flex gap-3">
+            <Button type="submit" disabled={busy} className="gap-2">
+              {isPending && (
+                <LoadingSpinner
+                  size="sm"
+                  className="border-primary-foreground border-t-transparent"
+                />
+              )}
+              {isPending ? 'Saving...' : mode === 'create' ? 'Create' : 'Save'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.push(`${basePath}/${urlKey}`)}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
 
         {mode === 'edit' && itemId && canDelete && (
           <Button

@@ -16,6 +16,7 @@ import {
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
+import { resolveListUi } from '../lib/resolveListUi.js'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
@@ -176,6 +177,7 @@ async function ItemViewLayoutView({
   layout: ItemViewLayout
 }) {
   const urlKey = getUrlKey(listKey)
+  const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
 
   // One secured read: the bounded rows each table renders and the total its
   // footer shows come back from the SAME call, both scoped by the related
@@ -249,6 +251,8 @@ async function ItemViewLayoutView({
         basePath={basePath}
         serverAction={serverAction}
         relationshipData={relationshipData}
+        canDelete={!hideDelete}
+        fieldMode={fieldMode}
       />
     </Card>
   )
@@ -381,6 +385,8 @@ export async function ItemForm({
     }
   }
 
+  const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
+
   // Also used by SingletonView so both editors serialize identically.
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
@@ -410,6 +416,8 @@ export async function ItemForm({
           basePath={basePath}
           serverAction={serverAction}
           relationshipData={relationshipData}
+          canDelete={!hideDelete}
+          fieldMode={fieldMode}
         />
       </div>
     </div>

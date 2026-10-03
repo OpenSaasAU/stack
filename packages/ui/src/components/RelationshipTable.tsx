@@ -1,3 +1,4 @@
+import { resolveListUi } from '../lib/resolveListUi.js'
 import {
   getItemLabel,
   getUrlKey,
@@ -166,6 +167,8 @@ async function resolveCreateForm(
   context: AccessContext,
 ): Promise<CreateFormData | null> {
   if (!section.backReferenceField || !relatedListConfig) return null
+
+  if ((await resolveListUi(relatedListConfig, context)).hideCreate) return null
 
   const allowed = await isOperationPotentiallyAllowed(
     relatedListConfig.access?.operation,

@@ -5,6 +5,7 @@ import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
+import { resolveListUi } from '../lib/resolveListUi.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { PageHeader } from './PageHeader.js'
@@ -340,18 +341,22 @@ export async function ListView({
     listKey,
   )
 
+  const { hideCreate, hideDelete } = await resolveListUi(listConfig, context)
+
   return (
     <div className="p-8">
       <PageHeader
         title={formatListName(listKey)}
         description={`${total} ${total === 1 ? 'item' : 'items'}`}
         actions={
-          <Button asChild>
-            <Link href={`${basePath}/${urlKey}/create`}>
-              <Plus aria-hidden="true" />
-              Create {formatListName(listKey)}
-            </Link>
-          </Button>
+          hideCreate ? undefined : (
+            <Button asChild>
+              <Link href={`${basePath}/${urlKey}/create`}>
+                <Plus aria-hidden="true" />
+                Create {formatListName(listKey)}
+              </Link>
+            </Button>
+          )
         }
       />
 
@@ -376,7 +381,8 @@ export async function ListView({
         search={search}
         filterSuggestions={filterSuggestions}
         serverAction={serverAction}
-        canDelete={canDeleteList(listConfig.access?.operation?.delete)}
+        canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}
+        canCreate={!hideCreate}
         avatarColumn={avatarColumn}
         bulkActions={bulkActions}
       />

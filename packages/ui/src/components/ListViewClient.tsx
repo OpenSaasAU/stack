@@ -115,6 +115,8 @@ export interface ListViewClientProps {
    * absorbed by Silent failure into the "N of M deleted" report.
    */
   canDelete?: boolean
+  /** Whether the Create affordance is offered; resolved server-side from `ui.hideCreate`. Defaults to `true`. */
+  canCreate?: boolean
   /**
    * The label column to render with an initials-avatar Cell (issue #735). Set by
    * `ListView` to the list's resolved label field when the list opts in via
@@ -149,6 +151,7 @@ export function ListViewClient({
   filterSuggestions = [],
   serverAction,
   canDelete = false,
+  canCreate = true,
   avatarColumn,
   bulkActions = [],
 }: ListViewClientProps) {
@@ -450,14 +453,20 @@ export function ListViewClient({
                       className="border-0"
                       icon={<Inbox className="h-6 w-6" />}
                       title="No items yet"
-                      description="Create your first record to see it listed here."
+                      description={
+                        canCreate
+                          ? 'Create your first record to see it listed here.'
+                          : 'Records will be listed here.'
+                      }
                       actions={
-                        <Button asChild size="sm">
-                          <Link href={`${basePath}/${urlKey}/create`}>
-                            <Plus aria-hidden="true" />
-                            Create
-                          </Link>
-                        </Button>
+                        canCreate ? (
+                          <Button asChild size="sm">
+                            <Link href={`${basePath}/${urlKey}/create`}>
+                              <Plus aria-hidden="true" />
+                              Create
+                            </Link>
+                          </Button>
+                        ) : undefined
                       }
                     />
                   )}
