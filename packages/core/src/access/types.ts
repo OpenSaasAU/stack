@@ -92,6 +92,7 @@ export interface OrmClient {
 export interface OpenedTransaction {
   readonly ormHandle: OrmClient
   readonly unsafe: UnsafeTransactionScope
+  readonly rowLock?: RowLockLane
 }
 
 /**
