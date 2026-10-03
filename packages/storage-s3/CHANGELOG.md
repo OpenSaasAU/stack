@@ -1,5 +1,35 @@
 # @opensaas/stack-storage-s3
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1499](https://github.com/OpenSaasAU/stack/pull/1499) [`bcea6de`](https://github.com/OpenSaasAU/stack/commit/bcea6dea0766f510da59188cb70fb41b2fd2573b) Thanks [@borisno2](https://github.com/borisno2)! - Add the missing `[key: string]: unknown` index member to `S3StorageConfig` so it matches `LocalStorageConfig` and `VercelBlobStorageConfig` and is assignable to core's `BaseStorageConfig`:
+
+  ```typescript
+  import type { BaseStorageConfig } from '@opensaas/stack-storage'
+  import { s3Storage } from '@opensaas/stack-storage-s3'
+
+  // Previously a type error: S3StorageConfig was not assignable to BaseStorageConfig.
+  const slot: BaseStorageConfig = s3Storage({ bucket: 'my-bucket', region: 'us-east-1' })
+  ```
+
+  `@opensaas/stack-storage` and `@opensaas/stack-storage-vercel` each gain a test pinning their own provider config's assignability to `BaseStorageConfig`, alongside the new S3 one, so a future provider can't regress this.
+
+### Patch Changes
+
+- [#1729](https://github.com/OpenSaasAU/stack/pull/1729) [`8d8a338`](https://github.com/OpenSaasAU/stack/commit/8d8a338ea4606b03ef859c4128b93b40a5fc9a21) Thanks [@borisno2](https://github.com/borisno2)! - Publish only `dist`, and docs; tarballs no longer include src, tests, compiled test files or build logs.
+
+- [#1739](https://github.com/OpenSaasAU/stack/pull/1739) [`97e428b`](https://github.com/OpenSaasAU/stack/commit/97e428b17ad99998c86a354e5a8be4c35a1d6c59) Thanks [@borisno2](https://github.com/borisno2)! - S3 and Vercel Blob providers refuse a filename that is not a single plain segment (`/`, `\`, NUL, `.`, `..`), matching `LocalStorageProvider`.
+
+- [#1522](https://github.com/OpenSaasAU/stack/pull/1522) [`c322241`](https://github.com/OpenSaasAU/stack/commit/c322241a7a8a293ce6824df13dcb9765cd9479a2) Thanks [@borisno2](https://github.com/borisno2)! - Add a `typecheck` script to every package, covering `tests/**/*` alongside `src/**/*` (not just what `build` compiles), and fix the type errors it surfaced in existing test files.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
+- [#1723](https://github.com/OpenSaasAU/stack/pull/1723) [`a69fabb`](https://github.com/OpenSaasAU/stack/commit/a69fabbffafc60da248543dcba5697775f915528) Thanks [@borisno2](https://github.com/borisno2)! - Derive the uploaded object's file extension with `path.extname` so extension-less or dotted-directory names can no longer put the client filename or a `/` into the S3 key.
+
+- [#1532](https://github.com/OpenSaasAU/stack/pull/1532) [`f9b4e2c`](https://github.com/OpenSaasAU/stack/commit/f9b4e2cd5ee2e6db5ad23ca3e13e07635291747d) Thanks [@borisno2](https://github.com/borisno2)! - Fail a package's vitest run with a named, actionable error when its `dist/` was not built from its current `src/`, instead of silently testing stale built output through a cross-package import or a spawned CLI binary.
+
 ## 0.43.0
 
 ## 0.42.3
