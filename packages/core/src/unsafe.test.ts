@@ -535,8 +535,9 @@ describe('the Unsafe surface', () => {
           await call(chain(model(tx.unsafe, 'Post'), 'where', { id: postId }), 'first')
         })
 
-        expect(recorder.plans.length).toBe(3)
-        expect(new Set(origins(recorder))).toEqual(new Set(['unsafe']))
+        expect(recorder.plans.length).toBe(4)
+        expect(new Set(origins(recorder).slice(0, 3))).toEqual(new Set(['unsafe']))
+        expect(origins(recorder)[3]).toBe('engine')
       },
       BOOT,
     )

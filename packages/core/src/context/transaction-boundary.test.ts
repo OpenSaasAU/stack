@@ -12,7 +12,7 @@ import { text } from '../fields/index.js'
 import { isSerializationFailure } from '../lib/database-errors.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
-import { getContext } from './index.js'
+import { getContext, TransactionRolledBackError } from './index.js'
 import { AfterTransactionError } from './transaction-boundary.js'
 
 /**
@@ -316,11 +316,15 @@ describe('transaction-boundary hooks', () => {
           }),
         )
 
-        await context.transaction(async (tx) => {
-          order.push('callback-start')
-          await expect(tx.db.User.create({ data: { name: 'jane' } })).rejects.toThrow('before boom')
-          order.push('callback-end')
-        })
+        await expect(
+          context.transaction(async (tx) => {
+            order.push('callback-start')
+            await expect(tx.db.User.create({ data: { name: 'jane' } })).rejects.toThrow(
+              'before boom',
+            )
+            order.push('callback-end')
+          }),
+        ).rejects.toBeInstanceOf(TransactionRolledBackError)
 
         expect(order).toEqual(['callback-start', 'before', 'callback-end', 'after:rolled-back'])
         expect(await rows('User')).toEqual([])
@@ -400,7 +404,7 @@ describe('transaction-boundary hooks', () => {
      * on to commit the Post — and each compensator reports its own subject.
      */
     test(
-      "a write's own error outranks the transaction's outcome, even on a commit",
+      "a write's own error outranks the transaction's outcome, and the caught failure rolls the owner back",
       async () => {
         const userAfter = vi.fn()
         const postAfter = vi.fn()
@@ -410,20 +414,15 @@ describe('transaction-boundary hooks', () => {
         )
         const context = contextAt(config)
 
-        const result = await context.transaction(async (tx) => {
-          let userError: unknown
-          try {
-            await tx.db.User.create({ data: {} })
-          } catch (error) {
-            userError = error
-          }
-          await tx.db.Post.create({ data: { title: 'ok' } })
-          return { failed: userError !== undefined }
-        })
+        await expect(
+          context.transaction(async (tx) => {
+            await tx.db.User.create({ data: {} }).catch(() => null)
+            await tx.db.Post.create({ data: { title: 'ok' } })
+          }),
+        ).rejects.toBeInstanceOf(TransactionRolledBackError)
 
-        expect(result.failed).toBe(true)
-        expect(await rows('Post')).toHaveLength(1)
-        expect(postAfter.mock.calls[0][0]).toMatchObject({ status: 'committed' })
+        expect(await rows('Post')).toHaveLength(0)
+        expect(postAfter.mock.calls[0][0]).toMatchObject({ status: 'rolled-back' })
         expect(userAfter).toHaveBeenCalledTimes(1)
         expect(userAfter.mock.calls[0][0]).toMatchObject({ status: 'rolled-back' })
       },
