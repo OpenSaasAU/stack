@@ -67,7 +67,7 @@ export class S3StorageProvider implements StorageProvider {
 
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
-      return originalFilename
+      return originalFilename.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
     }
 
     const rawExt = path.extname(path.basename(originalFilename)).toLowerCase()

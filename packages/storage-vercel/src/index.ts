@@ -90,7 +90,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
-      return originalFilename
+      return originalFilename.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
     }
 
     const ext = path.extname(originalFilename)

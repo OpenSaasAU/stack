@@ -28,14 +28,16 @@ describe('S3StorageProvider key containment', () => {
     await expect(provider.getSignedUrl(name)).rejects.toThrow(/refused/)
   })
 
-  it('refuses an unsafe name on upload when unique filenames are off', async () => {
+  it('reduces a path-shaped upload name to its basename when unique filenames are off', async () => {
     const stable = new S3StorageProvider({
       type: 's3',
       bucket: 'b',
       region: 'us-east-1',
       generateUniqueFilenames: false,
     })
-    await expect(stable.upload(Buffer.from('x'), '../evil.txt')).rejects.toThrow(/refused/)
+    const result = await stable.upload(Buffer.from('x'), '../dir\\evil.txt')
+    expect(result.filename).toBe('evil.txt')
+    await expect(stable.upload(Buffer.from('x'), '..')).rejects.toThrow(/refused/)
   })
 
   it('accepts a plain filename', async () => {
