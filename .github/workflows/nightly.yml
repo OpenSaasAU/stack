@@ -22,8 +22,8 @@ jobs:
   # toolchain offline; this exercises the actual published artifact). See ADR-0002.
   published-create-e2e:
     name: Published npm create e2e
-    # The published package is `main`'s Prisma 7 scaffold. The integration
-    # branch's cold start is the `cold-clone` job below instead.
+    # The published package is `main`'s scaffold. The integration branch's
+    # cold start is the `cold-clone` job below instead.
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -49,7 +49,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
-      # Scaffold the published basic (SQLite, no-auth) template fully
+      # Scaffold the published basic (no-auth) template fully
       # non-interactively into an OS temp dir — never the runner's workspace —
       # so a mid-run failure can't dirty anything. `--no-ai` skips the networked
       # MCP install; we let the CLI run its own post-scaffold setup.
@@ -61,14 +61,11 @@ jobs:
           cd "$WORKDIR"
           # Real, networked install of the published package + its template deps.
           npx --yes create-opensaas-app@latest myapp --no-auth --no-ai
-        env:
-          DATABASE_URL: 'file:./dev.db'
 
       # The CLI auto-runs the scaffolded project's own setup; re-run generate and
       # build explicitly so the job fails loudly (and points at the failed step)
-      # if either regresses. The database step is not re-run here: `db:push` and
-      # the SQLite file it created are Prisma 7's, and the `cold-clone` job below
-      # is where a scaffolded project's database is proved under Prisma 8.
+      # if either regresses. No DATABASE_URL is set, as for a user's first run;
+      # the `cold-clone` job below is where a scaffolded project's database is proved.
       - name: Generate and build the scaffolded app
         run: |
           set -euo pipefail
@@ -77,15 +74,13 @@ jobs:
           pnpm generate
           pnpm build
           test -f .opensaas/context.ts
-        env:
-          DATABASE_URL: 'file:./dev.db'
 
   # (b) The FULL `examples/*` build. Examples are off the default build gate
   # (ADR-0002 / PR #447) because each needs a developer-created `.env` to
   # `generate`. This job makes that deterministic: it creates every example's
   # `.env` from its committed `.env.example` first, then runs `pnpm build:examples`.
-  # Each `.env.example` now defaults to a DATABASE_URL that matches its config's
-  # provider (#462), so no per-example overrides are needed here.
+  # No DATABASE_URL is set: generation reads the config and `next build`
+  # renders no database-backed page.
   examples-build:
     name: Full examples build
     # All twelve database-backed examples now build on every PR into the
@@ -114,11 +109,8 @@ jobs:
         run: pnpm build
 
       # Create a runnable `.env` for every example by copying its committed
-      # `.env.example`. A converted example's `.env.example` no longer defaults
-      # DATABASE_URL — leaving it unset is what makes `opensaas dev` start the
-      # Dev database — so the job-level DATABASE_URL below is what its
-      # generate/build resolves. DB/secret placeholders come from the
-      # .env.example values plus that job-level env.
+      # `.env.example`. Secret placeholders come from those values plus the
+      # job-level env.
       - name: Create .env for every example
         run: |
           set -euo pipefail
@@ -133,12 +125,6 @@ jobs:
       - name: Build all examples
         run: pnpm build:examples
         env:
-          # SQLite by default, for the examples wave 2 of #1129 has yet to
-          # convert. No example connects during generate or build, so a
-          # converted Postgres example is unaffected by the value: generation
-          # reads the config and `next build` renders no database-backed page.
-          # #1175 replaces this with a Postgres URL when the last one converts.
-          DATABASE_URL: 'file:./dev.db'
           # Placeholder secrets so generate/build don't fail on missing vars.
           OPENAI_API_KEY: 'sk-testing-key'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
