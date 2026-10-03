@@ -19,6 +19,23 @@
  */
 
 /**
+ * Thrown by a transaction owner that cannot commit: a joined `context.db`
+ * write threw, or the database aborted the transaction, even though the
+ * caller caught the failure and the callback resolved. `cause` is the first
+ * failure; the owner has already rolled back.
+ */
+export class TransactionRolledBackError extends Error {
+  constructor(options: { cause: unknown }) {
+    super(
+      'The transaction was rolled back: a write inside it failed and the failure was caught, ' +
+        'but a transaction with a failed write cannot commit. See `cause` for the first failure.',
+      options,
+    )
+    this.name = 'TransactionRolledBackError'
+  }
+}
+
+/**
  * The outcome the transaction OWNER observed for the transaction as a whole —
  * distinct from a single write's own {@link import('../hooks/index.js').TransactionOutcome},
  * which additionally carries that write's own persisted `item` or `error`.
@@ -45,6 +62,33 @@ export type QueuedTransactionFlush = (
  */
 export class TransactionRegistry {
   private readonly queue: QueuedTransactionFlush[] = []
+  private poisoned = false
+  private firstFailure: unknown
+  private unsafeReached = false
+
+  /** The caller reached the Unsafe surface, whose failures the stack does not observe. */
+  noteUnsafeReached(): void {
+    this.unsafeReached = true
+  }
+
+  get hasReachedUnsafe(): boolean {
+    return this.unsafeReached
+  }
+
+  /** Marks the owner rollback-only. The first failure recorded is the one reported. */
+  poison(failure: unknown): void {
+    if (this.poisoned) return
+    this.poisoned = true
+    this.firstFailure = failure
+  }
+
+  get isPoisoned(): boolean {
+    return this.poisoned
+  }
+
+  get poisonCause(): unknown {
+    return this.firstFailure
+  }
 
   enqueue(flush: QueuedTransactionFlush): void {
     this.queue.push(flush)

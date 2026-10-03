@@ -7,6 +7,7 @@ import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational
 import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
 import {
+  assertAccessFilterConstrains,
   checkAccess,
   checkFieldAccess,
   filterReadableFields,
@@ -531,6 +532,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
 
   if (access !== true) {
     const filter: PrismaFilter = access
+    assertAccessFilterConstrains(filter)
     // The Access Filter is trusted config, so its keys are not read-gated —
     // but it is lowered through the same total seam, which is what stops a
     // rule that resolved to `undefined` from matching every row.

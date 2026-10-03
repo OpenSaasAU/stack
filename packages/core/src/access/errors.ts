@@ -225,3 +225,28 @@ export class UndefinedAccessFilterError extends Error {
     this.path = path
   }
 }
+
+/**
+ * Thrown when an Access Filter constrains nothing — `{}`, `{ AND: [] }`, an
+ * empty operator object, or an empty predicate under a relation quantifier —
+ * the shape a conditional spread yields when it adds nothing for an anonymous
+ * caller. Lowering it would match every row, so it is refused; a rule that
+ * means "every row" returns `true`.
+ *
+ * Deliberately distinct from `ValidationError`: a fault in a trusted rule, not
+ * caller input.
+ */
+export class VacuousAccessFilterError extends Error {
+  public path: readonly string[]
+
+  constructor(path: readonly string[]) {
+    const where = path.length === 0 ? 'at the top level' : `at "${path.join('.')}"`
+    super(
+      `An access rule returned a filter that constrains nothing ${where}. An empty filter would ` +
+        `match every row, so it is refused rather than treated as allow-all. Return \`true\` to ` +
+        `allow every row, or \`false\` to deny.`,
+    )
+    this.name = 'VacuousAccessFilterError'
+    this.path = path
+  }
+}

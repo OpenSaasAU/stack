@@ -165,7 +165,10 @@ describe('every adapter method runs under the unsafe origin', () => {
     })
     expect(consumed?.identifier).toBe('once')
     expect(recorder.plans.length).toBeGreaterThan(1)
-    expect(origins()).toEqual(recorder.plans.map(() => 'unsafe'))
+    // The owner's liveness probe runs last, as the engine.
+    expect(origins()).toEqual(
+      recorder.plans.map((_, index, all) => (index === all.length - 1 ? 'engine' : 'unsafe')),
+    )
 
     recorder.clear()
     const second = await adapter.consumeOne({
@@ -173,7 +176,9 @@ describe('every adapter method runs under the unsafe origin', () => {
       where: [{ field: 'identifier', value: 'once' }],
     })
     expect(second).toBeNull()
-    expect(origins()).toEqual(recorder.plans.map(() => 'unsafe'))
+    expect(origins()).toEqual(
+      recorder.plans.map((_, index, all) => (index === all.length - 1 ? 'engine' : 'unsafe')),
+    )
   })
 
   test('incrementOne runs one typed-SQL statement under the origin', async () => {

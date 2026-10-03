@@ -1,6 +1,6 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
 import type { AccessContext, OrmClient } from '../access/types.js'
-import { checkAccess } from '../access/index.js'
+import { assertAccessFilterConstrains, checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
 import {
@@ -434,6 +434,7 @@ async function reachable(
     })
     if (access === false) return false
     if (access !== true) {
+      assertAccessFilterConstrains(access)
       scope.push(
         await resolveWhere(access, {
           listName: target,

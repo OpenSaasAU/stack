@@ -79,7 +79,11 @@ export { checkAccess, checkCreateAccess, mergeFilters } from './access/index.js'
 
 // Context factory
 export { getContext } from './context/index.js'
-export { TransactionOrmHandleError, TransactionUnavailableError } from './context/index.js'
+export {
+  TransactionOrmHandleError,
+  TransactionRolledBackError,
+  TransactionUnavailableError,
+} from './context/index.js'
 // Thrown when a session handed to `getContext`/`withSession`/`createTestContext`
 // holds `undefined` for one of its own keys — the shape `{ userId: undefined }`
 // a caller builds from an unguarded optional identifier, which `session ?? null`
@@ -259,7 +263,7 @@ export { InvalidCreateAccessResultError } from './access/index.js'
 // `undefined` condition — the shape `({ session }) => ({ authorId:
 // session?.userId })` yields for an anonymous caller. Dropping it would widen
 // the read to every row, so it is refused (see #1147, ADR-0022, ADR-0055).
-export { UndefinedAccessFilterError } from './access/index.js'
+export { UndefinedAccessFilterError, VacuousAccessFilterError } from './access/index.js'
 
 /** @deprecated Never thrown; kept so existing imports compile. */
 export { RelationFilterAccessDeniedError } from './access/index.js'

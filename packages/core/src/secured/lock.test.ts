@@ -406,20 +406,14 @@ describe('forUpdate()', () => {
       expect(rawStatements()[0].sql).toContain('FOR UPDATE')
     })
 
-    test('the same hook under a write outside a transaction has no lane, and refuses', async () => {
-      // This context is not transaction-bound, so it never carried a lane at
-      // all — the refusal comes from its absence, not from
-      // `bindContextToTransaction` dropping one. That guard is defensive:
-      // `_rowLock` and `_transactionOpener` are set on mutually exclusive
-      // conditions, so no path reaches the drop branch with a lane present,
-      // and this test passes identically with the guard deleted.
+    test('the same hook under a root write locks through the lane of that write’s own transaction', async () => {
       const context = database.context(anonymous)
       await context.db.Slot.create({ data: { name: 'a', capacity: 1 } })
       lockedByHook = null
 
       await context.db.Ledger.create({ data: { note: 'x' } })
 
-      expect(lockedByHook).toMatchObject({ error: expect.any(RowLockUnavailableError) })
+      expect(lockedByHook).toEqual({ keys: ['a'] })
     })
   })
 
