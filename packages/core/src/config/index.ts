@@ -163,6 +163,7 @@ export type {
   BulkActionResult,
   BulkActionVariant,
   ItemViewUIConfig,
+  ListUIOption,
   RelationshipItemViewConfig,
   ThemeConfig,
   ThemePreset,

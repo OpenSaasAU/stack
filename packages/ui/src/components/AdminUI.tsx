@@ -16,6 +16,7 @@ import {
   resolveListKeyFromUrl,
   resolveNavCounts,
 } from '@opensaas/stack-core'
+import { resolveListUi } from '../lib/resolveListUi.js'
 import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
 
@@ -93,6 +94,10 @@ export async function AdminUI({
     // Redirect them to the bare editor so old links keep working.
     redirect(`${basePath}/${getUrlKey(listKey)}`)
   } else if (action === 'create') {
+    const createListConfig = Object.hasOwn(config.lists, listKey)
+      ? config.lists[listKey]
+      : undefined
+    if ((await resolveListUi(createListConfig, engineContextOf(context))).hideCreate) notFound()
     content = (
       <ItemForm
         context={context}

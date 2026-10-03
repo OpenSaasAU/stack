@@ -2396,7 +2396,43 @@ export type ListUIConfig = {
    * ```
    */
   avatar?: boolean
+  /**
+   * Hide every Create affordance for this list in the admin UI — the list
+   * header, the empty state, the dashboard quick actions and a relationship
+   * table's create drawer — and render the `/create` route as not-found.
+   * Takes a boolean, or a function of the session resolved on the server. Only
+   * what the UI offers changes; access control, hooks and server actions are
+   * untouched, so a write that bypasses the UI behaves exactly as before.
+   *
+   * @example
+   * ```typescript
+   * ui: { hideCreate: ({ session }) => session?.role !== 'SUPPORT' }
+   * ```
+   */
+  hideCreate?: ListUIOption<boolean>
+  /**
+   * Hide every Delete affordance for this list in the admin UI — the list view
+   * (row and bulk) and the item view. Same shape and guarantees as
+   * {@link ListUIConfig.hideCreate}.
+   *
+   * @example
+   * ```typescript
+   * ui: { hideDelete: true }
+   * ```
+   */
+  hideDelete?: ListUIOption<boolean>
 }
+
+/**
+ * A list-level UI option: a literal, or a function of the live session
+ * resolved on the server. The function never crosses to the client.
+ */
+export type ListUIOption<TValue> =
+  | TValue
+  | ((args: {
+      session: import('../access/types.js').AccessContext['session']
+      context: import('../access/types.js').AccessContext
+    }) => TValue | Promise<TValue>)
 
 /**
  * Item-view (record edit page) configuration, mirroring the `ui.listView`
@@ -2420,6 +2456,18 @@ export type ItemViewUIConfig = {
    * ```
    */
   order?: string[]
+  /**
+   * The mode the item view renders its fields in. `'read'` renders every field
+   * read-only with no Save action; relationship sections still render. Takes a
+   * value, or a function of the session resolved on the server. Defaults to
+   * `'edit'`. UI-only: access control and server actions are unchanged.
+   *
+   * @example
+   * ```typescript
+   * ui: { itemView: { defaultFieldMode: 'read' } }
+   * ```
+   */
+  defaultFieldMode?: ListUIOption<'edit' | 'read'>
 }
 
 /**

@@ -1,3 +1,4 @@
+import { resolveListUi } from '../lib/resolveListUi.js'
 import {
   getItemLabel,
   getUrlKey,
@@ -53,6 +54,8 @@ export interface RelationshipTableProps {
   parentId: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  /** Suppress every write affordance — set when the parent's item view is in `'read'` field mode. */
+  readOnly?: boolean
 }
 
 /**
@@ -72,6 +75,7 @@ async function resolveRemoveMode(
   const args = { session: context.session, context }
 
   if (section.removeAction === 'delete') {
+    if ((await resolveListUi(relatedListConfig, context)).hideDelete) return null
     return (await isOperationPotentiallyAllowed(access, 'delete', args)) ? 'delete' : null
   }
 
@@ -166,6 +170,8 @@ async function resolveCreateForm(
   context: AccessContext,
 ): Promise<CreateFormData | null> {
   if (!section.backReferenceField || !relatedListConfig) return null
+
+  if ((await resolveListUi(relatedListConfig, context)).hideCreate) return null
 
   const allowed = await isOperationPotentiallyAllowed(
     relatedListConfig.access?.operation,
@@ -347,15 +353,20 @@ export async function RelationshipTable({
   parentListKey,
   parentId,
   serverAction,
+  readOnly = false,
 }: RelationshipTableProps) {
   const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
 
-  const removeMode = await resolveRemoveMode(section, relatedListConfig, context)
-  const createForm = await resolveCreateForm(section, relatedListConfig, config, context)
-  const linkEdge = await resolveLinkEdge(section, config, parentListKey, context)
-  const editableColumns = await resolveEditableColumns(section, relatedListConfig, context)
+  const removeMode = readOnly ? null : await resolveRemoveMode(section, relatedListConfig, context)
+  const createForm = readOnly
+    ? null
+    : await resolveCreateForm(section, relatedListConfig, config, context)
+  const linkEdge = readOnly ? null : await resolveLinkEdge(section, config, parentListKey, context)
+  const editableColumns = readOnly
+    ? []
+    : await resolveEditableColumns(section, relatedListConfig, context)
 
   // The related list config for each relationship column, keyed by column, so
   // its values can be label-resolved via that column's OWN target list (a
