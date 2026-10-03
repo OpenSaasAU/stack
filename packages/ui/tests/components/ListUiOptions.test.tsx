@@ -3,11 +3,13 @@ import * as React from 'react'
 import { render, screen } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
+import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { Dashboard } from '../../src/components/Dashboard.js'
 import { ItemForm } from '../../src/components/ItemForm.js'
+import { SingletonView } from '../../src/components/SingletonView.js'
+import { RelationshipTable } from '../../src/components/RelationshipTable.js'
 import { ListView } from '../../src/components/ListView.js'
 
 vi.mock('next/navigation.js', () => ({
@@ -39,6 +41,24 @@ const config: OpenSaasConfig = {
       access: { operation: OPEN },
       ui: { hideCreate: true, hideDelete: true, itemView: { defaultFieldMode: 'read' } },
     }),
+    Settings: list({
+      isSingleton: true,
+      fields: { siteName: text() },
+      access: { operation: OPEN },
+      ui: { itemView: { defaultFieldMode: 'read' } },
+    }),
+    Parent: list({
+      fields: { name: text(), kids: relationship({ ref: 'Kid.parent', many: true }) },
+      access: { operation: OPEN },
+      ui: {
+        itemView: { defaultFieldMode: ({ session }) => (isViewer({ session }) ? 'read' : 'edit') },
+      },
+    }),
+    Kid: list({
+      fields: { name: text(), parent: relationship({ ref: 'Parent.kids' }) },
+      access: { operation: OPEN },
+      ui: { hideDelete: true },
+    }),
     ByRole: list({
       fields: { title: text() },
       access: { operation: OPEN },
@@ -61,6 +81,8 @@ let hiddenId: string
 let plainId: string
 let byRoleId: string
 let viewerByRoleId: string
+let parentId: string
+let viewerParentId: string
 
 beforeAll(async () => {
   adminHarness = await createTestContext(config, { role: 'admin' })
@@ -73,6 +95,11 @@ beforeAll(async () => {
   viewerByRoleId = String(
     (await viewerHarness.context.db.ByRole.create({ data: { title: 'r' } }))?.id,
   )
+  parentId = String((await adminHarness.context.db.Parent.create({ data: { name: 'p' } }))?.id)
+  viewerParentId = String(
+    (await viewerHarness.context.db.Parent.create({ data: { name: 'p' } }))?.id,
+  )
+  await adminHarness.context.db.Settings.create({ data: { siteName: 's' } })
 }, 120_000)
 
 afterAll(async () => {
@@ -231,6 +258,49 @@ describe('itemView.defaultFieldMode', () => {
       await ItemForm({ context: admin, config, listKey: 'Hidden', mode: 'create', serverAction }),
     )
     expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
+  })
+})
+
+describe('read mode beyond the details form', () => {
+  it('renders the singleton editor read-only', async () => {
+    render(await SingletonView({ context: admin, config, listKey: 'Settings', serverAction }))
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+  })
+
+  it('suppresses relationship section write affordances in read mode only', async () => {
+    const tableProps = async (context: AccessContext, id: string) => {
+      const find = async (node: React.ReactNode): Promise<React.ReactElement | undefined> => {
+        if (!React.isValidElement<{ children?: React.ReactNode }>(node)) return undefined
+        if (node.type === RelationshipTable) return node
+        const expanded =
+          Object.prototype.toString.call(node.type) === '[object AsyncFunction]'
+            ? await node.type(node.props)
+            : node.props.children
+        for (const child of React.Children.toArray(expanded)) {
+          const found = await find(child)
+          if (found) return found
+        }
+        return undefined
+      }
+      const table = await find(
+        await ItemForm({
+          context,
+          config,
+          listKey: 'Parent',
+          mode: 'edit',
+          itemId: id,
+          serverAction,
+        }),
+      )
+      expect(table).toBeDefined()
+      return (await RelationshipTable(table?.props)).props
+    }
+
+    const readOnly = await tableProps(viewer, viewerParentId)
+    expect(readOnly.canCreate).toBe(false)
+    expect(readOnly.editableColumns).toEqual([])
+
+    expect((await tableProps(admin, parentId)).canCreate).toBe(true)
   })
 })
 

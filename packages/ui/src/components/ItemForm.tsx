@@ -273,6 +273,7 @@ async function ItemViewLayoutView({
         parentListKey={listKey}
         parentId={String(itemId)}
         serverAction={serverAction}
+        readOnly={fieldMode === 'read'}
       />
     )
   })

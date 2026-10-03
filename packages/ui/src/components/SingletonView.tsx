@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { resolveListUi } from '../lib/resolveListUi.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
@@ -169,6 +170,7 @@ export async function SingletonView({
   )
 
   const itemId = record.id as string
+  const { fieldMode } = await resolveListUi(listConfig, context)
 
   return (
     <div className="p-8 max-w-4xl">
@@ -190,6 +192,7 @@ export async function SingletonView({
           serverAction={serverAction}
           relationshipData={relationshipData}
           canDelete={false}
+          fieldMode={fieldMode}
         />
       </div>
     </div>
