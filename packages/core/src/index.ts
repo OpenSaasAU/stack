@@ -79,7 +79,11 @@ export { checkAccess, checkCreateAccess, mergeFilters } from './access/index.js'
 
 // Context factory
 export { getContext } from './context/index.js'
-export { TransactionOrmHandleError, TransactionUnavailableError } from './context/index.js'
+export {
+  TransactionOrmHandleError,
+  TransactionRolledBackError,
+  TransactionUnavailableError,
+} from './context/index.js'
 // Thrown when a session handed to `getContext`/`withSession`/`createTestContext`
 // holds `undefined` for one of its own keys — the shape `{ userId: undefined }`
 // a caller builds from an unguarded optional identifier, which `session ?? null`

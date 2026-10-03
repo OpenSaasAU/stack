@@ -331,6 +331,8 @@ export async function runWithTransactionBoundary(args: {
         await runAfterTransactionForList(involved, outcome, afterTransactionContext, afterErrors)
       }
     }
+    const owner = joinedOwner ?? ownedRegistry
+    owner?.poison(beforeError)
     throw beforeError
   }
 
@@ -354,6 +356,7 @@ export async function runWithTransactionBoundary(args: {
   } catch (err) {
     txError = err
     outcome = { status: 'rolled-back', error: err }
+    ;(joinedOwner ?? ownedRegistry)?.poison(err)
   }
 
   if (joinedOwner) {

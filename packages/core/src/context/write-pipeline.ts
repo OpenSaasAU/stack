@@ -39,7 +39,7 @@ import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
-import { TransactionRegistry } from '../access/transaction-registry.js'
+import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { RowLockLane } from '../secured/lock.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
@@ -192,14 +192,20 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // boundary hooks must not run. The result feeds `preResolvedTarget` and is
   // REUSED inside the transaction rather than re-resolved, keeping the target
   // read exactly once (#569).
-  const gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
-  if (gate.status === 'denied') {
-    return null
-  }
+  let gate: TargetResolution
+  try {
+    gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
+    if (gate.status === 'denied') {
+      return null
+    }
 
-  // A payload-shape refusal, after the access gate so a denied caller learns
-  // nothing about this list's fields from it (ADR-0031).
-  refuseNestedRelationInput(listName, listConfig, config, inputData)
+    // A payload-shape refusal, after the access gate so a denied caller learns
+    // nothing about this list's fields from it (ADR-0031).
+    refuseNestedRelationInput(listName, listConfig, config, inputData)
+  } catch (err) {
+    context._transactionOwner?.poison(err)
+    throw err
+  }
 
   const involvedLists = enumerateInvolvedLists({
     listName,
@@ -242,8 +248,8 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: () =>
-      runInTransaction(opener, ormHandle, (tx, openedLock) =>
-        runWriteInTransaction(
+      runInTransaction(opener, ormHandle, async (tx, openedLock) => {
+        const written = await runWriteInTransaction(
           {
             ...args,
             ormHandle: tx,
@@ -254,8 +260,12 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
             context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
           },
           ops,
-        ),
-      ),
+        )
+        if (ownedRegistry?.isPoisoned) {
+          throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
+        }
+        return written
+      }),
   })
 }
 

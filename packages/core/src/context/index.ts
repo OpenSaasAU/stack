@@ -9,6 +9,7 @@ import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import {
+  createLivenessProbe,
   createRowLockLane,
   RowLockUnavailableError,
   unusableRowLockLane,
@@ -38,7 +39,8 @@ import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
 import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { AfterTransactionError } from './transaction-boundary.js'
-import { TransactionRegistry } from '../access/transaction-registry.js'
+import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
+export { TransactionRolledBackError }
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
 
 export type ServerActionProps =
@@ -496,6 +498,23 @@ function transactionOpenerFor(
     })
 }
 
+function watchUnsafeReach(
+  surface: UnsafeSurface,
+  owner: TransactionRegistry | undefined,
+): UnsafeSurface {
+  if (owner === undefined) return surface
+  return new Proxy(surface, {
+    get(target, key) {
+      owner.noteUnsafeReached()
+      return Reflect.get(target, key)
+    },
+  })
+}
+
+function throwIfPoisoned(registry: TransactionRegistry): void {
+  if (registry.isPoisoned) throw new TransactionRolledBackError({ cause: registry.poisonCause })
+}
+
 /**
  * Drain a `context.transaction()` owner's deferral registry once its callback
  * (and any real underlying transaction) has settled (ADR-0028). A transaction/
@@ -681,7 +700,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
       ? unavailableUnsafeSurface()
       : _unsafeTransaction === undefined
         ? createUnsafeSurface(client)
-        : createUnsafeTransactionSurface(client, _unsafeTransaction)
+        : watchUnsafeReach(
+            createUnsafeTransactionSurface(client, _unsafeTransaction),
+            _transactionOwner,
+          )
 
   const context: AccessContext = {
     session,
@@ -1409,7 +1431,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // this branch, the scope has to be derived here too or `tx.unsafe` starts
     // executing outside the transaction it opened.
     if (typeof ormClient.$transaction === 'function') {
-      return ormClient.$transaction((tx) => fn(child(tx))) as Promise<T>
+      return ormClient.$transaction(async (tx) => {
+        const result = await fn(child(tx))
+        throwIfPoisoned(registry)
+        return result
+      }) as Promise<T>
     }
 
     // Prisma 8's transaction holds a pooled connection for the whole callback,
@@ -1418,14 +1444,25 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // transaction, or wait forever for a second connection the dev database's
     // single-connection pool never frees (ADR-0056, ADR-0063).
     if (openTransaction !== undefined) {
-      return openTransaction(async (opened) => fn(child(opened.ormHandle, opened.unsafe)))
+      return openTransaction(async (opened) => {
+        const result = await fn(child(opened.ormHandle, opened.unsafe))
+        throwIfPoisoned(registry)
+        if (!registry.hasReachedUnsafe) return result
+        await createLivenessProbe(client?.raw, opened.unsafe)?.().catch((aborted: unknown) => {
+          throw new TransactionRolledBackError({ cause: registry.poisonCause ?? aborted })
+        })
+        return result
+      })
     }
 
     // Already inside a transaction someone else opened: run directly, because
     // hook and access semantics are identical and the atomicity comes from
     // that enclosing transaction (ADR-0028).
     if (_unsafeTransaction !== undefined) {
-      return fn(child(ormHandle, _unsafeTransaction))
+      return fn(child(ormHandle, _unsafeTransaction)).then((result) => {
+        throwIfPoisoned(registry)
+        return result
+      })
     }
 
     return Promise.reject(new TransactionUnavailableError())
