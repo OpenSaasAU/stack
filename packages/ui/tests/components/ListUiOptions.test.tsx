@@ -9,7 +9,10 @@ import { AdminUI } from '../../src/components/AdminUI.js'
 import { Dashboard } from '../../src/components/Dashboard.js'
 import { ItemForm } from '../../src/components/ItemForm.js'
 import { SingletonView } from '../../src/components/SingletonView.js'
-import { RelationshipTable } from '../../src/components/RelationshipTable.js'
+import {
+  RelationshipTable,
+  type RelationshipTableProps,
+} from '../../src/components/RelationshipTable.js'
 import { ListView } from '../../src/components/ListView.js'
 
 vi.mock('next/navigation.js', () => ({
@@ -27,6 +30,9 @@ vi.mock('next/link.js', () => ({
     <a href={href}>{children}</a>
   ),
 }))
+
+const isAsyncComponent = (type: unknown): type is (props: unknown) => Promise<React.ReactNode> =>
+  Object.prototype.toString.call(type) === '[object AsyncFunction]'
 
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
@@ -269,13 +275,16 @@ describe('read mode beyond the details form', () => {
 
   it('suppresses relationship section write affordances in read mode only', async () => {
     const tableProps = async (context: AccessContext, id: string) => {
-      const find = async (node: React.ReactNode): Promise<React.ReactElement | undefined> => {
+      const find = async (
+        node: React.ReactNode,
+      ): Promise<React.ReactElement<RelationshipTableProps> | undefined> => {
+        if (React.isValidElement<RelationshipTableProps>(node) && node.type === RelationshipTable) {
+          return node
+        }
         if (!React.isValidElement<{ children?: React.ReactNode }>(node)) return undefined
-        if (node.type === RelationshipTable) return node
-        const expanded =
-          Object.prototype.toString.call(node.type) === '[object AsyncFunction]'
-            ? await node.type(node.props)
-            : node.props.children
+        const expanded = isAsyncComponent(node.type)
+          ? await node.type(node.props)
+          : node.props.children
         for (const child of React.Children.toArray(expanded)) {
           const found = await find(child)
           if (found) return found
@@ -292,8 +301,8 @@ describe('read mode beyond the details form', () => {
           serverAction,
         }),
       )
-      expect(table).toBeDefined()
-      return (await RelationshipTable(table?.props)).props
+      if (!table) throw new Error('no relationship table rendered')
+      return (await RelationshipTable(table.props)).props
     }
 
     const readOnly = await tableProps(viewer, viewerParentId)
