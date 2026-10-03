@@ -311,7 +311,7 @@
     "storageHash": "90a9b7f6b40ddd43ccd150bfe1badde9a0e63d1ae13117856bb60210af79c96d"
   },
   "execution": {
-    "executionHash": "d2556e34998f7600656347c5fdcb1521ab3df53ef5bab4d9e486e4588451fe48",
+    "executionHash": "d8352b781504e546212207d50ca24f84317b25410ad47983ab7e8bbf162a65c9",
     "mutations": {
       "defaults": [
         {
@@ -320,9 +320,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Article"
+            "entry": "Article",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -331,9 +331,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Document"
+            "entry": "Document",
+            "field": "id",
+            "namespace": "public"
           }
         }
       ]

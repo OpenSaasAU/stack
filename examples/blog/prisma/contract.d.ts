@@ -36,7 +36,7 @@ import type {
 export type StorageHash =
   StorageHashBase<'009224f52bdbfbd1ddfe13fe931e4ff0711395cbf89618183169c1bffd08cc27'>;
 export type ExecutionHash =
-  ExecutionHashBase<'af5dc3d5f24b634b2e758fd00fab12e7bb54e8a31c5b0abc1323b1407a9bc321'>;
+  ExecutionHashBase<'50c029eb0f2aa20ab356fe12cb523f13a754a3a2c115da66bd8365c1b908bde9'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -1168,78 +1168,78 @@ type ContractBase = Omit<
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Post';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Post';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Post';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Post';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'PostTag';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'PostTag';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'PostTag';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'PostTag';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Settings';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Settings';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Tag';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Tag';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Tag';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Tag';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'User';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'User';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'User';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'User';
           };
         },
       ];

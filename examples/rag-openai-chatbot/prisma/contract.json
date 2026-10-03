@@ -169,7 +169,7 @@
     "storageHash": "7b00f5dd2bdc840b6b8774540b76a6d6368f7db19de9eba66c6046ba9401b9dd"
   },
   "execution": {
-    "executionHash": "a7755b5463267cb2c568976e30c2fea818bff29bf19ec56d524ec4d8d751b928",
+    "executionHash": "e46ade5a9f89ec7b9a9f33726497945abaf36f1041eac80922b4b4bc82894ed3",
     "mutations": {
       "defaults": [
         {
@@ -178,9 +178,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "KnowledgeBase"
+            "entry": "KnowledgeBase",
+            "field": "id",
+            "namespace": "public"
           }
         }
       ]

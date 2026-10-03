@@ -196,10 +196,7 @@ type MutationDefaults<C> = C extends {
  * generator (`uuidv7`, `timestampNow`) rather than the caller.
  */
 type HasCreateGenerator<C, K extends string, F> = [
-  Extract<
-    MutationDefaults<C>,
-    { readonly ref: { readonly table: TableOf<C, K>; readonly column: PhysicalColumn<C, K, F> } }
-  >,
+  Extract<MutationDefaults<C>, { readonly ref: { readonly entry: K; readonly field: F } }>,
 ] extends [never]
   ? false
   : true

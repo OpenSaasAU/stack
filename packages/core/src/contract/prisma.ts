@@ -215,10 +215,17 @@ function scalarField(
   if (column.nullable) builder = builder.optional()
   if (column.map !== undefined) builder = builder.column(column.map)
   if (column.unique) builder = builder.unique()
-  if (column.default?.kind === 'literal') builder = builder.default(column.default.value)
+  if (column.default?.kind === 'literal')
+    builder = builder.default(codecLiteral(column, column.default.value))
   if (column.default?.kind === 'now') builder = builder.defaultSql('now()')
   if (column.default?.kind === 'sql') builder = builder.defaultSql(column.default.expression)
   return builder
+}
+
+function codecLiteral(column: ContractColumn, value: unknown): unknown {
+  return column.type.pack === 'pg' && column.type.type === 'bigint' && typeof value === 'string'
+    ? BigInt(value)
+    : value
 }
 
 function modelFields(

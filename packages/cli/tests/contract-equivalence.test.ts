@@ -14,6 +14,7 @@ import {
   type PrismaContractPacks,
 } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
+import { bigInt } from '../../core/src/fields/index.js'
 import {
   authConfig,
   blogConfig,
@@ -48,6 +49,11 @@ async function evaluateRendered(name: string, source: string): Promise<PrismaCon
   return module.contract
 }
 
+const bigIntDefaultConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: { Counter: { fields: { total: bigInt({ defaultValue: 42n }) } } },
+}
+
 const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPacks }[] = [
   { name: 'blog', config: blogConfig },
   { name: 'auth', config: authConfig },
@@ -57,6 +63,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'native-types', config: nativeTypesConfig },
   { name: 'hostile-names', config: hostileNamesConfig },
   { name: 'long-identifiers', config: longIdentifierConfig },
+  { name: 'bigint-default', config: bigIntDefaultConfig },
   // `fieldPackageConfig` is typed against `@opensaas/stack-core`'s published
   // declarations (it mixes in `@opensaas/stack-storage`/`@opensaas/stack-tiptap`
   // fields, which are themselves built against that surface) while this file's
@@ -159,6 +166,12 @@ describe('renderContractModule — the lowering table', () => {
     expect(blog).toContain('rel.hasMany(() => models.Post,')
     const oneToOne = renderContractModule(deriveContract(oneToOneConfig))
     expect(oneToOne).toContain('rel.hasOne(')
+  })
+
+  test('a bigint literal default is a bigint, which the int8 codec requires', () => {
+    expect(renderContractModule(deriveContract(bigIntDefaultConfig))).toContain(
+      'total: field.bigint().optional().default(42n)',
+    )
   })
 
   test('an extension column is a pack-qualified type constructor', () => {
