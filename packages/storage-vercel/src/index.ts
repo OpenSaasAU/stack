@@ -59,6 +59,11 @@ export interface VercelBlobStorageConfig {
   [key: string]: unknown
 }
 
+function isPlainFilename(name: string): boolean {
+  if (name === '' || name === '.' || name === '..') return false
+  return !/[/\\\0]/.test(name)
+}
+
 export class VercelBlobStorageProvider implements StorageProvider {
   private config: VercelBlobStorageConfig
 
@@ -95,6 +100,11 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   private getFullPath(filename: string): string {
+    if (!isPlainFilename(filename)) {
+      throw new Error(
+        `VercelBlobStorageProvider refused a pathname outside the configured prefix: ${JSON.stringify(filename)}`,
+      )
+    }
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
     }

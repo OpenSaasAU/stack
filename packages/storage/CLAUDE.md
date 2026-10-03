@@ -341,9 +341,9 @@ export async function GET(request: NextRequest, { params }: { params: { filename
 
   // Reject any segment that isn't the bare filename the provider generated —
   // `basename` alone defeats a `../` traversal attempt, independent of
-  // whether the named provider itself checks (`LocalStorageProvider` does;
-  // `@opensaas/stack-storage-s3` and `-vercel` do not carry the equivalent
-  // check).
+  // whether the named provider itself checks (`LocalStorageProvider`,
+  // `S3StorageProvider` and `VercelBlobStorageProvider` each refuse a name
+  // that isn't a single plain segment).
   const filename = path.basename(params.filename)
   if (filename !== params.filename) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -608,7 +608,10 @@ What this package actually enforces, and what it leaves to you (issues #1625, #1
   for it, or at least `X-Content-Type-Options: nosniff`.
 - **Signed URLs** are available where the provider supports them (S3's
   `getSignedUrl`) for private files — optional, and not the default.
-- **Path traversal and header injection in a custom serving route are the
+- **Providers refuse non-plain names.** Local, S3 and Vercel Blob providers
+  throw on a `download`/`delete`/`getUrl`/`getSignedUrl` name containing `/`,
+  `\`, NUL or equal to `.`/`..`, before any prefix is joined on.
+- **Path traversal and header injection in a custom serving route are still the
   route author's job** — see the pattern in "Serving Private Files" above.
 
 ## Future Enhancements

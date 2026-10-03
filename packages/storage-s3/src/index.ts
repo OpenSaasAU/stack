@@ -35,6 +35,11 @@ export interface S3StorageConfig {
   [key: string]: unknown
 }
 
+function isPlainFilename(name: string): boolean {
+  if (name === '' || name === '.' || name === '..') return false
+  return !/[/\\\0]/.test(name)
+}
+
 /**
  * AWS S3 storage provider
  * Supports standard S3 and S3-compatible services
@@ -73,6 +78,11 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   private getFullKey(filename: string): string {
+    if (!isPlainFilename(filename)) {
+      throw new Error(
+        `S3StorageProvider refused a key outside the configured prefix: ${JSON.stringify(filename)}`,
+      )
+    }
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
     }
