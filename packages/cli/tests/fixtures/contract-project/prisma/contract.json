@@ -1105,7 +1105,7 @@
     "storageHash": "bf884008ca84b96723431c4d2eb7aa537e2fd1b051887c068b8605d2e9f2deb8"
   },
   "execution": {
-    "executionHash": "dae5903078565ab31cb5f8ebb7ad424a5c262825cb64eb3e9499e857380e9396",
+    "executionHash": "b226cb137b15acbabfef2bc5082eb506d9510c2d3cefd3c20c52ca4356e55772",
     "mutations": {
       "defaults": [
         {
@@ -1114,9 +1114,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "audit",
-            "table": "AuditEntry"
+            "entry": "AuditEntry",
+            "field": "id",
+            "namespace": "audit"
           }
         },
         {
@@ -1129,9 +1129,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "audit",
-            "table": "AuditEntry"
+            "entry": "AuditEntry",
+            "field": "updatedAt",
+            "namespace": "audit"
           }
         },
         {
@@ -1140,9 +1140,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Category"
+            "entry": "Category",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1151,9 +1151,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "post"
+            "entry": "Profile",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1166,9 +1166,24 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "post"
+            "entry": "Profile",
+            "field": "updatedAt",
+            "namespace": "public"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "timestampNow",
+            "kind": "generator"
+          },
+          "onUpdate": {
+            "id": "timestampNow",
+            "kind": "generator"
+          },
+          "ref": {
+            "entry": "Settings",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         },
         {
@@ -1177,9 +1192,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Profile"
+            "entry": "User",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1192,24 +1207,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "Profile"
-          }
-        },
-        {
-          "onCreate": {
-            "id": "timestampNow",
-            "kind": "generator"
-          },
-          "onUpdate": {
-            "id": "timestampNow",
-            "kind": "generator"
-          },
-          "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "Settings"
+            "entry": "User",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         },
         {
@@ -1218,9 +1218,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "User"
+            "entry": "post",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1233,9 +1233,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "User"
+            "entry": "post",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         }
       ]

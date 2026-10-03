@@ -216,7 +216,7 @@
     "storageHash": "bc6c4509222142b9dcac123b533f86a70fa3769774d7d21dec19917421889fd1"
   },
   "execution": {
-    "executionHash": "4d4b09aa2c7a57c862bff94124762e1e6c6e55584105f635253569e939d1dcee",
+    "executionHash": "3cc9cb98b3171e8b5701d3570b83306a599a3711438ac515d082dfe6d695090a",
     "mutations": {
       "defaults": [
         {
@@ -225,9 +225,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Article"
+            "entry": "Article",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -236,9 +236,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Product"
+            "entry": "Product",
+            "field": "id",
+            "namespace": "public"
           }
         }
       ]

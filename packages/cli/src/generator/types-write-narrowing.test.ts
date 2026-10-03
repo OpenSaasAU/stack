@@ -137,6 +137,9 @@ async function run() {
   // @ts-expect-error \`createdAt\` carries a database default and is never writable
   await context.db.Event.create({ data: { title: 't', createdAt: '2026-01-01T00:00:00Z' } })
 
+  // @ts-expect-error \`updatedAt\` is filled by an ORM-side generator and is never writable
+  await context.db.Event.create({ data: { title: 't', updatedAt: '2026-01-01T00:00:00Z' } })
+
   // Update is partial, and keeps every narrowing create has.
   await context.db.Event.update({ where: { id: 'e1' }, data: { day: '2026-01-02' } })
 

@@ -64,7 +64,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       nullable: false,
     })
     expect(contract.execution?.mutations.defaults).toContainEqual({
-      ref: { namespace: 'public', table: 'User', column: 'id' },
+      ref: { namespace: 'public', entry: 'User', field: 'id' },
       onCreate: { kind: 'generator', id: 'uuidv7' },
     })
 
@@ -80,7 +80,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     })
     expect(table(contract, 'User').columns.updatedAt).not.toHaveProperty('default')
     expect(contract.execution?.mutations.defaults).toContainEqual({
-      ref: { namespace: 'public', table: 'User', column: 'updatedAt' },
+      ref: { namespace: 'public', entry: 'User', field: 'updatedAt' },
       onCreate: { kind: 'generator', id: 'timestampNow' },
       onUpdate: { kind: 'generator', id: 'timestampNow' },
     })
@@ -370,7 +370,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     })
     expect(table(contract, 'Profile').columns.id).toMatchObject({ codecId: 'sql/char@1' })
     expect(contract.execution?.mutations.defaults).toContainEqual({
-      ref: { namespace: 'public', table: 'Profile', column: 'id' },
+      ref: { namespace: 'public', entry: 'Profile', field: 'id' },
       onCreate: { kind: 'generator', id: 'cuid2' },
     })
   })

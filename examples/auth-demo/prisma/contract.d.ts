@@ -36,7 +36,7 @@ import type {
 export type StorageHash =
   StorageHashBase<'4e0477774ba0d6bde9278687838b295ef8ce21809dccbf8c780fcec534a8b48b'>;
 export type ExecutionHash =
-  ExecutionHashBase<'2a37caf16f34ae2bd8b4f3e8090859f6cc1b6352bd7f085d1502541f7127f148'>;
+  ExecutionHashBase<'f8065f1b5644d74af95ba1fffe0bcd78a1d790c55b2a7714cc018d7ffbb48a2b'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -1317,77 +1317,77 @@ type ContractBase = Omit<
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Account';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Account';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Account';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Account';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Post';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Post';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Session';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Session';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Session';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Session';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'User';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'User';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'User';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'User';
           };
         },
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'Verification';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'Verification';
           };
         },
         {
           readonly onCreate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly onUpdate: { readonly id: 'timestampNow'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'updatedAt';
+            readonly entry: 'Verification';
+            readonly field: 'updatedAt';
             readonly namespace: 'public';
-            readonly table: 'Verification';
           };
         },
       ];

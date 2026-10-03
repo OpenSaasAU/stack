@@ -1169,7 +1169,7 @@
     "storageHash": "fffdf110dc01c113c7dfc2a4dac9db198e7dff3d2408298fa06658a7bc34fdfb"
   },
   "execution": {
-    "executionHash": "26b60f4cb79e129157ebb5dfc4f5ccb621b521b2b170875af684be56a0aedaff",
+    "executionHash": "cd87c5f68aca4fc87e0fbc8f8e4839b33f7a0fe875994bfa48eadfa5c1a1d264",
     "mutations": {
       "defaults": [
         {
@@ -1178,9 +1178,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Account"
+            "entry": "Account",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1193,9 +1193,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "Account"
+            "entry": "Account",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         },
         {
@@ -1204,9 +1204,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Note"
+            "entry": "Note",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1215,9 +1215,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Post"
+            "entry": "Post",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1226,9 +1226,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Session"
+            "entry": "Session",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1241,9 +1241,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "Session"
+            "entry": "Session",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         },
         {
@@ -1252,9 +1252,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "User"
+            "entry": "User",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1267,9 +1267,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "User"
+            "entry": "User",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         },
         {
@@ -1278,9 +1278,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Verification"
+            "entry": "Verification",
+            "field": "id",
+            "namespace": "public"
           }
         },
         {
@@ -1293,9 +1293,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "updatedAt",
-            "namespace": "public",
-            "table": "Verification"
+            "entry": "Verification",
+            "field": "updatedAt",
+            "namespace": "public"
           }
         }
       ]

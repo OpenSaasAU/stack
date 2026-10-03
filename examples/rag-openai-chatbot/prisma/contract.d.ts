@@ -41,7 +41,7 @@ import type {
 export type StorageHash =
   StorageHashBase<'7b00f5dd2bdc840b6b8774540b76a6d6368f7db19de9eba66c6046ba9401b9dd'>;
 export type ExecutionHash =
-  ExecutionHashBase<'a7755b5463267cb2c568976e30c2fea818bff29bf19ec56d524ec4d8d751b928'>;
+  ExecutionHashBase<'e46ade5a9f89ec7b9a9f33726497945abaf36f1041eac80922b4b4bc82894ed3'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -542,9 +542,9 @@ type ContractBase = Omit<
         {
           readonly onCreate: { readonly id: 'uuidv7'; readonly kind: 'generator' };
           readonly ref: {
-            readonly column: 'id';
+            readonly entry: 'KnowledgeBase';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'KnowledgeBase';
           };
         },
       ];
