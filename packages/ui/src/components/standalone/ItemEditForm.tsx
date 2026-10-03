@@ -28,6 +28,11 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
   initialData: TData
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
+  /**
+   * Runs instead of `onSubmit` when Save is pressed with nothing changed, so no
+   * update is issued. Defaults to `onCancel`.
+   */
+  onUnchanged?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
   submitLabel?: string
   cancelLabel?: string
@@ -58,6 +63,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   initialData,
   onSubmit,
   onCancel,
+  onUnchanged,
   relationshipData = {},
   submitLabel = 'Save',
   cancelLabel = 'Cancel',
@@ -90,6 +96,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
     initialData: transformedInitialData,
     mode: 'update',
     errorFallback: 'Failed to update item',
+    onUnchanged: onUnchanged ?? onCancel,
     onSubmit: async (data) => {
       const result = await onSubmit(data as TData)
       return result.success
