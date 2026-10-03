@@ -59,6 +59,11 @@ export interface VercelBlobStorageConfig {
   [key: string]: unknown
 }
 
+function isPlainFilename(name: string): boolean {
+  if (name === '' || name === '.' || name === '..') return false
+  return !/[/\\\0]/.test(name)
+}
+
 export class VercelBlobStorageProvider implements StorageProvider {
   private config: VercelBlobStorageConfig
 
@@ -85,7 +90,7 @@ export class VercelBlobStorageProvider implements StorageProvider {
 
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
-      return originalFilename
+      return originalFilename.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
     }
 
     const ext = path.extname(originalFilename)
@@ -95,6 +100,11 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   private getFullPath(filename: string): string {
+    if (!isPlainFilename(filename)) {
+      throw new Error(
+        `VercelBlobStorageProvider refused a pathname outside the configured prefix: ${JSON.stringify(filename)}`,
+      )
+    }
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
     }
@@ -240,7 +250,9 @@ export class VercelBlobStorageProvider implements StorageProvider {
   }
 
   getUrl(filename: string): string {
-    const pathname = this.getFullPath(filename)
+    this.getFullPath(filename)
+    const encoded = filename.replace(/%/g, '%25')
+    const pathname = this.config.pathPrefix ? `${this.config.pathPrefix}/${encoded}` : encoded
     const storeId = this.resolveStoreId()
     return `https://${storeId}.${this.getAccess()}.blob.vercel-storage.com/${pathname}`
   }

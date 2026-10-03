@@ -35,6 +35,11 @@ export interface S3StorageConfig {
   [key: string]: unknown
 }
 
+function isPlainFilename(name: string): boolean {
+  if (name === '' || name === '.' || name === '..') return false
+  return !/[/\\\0]/.test(name)
+}
+
 /**
  * AWS S3 storage provider
  * Supports standard S3 and S3-compatible services
@@ -62,7 +67,7 @@ export class S3StorageProvider implements StorageProvider {
 
   private generateFilename(originalFilename: string): string {
     if (this.config.generateUniqueFilenames === false) {
-      return originalFilename
+      return originalFilename.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
     }
 
     const rawExt = path.extname(path.basename(originalFilename)).toLowerCase()
@@ -73,6 +78,11 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   private getFullKey(filename: string): string {
+    if (!isPlainFilename(filename)) {
+      throw new Error(
+        `S3StorageProvider refused a key outside the configured prefix: ${JSON.stringify(filename)}`,
+      )
+    }
     if (this.config.pathPrefix) {
       return `${this.config.pathPrefix}/${filename}`
     }
@@ -147,7 +157,9 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   getUrl(filename: string): string {
-    const key = this.getFullKey(filename)
+    this.getFullKey(filename)
+    const encoded = filename.replace(/%/g, '%25')
+    const key = this.config.pathPrefix ? `${this.config.pathPrefix}/${encoded}` : encoded
 
     if (this.config.customDomain) {
       return `${this.config.customDomain}/${key}`
