@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { submitAndAwaitServerAction } from '../utils/server-action.js'
 
 /**
  * `examples/tiptap-demo` boots on its own port (playwright.config.ts's third
@@ -35,8 +36,7 @@ test.describe('tiptap-demo custom field registration', () => {
     // TiptapField, see its `emitUpdate: false` comment): a rich text editor
     // that reports an empty document as a change on mount would satisfy a
     // required field with nothing the user wrote.
-    await page.click('button[type="submit"]')
-    await page.waitForLoadState('networkidle')
+    await submitAndAwaitServerAction(page)
 
     // A correctly-behaving editor leaves the create blocked (client stays on
     // the create form; the server's required check has nothing to accept)
@@ -62,13 +62,12 @@ test.describe('tiptap-demo custom field registration', () => {
     await editors.first().click()
     await page.keyboard.type('This article has real content.')
 
-    await page.click('button[type="submit"]')
     // The create form's `router.push`/`router.refresh()` pair back to the list
     // page doesn't reliably land as a client-side transition under load — the
     // save itself is what this test cares about, so wait for the mutation's
-    // own request to settle and read the result back from a fresh navigation
-    // rather than depending on that transition committing.
-    await page.waitForLoadState('networkidle')
+    // own response and read the result back from a fresh navigation rather
+    // than depending on that transition committing.
+    await submitAndAwaitServerAction(page)
     await page.goto(`${BASE_URL}/admin/article`)
     await page.waitForLoadState('networkidle')
     await expect(page.locator(`text=${unique}`)).toBeVisible({ timeout: 5000 })

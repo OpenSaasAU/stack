@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { submitAndAwaitServerAction } from '../utils/server-action.js'
 
 /**
  * `examples/json-demo` boots on its own port (playwright.config.ts's second
@@ -41,13 +42,12 @@ test.describe('json-demo custom field registration', () => {
     // just for a JSON field rather than Tiptap's rich text.
     await page.fill('textarea[name="configuration"]', '{"sku": "W-1"}')
 
-    await page.click('button[type="submit"]')
     // The create form's `router.push`/`router.refresh()` pair back to the list
     // page doesn't reliably land as a client-side transition under load — the
     // save itself is what this test cares about, so wait for the mutation's
-    // own request to settle and read the result back from a fresh navigation
-    // rather than depending on that transition committing.
-    await page.waitForLoadState('networkidle')
+    // own response and read the result back from a fresh navigation rather
+    // than depending on that transition committing.
+    await submitAndAwaitServerAction(page)
     await page.goto(`${BASE_URL}/admin/product`)
     await page.waitForLoadState('networkidle')
     await expect(page.locator(`text=${uniqueName}`)).toBeVisible({ timeout: 5000 })
