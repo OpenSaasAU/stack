@@ -36,8 +36,7 @@ test.describe('tiptap-demo custom field registration', () => {
     // TiptapField, see its `emitUpdate: false` comment): a rich text editor
     // that reports an empty document as a change on mount would satisfy a
     // required field with nothing the user wrote.
-    await page.click('button[type="submit"]')
-    await page.waitForLoadState('networkidle')
+    await submitAndAwaitServerAction(page)
 
     // A correctly-behaving editor leaves the create blocked (client stays on
     // the create form; the server's required check has nothing to accept)
