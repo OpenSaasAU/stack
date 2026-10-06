@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
-import { createTestContext } from './context.js'
+import { createTestContext, type TestContext } from './context.js'
 
 const BOOT = 120_000
 const ITERATIONS = 25
+const BAD_ID = 'not-a-uuid'
 
 const open = {
   operation: { query: () => true, create: () => true, update: () => true, delete: () => true },
@@ -19,55 +20,58 @@ const config: OpenSaasConfig = {
   },
 }
 
-const BAD_ID = 'not-a-uuid'
+async function causeOf(attempt: Promise<unknown>): Promise<string> {
+  try {
+    await attempt
+  } catch (error) {
+    return error instanceof Error && error.cause instanceof Error ? error.cause.message : ''
+  }
+  return ''
+}
 
 describe('a failed statement on the in-process database', () => {
-  test(
-    'rejects with its own error and leaves the next statements their own results',
-    async () => {
-      const harness = await createTestContext(config, { userId: 'user-1' })
-      try {
-        const { db } = harness.context
-        for (let i = 0; i < ITERATIONS; i++) {
-          await expect(
-            db.User.update({ where: { id: BAD_ID }, data: { name: 'x' } }),
-          ).rejects.toThrow()
+  let harness: TestContext
 
-          const created = await db.IntItem.create({ data: { name: `i${i}` } })
-          expect(created).toMatchObject({ name: `i${i}` })
+  beforeAll(async () => {
+    harness = await createTestContext(config, { userId: 'user-1' })
+    await harness.context.db.Note.create({ data: { name: 'seed' } })
+  }, BOOT)
 
-          const notes = await db.Note.all()
-          expect(notes).toEqual([])
-        }
-        expect(await db.IntItem.all()).toHaveLength(ITERATIONS)
-      } finally {
-        await harness.close()
-      }
-    },
-    BOOT,
-  )
+  afterAll(async () => {
+    await harness.close()
+  })
 
-  test(
-    'rejects a failing transaction and the next statement sees its own result',
-    async () => {
-      const harness = await createTestContext(config, { userId: 'user-1' })
-      try {
-        const { context } = harness
-        for (let i = 0; i < ITERATIONS; i++) {
-          await expect(
-            context.transaction(async (tx) => {
-              await tx.db.User.update({ where: { id: BAD_ID }, data: { name: 'x' } })
-            }),
-          ).rejects.toThrow()
+  test('rejects with its own error and leaves the next statements their own results', async () => {
+    const { db } = harness.context
+    for (let i = 0; i < ITERATIONS; i++) {
+      const cause = await causeOf(db.User.update({ where: { id: BAD_ID }, data: { name: 'x' } }))
+      expect(cause).toMatch(/invalid input syntax for type uuid/)
 
-          const created = await context.db.IntItem.create({ data: { name: `t${i}` } })
-          expect(created).toMatchObject({ name: `t${i}` })
-          expect(await context.db.Note.all()).toEqual([])
-        }
-      } finally {
-        await harness.close()
-      }
-    },
-    BOOT,
-  )
+      const created = await db.IntItem.create({ data: { name: `i${i}` } })
+      expect(created).toMatchObject({ name: `i${i}` })
+
+      const notes = await db.Note.all()
+      expect(notes).toHaveLength(1)
+      expect(notes[0]).toMatchObject({ name: 'seed' })
+    }
+  })
+
+  test('rejects a failing transaction and the next statement sees its own result', async () => {
+    const { context } = harness
+    for (let i = 0; i < ITERATIONS; i++) {
+      const cause = await causeOf(
+        context.transaction(async (tx) => {
+          await tx.db.User.update({ where: { id: BAD_ID }, data: { name: 'x' } })
+        }),
+      )
+      expect(cause).toMatch(/invalid input syntax for type uuid/)
+
+      const created = await context.db.IntItem.create({ data: { name: `t${i}` } })
+      expect(created).toMatchObject({ name: `t${i}` })
+
+      const notes = await context.db.Note.all()
+      expect(notes).toHaveLength(1)
+      expect(notes[0]).toMatchObject({ name: 'seed' })
+    }
+  })
 })
