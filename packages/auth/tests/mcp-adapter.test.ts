@@ -89,6 +89,14 @@ describe('Better Auth MCP Adapter', () => {
       }
     })
 
+    it('does not let a custom claim supply scopes', async () => {
+      const token = mint({ sub: 'user-123', scopes: ['mcp:write'], expiresAt: 'x' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.scopes).toBeUndefined()
+      expect(session?.expiresAt).toBeInstanceOf(Date)
+    })
+
     it('does not let a claim override the userId', async () => {
       const token = mint({ sub: 'user-123', userId: 'someone-else' })
       const session = await createBetterAuthMcpAdapter(options)(bearer(token))

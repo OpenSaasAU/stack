@@ -40,6 +40,7 @@ function claimsToSession(
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
   for (const claim of REGISTERED_CLAIMS) delete customClaims[claim]
+  for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId']) delete customClaims[claim]
   const session: McpSession = { ...customClaims, userId: sub }
   if (typeof claims.scope === 'string') {
     session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')
