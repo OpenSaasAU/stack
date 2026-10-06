@@ -66,6 +66,8 @@ export default config({
         mcp({
           loginPage: '/sign-in',
           consentPage: '/consent',
+          // Register the scopes the tool gate below requires
+          scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
           resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
         }),
       ],
