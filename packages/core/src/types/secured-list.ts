@@ -104,28 +104,18 @@ export type QueryResult<C, R extends RemainderBase, K extends keyof R & string, 
 
 // ── operation arguments ───────────────────────────────────────────────────
 
-type Selection<C, R extends RemainderBase, K extends keyof R & string> = {
-  select?: ListSelect<C, R, K>
-  include?: ListInclude<C, R, K>
+export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> = {
+  data: CreateInput<C, R, K>
 }
 
-export type CreateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { data: CreateInput<C, R, K> }
+export type UpdateArgs<C, R extends RemainderBase, K extends keyof R & string> = {
+  where: ListIdentityWhere<C, K>
+  data: UpdateInput<C, R, K>
+}
 
-export type UpdateArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { where: ListIdentityWhere<C, K>; data: UpdateInput<C, R, K> }
-
-export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> = Selection<
-  C,
-  R,
-  K
-> & { where: ListIdentityWhere<C, K> }
+export type DeleteArgs<C, R extends RemainderBase, K extends keyof R & string> = {
+  where: ListIdentityWhere<C, K>
+}
 
 export type GetArgs<C, R extends RemainderBase, K extends keyof R & string> = {
   select?: ListSelect<C, R, K>
@@ -591,24 +581,9 @@ type ListOps<C, R extends RemainderBase, K extends keyof R & string, Tx extends 
   ListQuery<C, R, K, unknown, never, Tx>,
   ComposedReadKey<C, R, K, Tx>
 > & {
-  create: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
-    data: CreateInput<C, R, K>
-    select?: S
-    include?: I
-  }) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  update: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
-    where: ListIdentityWhere<C, K>
-    data: UpdateInput<C, R, K>
-    select?: S
-    include?: I
-  }) => Promise<QueryResult<C, R, K, S, I> | null>
-
-  delete: <S extends ListSelect<C, R, K> = never, I extends ListInclude<C, R, K> = never>(args: {
-    where: ListIdentityWhere<C, K>
-    select?: S
-    include?: I
-  }) => Promise<QueryResult<C, R, K, S, I> | null>
+  create: (args: CreateArgs<C, R, K>) => Promise<Row<C, R, K> | null>
+  update: (args: UpdateArgs<C, R, K>) => Promise<Row<C, R, K> | null>
+  delete: (args: DeleteArgs<C, R, K>) => Promise<Row<C, R, K> | null>
 }
 
 /**
