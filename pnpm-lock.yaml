@@ -904,8 +904,8 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       '@vitest/ui':
         specifier: 5.0.2
         version: 5.0.2(vitest@5.0.2)
@@ -926,7 +926,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/cli:
     dependencies:
@@ -1010,14 +1010,14 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       pg:
         specifier: ^8.23.0
         version: 8.23.0
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/core:
     dependencies:
@@ -1059,8 +1059,8 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
@@ -1069,7 +1069,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/create-opensaas-app:
     dependencies:
@@ -1099,14 +1099,14 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/rag:
     dependencies:
@@ -1139,8 +1139,8 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       '@vitest/ui':
         specifier: 5.0.2
         version: 5.0.2(vitest@5.0.2)
@@ -1161,7 +1161,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/storage:
     dependencies:
@@ -1191,14 +1191,14 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/storage-s3:
     dependencies:
@@ -1219,14 +1219,14 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/storage-vercel:
     dependencies:
@@ -1244,14 +1244,14 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/tiptap:
     dependencies:
@@ -1299,8 +1299,8 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
@@ -1318,7 +1318,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/ui:
     dependencies:
@@ -1417,8 +1417,8 @@ importers:
         specifier: 5.0.2
         version: 5.0.2(playwright@1.61.1)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.2)
       '@vitest/coverage-v8':
-        specifier: 5.0.2
-        version: 5.0.2(@vitest/browser@5.0.3)(vitest@5.0.2)
+        specifier: 5.0.3
+        version: 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
@@ -1451,7 +1451,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: 5.0.2
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
 packages:
 
@@ -1733,10 +1733,6 @@ packages:
 
   '@babel/traverse@7.29.7':
     resolution: {integrity: sha512-EhlfNQtZ+NK22w5BM61ciuiq1m58ed33Wr1Xan//ZRTy6hgjnwyCffRYwzsGXdASJSUJ1guZILsErh1eQcl+zw==}
-    engines: {node: '>=6.9.0'}
-
-  '@babel/types@7.29.7':
-    resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
   '@babel/types@7.29.8':
@@ -4768,12 +4764,21 @@ packages:
       '@vitest/browser':
         optional: true
 
-  '@vitest/istanbul-lib-coverage@1.0.1':
-    resolution: {integrity: sha512-k3DJZ8LhMBK9NS4SclF1ASD3OgXEWDorbIcPTRDK0/Zae6fRvu+fJRxtFdLfHsa9Y24beCdPnoNZ4LviTNstfA==}
+  '@vitest/coverage-v8@5.0.3':
+    resolution: {integrity: sha512-+klsyz7BvT1vCU28Zkfzms1Ia78XD0V41U3FUtRaa3S+vOr/EXvK1O6BvVD7l1RzEjm6SONR2aybOvDDf9u0mQ==}
+    peerDependencies:
+      '@vitest/browser': 5.0.3
+      vitest: 5.0.3
+    peerDependenciesMeta:
+      '@vitest/browser':
+        optional: true
+
+  '@vitest/istanbul-lib-coverage@1.0.2':
+    resolution: {integrity: sha512-9J/JMwOf9AoJhAywhrn7ScKTL38hsWQP/qPG60OtaAFcQ5OXPwKsxZFlbnuCKmZ61m8/lGgHYnFpdyQZUvG/iA==}
     engines: {node: '>=22'}
 
-  '@vitest/istanbul-lib-report@1.0.1':
-    resolution: {integrity: sha512-1EOLRfsTMnyAr3+kEAsP4o9dhaDlGPpD7H5iLBBeq//YpNB1VIahkPhB+eRp9N2Dkfw8oySROjE3yf9XDeaIkQ==}
+  '@vitest/istanbul-lib-report@1.0.2':
+    resolution: {integrity: sha512-gUsfXZJbzPamoIY5TvHFiMMoXESBrUMo+xqaj+rYrWI69+EnvRlYBlP96ZnHPY4vX8kyUpgAnFUCg5wZG/HkDQ==}
     engines: {node: '>=22'}
 
   '@vitest/mocker@5.0.2':
@@ -5028,8 +5033,8 @@ packages:
   ast-types-flow@0.0.8:
     resolution: {integrity: sha512-OH/2E5Fg20h2aPrbe+QL8JZQFko0YZaF+j4mnQ7BGhfavO7OpSLa8a0y9sBwomHdSbkhTS8TQNayBfnW5DwbvQ==}
 
-  ast-v8-to-istanbul@1.0.6:
-    resolution: {integrity: sha512-fvpl29helSO2w/z7utIbrkNXILdrLwDwAMH2I/zPKlGf5244+gf+B4cyS1sANcrPY2h+hWCGSgC8N61s/+AF9A==}
+  ast-v8-to-istanbul@1.0.7:
+    resolution: {integrity: sha512-kFL68AG6ajd8fg248zwM9GQrUWEp79gsmjum34OEXjs4yHuUMZfYKwOLW9GMmB4oNvVrj+EAGxsP7ye2UR9UlA==}
 
   async-function@1.0.0:
     resolution: {integrity: sha512-hsU18Ae8CDTR6Kgu9DYf0EbCr/a5iGL0rytQDobUcdpYOKokk8LEjVphnXkDkgpi0wYVsqrXuP0bZxJaTqdgoA==}
@@ -7607,6 +7612,9 @@ packages:
   std-env@4.2.0:
     resolution: {integrity: sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw==}
 
+  std-env@4.3.0:
+    resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
+
   stdin-discarder@0.3.2:
     resolution: {integrity: sha512-eCPu1qRxPVkl5605OTWF8Wz40b4Mf45NY5LQmVPQ599knfs5QhASUm9GbJ5BDMDOXgrnh0wyEdvzmL//YMlw0A==}
     engines: {node: '>=18'}
@@ -8595,10 +8603,10 @@ snapshots:
       '@babel/helper-compilation-targets': 7.29.7
       '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7)
       '@babel/helpers': 7.29.7
-      '@babel/parser': 7.29.7
+      '@babel/parser': 7.29.9
       '@babel/template': 7.29.7
       '@babel/traverse': 7.29.7
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
       '@jridgewell/remapping': 2.3.5
       convert-source-map: 2.0.0
       debug: 4.4.3
@@ -8657,7 +8665,7 @@ snapshots:
 
   '@babel/parser@7.29.7':
     dependencies:
-      '@babel/types': 7.29.7
+      '@babel/types': 7.29.8
 
   '@babel/parser@7.29.9':
     dependencies:
@@ -8692,11 +8700,6 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
-
-  '@babel/types@7.29.7':
-    dependencies:
-      '@babel/helper-string-parser': 7.29.7
-      '@babel/helper-validator-identifier': 7.29.7
 
   '@babel/types@7.29.8':
     dependencies:
@@ -8781,7 +8784,7 @@ snapshots:
     dependencies:
       '@better-auth/core': 1.7.7(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.0(zod@4.6.5))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.4)
       better-auth: 1.7.7(@opentelemetry/api@1.9.1)(mongodb@7.1.0(@aws-sdk/credential-providers@3.1143.0))(next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.2)
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@better-auth/utils@0.5.0':
     dependencies:
@@ -11081,8 +11084,8 @@ snapshots:
 
   '@types/babel__core@7.20.5':
     dependencies:
-      '@babel/parser': 7.29.7
-      '@babel/types': 7.29.7
+      '@babel/parser': 7.29.9
+      '@babel/types': 7.29.8
       '@types/babel__generator': 7.27.0
       '@types/babel__template': 7.4.4
       '@types/babel__traverse': 7.28.0
@@ -11565,7 +11568,7 @@ snapshots:
       '@vitest/mocker': 5.0.2(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
       playwright: 1.61.1
       tinyrainbow: 3.1.1
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -11614,7 +11617,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -11625,36 +11628,37 @@ snapshots:
   '@vitest/coverage-v8@5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
-      '@vitest/istanbul-lib-coverage': 1.0.1
-      '@vitest/istanbul-lib-report': 1.0.1
-      ast-v8-to-istanbul: 1.0.6
+      '@vitest/istanbul-lib-coverage': 1.0.2
+      '@vitest/istanbul-lib-report': 1.0.2
+      ast-v8-to-istanbul: 1.0.7
       magicast: 0.5.5
       obug: 2.2.1
-      std-env: 4.2.0
-      tinyrainbow: 3.1.1
+      std-env: 4.3.0
+      tinyrainbow: 3.2.0
       vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
     optionalDependencies:
       '@vitest/browser': 5.0.2(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.2)
+    optional: true
 
-  '@vitest/coverage-v8@5.0.2(@vitest/browser@5.0.3)(vitest@5.0.2)':
+  '@vitest/coverage-v8@5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
-      '@vitest/istanbul-lib-coverage': 1.0.1
-      '@vitest/istanbul-lib-report': 1.0.1
-      ast-v8-to-istanbul: 1.0.6
+      '@vitest/istanbul-lib-coverage': 1.0.2
+      '@vitest/istanbul-lib-report': 1.0.2
+      ast-v8-to-istanbul: 1.0.7
       magicast: 0.5.5
       obug: 2.2.1
-      std-env: 4.2.0
-      tinyrainbow: 3.1.1
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      std-env: 4.3.0
+      tinyrainbow: 3.2.0
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
     optionalDependencies:
       '@vitest/browser': 5.0.3(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.2)
 
-  '@vitest/istanbul-lib-coverage@1.0.1': {}
+  '@vitest/istanbul-lib-coverage@1.0.2': {}
 
-  '@vitest/istanbul-lib-report@1.0.1':
+  '@vitest/istanbul-lib-report@1.0.2':
     dependencies:
-      '@vitest/istanbul-lib-coverage': 1.0.1
+      '@vitest/istanbul-lib-coverage': 1.0.2
 
   '@vitest/mocker@5.0.2(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -11704,7 +11708,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@vitest/utils@5.0.2':
     dependencies:
@@ -11953,7 +11957,7 @@ snapshots:
 
   ast-types-flow@0.0.8: {}
 
-  ast-v8-to-istanbul@1.0.6:
+  ast-v8-to-istanbul@1.0.7:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
@@ -12052,7 +12056,7 @@ snapshots:
       pg: 8.23.0
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.2)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
     transitivePeerDependencies:
       - '@opentelemetry/api'
 
@@ -13671,7 +13675,7 @@ snapshots:
     dependencies:
       '@babel/parser': 7.29.9
       '@babel/types': 7.29.8
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   math-intrinsics@1.1.0: {}
 
@@ -14844,6 +14848,8 @@ snapshots:
 
   std-env@4.2.0: {}
 
+  std-env@4.3.0: {}
+
   stdin-discarder@0.3.2: {}
 
   stop-iteration-iterator@1.1.0:
@@ -15355,6 +15361,32 @@ snapshots:
       '@types/node': 26.6.3
       '@vitest/browser-playwright': 5.0.2(playwright@1.63.0)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.2)
       '@vitest/coverage-v8': 5.0.2(@vitest/browser@5.0.2)(vitest@5.0.2)
+      '@vitest/ui': 5.0.2(vitest@5.0.2)
+      happy-dom: 20.14.5
+    transitivePeerDependencies:
+      - msw
+
+  vitest@5.0.2(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(@vitest/browser-playwright@5.0.2)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.2)(happy-dom@20.14.5)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)):
+    dependencies:
+      '@types/chai': 5.2.3
+      '@vitest/mocker': 5.0.2(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      chai: 6.2.2
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.1
+      obug: 2.2.1
+      picomatch: 4.0.7
+      std-env: 4.2.0
+      tinybench: 6.1.4
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      vite: 7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)
+      why-is-node-running: 3.2.2
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.1
+      '@types/node': 26.6.3
+      '@vitest/browser-playwright': 5.0.2(playwright@1.63.0)(vite@7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.2)
+      '@vitest/coverage-v8': 5.0.3(@vitest/browser@5.0.3)(vitest@5.0.2)
       '@vitest/ui': 5.0.2(vitest@5.0.2)
       happy-dom: 20.14.5
     transitivePeerDependencies:
