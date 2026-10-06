@@ -3052,6 +3052,12 @@ export type McpCustomTool = {
   name: string
   description: string
   /**
+   * OAuth scopes the session's token must carry to see or call this tool.
+   * A token missing any of them gets a tool error naming them, and the tool is
+   * left out of `tools/list`. Unset means no scope is required.
+   */
+  scopes?: string[]
+  /**
    * Input schema (Zod schema)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3063,12 +3069,33 @@ export type McpCustomTool = {
   }) => Promise<unknown>
 }
 
+/**
+ * OAuth scopes gating the CRUD tools. `read` gates `query`; `write` gates
+ * `create`, `update` and `delete`. Scopes are only enforced where configured.
+ *
+ * @example
+ * ```typescript
+ * mcp: { enabled: true, scopes: { read: 'mcp:read', write: ['mcp:write'] } }
+ * ```
+ */
+export type McpScopesConfig = {
+  /** Scope(s) a token must carry to call `query` tools */
+  read?: string | string[]
+  /** Scope(s) a token must carry to call `create`, `update` and `delete` tools */
+  write?: string | string[]
+}
+
 export type ListMcpConfig = {
   /**
    * Enable MCP tools for this list
    * @default true
    */
   enabled?: boolean
+  /**
+   * Scopes required by this list's CRUD tools. Each of `read` and `write`
+   * set here takes precedence over the config-level `mcp.scopes`.
+   */
+  scopes?: McpScopesConfig
   /**
    * Configure which CRUD tools to enable
    */
@@ -3161,6 +3188,11 @@ export type McpConfig = {
    * Can be overridden per-list
    */
   defaultTools?: McpToolsConfig
+  /**
+   * OAuth scopes the session's token must carry for CRUD tools. Not enforced
+   * unless configured. Overridable per list with `list.mcp.scopes`.
+   */
+  scopes?: McpScopesConfig
   /**
    * Resource identifier for OAuth protected resource metadata
    * @default "https://yourdomain.com"

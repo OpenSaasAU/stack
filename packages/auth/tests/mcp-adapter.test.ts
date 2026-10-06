@@ -71,6 +71,24 @@ describe('Better Auth MCP Adapter', () => {
       expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
     })
 
+    it('drops registered JWT claims but keeps custom ones', async () => {
+      const token = mint({
+        sub: 'user-123',
+        jti: 'j1',
+        azp: 'client',
+        client_id: 'client',
+        sid: 's1',
+        nbf: 1,
+        role: 'admin',
+      })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({ userId: 'user-123', role: 'admin' })
+      for (const claim of ['iss', 'aud', 'iat', 'nbf', 'jti', 'azp', 'client_id', 'sid']) {
+        expect(session).not.toHaveProperty(claim)
+      }
+    })
+
     it('does not let a claim override the userId', async () => {
       const token = mint({ sub: 'user-123', userId: 'someone-else' })
       const session = await createBetterAuthMcpAdapter(options)(bearer(token))

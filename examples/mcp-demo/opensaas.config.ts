@@ -102,8 +102,11 @@ export default config({
     auth: {
       type: 'better-auth',
       loginPage: '/sign-in',
-      scopes: ['openid', 'profile', 'email'],
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
     },
+    // Tokens need mcp:read to query and mcp:write to create/update/delete.
+    // Omit `scopes` and no scope is enforced.
+    scopes: { read: 'mcp:read', write: 'mcp:write' },
     // Global defaults for all lists
     defaultTools: {
       read: true,
