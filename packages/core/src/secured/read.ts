@@ -923,6 +923,14 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
   return assembled
 }
 
+function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
+  const refined = plans.filter((plan) => plan.callerRefined)
+  if (refined.length === 0) return row
+  const copy: OrmRow = { ...row }
+  for (const plan of refined) delete copy[plan.relation]
+  return copy
+}
+
 /**
  * Narrow the foreign-key column of every to-one relationship this read did
  * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
@@ -984,7 +992,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: assembleColumnFields(raw, listConfig.fields),
+        item: assembleColumnFields(callerIndependent(raw, resolvedIncludes), listConfig.fields),
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }

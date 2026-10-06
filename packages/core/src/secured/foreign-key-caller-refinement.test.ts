@@ -26,6 +26,10 @@ const config: OpenSaasConfig = {
         ref: text({ validation: { isRequired: true } }),
         customer: relationship({ ref: 'Customer.orders' }),
         hidden: relationship({ ref: 'Customer', access: { read: () => false } }),
+        peeking: relationship({
+          ref: 'Customer',
+          access: { read: ({ item }) => item?.peeking === null },
+        }),
       },
       access: { operation: { query: () => true, create: () => true } },
     },
@@ -49,6 +53,7 @@ beforeAll(async () => {
       ref: 'o-visible',
       customer: { connect: { id: visibleId } },
       hidden: { connect: { id: visibleId } },
+      peeking: { connect: { id: visibleId } },
     },
   })
   await sudo.db.Order.create({ data: { ref: 'o-secret', customer: { connect: { id: secretId } } } })
@@ -112,5 +117,14 @@ describe("a caller's own where() on a to-one include", () => {
       .include('hidden', (hidden) => hidden.where(nobody))
       .all()
     expect(rows[0]?.hiddenId ?? null).toBeNull()
+  })
+
+  test("does not let the caller's filter satisfy a row-dependent read rule on the relation", async () => {
+    const context = database.context(null)
+    const rows = await context.db.Order.where({ ref: { equals: 'o-visible' } })
+      .select('ref', 'peekingId')
+      .include('peeking', (peeking) => peeking.where(nobody))
+      .all()
+    expect(rows[0]?.peekingId ?? null).toBeNull()
   })
 })
