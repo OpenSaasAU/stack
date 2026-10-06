@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
 import { createTestContext, type TestContext } from './context.js'
+import { ESCAPE_VARIABLES } from './escape.js'
 
 const BOOT = 120_000
 const ITERATIONS = 25
@@ -33,12 +34,15 @@ describe('a failed statement on the in-process database', () => {
   let harness: TestContext
 
   beforeAll(async () => {
+    for (const name of ESCAPE_VARIABLES) vi.stubEnv(name, undefined)
     harness = await createTestContext(config, { userId: 'user-1' })
+    expect(harness.provenance).toBe('pglite')
     await harness.context.db.Note.create({ data: { name: 'seed' } })
   }, BOOT)
 
   afterAll(async () => {
     await harness.close()
+    vi.unstubAllEnvs()
   })
 
   test('rejects with its own error and leaves the next statements their own results', async () => {
