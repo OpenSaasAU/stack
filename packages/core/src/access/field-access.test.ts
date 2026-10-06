@@ -357,35 +357,31 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('tagsId', 'tag-456')
   })
 
-  it('should filter out system fields', async () => {
-    const fieldConfigs = {
-      title: { type: 'text' },
-    }
-
-    const data = {
-      id: 'post-123',
-      title: 'Test',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      session: null,
-      context: {
+  it.each([
+    ['id', { id: 'post-123' }],
+    ['createdAt', { createdAt: new Date() }],
+    ['updatedAt', { updatedAt: new Date() }],
+  ])('refuses system field %s, even under sudo', async (name, extra) => {
+    const data = { title: 'Test', ...extra }
+    await expect(
+      filterWritableFields(data, { title: { type: 'text' } }, 'create', {
         session: null,
-        _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
+        context: { session: null, _isSudo: true } as any,
+        inputData: data,
+      }),
+    ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('treats a declared createdAt as an ordinary field', async () => {
+    const data = { createdAt: 'hello' }
+    const filtered = await filterWritableFields(data, { createdAt: { type: 'text' } }, 'create', {
+      session: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      context: { session: null } as any,
       inputData: data,
     })
-
-    // System fields should be filtered out
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
-
-    // Regular fields should remain
-    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).toEqual({ createdAt: 'hello' })
   })
 
   it('should handle update operation', async () => {
@@ -513,15 +509,12 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('from_Enrolment_student')
   })
 
-  it('still skips system fields, and keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
+  it('keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
     const fieldConfigs = {
       title: { type: 'text' },
       author: { type: 'relationship', many: false },
     }
     const data = {
-      id: 'post-1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
       title: 'Test',
       authorId: 'user-1', // No `access` on `author` — `checkFieldAccess` allows (#1326)
     }
@@ -532,9 +525,6 @@ describe('filterWritableFields', () => {
       inputData: data,
     })
 
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
     expect(filtered).toHaveProperty('authorId', 'user-1')
     expect(filtered).toHaveProperty('title', 'Test')
   })

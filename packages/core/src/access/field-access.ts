@@ -9,6 +9,7 @@ import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
+import { isSystemFieldName } from './system-fields.js'
 
 /**
  * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
@@ -403,8 +404,13 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = Object.hasOwn(fieldConfigs, fieldName) ? fieldConfigs[fieldName] : undefined
 
-    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
-      continue
+    if (isSystemFieldName(fieldName, fieldConfigs)) {
+      throw new ValidationError([
+        `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
+          (fieldName === 'id'
+            ? ` through the secured surface. To write explicit ids, use context.unsafe.`
+            : `. Remove it from the payload.`),
+      ])
     }
 
     // A value `applyCreateDefaults` filled because EVERYTHING upstream (the

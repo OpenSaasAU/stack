@@ -273,7 +273,7 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
     if (fieldConfig.virtual) continue
 
-    if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
+    if (fieldKey === 'id') continue
 
     if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
       data[fieldKey] = fieldConfig.defaultValue
