@@ -41,9 +41,9 @@ describe('generateContext', () => {
       "import { resolveRuntimeConnection } from '@opensaas/stack-core/client'",
     )
     expect(context).toContain('...resolveRuntimeConnection(config.db.client),')
-    // The factory may only run under the client singleton, so the sole call to
-    // it sits behind the resolved config.
-    expect(context.match(/createClient\(config\)/g)).toHaveLength(1)
+    // The factory may only run under the client singleton: the publish and the
+    // replacement on a contract change, both behind the resolved config.
+    expect(context.match(/createClient\(config\)/g)).toHaveLength(2)
     expect(context).toMatch(/const config = await getConfig\(\)\s[\s\S]*?createClient\(config\)/)
     expect(context).not.toContain('binding?.pg?.()')
   })
@@ -71,18 +71,16 @@ describe('generateContext', () => {
   it('keeps the client as a module-level singleton, memoised as a promise', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain(
-      'let clientPromise: Promise<ReturnType<typeof createClient>> | null = null',
-    )
+    expect(context).toContain('let clientPromise: Promise<RuntimeClient> | null = null')
   })
 
   it('shares the client across module instances through the process-wide registry, unconditionally', () => {
     const context = generateContext(config, data)
 
     expect(context).toContain("import { processGlobal } from '@opensaas/stack-core/internal'")
-    expect(context).toContain(
-      "processGlobal('client', isRuntimeClient, () => createClient(config))",
-    )
+    expect(context).toContain("processGlobal('client', isPublishedClient, () => ({")
+    expect(context).toContain('contractJson.storage.storageHash')
+    expect(context).toContain('void stale.close()')
     // The earlier, dev-only asymmetry this replaced (ADR-0070) must not come back.
     expect(context).not.toContain('NODE_ENV')
     expect(context).not.toContain('globalForClient')

@@ -266,6 +266,38 @@ console.log('TWO_COPIES_READY')
     expect(calls() - callsBefore).toBe(1)
   }, 120_000)
 
+  test('a client published from another contract is replaced, not adopted, and its pool ended', () => {
+    const opensaasDir = path.join(projectDir, '.opensaas')
+    const prismaDir = path.join(projectDir, 'prisma')
+    const contract = JSON.parse(fs.readFileSync(path.join(prismaDir, 'contract.json'), 'utf-8'))
+    contract.storage.storageHash = 'sha256:another-contract'
+    fs.writeFileSync(path.join(prismaDir, 'contract-b.json'), JSON.stringify(contract), 'utf-8')
+    const source = fs
+      .readFileSync(path.join(opensaasDir, 'context.ts'), 'utf-8')
+      .replace('contract.json', 'contract-b.json')
+    fs.writeFileSync(path.join(opensaasDir, 'context-b.ts'), source, 'utf-8')
+    const callsBefore = calls()
+
+    const result = runProbe(
+      'replace.mjs',
+      `const a = await import('./.opensaas/context.ts')
+const b = await import('./.opensaas/context-b.ts')
+await a.getContext()
+await a.getContext()
+console.log('SAME_CONTRACT_DONE')
+await b.getContext()
+console.log('REPLACED')
+`,
+      { OPENSAAS_TEST_POOL: '1', DATABASE_URL: '', DIRECT_DATABASE_URL: '' },
+    )
+
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    expect(result.signal, output).toBe(null)
+    expect(output, output).toContain('REPLACED')
+    expect(result.status, output).toBe(0)
+    expect(calls() - callsBefore).toBe(2)
+  }, 120_000)
+
   test('a construction that failed for want of a URL does not poison the next', () => {
     const result = runProbe('recovery.mjs', RECOVERY_PROBE, {
       OPENSAAS_TEST_POOL: '',
