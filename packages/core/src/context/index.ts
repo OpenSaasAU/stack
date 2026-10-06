@@ -600,12 +600,17 @@ function clientFailure(
   config: OpenSaasConfig,
   listKey: string,
   action: string,
+  options: { shownListKey?: string; genericMessage?: string } = {},
 ): { error: string; fieldErrors?: Record<string, string> } {
   const normalized = databaseErrorMessage(error, config)
   if (!isClientSafeError(normalized)) {
     console.error(`Action "${action}" on list "${listKey}" failed:`, error)
     const label = action.charAt(0).toUpperCase() + action.slice(1)
-    return { error: `${label} on "${listKey}" failed due to an internal error.` }
+    return {
+      error:
+        options.genericMessage ??
+        `${label} on "${options.shownListKey ?? listKey}" failed due to an internal error.`,
+    }
   }
   logDatabaseFailure(normalized, listKey, action)
   const fieldErrors =
@@ -885,13 +890,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
         })
         return { bulkAction: true, message: result?.message }
       } catch (error) {
-        const failure = clientFailure(error, config, props.listKey, props.action)
-        return {
-          bulkAction: false,
-          error: isClientSafeError(databaseErrorMessage(error, config))
-            ? failure.error
-            : 'Action failed',
-        }
+        const failure = clientFailure(error, config, props.listKey, props.action, {
+          genericMessage: 'Action failed',
+        })
+        return { bulkAction: false, error: failure.error }
       }
     }
 
@@ -1145,7 +1147,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
             : undefined
         return { added: true, id }
       } catch (error) {
-        return { added: false, ...clientFailure(error, config, edge.junctionListKey, props.action) }
+        return {
+          added: false,
+          ...clientFailure(error, config, edge.junctionListKey, props.action, {
+            shownListKey: props.listKey,
+          }),
+        }
       }
     }
 

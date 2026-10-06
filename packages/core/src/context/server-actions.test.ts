@@ -207,6 +207,37 @@ describe('context.serverAction', () => {
     )
 
     test(
+      'update and delete redact a throwing afterOperation too',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const seeded = await harness.context.db.Post.create({ data: { title: 'x' } })
+          if (seeded === null) throw new Error('seed failed')
+          const id = String(seeded.id)
+          const config = schemaConfig()
+          config.lists.Post.hooks = {
+            afterOperation: () => {
+              throw new Error('INTERNAL api key sk-live-123')
+            },
+          }
+          const context = contextAt(config)
+          for (const action of ['update', 'delete'] as const) {
+            const result = await context.serverAction(
+              action === 'update'
+                ? { listKey: 'Post', action, id, data: { title: 'y' } }
+                : { listKey: 'Post', action, id },
+            )
+            expect(result).toMatchObject({ success: false })
+            expect(JSON.stringify(result)).not.toContain('sk-live-123')
+          }
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
       'a ValidationError reaches the client verbatim',
       async () => {
         const context = contextAt(
