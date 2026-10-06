@@ -40,9 +40,8 @@ describe('write arguments', () => {
   ])('create refuses %s and writes nothing', async (key, extra) => {
     const call = harness.context.db.Post.create as unknown as (a: object) => Promise<unknown>
     await expect(call({ data: { title: `refused-${key}` }, ...extra })).rejects.toThrow(
-      ValidationError,
+      new RegExp(`${key}.*create\\(\\)|create\\(\\).*${key}`),
     )
-    await expect(call({ data: { title: `refused-${key}` }, ...extra })).rejects.toThrow(key)
     const rows = await harness.context.db.Post.where({
       title: { equals: `refused-${key}` },
     }).all()
@@ -60,6 +59,14 @@ describe('write arguments', () => {
     await expect(del({ where: { id }, [key]: {} })).rejects.toThrow(ValidationError)
     const after = await harness.context.db.Post.where({ id: { equals: id } }).first()
     expect(after).toMatchObject({ title: `keep-${key}` })
+  })
+
+  test('an undefined-valued option is not an option, and a missing argument object is refused', async () => {
+    const call = harness.context.db.Post.create as unknown as (a?: object) => Promise<unknown>
+    await expect(call({ data: { title: 'undef' }, select: undefined })).resolves.toMatchObject({
+      title: 'undef',
+    })
+    await expect(call(undefined)).rejects.toThrow(ValidationError)
   })
 
   test('read-after-write returns the included relation', async () => {

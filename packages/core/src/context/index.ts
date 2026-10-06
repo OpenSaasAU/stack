@@ -1601,13 +1601,19 @@ const WRITE_ARG_KEYS = {
 } as const
 
 function assertWriteArgs(
-  args: object,
+  args: object | null | undefined,
   listName: string,
   operation: keyof typeof WRITE_ARG_KEYS,
 ): void {
   const allowed: readonly string[] = WRITE_ARG_KEYS[operation]
-  for (const key of Object.keys(args)) {
-    if (allowed.includes(key)) continue
+  if (args === null || typeof args !== 'object') {
+    throw new ValidationError(
+      [`${operation}() on "${listName}" takes an argument object with ${allowed.join(', ')}.`],
+      {},
+    )
+  }
+  for (const [key, value] of Object.entries(args)) {
+    if (allowed.includes(key) || value === undefined) continue
 
     const reason =
       key === 'select' || key === 'include'
