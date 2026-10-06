@@ -235,10 +235,11 @@ function getClient() {
     }))
     if (published.hash === contractHash) return published.client
     const stale = published.client
+    const replacement = createClient(config)
+    published.client = replacement
     published.hash = contractHash
-    published.client = createClient(config)
-    void stale.close().catch(() => {})
-    return published.client
+    void Promise.resolve(stale.close()).catch(() => {})
+    return replacement
   })().catch((error: unknown) => {
     if (clientPromise === attempt) clientPromise = null
     throw error

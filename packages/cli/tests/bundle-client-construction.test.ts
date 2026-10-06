@@ -274,7 +274,7 @@ console.log('TWO_COPIES_READY')
     fs.writeFileSync(path.join(prismaDir, 'contract-b.json'), JSON.stringify(contract), 'utf-8')
     const source = fs
       .readFileSync(path.join(opensaasDir, 'context.ts'), 'utf-8')
-      .replace('contract.json', 'contract-b.json')
+      .replaceAll('contract.json', 'contract-b.json')
     fs.writeFileSync(path.join(opensaasDir, 'context-b.ts'), source, 'utf-8')
     const callsBefore = calls()
 
