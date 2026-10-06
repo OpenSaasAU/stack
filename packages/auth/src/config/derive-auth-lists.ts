@@ -663,7 +663,7 @@ function betterAuthModelOptions(model: NormalizedAuthModelConfig): {
  * own `schema` (base-model extensions and standalone plugin tables alike)
  * merges into the same resolved table set (issue #992).
  */
-function buildBetterAuthTableOptions(
+export function buildBetterAuthTableOptions(
   models: NormalizedAuthModels,
   plugins: BetterAuthPlugin[],
 ): BetterAuthOptions {
