@@ -80,6 +80,7 @@ describe('generateContext', () => {
     expect(context).toContain("import { processGlobal } from '@opensaas/stack-core/internal'")
     expect(context).toContain("processGlobal('client', isPublishedClient, () => ({")
     expect(context).toContain('contractJson.storage.storageHash')
+    expect(context).toContain('contractJson.domain')
     expect(context).toContain('stale.close()')
     // The earlier, dev-only asymmetry this replaced (ADR-0070) must not come back.
     expect(context).not.toContain('NODE_ENV')

@@ -68,7 +68,11 @@ function isPublishedClient(value: unknown): value is PublishedClient {
   )
 }
 
-const contractHash: string = contractJson.storage.storageHash
+const contractHash: string = JSON.stringify([
+  contractJson.storage.storageHash,
+  contractJson.roots,
+  contractJson.domain,
+])
 
 let clientPromise: Promise<RuntimeClient> | null = null
 
