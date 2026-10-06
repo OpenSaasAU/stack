@@ -69,17 +69,18 @@ describe('applyCreateDefaults', () => {
     expect('computed' in resolved).toBe(false)
   })
 
-  it('skips system fields (id/createdAt/updatedAt)', () => {
+  it('skips id but applies defaults on declared createdAt/updatedAt', () => {
+    const date = new Date('2020-01-01T00:00:00Z')
     const resolved = applyCreateDefaults(
       {},
       fields({
         id: text({ defaultValue: 'SHOULD_NOT_INJECT' }),
-        createdAt: timestamp({ defaultValue: new Date('2020-01-01T00:00:00Z') }),
-        updatedAt: timestamp({ defaultValue: new Date('2020-01-01T00:00:00Z') }),
+        createdAt: timestamp({ defaultValue: date }),
+        updatedAt: timestamp({ defaultValue: date }),
       }),
     )
 
-    expect(resolved).toEqual({})
+    expect(resolved).toEqual({ createdAt: date, updatedAt: date })
   })
 
   it('skips relationship fields (they carry connect/create payloads, not literals)', () => {

@@ -468,7 +468,6 @@ describe('an update whose stored payload is empty', () => {
 
   test.each([
     ['an empty payload', {}],
-    ['only a system key', { createdAt: new Date(0) }],
     ['only a virtual field', { note: 'x' }],
     ['only undefined values', { title: undefined }],
   ])(

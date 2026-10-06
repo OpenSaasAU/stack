@@ -751,12 +751,12 @@ An included to-one the related list's `query` access scopes away is `null`, and 
 
 ### 4. System Fields
 
-`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by declaring the two fields itself or by setting `db: { timestamps: true }`, per list or on `db` for every list at once.
+`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by setting `db: { timestamps: true }`, per list or on `db` for every list at once. A list that declares `createdAt`/`updatedAt` itself gets ordinary fields the application maintains — access, hooks, validation and defaults all apply, and no auto-maintenance.
 
-All three names, where the list has them, are:
+`id` and an auto-pair `createdAt`/`updatedAt` are system fields:
 
 - Excluded from access control (always readable)
-- Excluded from field-level write operations
+- Refused in a `create`/`update` payload with a `ValidationError`, sudo included. Writing explicit ids goes through `context.unsafe`
 
 `updatedAt` is maintained **application-side**, with no database backstop: a write that bypasses the ORM — `psql`, a reconcile, `context.unsafe` — leaves it stale, and an `update` with an empty payload no longer moves it (ADR-0048).
 
