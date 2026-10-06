@@ -7,13 +7,7 @@ import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentCreateAccess } from '../access/field-access.js'
 import { pascalToCamel } from '../lib/case-utils.js'
 import { isRelationshipField } from '../fields/index.js'
-import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
-import { ValidationError } from '../hooks/index.js'
-import { DatabaseError } from '../lib/database-errors.js'
-import {
-  MalformedRelationInputError,
-  NonOwningRelationInputError,
-} from '../context/relationship-input.js'
+import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { decideAdvertisement } from './advertise.js'
@@ -588,15 +582,10 @@ function coerceConnectIds(
  */
 function isSafeMcpError(error: unknown): error is Error {
   return (
+    isClientSafeError(error) ||
     error instanceof McpProjectionRefusedError ||
     error instanceof McpWriteRefusedError ||
-    error instanceof ValidationError ||
-    error instanceof AccessScopeDepthExceededError ||
-    error instanceof ResolveOutputCycleError ||
-    error instanceof DatabaseError ||
-    error instanceof McpToolError ||
-    error instanceof NonOwningRelationInputError ||
-    error instanceof MalformedRelationInputError
+    error instanceof McpToolError
   )
 }
 

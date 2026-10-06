@@ -4,6 +4,7 @@ import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
@@ -594,6 +595,31 @@ function logDatabaseFailure(error: unknown, listKey: string, action: string): vo
   console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
 }
 
+function clientFailure(
+  error: unknown,
+  config: OpenSaasConfig,
+  listKey: string,
+  action: string,
+  options: { shownListKey?: string; genericMessage?: string } = {},
+): { error: string; fieldErrors?: Record<string, string> } {
+  const normalized = databaseErrorMessage(error, config)
+  if (!isClientSafeError(normalized)) {
+    console.error(`Action "${action}" on list "${listKey}" failed:`, error)
+    const label = action.charAt(0).toUpperCase() + action.slice(1)
+    return {
+      error:
+        options.genericMessage ??
+        `${label} on "${options.shownListKey ?? listKey}" failed due to an internal error.`,
+    }
+  }
+  logDatabaseFailure(normalized, listKey, action)
+  const fieldErrors =
+    normalized instanceof ValidationError || normalized instanceof DatabaseError
+      ? normalized.fieldErrors
+      : undefined
+  return { error: normalized.message, fieldErrors }
+}
+
 /**
  * The lock lane a context carries, present only inside a transaction — which
  * is what makes `forUpdate()` answerable there and a refusal everywhere else.
@@ -846,17 +872,17 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
-      if (action.hasAccess) {
-        const allowed = await action.hasAccess({
-          session: context.session,
-          context,
-          listKey: props.listKey,
-        })
-        if (!allowed) {
-          return { bulkAction: false, error: 'Access denied' }
-        }
-      }
       try {
+        if (action.hasAccess) {
+          const allowed = await action.hasAccess({
+            session: context.session,
+            context,
+            listKey: props.listKey,
+          })
+          if (!allowed) {
+            return { bulkAction: false, error: 'Access denied' }
+          }
+        }
         const result = await action.handler({
           listKey: props.listKey,
           ids: props.ids,
@@ -864,21 +890,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
         })
         return { bulkAction: true, message: result?.message }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { bulkAction: false, error: error.message }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        // A normalised database error carries a user-safe, translated message.
-        if (dbError instanceof DatabaseError) {
-          logDatabaseFailure(dbError, props.listKey, props.action)
-          return { bulkAction: false, error: dbError.message }
-        }
-        // Anything else is an unexpected handler bug whose raw `.message` could
-        // leak internal detail to the client — log it server-side and return a
-        // generic client-facing message instead.
-        console.error(`Bulk action "${props.key}" on list "${props.listKey}" failed:`, error)
-        return { bulkAction: false, error: 'Action failed' }
+        const failure = clientFailure(error, config, props.listKey, props.action, {
+          genericMessage: 'Action failed',
+        })
+        return { bulkAction: false, error: failure.error }
       }
     }
 
@@ -1018,13 +1033,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { removed: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { removed: false, error: error.message }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return { removed: false, error: dbError.message }
+        return { removed: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1091,17 +1100,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
             : undefined
         return { created: true, id }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { created: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          created: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { created: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1148,16 +1147,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
             : undefined
         return { added: true, id }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, edge.junctionListKey, props.action)
-          return { added: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, edge.junctionListKey, props.action)
         return {
           added: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+          ...clientFailure(error, config, edge.junctionListKey, props.action, {
+            shownListKey: props.listKey,
+          }),
         }
       }
     }
@@ -1198,17 +1192,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { linked: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { linked: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          linked: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { linked: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1230,17 +1214,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { updated: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          updated: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { updated: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1293,37 +1267,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         data: result,
       }
     } catch (error) {
-      if (error instanceof ValidationError) {
-        return {
-          success: false,
-          error: error.message,
-          fieldErrors: error.fieldErrors,
-        }
-      }
-
-      if (error instanceof DatabaseError) {
-        logDatabaseFailure(error, props.listKey, props.action)
-        return {
-          success: false,
-          error: error.message,
-          fieldErrors: error.fieldErrors,
-        }
-      }
-
-      const dbError = databaseErrorMessage(error, config)
-      if (dbError instanceof DatabaseError) {
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          success: false,
-          error: dbError.message,
-          fieldErrors: dbError.fieldErrors,
-        }
-      }
-
-      return {
-        success: false,
-        error: dbError.message,
-      }
+      return { success: false, ...clientFailure(error, config, props.listKey, props.action) }
     }
   }
 
