@@ -1594,6 +1594,31 @@ export function buildDbDelegate(
   return db as AccessControlledDB
 }
 
+const WRITE_ARG_KEYS = {
+  create: ['data'],
+  update: ['where', 'data'],
+  delete: ['where'],
+} as const
+
+function assertWriteArgs(
+  args: object,
+  listName: string,
+  operation: keyof typeof WRITE_ARG_KEYS,
+): void {
+  const allowed: readonly string[] = WRITE_ARG_KEYS[operation]
+  for (const key of Object.keys(args)) {
+    if (allowed.includes(key)) continue
+
+    const reason =
+      key === 'select' || key === 'include'
+        ? `\`${key}\` is not supported on a write. Write first, then read the row back with ` +
+          `context.db.${listName}.where({ id: { equals: row.id } }).${key}(…).first(), ` +
+          `inside context.transaction() when the two must be atomic.`
+        : `\`${key}\` is not an argument of ${operation}(); it takes ${allowed.join(', ')}.`
+    throw new ValidationError([`${operation}() on "${listName}": ${reason}`], {})
+  }
+}
+
 function createCreate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1605,6 +1630,7 @@ function createCreate(
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { data: Record<string, unknown> }) => {
+    assertWriteArgs(args, listName, 'create')
     return runWritePipeline({
       listName,
       listConfig,
@@ -1630,6 +1656,7 @@ function createUpdate(
   return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     // Runs before the pipeline's access gate — a `where` the engine cannot
     // lower is the caller's own shape error, not a denial.
+    assertWriteArgs(args, listName, 'update')
     assertIdentityWhere(args.where, listName, 'update')
 
     return runWritePipeline({
@@ -1655,6 +1682,7 @@ function createDelete(
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { where: Record<string, unknown> }) => {
+    assertWriteArgs(args, listName, 'delete')
     assertIdentityWhere(args.where, listName, 'delete')
 
     return runWritePipeline({
