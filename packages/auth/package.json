@@ -98,7 +98,7 @@
     "@vitest/coverage-v8": "5.0.2",
     "@vitest/ui": "5.0.2",
     "better-auth": "^1.7.7",
-    "next": "^16.3.5",
+    "next": "^16.3.8",
     "pg": "^8.23.0",
     "react": "^19.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
