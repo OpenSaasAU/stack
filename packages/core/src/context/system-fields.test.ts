@@ -23,6 +23,11 @@ function config(): OpenSaasConfig {
         fields: { name: text(), createdAt: text({ access: { read: () => false } }) },
         access: { operation: OPEN },
       },
+      Single: {
+        isSingleton: true,
+        fields: { name: text(), createdAt: timestamp({ defaultValue: { kind: 'now' } }) },
+        access: { operation: OPEN },
+      },
       Auto: {
         fields: { name: text() },
         db: { timestamps: true },
@@ -75,5 +80,10 @@ describe('system fields follow the contract, not the name', () => {
   test('an auto list still maintains and returns its timestamps', async () => {
     const row = await harness.context.db.Auto.create({ data: { name: 'n' } })
     expect(Number.isNaN(new Date(String(row?.createdAt)).getTime())).toBe(false)
+  })
+
+  test('a singleton declaring a now-default createdAt auto-creates', async () => {
+    const row = await harness.context.db.Single.get?.()
+    expect(row).not.toBeNull()
   })
 })

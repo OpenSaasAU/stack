@@ -317,6 +317,13 @@ describe('adding an edge across a junction', () => {
     expect(resolveJunctionEdge(config, 'Post', 'tags')).toMatchObject({ targetField: 'tag' })
   })
 
+  test('a required declared createdAt is data the edge row carries', () => {
+    const config = junctionConfig()
+    config.lists.PostTag.fields.createdAt = text({ validation: { isRequired: true } })
+
+    expect(resolveJunctionEdge(config, 'Post', 'tags')).toBeNull()
+  })
+
   test('a field flagged virtual stores nothing, whatever its type', () => {
     const config = junctionConfig()
     // The `virtual: true` flag rather than `type: 'virtual'` — the spelling a

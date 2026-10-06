@@ -22,9 +22,6 @@ export interface JunctionEdge {
   targetListKey: string
 }
 
-/** Added by the generator rather than declared, so never data the row carries. */
-const SYSTEM_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
-
 /**
  * Whether a non-relationship field of a candidate junction list carries data of
  * its own.
@@ -39,7 +36,16 @@ const SYSTEM_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
  * A virtual field is computed rather than stored, so it holds nothing.
  */
 function carriesOwnData(fieldKey: string, field: FieldConfig): boolean {
-  if (SYSTEM_FIELDS.has(fieldKey)) return false
+  if (fieldKey === 'id') return false
+  if (fieldKey === 'createdAt' || fieldKey === 'updatedAt') {
+    const hasDefault = 'defaultValue' in field && field.defaultValue !== undefined
+    const isRequired =
+      'validation' in field &&
+      Object.entries(field.validation ?? {}).some(
+        ([key, value]) => key === 'isRequired' && value === true,
+      )
+    if (hasDefault || !isRequired) return false
+  }
   if (field.type === 'virtual') return false
   return !('virtual' in field && field.virtual === true)
 }
