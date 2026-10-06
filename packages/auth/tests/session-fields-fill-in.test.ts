@@ -1,3 +1,4 @@
+import type { Auth, BetterAuthOptions } from 'better-auth'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { config as defineConfig } from '@opensaas/stack-core'
@@ -38,7 +39,7 @@ afterAll(async () => {
   await database?.close()
 })
 
-async function signUp(auth: ReturnType<typeof createAuth>) {
+async function signUp(auth: Auth<BetterAuthOptions>) {
   const email = `fill-in-${randomUUID()}@example.com`
   const response = await auth.api.signUpEmail({
     body: { email, password: randomUUID(), name: 'Fill In' },
