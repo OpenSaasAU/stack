@@ -22,13 +22,16 @@ export function isSessionFillIn(value: unknown): value is SessionFillIn {
   )
 }
 
-const NON_COLUMN_FIELD_TYPES = new Set(['relationship', 'virtual', 'password'])
+const EXCLUDED_FIELD_TYPES = new Set(['password'])
 
 function userListScalarFields(config: OpenSaasConfig, userListKey: string): Set<string> {
   const fields = config.lists[userListKey]?.fields ?? {}
   return new Set(
     Object.entries(fields)
-      .filter(([, field]) => !NON_COLUMN_FIELD_TYPES.has(field.type))
+      .filter(([name, field]) => {
+        if (EXCLUDED_FIELD_TYPES.has(field.type)) return false
+        return field.getContractField?.(name, userListKey, config).kind === 'column'
+      })
       .map(([name]) => name),
   )
 }

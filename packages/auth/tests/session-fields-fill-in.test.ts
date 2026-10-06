@@ -137,4 +137,30 @@ describe('sessionFields fill-in from the user row (#1649)', () => {
     },
     BOOT,
   )
+
+  it(
+    'refuses a multi-column extendUserList field named in sessionFields',
+    async () => {
+      const parts = {
+        ...text(),
+        getContractField: (name: string) => ({
+          kind: 'columns' as const,
+          columns: [{ name: `${name}_a`, type: { pack: 'pg', type: 'text' }, nullable: true }],
+        }),
+      }
+      const multi = await defineConfig({
+        plugins: [
+          authPlugin({
+            emailAndPassword: { enabled: true },
+            sessionFields: ['userId', 'avatar'],
+            extendUserList: { fields: { avatar: parts } },
+          }),
+        ],
+        db: { provider: 'postgresql' },
+        lists: {},
+      })
+      await expect(buildBetterAuthOptions(multi, database.context())).rejects.toThrow(/"avatar"/)
+    },
+    BOOT,
+  )
 })
