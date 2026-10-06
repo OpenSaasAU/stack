@@ -872,17 +872,17 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
-      if (action.hasAccess) {
-        const allowed = await action.hasAccess({
-          session: context.session,
-          context,
-          listKey: props.listKey,
-        })
-        if (!allowed) {
-          return { bulkAction: false, error: 'Access denied' }
-        }
-      }
       try {
+        if (action.hasAccess) {
+          const allowed = await action.hasAccess({
+            session: context.session,
+            context,
+            listKey: props.listKey,
+          })
+          if (!allowed) {
+            return { bulkAction: false, error: 'Access denied' }
+          }
+        }
         const result = await action.handler({
           listKey: props.listKey,
           ids: props.ids,

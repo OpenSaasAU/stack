@@ -167,6 +167,32 @@ describe('context.serverAction', () => {
   })
 
   describe('error redaction', () => {
+    test(
+      'a throwing bulk-action hasAccess is redacted',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const context = contextAt(
+            withBulkAction({
+              hasAccess: () => {
+                throw new Error('INTERNAL sk-live-123')
+              },
+            }),
+          )
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'bulkAction',
+            key: 'publish',
+            ids: [],
+          })
+          expect(result).toEqual({ bulkAction: false, error: 'Action failed' })
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
     function withHook(throwing: () => never): OpenSaasConfig {
       const config = schemaConfig()
       config.lists.Post.hooks = { beforeOperation: throwing }

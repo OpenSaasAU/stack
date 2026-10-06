@@ -1,6 +1,9 @@
 import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
 import {
+  ConflictingRelationInputError,
+  MalformedForeignKeyInputError,
   MalformedRelationInputError,
+  NestedRelationInputError,
   NonOwningRelationInputError,
 } from '../context/relationship-input.js'
 import { ValidationError } from '../hooks/index.js'
@@ -19,6 +22,9 @@ export function isClientSafeError(error: unknown): error is Error {
     error instanceof DatabaseError ||
     error instanceof NonOwningRelationInputError ||
     error instanceof MalformedRelationInputError ||
+    error instanceof NestedRelationInputError ||
+    error instanceof ConflictingRelationInputError ||
+    error instanceof MalformedForeignKeyInputError ||
     error instanceof AccessScopeDepthExceededError ||
     error instanceof ResolveOutputCycleError
   )
