@@ -9,7 +9,7 @@ import { pascalToCamel } from '../lib/case-utils.js'
 import { isRelationshipField } from '../fields/index.js'
 import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
 import { ValidationError } from '../hooks/index.js'
-import { DatabaseError } from '../lib/database-errors.js'
+import { isClientSafeError } from '../lib/client-safe-error.js'
 import {
   MalformedRelationInputError,
   NonOwningRelationInputError,
@@ -588,15 +588,10 @@ function coerceConnectIds(
  */
 function isSafeMcpError(error: unknown): error is Error {
   return (
+    isClientSafeError(error) ||
     error instanceof McpProjectionRefusedError ||
     error instanceof McpWriteRefusedError ||
-    error instanceof ValidationError ||
-    error instanceof AccessScopeDepthExceededError ||
-    error instanceof ResolveOutputCycleError ||
-    error instanceof DatabaseError ||
-    error instanceof McpToolError ||
-    error instanceof NonOwningRelationInputError ||
-    error instanceof MalformedRelationInputError
+    error instanceof McpToolError
   )
 }
 

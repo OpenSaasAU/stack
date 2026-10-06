@@ -794,3 +794,7 @@ All types are strongly typed with TypeScript:
 - The secured surface's types are instantiated from the emitted contract
 - Access control functions are typed with proper generics
 - Avoid `any` and `unknown` in external APIs (internal use only where necessary)
+
+### Errors that reach the client
+
+`serverAction` (including the relationship actions), `bulkAction` and MCP share `isClientSafeError` (`src/lib/client-safe-error.ts`). `ValidationError`, `DatabaseError` and the engine's own refusals reach the client verbatim; anything else is logged server-side and replaced with a generic message. A hook that wants a message shown throws `ValidationError` or calls `addValidationError`.

@@ -99,8 +99,8 @@ export function normalizeDatabaseError(error: unknown, config: OpenSaasConfig): 
  * The user-facing message and per-field messages for an error caught around a
  * `context.db` operation — what a server action returns to a form.
  *
- * A {@link DatabaseError} already carries both. Anything else is a hook's own
- * throw or a bug, and reaches the caller as its own message.
+ * A {@link DatabaseError} already carries both. Anything else is returned
+ * unchanged; callers decide whether it is client-safe with `isClientSafeError`.
  */
 export function databaseErrorMessage(error: unknown, config: OpenSaasConfig): Error {
   const normalized = normalizeDatabaseError(error, config)
