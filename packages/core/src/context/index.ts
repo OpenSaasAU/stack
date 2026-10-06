@@ -1604,6 +1604,7 @@ function assertWriteArgs(
   args: object | null | undefined,
   listName: string,
   operation: keyof typeof WRITE_ARG_KEYS,
+  isSingleton: boolean,
 ): void {
   const allowed: readonly string[] = WRITE_ARG_KEYS[operation]
   if (args === null || typeof args !== 'object') {
@@ -1615,11 +1616,13 @@ function assertWriteArgs(
   for (const [key, value] of Object.entries(args)) {
     if (allowed.includes(key) || value === undefined) continue
 
+    const readBack = isSingleton
+      ? `context.db.${listName}.get({ include: { … } }) (a singleton has no select)`
+      : `context.db.${listName}.where({ id: { equals: row.id } }).${key}(…).first()`
     const reason =
       key === 'select' || key === 'include'
         ? `\`${key}\` is not supported on a write. Write first, then read the row back with ` +
-          `context.db.${listName}.where({ id: { equals: row.id } }).${key}(…).first(), ` +
-          `inside context.transaction() when the two must be atomic.`
+          `${readBack}, inside context.transaction() when the two must be atomic.`
         : `\`${key}\` is not an argument of ${operation}(); it takes ${allowed.join(', ')}.`
     throw new ValidationError([`${operation}() on "${listName}": ${reason}`], {})
   }
@@ -1636,7 +1639,7 @@ function createCreate(
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { data: Record<string, unknown> }) => {
-    assertWriteArgs(args, listName, 'create')
+    assertWriteArgs(args, listName, 'create', isSingletonList(listConfig))
     return runWritePipeline({
       listName,
       listConfig,
@@ -1662,7 +1665,7 @@ function createUpdate(
   return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     // Runs before the pipeline's access gate — a `where` the engine cannot
     // lower is the caller's own shape error, not a denial.
-    assertWriteArgs(args, listName, 'update')
+    assertWriteArgs(args, listName, 'update', isSingletonList(listConfig))
     assertIdentityWhere(args.where, listName, 'update')
 
     return runWritePipeline({
@@ -1688,7 +1691,7 @@ function createDelete(
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { where: Record<string, unknown> }) => {
-    assertWriteArgs(args, listName, 'delete')
+    assertWriteArgs(args, listName, 'delete', isSingletonList(listConfig))
     assertIdentityWhere(args.where, listName, 'delete')
 
     return runWritePipeline({
