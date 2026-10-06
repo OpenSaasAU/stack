@@ -22,7 +22,7 @@ export function isSessionFillIn(value: unknown): value is SessionFillIn {
   )
 }
 
-const NON_COLUMN_FIELD_TYPES = new Set(['relationship', 'virtual'])
+const NON_COLUMN_FIELD_TYPES = new Set(['relationship', 'virtual', 'password'])
 
 function userListScalarFields(config: OpenSaasConfig, userListKey: string): Set<string> {
   const fields = config.lists[userListKey]?.fields ?? {}
@@ -31,6 +31,13 @@ function userListScalarFields(config: OpenSaasConfig, userListKey: string): Set<
       .filter(([, field]) => !NON_COLUMN_FIELD_TYPES.has(field.type))
       .map(([name]) => name),
   )
+}
+
+function betterAuthUserFields(authConfig: NormalizedAuthConfig): Set<string> {
+  const tables = getAuthTables(
+    buildBetterAuthTableOptions(authConfig.models, authConfig.betterAuthPlugins),
+  )
+  return new Set(Object.keys(tables.user?.fields ?? {}))
 }
 
 function betterAuthSessionNames(authConfig: NormalizedAuthConfig): Set<string> {
@@ -62,12 +69,13 @@ export function assertSessionFieldsResolvable(
 ): void {
   const userListKey = authConfig.models.user.modelName
   const fromBetterAuth = betterAuthSessionNames(authConfig)
+  const userOwned = betterAuthUserFields(authConfig)
   const fromUserList = userListScalarFields(config, userListKey)
   const extended = Object.keys(authConfig.extendUserList.fields ?? {})
   const customSession = hasCustomSession(authConfig.betterAuthPlugins)
 
   for (const entry of authConfig.sessionFields) {
-    if (extended.includes(entry) && fromBetterAuth.has(entry)) {
+    if (extended.includes(entry) && userOwned.has(entry)) {
       throw new Error(
         `[@opensaas/stack-auth] sessionFields: "${entry}" is declared in \`extendUserList\` but ` +
           `better-auth's own user schema (core or a plugin such as \`admin()\`) already carries a ` +

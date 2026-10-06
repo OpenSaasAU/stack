@@ -519,13 +519,15 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
     const betterAuthConfig = plugins
       ? await buildBetterAuthOptions(opensaasConfig, context, plugins)
       : await buildBetterAuthOptions(opensaasConfig, context)
-    const instance = betterAuth(betterAuthConfig)
     const resolvedConfig = await Promise.resolve(opensaasConfig)
     const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
     const unsafe = Reflect.get(await Promise.resolve(context), 'unsafe')
-    if (authConfig && isUnsafeSurface(unsafe)) {
-      sessionFillIn = createSessionFillIn(resolvedConfig, authConfig, unsafe)
-    }
+    const fillIn =
+      authConfig && isUnsafeSurface(unsafe)
+        ? createSessionFillIn(resolvedConfig, authConfig, unsafe)
+        : null
+    const instance = betterAuth(betterAuthConfig)
+    sessionFillIn = fillIn
     authInstance = instance
     return instance
   }

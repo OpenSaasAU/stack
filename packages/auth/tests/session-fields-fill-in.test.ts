@@ -127,4 +127,13 @@ describe('sessionFields fill-in from the user row (#1649)', () => {
     },
     BOOT,
   )
+
+  it(
+    'accepts a better-auth session field that is not a user field',
+    async () => {
+      const ok = await buildConfig(['userId', 'token', 'ipAddress'])
+      await expect(buildBetterAuthOptions(ok, database.context())).resolves.toBeDefined()
+    },
+    BOOT,
+  )
 })
