@@ -295,8 +295,9 @@ export function describePlan(plan: ReconcilePlan): string[] {
 
 /** A short, stable id for a plan, derived from its operations. */
 export function planId(plan: ReconcilePlan): string {
-  const content = plan.operations.map(
-    (operation) => `${operation.operationClass}:${operation.label}`,
-  )
+  const content = [
+    ...plan.operations.map((operation) => `${operation.operationClass}:${operation.label}`),
+    ...plan.statements,
+  ]
   return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
 }

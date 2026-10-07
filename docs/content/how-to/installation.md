@@ -101,9 +101,8 @@ in a second terminal, while `pnpm dev` is still running:
 pnpm db:update --plan <id>
 ```
 
-The token is the name of the database being changed, which is what Prisma asks
-for before it destroys data; the local one is called `postgres`. `pnpm db:update`
-on its own is refused and exits non-zero — the loop reports that nothing was
+The id is the one the loop printed with the plan, and the loop applies the change
+only if the plan it computes now still has that id. `pnpm db:update` on its own is refused and exits non-zero — the loop reports that nothing was
 applied and nothing was promoted.
 
 ## Using your own Postgres

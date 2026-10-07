@@ -1,5 +1,5 @@
 ---
-'@opensaas/stack-cli': patch
+'@opensaas/stack-cli': minor
 'create-opensaas-app': patch
 ---
 

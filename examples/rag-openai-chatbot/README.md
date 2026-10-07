@@ -541,13 +541,7 @@ psql "$(node -p "require('./.opensaas/dev-db.json').url")" \
 With no vector left to cast, `pnpm db:update --plan <id>` exits 0 and
 reports `Applied, promoted.`. Re-run `pnpm db:seed` to regenerate the embeddings
 from the article text — it clears the list before recreating it, so it is safe on
-either route. Asked for consent in a non-interactive session, `db update` prints:
-
-```
-"Apply 1 destructive operation(s) to postgres? Data they remove cannot be recovered:
-  - Alter type of "KnowledgeBase"."contentEmbedding" to vector(3072)" requires explicit
-consent, and the session is not interactive. Grant it by passing --plan <id>.
-```
+either route. Without `--plan <id>`, `db update` refuses and prints the plan and its id.
 
 ### Add Your Own Articles
 

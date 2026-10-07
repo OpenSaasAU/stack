@@ -218,7 +218,7 @@ Editing `opensaas.config.ts` while the loop is running regenerates and reconcile
 pnpm db:update --plan <id>
 ```
 
-The consent token is the database name; the Dev database's is `postgres`.
+The plan id is the one the loop printed with the plan; if the plan has changed since, the loop prints the new plan and id instead of applying.
 
 #### `pnpm db:update` needs the loop
 
