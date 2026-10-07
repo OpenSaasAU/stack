@@ -175,6 +175,7 @@ export type {
   McpAuthConfig,
   ListMcpConfig,
   McpCustomTool,
+  McpScopesConfig,
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,
