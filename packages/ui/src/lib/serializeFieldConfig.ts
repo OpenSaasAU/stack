@@ -116,6 +116,11 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
     type: fieldConfig.type,
   }
 
+  if (fieldConfig.access?.write === 'hooks') {
+    config.readOnly = true
+    config.readOnlyReason = FIELD_HOOK_ONLY_REASON
+  }
+
   if (fieldConfig.ui) {
     const { valueForClientSerialization: _valueForClientSerialization, ...serializableUi } =
       fieldConfig.ui
