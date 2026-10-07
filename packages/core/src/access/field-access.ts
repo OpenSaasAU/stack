@@ -115,6 +115,10 @@ export async function checkFieldAccess(
     inputData?: Record<string, unknown>
   },
 ): Promise<boolean> {
+  if (operation !== 'read' && fieldAccess?.write === 'hooks') {
+    return false
+  }
+
   if (args.context._isSudo) {
     return true
   }
@@ -445,7 +449,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     if (
       operation === 'create' &&
       args.defaultedFields?.has(fieldName) &&
-      fieldConfig?.access?.allowCreateDefault
+      (fieldConfig?.access?.allowCreateDefault || fieldConfig?.access?.write === 'hooks')
     ) {
       filtered[fieldName] = value
       continue
