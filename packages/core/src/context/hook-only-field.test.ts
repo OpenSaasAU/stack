@@ -23,7 +23,9 @@ async function hookOnlyConfig() {
           }),
           stamp: text({
             access: { write: 'hooks' },
-            hooks: { resolveInput: ({ resolvedData }) => String(resolvedData.stamp).toUpperCase() },
+            hooks: {
+              resolveInput: ({ resolvedData }) => String(resolvedData.stamp ?? '').toUpperCase(),
+            },
           }),
         },
         access: { operation: { query: () => true, create: () => true, update: () => true } },
@@ -91,4 +93,14 @@ test('write: "hooks" cannot be combined with an update rule', () => {
     // @ts-expect-error a hook-only field takes no create/update rule
     access: { write: 'hooks', update: () => true },
   })
+})
+
+test('an unknown write marker or a combined rule is refused at config time', () => {
+  const build = (access: object) =>
+    config({
+      db: { provider: 'postgresql' },
+      lists: { A: list({ fields: { x: text({ access: access as never }) } }) },
+    })
+  expect(() => build({ write: 'hook' })).toThrow(/access.write/)
+  expect(() => build({ write: 'hooks', update: () => true })).toThrow(/cannot be combined/)
 })
