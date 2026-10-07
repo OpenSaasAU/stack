@@ -238,11 +238,12 @@ Key points:
   write itself succeeded AND the enclosing transaction committed, the write's
   own error always winning otherwise — and the deferred `item` is the row as
   that write persisted it, not re-read at flush (so a later same-record write in
-  the same transaction leaves it stale). Because of this, a **rejected
-  `context.transaction()` no longer implies rollback**: a deferred hook that
-  throws after a successful commit rejects the call with `AfterTransactionError`
-  over already-final data, though a transaction error — `SerializationFailure`
-  among them — still takes precedence. A write with no transaction owner at all
+  the same transaction leaves it stale). A rejection always means the write did
+  not persist: an `afterTransaction` that throws never changes a write's or a
+  transaction's result — its error goes to the config's `onAfterTransactionError`
+  (default `console.error`), on the committed and rolled-back paths alike, and a
+  transaction error — `SerializationFailure` among them — is what the caller
+  receives (ADR-0074). A write with no transaction owner at all
   (an application managing its own transaction, or a client that cannot open
   one) still fires `afterTransaction` optimistically at write time, unchanged.
   See ADR-0028 and the hooks concept doc.

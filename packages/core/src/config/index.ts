@@ -116,6 +116,7 @@ export function list<TTypeInfo extends import('./types.js').TypeInfo>(
 
 export type {
   OpenSaasConfig,
+  AfterTransactionErrorReport,
   OutputConfig,
   ListConfig,
   ListConfigInput,

@@ -13,7 +13,6 @@ import { isSerializationFailure } from '../lib/database-errors.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { getContext, TransactionRolledBackError } from './index.js'
-import { AfterTransactionError } from './transaction-boundary.js'
 
 /**
  * Transaction-boundary hooks over a real database (ADR-0028, ADR-0057).
@@ -430,7 +429,7 @@ describe('transaction-boundary hooks', () => {
     )
 
     test(
-      'a throwing compensator rejects the transaction, and the others still ran',
+      'a throwing compensator is reported, the transaction resolves, and the others still ran',
       async () => {
         const fired: string[] = []
         const context = contextAt(
@@ -449,12 +448,19 @@ describe('transaction-boundary hooks', () => {
           }),
         )
 
-        await expect(
-          context.transaction(async (tx) => {
-            await tx.db.User.create({ data: { name: 'jane' } })
-            await tx.db.Post.create({ data: { title: 'ok' } })
-          }),
-        ).rejects.toBeInstanceOf(AfterTransactionError)
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        try {
+          await expect(
+            context.transaction(async (tx) => {
+              await tx.db.User.create({ data: { name: 'jane' } })
+              await tx.db.Post.create({ data: { title: 'ok' } })
+              return 'done'
+            }),
+          ).resolves.toBe('done')
+          expect(errorSpy).toHaveBeenCalledTimes(1)
+        } finally {
+          errorSpy.mockRestore()
+        }
 
         expect(fired.sort()).toEqual(['post', 'user'])
         expect(await rows('User')).toHaveLength(1)
@@ -605,7 +611,6 @@ describe('transaction-boundary hooks', () => {
           )
 
         expect(isSerializationFailure(raised)).toBe(true)
-        expect(raised).not.toBeInstanceOf(AfterTransactionError)
         expect(after).toHaveBeenCalledTimes(1)
         expect(after.mock.calls[0][0]).toMatchObject({ status: 'rolled-back' })
         expect(await rows('User')).toEqual([])
@@ -717,6 +722,194 @@ describe('transaction-boundary hooks', () => {
 
         expect(await rows('Audit')).toHaveLength(1)
         expect(await rows('Comment')).toMatchObject([{ body: 'compensated' }])
+      },
+      BOOT,
+    )
+  })
+
+  describe('a throwing afterTransaction is reported, never propagated', () => {
+    const boom = new Error('boom')
+    const throwing = (): never => {
+      throw boom
+    }
+
+    function reported(hooks: Partial<Record<'User' | 'Post', Hooks>>) {
+      const onAfterTransactionError = vi.fn()
+      const context = contextAt({ ...withHooks(hooks), onAfterTransactionError })
+      return { context, onAfterTransactionError }
+    }
+
+    test(
+      'create, update and delete resolve with their result and the row state persists',
+      async () => {
+        const { context, onAfterTransactionError } = reported({
+          User: { afterTransaction: throwing },
+        })
+
+        const created = await context.db.User.create({ data: { name: 'jane' } })
+        expect(created).toMatchObject({ name: 'jane' })
+        const updated = await context.db.User.update({
+          where: { id: created!.id },
+          data: { name: 'janet' },
+        })
+        expect(updated).toMatchObject({ name: 'janet' })
+        expect(await rows('User')).toMatchObject([{ name: 'janet' }])
+        const deleted = await context.db.User.delete({ where: { id: created!.id } })
+        expect(deleted).not.toBeNull()
+        expect(await rows('User')).toEqual([])
+
+        expect(onAfterTransactionError.mock.calls.map(([report]) => report)).toEqual([
+          { error: boom, status: 'committed', listKey: 'User', operation: 'create' },
+          { error: boom, status: 'committed', listKey: 'User', operation: 'update' },
+          { error: boom, status: 'committed', listKey: 'User', operation: 'delete' },
+        ])
+      },
+      BOOT,
+    )
+
+    test(
+      'a field-level afterTransaction follows the same rule',
+      async () => {
+        const onAfterTransactionError = vi.fn()
+        const context = contextAt({
+          ...withHooks({}, { User: { name: text({ hooks: { afterTransaction: throwing } }) } }),
+          onAfterTransactionError,
+        })
+
+        await expect(context.db.User.create({ data: { name: 'jane' } })).resolves.toMatchObject({
+          name: 'jane',
+        })
+        expect(onAfterTransactionError).toHaveBeenCalledWith({
+          error: boom,
+          status: 'committed',
+          listKey: 'User',
+          operation: 'create',
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'context.transaction resolves with the callback value and every compensator runs',
+      async () => {
+        const fired: string[] = []
+        const { context, onAfterTransactionError } = reported({
+          User: {
+            afterTransaction: () => {
+              fired.push('user')
+              throw boom
+            },
+          },
+          Post: {
+            afterTransaction: () => {
+              fired.push('post')
+              throw boom
+            },
+          },
+        })
+
+        const value = await context.transaction(async (tx) => {
+          await tx.db.User.create({ data: { name: 'jane' } })
+          await tx.db.Post.create({ data: { title: 'ok' } })
+          return 42
+        })
+
+        expect(value).toBe(42)
+        expect(fired.sort()).toEqual(['post', 'user'])
+        expect(await rows('User')).toHaveLength(1)
+        expect(await rows('Post')).toHaveLength(1)
+        expect(onAfterTransactionError.mock.calls.map(([report]) => report.listKey).sort()).toEqual(
+          ['Post', 'User'],
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'rolled-back: the caller gets the original error and the hook error is reported',
+      async () => {
+        const { context, onAfterTransactionError } = reported({
+          User: { afterTransaction: throwing },
+        })
+        const original = new Error('callback failed')
+
+        await expect(
+          context.transaction(async (tx) => {
+            await tx.db.User.create({ data: { name: 'jane' } })
+            throw original
+          }),
+        ).rejects.toBe(original)
+
+        expect(await rows('User')).toEqual([])
+        expect(onAfterTransactionError).toHaveBeenCalledWith({
+          error: boom,
+          status: 'rolled-back',
+          listKey: 'User',
+          operation: 'create',
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'an aborting beforeTransaction still rejects and its compensator error is reported',
+      async () => {
+        const abort = new Error('abort')
+        const { context, onAfterTransactionError } = reported({
+          User: {
+            beforeTransaction: () => {
+              throw abort
+            },
+            afterTransaction: throwing,
+          },
+        })
+
+        await expect(context.db.User.create({ data: { name: 'jane' } })).rejects.toBe(abort)
+        expect(onAfterTransactionError).toHaveBeenCalledWith({
+          error: boom,
+          status: 'rolled-back',
+          listKey: 'User',
+          operation: 'create',
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'without a callback each error goes to console.error and nothing rejects',
+      async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        try {
+          const context = contextAt(withHooks({ User: { afterTransaction: throwing } }))
+          await expect(context.db.User.create({ data: { name: 'jane' } })).resolves.not.toBeNull()
+          expect(errorSpy).toHaveBeenCalledTimes(1)
+          expect(errorSpy.mock.calls[0]).toContain(boom)
+        } finally {
+          errorSpy.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a throwing onAfterTransactionError falls back to console.error and does not reject',
+      async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        try {
+          const callbackError = new Error('reporter down')
+          const context = contextAt({
+            ...withHooks({ User: { afterTransaction: throwing } }),
+            onAfterTransactionError: () => {
+              throw callbackError
+            },
+          })
+          await expect(context.db.User.create({ data: { name: 'jane' } })).resolves.not.toBeNull()
+          const logged = errorSpy.mock.calls.flat()
+          expect(logged).toContain(callbackError)
+          expect(logged).toContain(boom)
+        } finally {
+          errorSpy.mockRestore()
+        }
       },
       BOOT,
     )

@@ -16,6 +16,7 @@ export { config, list, getPluginData } from './config/index.js'
 // alongside their builders.
 export type {
   OpenSaasConfig,
+  AfterTransactionErrorReport,
   OutputConfig,
   ListConfig,
   ListUIOption,

@@ -45,13 +45,21 @@ export interface TransactionSettleOutcome {
   error?: unknown
 }
 
+/** One `afterTransaction` hook failure, with the settle it ran under and where it came from. */
+export interface AfterTransactionFailure {
+  error: unknown
+  status: 'committed' | 'rolled-back'
+  listKey: string
+  operation: 'create' | 'update' | 'delete'
+}
+
 /**
  * One deferred write's flush: given the owner's settle outcome, runs that
  * write's `afterTransaction` bracket and appends any hook errors to `errors`.
  */
 export type QueuedTransactionFlush = (
   settle: TransactionSettleOutcome,
-  errors: unknown[],
+  errors: AfterTransactionFailure[],
 ) => Promise<void>
 
 /**
@@ -94,7 +102,7 @@ export class TransactionRegistry {
     this.queue.push(flush)
   }
 
-  async drain(settle: TransactionSettleOutcome, errors: unknown[]): Promise<void> {
+  async drain(settle: TransactionSettleOutcome, errors: AfterTransactionFailure[]): Promise<void> {
     for (const flush of this.queue) {
       await flush(settle, errors)
     }

@@ -425,6 +425,8 @@ export type FieldHooks<
    *   }
    * }
    * ```
+   *
+   * A throw is reported to `onAfterTransactionError`, never propagated.
    */
   afterTransaction?: (
     args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>,
@@ -2046,6 +2048,9 @@ export type Hooks<
    * AND only for the top-level record (`undefined` for nested lists). The
    * compensation half of the transaction-boundary bracket. See
    * {@link AfterTransactionHookArgs}.
+   *
+   * A throw is reported to `onAfterTransactionError`, never propagated: the
+   * write's result is unchanged and every other compensator still runs.
    */
   afterTransaction?: (
     args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
@@ -3486,12 +3491,39 @@ export interface OutputConfig {
   opensaasDir?: string
 }
 
+/** What {@link OpenSaasConfig.onAfterTransactionError} receives for one failed `afterTransaction` hook. */
+export interface AfterTransactionErrorReport {
+  error: unknown
+  status: 'committed' | 'rolled-back'
+  listKey: string
+  operation: 'create' | 'update' | 'delete'
+}
+
 /**
  * Main configuration type.
  * Uses an interface, not a type alias, so it can be extended via module augmentation.
  */
 export interface OpenSaasConfig {
   db: DatabaseConfig
+  /**
+   * Receives every error an `afterTransaction` hook throws. Such an error never
+   * changes the write's or transaction's result: a committed write resolves and
+   * a rolled-back one still rejects with its own error. Called once per failed
+   * hook. When unset, or when this callback itself throws, the error is written
+   * to `console.error`.
+   *
+   * @example
+   * ```typescript
+   * config({
+   *   db: { provider: 'postgresql' },
+   *   lists: {},
+   *   onAfterTransactionError: ({ error, status, listKey, operation }) => {
+   *     logger.error({ error, status, listKey, operation }, 'afterTransaction failed')
+   *   },
+   * })
+   * ```
+   */
+  onAfterTransactionError?: (report: AfterTransactionErrorReport) => void | Promise<void>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
   lists: Record<string, ListConfig<any>>
   session?: SessionConfig

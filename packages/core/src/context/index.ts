@@ -40,8 +40,12 @@ import {
 import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
 import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
-import { AfterTransactionError } from './transaction-boundary.js'
-import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
+import { reportAfterTransactionFailures } from './transaction-boundary.js'
+import {
+  TransactionRegistry,
+  TransactionRolledBackError,
+  type AfterTransactionFailure,
+} from '../access/transaction-registry.js'
 export { TransactionRolledBackError }
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
 
@@ -521,11 +525,8 @@ function throwIfPoisoned(registry: TransactionRegistry): void {
 /**
  * Drain a `context.transaction()` owner's deferral registry once its callback
  * (and any real underlying transaction) has settled (ADR-0028). A transaction/
- * callback error always wins — compensators still all run, but their errors
- * are discarded in favor of re-surfacing the original, matching the Write
- * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
- * errors reject with {@link AfterTransactionError} even though the callback
- * succeeded and the transaction committed.
+ * callback error always wins and is re-surfaced; deferred `afterTransaction`
+ * errors never reject — they go to `onAfterTransactionError` (ADR-0074).
  *
  * The settle is the second normalisation site (ADR-0042). PostgreSQL raises
  * some failures at `COMMIT`, after every terminal in the callback has already
@@ -539,7 +540,7 @@ async function settleTransactionOwner<T>(
   registry: TransactionRegistry,
   config: OpenSaasConfig,
 ): Promise<T> {
-  const errors: unknown[] = []
+  const errors: AfterTransactionFailure[] = []
   let result: T
   try {
     result = await settled
@@ -547,12 +548,11 @@ async function settleTransactionOwner<T>(
     const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
     await registry.drain(outcome, errors)
+    await reportAfterTransactionFailures(config, errors)
     throw err
   }
   await registry.drain({ status: 'committed' }, errors)
-  if (errors.length > 0) {
-    throw new AfterTransactionError(errors)
-  }
+  await reportAfterTransactionFailures(config, errors)
   return result
 }
 
