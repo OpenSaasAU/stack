@@ -1225,6 +1225,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - `contains` and text equality in filter URLs are case-insensitive; a to-many count filter other than presence degrades to free text
 - An approximate vector scan under a selective access filter can return fewer rows than asked for
 - The Auth adapter implements no joins and no schema creation, so better-auth's own CLI is unsupported
+- A unique constraint or restrictive foreign key on an access-scoped list tells a writer that a row it cannot read holds that value or references that row. Scope the uniqueness to the access boundary; see "Uniqueness and existence" in `docs/content/concepts/access-control.md`
 - `pnpm db:update` requires the dev loop to be running, and a destructive mid-session change restarts the app
 - The staged promotion set is not atomic to an outside observer: a direct `prisma` invocation, `psql`, or a hot-reloading app child can see a mix of old and new artifacts for a measured window (1–2 ms on macOS, up to 127 ms on a loaded 2-CPU Linux runner) during `opensaas dev`. Only a second-terminal `opensaas db update` is serialised against it. See ADR-0072
 

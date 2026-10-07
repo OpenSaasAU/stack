@@ -391,6 +391,47 @@ owns the column:
 await context.db.Post.update({ where: { id: postId }, data: { author: null } })
 ```
 
+## Uniqueness and existence
+
+A unique constraint is enforced by the database across every row, including rows the session cannot read. When a write collides with one, the resulting `UniqueConstraintViolation` (with its `fieldErrors`) tells the caller that some row holds that value. A scoped `User` list shows the shape:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+const User = list({
+  fields: { email: text({ isIndexed: 'unique' }) },
+  access: {
+    operation: {
+      query: ({ session }) => (session === null ? false : { id: { equals: session.userId } }),
+      update: ({ session }) => (session === null ? false : { id: { equals: session.userId } }),
+    },
+  },
+})
+```
+
+A session that updates its own `email` to another user's address receives the violation, confirming that address is taken even though it cannot read that user. The same applies to `create` for any caller with create access. A restrictive foreign key (`onDelete: 'restrict'`) likewise reveals, by blocking a delete, that rows the session cannot read still reference the target.
+
+No runtime check can close this: the database alone knows about the colliding row, and any outcome other than success differs from success. The stack keeps the field-mapped message on purpose (see ADR-0042). Mitigate in the schema and at the edge:
+
+- **Scope the constraint to the access boundary.** On a tenant-scoped list, make the pair unique so a caller can only collide with rows in its own tenant:
+
+  ```typescript
+  import { list } from '@opensaas/stack-core'
+  import { relationship, text } from '@opensaas/stack-core/fields'
+
+  const Member = list({
+    fields: {
+      tenant: relationship({ ref: 'Tenant.members' }),
+      email: text(),
+    },
+    db: { indexes: [{ fields: ['tenant', 'email'], unique: true }] },
+  })
+  ```
+
+- **Rate-limit** create and update on endpoints that expose a unique field to untrusted callers.
+- **Avoid `restrict`** on references that cross the access boundary, where the domain allows it.
+
 ## Access Control Execution Order
 
 For **write operations** (create/update):
