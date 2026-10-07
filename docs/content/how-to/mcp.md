@@ -226,32 +226,24 @@ export { GET, POST, DELETE }
 
 ### 2. Create OAuth Discovery Endpoints
 
-Better Auth provides OAuth endpoints automatically, but some MCP clients need them at specific paths.
+Better Auth provides OAuth endpoints automatically, but MCP clients look for them at the root `.well-known` paths. The helpers answer those paths in-process through your Better Auth instance: they make no outbound fetch, forward no request headers, and the request's host selects no server.
 
 Create `app/.well-known/oauth-authorization-server/route.ts`:
 
 ```typescript
-export async function GET(req: Request) {
-  // Delegate to Better Auth's built-in handler
-  const authUrl = new URL('/api/auth/.well-known/oauth-authorization-server', req.url)
+import { createOAuthDiscoveryHandler } from '@opensaas/stack-auth/mcp'
+import { auth } from '@/lib/auth'
 
-  return fetch(authUrl.toString(), {
-    headers: req.headers,
-  })
-}
+export const GET = createOAuthDiscoveryHandler(auth)
 ```
 
-Create `app/.well-known/oauth-protected-resource/route.ts`:
+Create `app/.well-known/oauth-protected-resource/[[...resource]]/route.ts` (the optional catch-all also serves the resource-path variant, e.g. `/.well-known/oauth-protected-resource/api/mcp`):
 
 ```typescript
-export async function GET() {
-  const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+import { createOAuthProtectedResourceHandler } from '@opensaas/stack-auth/mcp'
+import { auth } from '@/lib/auth'
 
-  return Response.json({
-    resource: baseUrl,
-    authorization_servers: [`${baseUrl}/api/auth`],
-  })
-}
+export const GET = createOAuthProtectedResourceHandler(auth)
 ```
 
 ## How Tools Are Built
