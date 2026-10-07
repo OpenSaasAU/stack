@@ -283,9 +283,15 @@ export function embedding<
     }
   }
 
-  const access: FieldAccess | undefined = allowManualWrites
-    ? options?.access
-    : { ...options?.access, create: () => false, update: () => false }
+  const access: FieldAccess | undefined =
+    allowManualWrites || options?.access?.write === 'hooks'
+      ? options?.access
+      : {
+          read: options?.access?.read,
+          allowCreateDefault: options?.access?.allowCreateDefault,
+          create: () => false,
+          update: () => false,
+        }
 
   const showVector = options?.ui?.showVector ?? false
   const showMetadata = options?.ui?.showMetadata ?? true

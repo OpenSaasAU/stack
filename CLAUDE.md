@@ -164,7 +164,7 @@ The hooks system provides data transformation and side effects during database o
 3. List-level `validate` - Custom validation logic
 4. Field-level `validate` - Custom validation logic for individual fields
 5. Field validation - Built-in rules (isRequired, length, min/max)
-6. Field-level access control - Gates the keys the caller supplied in `inputData` (hook output is trusted; ADR-0074)
+6. Field-level access control - Gates the keys the caller supplied in `inputData` (hook output is trusted; ADR-0075)
 7. Relationship resolution - a `connect`'s reachability query and the foreign-key write
 8. Field-level `beforeOperation` - Side effects for individual fields
 9. List-level `beforeOperation` - Side effects at list level
