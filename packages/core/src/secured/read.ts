@@ -855,6 +855,10 @@ function relatedRowsOf(row: OrmRow, plan: IncludePlan): OrmRow[] {
  * id when the relation is visible, `null` when it is not — denied, scoped away
  * and stripped alike, which is what a to-one the caller may not see means
  * everywhere else (ADR-0058).
+ *
+ * A relation the caller's own `where()` refined is the exception: a `null`
+ * there may be the caller's filter rather than access, so the column is left
+ * for {@link narrowUnincludedForeignKeys}, which decides on access alone.
  */
 function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   for (const plan of plans) {
@@ -865,7 +869,8 @@ function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
       plan.foreignKey in row
     ) {
       const value = row[plan.relation]
-      row[plan.foreignKey] = isRow(value) ? value.id : null
+      if (isRow(value)) row[plan.foreignKey] = value.id
+      else if (!plan.callerRefined) row[plan.foreignKey] = null
     }
     if (plan.includes.length === 0) continue
     for (const related of relatedRowsOf(row, plan)) applyForeignKeys(related, plan.includes)
@@ -918,6 +923,14 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
   return assembled
 }
 
+function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
+  const refined = plans.filter((plan) => plan.callerRefined)
+  if (refined.length === 0) return row
+  const copy: OrmRow = { ...row }
+  for (const plan of refined) delete copy[plan.relation]
+  return copy
+}
+
 /**
  * Narrow the foreign-key column of every to-one relationship this read did
  * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
@@ -956,7 +969,9 @@ async function narrowUnincludedForeignKeys(
   if (binding.context._isSudo === true) return
   const ctx = relatedResolveContext(binding, listName, listConfig)
   const alreadyIncluded = new Set(
-    resolvedIncludes.filter((plan) => !plan.declared).map((plan) => plan.relation),
+    resolvedIncludes
+      .filter((plan) => !plan.declared && !plan.callerRefined)
+      .map((plan) => plan.relation),
   )
 
   for (const owner of foreignKeyOwningRelations(ctx)) {
@@ -977,7 +992,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: assembleColumnFields(raw, listConfig.fields),
+        item: assembleColumnFields(callerIndependent(raw, resolvedIncludes), listConfig.fields),
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }
