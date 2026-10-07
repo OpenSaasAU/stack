@@ -401,8 +401,28 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 
   const isSudo = args.context._isSudo === true
 
+  const owningField = (key: string): string =>
+    foreignKeyOwners.get(key)?.fieldName ?? splitColumnOwners.get(key)?.fieldName ?? key
+  const callerFields = new Set(Object.keys(args.inputData ?? {}).map(owningField))
+
+  for (const fieldName of callerFields) {
+    if (Object.hasOwn(data, fieldName) || Object.hasOwn(fieldConfigs, fieldName) === false) continue
+    if (args.inputData?.[fieldName] === undefined) continue
+    const fieldConfig = fieldConfigs[fieldName]
+    if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
+    const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
+    if (keyed) continue
+    if (!(await checkFieldAccess(fieldConfig.access, operation, { ...args }))) {
+      throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])
+    }
+  }
+
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = Object.hasOwn(fieldConfigs, fieldName) ? fieldConfigs[fieldName] : undefined
+    const callerSupplied =
+      args.inputData === undefined ||
+      callerFields.has(owningField(fieldName)) ||
+      args.defaultedFields?.has(fieldName) === true
 
     if (isSystemFieldName(fieldName, fieldConfigs)) {
       throw new ValidationError([
@@ -446,10 +466,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // relationship field's write gate.
     const foreignKeyOwner = foreignKeyOwners.get(fieldName)
     if (foreignKeyOwner) {
-      const canWrite = await checkFieldAccess(foreignKeyOwner.access, operation, {
-        ...args,
-        inputData: args.inputData,
-      })
+      const canWrite =
+        !callerSupplied ||
+        (await checkFieldAccess(foreignKeyOwner.access, operation, {
+          ...args,
+          inputData: args.inputData,
+        }))
       if (!canWrite) {
         throw new ValidationError([
           `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
@@ -471,10 +493,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // through, preserving the legitimate multi-column write path.
     const splitColumnOwner = splitColumnOwners.get(fieldName)
     if (splitColumnOwner) {
-      const canWrite = await checkFieldAccess(splitColumnOwner.access, operation, {
-        ...args,
-        inputData: args.inputData,
-      })
+      const canWrite =
+        !callerSupplied ||
+        (await checkFieldAccess(splitColumnOwner.access, operation, {
+          ...args,
+          inputData: args.inputData,
+        }))
       if (!canWrite) {
         throw new ValidationError([
           `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
@@ -528,10 +552,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // asked (and skips any hook side effects gated on that field).
     // `checkFieldAccess` already returns `true` under sudo, so sudo writes never
     // reach the throw below — no parallel sudo path is needed here.
-    const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
-      ...args,
-      inputData: args.inputData,
-    })
+    const canWrite =
+      !callerSupplied ||
+      (await checkFieldAccess(fieldConfig.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      }))
 
     if (!canWrite) {
       throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])

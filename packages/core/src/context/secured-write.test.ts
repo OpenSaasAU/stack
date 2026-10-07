@@ -740,3 +740,59 @@ describe('a field-level refusal never outranks the operation gate', () => {
     BOOT,
   )
 })
+
+describe('field write access gates caller input, not hook output (issue #1643)', () => {
+  let harness: TestContext
+
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql', timestamps: true },
+    lists: {
+      Post: {
+        fields: {
+          title: text(),
+          secret: text({ access: { create: () => false, update: () => false } }),
+        },
+        access: { operation: OPEN },
+        hooks: {
+          resolveInput: async ({ resolvedData }) => ({ ...resolvedData, secret: 'server-set' }),
+        },
+      },
+    },
+  }
+
+  beforeAll(async () => {
+    harness = await createTestContext(config, { userId: 'u1' })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+  })
+
+  test(
+    'a hook-set write-denied field persists on create and update',
+    async () => {
+      const created = await harness.context.db.Post.create({ data: { title: 't' } })
+      expect(created?.secret).toBe('server-set')
+      const updated = await harness.context.db.Post.update({
+        where: { id: created!.id },
+        data: { title: 'u' },
+      })
+      expect(updated?.secret).toBe('server-set')
+    },
+    BOOT,
+  )
+
+  test(
+    'a caller-supplied write-denied field is still refused even when the hook overwrites it',
+    async () => {
+      await expect(
+        harness.context.db.Post.create({ data: { title: 't', secret: 'mine' } }),
+      ).rejects.toThrow('Cannot create "secret": field-level access denied.')
+    },
+    BOOT,
+  )
+})

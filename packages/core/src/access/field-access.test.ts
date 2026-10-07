@@ -914,7 +914,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'update', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: true },
         defaultedFields: new Set(['emailVerified']),
       }),
     ).rejects.toThrow(ValidationError)
@@ -933,7 +933,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'create', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: false },
       }),
     ).rejects.toThrow(ValidationError)
   })
@@ -1067,5 +1067,66 @@ describe('the virtual-field write skip (issue #1531)', () => {
 
     expect(filtered).toHaveProperty('title', 'Test')
     expect(filtered).not.toHaveProperty('summary')
+  })
+})
+
+describe('filterWritableFields — gates caller input, not hook output (issue #1643)', () => {
+  const fieldConfigs = {
+    name: { type: 'text' },
+    locked: { type: 'text', access: { create: () => false, update: () => false } },
+  }
+
+  it('persists a write-denied field a hook set when the caller did not supply it', async () => {
+    for (const operation of ['create', 'update'] as const) {
+      const filtered = await filterWritableFields(
+        { name: 'a', locked: 'server-set' },
+        fieldConfigs,
+        operation,
+        { session: null, context: nonSudoContext(), inputData: { name: 'a' } },
+      )
+      expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
+    }
+  })
+
+  it('throws when the caller supplies the denied field', async () => {
+    await expect(
+      filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('throws when the caller supplied the denied field and a hook removed it', async () => {
+    await expect(
+      filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { name: 'a', locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('refuses a caller-supplied foreign key but persists a hook-set one', async () => {
+    const rels = {
+      author: { type: 'relationship', ref: 'User.posts', access: { create: () => false } },
+    }
+    const config = {
+      lists: {
+        User: { fields: { posts: { type: 'relationship', ref: 'Post.author', many: true } } },
+        Post: { fields: rels },
+      },
+    } as unknown as OpenSaasConfig
+    const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', {
+        ...base,
+        inputData: { authorId: 'u1' },
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
+    ).resolves.toEqual({ authorId: 'u1' })
   })
 })
