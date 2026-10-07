@@ -74,7 +74,7 @@ The config's default export may be a `Promise` when plugins are present, so ever
 4. Spawn the app (`next dev` by default, `opensaas dev -- <command>` otherwise) with **no `DATABASE_URL` injected**, stdin closed
 5. Watch `opensaas.config.ts`
 
-On a config change, generation is **staged behind reconciliation**: it emits to a staging directory, plans the update, and promotes the contract and bundle only once the plan applies. A destructive plan stops at Prisma's consent prompt on boot; mid-session it leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving. The loop restarts the app child after a destructive promote, because a cached client survives HMR.
+On a config change, generation is **staged behind reconciliation**: it emits to a staging directory, plans the update, and promotes the contract and bundle only once the plan applies. A destructive plan stops at Prisma's consent prompt on boot; mid-session it leaves bundle and database at the previous schema, prints the plan, its id and `pnpm db:update --plan <id>`, and keeps serving. The loop restarts the app child after a destructive promote, because a cached client survives HMR.
 
 Promotion moves the file set one atomic swap at a time, not as a single commit — a direct `prisma`/`psql` invocation or a hot-reloading app child can observe a mix of old and new artifacts for a small window. `prisma.config.ts` always lands last, which is why the loop's own end-of-promotion log line, not the app's own answer, is the correct signal that the whole set is in place. See ADR-0072.
 
@@ -104,7 +104,7 @@ opensaas dev -- tsx seed.ts
 
 ```bash
 opensaas db update
-opensaas db update --confirm postgres   # consent for a destructive change
+opensaas db update --plan <id>   # apply the destructive plan the loop printed
 ```
 
 Runs **through the loop** rather than beside it: the loop holds the database, the staged generation and the app child, so this command opens no connection of its own and errors when nothing is listening. Prisma asks for the database name as its consent token; the Dev database's is `postgres`.

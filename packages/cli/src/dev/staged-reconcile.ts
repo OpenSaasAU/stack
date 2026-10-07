@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
@@ -290,4 +291,12 @@ export function describePlan(plan: ReconcilePlan): string[] {
   )
   for (const statement of plan.statements) lines.push(`    ${statement}`)
   return lines
+}
+
+/** A short, stable id for a plan, derived from its operations. */
+export function planId(plan: ReconcilePlan): string {
+  const content = plan.operations.map(
+    (operation) => `${operation.operationClass}:${operation.label}`,
+  )
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
 }

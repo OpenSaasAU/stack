@@ -15,6 +15,7 @@ import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
 import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
 import {
   describePlan,
+  planId,
   planDatabaseUpdate,
   promoteStagedGeneration,
   restoreMigrationRefs,
@@ -43,8 +44,19 @@ const NOTHING_TO_RECONCILE_ROUTE =
   '(`opensaas db update`) in another terminal.\n'
 
 /** How a parked destructive change is applied, named wherever one is waiting. */
-const PARKED_ROUTE =
-  'To apply it, run `pnpm db:update` (`opensaas db update --confirm postgres`) in another terminal.\n'
+const parkedRoute = (id: string): string =>
+  `To apply it, run \`pnpm db:update --plan ${id}\` in another terminal.\n`
+
+/** The database name Prisma takes as consent: the last path segment of the connection URL. */
+function consentToken(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))
+    return name.length > 0 ? name : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** The Dev database's data directory, inside the Generated bundle (ADR-0063). */
 const DEV_DATABASE_DIR = path.join('.opensaas', 'dev-db')
@@ -127,6 +139,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
   /** A staged generation the database does not carry yet. */
   let staged: GenerationResult | undefined
+  /** The id of the destructive plan printed when `staged` was parked. */
+  let parkedPlanId: string | undefined
   /** One reconcile at a time: a burst of writes must not race itself. */
   let queue = Promise.resolve()
   /**
@@ -250,6 +264,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // dropped with them — a pointer left behind names the bytes of whatever
     // generation runs next, including one this loop refused.
     staged = undefined
+    parkedPlanId = undefined
     fs.rmSync(stagingDir, { recursive: true, force: true })
     try {
       return await generateCommand({ stagingDir })
@@ -261,6 +276,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   const promote = (generation: GenerationResult): void => {
     promoteStagedGeneration(generation.paths, generation.livePaths, stagingDir)
     staged = undefined
+    parkedPlanId = undefined
   }
 
   const reportFailure = (say: (message: string) => void, output: string): void => {
@@ -289,9 +305,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.'))
       console.log(
         chalk.gray(
-          staged === undefined
+          staged === undefined || parkedPlanId === undefined
             ? NOTHING_TO_RECONCILE_ROUTE
-            : `The change staged earlier is still parked. ${PARKED_ROUTE}`,
+            : `The change staged earlier is still parked. ${parkedRoute(parkedPlanId)}`,
         ),
       )
       return
@@ -323,6 +339,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (planned.plan.destructive) {
       restoreMigrationRefs(cwd, refs)
       staged = generation
+      const id = planId(planned.plan)
+      parkedPlanId = id
       // Only now, not right after staging: a rejected generation must never
       // have already moved the live watch onto its module graph — the bundle
       // and the database are still the previous generation's until this one
@@ -331,7 +349,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       reconciledModules = snapshotModules(watchedModules)
       console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
       for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
-      console.log(chalk.yellow(`\nThe app keeps serving the previous schema. ${PARKED_ROUTE}`))
+      console.log(chalk.yellow(`\nPlan id: ${id}`))
+      console.log(chalk.yellow(`\nThe app keeps serving the previous schema. ${parkedRoute(id)}`))
       return
     }
 
@@ -350,7 +369,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   const onDatabaseUpdateRequest = async (
-    confirm: readonly string[],
+    requestedPlanId: string | undefined,
     reply: ControlReply,
   ): Promise<void> => {
     const say = (message: string): void => {
@@ -365,6 +384,41 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       restoreMigrationRefs(cwd, refs)
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
       return
+    }
+
+    const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
+    if (!planned.ok) {
+      restoreMigrationRefs(cwd, refs)
+      reportFailure(say, planned.failure.output)
+      reply.finish(false, 'The database is unchanged and nothing was promoted.')
+      return
+    }
+
+    let confirm: string[] = []
+    if (planned.plan.destructive) {
+      const id = planId(planned.plan)
+      if (requestedPlanId !== id) {
+        restoreMigrationRefs(cwd, refs)
+        staged = generation
+        parkedPlanId = id
+        say('This change would destroy data, so it was not applied:')
+        for (const line of describePlan(planned.plan)) say(line)
+        say(`Plan id: ${id}`)
+        reply.finish(
+          false,
+          requestedPlanId === undefined
+            ? `Destructive changes need the plan's id. ${parkedRoute(id).trim()}`
+            : `Plan ${requestedPlanId} is not the current plan. ${parkedRoute(id).trim()}`,
+        )
+        return
+      }
+      const token = consentToken(database?.url ?? findDatabaseConnection({ cwd })?.url)
+      if (token === undefined) {
+        restoreMigrationRefs(cwd, refs)
+        reply.finish(false, 'Could not tell which database is connected, so nothing was applied.')
+        return
+      }
+      confirm = [token]
     }
 
     const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, { confirm })
@@ -469,7 +523,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     control = await startControlChannel(cwd, async (request, reply) => {
       await new Promise<void>((resolve) => {
         queue = queue
-          .then(() => onDatabaseUpdateRequest(request.confirm, reply))
+          .then(() => onDatabaseUpdateRequest(request.plan, reply))
           .catch((error: unknown) => {
             reply.finish(false, error instanceof Error ? error.message : String(error))
           })

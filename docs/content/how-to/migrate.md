@@ -215,7 +215,7 @@ pnpm opensaas dev
 Editing `opensaas.config.ts` while the loop is running regenerates and reconciles again. A **non-destructive** change applies on its own. A **destructive** one — a dropped column, a narrowed type — stops: the loop leaves both the generated bundle and the database at the previous schema, prints the plan, and keeps serving. Apply it deliberately from a second terminal:
 
 ```bash
-pnpm db:update --confirm postgres
+pnpm db:update --plan <id>
 ```
 
 The consent token is the database name; the Dev database's is `postgres`.
@@ -664,7 +664,7 @@ To preserve your existing database:
    pnpm opensaas dev
    ```
 
-   With `DATABASE_URL` set, no Dev database starts and the loop reconciles against yours. A destructive plan stops and prints itself rather than applying — that printout is your review step, and nothing is dropped until you run `pnpm db:update --confirm <database-name>`.
+   With `DATABASE_URL` set, no Dev database starts and the loop reconciles against yours. A destructive plan stops and prints itself rather than applying — that printout is your review step, and nothing is dropped until you run `pnpm db:update --plan <id>`.
 
 3. **OpenSaaS generates schema compatible with existing data:**
    - Same table names (PascalCase models)
@@ -815,7 +815,7 @@ pnpm install
 pnpm opensaas dev
 ```
 
-One command generates, reconciles the schema and starts the app. Mid-session config edits regenerate and reconcile again; a destructive one waits for `pnpm db:update --confirm <database-name>`.
+One command generates, reconciles the schema and starts the app. Mid-session config edits regenerate and reconcile again; a destructive one waits for `pnpm db:update --plan <id>`.
 
 ### 4. Update Application Code
 

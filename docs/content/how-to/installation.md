@@ -98,7 +98,7 @@ and leaves both the database and the running app on the old schema. Approve it
 in a second terminal, while `pnpm dev` is still running:
 
 ```bash
-pnpm db:update --confirm postgres
+pnpm db:update --plan <id>
 ```
 
 The token is the name of the database being changed, which is what Prisma asks
