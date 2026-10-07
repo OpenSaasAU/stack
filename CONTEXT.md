@@ -115,7 +115,7 @@ The write a plugin makes to a field it computes and application code is denied �
 _Avoid_: sudo write, plugin update, escalated update
 
 **Hook-only field**:
-A field declared `access: { write: 'hooks' }`. No caller may name it in a create or update payload — `sudo()`, the admin UI, MCP and another list's hook included — and a `ValidationError` names it. Only the list's own list-level and field-level `resolveInput`, and `defaultValue` on create, may set it. `context.unsafe` and `writePluginOwnedField` are unaffected (ADR-0075).
+A field declared `access: { write: 'hooks' }`. No caller may name it in a create or update payload — `sudo()`, the admin UI, MCP and another list's hook included — and a `ValidationError` names it. Only the list's own list-level and field-level `resolveInput`, and `defaultValue` on create, may set it. `context.unsafe` and `writePluginOwnedField` are unaffected (ADR-0076).
 _Avoid_: system field (that is `id`/auto timestamps), write-protected field
 
 **Hook Pipeline**:

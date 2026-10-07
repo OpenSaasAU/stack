@@ -6,7 +6,7 @@ A field declared `access: { write: 'hooks' }` is refused in any create or update
 
 ## Context
 
-`sudo()` bypasses field access, so an application needing a field only the system may change re-implemented the guard in `validate` per list (issue #1684). ADR-0074 made the field-write gate run over caller-supplied keys, so hook output is already trusted.
+`sudo()` bypasses field access, so an application needing a field only the system may change re-implemented the guard in `validate` per list (issue #1684). ADR-0075 made the field-write gate run over caller-supplied keys, so hook output is already trusted.
 
 ## Considered options
 
