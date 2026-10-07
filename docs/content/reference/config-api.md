@@ -112,6 +112,10 @@ Admin UI customization options.
 
 **Type:** [`UIConfig`](#uiconfig)
 
+##### `onAfterTransactionError`
+
+`(report: AfterTransactionErrorReport) => void | Promise<void>` — called once for each `afterTransaction` hook that throws, with `{ error, status, listKey, operation }`. A throwing hook never changes a write's or `context.transaction()`'s result; when this is unset, or itself throws, the error is written to `console.error`.
+
 ##### `mcp`
 
 Model Context Protocol server configuration for AI assistant integration.

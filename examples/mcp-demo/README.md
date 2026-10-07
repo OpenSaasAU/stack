@@ -301,9 +301,10 @@ examples/mcp-demo/
 │   │           └── route.ts     # MCP route handler (uses createMcpHandlers)
 │   └── .well-known/
 │       ├── oauth-authorization-server/
-│       │   └── route.ts         # OAuth discovery
+│       │   └── route.ts         # createOAuthDiscoveryHandler(auth)
 │       └── oauth-protected-resource/
-│           └── route.ts         # Resource metadata
+│           └── [[...resource]]/
+│               └── route.ts         # createOAuthProtectedResourceHandler(auth)
 └── .opensaas/                   # Generated
     ├── types.ts
     └── context.ts

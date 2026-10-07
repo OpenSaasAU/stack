@@ -312,6 +312,8 @@ export interface IncludePlan {
    */
   readonly foreignKey?: string
   readonly predicates: readonly WherePlan[]
+  /** Whether the caller's own refinement composed a predicate on this relation. */
+  readonly callerRefined: boolean
   readonly orders: readonly OrderPlan[]
   readonly limit?: number
   readonly offset?: number
@@ -644,6 +646,7 @@ async function resolveInclude(
     arity: target.arity,
     ...(target.foreignKey ? { foreignKey: target.foreignKey.name } : {}),
     predicates,
+    callerRefined: request.predicates.length > 0,
     orders,
     limit: request.limit,
     offset: request.offset,

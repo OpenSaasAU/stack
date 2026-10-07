@@ -164,7 +164,7 @@ The hooks system provides data transformation and side effects during database o
 3. List-level `validate` - Custom validation logic
 4. Field-level `validate` - Custom validation logic for individual fields
 5. Field validation - Built-in rules (isRequired, length, min/max)
-6. Field-level access control - Filter writable fields
+6. Field-level access control - Gates the keys the caller supplied in `inputData` (hook output is trusted; ADR-0075)
 7. Relationship resolution - a `connect`'s reachability query and the foreign-key write
 8. Field-level `beforeOperation` - Side effects for individual fields
 9. List-level `beforeOperation` - Side effects at list level
@@ -225,6 +225,8 @@ All hooks receive these common arguments:
 - `resolvedData` - The data after transformations (updated by `resolveInput` hooks)
 - `item` - The existing item from the database (undefined for create, present for update/delete)
 - `originalItem` - The item before the operation (undefined for create, present for update/delete in `afterOperation`)
+
+**`afterTransaction` never changes a write's result.** A throw is reported to the config's `onAfterTransactionError` (default `console.error`), never propagated, so a rejected write always means nothing persisted (ADR-0074).
 
 A `resolveOutput` hook sees **exactly its own declared dependency set plus the list's system fields** — never another computed field's output, and never what the caller happened to select. Reaching for anything it did not declare finds nothing there. See `needs` in `packages/core/CLAUDE.md` and ADR-0051.
 
@@ -652,7 +654,7 @@ const context = userId ? await getContext({ userId }) : await getContext()
 
 **Reads are composed, then run by a terminal.** `where`, `orderBy`, `select`, `include`, `limit`, `offset`, `cursor`, `distinct`/`distinctOn` build an immutable value; `all()`, `first()`, `aggregate()` and `nearest()` run it. A method appears on the surface only where the engine knows how to scope it — omission is the signal, not an oversight. A read materialises: no terminal is an async iterable, and a caller that needs a cursor uses `context.unsafe`.
 
-**Writes take scalars plus `connect`.** `create({ data })`, `update({ where, data })` and `delete({ where })` are members of the list itself, never terminals chained off a composed read — and `where` there is the row's identity, `{ id }`, alone. `data` accepts the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
+**Writes take scalars plus `connect`.** `create({ data })`, `update({ where, data })` and `delete({ where })` are members of the list itself, never terminals chained off a composed read — and `where` there is the row's identity, `{ id }`, alone. `data` accepts the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A write takes no `select`/`include` — passing one throws `ValidationError`; read the row back with `context.db.<List>.where({ id: { equals: row.id } }).include(…).first()`, inside `context.transaction` when atomicity matters. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
 
 **Interactive transactions:** `context.transaction(async (txContext) => { … })` runs several access-checked, hook-firing `context.db` operations atomically. Unlike a transaction on `context.unsafe` (which bypasses access control and hooks), `txContext.db` keeps the security and validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.
 
@@ -751,12 +753,12 @@ An included to-one the related list's `query` access scopes away is `null`, and 
 
 ### 4. System Fields
 
-`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by declaring the two fields itself or by setting `db: { timestamps: true }`, per list or on `db` for every list at once.
+`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by setting `db: { timestamps: true }`, per list or on `db` for every list at once. A list that declares `createdAt`/`updatedAt` itself gets ordinary fields the application maintains — access, hooks, validation and defaults all apply, and no auto-maintenance.
 
-All three names, where the list has them, are:
+`id` and an auto-pair `createdAt`/`updatedAt` are system fields:
 
 - Excluded from access control (always readable)
-- Excluded from field-level write operations
+- Refused in a `create`/`update` payload with a `ValidationError`, sudo included. Writing explicit ids goes through `context.unsafe`
 
 `updatedAt` is maintained **application-side**, with no database backstop: a write that bypasses the ORM — `psql`, a reconcile, `context.unsafe` — leaves it stale, and an `update` with an empty payload no longer moves it (ADR-0048).
 

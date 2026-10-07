@@ -357,35 +357,31 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('tagsId', 'tag-456')
   })
 
-  it('should filter out system fields', async () => {
-    const fieldConfigs = {
-      title: { type: 'text' },
-    }
-
-    const data = {
-      id: 'post-123',
-      title: 'Test',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      session: null,
-      context: {
+  it.each([
+    ['id', { id: 'post-123' }],
+    ['createdAt', { createdAt: new Date() }],
+    ['updatedAt', { updatedAt: new Date() }],
+  ])('refuses system field %s, even under sudo', async (name, extra) => {
+    const data = { title: 'Test', ...extra }
+    await expect(
+      filterWritableFields(data, { title: { type: 'text' } }, 'create', {
         session: null,
-        _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
+        context: { session: null, _isSudo: true } as any,
+        inputData: data,
+      }),
+    ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('treats a declared createdAt as an ordinary field', async () => {
+    const data = { createdAt: 'hello' }
+    const filtered = await filterWritableFields(data, { createdAt: { type: 'text' } }, 'create', {
+      session: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      context: { session: null } as any,
       inputData: data,
     })
-
-    // System fields should be filtered out
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
-
-    // Regular fields should remain
-    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).toEqual({ createdAt: 'hello' })
   })
 
   it('should handle update operation', async () => {
@@ -513,15 +509,12 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('from_Enrolment_student')
   })
 
-  it('still skips system fields, and keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
+  it('keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
     const fieldConfigs = {
       title: { type: 'text' },
       author: { type: 'relationship', many: false },
     }
     const data = {
-      id: 'post-1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
       title: 'Test',
       authorId: 'user-1', // No `access` on `author` — `checkFieldAccess` allows (#1326)
     }
@@ -532,9 +525,6 @@ describe('filterWritableFields', () => {
       inputData: data,
     })
 
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
     expect(filtered).toHaveProperty('authorId', 'user-1')
     expect(filtered).toHaveProperty('title', 'Test')
   })
@@ -924,7 +914,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'update', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: true },
         defaultedFields: new Set(['emailVerified']),
       }),
     ).rejects.toThrow(ValidationError)
@@ -943,7 +933,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'create', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: false },
       }),
     ).rejects.toThrow(ValidationError)
   })
@@ -1077,5 +1067,66 @@ describe('the virtual-field write skip (issue #1531)', () => {
 
     expect(filtered).toHaveProperty('title', 'Test')
     expect(filtered).not.toHaveProperty('summary')
+  })
+})
+
+describe('filterWritableFields — gates caller input, not hook output (issue #1643)', () => {
+  const fieldConfigs = {
+    name: { type: 'text' },
+    locked: { type: 'text', access: { create: () => false, update: () => false } },
+  }
+
+  it('persists a write-denied field a hook set when the caller did not supply it', async () => {
+    for (const operation of ['create', 'update'] as const) {
+      const filtered = await filterWritableFields(
+        { name: 'a', locked: 'server-set' },
+        fieldConfigs,
+        operation,
+        { session: null, context: nonSudoContext(), inputData: { name: 'a' } },
+      )
+      expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
+    }
+  })
+
+  it('throws when the caller supplies the denied field', async () => {
+    await expect(
+      filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('throws when the caller supplied the denied field and a hook removed it', async () => {
+    await expect(
+      filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { name: 'a', locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('refuses a caller-supplied foreign key but persists a hook-set one', async () => {
+    const rels = {
+      author: { type: 'relationship', ref: 'User.posts', access: { create: () => false } },
+    }
+    const config = {
+      lists: {
+        User: { fields: { posts: { type: 'relationship', ref: 'Post.author', many: true } } },
+        Post: { fields: rels },
+      },
+    } as unknown as OpenSaasConfig
+    const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', {
+        ...base,
+        inputData: { authorId: 'u1' },
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
+    ).resolves.toEqual({ authorId: 'u1' })
   })
 })

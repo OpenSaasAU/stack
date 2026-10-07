@@ -9,6 +9,7 @@ import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
+import { isSystemFieldName } from './system-fields.js'
 
 /**
  * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
@@ -114,6 +115,10 @@ export async function checkFieldAccess(
     inputData?: Record<string, unknown>
   },
 ): Promise<boolean> {
+  if (operation !== 'read' && fieldAccess?.write === 'hooks') {
+    return false
+  }
+
   if (args.context._isSudo) {
     return true
   }
@@ -400,11 +405,36 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 
   const isSudo = args.context._isSudo === true
 
+  const owningField = (key: string): string =>
+    foreignKeyOwners.get(key)?.fieldName ?? splitColumnOwners.get(key)?.fieldName ?? key
+  const callerFields = new Set(Object.keys(args.inputData ?? {}).map(owningField))
+
+  for (const fieldName of callerFields) {
+    if (Object.hasOwn(data, fieldName) || Object.hasOwn(fieldConfigs, fieldName) === false) continue
+    if (args.inputData?.[fieldName] === undefined) continue
+    const fieldConfig = fieldConfigs[fieldName]
+    if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
+    const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
+    if (keyed) continue
+    if (!(await checkFieldAccess(fieldConfig.access, operation, { ...args }))) {
+      throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])
+    }
+  }
+
   for (const [fieldName, value] of Object.entries(data)) {
     const fieldConfig = Object.hasOwn(fieldConfigs, fieldName) ? fieldConfigs[fieldName] : undefined
+    const callerSupplied =
+      args.inputData === undefined ||
+      callerFields.has(owningField(fieldName)) ||
+      args.defaultedFields?.has(fieldName) === true
 
-    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
-      continue
+    if (isSystemFieldName(fieldName, fieldConfigs)) {
+      throw new ValidationError([
+        `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
+          (fieldName === 'id'
+            ? ` through the secured surface. To write explicit ids, use context.unsafe.`
+            : `. Remove it from the payload.`),
+      ])
     }
 
     // A value `applyCreateDefaults` filled because EVERYTHING upstream (the
@@ -419,7 +449,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     if (
       operation === 'create' &&
       args.defaultedFields?.has(fieldName) &&
-      fieldConfig?.access?.allowCreateDefault
+      (fieldConfig?.access?.allowCreateDefault || fieldConfig?.access?.write === 'hooks')
     ) {
       filtered[fieldName] = value
       continue
@@ -440,10 +470,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // relationship field's write gate.
     const foreignKeyOwner = foreignKeyOwners.get(fieldName)
     if (foreignKeyOwner) {
-      const canWrite = await checkFieldAccess(foreignKeyOwner.access, operation, {
-        ...args,
-        inputData: args.inputData,
-      })
+      const canWrite =
+        !callerSupplied ||
+        (await checkFieldAccess(foreignKeyOwner.access, operation, {
+          ...args,
+          inputData: args.inputData,
+        }))
       if (!canWrite) {
         throw new ValidationError([
           `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
@@ -465,10 +497,12 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // through, preserving the legitimate multi-column write path.
     const splitColumnOwner = splitColumnOwners.get(fieldName)
     if (splitColumnOwner) {
-      const canWrite = await checkFieldAccess(splitColumnOwner.access, operation, {
-        ...args,
-        inputData: args.inputData,
-      })
+      const canWrite =
+        !callerSupplied ||
+        (await checkFieldAccess(splitColumnOwner.access, operation, {
+          ...args,
+          inputData: args.inputData,
+        }))
       if (!canWrite) {
         throw new ValidationError([
           `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
@@ -520,12 +554,14 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // dropped. Keystone threw a GraphQL access error for the same situation;
     // silently stripping the field lets a write "succeed" while doing less than
     // asked (and skips any hook side effects gated on that field).
-    // `checkFieldAccess` already returns `true` under sudo, so sudo writes never
-    // reach the throw below — no parallel sudo path is needed here.
-    const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
-      ...args,
-      inputData: args.inputData,
-    })
+    // `checkFieldAccess` returns `true` under sudo except for a hook-only
+    // field, which it denies for every caller.
+    const canWrite =
+      !callerSupplied ||
+      (await checkFieldAccess(fieldConfig.access, operation, {
+        ...args,
+        inputData: args.inputData,
+      }))
 
     if (!canWrite) {
       throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])

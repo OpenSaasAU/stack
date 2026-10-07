@@ -151,8 +151,8 @@ hooks split into two families by where they run relative to that transaction:
   `beforeTransaction` aborts the write (the transaction never opens) and triggers
   `afterTransaction` (`rolled-back`) only for the lists whose `beforeTransaction`
   already ran. If an `afterTransaction` itself throws, the remaining
-  compensators still run and the error(s) are surfaced afterward — the database
-  state is already final. Sudo does not affect these hooks; they always run.
+  compensators still run and the error is reported to `onAfterTransactionError`
+  (default `console.error`) — it never changes the write's result. Sudo does not affect these hooks; they always run.
 
   Important caveats for these hooks:
   - **`item`/`originalItem` are populated only for the TOP-LEVEL record.** On
@@ -190,14 +190,13 @@ hooks split into two families by where they run relative to that transaction:
       that write persisted it, captured at write time — not re-read at flush —
       so a later write to the same record in the same transaction leaves it
       stale in what the compensator sees.
-    - **A rejected `context.transaction()` no longer implies rollback.** If the
-      transaction commits and a deferred `afterTransaction` then throws,
-      `context.transaction()` rejects with an `AfterTransactionError` over data
-      that is already final. That class is not exported, so match on
-      `error.name`. A transaction error — `SerializationFailure` among
-      them — still takes precedence, so a retry loop keyed on it is unaffected;
-      one that catches broadly should not treat every rejection as "not
-      committed".
+    - **A rejection always means the write did not persist.** An
+      `afterTransaction` that throws — list or field level, on a commit or a
+      rollback — never rejects the write or `context.transaction()`. Its error is
+      handed to the top-level `onAfterTransactionError` callback (with `error`,
+      `status`, `listKey` and `operation`), or to `console.error` when none is
+      configured or the callback throws. A transaction error still reaches the
+      caller as before.
     - **`beforeTransaction` can now run with the transaction already open.**
       Under `context.transaction()` it runs on the write's way in, so it holds
       that transaction open for its duration. Keep it fast, or hoist slow
