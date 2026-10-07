@@ -225,8 +225,7 @@ export async function reportAfterTransactionFailures(
   config: OpenSaasConfig,
   failures: readonly AfterTransactionFailure[],
 ): Promise<void> {
-  for (const failure of failures) {
-    const report = { ...failure }
+  for (const report of failures) {
     const callback = config.onAfterTransactionError
     if (callback !== undefined) {
       try {
@@ -397,13 +396,15 @@ export async function runWithTransactionBoundary(args: {
 
   // Owner: drain joined writes' deferred brackets with this write's own settle
   // outcome (ADR-0028).
-  if (ownedRegistry) {
-    const settle: TransactionSettleOutcome =
-      txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
-    await ownedRegistry.drain(settle, afterErrors)
+  try {
+    if (ownedRegistry) {
+      const settle: TransactionSettleOutcome =
+        txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
+      await ownedRegistry.drain(settle, afterErrors)
+    }
+  } finally {
+    await reportAfterTransactionFailures(config, afterErrors)
   }
-
-  await reportAfterTransactionFailures(config, afterErrors)
 
   if (txError !== undefined) throw txError
 

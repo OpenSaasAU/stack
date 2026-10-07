@@ -1,6 +1,5 @@
 ---
 '@opensaas/stack-core': minor
-'@opensaas/stack-rag': patch
 ---
 
 A throwing `afterTransaction` hook is reported, never propagated
@@ -16,3 +15,5 @@ config({
   },
 })
 ```
+
+Migration: `AfterTransactionError` is no longer thrown or exported, so code matching `error.name === 'AfterTransactionError'` should move that handling into `onAfterTransactionError`.

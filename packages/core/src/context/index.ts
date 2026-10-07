@@ -547,12 +547,18 @@ async function settleTransactionOwner<T>(
   } catch (raised) {
     const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
-    await registry.drain(outcome, errors)
-    await reportAfterTransactionFailures(config, errors)
+    try {
+      await registry.drain(outcome, errors)
+    } finally {
+      await reportAfterTransactionFailures(config, errors)
+    }
     throw err
   }
-  await registry.drain({ status: 'committed' }, errors)
-  await reportAfterTransactionFailures(config, errors)
+  try {
+    await registry.drain({ status: 'committed' }, errors)
+  } finally {
+    await reportAfterTransactionFailures(config, errors)
+  }
   return result
 }
 

@@ -317,8 +317,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
               // runs, so none of the three gaps below can abort it. Nothing in
               // this hook is allowed to throw past the try/catch below,
               // including the escalated-write lookup — a throw here would
-              // skip the embedding quietly and reach only onAfterTransactionError
-              // rather than this plugin's own logging (#1342).
+              // reach only onAfterTransactionError instead of this plugin's own
+              // logging (#1342).
               //  - #1271: a nested record is never embedded — `afterTransaction`
               //    carries a persisted `item` for the top-level record only.
               //  - #1271: a provider failure is logged, not thrown. The write

@@ -876,6 +876,45 @@ describe('transaction-boundary hooks', () => {
     )
 
     test(
+      'a joined write whose owner rolled back reports its hook error and rejects with the original',
+      async () => {
+        const { context, onAfterTransactionError } = reported({
+          User: { afterTransaction: throwing },
+        })
+        const original = new Error('callback failed')
+
+        await expect(
+          context.transaction(async (tx) => {
+            await tx.db.User.create({ data: { name: 'jane' } })
+            throw original
+          }),
+        ).rejects.toBe(original)
+        expect(onAfterTransactionError).toHaveBeenCalledTimes(1)
+      },
+      BOOT,
+    )
+
+    test(
+      'an async onAfterTransactionError that rejects falls back to console.error',
+      async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        try {
+          const context = contextAt({
+            ...withHooks({ User: { afterTransaction: throwing } }),
+            onAfterTransactionError: async () => {
+              throw new Error('reporter rejected')
+            },
+          })
+          await expect(context.db.User.create({ data: { name: 'jane' } })).resolves.not.toBeNull()
+          expect(errorSpy.mock.calls.flat()).toContain(boom)
+        } finally {
+          errorSpy.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
       'without a callback each error goes to console.error and nothing rejects',
       async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)

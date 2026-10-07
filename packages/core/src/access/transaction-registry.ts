@@ -17,6 +17,7 @@
  * `_resolveOutputChain` (see `AccessContext['_transactionOwner']`), never
  * exposed on the public `StackContext` type.
  */
+import type { AfterTransactionErrorReport } from '../config/types.js'
 
 /**
  * Thrown by a transaction owner that cannot commit: a joined `context.db`
@@ -45,13 +46,7 @@ export interface TransactionSettleOutcome {
   error?: unknown
 }
 
-/** One `afterTransaction` hook failure, with the settle it ran under and where it came from. */
-export interface AfterTransactionFailure {
-  error: unknown
-  status: 'committed' | 'rolled-back'
-  listKey: string
-  operation: 'create' | 'update' | 'delete'
-}
+export type AfterTransactionFailure = AfterTransactionErrorReport
 
 /**
  * One deferred write's flush: given the owner's settle outcome, runs that
