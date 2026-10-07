@@ -528,6 +528,20 @@ describe('Plugin Engine', () => {
         expect(result.lists.Post.fields.title.type).toBe('integer')
       })
 
+      test('keeps an app-declared field app-owned across successive plugin refinements', async () => {
+        const first: Plugin = {
+          name: 'first',
+          init: async (c) => c.extendList('Post', { fields: { title: integer() } }),
+        }
+        const second: Plugin = {
+          name: 'second',
+          dependencies: ['first'],
+          init: async (c) => c.extendList('Post', { fields: { title: text() } }),
+        }
+        const result = await run([first, second])
+        expect(result.lists.Post.fields.title.type).toBe('text')
+      })
+
       test('allows a plugin to add a new field to a list another plugin created', async () => {
         const adder: Plugin = {
           name: 'a',

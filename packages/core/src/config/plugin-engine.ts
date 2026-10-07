@@ -232,7 +232,11 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           ...extension.fields,
         }
 
-        claimFields(name, Object.keys(extension.fields ?? {}), plugin.name)
+        claimFields(
+          name,
+          Object.keys(extension.fields ?? {}).filter((key) => !Object.hasOwn(existing.fields, key)),
+          plugin.name,
+        )
 
         const mergedHooks = mergeHooks(existing.hooks, extension.hooks)
 
