@@ -412,7 +412,7 @@ const User = list({
 
 A session that updates its own `email` to another user's address receives the violation, confirming that address is taken even though it cannot read that user. The same applies to `create` for any caller with create access. A restrictive foreign key (`onDelete: 'restrict'`) likewise reveals, by blocking a delete, that rows the session cannot read still reference the target.
 
-No runtime check can close this: the database alone knows about the colliding row, and any outcome other than success differs from success. The stack keeps the field-mapped message on purpose (see ADR-0042). Mitigate in the schema and at the edge:
+No check inside the stack can close this for a write whose success the caller observes: the database alone knows about the colliding row, and any outcome other than success differs from success. The stack keeps the field-mapped message on purpose (see ADR-0042). Mitigate in the schema and at the edge:
 
 - **Scope the constraint to the access boundary.** On a tenant-scoped list, make the pair unique so a caller can only collide with rows in its own tenant. This only holds when the access filter or a `resolveInput` hook pins the tenant to the session's own; a caller who can choose any tenant can still probe other tenants' values:
 
@@ -429,6 +429,7 @@ No runtime check can close this: the database alone knows about the colliding ro
   })
   ```
 
+- **Return a uniform response** where the caller does not need the written row (registration, invitations, password recovery): catch the violation in your endpoint and answer exactly as you would a success, so an existing value is indistinguishable from a new one. This is the mitigation when uniqueness must stay global.
 - **Rate-limit** create and update on endpoints that expose a unique field to untrusted callers.
 - **Avoid `restrict`** on references that cross the access boundary, where the domain allows it. `onDelete` is set on the relationship field as `db: { onDelete: 'setNull' }` (or `'cascade'`).
 
