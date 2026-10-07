@@ -368,7 +368,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // Raw per-part columns of a multi-column field, mapped to the owning field.
   // `splitColumns` produces them after validation (#789); a caller naming one
   // would skip the logical field's validation and hooks, so it is refused below.
-  const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
+  const splitColumnOwners = new Map<string, { fieldName: string }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
       // A to-one relationship owns a `<field>Id` column UNLESS it is the
@@ -381,7 +381,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
       for (const column of fieldConfig.getColumnNames(fieldName)) {
-        splitColumnOwners.set(column, { fieldName, access: fieldConfig.access })
+        splitColumnOwners.set(column, { fieldName })
       }
     }
   }
