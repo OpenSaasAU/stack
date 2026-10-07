@@ -372,13 +372,14 @@ export async function executeFieldAfterTransactionHooks(
   operation: 'create' | 'update' | 'delete',
   context: AccessContext,
   listKey: string,
-  originalItem?: Record<string, unknown>,
+  originalItem: Record<string, unknown> | undefined,
+  onError: (error: unknown) => void,
 ): Promise<void> {
   const committedItem = outcome.status === 'committed' ? outcome.item : undefined
   const committedOriginalItem = originalItem
 
-  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
-    if (!fieldConfig.hooks?.afterTransaction) continue
+  const runField = async (fieldKey: string, fieldConfig: FieldConfig): Promise<void> => {
+    if (!fieldConfig.hooks?.afterTransaction) return
 
     const base = { listKey, fieldKey, context }
 
@@ -409,7 +410,7 @@ export async function executeFieldAfterTransactionHooks(
           error: outcome.error,
         } as Parameters<typeof fieldConfig.hooks.afterTransaction>[0])
       }
-      continue
+      return
     }
 
     if (operation === 'delete') {
@@ -436,6 +437,14 @@ export async function executeFieldAfterTransactionHooks(
         originalItem: committedOriginalItem,
         item: committedItem,
       } as Parameters<typeof fieldConfig.hooks.afterTransaction>[0])
+    }
+  }
+
+  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+    try {
+      await runField(fieldKey, fieldConfig)
+    } catch (err) {
+      onError(err)
     }
   }
 }

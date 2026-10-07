@@ -242,6 +242,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // keeps running through `context` as given — see `runWithTransactionBoundary`'s
   // own param doc for why that one is deliberately left alone.
   return runWithTransactionBoundary({
+    config,
     involvedLists,
     context,
     afterTransactionContext: resolveAfterTransactionContext(context, config),
