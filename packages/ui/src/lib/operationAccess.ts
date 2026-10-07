@@ -6,7 +6,11 @@ import type {
   Session,
 } from '@opensaas/stack-core'
 import { checkFieldAccess } from '@opensaas/stack-core/internal'
-import { FIELD_WRITE_DENIED_REASON, type SerializableFieldConfig } from './serializeFieldConfig.js'
+import {
+  FIELD_HOOK_ONLY_REASON,
+  FIELD_WRITE_DENIED_REASON,
+  type SerializableFieldConfig,
+} from './serializeFieldConfig.js'
 
 export type OperationAccessName = 'query' | 'create' | 'update' | 'delete'
 
@@ -125,7 +129,8 @@ export async function markWriteDeniedFields(
       const writable = await isFieldPotentiallyWritable(fieldConfig.access, operation, args)
       if (!writable) {
         serialized.readOnly = true
-        serialized.readOnlyReason = FIELD_WRITE_DENIED_REASON
+        serialized.readOnlyReason =
+          fieldConfig.access?.write === 'hooks' ? FIELD_HOOK_ONLY_REASON : FIELD_WRITE_DENIED_REASON
       }
     }),
   )

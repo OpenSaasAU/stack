@@ -115,6 +115,10 @@ export async function checkFieldAccess(
     inputData?: Record<string, unknown>
   },
 ): Promise<boolean> {
+  if (operation !== 'read' && fieldAccess?.write === 'hooks') {
+    return false
+  }
+
   if (args.context._isSudo) {
     return true
   }
@@ -445,7 +449,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     if (
       operation === 'create' &&
       args.defaultedFields?.has(fieldName) &&
-      fieldConfig?.access?.allowCreateDefault
+      (fieldConfig?.access?.allowCreateDefault || fieldConfig?.access?.write === 'hooks')
     ) {
       filtered[fieldName] = value
       continue
@@ -550,8 +554,8 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // dropped. Keystone threw a GraphQL access error for the same situation;
     // silently stripping the field lets a write "succeed" while doing less than
     // asked (and skips any hook side effects gated on that field).
-    // `checkFieldAccess` already returns `true` under sudo, so sudo writes never
-    // reach the throw below — no parallel sudo path is needed here.
+    // `checkFieldAccess` returns `true` under sudo except for a hook-only
+    // field, which it denies for every caller.
     const canWrite =
       !callerSupplied ||
       (await checkFieldAccess(fieldConfig.access, operation, {

@@ -131,7 +131,7 @@ const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
   twoFactor: ['secret', 'backupCodes'],
 }
 
-const DENY_READ: FieldAccess = { read: () => false }
+const DENY_READ: Exclude<FieldAccess, { write: 'hooks' }> = { read: () => false }
 /**
  * `allowCreateDefault: true` because this deny is UNCONDITIONAL — it refuses
  * every session, sudo aside, never just some — so a session that omits the
@@ -143,7 +143,7 @@ const DENY_READ: FieldAccess = { read: () => false }
  * (issue #1618; see `FieldAccess.allowCreateDefault`'s own doc comment for
  * why this is opt-in rather than automatic).
  */
-const DENY_WRITE: FieldAccess = {
+const DENY_WRITE: Exclude<FieldAccess, { write: 'hooks' }> = {
   create: () => false,
   update: () => false,
   allowCreateDefault: true,
@@ -318,7 +318,7 @@ function withFieldAccess<T extends FieldConfig>(
   // `undefined`, which the access engine treats as "no rule" (allow). Only
   // copy an override key whose value is actually a function, so a seeded
   // deny can only be replaced, never silently unset.
-  const access: FieldAccess = {
+  const access: Exclude<FieldAccess, { write: 'hooks' }> = {
     ...(isCredential ? DENY_READ : {}),
     ...(isWriteDenied ? DENY_WRITE : {}),
   }
