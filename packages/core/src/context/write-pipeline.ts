@@ -34,7 +34,7 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
-import { visibleWrittenRow } from '../secured/read.js'
+import { visibleWrittenRow, writtenRowQueryable } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
@@ -529,7 +529,8 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
-  return visibleWrittenRow({ listName, listConfig, ormHandle: tx, context, config }, item)
+  const binding = { listName, listConfig, ormHandle: tx, context, config }
+  return visibleWrittenRow(binding, item, await writtenRowQueryable(binding, item.id))
 }
 
 /**
@@ -602,6 +603,9 @@ async function runDeletePath(args: {
     context,
   })
 
+  const binding = { listName, listConfig, ormHandle, context, config }
+  const queryable = await writtenRowQueryable(binding, item.id)
+
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
   if (deleted === null) return null
@@ -626,7 +630,7 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return visibleWrittenRow({ listName, listConfig, ormHandle, context, config }, deleted)
+  return visibleWrittenRow(binding, deleted, queryable)
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

@@ -58,10 +58,11 @@ import {
   selectionScope,
   type ProjectionPlan,
 } from './select.js'
-import type {
-  DependencyAdditions,
-  FieldSelectionScope,
-  ReducedDeclaredKeys,
+import {
+  getListDependencies,
+  type DependencyAdditions,
+  type FieldSelectionScope,
+  type ReducedDeclaredKeys,
 } from '../access/declared-dependencies.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
@@ -1266,15 +1267,56 @@ async function visibleRows(
 }
 
 /**
+ * Whether the session's operation-level `query` access reaches the row with
+ * this id, resolved as a read would: a filter rule is run as a scoped read of
+ * the row's identity on the binding's own handle.
+ */
+export async function writtenRowQueryable(
+  binding: Omit<ReadBinding, 'lock'>,
+  id: unknown,
+): Promise<boolean> {
+  if (binding.context._isSudo === true) return true
+  if (typeof id !== 'string' && typeof id !== 'number') return false
+  const state: QueryState = {
+    predicates: [{ id: { equals: id } }],
+    orders: [],
+    includes: [],
+    fields: ['id'],
+    distincts: [],
+    lock: false,
+  }
+  const plan = await resolvePlan(binding, state)
+  if (plan === null) return false
+  if (plan.predicates.length === 1) return true
+  const collection = scope(
+    binding,
+    plan,
+    await whereCombinators(),
+    FIRST_DISPOSITIONS,
+    unreachableRefusal,
+  )
+  return (await withOrigin('engine', () => collection.first())) !== null
+}
+
+/**
  * What a write hands back: the row Field Visibility leaves, then the
  * foreign-key pass a read of the same row would give it, so `create()` and
- * `update()` never return an id `first()` hides.
+ * `update()` never return an id `first()` hides. A row the session cannot
+ * `query` comes back as the list's system fields alone.
  */
 export async function visibleWrittenRow(
   binding: Omit<ReadBinding, 'lock'>,
   row: OrmRow,
+  queryable: boolean,
 ): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
+  if (!queryable) {
+    const kept: OrmRow = {}
+    for (const key of getListDependencies(config, listName).systemFields) {
+      if (key in row) kept[key] = row[key]
+    }
+    return kept
+  }
   const filtered = await filterReadableFields(
     row,
     listConfig.fields,
