@@ -15,7 +15,7 @@
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.16",
+    "@ai-sdk/openai": "^4.0.83",
     "@ai-sdk/react": "^4.0.111",
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
