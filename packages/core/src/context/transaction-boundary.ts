@@ -184,19 +184,16 @@ export async function runAfterTransactionForList(
     fail(err)
   }
 
-  try {
-    await executeFieldAfterTransactionHooks(
-      outcome,
-      inputData,
-      listConfig.fields,
-      operation,
-      context,
-      listKey,
-      originalItem,
-    )
-  } catch (err) {
-    fail(err)
-  }
+  await executeFieldAfterTransactionHooks(
+    outcome,
+    inputData,
+    listConfig.fields,
+    operation,
+    context,
+    listKey,
+    originalItem,
+    fail,
+  )
 }
 
 /**

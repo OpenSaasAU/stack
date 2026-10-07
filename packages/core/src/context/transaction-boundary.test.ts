@@ -790,6 +790,44 @@ describe('transaction-boundary hooks', () => {
     )
 
     test(
+      'every field-level compensator runs when an earlier one throws',
+      async () => {
+        const fired: string[] = []
+        const onAfterTransactionError = vi.fn()
+        const context = contextAt({
+          ...withHooks(
+            {},
+            {
+              User: {
+                name: text({
+                  hooks: {
+                    afterTransaction: () => {
+                      fired.push('name')
+                      throw boom
+                    },
+                  },
+                }),
+                nickname: text({
+                  hooks: {
+                    afterTransaction: () => {
+                      fired.push('nickname')
+                    },
+                  },
+                }),
+              },
+            },
+          ),
+          onAfterTransactionError,
+        })
+
+        await context.db.User.create({ data: { name: 'jane' } })
+        expect(fired).toEqual(['name', 'nickname'])
+        expect(onAfterTransactionError).toHaveBeenCalledTimes(1)
+      },
+      BOOT,
+    )
+
+    test(
       'context.transaction resolves with the callback value and every compensator runs',
       async () => {
         const fired: string[] = []
