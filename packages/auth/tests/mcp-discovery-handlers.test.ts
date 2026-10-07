@@ -96,4 +96,15 @@ describe('OAuth discovery handlers', () => {
       expect(response.status).toBe(404)
     }
   })
+
+  it.each([
+    ['discovery', discovery, '/.well-known/oauth-authorization-server'],
+    ['protected resource', protectedResource, '/.well-known/oauth-protected-resource'],
+  ])('%s accepts a trailing slash and HEAD', async (_, handler, path) => {
+    const slashed = await handler(new Request(`http://localhost:3000${path}/`))
+    expect(slashed.status).toBe(200)
+    const head = await handler(new Request(`http://localhost:3000${path}`, { method: 'HEAD' }))
+    expect(head.status).toBe(200)
+    expect(await head.text()).toBe('')
+  })
 })

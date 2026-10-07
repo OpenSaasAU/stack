@@ -193,15 +193,24 @@ function statusResponse(status: 404 | 405): Response {
   )
 }
 
-async function authBasePath(auth: BetterAuthInstance): Promise<string> {
+async function serveInProcess(
+  auth: BetterAuthInstance,
+  req: Request,
+  pathFor: (basePath: string) => string,
+): Promise<Response> {
   const context = await auth.$context
   const baseURL: unknown = context?.baseURL
-  if (typeof baseURL !== 'string') return DEFAULT_AUTH_BASE_PATH
-  return new URL(baseURL).pathname.replace(/\/+$/, '')
-}
-
-function inProcessRequest(req: Request, pathname: string): Request {
-  return new Request(new URL(pathname, req.url), { method: req.method })
+  let origin = new URL(req.url).origin
+  let basePath = DEFAULT_AUTH_BASE_PATH
+  if (typeof baseURL === 'string' && URL.canParse(baseURL)) {
+    const parsed = new URL(baseURL)
+    origin = parsed.origin
+    basePath = parsed.pathname.replace(/\/+$/, '')
+  }
+  const response = await auth.handler(new Request(new URL(pathFor(basePath), origin)))
+  return req.method === 'HEAD'
+    ? new Response(null, { status: response.status, headers: response.headers })
+    : response
 }
 
 /**
@@ -223,8 +232,11 @@ export function createOAuthDiscoveryHandler(auth: BetterAuthInstance) {
   return async (req: Request): Promise<Response> => {
     const status = metadataStatus(req, AUTHORIZATION_SERVER_METADATA_PATH, false)
     if (status !== null) return statusResponse(status)
-    const basePath = await authBasePath(auth)
-    return auth.handler(inProcessRequest(req, `${AUTHORIZATION_SERVER_METADATA_PATH}${basePath}`))
+    return serveInProcess(
+      auth,
+      req,
+      (basePath) => `${AUTHORIZATION_SERVER_METADATA_PATH}${basePath}`,
+    )
   }
 }
 
@@ -247,6 +259,7 @@ export function createOAuthProtectedResourceHandler(auth: BetterAuthInstance) {
   return async (req: Request): Promise<Response> => {
     const status = metadataStatus(req, PROTECTED_RESOURCE_METADATA_PATH, true)
     if (status !== null) return statusResponse(status)
-    return auth.handler(inProcessRequest(req, new URL(req.url).pathname))
+    const pathname = new URL(req.url).pathname.replace(/\/+$/, '')
+    return serveInProcess(auth, req, () => pathname)
   }
 }
