@@ -322,7 +322,7 @@ export default config({
 - **Extend Lists**: Add fields or hooks to existing lists
 - **Declare Extension packs**: `context.addExtension({ name, from })`, so a field type needing a pack does not push that declaration onto the application
 - **Hook Chaining**: Multiple plugins can add hooks that execute in sequence
-- **Deep Merging**: Plugins safely merge fields, hooks, and access control
+- **Merging**: Hooks chain (`mergeHooks`); fields are replaced per key, and a plugin may redeclare an app-declared field or its own, but redeclaring a field another plugin introduced throws; operation-level access on an existing list is refused (ADR-0013, ADR-0077)
 - **Lifecycle Hooks**: `beforeGenerate`, `afterGenerate` for code generation control
 - **Dependency Resolution**: Automatic execution ordering via topological sort
 
