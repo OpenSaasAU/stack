@@ -303,7 +303,8 @@ examples/mcp-demo/
 │       ├── oauth-authorization-server/
 │       │   └── route.ts         # createOAuthDiscoveryHandler(auth)
 │       └── oauth-protected-resource/
-│           └── route.ts         # createOAuthProtectedResourceHandler(auth)
+│           └── [[...resource]]/
+│               └── route.ts         # createOAuthProtectedResourceHandler(auth)
 └── .opensaas/                   # Generated
     ├── types.ts
     └── context.ts

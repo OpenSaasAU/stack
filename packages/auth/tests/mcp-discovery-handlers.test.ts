@@ -107,4 +107,24 @@ describe('OAuth discovery handlers', () => {
     expect(head.status).toBe(200)
     expect(await head.text()).toBe('')
   })
+
+  it('resolves the configured origin and base path through a createAuth-style lazy proxy', async () => {
+    const lazy = new Proxy(
+      {},
+      {
+        get:
+          (_, prop) =>
+          async (...args: unknown[]) => {
+            const value = Reflect.get(auth, prop)
+            return typeof value === 'function' ? value.apply(auth, args) : value
+          },
+      },
+    )
+    const handler = createOAuthDiscoveryHandler(lazy as typeof auth)
+    const response = await handler(
+      new Request('http://evil.example/.well-known/oauth-authorization-server'),
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ issuer })
+  })
 })

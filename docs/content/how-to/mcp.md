@@ -237,7 +237,7 @@ import { auth } from '@/lib/auth'
 export const GET = createOAuthDiscoveryHandler(auth)
 ```
 
-Create `app/.well-known/oauth-protected-resource/route.ts`:
+Create `app/.well-known/oauth-protected-resource/[[...resource]]/route.ts` (the optional catch-all also serves the resource-path variant, e.g. `/.well-known/oauth-protected-resource/api/mcp`):
 
 ```typescript
 import { createOAuthProtectedResourceHandler } from '@opensaas/stack-auth/mcp'

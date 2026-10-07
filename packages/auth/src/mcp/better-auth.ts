@@ -198,7 +198,7 @@ async function serveInProcess(
   req: Request,
   pathFor: (basePath: string) => string,
 ): Promise<Response> {
-  const context = await auth.$context
+  const context = typeof auth.$context === 'function' ? await auth.$context() : await auth.$context
   const baseURL: unknown = context?.baseURL
   let origin = new URL(req.url).origin
   let basePath = DEFAULT_AUTH_BASE_PATH
