@@ -37,7 +37,7 @@
  */
 
 import type { Extension } from '@electric-sql/pglite'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import {
   describeSelf,
@@ -171,6 +171,21 @@ export class DevDatabaseInUseError extends Error {
  */
 const DATA_DIR_LOCK_FILE_NAME = '.opensaas-dev-database.lock'
 
+function restrictDataDir(dataDir: string): void {
+  if (process.platform === 'win32') return
+  try {
+    chmodSync(dataDir, 0o700)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Could not restrict the Dev database data directory ${dataDir} to 0700: ${reason}`,
+      {
+        cause: error,
+      },
+    )
+  }
+}
+
 function readDataDirLock(lockFile: string) {
   let contents: string
   try {
@@ -189,7 +204,11 @@ function readDataDirLock(lockFile: string) {
 }
 
 function writeDataDirLock(lockFile: string, claim: ProcessClaim): void {
-  writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+  writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  })
 }
 
 /** Removes the lock only while it still names the claim that took it. */
@@ -225,7 +244,8 @@ const MAX_DATA_DIR_LOCK_ATTEMPTS = 5
  * @throws {DevDatabaseInUseError} when a live sidecar already holds `dataDir`.
  */
 function acquireDataDirLock(dataDir: string): () => void {
-  mkdirSync(dataDir, { recursive: true })
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 })
+  restrictDataDir(dataDir)
   const lockFile = path.join(dataDir, DATA_DIR_LOCK_FILE_NAME)
   const claim = describeSelf()
 
