@@ -365,22 +365,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // reachability, `query` access on the TARGET row — is applied to both
   // spellings by `lowerRelationInput`, which runs after this filter (#1331).
   const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
-  // Map each raw per-part column name contributed by a multi-column field
-  // (e.g. storage image()/file() in Keystone-parity mode) back to its OWNING
-  // declared field. These columns are injected into the write payload by the
-  // field's `splitColumns`, AFTER validation (#789), and are intentionally NOT
-  // declared as their own entries in `fieldConfigs`, so without this map they
-  // would trip the #564 undeclared-key reject below.
-  //
-  // SECURITY (#568): a raw column must NOT be blanket-passed through. The hooks
-  // layer (`splitMultiColumnFields`) only gates the owning field when the
-  // LOGICAL key (e.g. `media`) is present, because it iterates declared fields,
-  // not data keys. A non-sudo caller who supplies the raw columns DIRECTLY
-  // (`data: { media_url, media_size }`) never produces that logical key, so that
-  // gate never fires. We therefore gate each raw column HERE by its owning
-  // field's write access — denied (non-sudo) throws, allowed (or sudo) passes
-  // through — so the legitimate multi-column write path is preserved while the
-  // direct-raw-column bypass is closed.
+  // Raw per-part columns of a multi-column field, mapped to the owning field.
+  // `splitColumns` produces them after validation (#789); a caller naming one
+  // would skip the logical field's validation and hooks, so it is refused below.
   const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
@@ -400,6 +387,16 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   }
 
   const isSudo = args.context._isSudo === true
+
+  for (const key of Object.keys(args.inputData ?? {})) {
+    const owner = splitColumnOwners.get(key)
+    if (owner && owner.fieldName !== key) {
+      throw new ValidationError([
+        `Cannot ${operation} "${key}": it is a storage column of "${owner.fieldName}". ` +
+          `Write "${owner.fieldName}" instead; use context.unsafe to write columns directly.`,
+      ])
+    }
+  }
 
   const owningField = (key: string): string =>
     foreignKeyOwners.get(key)?.fieldName ?? splitColumnOwners.get(key)?.fieldName ?? key
@@ -482,29 +479,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Raw per-part columns produced by a multi-column field's `splitColumns`.
-    // They are undeclared by design, so they must not trip the #564 reject — but
-    // they must NOT be blanket-passed through either: gate each one by its
-    // OWNING field's write access (see the SECURITY note where the map is built).
-    // This is the real gate for callers who supply the raw columns directly,
-    // because the logical-key gate in `splitMultiColumnFields` never fires for
-    // them. Denied (non-sudo) throws — same fail-loud behaviour as a denied
-    // declared field (#568); allowed (or sudo, via `checkFieldAccess`) passes
-    // through, preserving the legitimate multi-column write path.
-    const splitColumnOwner = splitColumnOwners.get(fieldName)
-    if (splitColumnOwner) {
-      const canWrite =
-        !callerSupplied ||
-        (await checkFieldAccess(splitColumnOwner.access, operation, {
-          ...args,
-          inputData: args.inputData,
-        }))
-      if (!canWrite) {
-        throw new ValidationError([
-          `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
-            `field-level access denied.`,
-        ])
-      }
+    // Part columns reaching here came from the field's own `splitColumns`;
+    // caller-supplied ones were refused above.
+    if (splitColumnOwners.has(fieldName)) {
       filtered[fieldName] = value
       continue
     }
