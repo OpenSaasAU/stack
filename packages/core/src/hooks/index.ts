@@ -526,12 +526,15 @@ export async function splitMultiColumnFields(
 
     const resolvedValue = result[fieldKey]
 
-    const canWrite = await checkFieldAccess(fieldConfig.access, operation, {
-      session: context.session,
-      item,
-      context,
-      inputData,
-    })
+    const callerSupplied = inputData[fieldKey] !== undefined
+    const canWrite =
+      !callerSupplied ||
+      (await checkFieldAccess(fieldConfig.access, operation, {
+        session: context.session,
+        item,
+        context,
+        inputData,
+      }))
 
     if (!canWrite) {
       throw new ValidationError([`Cannot ${operation} "${fieldKey}": field-level access denied.`])
