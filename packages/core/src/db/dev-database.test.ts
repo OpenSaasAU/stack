@@ -91,29 +91,37 @@ describe.skipIf(process.platform === 'win32')('Dev database file permissions', (
 
   const modeOf = (file: string) => statSync(file).mode & 0o777
 
-  test('a fresh data directory is 0700 and the state and lock files are 0600', async () => {
-    const dataDir = path.join(projectRoot, 'dev-db')
-    const database = await startDevDatabase({ cwd: projectRoot, dataDir })
-    try {
-      expect(modeOf(dataDir)).toBe(0o700)
-      expect(modeOf(database.stateFile)).toBe(0o600)
-      expect(modeOf(path.join(dataDir, '.opensaas-dev-database.lock'))).toBe(0o600)
-    } finally {
-      await database.stop()
-    }
-  })
+  test(
+    'a fresh data directory is 0700 and the state and lock files are 0600',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+        expect(modeOf(database.stateFile)).toBe(0o600)
+        expect(modeOf(path.join(dataDir, '.opensaas-dev-database.lock'))).toBe(0o600)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
 
-  test('a pre-existing 0755 data directory is tightened to 0700', async () => {
-    const dataDir = path.join(projectRoot, 'dev-db')
-    mkdirSync(dataDir)
-    chmodSync(dataDir, 0o755)
-    const database = await startDevDatabase({ cwd: projectRoot, dataDir })
-    try {
-      expect(modeOf(dataDir)).toBe(0o700)
-    } finally {
-      await database.stop()
-    }
-  })
+  test(
+    'a pre-existing 0755 data directory is tightened to 0700',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      mkdirSync(dataDir)
+      chmodSync(dataDir, 0o755)
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
 
   test('writeDevDatabaseState leaves the state file at 0600', () => {
     const file = path.join(projectRoot, 'state.json')
