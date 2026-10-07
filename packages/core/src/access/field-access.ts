@@ -407,7 +407,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
 
   for (const fieldName of callerFields) {
     if (Object.hasOwn(data, fieldName) || Object.hasOwn(fieldConfigs, fieldName) === false) continue
+    if (args.inputData?.[fieldName] === undefined) continue
     const fieldConfig = fieldConfigs[fieldName]
+    if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
     const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
     if (keyed) continue
     if (!(await checkFieldAccess(fieldConfig.access, operation, { ...args }))) {
