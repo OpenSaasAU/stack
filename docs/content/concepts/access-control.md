@@ -393,7 +393,7 @@ await context.db.Post.update({ where: { id: postId }, data: { author: null } })
 
 ## Uniqueness and existence
 
-A unique constraint is enforced by the database across every row, including rows the session cannot read. When a write collides with one, the resulting `UniqueConstraintViolation` (with its `fieldErrors`) tells the caller that some row holds that value. A scoped `User` list shows the shape:
+A unique constraint is enforced by the database across every row, including rows the session cannot read. When a write collides with one, the resulting `UniqueConstraintViolation` (with its `fieldErrors`, for any constraint the generator emitted) tells the caller that some row holds that value. A scoped `User` list shows the shape:
 
 ```typescript
 import { list } from '@opensaas/stack-core'
@@ -414,7 +414,7 @@ A session that updates its own `email` to another user's address receives the vi
 
 No runtime check can close this: the database alone knows about the colliding row, and any outcome other than success differs from success. The stack keeps the field-mapped message on purpose (see ADR-0042). Mitigate in the schema and at the edge:
 
-- **Scope the constraint to the access boundary.** On a tenant-scoped list, make the pair unique so a caller can only collide with rows in its own tenant:
+- **Scope the constraint to the access boundary.** On a tenant-scoped list, make the pair unique so a caller can only collide with rows in its own tenant. This only holds when the access filter or a `resolveInput` hook pins the tenant to the session's own; a caller who can choose any tenant can still probe other tenants' values:
 
   ```typescript
   import { list } from '@opensaas/stack-core'
@@ -430,7 +430,7 @@ No runtime check can close this: the database alone knows about the colliding ro
   ```
 
 - **Rate-limit** create and update on endpoints that expose a unique field to untrusted callers.
-- **Avoid `restrict`** on references that cross the access boundary, where the domain allows it.
+- **Avoid `restrict`** on references that cross the access boundary, where the domain allows it. `onDelete` is set on the relationship field as `db: { onDelete: 'setNull' }` (or `'cascade'`).
 
 ## Access Control Execution Order
 
