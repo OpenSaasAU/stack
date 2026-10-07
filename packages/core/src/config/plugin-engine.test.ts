@@ -471,6 +471,78 @@ describe('Plugin Engine', () => {
       expect(result.lists.Post.fields.views).toBeDefined()
     })
 
+    describe('field ownership', () => {
+      const run = (plugins: Plugin[], app = true) =>
+        executePlugins({
+          db: { provider: 'postgresql' },
+          lists: app ? { Post: { fields: { title: text() } } } : {},
+          plugins,
+        })
+      const a: Plugin = {
+        name: 'a',
+        init: async (c) => c.extendList('Post', { fields: { summary: text() } }),
+      }
+
+      test('throws when a plugin redeclares a field another plugin extended in', async () => {
+        const b: Plugin = {
+          name: 'b',
+          dependencies: ['a'],
+          init: async (c) => c.extendList('Post', { fields: { summary: text() } }),
+        }
+        await expect(run([a, b])).rejects.toThrow(
+          /Plugin "b".*"summary".*"Post".*introduced by plugin "a"/,
+        )
+      })
+
+      test('throws when the field was introduced through addList', async () => {
+        const adder: Plugin = {
+          name: 'a',
+          init: async (c) => c.addList('Note', { fields: { body: text() } }),
+        }
+        const b: Plugin = {
+          name: 'b',
+          dependencies: ['a'],
+          init: async (c) => c.extendList('Note', { fields: { body: text() } }),
+        }
+        await expect(run([adder, b])).rejects.toThrow(/"body".*"Note".*introduced by plugin "a"/)
+      })
+
+      test('allows a plugin to redeclare its own field', async () => {
+        const self: Plugin = {
+          name: 'a',
+          init: async (c) => {
+            c.extendList('Post', { fields: { summary: text() } })
+            c.extendList('Post', { fields: { summary: integer() } })
+          },
+        }
+        const result = await run([self])
+        expect(result.lists.Post.fields.summary.type).toBe('integer')
+      })
+
+      test('allows a plugin to redeclare an app-declared field', async () => {
+        const p: Plugin = {
+          name: 'p',
+          init: async (c) => c.extendList('Post', { fields: { title: integer() } }),
+        }
+        const result = await run([p])
+        expect(result.lists.Post.fields.title.type).toBe('integer')
+      })
+
+      test('allows a plugin to add a new field to a list another plugin created', async () => {
+        const adder: Plugin = {
+          name: 'a',
+          init: async (c) => c.addList('Note', { fields: { body: text() } }),
+        }
+        const b: Plugin = {
+          name: 'b',
+          dependencies: ['a'],
+          init: async (c) => c.extendList('Note', { fields: { tag: text() } }),
+        }
+        const result = await run([adder, b])
+        expect(result.lists.Note.fields.tag).toBeDefined()
+      })
+    })
+
     test('throws when extending non-existent list', async () => {
       const plugin: Plugin = {
         name: 'test-plugin',
