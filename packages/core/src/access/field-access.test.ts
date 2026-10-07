@@ -549,6 +549,20 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('media_size', 99)
   })
 
+  it('THROWS when a hook swaps a write-denied logical key for its part columns', async () => {
+    const configs = {
+      media: { ...mediaConfigs.media, access: { create: () => false, update: () => false } },
+    }
+
+    await expect(
+      filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, configs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { media: { url: 'https://x/y.jpg' } },
+      }),
+    ).rejects.toThrow(/"media".*access denied/)
+  })
+
   for (const [label, makeContext] of [
     ['non-sudo', nonSudoContext],
     ['sudo', sudoContext],

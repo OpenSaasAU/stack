@@ -368,7 +368,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // Raw per-part columns of a multi-column field, mapped to the owning field.
   // `splitColumns` produces them after validation (#789); a caller naming one
   // would skip the logical field's validation and hooks, so it is refused below.
-  const splitColumnOwners = new Map<string, { fieldName: string }>()
+  const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.type === 'relationship') {
       // A to-one relationship owns a `<field>Id` column UNLESS it is the
@@ -381,7 +381,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     }
     if (typeof fieldConfig.getColumnNames === 'function') {
       for (const column of fieldConfig.getColumnNames(fieldName)) {
-        splitColumnOwners.set(column, { fieldName })
+        splitColumnOwners.set(column, { fieldName, access: fieldConfig.access })
       }
     }
   }
@@ -479,9 +479,23 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       continue
     }
 
-    // Part columns reaching here came from the field's own `splitColumns`;
-    // caller-supplied ones were refused above.
-    if (splitColumnOwners.has(fieldName)) {
+    // Caller-supplied part columns were refused above, so these came from a
+    // hook or `splitColumns`; the owning field's write access still applies
+    // when the caller named that field, since the `keyed` skip above ran no check.
+    const splitColumnOwner = splitColumnOwners.get(fieldName)
+    if (splitColumnOwner) {
+      const canWrite =
+        !callerSupplied ||
+        (await checkFieldAccess(splitColumnOwner.access, operation, {
+          ...args,
+          inputData: args.inputData,
+        }))
+      if (!canWrite) {
+        throw new ValidationError([
+          `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
+            `field-level access denied.`,
+        ])
+      }
       filtered[fieldName] = value
       continue
     }
