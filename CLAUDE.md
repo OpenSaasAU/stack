@@ -93,6 +93,7 @@ pnpm dev
 pnpm generate
 
 # Apply a schema change the running loop staged but did not promote
+# (a destructive one prints its plan id: pnpm db:update --plan <id>)
 pnpm db:update
 
 # Run a one-off script against the loop's database instead of `next dev`
@@ -447,7 +448,7 @@ An entry naming a field the list doesn't have, a virtual field, a to-many relati
 
 The workflow splits on history, not on provider: **dev reconciles, production migrates** (ADR-0003 as amended, ADR-0063).
 
-- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving.
+- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan, its id and `pnpm db:update --plan <id>`, and keeps serving.
 - `pnpm db:update` (`opensaas db update`) is the promoting wrapper. It runs **during** `dev` — the loop holds the database and the staged generation, so this command opens no connection of its own — and errors when nothing is listening.
 - Production runs Prisma's migrate from the committed `migrations/` directory, which carries the app's migration packages and every declared pack's extension space.
 - Prisma runs `CREATE EXTENSION IF NOT EXISTS` on every path. The deployment's job is provisioning: make the extension available and give the migrating role the privilege, or have a DBA pre-create it. pgvector is untrusted, so it needs superuser or a provider grant.
