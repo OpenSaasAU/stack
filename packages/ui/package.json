@@ -105,7 +105,7 @@
     "@prisma/orm-toolchain": "8.0.0-rc.13",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
