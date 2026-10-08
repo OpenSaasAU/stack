@@ -18,7 +18,7 @@
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.13",
+    "@prisma/orm-postgres": "8.0.0-rc.14",
     "@tailwindcss/postcss": "^4.3.3",
     "next": "^16.3.8",
     "postcss": "^8.5.28",
