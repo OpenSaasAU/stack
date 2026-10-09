@@ -237,6 +237,8 @@ function modelFields(
   for (const column of model.columns) {
     fields[column.name] = scalarField(helpers, model.name, column, enums)
   }
+  // Known limits: createdAt avoids field.temporal.createdAtString(), which drops the database
+  // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt)
     fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
   if (model.timestamps.updatedAt) fields.updatedAt = helpers.field.temporal.updatedAtString()
