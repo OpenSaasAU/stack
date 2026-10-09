@@ -47,17 +47,6 @@ const NOTHING_TO_RECONCILE_ROUTE =
 const parkedRoute = (id: string): string =>
   `To apply it, run \`pnpm db:update --plan ${id}\` in another terminal.\n`
 
-/** The database name Prisma takes as consent: the last path segment of the connection URL. */
-function consentToken(url: string | undefined): string | undefined {
-  if (url === undefined) return undefined
-  try {
-    const name = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''))
-    return name.length > 0 ? name : undefined
-  } catch {
-    return undefined
-  }
-}
-
 /** The Dev database's data directory, inside the Generated bundle (ADR-0063). */
 const DEV_DATABASE_DIR = path.join('.opensaas', 'dev-db')
 
@@ -394,7 +383,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
-    let confirm: string[] = []
     if (planned.plan.destructive) {
       const id = planId(planned.plan)
       if (requestedPlanId !== id) {
@@ -412,16 +400,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         )
         return
       }
-      const token = consentToken(database?.url ?? findDatabaseConnection({ cwd })?.url)
-      if (token === undefined) {
-        restoreMigrationRefs(cwd, refs)
-        reply.finish(false, 'Could not tell which database is connected, so nothing was applied.')
-        return
-      }
-      confirm = [token]
     }
 
-    const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, { confirm })
+    const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, {
+      consent: planned.plan,
+    })
     if (!applied.ok) {
       restoreMigrationRefs(cwd, refs)
       reportFailure(say, applied.failure.output)

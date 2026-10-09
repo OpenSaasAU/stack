@@ -114,10 +114,10 @@ describe('prisma contract emit — the pgvector fixture', () => {
     expect(Object.keys(emitted.domain.namespaces.public.models)).toEqual(['Document'])
     const columns = (
       emitted.storage.namespaces.public.entries.table.Document as unknown as {
-        columns: Record<string, { nativeType: string }>
+        columns: Record<string, { dataType: string }>
       }
     ).columns
-    expect(columns.embedding.nativeType).toContain('vector')
+    expect(columns.embedding.dataType).toBe('pgvector/vector')
   })
 
   test('declares the pgvector pack', () => {

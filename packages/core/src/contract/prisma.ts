@@ -73,9 +73,7 @@ function isColumnType(value: unknown): value is PrismaColumnType {
     typeof value === 'object' &&
     value !== null &&
     'codecId' in value &&
-    typeof value.codecId === 'string' &&
-    'nativeType' in value &&
-    typeof value.nativeType === 'string'
+    typeof value.codecId === 'string'
   )
 }
 

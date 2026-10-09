@@ -20,7 +20,7 @@
     "@opensaas/stack-storage": "workspace:*",
     "@opensaas/stack-storage-s3": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.14",
+    "@prisma/orm-postgres": "8.0.0-rc.17",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -33,7 +33,7 @@
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^18.0.4",
-    "prisma": "8.0.0-rc.20",
+    "prisma": "8.0.0-rc.22",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "5.0.2"
   }
