@@ -397,6 +397,44 @@ row it runs on.
 See [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md)
 and [ADR-0052](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0052-the-generated-types-declare-the-contract-remainder-and-instantiate-core-generics.md).
 
+## Enforcing a state machine
+
+`transitionGuard()` returns a list-level `validate` hook that enforces allowed transitions on a `select` field, optionally keyed by a stored sibling field. It runs for every caller, `sudo()` included, and checks a value set by `resolveInput` the same as one the caller supplied.
+
+```typescript
+import { list, transitionGuard } from '@opensaas/stack-core'
+
+Operation: list({
+  fields: {/* action, state */},
+  hooks: {
+    validate: transitionGuard({
+      field: 'state',
+      discriminator: 'action',
+      initial: { EDIT: ['PREPARED'] },
+      allowed: { EDIT: { PREPARED: ['DISPATCHING'] } },
+    }),
+  },
+})
+```
+
+- **Create:** the state must be in `initial[key]`.
+- **Update that changes the field:** the new state must be in `allowed[key][previous]`.
+- **Update that changes only the discriminator:** the current state must be legal under the new key.
+- **Update that changes neither, and delete:** not checked.
+
+Omit `discriminator` for a plain guard: `initial` is a flat array and `allowed` a flat `from → to[]` map. To combine the guard with your own `validate`, call both:
+
+```typescript
+const guard = transitionGuard({ field: 'state', initial: ['DRAFT'], allowed: { DRAFT: ['SENT'] } })
+
+hooks: {
+  validate: async (args) => {
+    await guard(args)
+    // ...your own checks
+  },
+}
+```
+
 ## Best Practices
 
 ### 1. Keep Hooks Pure
