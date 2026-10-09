@@ -422,7 +422,9 @@ Operation: list({
 - **Update that changes only the discriminator:** the current state must be legal under the new key.
 - **Update that changes neither, and delete:** not checked.
 
-Omit `discriminator` for a plain guard: `initial` is a flat array and `allowed` a flat `from → to[]` map. To combine the guard with your own `validate`, call both:
+Omit `discriminator` for a plain guard: `initial` is a flat array and `allowed` a flat `from → to[]` map. The guard reads the row loaded for the write and takes no lock, so two concurrent updates from the same state can both pass. Where that matters, read the row under `.forUpdate()` inside `context.transaction`. A create that omits the field is checked as `undefined`, because database defaults are not visible to the hook.
+
+To combine the guard with your own `validate`, call both:
 
 ```typescript
 const guard = transitionGuard({ field: 'state', initial: ['DRAFT'], allowed: { DRAFT: ['SENT'] } })
@@ -430,6 +432,7 @@ const guard = transitionGuard({ field: 'state', initial: ['DRAFT'], allowed: { D
 hooks: {
   validate: async (args) => {
     await guard(args)
+    if (args.operation === 'delete') return
     // ...your own checks
   },
 }

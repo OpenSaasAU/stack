@@ -93,6 +93,10 @@ function legalUnderKey(initial: unknown, allowed: unknown, state: unknown): bool
  *   under the new key (an `initial` entry, or a source or target in `allowed`)
  * - update that changes neither, and delete: no check
  *
+ * The guard takes no row lock, so concurrent updates from the same state can both pass; use
+ * `context.transaction` with `.forUpdate()` where that matters. A create that omits the field is
+ * checked as `undefined`, since database defaults are not visible to the hook.
+ *
  * To combine it with a validation of your own, call both:
  *
  * ```ts

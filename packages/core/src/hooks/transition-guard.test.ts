@@ -154,6 +154,13 @@ describe('transitionGuard', () => {
     ).rejects.toThrow(/for action "VOID"/)
   })
 
+  test('an allowed update takes its discriminator from the item', async () => {
+    const id = await operation('EDIT', 'PREPARED')
+    await expect(
+      harness.context.db.Operation.update({ where: { id }, data: { state: 'DISPATCHING' } }),
+    ).resolves.toMatchObject({ state: 'DISPATCHING' })
+  })
+
   test('re-checks the state when only the discriminator changes', async () => {
     const db = harness.context.db
     const legal = await operation('EDIT', 'PREPARED')
