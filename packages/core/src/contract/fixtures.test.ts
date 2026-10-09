@@ -74,6 +74,9 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       codecId: 'pg/timestamptz-string@1',
       default: { kind: 'function', expression: 'now()' },
     })
+    expect(contract.execution?.mutations.defaults).not.toContainEqual(
+      expect.objectContaining({ ref: { namespace: 'public', entry: 'User', field: 'createdAt' } }),
+    )
     expect(table(contract, 'User').columns.updatedAt).toMatchObject({
       codecId: 'pg/timestamptz-string@1',
       nullable: false,
