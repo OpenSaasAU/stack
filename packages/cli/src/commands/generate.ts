@@ -103,6 +103,8 @@ export interface GenerateCommandOptions {
    * them.
    */
   stagingDir?: string
+  /** Print the standalone "Next steps" hint. Defaults to true; the dev loop turns it off. */
+  showNextSteps?: boolean
 }
 
 /** Where one generation put its files, and how to point Prisma at them. */
@@ -426,7 +428,7 @@ export async function generateCommand(
     }
 
     console.log(chalk.bold('\n✨ Generation complete!\n'))
-    if (staging === undefined) {
+    if (staging === undefined && options.showNextSteps !== false) {
       console.log(chalk.gray('Next steps:'))
       console.log(chalk.gray('  1. Commit prisma/contract.json and prisma/contract.d.ts'))
       console.log(chalk.gray('  2. Run: pnpm dev (or pnpm db:update while dev is running)'))

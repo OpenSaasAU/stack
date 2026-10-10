@@ -463,7 +463,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     reconciledSource = fs.readFileSync(configPath, 'utf-8')
     let bootGeneration: GenerationResult
     try {
-      bootGeneration = await generateCommand()
+      bootGeneration = await generateCommand({ showNextSteps: false })
     } catch (error) {
       if (!(error instanceof GenerationFailedError)) throw error
       process.exitCode = 1
