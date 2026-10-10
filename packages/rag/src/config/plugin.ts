@@ -428,6 +428,12 @@ export function ragPlugin(config: RAGConfig): Plugin {
             (entry): entry is [string, EmbeddingField] => isEmbeddingField(entry[1]),
           )
 
+          const mcpConfig = context.config.mcp
+          const readEnabled = listConfig.mcp?.tools?.read ?? mcpConfig?.defaultTools?.read ?? true
+          if (listConfig.mcp?.enabled === false || !readEnabled) continue
+          const readScopes = listConfig.mcp?.scopes?.read ?? mcpConfig?.scopes?.read
+          const scopes = readScopes === undefined ? [] : [readScopes].flat()
+
           if (embeddingFields.length > 0) {
             const toolName = `semantic_search_${listName.toLowerCase()}`
             const defaultField = embeddingFields[0][0]
@@ -443,6 +449,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
             context.registerMcpTool({
               name: toolName,
               description: `Search ${listName} using natural language (semantic search)`,
+              scopes,
               inputSchema: {
                 type: 'object',
                 properties: {

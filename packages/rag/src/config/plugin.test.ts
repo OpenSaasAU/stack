@@ -484,6 +484,49 @@ describe('ragPlugin', () => {
       expect(harness.mcpTools[0].inputSchema.properties.field.enum).toEqual(['contentEmbedding'])
     })
 
+    const articleLists = (mcp?: NonNullable<OpenSaasConfig['lists'][string]['mcp']>) => ({
+      Article: {
+        fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
+        ...(mcp ? { mcp } : {}),
+      },
+    })
+
+    it('skips a list that opted out of MCP', async () => {
+      const harness = pluginContext({ lists: articleLists({ enabled: false }) })
+      await ragPlugin(openai).init!(harness.context)
+      expect(harness.mcpTools).toEqual([])
+    })
+
+    it('skips a list whose read tool is disabled', async () => {
+      const harness = pluginContext({ lists: articleLists({ tools: { read: false } }) })
+      await ragPlugin(openai).init!(harness.context)
+      expect(harness.mcpTools).toEqual([])
+    })
+
+    it('honours defaultTools.read unless the list overrides it', async () => {
+      const mcp = { enabled: true, defaultTools: { read: false } }
+      const off = pluginContext({ lists: articleLists(), mcp })
+      await ragPlugin(openai).init!(off.context)
+      expect(off.mcpTools).toEqual([])
+
+      const on = pluginContext({ lists: articleLists({ tools: { read: true } }), mcp })
+      await ragPlugin(openai).init!(on.context)
+      expect(on.mcpTools.map((tool) => tool.name)).toEqual(['semantic_search_article'])
+    })
+
+    it('gates the tool on the list read scope, falling back to the config scope', async () => {
+      const listScoped = pluginContext({ lists: articleLists({ scopes: { read: 'mcp:read' } }) })
+      await ragPlugin(openai).init!(listScoped.context)
+      expect(listScoped.mcpTools[0].scopes).toEqual(['mcp:read'])
+
+      const configScoped = pluginContext({
+        lists: articleLists(),
+        mcp: { enabled: true, scopes: { read: ['a', 'b'] } },
+      })
+      await ragPlugin(openai).init!(configScoped.context)
+      expect(configScoped.mcpTools[0].scopes).toEqual(['a', 'b'])
+    })
+
     it('registers nothing when MCP tools are disabled', async () => {
       const harness = pluginContext({
         lists: {
