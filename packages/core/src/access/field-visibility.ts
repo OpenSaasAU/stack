@@ -62,6 +62,15 @@ import { buildDbDelegate } from '../context/index.js'
  * computed field run on the related rows.
  */
 
+export interface RuleView {
+  readonly removed: ReadonlySet<string>
+  readonly declared: Readonly<Record<string, unknown>>
+}
+
+export function noRuleView(): RuleView {
+  return { removed: new Set(), declared: {} }
+}
+
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
   value: unknown
@@ -224,6 +233,10 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // field runs on it (ADR-0051), and `restoreReductions` in `read.ts`
   // overwrites the key with the reduction's own value afterwards.
   reducedDeclared: ReducedDeclaredKeys = noReducedDeclaredKeys(),
+  // How this level's rules and hooks see a relation the caller shaped: the
+  // keys to drop from their view, and the unshaped declared rows to put in
+  // their place. Output is unaffected (ADR-0051).
+  ruleView: RuleView = noRuleView(),
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -272,12 +285,16 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
    * exercising field access in isolation) has no table to read, so the whole
    * working row stands in — there is no declaration to honour there.
    */
+  const ruleItem: Record<string, unknown> = { ...workingItem }
+  for (const key of ruleView.removed) delete ruleItem[key]
+  Object.assign(ruleItem, ruleView.declared)
+
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
-    if (!config || !listKey) return workingItem
+    if (!config || !listKey) return ruleItem
     const declared = listDependencies.fields[fieldName] ?? { columns: [], relations: [] }
     const item: Record<string, unknown> = {}
     for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
-      if (key in workingItem) item[key] = workingItem[key]
+      if (key in ruleItem) item[key] = ruleItem[key]
     }
     return item
   }
@@ -335,7 +352,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       if (isDeclaredRelationshipField) {
         const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
           ...args,
-          item: workingItem,
+          item: ruleItem,
         })
 
         // A `read` denial hides the relation from the CALLER and nothing
@@ -434,7 +451,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value,
-      accessItem: workingItem,
+      accessItem: ruleItem,
       hookItem: hookItemFor(fieldName),
       listKey,
       args,
@@ -487,7 +504,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value: undefined, // Virtual fields don't have a database value
-      accessItem: workingItem,
+      accessItem: ruleItem,
       hookItem: hookItemFor(fieldName),
       listKey,
       args,
