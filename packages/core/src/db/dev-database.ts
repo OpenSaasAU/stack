@@ -31,14 +31,17 @@
  *   form; node-postgres does not strip those brackets when it parses a
  *   connection string, so such a client takes `host` and `port` off the handle
  *   instead of the URL.
- * - `PGLiteSocketServer` reports the port it bound only through the
- *   `host:port` string of `getServerConn()`, so the port is parsed back out of
- *   it rather than read from a field.
+ * - PGlite is served on a unix socket in a 0700 temp directory; the TCP port
+ *   is a cleartext-password front carrying a per-boot password in the URL.
+ *   Platforms without unix-domain sockets are not supported.
  */
 
 import type { Extension } from '@electric-sql/pglite'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { startPasswordFront } from './password-front.js'
 import {
   describeSelf,
   identifiesLiveProcess,
@@ -141,14 +144,6 @@ async function release(steps: readonly (() => Promise<void>)[]): Promise<void> {
 
 function authorityOf(host: string): string {
   return host.includes(':') ? `[${host}]` : host
-}
-
-function portOf(connection: string): number {
-  const port = Number(connection.slice(connection.lastIndexOf(':') + 1))
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`The dev database socket server reported no TCP port (got "${connection}").`)
-  }
-  return port
 }
 
 /** Thrown by {@link startDevDatabase} when another sidecar already holds `dataDir`. */
@@ -307,17 +302,23 @@ export async function startDevDatabase(
     teardown.unshift(() => pglite.close())
     await pglite.waitReady
 
+    const socketDir = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-'))
+    teardown.unshift(async () => rmSync(socketDir, { recursive: true, force: true }))
+    const socketPath = path.join(socketDir, 'pg.sock')
     const server = new PGLiteSocketServer({
       db: pglite,
-      host,
-      port: 0,
+      path: socketPath,
       maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
     })
     await server.start()
     teardown.unshift(() => server.stop())
 
-    const port = portOf(server.getServerConn())
-    const url = `postgres://${DATABASE_NAME}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
+    const password = randomBytes(16).toString('hex')
+    const front = await startPasswordFront({ host, innerPath: socketPath, password })
+    teardown.unshift(() => front.stop())
+
+    const port = front.port
+    const url = `postgres://${DATABASE_NAME}:${password}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
     const location: DevDatabaseStateLocation = {
       cwd,
       ...(options.stateFile !== undefined && { stateFile: options.stateFile }),

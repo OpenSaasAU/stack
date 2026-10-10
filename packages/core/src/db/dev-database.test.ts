@@ -113,6 +113,25 @@ describe('startDevDatabase', () => {
   )
 
   test(
+    'a wrong password is refused and the published password is accepted',
+    async () => {
+      const database = await start()
+      const wrong = new URL(database.url)
+      wrong.password = 'f'.repeat(32)
+      const anonymous = new URL(database.url)
+      anonymous.password = ''
+
+      await expect(ask(wrong.toString(), 'select 1')).rejects.toThrow(
+        /password authentication failed/,
+      )
+      await expect(ask(anonymous.toString(), 'select 1')).rejects.toThrow()
+      expect(new URL(database.url).password).toMatch(/^[0-9a-f]{32}$/)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
     'the state file is written under the Generated bundle and rewritten on every boot',
     async () => {
       const first = await start()
@@ -226,7 +245,9 @@ describe('startDevDatabase', () => {
       started.push(database)
 
       expect(database.host).toBe('127.0.0.1')
-      expect(database.url).toBe(`postgres://postgres@127.0.0.1:${database.port}/postgres`)
+      expect(database.url).toMatch(
+        new RegExp(`^postgres://postgres:[0-9a-f]{32}@127\\.0\\.0\\.1:${database.port}/postgres$`),
+      )
       expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
     },
     BOOT_TIMEOUT,
