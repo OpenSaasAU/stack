@@ -23,6 +23,13 @@ updates:
           - 'prisma'
           - '@prisma/*'
 
+      # @vitest/* packages peer-depend on the exact matching vitest version.
+      # Bumped individually they leave vitest behind and the install fails.
+      vitest:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
