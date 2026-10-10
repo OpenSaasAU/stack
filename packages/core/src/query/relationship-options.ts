@@ -70,8 +70,7 @@ export async function getRelationshipOptions(
   }
   const take = Math.min(requestedTake, MAX_TAKE)
   const labelFieldConfig = relatedListConfig.fields[labelField] as
-    | { type?: string; virtual?: boolean }
-    | undefined
+    { type?: string; virtual?: boolean } | undefined
   const where =
     search && labelFieldConfig?.type === 'text' ? { [labelField]: { contains: search } } : undefined
 
@@ -89,7 +88,7 @@ export async function getRelationshipOptions(
   const primary = await options(scoped).orderBy(orderBy).limit(take).all()
 
   const seenIds = new Set(primary.map((item) => String(item.id)))
-  const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id))
+  const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id)).slice(0, MAX_TAKE)
 
   const selected = missingSelectedIds.length
     ? await options(context.db[relatedListKey].where({ id: { in: missingSelectedIds } })).all()

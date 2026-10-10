@@ -123,6 +123,20 @@ describe('getRelationshipOptions', () => {
     expect(delegate.calls[0].limit).toBe(200)
   })
 
+  it('bounds the selectedIds lookup to 200 ids', async () => {
+    const delegate = makeDelegate(authors)
+    const selectedIds = Array.from({ length: 500 }, (_, i) => `x${i}`)
+    await getRelationshipOptions(makeContext({ Author: delegate }), makeConfig(), 'Author', {
+      selectedIds,
+    })
+
+    const inClause = delegate.calls
+      .flatMap((call) => call.where)
+      .map((w) => (w as { id?: { in?: string[] } }).id?.in)
+      .find((ids) => ids !== undefined)
+    expect(inClause).toHaveLength(200)
+  })
+
   it.each([-1, 0, NaN, 1.5])('rejects take %s with a ValidationError', async (take) => {
     const context = makeContext({ Author: makeDelegate(authors) })
 
