@@ -16,12 +16,12 @@
     },
     "opensaas-auth-example#build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo", ".opensaas/**"],
       "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL"]
     },
     "opensaas-mcp-example#build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo", ".opensaas/**"],
       "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
     },
     "opensaas-mcp-example#test": {
@@ -31,7 +31,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "tsconfig.tsbuildinfo"],
+      "outputs": ["dist/**", "tsconfig.tsbuildinfo", ".opensaas/**"],
       "env": ["DATABASE_URL"]
     },
     "typecheck": {

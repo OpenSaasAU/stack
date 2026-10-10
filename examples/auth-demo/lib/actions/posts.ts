@@ -19,10 +19,7 @@ export async function createPost(data: Omit<PostCreateInput, 'author'>) {
   const context = await getContext(session)
 
   const post = await context.db.Post.create({
-    data: {
-      ...data,
-      author: { connect: { id: session.userId } },
-    },
+    data,
   })
 
   if (!post) {
