@@ -93,6 +93,7 @@ pnpm dev
 pnpm generate
 
 # Apply a schema change the running loop staged but did not promote
+# (a destructive one prints its plan id: pnpm db:update --plan <id>)
 pnpm db:update
 
 # Run a one-off script against the loop's database instead of `next dev`
@@ -164,7 +165,7 @@ The hooks system provides data transformation and side effects during database o
 3. List-level `validate` - Custom validation logic
 4. Field-level `validate` - Custom validation logic for individual fields
 5. Field validation - Built-in rules (isRequired, length, min/max)
-6. Field-level access control - Filter writable fields
+6. Field-level access control - Gates the keys the caller supplied in `inputData` (hook output is trusted; ADR-0075)
 7. Relationship resolution - a `connect`'s reachability query and the foreign-key write
 8. Field-level `beforeOperation` - Side effects for individual fields
 9. List-level `beforeOperation` - Side effects at list level
@@ -225,6 +226,8 @@ All hooks receive these common arguments:
 - `resolvedData` - The data after transformations (updated by `resolveInput` hooks)
 - `item` - The existing item from the database (undefined for create, present for update/delete)
 - `originalItem` - The item before the operation (undefined for create, present for update/delete in `afterOperation`)
+
+**`afterTransaction` never changes a write's result.** A throw is reported to the config's `onAfterTransactionError` (default `console.error`), never propagated, so a rejected write always means nothing persisted (ADR-0074).
 
 A `resolveOutput` hook sees **exactly its own declared dependency set plus the list's system fields** — never another computed field's output, and never what the caller happened to select. Reaching for anything it did not declare finds nothing there. See `needs` in `packages/core/CLAUDE.md` and ADR-0051.
 
@@ -320,7 +323,7 @@ export default config({
 - **Extend Lists**: Add fields or hooks to existing lists
 - **Declare Extension packs**: `context.addExtension({ name, from })`, so a field type needing a pack does not push that declaration onto the application
 - **Hook Chaining**: Multiple plugins can add hooks that execute in sequence
-- **Deep Merging**: Plugins safely merge fields, hooks, and access control
+- **Merging**: Hooks chain (`mergeHooks`); fields are replaced per key, and a plugin may redeclare an app-declared field or its own, but redeclaring a field another plugin introduced throws; operation-level access on an existing list is refused (ADR-0013, ADR-0077)
 - **Lifecycle Hooks**: `beforeGenerate`, `afterGenerate` for code generation control
 - **Dependency Resolution**: Automatic execution ordering via topological sort
 
@@ -445,7 +448,7 @@ An entry naming a field the list doesn't have, a virtual field, a to-many relati
 
 The workflow splits on history, not on provider: **dev reconciles, production migrates** (ADR-0003 as amended, ADR-0063).
 
-- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving.
+- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan, its id and `pnpm db:update --plan <id>`, and keeps serving.
 - `pnpm db:update` (`opensaas db update`) is the promoting wrapper. It runs **during** `dev` — the loop holds the database and the staged generation, so this command opens no connection of its own — and errors when nothing is listening.
 - Production runs Prisma's migrate from the committed `migrations/` directory, which carries the app's migration packages and every declared pack's extension space.
 - Prisma runs `CREATE EXTENSION IF NOT EXISTS` on every path. The deployment's job is provisioning: make the extension available and give the migrating role the privilege, or have a DBA pre-create it. pgvector is untrusted, so it needs superuser or a provider grant.
@@ -1223,6 +1226,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - `contains` and text equality in filter URLs are case-insensitive; a to-many count filter other than presence degrades to free text
 - An approximate vector scan under a selective access filter can return fewer rows than asked for
 - The Auth adapter implements no joins and no schema creation, so better-auth's own CLI is unsupported
+- A unique constraint or restrictive foreign key on an access-scoped list tells a writer that a row it cannot read holds that value or references that row. Scope the uniqueness to the access boundary; see "Uniqueness and existence" in `docs/content/concepts/access-control.md`
 - `pnpm db:update` requires the dev loop to be running, and a destructive mid-session change restarts the app
 - The staged promotion set is not atomic to an outside observer: a direct `prisma` invocation, `psql`, or a hot-reloading app child can see a mix of old and new artifacts for a measured window (1–2 ms on macOS, up to 127 ms on a loaded 2-CPU Linux runner) during `opensaas dev`. Only a second-terminal `opensaas db update` is serialised against it. See ADR-0072
 

@@ -972,6 +972,18 @@ describe('multi-column write split respects field-level write access', () => {
     ).rejects.toThrow('Cannot create "media": field-level access denied.')
   })
 
+  it('splits a hook-set value for a denied field the caller did not supply (issue #1643)', async () => {
+    const fields = { media: multiColumnField({ create: () => false }) }
+    const result = await splitMultiColumnFields(
+      {},
+      { media: { url: 'https://x/y.jpg', size: 99 } },
+      fields,
+      'create',
+      makeContext(),
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
+  })
+
   it('still splits/writes the columns when write access is granted', async () => {
     const fields = { media: multiColumnField({ update: () => true, create: () => true }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }

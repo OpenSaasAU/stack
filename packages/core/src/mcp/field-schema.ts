@@ -222,6 +222,7 @@ export async function generateFieldSchemas(
     // the default — not only when the column is genuinely omittable.
     const isRequired =
       operation === 'create' &&
+      fieldConfig.access?.write !== 'hooks' &&
       (('validation' in fieldConfig &&
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
         !!(fieldConfig.validation as any)?.isRequired) ||
