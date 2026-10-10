@@ -27,6 +27,7 @@ function schemaConfig(): OpenSaasConfig {
         fields: {
           name: text(),
           email: text(),
+          apiToken: text({ ui: { valueForClientSerialization: () => null } }),
           posts: relationship({ ref: 'Post.author', many: true }),
         },
         access: { operation: OPEN },
@@ -100,6 +101,27 @@ describe('context.serverAction', () => {
   }
 
   describe('the CRUD actions', () => {
+    test('no write response carries a column other than id', async () => {
+      const context = harness.context
+      const created = await context.serverAction({
+        listKey: 'User',
+        action: 'create',
+        data: { name: 'a', email: 'a@x.io', apiToken: 'sk_live_secret' },
+      })
+      const id = String((created as { data: { id: unknown } }).data.id)
+      const updated = await context.serverAction({
+        listKey: 'User',
+        action: 'update',
+        id,
+        data: { apiToken: 'sk_live_other' },
+      })
+      const deleted = await context.serverAction({ listKey: 'User', action: 'delete', id })
+      for (const response of [created, updated, deleted]) {
+        expect(JSON.stringify(response)).not.toContain('sk_live')
+        expect(response).toEqual({ success: true, data: { id } })
+      }
+    })
+
     test(
       'create, update and delete each round-trip through the secured surface',
       async () => {
