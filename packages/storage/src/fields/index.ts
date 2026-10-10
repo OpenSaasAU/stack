@@ -321,6 +321,10 @@ function createPendingUploads<TMetadata>() {
       if (typeof write !== 'object' || write === null) return undefined
       return pending.get(write)?.get(fieldKey)?.shift()
     },
+    size: (write: unknown, fieldKey: string): number => {
+      if (typeof write !== 'object' || write === null) return 0
+      return pending.get(write)?.get(fieldKey)?.length ?? 0
+    },
     amendLast: (
       write: unknown,
       fieldKey: string,
@@ -348,13 +352,17 @@ function composeFieldHooks(
   return {
     ...userHooks,
     resolveInput: async (args: any) => {
+      const queuedBefore = uploads.size(args.inputData, args.fieldKey)
       const resolved = await builtIn.resolveInput(args)
       if (!userHooks?.resolveInput) return resolved
       const final = await userHooks.resolveInput({
         ...args,
         resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
       })
-      if (final?.filename !== resolved?.filename) {
+      if (
+        final?.filename !== resolved?.filename &&
+        uploads.size(args.inputData, args.fieldKey) > queuedBefore
+      ) {
         uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
           ...pending,
           replaced: null,
