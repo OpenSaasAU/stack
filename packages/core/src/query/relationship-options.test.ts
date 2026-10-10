@@ -114,6 +114,23 @@ describe('getRelationshipOptions', () => {
     expect(delegate.calls[0].limit).toBe(2)
   })
 
+  it('clamps take to 200', async () => {
+    const delegate = makeDelegate(authors)
+    await getRelationshipOptions(makeContext({ Author: delegate }), makeConfig(), 'Author', {
+      take: 1e9,
+    })
+
+    expect(delegate.calls[0].limit).toBe(200)
+  })
+
+  it.each([-1, 0, NaN, 1.5])('rejects take %s with a ValidationError', async (take) => {
+    const context = makeContext({ Author: makeDelegate(authors) })
+
+    await expect(
+      getRelationshipOptions(context, makeConfig(), 'Author', { take }),
+    ).rejects.toMatchObject({ name: 'ValidationError' })
+  })
+
   it('orders by the label field ascending and filters via contains on a text label field', async () => {
     const delegate = makeDelegate([authors[0]])
     const context = makeContext({ Author: delegate })
