@@ -208,6 +208,19 @@ jobs:
           git add --intent-to-add -- $PATHS
           git diff --exit-code -- $PATHS
 
+      # A committed snapshot in a stale format only fails when Prisma reads it
+      # as a migration's predecessor, which regeneration never does. Planning
+      # offline against each example loads every snapshot; the baseline package
+      # the plan writes is discarded.
+      - name: Plan a migration offline in each example
+        run: |
+          for dir in starter starter-auth custom-field blog composable-dashboard auth-demo mcp-demo json-demo tiptap-demo file-upload-demo rag-ollama-demo rag-openai-chatbot; do
+            (cd "examples/$dir" && pnpm exec prisma migration plan --json > /dev/null) || { echo "::error::migration plan failed in examples/$dir"; exit 1; }
+          done
+          git clean -fdq -- examples/*/migrations/app
+        env:
+          OPENAI_API_KEY: 'sk-testing-key'
+
       # Unlike its two sibling checks above, this one reads compiled output: it
       # resolves @opensaas/* through each package's own `exports` to its dist,
       # so it measures this branch's own declarations. The regeneration step
