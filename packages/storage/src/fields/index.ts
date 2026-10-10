@@ -333,20 +333,26 @@ function composeFieldHooks(
   },
   userHooks: any,
   cleanupAfterTransaction: (args: any) => Promise<void>,
+  uploads: ReturnType<typeof createPendingUploads<any>>,
 ): any {
   return {
     ...userHooks,
     resolveInput: async (args: any) => {
       const resolved = await builtIn.resolveInput(args)
       if (!userHooks?.resolveInput) return resolved
-      return userHooks.resolveInput({
+      const final = await userHooks.resolveInput({
         ...args,
         resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
       })
+      if (final?.filename !== resolved?.filename) {
+        const pending = uploads.take(args.inputData, args.fieldKey)
+        if (pending) uploads.set(args.inputData, args.fieldKey, { ...pending, replaced: null })
+      }
+      return final
     },
     afterOperation: async (args: any) => {
-      await builtIn.afterOperation(args)
       await userHooks?.afterOperation?.(args)
+      await builtIn.afterOperation(args)
     },
     afterTransaction: async (args: any) => {
       await cleanupAfterTransaction(args)
@@ -491,6 +497,7 @@ export function file<
       },
       userHooks,
       cleanupAfterTransaction,
+      pendingFileUploads,
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
@@ -671,6 +678,7 @@ export function image<
       },
       userHooks,
       cleanupAfterTransaction,
+      pendingImageUploads,
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
