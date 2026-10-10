@@ -333,6 +333,26 @@ function connectId(value: unknown): string | number | undefined {
 }
 
 /**
+ * A copy of the caller's payload that a hook mutating `resolvedData` in place
+ * cannot reach: relation input is `{ connect: { id } }`, so two levels of plain
+ * objects are copied and every other value is kept as is.
+ */
+export function snapshotCallerInput(inputData: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(inputData)) {
+    if (!isPlainObject(value)) {
+      copy[key] = value
+      continue
+    }
+    copy[key] = {
+      ...value,
+      ...(isPlainObject(value.connect) ? { connect: { ...value.connect } } : {}),
+    }
+  }
+  return copy
+}
+
+/**
  * Refuse a payload carrying both spellings of one edge. Checked over the whole
  * payload before any per-key refusal, so the answer does not turn on which of
  * the two keys the caller happened to write first.

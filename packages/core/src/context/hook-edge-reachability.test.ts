@@ -80,6 +80,9 @@ describe('a hook-introduced edge is trusted; a caller-supplied one is gated', ()
         const { author: _author, ...rest } = resolvedData
         return { ...rest, author: { connect: { id: reachableId } } }
       }
+      case 'mutate':
+        resolvedData.author = { connect: { id: target } }
+        return resolvedData
       case 'absent':
         return { ...resolvedData, author: { connect: { id: ABSENT_ID } } }
       default:
@@ -170,6 +173,16 @@ describe('a hook-introduced edge is trusted; a caller-supplied one is gated', ()
       expect(
         recorder.plans.map((plan) => plan.kind).filter((kind) => kind === 'select'),
       ).toHaveLength(2)
+    },
+    BOOT,
+  )
+
+  test(
+    'a hook mutating resolvedData in place is still a hook edge',
+    async () => {
+      state.mode = 'mutate'
+      expect(await harness.context.db.Post.create({ data: { title: 'a' } })).not.toBeNull()
+      expect(await storedAuthors(harness.url)).toEqual([target])
     },
     BOOT,
   )
