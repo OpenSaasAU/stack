@@ -27,6 +27,8 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
     "@opensaas/stack-cli": "workspace:*",
     "@types/node": "^26.6.3",
     "@types/react": "^19.2.18",
