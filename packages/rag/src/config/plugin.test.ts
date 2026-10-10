@@ -503,6 +503,17 @@ describe('ragPlugin', () => {
       expect(harness.mcpTools).toEqual([])
     })
 
+    it('honours defaultTools.read unless the list overrides it', async () => {
+      const mcp = { enabled: true, defaultTools: { read: false } }
+      const off = pluginContext({ lists: articleLists(), mcp })
+      await ragPlugin(openai).init!(off.context)
+      expect(off.mcpTools).toEqual([])
+
+      const on = pluginContext({ lists: articleLists({ tools: { read: true } }), mcp })
+      await ragPlugin(openai).init!(on.context)
+      expect(on.mcpTools.map((tool) => tool.name)).toEqual(['semantic_search_article'])
+    })
+
     it('gates the tool on the list read scope, falling back to the config scope', async () => {
       const listScoped = pluginContext({ lists: articleLists({ scopes: { read: 'mcp:read' } }) })
       await ragPlugin(openai).init!(listScoped.context)
