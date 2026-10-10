@@ -14,6 +14,16 @@ const EXCLUDED_DIRECTORIES = [
   'migrations',
 ]
 
+export const PACKED_GITIGNORE = 'gitignore'
+
+/** Packing drops `.gitignore` files, so templates carry it as `gitignore`. */
+export async function restoreGitignore(projectDir: string): Promise<void> {
+  const packed = path.join(projectDir, PACKED_GITIGNORE)
+  if (await fs.pathExists(packed)) {
+    await fs.move(packed, path.join(projectDir, '.gitignore'), { overwrite: true })
+  }
+}
+
 /** File names an example never contributes to a template, at any depth. */
 const EXCLUDED_FILES = [
   'prisma.config.ts',
@@ -86,6 +96,11 @@ export async function copyTemplate(
       return false
     },
   })
+
+  const ignored = path.join(target, '.gitignore')
+  if (await fs.pathExists(ignored)) {
+    await fs.move(ignored, path.join(target, PACKED_GITIGNORE), { overwrite: true })
+  }
 
   const files = await templateFiles(target)
   if (files.length === 0) throw new UnusableTemplateError(target, 'came out empty')

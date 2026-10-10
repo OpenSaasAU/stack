@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateEnvFiles } from '../src/lib/env.js'
+import { generateAuthEnv, generateEnvFiles } from '../src/lib/env.js'
 
 describe('generateEnvFiles', () => {
   const { env, envExample } = generateEnvFiles({ projectName: 'my-app' })
@@ -24,5 +24,27 @@ describe('generateEnvFiles', () => {
   it('always ends files with a trailing newline', () => {
     expect(env.endsWith('\n')).toBe(true)
     expect(envExample.endsWith('\n')).toBe(true)
+  })
+})
+
+describe('generateAuthEnv', () => {
+  const example = [
+    'BETTER_AUTH_SECRET=your_secret_key_here  # Generate with: openssl rand -base64 32',
+    'BETTER_AUTH_URL=http://localhost:3000',
+    '',
+    '# Rate Limiting',
+    '# Set to true to disable rate limiting (useful for local development)',
+    'DISABLE_RATE_LIMITING=true',
+    '',
+  ].join('\n')
+  const out = generateAuthEnv(example, 'abc123')
+
+  it('replaces the placeholder secret', () => {
+    expect(out).toContain('BETTER_AUTH_SECRET=abc123\n')
+    expect(out).not.toContain('your_secret_key_here')
+  })
+
+  it('leaves DISABLE_RATE_LIMITING unset', () => {
+    expect(out).not.toContain('DISABLE_RATE_LIMITING')
   })
 })

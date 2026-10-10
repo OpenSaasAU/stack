@@ -31,3 +31,15 @@ export function generateEnvFiles(options: { projectName: string }): EnvFiles {
 
   return { env: contents, envExample: contents }
 }
+
+/** The auth template's `.env`: its example with a real secret and rate limiting left on. */
+export function generateAuthEnv(example: string, secret: string): string {
+  return example
+    .split('\n')
+    .filter(
+      (line) => !/^\s*(DISABLE_RATE_LIMITING=|# Set to true to disable rate limiting)/.test(line),
+    )
+    .map((line) => (line.startsWith('BETTER_AUTH_SECRET=') ? `BETTER_AUTH_SECRET=${secret}` : line))
+    .join('\n')
+    .replace(/# Rate Limiting\n\n/, '')
+}
