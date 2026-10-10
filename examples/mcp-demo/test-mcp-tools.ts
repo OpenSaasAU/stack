@@ -175,7 +175,6 @@ async function main(): Promise<void> {
         title: 'Written over MCP',
         slug: 'written-over-mcp',
         content: 'The create tool goes through the same write pipeline as context.db.',
-        author: { connect: { id: userId } },
       },
     }),
   )
