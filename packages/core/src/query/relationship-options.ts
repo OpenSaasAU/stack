@@ -36,6 +36,12 @@ export interface RelationshipOptionsArgs {
   take?: number
   /** Always unioned into the result, even outside the search/take window. */
   selectedIds?: string[]
+  /**
+   * Whether the session may read the label field. When `false` the primitive
+   * neither orders nor searches by it and projects `id` alone, so the label
+   * falls back as {@link getItemLabel} does. @default true
+   */
+  labelReadable?: boolean
 }
 
 /**
@@ -60,21 +66,24 @@ export async function getRelationshipOptions(
 
   const labelField = getLabelFieldName(relatedListConfig)
 
-  const { search, take = DEFAULT_TAKE, selectedIds = [] } = args
+  const { search, take = DEFAULT_TAKE, selectedIds = [], labelReadable = true } = args
   const labelFieldConfig = relatedListConfig.fields[labelField] as
     { type?: string; virtual?: boolean } | undefined
   const where =
-    search && labelFieldConfig?.type === 'text' ? { [labelField]: { contains: search } } : undefined
+    labelReadable && search && labelFieldConfig?.type === 'text'
+      ? { [labelField]: { contains: search } }
+      : undefined
 
   // Virtual/computed label fields (resolved at read time via `resolveOutput`)
   // have no backing database column, so passing them into `orderBy` fails
   // Prisma validation and 500s the request. Fall back to ordering by `id` —
   // always a real, orderable column — whenever the label field is virtual.
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
-  const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
+  const orderBy: Record<string, 'asc'> =
+    isVirtualLabel || !labelReadable ? { id: 'asc' } : { [labelField]: 'asc' }
 
   const options = (query: RelationshipOptionsQuery): RelationshipOptionsQuery =>
-    query.select('id', labelField)
+    labelReadable ? query.select('id', labelField) : query.select('id')
 
   const scoped = where ? context.db[relatedListKey].where(where) : context.db[relatedListKey]
   const primary = await options(scoped).orderBy(orderBy).limit(take).all()

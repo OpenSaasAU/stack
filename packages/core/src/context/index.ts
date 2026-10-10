@@ -3,6 +3,8 @@ import { isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
+import { isFieldReadableForPredicate } from '../access/field-access.js'
+import { getLabelFieldName } from '../config/label.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
@@ -1238,7 +1240,15 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
 
         const relatedListKey = fieldConfig.ref.split('.')[0]
+        const relatedListConfig = config.lists[relatedListKey]
+        const labelReadable = relatedListConfig
+          ? await isFieldReadableForPredicate(
+              relatedListConfig.fields[getLabelFieldName(relatedListConfig)]?.access,
+              { session: context.session, context },
+            )
+          : true
         const options = await getRelationshipOptions(context, config, relatedListKey, {
+          labelReadable,
           search: props.search,
           take: props.take,
           selectedIds: props.selectedIds,

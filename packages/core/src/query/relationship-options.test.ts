@@ -165,6 +165,21 @@ describe('getRelationshipOptions', () => {
     expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
   })
 
+  it('neither orders nor searches by the label field when it is not readable', async () => {
+    const delegate = makeDelegate([{ id: 'a1' }])
+    const context = makeContext({ Author: delegate })
+
+    const result = await getRelationshipOptions(context, makeConfig(), 'Author', {
+      search: 'Ada',
+      labelReadable: false,
+    })
+
+    expect(delegate.calls[0].where).toEqual([])
+    expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
+    expect(delegate.calls[0].select).toEqual(['id'])
+    expect(result).toEqual([{ id: 'a1', label: 'a1' }])
+  })
+
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
     // The bounded/search-scoped query only returns a1 (mimicking take:1 + search).
     const primaryDelegate = makeDelegate([authors[0]])
