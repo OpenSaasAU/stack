@@ -148,7 +148,9 @@ export async function AdminUI({
     // Optional `?pageSize=` override (Keystone-style). When absent, ListView's
     // own default applies.
     const pageSizeParam =
-      typeof searchParams.pageSize === 'string' ? parseInt(searchParams.pageSize, 10) : undefined
+      typeof searchParams.pageSize === 'string' && /^\d+$/.test(searchParams.pageSize)
+        ? Number(searchParams.pageSize)
+        : undefined
     const pageSize =
       pageSizeParam !== undefined && Number.isFinite(pageSizeParam) && pageSizeParam > 0
         ? Math.min(pageSizeParam, MAX_PAGE_SIZE)
