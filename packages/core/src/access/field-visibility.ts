@@ -62,14 +62,13 @@ import { buildDbDelegate } from '../context/index.js'
  * computed field run on the related rows.
  */
 
+/** What a level's `read` rules and hooks see in place of a caller-shaped relation. */
 export interface RuleView {
   readonly removed: ReadonlySet<string>
   readonly declared: Readonly<Record<string, unknown>>
 }
 
-export function noRuleView(): RuleView {
-  return { removed: new Set(), declared: {} }
-}
+const NO_RULE_VIEW: RuleView = Object.freeze({ removed: new Set<string>(), declared: {} })
 
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
@@ -233,10 +232,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // field runs on it (ADR-0051), and `restoreReductions` in `read.ts`
   // overwrites the key with the reduction's own value afterwards.
   reducedDeclared: ReducedDeclaredKeys = noReducedDeclaredKeys(),
-  // How this level's rules and hooks see a relation the caller shaped: the
-  // keys to drop from their view, and the unshaped declared rows to put in
-  // their place. Output is unaffected (ADR-0051).
-  ruleView: RuleView = noRuleView(),
+  ruleView: RuleView = NO_RULE_VIEW,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -285,9 +281,14 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
    * exercising field access in isolation) has no table to read, so the whole
    * working row stands in — there is no declaration to honour there.
    */
-  const ruleItem: Record<string, unknown> = { ...workingItem }
-  for (const key of ruleView.removed) delete ruleItem[key]
-  Object.assign(ruleItem, ruleView.declared)
+  const ruleItem: Record<string, unknown> =
+    ruleView.removed.size === 0 && Object.keys(ruleView.declared).length === 0
+      ? workingItem
+      : { ...workingItem }
+  if (ruleItem !== workingItem) {
+    for (const key of ruleView.removed) delete ruleItem[key]
+    Object.assign(ruleItem, ruleView.declared)
+  }
 
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
     if (!config || !listKey) return ruleItem
