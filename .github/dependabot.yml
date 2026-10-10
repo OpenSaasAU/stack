@@ -24,11 +24,18 @@ updates:
           - '@prisma/*'
 
       # @vitest/* packages peer-depend on the exact matching vitest version.
-      # Bumped individually they leave vitest behind and the install fails.
+      # Bumped individually they install a second vitest copy and suites fail.
       vitest:
         patterns:
           - 'vitest'
           - '@vitest/*'
+
+      # @ai-sdk/* providers and ai share @ai-sdk/provider. Bumped individually
+      # they resolve different provider versions and the model types stop lining up.
+      ai-sdk:
+        patterns:
+          - 'ai'
+          - '@ai-sdk/*'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
