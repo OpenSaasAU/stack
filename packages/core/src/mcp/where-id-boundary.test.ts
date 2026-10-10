@@ -53,6 +53,27 @@ describe('coerceWhereIds', () => {
     expect(coerceWhereIds({ counterId: null }, config(), 'Tally')).toEqual({ counterId: null })
   })
 
+  test('null operators on a foreign key pass; non-id operator values are left alone', () => {
+    expect(coerceWhereIds({ counterId: { not: null } }, config(), 'Tally')).toEqual({
+      counterId: { not: null },
+    })
+    expect(coerceWhereIds({ counterId: { in: ['3', null] } }, config(), 'Tally')).toEqual({
+      counterId: { in: [3, null] },
+    })
+    expect(
+      coerceWhereIds(
+        { id: { equals: '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60', mode: 'insensitive' } },
+        config(),
+        'Tally',
+      ),
+    ).toEqual({ id: { equals: '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60', mode: 'insensitive' } })
+  })
+
+  test('contains on a uuid or integer id is refused', () => {
+    expect(coerceWhereIds({ id: { contains: 'ab' } }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ id: { contains: '3' } }, config(), 'Counter')).toBeNull()
+  })
+
   test('walks AND/OR/NOT at any depth, coercing every id it finds', () => {
     expect(coerceWhereIds({ AND: [{ id: '3' }] }, config(), 'Counter')).toEqual({
       AND: [{ id: 3 }],

@@ -9,7 +9,7 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
 import { ownsForeignKey } from './field-schema.js'
-import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
+import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
 const LOGICAL_OPERATORS: ReadonlySet<string> = new Set(['AND', 'OR', 'NOT'])
@@ -18,40 +18,50 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** One `id` key's condition — a bare value, `in`/`notIn`, or a scalar operator object. `null` means it names a value the column cannot hold. */
+const ID_VALUE_OPERATORS: ReadonlySet<string> = new Set(['equals', 'not', 'lt', 'lte', 'gt', 'gte'])
+
+/** One `id` key's condition — a bare value, `in`/`notIn`, or a scalar operator object. `null` means it names a value the column cannot hold. `nullable` admits a literal `null` (a foreign-key column). */
 function coerceIdCondition(
   raw: unknown,
   config: OpenSaasConfig,
   listKey: string,
+  nullable = false,
 ): Record<string, unknown> | ListIdValue | null {
-  const parse = (value: unknown): ListIdValue | null => {
+  const parse = (value: unknown): ListIdValue | null | undefined => {
+    if (nullable && value === null) return null
     const parsed = parseListId(config, listKey, value)
-    return parsed.ok ? parsed.value : null
+    return parsed.ok ? parsed.value : undefined
   }
 
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    return parse(raw)
+    const parsed = parse(raw)
+    return parsed === undefined ? null : parsed
   }
 
   const operators: Record<string, unknown> = {}
   for (const [operator, value] of Object.entries(raw)) {
     if (operator === 'in' || operator === 'notIn') {
       if (!Array.isArray(value)) return null
-      const ids: ListIdValue[] = []
+      const ids: Array<ListIdValue | null> = []
       for (const entry of value) {
         const parsedId = parse(entry)
-        if (parsedId === null) return null
+        if (parsedId === undefined) return null
         ids.push(parsedId)
       }
       operators[operator] = ids
       continue
     }
     if (operator === 'contains') {
+      if (listIdColumn(config, listKey)?.strategy !== 'cuid2') return null
+      operators[operator] = value
+      continue
+    }
+    if (!ID_VALUE_OPERATORS.has(operator)) {
       operators[operator] = value
       continue
     }
     const parsedId = parse(value)
-    if (parsedId === null) return null
+    if (parsedId === undefined) return null
     operators[operator] = parsedId
   }
   return operators
@@ -63,7 +73,8 @@ function foreignKeyRelation(
   listKey: string,
   key: string,
 ): string | undefined {
-  if (!key.endsWith('Id')) return undefined
+  if (!key.endsWith('Id') || Object.hasOwn(config.lists[listKey]?.fields ?? {}, key))
+    return undefined
   const fieldName = key.slice(0, -2)
   const fieldConfig = config.lists[listKey]?.fields[fieldName]
   if (!isRelationshipField(fieldConfig)) return undefined
@@ -130,7 +141,7 @@ export function coerceWhereIds(
     const foreignKeyOwner = foreignKeyRelation(config, listKey, key)
     if (foreignKeyOwner !== undefined) {
       if (value === null) continue
-      const coerced = coerceIdCondition(value, config, foreignKeyOwner)
+      const coerced = coerceIdCondition(value, config, foreignKeyOwner, true)
       if (coerced === null) return null
       result[key] = coerced
       continue
