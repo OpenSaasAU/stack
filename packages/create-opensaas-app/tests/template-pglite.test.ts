@@ -19,7 +19,9 @@ describe.each(['starter', 'starter-auth'])('%s template', (example) => {
     const core = await readManifest('packages', 'core')
     const template = await readManifest('examples', example)
     for (const name of PGLITE_PACKAGES) {
-      expect(template.devDependencies?.[name]).toBe(core.peerDependencies?.[name])
+      const pinned = core.peerDependencies?.[name]
+      expect(pinned).toMatch(/^\d+\.\d+\.\d+$/)
+      expect(template.devDependencies?.[name]).toBe(pinned)
     }
   })
 })
