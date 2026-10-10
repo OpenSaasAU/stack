@@ -218,9 +218,7 @@ export async function generateCommand(
     try {
       options.checkConfig?.(config)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(chalk.red('\n❌ Error:'), message)
-      throw new GenerationFailedError(message)
+      throw new GenerationFailedError(err instanceof Error ? err.message : String(err))
     }
 
     const deriveSpinner = ora('Deriving the contract...').start()
