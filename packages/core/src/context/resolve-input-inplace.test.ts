@@ -6,7 +6,8 @@ import { createTestContext, type TestContext } from '../testing/context.js'
 const BOOT = 120_000
 
 const mutateInPlace = ({ resolvedData }: { resolvedData: Record<string, unknown> }) => {
-  resolvedData.note = 'set-by-hook'
+  if (resolvedData.title === 'drop') delete resolvedData.note
+  else resolvedData.note = 'set-by-hook'
   return resolvedData
 }
 
@@ -48,6 +49,12 @@ describe('resolveInput mutating resolvedData in place', () => {
   test('a caller-supplied denied key is still refused', async () => {
     await expect(
       harness.context.db.Post.create({ data: { title: 'x', note: 'caller' } }),
+    ).rejects.toThrow(/note/)
+  })
+
+  test('a hook deleting a caller-supplied denied key does not hide it from the gate', async () => {
+    await expect(
+      harness.context.db.Post.create({ data: { title: 'drop', note: 'caller' } }),
     ).rejects.toThrow(/note/)
   })
 })
