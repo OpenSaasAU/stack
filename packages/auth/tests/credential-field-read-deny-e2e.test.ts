@@ -7,7 +7,7 @@ import { generateProject, toolchainPresent, type GeneratedProject } from './gene
 /**
  * Live end-to-end proof for issue #981 / ADR-0036: the credential-bearing
  * fields the auth plugin ships read-denied (`Session.token`,
- * `Verification.value`, `Account.password`/`accessToken`/`refreshToken`/
+ * `Verification.identifier`/`value`, `Account.password`/`accessToken`/`refreshToken`/
  * `idToken`) are actually stripped from an opened list's `context.db` reads,
  * `sudo()` still reads them, and — the part a unit test on `deriveAuthLists`
  * cannot show — better-auth's own sign-up/sign-in/password-reset flows are
@@ -174,10 +174,14 @@ describe.skipIf(!prerequisitesPresent)(
         expect(verifications.length).toBeGreaterThan(0)
         for (const v of verifications) {
           expect(v.value).toBeUndefined()
-          expect(typeof v.identifier).toBe('string')
+          expect(v.identifier).toBeUndefined()
         }
+        await expect(
+          context.db.Verification.where({ identifier: { startsWith: 'reset-password:' } }).all(),
+        ).rejects.toThrow()
         const sudoVerification = await context.sudo().db.Verification.first()
         expect(typeof sudoVerification?.value).toBe('string')
+        expect(typeof sudoVerification?.identifier).toBe('string')
 
         const resetToken = (await fsp.readFile(resetTokenFile, 'utf-8')).trim()
         expect(resetToken.length).toBeGreaterThan(0)

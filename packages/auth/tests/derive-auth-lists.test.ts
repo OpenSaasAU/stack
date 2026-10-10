@@ -534,6 +534,7 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
 
     const denied: Array<[string, string]> = [
       ['Session', 'token'],
+      ['Verification', 'identifier'],
       ['Verification', 'value'],
       ['Account', 'password'],
       ['Account', 'accessToken'],

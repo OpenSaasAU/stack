@@ -123,12 +123,14 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
  */
 const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
   session: ['token'],
-  verification: ['value'],
+  verification: ['identifier', 'value'],
   account: ['password', 'accessToken', 'refreshToken', 'idToken'],
   oauthClient: ['clientSecret'],
   oauthAccessToken: ['token'],
   oauthRefreshToken: ['token'],
   twoFactor: ['secret', 'backupCodes'],
+  jwks: ['privateKey'],
+  deviceCode: ['deviceCode', 'userCode'],
 }
 
 const DENY_READ: FieldAccess = { read: () => false }
