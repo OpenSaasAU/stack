@@ -110,7 +110,8 @@ describe('context.serverAction', () => {
           action: 'create',
           data: { name: 'John', email: 'john@example.com' },
         })
-        expect(created).toMatchObject({ success: true, data: { name: 'John' } })
+        expect(created).toMatchObject({ success: true })
+        expect(Object.keys((created as { data: object }).data)).toEqual(['id'])
         const id = String((created as { data: { id: unknown } }).data.id)
 
         expect(
@@ -120,7 +121,7 @@ describe('context.serverAction', () => {
             id,
             data: { name: 'John Updated' },
           }),
-        ).toMatchObject({ success: true, data: { name: 'John Updated' } })
+        ).toMatchObject({ success: true, data: { id } })
 
         expect(await context.serverAction({ listKey: 'User', action: 'delete', id })).toMatchObject(
           { success: true },

@@ -1270,10 +1270,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
       }
 
-      return {
-        success: true,
-        data: result,
-      }
+      return { success: true, data: { id: (result as { id: unknown }).id } }
     } catch (error) {
       return { success: false, ...clientFailure(error, config, props.listKey, props.action) }
     }
