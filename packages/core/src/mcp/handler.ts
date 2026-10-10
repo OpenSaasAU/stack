@@ -23,7 +23,7 @@ import {
   generateFieldSchemas,
   ownsForeignKey,
 } from './field-schema.js'
-import { listIdColumn, listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
+import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
@@ -566,9 +566,6 @@ function coerceConnectIds(
     if (criterion === undefined) continue
 
     const relatedListKey = fieldConfig.ref.split('.')[0]
-    const strategy = listIdColumn(config, relatedListKey)?.strategy
-    if (strategy !== 'int autoincrement' && strategy !== 'singleton') continue
-
     const parsed = parseListId(config, relatedListKey, criterion.id)
     if (!parsed.ok) return null
 

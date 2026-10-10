@@ -37,10 +37,20 @@ describe('coerceWhereIds', () => {
     expect(coerceWhereIds({ id: { in: ['not-an-int'] } }, config(), 'Counter')).toBeNull()
   })
 
-  test('a string-keyed list is unaffected: contains and a non-numeric id pass through', () => {
-    expect(coerceWhereIds({ id: 'anything', label: { contains: 'x' } }, config(), 'Tally')).toEqual(
-      { id: 'anything', label: { contains: 'x' } },
-    )
+  test('a string-keyed list refuses a malformed uuid and passes a well-formed one', () => {
+    const uuid = '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60'
+    expect(coerceWhereIds({ id: uuid, label: { contains: 'x' } }, config(), 'Tally')).toEqual({
+      id: uuid,
+      label: { contains: 'x' },
+    })
+    expect(coerceWhereIds({ id: 'not-a-uuid' }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ id: { in: ['not-a-uuid'] } }, config(), 'Tally')).toBeNull()
+  })
+
+  test('a foreign-key column is parsed against the related list id strategy', () => {
+    expect(coerceWhereIds({ counterId: '3' }, config(), 'Tally')).toEqual({ counterId: 3 })
+    expect(coerceWhereIds({ counterId: { equals: 'bad' } }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ counterId: null }, config(), 'Tally')).toEqual({ counterId: null })
   })
 
   test('walks AND/OR/NOT at any depth, coercing every id it finds', () => {

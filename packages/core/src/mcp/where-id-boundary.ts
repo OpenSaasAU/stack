@@ -8,18 +8,14 @@
 
 import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
-import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
+import { ownsForeignKey } from './field-schema.js'
+import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
 const LOGICAL_OPERATORS: ReadonlySet<string> = new Set(['AND', 'OR', 'NOT'])
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function coercesIds(config: OpenSaasConfig, listKey: string): boolean {
-  const strategy = listIdColumn(config, listKey)?.strategy
-  return strategy === 'int autoincrement' || strategy === 'singleton'
 }
 
 /** One `id` key's condition — a bare value, `in`/`notIn`, or a scalar operator object. `null` means it names a value the column cannot hold. */
@@ -61,6 +57,20 @@ function coerceIdCondition(
   return operators
 }
 
+/** The related list a foreign-key column (`authorId`) points at, when `key` names one this list owns. */
+function foreignKeyRelation(
+  config: OpenSaasConfig,
+  listKey: string,
+  key: string,
+): string | undefined {
+  if (!key.endsWith('Id')) return undefined
+  const fieldName = key.slice(0, -2)
+  const fieldConfig = config.lists[listKey]?.fields[fieldName]
+  if (!isRelationshipField(fieldConfig)) return undefined
+  if (!ownsForeignKey(listKey, fieldName, fieldConfig, config)) return undefined
+  return fieldConfig.ref.split('.')[0]
+}
+
 /** AND/OR/NOT's own value: one predicate, or a list of them (the same normalisation `whereArgument`'s `branches` applies). */
 function coerceBranches(raw: unknown, config: OpenSaasConfig, listKey: string): unknown | null {
   if (isPlainObject(raw)) return coerceWhereIds(raw, config, listKey)
@@ -100,7 +110,6 @@ export function coerceWhereIds(
   const listConfig = config.lists[listKey]
   if (!listConfig) return where
 
-  const ownIdNeedsCoercion = coercesIds(config, listKey)
   const result: Record<string, unknown> = { ...where }
 
   for (const [key, value] of Object.entries(where)) {
@@ -112,8 +121,16 @@ export function coerceWhereIds(
     }
 
     if (key === 'id') {
-      if (!ownIdNeedsCoercion) continue
       const coerced = coerceIdCondition(value, config, listKey)
+      if (coerced === null) return null
+      result[key] = coerced
+      continue
+    }
+
+    const foreignKeyOwner = foreignKeyRelation(config, listKey, key)
+    if (foreignKeyOwner !== undefined) {
+      if (value === null) continue
+      const coerced = coerceIdCondition(value, config, foreignKeyOwner)
       if (coerced === null) return null
       result[key] = coerced
       continue
