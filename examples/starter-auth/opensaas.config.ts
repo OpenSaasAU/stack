@@ -225,8 +225,7 @@ export default config({
           ref: 'User.posts',
           access: {
             read: () => true,
-            create: () => false,
-            update: () => false,
+            write: 'hooks',
           },
         }),
       },
@@ -324,7 +323,7 @@ export default config({
         body: text({ validation: { isRequired: true }, ui: { displayMode: 'textarea' } }),
         owner: relationship({
           ref: 'User.notes',
-          access: { create: () => false, update: () => false },
+          access: { write: 'hooks' },
         }),
       },
       access: {

@@ -162,8 +162,7 @@ export default config({
           ref: 'User.posts',
           access: {
             read: () => true,
-            create: () => false,
-            update: () => false,
+            write: 'hooks',
           },
         }),
       },

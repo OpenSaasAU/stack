@@ -3,8 +3,6 @@ import { createTestContext, type TestContext } from '@opensaas/stack-core/testin
 import config from '../opensaas.config.js'
 import type { Context } from '../.opensaas/types.js'
 
-const BOOT = 120_000
-
 function present<T>(value: T | null, what: string): T {
   if (value === null) throw new Error(`${what} returned null — denied, or not found`)
   return value
@@ -32,7 +30,7 @@ describe('Post.author is pinned to the session', () => {
     )
     aliceId = alice.id
     bobId = bob.id
-  }, BOOT)
+  })
 
   afterAll(async () => {
     await harness?.close()
