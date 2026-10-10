@@ -340,10 +340,13 @@ describe.skipIf(!available)(
         await database
           .context(null)
           .sudo()
-          .db.Article.create({ data: { content: '', ...denied } })
+          .db.Article.create({ data: { content: 'red', ...denied } })
 
         const stored = await database.context(null).db.Article.where({}).first()
-        expect(stored?.contentEmbedding).toEqual({ vector: [1, 0, 0], metadata })
+        expect(stored?.contentEmbedding).toMatchObject({
+          vector: [1, 0, 0],
+          metadata: { model: metadata.model },
+        })
       })
 
       /**

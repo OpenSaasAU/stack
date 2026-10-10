@@ -85,7 +85,7 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  stored: StoredEmbedding,
+  stored: StoredEmbedding | null,
 ) => Promise<void>
 
 type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
@@ -371,7 +371,12 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   if (persisted === null) return
 
                   const sourceText = persisted.sourceText
-                  if (typeof sourceText !== 'string' || sourceText.length === 0) return
+                  if (typeof sourceText !== 'string' || sourceText.length === 0) {
+                    if (persisted.metadata !== null && persisted.metadata !== undefined) {
+                      await write(listName, id, fieldName, null)
+                    }
+                    return
+                  }
 
                   const sourceHash = hashText(sourceText)
                   if (storedSourceHash(persisted.metadata) === sourceHash) return
@@ -390,6 +395,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                     },
                   })
                 } catch (error) {
+                  if (args.operation === 'update') {
+                    try {
+                      await embeddingWriter(args.context)(listName, id, fieldName, null)
+                    } catch {
+                      // the report below carries the original failure
+                    }
+                  }
                   reportGenerationFailure({
                     listName,
                     fieldName,

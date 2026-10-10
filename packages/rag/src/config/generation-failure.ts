@@ -194,7 +194,7 @@ export function createGenerationFailureReporter(): GenerationFailureReporter {
     console.error(
       `RAG plugin: "${field}" was not embedded for ${failure.listName} ${failure.id}. Reaching ` +
         `the ${failure.provider}, or storing what it returned, failed for a reason that is not ` +
-        `a standing defect — the row is committed and keeps a null embedding, and there is no ` +
+        `a standing defect — the row is committed and has a null embedding, and there is no ` +
         `regeneration path yet (#1271). If the cause has cleared, retry by writing the source ` +
         `field again.`,
       failure.error,
