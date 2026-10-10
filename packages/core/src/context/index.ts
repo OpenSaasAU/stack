@@ -30,7 +30,10 @@ import type { AnyExpression } from '@prisma/orm-postgres/relational-core'
 import type { PredicateAccessor } from '../secured/lower.js'
 import { withOrigin } from '../origin.js'
 import type { StackContext, StackTransactionContext } from '../types/context.js'
-import { getRelationshipOptions } from '../query/relationship-options.js'
+import {
+  getRelationshipOptions,
+  isRelationshipLabelReadable,
+} from '../query/relationship-options.js'
 import {
   runWritePipeline,
   createWriteStrategy,
@@ -1238,7 +1241,9 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
 
         const relatedListKey = fieldConfig.ref.split('.')[0]
+        const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
         const options = await getRelationshipOptions(context, config, relatedListKey, {
+          labelReadable,
           search: props.search,
           take: props.take,
           selectedIds: props.selectedIds,

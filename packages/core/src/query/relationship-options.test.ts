@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getRelationshipOptions } from './relationship-options.js'
+import { getRelationshipOptions, isRelationshipLabelReadable } from './relationship-options.js'
 import type { QueryRunnerContext, RelationshipOptionsQuery } from './relationship-options.js'
 import type { OrderBy, Where } from '../secured/vocabulary.js'
 import type { OpenSaasConfig } from '../config/types.js'
@@ -165,6 +165,21 @@ describe('getRelationshipOptions', () => {
     expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
   })
 
+  it('neither orders nor searches by the label field when it is not readable', async () => {
+    const delegate = makeDelegate([{ id: 'a1' }])
+    const context = makeContext({ Author: delegate })
+
+    const result = await getRelationshipOptions(context, makeConfig(), 'Author', {
+      search: 'Ada',
+      labelReadable: false,
+    })
+
+    expect(delegate.calls[0].where).toEqual([])
+    expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
+    expect(delegate.calls[0].select).toEqual(['id'])
+    expect(result).toEqual([{ id: 'a1', label: 'a1' }])
+  })
+
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
     // The bounded/search-scoped query only returns a1 (mimicking take:1 + search).
     const primaryDelegate = makeDelegate([authors[0]])
@@ -220,5 +235,19 @@ describe('getRelationshipOptions', () => {
     const result = await getRelationshipOptions(context, config, 'Missing', {})
 
     expect(result).toEqual([])
+  })
+})
+
+describe('isRelationshipLabelReadable', () => {
+  it('is false when the label field read rule denies the session', async () => {
+    const config = makeConfig()
+    config.lists.Author.fields.name = { type: 'text', access: { read: () => false } } as never
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, config, 'Author')).toBe(false)
+  })
+
+  it('is true when the label field has no read rule', async () => {
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, makeConfig(), 'Author')).toBe(true)
   })
 })
