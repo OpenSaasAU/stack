@@ -223,6 +223,20 @@ describe.skipIf(!available)(
       expect(stored).not.toHaveProperty('contentEmbeddingMetadata')
     })
 
+    test.each([[''], [null]])(
+      'updating the source to %j clears the stored embedding',
+      async (next) => {
+        const id = await writeSource('red')
+        const before = await database.context(null).db.Article.where({}).first()
+        expect(before?.contentEmbedding).not.toBeNull()
+
+        await database.context(null).db.Article.update({ where: { id }, data: { content: next } })
+
+        const after = await database.context(null).db.Article.where({}).first()
+        expect(after?.contentEmbedding).toBeNull()
+      },
+    )
+
     test('a row with no vector reads back as a null embedding', async () => {
       // Metadata present and the vector absent, so a null answer can only come
       // from the vector column. No write through `context.db` can produce that
@@ -336,16 +350,20 @@ describe.skipIf(!available)(
         expect(after?.contentEmbedding).toBeNull()
       })
 
-      test('a sudo write naming the embedding produces both columns, and they read back', async () => {
+      test('a sudo write naming the embedding is accepted, and the generated embedding reads back', async () => {
         await database
           .context(null)
           .sudo()
           .db.Article.create({ data: { content: 'red', ...denied } })
 
         const stored = await database.context(null).db.Article.where({}).first()
-        expect(stored?.contentEmbedding).toMatchObject({
+        expect(stored?.contentEmbedding).toEqual({
           vector: [1, 0, 0],
-          metadata: { model: metadata.model },
+          metadata: {
+            ...generatedMetadata,
+            generatedAt: expect.any(String),
+            sourceHash: hashText('red'),
+          },
         })
       })
 
