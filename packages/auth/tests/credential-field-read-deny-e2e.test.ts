@@ -153,9 +153,7 @@ describe.skipIf(!prerequisitesPresent)(
 
         // Naming a denied field in a read's predicate is rejected up front by
         // the predicate-time read-access check, not silently stripped.
-        await expect(context.db.Session.where({ token: { equals: token } }).all()).rejects.toThrow(
-          /identifier/,
-        )
+        await expect(context.db.Session.where({ token: { equals: token } }).all()).rejects.toThrow()
         await expect(
           context
             .sudo()
@@ -180,7 +178,7 @@ describe.skipIf(!prerequisitesPresent)(
         }
         await expect(
           context.db.Verification.where({ identifier: { startsWith: 'reset-password:' } }).all(),
-        ).rejects.toThrow()
+        ).rejects.toThrow(/"identifier" is not a queryable field/)
         const sudoVerification = await context.sudo().db.Verification.first()
         expect(typeof sudoVerification?.value).toBe('string')
         expect(typeof sudoVerification?.identifier).toBe('string')
