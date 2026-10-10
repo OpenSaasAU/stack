@@ -447,6 +447,7 @@ async function runWriteInTransaction(
     ormHandle: tx,
     ops,
     data,
+    inputData: input,
   })
   if (linked.status === 'unreachable') return null
   const writeData = linked.data
