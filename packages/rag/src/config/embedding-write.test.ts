@@ -252,7 +252,7 @@ describe.skipIf(!available)(
       await slow
       await new Promise((resolve) => setTimeout(resolve, 600))
 
-      const stored = await context.db.Article.where({}).first()
+      const stored = await context.db.Article.where({ id: { equals: id } }).first()
       expect(stored?.content).toBe('blue')
       expect(stored?.contentEmbedding).toMatchObject({
         vector: [0, 1, 0],

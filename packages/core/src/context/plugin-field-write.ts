@@ -3,6 +3,7 @@ import type { FieldConfig } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 import { isRelationshipField } from '../fields/index.js'
 import {
+  columnEqualsPredicate,
   identityPredicate,
   updateFirst,
   whereCombinators,
@@ -110,7 +111,7 @@ export interface PluginOwnedFieldWrite {
   /** The field's logical value, or `null` to clear it. `undefined` is refused. */
   value: unknown
   /** Skip the write unless this scalar field still holds exactly this value. */
-  onlyIfUnchanged?: { fieldName: string; value: string | number | boolean }
+  onlyIfUnchanged?: { fieldName: string; value: string | number | boolean | null }
 }
 
 function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
@@ -150,8 +151,15 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
   return field
 }
 
-function ownedColumn(context: AccessContext, listName: string, fieldName: string): string {
-  ownedField(context, listName, fieldName)
+function guardColumn(context: AccessContext, listName: string, fieldName: string): string {
+  const field = ownedField(context, listName, fieldName)
+  if (field.splitColumns) {
+    throw new UnknownPluginFieldWriteError(
+      listName,
+      fieldName,
+      'it spans several columns, so it cannot guard a write',
+    )
+  }
   return fieldName
 }
 
@@ -217,12 +225,11 @@ export async function writePluginOwnedField(args: PluginOwnedFieldWrite): Promis
       ...(onlyIfUnchanged === undefined
         ? []
         : [
-            {
-              kind: 'scalar' as const,
+            columnEqualsPredicate(
               listName,
-              column: ownedColumn(context, listName, onlyIfUnchanged.fieldName),
-              steps: [{ op: 'eq' as const, value: onlyIfUnchanged.value }],
-            },
+              guardColumn(context, listName, onlyIfUnchanged.fieldName),
+              onlyIfUnchanged.value,
+            ),
           ]),
     ],
     ops,
