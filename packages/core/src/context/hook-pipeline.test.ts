@@ -230,4 +230,29 @@ describe('Hook Pipeline — resolvedData threading', () => {
 
     expect(resolvedData).toEqual({ title: 'HELLO', slug: 'auto-slug' })
   })
+  it('keeps a resolveInput that mutates resolvedData in place off the caller input', async () => {
+    const listConfig = {
+      fields: { title: text() },
+      hooks: {
+        resolveInput: async ({ resolvedData }: { resolvedData: Record<string, unknown> }) => {
+          resolvedData.title = 'set-by-hook'
+          return resolvedData
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as ListConfig<any>
+    const inputData: Record<string, unknown> = { title: 'x' }
+
+    const { resolvedData } = await hookPipeline.run({
+      operation: 'create',
+      listName: 'Post',
+      listConfig,
+      inputData,
+      item: undefined,
+      context: makeContext(),
+    })
+
+    expect(resolvedData.title).toBe('set-by-hook')
+    expect(inputData).toEqual({ title: 'x' })
+  })
 })

@@ -405,7 +405,7 @@ async function runWriteInTransaction(
   const writeOp: 'create' | 'update' = operation === 'create' ? 'create' : 'update'
 
   // `inputData` is always present here; `?? {}` is only a defensive fallback.
-  const input = inputData ?? {}
+  const input = Object.freeze({ ...(inputData ?? {}) })
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
