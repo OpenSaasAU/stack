@@ -270,13 +270,16 @@ describe('startDevDatabase', () => {
       const database = await startDevDatabase({ cwd: projectRoot, host: '::1' })
       started.push(database)
 
-      expect(database.url).toBe(`postgres://postgres@[::1]:${database.port}/postgres`)
-      expect(new URL(database.url).port).toBe(String(database.port))
+      const parsed = new URL(database.url)
+      expect(parsed.hostname).toBe('[::1]')
+      expect(parsed.port).toBe(String(database.port))
+      expect(parsed.password).toMatch(/^[0-9a-f]{32}$/)
 
       const client = new pg.Client({
         host: '::1',
         port: database.port,
         user: 'postgres',
+        password: parsed.password,
         database: 'postgres',
       })
       await client.connect()
