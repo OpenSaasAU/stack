@@ -215,12 +215,6 @@ export async function generateCommand(
     }
     surfaceSpinner.succeed(chalk.green('Config surface valid'))
 
-    try {
-      options.checkConfig?.(config)
-    } catch (err) {
-      throw new GenerationFailedError(err instanceof Error ? err.message : String(err))
-    }
-
     const deriveSpinner = ora('Deriving the contract...').start()
     let contractData: ContractData
     try {
@@ -243,6 +237,12 @@ export async function generateCommand(
       packSpinner.fail(chalk.red('Declared extension pack unresolvable'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
       throw new GenerationFailedError('declared extension pack unresolvable')
+    }
+
+    try {
+      options.checkConfig?.(config)
+    } catch (err) {
+      throw new GenerationFailedError(err instanceof Error ? err.message : String(err))
     }
 
     const { paths: resolved, crossReferences } = resolveOutputPaths(
