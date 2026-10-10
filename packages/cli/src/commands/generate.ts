@@ -105,6 +105,12 @@ export interface GenerateCommandOptions {
   stagingDir?: string
   /** Print the standalone "Next steps" hint. Defaults to true; the dev loop turns it off. */
   showNextSteps?: boolean
+  /**
+   * Runs on the resolved config before anything is written. Throwing refuses
+   * the generation by that message, so the dev loop can turn away a config the
+   * running Dev database cannot carry without touching the live tree.
+   */
+  checkConfig?: (config: OpenSaasConfig) => void
 }
 
 /** Where one generation put its files, and how to point Prisma at them. */
@@ -231,6 +237,12 @@ export async function generateCommand(
       packSpinner.fail(chalk.red('Declared extension pack unresolvable'))
       console.error(chalk.red('\n❌ Error:'), err instanceof Error ? err.message : String(err))
       throw new GenerationFailedError('declared extension pack unresolvable')
+    }
+
+    try {
+      options.checkConfig?.(config)
+    } catch (err) {
+      throw new GenerationFailedError(err instanceof Error ? err.message : String(err))
     }
 
     const { paths: resolved, crossReferences } = resolveOutputPaths(
