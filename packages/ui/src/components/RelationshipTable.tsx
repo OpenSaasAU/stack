@@ -387,25 +387,30 @@ export async function RelationshipTable({
 
   // Resolve relationship-column values to { id, label } and drop everything
   // outside the shown columns (keeping `id` for the row link).
-  const clientRows = rows.map((row) =>
-    relatedListConfig ? applyClientValueTransforms(relatedListConfig.fields, row) : row,
-  )
-  const preparedRows = rows.map((row, index) => {
-    const clientRow = clientRows[index]
+  const shownFields: Record<string, FieldConfig> = {}
+  for (const column of section.columns) {
+    const field = relatedListConfig?.fields[column]
+    if (field) shownFields[column] = field
+  }
+  const preparedRows = rows.map((row) => {
     const prepared: Record<string, unknown> = { id: row.id }
     for (const column of section.columns) {
       prepared[column] = columnRelatedList.has(column)
-        ? toRelationshipCellValue(clientRow[column], columnRelatedList.get(column))
-        : clientRow[column]
+        ? toRelationshipCellValue(row[column], columnRelatedList.get(column))
+        : row[column]
     }
-    return prepared
+    return applyClientValueTransforms(shownFields, prepared)
   })
 
   // Sum only explicitly-configured numeric columns, over access-visible values.
   const sums: Record<string, number> = {}
   for (const column of section.sumColumns) {
-    sums[column] = clientRows.reduce((total, row) => {
-      const numeric = toNumber(row[column])
+    sums[column] = rows.reduce((total, row) => {
+      const numeric = toNumber(
+        relatedListConfig
+          ? applyClientValueTransforms(relatedListConfig.fields, row)[column]
+          : row[column],
+      )
       return numeric === null ? total : total + numeric
     }, 0)
   }
