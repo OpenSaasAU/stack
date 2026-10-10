@@ -329,7 +329,6 @@ const pendingImageUploads = createPendingUploads<ImageMetadata>()
 function composeFieldHooks(
   builtIn: {
     resolveInput: (args: any) => Promise<any>
-    afterOperation: (args: any) => Promise<void>
   },
   userHooks: any,
   cleanupAfterTransaction: (args: any) => Promise<void>,
@@ -349,10 +348,6 @@ function composeFieldHooks(
         if (pending) uploads.set(args.inputData, args.fieldKey, { ...pending, replaced: null })
       }
       return final
-    },
-    afterOperation: async (args: any) => {
-      await userHooks?.afterOperation?.(args)
-      await builtIn.afterOperation(args)
     },
     afterTransaction: async (args: any) => {
       await cleanupAfterTransaction(args)
@@ -395,8 +390,26 @@ export function file<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').FileMetadata", nullable)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+  const cleanupAfterTransaction = async ({
+    status,
+    operation,
+    inputData,
+    originalItem,
+    fieldKey,
+    context,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  }: any) => {
+    if (operation === 'delete') {
+      if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
+      const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as FileMetadata | null
+      if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
+      try {
+        await context.storage.deleteFile(fieldConfig.storage, deleted.filename)
+      } catch (error) {
+        console.error(`Failed to cleanup file on delete: ${deleted.filename}`, error)
+      }
+      return
+    }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
@@ -473,26 +486,6 @@ export function file<
 
           // Unknown type - return as-is and let validation catch it
           return inputValue
-        },
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-        afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-          // The deleted row is `originalItem`.
-          if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-            const fileMetadata = logicalValue(
-              fieldConfig,
-              fieldKey,
-              originalItem,
-            ) as FileMetadata | null
-
-            if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
-              try {
-                await context.storage.deleteFile(fieldConfig.storage, fileMetadata.filename)
-              } catch (error) {
-                console.error(`Failed to cleanup file on delete: ${fileMetadata.filename}`, error)
-              }
-            }
-          }
         },
       },
       userHooks,
@@ -571,8 +564,26 @@ export function image<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').ImageMetadata", nullable)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+  const cleanupAfterTransaction = async ({
+    status,
+    operation,
+    inputData,
+    originalItem,
+    fieldKey,
+    context,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  }: any) => {
+    if (operation === 'delete') {
+      if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
+      const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as ImageMetadata | null
+      if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
+      try {
+        await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
+      } catch (error) {
+        console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
+      }
+      return
+    }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
@@ -651,29 +662,6 @@ export function image<
 
           // Unknown type - return as-is and let validation catch it
           return inputValue
-        },
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-        afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-          // The deleted row is `originalItem`.
-          if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-            const imageMetadata = logicalValue(
-              fieldConfig,
-              fieldKey,
-              originalItem,
-            ) as ImageMetadata | null
-
-            if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
-              try {
-                await context.storage.deleteImage({
-                  ...imageMetadata,
-                  storageProvider: fieldConfig.storage,
-                })
-              } catch (error) {
-                console.error(`Failed to cleanup image on delete: ${imageMetadata.filename}`, error)
-              }
-            }
-          }
         },
       },
       userHooks,
