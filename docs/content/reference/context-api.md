@@ -467,11 +467,13 @@ Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, n
 
 The direct mirror of `context.db.<List>.create/update/delete`, run against `listKey` itself — this is the case the table row above already named.
 
-| Props                                     | Success                   | Denial                      |
-| ----------------------------------------- | ------------------------- | --------------------------- |
-| `{ listKey, action: 'create', data }`     | `{ success: true, data }` | `{ success: false, error }` |
-| `{ listKey, action: 'update', id, data }` | `{ success: true, data }` | `{ success: false, error }` |
-| `{ listKey, action: 'delete', id }`       | `{ success: true, data }` | `{ success: false, error }` |
+| Props                                     | Success                           | Denial                      |
+| ----------------------------------------- | --------------------------------- | --------------------------- |
+| `{ listKey, action: 'create', data }`     | `{ success: true, data: { id } }` | `{ success: false, error }` |
+| `{ listKey, action: 'update', id, data }` | `{ success: true, data: { id } }` | `{ success: false, error }` |
+| `{ listKey, action: 'delete', id }`       | `{ success: true, data: { id } }` | `{ success: false, error }` |
+
+`data` carries only the written row's `id`, never its other columns, so a field redacted with `ui.valueForClientSerialization` cannot leave through the action's response. Read the row back with `context.db` if the client needs more.
 
 `id` arrives as a string over the wire and is parsed through the list's own id type ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)) before it reaches the ORM; an id the list's key type cannot hold denies the same way an access refusal does. A thrown `ValidationError` or `DatabaseError` is caught here and turned into `{ success: false, error, fieldErrors? }` rather than reaching the caller as a rejection, so a form can show a per-field message with no `try/catch` of its own.
 

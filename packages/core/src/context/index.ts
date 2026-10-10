@@ -800,6 +800,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     }
   }
 
+  type WrittenRow = { id: unknown } | null | undefined
+
   // Returns a result object instead of throwing — required for server actions
   // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
@@ -826,12 +828,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
     const listConfig = config.lists[props.listKey]
 
     const model = db[props.listKey] as {
-      create: (args: { data: Record<string, unknown> }) => Promise<unknown>
+      create: (args: { data: Record<string, unknown> }) => Promise<WrittenRow>
       update: (args: {
         where: { id: ListIdValue }
         data: Record<string, unknown>
-      }) => Promise<unknown>
-      delete: (args: { where: { id: ListIdValue } }) => Promise<unknown>
+      }) => Promise<WrittenRow>
+      delete: (args: { where: { id: ListIdValue } }) => Promise<WrittenRow>
     }
 
     // Every id here arrived as a string on the wire, and the id type is per
@@ -913,7 +915,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
       const relatedId = parseId(props.listKey, props.id)
       if (relatedId === null) return { removed: false, error: 'Access denied or operation failed' }
       try {
-        let result: unknown = null
+        let result: WrittenRow = null
         if (props.mode === 'delete') {
           result = await model.delete({ where: { id: relatedId } })
         } else {
@@ -1247,7 +1249,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { success: true, data: options }
       }
 
-      let result: unknown = null
+      let result: WrittenRow = null
 
       if (props.action === 'create') {
         result = await model.create({ data: props.data })
@@ -1263,17 +1265,14 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
 
       // Check for access denial (null return from access-controlled operations)
-      if (result === null) {
+      if (result === null || result === undefined) {
         return {
           success: false,
           error: 'Access denied or operation failed',
         }
       }
 
-      return {
-        success: true,
-        data: result,
-      }
+      return { success: true, data: { id: result.id } }
     } catch (error) {
       return { success: false, ...clientFailure(error, config, props.listKey, props.action) }
     }
