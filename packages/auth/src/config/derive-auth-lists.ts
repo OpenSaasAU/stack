@@ -116,8 +116,9 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
  *
  * Covers the four base models plus every better-auth plugin table the stack
  * has first-class support for (ADR-0034's registry of known plugins) — the
- * `mcp`/oauth-provider plugin's client secret and token columns, and
- * `twoFactor()`'s encrypted secret/backup codes (issue #1014). An app can
+ * `mcp`/oauth-provider plugin's client secret and token columns,
+ * `twoFactor()`'s encrypted secret/backup codes (issue #1014), `jwt()`'s
+ * private key and `deviceAuthorization()`'s device/user codes. An app can
  * mark further fields via `authPlugin({ credentialFields })`, merged in by
  * {@link buildCredentialFieldRegistry} — this constant is never mutated.
  */

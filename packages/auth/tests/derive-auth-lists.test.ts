@@ -555,6 +555,7 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
 
     const denied: Array<[string, string]> = [
       ['Session', 'token'],
+      ['Verification', 'identifier'],
       ['Verification', 'value'],
       ['Account', 'password'],
       ['Account', 'accessToken'],
@@ -581,7 +582,6 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
       ['Account', 'providerId'],
       ['Account', 'accountId'],
       ['Account', 'scope'],
-      ['Verification', 'identifier'],
       ['Verification', 'expiresAt'],
       ['User', 'name'],
       ['User', 'email'],
@@ -619,7 +619,9 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
       ...Object.entries(lists.Account.fields).filter(
         ([k]) => !['password', 'accessToken', 'refreshToken', 'idToken'].includes(k),
       ),
-      ...Object.entries(lists.Verification.fields).filter(([k]) => k !== 'value'),
+      ...Object.entries(lists.Verification.fields).filter(
+        ([k]) => k !== 'identifier' && k !== 'value',
+      ),
     ]
     for (const [, field] of nonCredentialFields) {
       expect(field.access).toBeUndefined()
