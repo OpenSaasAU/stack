@@ -5,7 +5,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 
 const BOOT = 120_000
 
-function gatedConfig(read: () => boolean): OpenSaasConfig {
+function gatedConfig(read: (args: { item?: Record<string, unknown> }) => boolean): OpenSaasConfig {
   return {
     db: { provider: 'postgresql' },
     lists: {
@@ -50,6 +50,42 @@ describe('synthetic back-relation include honours the source field read gate (#1
       expect(rows).toHaveLength(1)
       expect(rows[0].name).toBe('c1')
       expect(rows[0].from_Post_category ?? []).toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('synthetic back-relation include with a row-dependent source rule (#1812)', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(
+      gatedConfig(({ item }) => item?.title !== 'hidden'),
+      null,
+    )
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  test(
+    'keeps only the readable related rows when an earlier row is denied',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c1' } })
+      if (category === null) throw new Error('setup')
+      await db.Post.create({
+        data: { title: 'hidden', category: { connect: { id: category.id } } },
+      })
+      await db.Post.create({
+        data: { title: 'shown', category: { connect: { id: category.id } } },
+      })
+
+      const rows = await db.Category.include('from_Post_category').all()
+      const posts = rows[0].from_Post_category
+      if (!Array.isArray(posts)) throw new Error('expected a to-many')
+      expect(posts.map((post) => post.title)).toEqual(['shown'])
     },
     BOOT,
   )

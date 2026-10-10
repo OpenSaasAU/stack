@@ -374,17 +374,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
           listConfig: synthetic.sourceListConfig,
         }
         if (Array.isArray(value)) {
-          const readable: unknown[] = []
-          for (const relatedItem of value) {
-            if (
-              await checkFieldAccess(synthetic.sourceFieldConfig.access, 'read', {
+          const allowed = await Promise.all(
+            value.map((relatedItem) =>
+              checkFieldAccess(synthetic.sourceFieldConfig.access, 'read', {
                 ...args,
                 item: relatedItem,
-              })
-            ) {
-              readable.push(relatedItem)
-            }
-          }
+              }),
+            ),
+          )
+          const readable = value.filter((_, index) => allowed[index])
           value = readable
         }
       }

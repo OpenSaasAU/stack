@@ -945,6 +945,30 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
  * {@link applyForeignKeys} does, so a related list reached only through an
  * include gets its own un-included to-ones narrowed too.
  */
+/**
+ * Pairs each shown related row with its raw twin. Field Visibility may drop
+ * rows from a to-many (a synthetic back-relation's source `read` rule), so
+ * once the lengths differ the pairing is by `id`, never by position.
+ */
+function pairRelatedRows(shown: readonly unknown[], raw: readonly unknown[]): [OrmRow, OrmRow][] {
+  const pairs: [OrmRow, OrmRow][] = []
+  if (shown.length === raw.length) {
+    shown.forEach((related, index) => {
+      const original = raw[index]
+      if (isRow(related) && isRow(original)) pairs.push([related, original])
+    })
+    return pairs
+  }
+  const rawById = new Map<string, OrmRow>()
+  for (const original of raw) if (isRow(original)) rawById.set(String(original.id), original)
+  for (const related of shown) {
+    if (!isRow(related)) continue
+    const original = rawById.get(String(related.id))
+    if (original !== undefined) pairs.push([related, original])
+  }
+  return pairs
+}
+
 async function narrowUnincludedForeignKeys(
   binding: ReadBinding,
   filteredRows: readonly OrmRow[],
@@ -1023,11 +1047,9 @@ async function narrowUnincludedForeignKeys(
       const filteredValue = filteredRows[i][plan.relation]
       const rawValue = rawRows[i][plan.relation]
       if (Array.isArray(filteredValue) && Array.isArray(rawValue)) {
-        for (let j = 0; j < filteredValue.length; j++) {
-          if (isRow(filteredValue[j]) && isRow(rawValue[j])) {
-            nestedFiltered.push(filteredValue[j])
-            nestedRaw.push(rawValue[j])
-          }
+        for (const [related, original] of pairRelatedRows(filteredValue, rawValue)) {
+          nestedFiltered.push(related)
+          nestedRaw.push(original)
         }
       } else if (isRow(filteredValue) && isRow(rawValue)) {
         nestedFiltered.push(filteredValue)
@@ -1184,10 +1206,9 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
     const kept = shown[plan.relation]
     const raw = source[plan.relation]
     if (Array.isArray(kept) && Array.isArray(raw)) {
-      kept.forEach((related, index) => {
-        const original = raw[index]
-        if (isRow(related) && isRow(original)) restoreReductions(related, original, plan.includes)
-      })
+      for (const [related, original] of pairRelatedRows(kept, raw)) {
+        restoreReductions(related, original, plan.includes)
+      }
     } else if (isRow(kept) && isRow(raw)) {
       restoreReductions(kept, raw, plan.includes)
     }
