@@ -69,6 +69,13 @@ describe('coerceWhereIds', () => {
     ).toEqual({ id: { equals: '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60', mode: 'insensitive' } })
   })
 
+  test('a foreign key the session may not read is left for the engine to refuse', () => {
+    const hidden = () => false
+    expect(coerceWhereIds({ counterId: 'bad' }, config(), 'Tally', hidden)).toEqual({
+      counterId: 'bad',
+    })
+  })
+
   test('contains on a uuid or integer id is refused', () => {
     expect(coerceWhereIds({ id: { contains: 'ab' } }, config(), 'Tally')).toBeNull()
     expect(coerceWhereIds({ id: { contains: '3' } }, config(), 'Counter')).toBeNull()
