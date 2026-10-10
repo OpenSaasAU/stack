@@ -483,7 +483,7 @@ Stores OAuth provider information and password hashes:
 Stores email verification and password reset tokens:
 
 - `id` (String, auto-generated)
-- `identifier` (String, email address)
+- `identifier` (String, lookup key such as `reset-password:<token>` — **read-denied**)
 - `value` (String, token — **read-denied**, see below)
 - `expiresAt` (DateTime)
 - `createdAt` (DateTime, auto)
@@ -491,7 +491,7 @@ Stores email verification and password reset tokens:
 
 ### Credential fields are read-denied (ADR-0036)
 
-`Session.token`, `Verification.value`, and `Account.password`/`accessToken`/`refreshToken`/`idToken`
+`Session.token`, `Verification.identifier`/`value`, and `Account.password`/`accessToken`/`refreshToken`/`idToken`
 hold live, presentable credentials — reading one is equivalent to holding it (session hijack, account
 takeover, replaying an OAuth token). The plugin sets a field-level `read` deny on each of them when it
 derives the list, so granting operation-level access to a list (e.g. `access: { session: { operation:

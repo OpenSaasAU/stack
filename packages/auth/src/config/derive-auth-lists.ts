@@ -200,7 +200,7 @@ function buildCredentialFieldRegistry(
       // trailing `Id` off its own key is a no-op, in which case it falls
       // back to a scalar column instead (#1222) — the same fallback as a
       // non-`id`-target reference, and the one case where
-      // withCredentialAccess actually applies. Every other id-referencing
+      // withFieldAccess actually applies. Every other id-referencing
       // field stays a relationship, never a scalar field, so a deny
       // registered against one would silently never apply. Fail loudly
       // instead of accepting a config that has no effect.

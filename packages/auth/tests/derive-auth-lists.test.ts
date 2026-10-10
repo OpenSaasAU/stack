@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
-import { admin, twoFactor } from 'better-auth/plugins'
+import { admin, deviceAuthorization, jwt, twoFactor } from 'better-auth/plugins'
 import {
   deriveAuthLists as deriveAuthListsImpl,
   type DerivedAuthLists,
@@ -649,6 +649,22 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
       expect(await field.access!.read!({} as any)).toBe(false)
       expect(field.ui?.listView?.defaultColumn).toBe(false)
+    }
+  })
+
+  it('denies read on jwks.privateKey and deviceCode.deviceCode/userCode', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [jwt(), deviceAuthorization()])
+
+    const denied: Array<[string, string]> = [
+      ['Jwks', 'privateKey'],
+      ['DeviceCode', 'deviceCode'],
+      ['DeviceCode', 'userCode'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+      expect(await field.access!.read!({} as any)).toBe(false)
     }
   })
 

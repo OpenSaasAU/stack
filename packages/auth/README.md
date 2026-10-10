@@ -428,7 +428,7 @@ Two field-level denies are seeded on the derived Auth lists automatically,
 independent of whatever operation-level access you grant:
 
 1. **Credential fields ship read-denied** (`Session.token`, `Account.password`/
-   `accessToken`/`refreshToken`/`idToken`, `Verification.value`, and more from
+   `accessToken`/`refreshToken`/`idToken`, `Verification.identifier`/`value`, and more from
    plugins the stack has first-class support for) — reading the value is
    equivalent to holding it. See `packages/auth/CLAUDE.md` for the full list.
 2. **Fields better-auth marks `input: false` ship write-denied** —
