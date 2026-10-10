@@ -241,7 +241,7 @@ npx prisma migrate diff \
   --script
 ```
 
-For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --confirm <database-name>`, which requires the loop to be running.
+For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --plan <id>`, using the plan id the loop printed, which requires the loop to be running.
 
 There is no `extendPrismaSchema` escape hatch, at either config or field level. What used to need one is now a first-class option: column-level shape on the field's own `db` block (`map`, `isNullable`, `nativeType`), referential actions on a relationship's `db` (`onDelete`, `onUpdate`, `foreignKey`), model-level shape on the list's `db` (`map`, `schema`, `indexes`, `idField`), and extension packs on `db.extensions`. If a live schema needs something outside that set, the migration is the place to reshape the database rather than the generator.
 
