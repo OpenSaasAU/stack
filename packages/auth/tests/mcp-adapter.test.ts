@@ -22,6 +22,7 @@ describe('Better Auth MCP Adapter', () => {
     let options: BetterAuthMcpOptions
 
     beforeAll(async () => {
+      await import('@better-auth/mcp')
       server = createServer((_, res) => {
         res.setHeader('content-type', 'application/json')
         res.end(JSON.stringify({ keys: [jwk] }))
