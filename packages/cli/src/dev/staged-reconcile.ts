@@ -19,6 +19,10 @@ export interface ReconcilePlan {
   readonly operations: readonly PlannedOperation[]
   /** SQL the CLI previewed, present on a `--dry-run`. */
   readonly statements: readonly string[]
+  /** The subjects whose data the plan would lose, as `--delete` names them. */
+  readonly dataLoss: readonly string[]
+  /** The models whose rows the plan would open to more readers or writers, as `--allow` names them. */
+  readonly accessWidening: readonly string[]
   readonly destructive: boolean
 }
 
@@ -37,10 +41,14 @@ const operationSchema = z.object({
   operationClass: z.string(),
 })
 
+const askedSubjectSchema = z.object({ text: z.string() })
+
 const resultEnvelopeSchema = z.object({
   kind: z.literal('result'),
   envelope: z.object({
     result: z.object({
+      dataLoss: z.array(askedSubjectSchema).optional(),
+      accessWidening: z.array(askedSubjectSchema).optional(),
       plan: z
         .object({
           operations: z.array(operationSchema).optional(),
@@ -72,13 +80,19 @@ function readPlan(stdout: string): ReconcilePlan | undefined {
     }
     const envelope = resultEnvelopeSchema.safeParse(parsed)
     if (!envelope.success) continue
-    const operations = envelope.data.envelope.result.plan?.operations ?? []
+    const { result } = envelope.data.envelope
+    const operations = result.plan?.operations ?? []
+    const dataLoss = (result.dataLoss ?? []).map((subject) => subject.text)
+    const accessWidening = (result.accessWidening ?? []).map((subject) => subject.text)
     plan = {
       operations,
-      statements: (envelope.data.envelope.result.plan?.preview?.statements ?? []).map(
-        (statement) => statement.text,
-      ),
-      destructive: operations.some((operation) => operation.operationClass === 'destructive'),
+      statements: (result.plan?.preview?.statements ?? []).map((statement) => statement.text),
+      dataLoss,
+      accessWidening,
+      destructive:
+        dataLoss.length > 0 ||
+        accessWidening.length > 0 ||
+        operations.some((operation) => operation.operationClass === 'destructive'),
     }
   }
   return plan
@@ -92,17 +106,20 @@ function readPlan(stdout: string): ReconcilePlan | undefined {
  *   Contract module and the project's own migrations directory.
  * @param options.dryRun - Plan without applying, which is how a destructive
  *   change is discovered before anything is promoted.
- * @param options.confirm - Consent tokens passed straight through to Prisma's
- *   `--confirm`; the Dev database's is its database name, `postgres`.
+ * @param options.consent - A dry run's plan whose data loss and access
+ *   widening this run may carry out, passed to Prisma as `--delete` and
+ *   `--allow`. A question the plan did not list stays unanswered, so a plan
+ *   that changed since the dry run fails rather than applying unasked.
  */
 export async function planDatabaseUpdate(
   cwd: string,
   configPath: string,
-  options: { dryRun?: boolean; confirm?: readonly string[] } = {},
+  options: { dryRun?: boolean; consent?: ReconcilePlan } = {},
 ): Promise<ReconcileOutcome> {
   const args = ['db', 'update', '--config', configPath, '--json', '--no-interactive']
   if (options.dryRun === true) args.push('--dry-run')
-  for (const token of options.confirm ?? []) args.push('--confirm', token)
+  for (const subject of options.consent?.dataLoss ?? []) args.push('--delete', subject)
+  for (const subject of options.consent?.accessWidening ?? []) args.push('--allow', subject)
 
   const run = await runPrismaCli(cwd, args)
   if (run.exitCode !== 0)
@@ -298,6 +315,8 @@ export function planId(plan: ReconcilePlan): string {
   const content = [
     ...plan.operations.map((operation) => `${operation.operationClass}:${operation.label}`),
     ...plan.statements,
+    ...plan.dataLoss.map((subject) => `delete:${subject}`),
+    ...plan.accessWidening.map((subject) => `allow:${subject}`),
   ]
   return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
 }

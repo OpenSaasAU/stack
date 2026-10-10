@@ -409,6 +409,7 @@ describe('devCommand', () => {
       kind: 'result',
       envelope: {
         result: {
+          dataLoss: [{ text: 'Post.title' }],
           plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
         },
       },
@@ -428,13 +429,13 @@ describe('devCommand', () => {
     await until(() => said.join('\n').includes('db:update --plan'))
     const id = /db:update --plan ([0-9a-f]+)/.exec(said.join('\n'))?.[1]
     expect(id).toBeDefined()
-    expect(said.join('\n')).not.toContain('--confirm')
+    expect(said.join('\n')).not.toContain('--delete')
 
     const applyCalls = (): string[][] =>
       vi
         .mocked(runPrismaCli)
         .mock.calls.map(([, args]) => [...args])
-        .filter((args) => !args.includes('--dry-run') && args.includes('update'))
+        .filter((args) => !args.includes('--dry-run') && args.includes('--no-interactive'))
 
     const refusedWithoutId: string[] = []
     expect(await requestDatabaseUpdate(tempDir, undefined, (m) => refusedWithoutId.push(m))).toBe(
@@ -446,13 +447,13 @@ describe('devCommand', () => {
     expect(await requestDatabaseUpdate(tempDir, 'deadbeef', (m) => refusedWrongId.push(m))).toBe(
       false,
     )
-    expect(applyCalls().filter((args) => args.includes('--confirm'))).toHaveLength(0)
+    expect(applyCalls()).toHaveLength(0)
     expect(fs.existsSync(live.contractModule)).toBe(false)
 
     expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
-    const applied = applyCalls().filter((args) => args.includes('--confirm'))
+    const applied = applyCalls()
     expect(applied).toHaveLength(1)
-    expect(applied[0]).toContain('postgres')
+    expect(applied[0]).toEqual(expect.arrayContaining(['--delete', 'Post.title']))
 
     child.emit('exit', 0, null)
     await new Promise((resolve) => setTimeout(resolve, 50))
