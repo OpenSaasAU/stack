@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getRelationshipOptions } from './relationship-options.js'
+import { getRelationshipOptions, isRelationshipLabelReadable } from './relationship-options.js'
 import type { QueryRunnerContext, RelationshipOptionsQuery } from './relationship-options.js'
 import type { OrderBy, Where } from '../secured/vocabulary.js'
 import type { OpenSaasConfig } from '../config/types.js'
@@ -235,5 +235,19 @@ describe('getRelationshipOptions', () => {
     const result = await getRelationshipOptions(context, config, 'Missing', {})
 
     expect(result).toEqual([])
+  })
+})
+
+describe('isRelationshipLabelReadable', () => {
+  it('is false when the label field read rule denies the session', async () => {
+    const config = makeConfig()
+    config.lists.Author.fields.name = { type: 'text', access: { read: () => false } } as never
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, config, 'Author')).toBe(false)
+  })
+
+  it('is true when the label field has no read rule', async () => {
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, makeConfig(), 'Author')).toBe(true)
   })
 })

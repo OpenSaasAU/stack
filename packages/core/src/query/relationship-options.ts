@@ -1,5 +1,7 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { getLabelFieldName, getItemLabel } from '../config/label.js'
+import type { AccessContext } from '../access/types.js'
+import { isFieldReadableForPredicate } from '../access/field-access.js'
 import type { OrderBy, Where } from '../secured/vocabulary.js'
 
 /**
@@ -99,4 +101,18 @@ export async function getRelationshipOptions(
     id: String(item.id),
     label: getItemLabel(relatedListConfig, item),
   }))
+}
+
+/** Whether the session may name the related list's label field in a `where`/`orderBy`. */
+export async function isRelationshipLabelReadable(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  relatedListKey: string,
+): Promise<boolean> {
+  const relatedListConfig = config.lists[relatedListKey]
+  if (!relatedListConfig) return true
+  return isFieldReadableForPredicate(
+    relatedListConfig.fields[getLabelFieldName(relatedListConfig)]?.access,
+    { session: context.session, context },
+  )
 }

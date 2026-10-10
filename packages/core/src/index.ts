@@ -360,7 +360,10 @@ export type {
 // Relationship-options read primitive — bounded, projected fetch for
 // relationship editors. Backs the `relationshipOptions` context.serverAction
 // op; also callable directly wherever a full context is already in hand.
-export { getRelationshipOptions } from './query/relationship-options.js'
+export {
+  getRelationshipOptions,
+  isRelationshipLabelReadable,
+} from './query/relationship-options.js'
 export type { RelationshipOption, RelationshipOptionsArgs } from './query/relationship-options.js'
 
 // Filter engine (ADR-0017) — the admin UI's Filter builder. The pure seam
