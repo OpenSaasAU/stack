@@ -305,19 +305,34 @@ interface PendingUpload<TMetadata> {
 }
 
 function createPendingUploads<TMetadata>() {
-  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>>>()
+  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>[]>>()
+  const queueFor = (write: object, fieldKey: string) => {
+    const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>[]>()
+    pending.set(write, forWrite)
+    const queue = forWrite.get(fieldKey) ?? []
+    forWrite.set(fieldKey, queue)
+    return queue
+  }
   return {
     set: (write: object, fieldKey: string, value: PendingUpload<TMetadata>) => {
-      const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>>()
-      forWrite.set(fieldKey, value)
-      pending.set(write, forWrite)
+      queueFor(write, fieldKey).push(value)
     },
     take: (write: unknown, fieldKey: string): PendingUpload<TMetadata> | undefined => {
       if (typeof write !== 'object' || write === null) return undefined
-      const forWrite = pending.get(write)
-      const value = forWrite?.get(fieldKey)
-      forWrite?.delete(fieldKey)
-      return value
+      return pending.get(write)?.get(fieldKey)?.shift()
+    },
+    size: (write: unknown, fieldKey: string): number => {
+      if (typeof write !== 'object' || write === null) return 0
+      return pending.get(write)?.get(fieldKey)?.length ?? 0
+    },
+    amendLast: (
+      write: unknown,
+      fieldKey: string,
+      amend: (value: PendingUpload<TMetadata>) => PendingUpload<TMetadata>,
+    ) => {
+      if (typeof write !== 'object' || write === null) return
+      const queue = pending.get(write)?.get(fieldKey)
+      if (queue?.length) queue[queue.length - 1] = amend(queue[queue.length - 1])
     },
   }
 }
@@ -337,15 +352,21 @@ function composeFieldHooks(
   return {
     ...userHooks,
     resolveInput: async (args: any) => {
+      const queuedBefore = uploads.size(args.inputData, args.fieldKey)
       const resolved = await builtIn.resolveInput(args)
       if (!userHooks?.resolveInput) return resolved
       const final = await userHooks.resolveInput({
         ...args,
         resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
       })
-      if (final?.filename !== resolved?.filename) {
-        const pending = uploads.take(args.inputData, args.fieldKey)
-        if (pending) uploads.set(args.inputData, args.fieldKey, { ...pending, replaced: null })
+      if (
+        final?.filename !== resolved?.filename &&
+        uploads.size(args.inputData, args.fieldKey) > queuedBefore
+      ) {
+        uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
+          ...pending,
+          replaced: null,
+        }))
       }
       return final
     },
