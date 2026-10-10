@@ -314,6 +314,15 @@ export interface IncludePlan {
   readonly predicates: readonly WherePlan[]
   /** Whether the caller's own refinement composed a predicate on this relation. */
   readonly callerRefined: boolean
+  /** Whether the caller's own refinement bounded or narrowed what this relation returns. */
+  readonly callerShaped: boolean
+  /**
+   * Present when the caller shaped a relation that is also a live declared
+   * dependency: the Access Filter predicates for the unshaped rows the
+   * declaring hooks and `read` rules are owed (ADR-0051), fetched apart from
+   * the caller's own view of the relation.
+   */
+  readonly declaredFetch?: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
   readonly limit?: number
   readonly offset?: number
@@ -640,6 +649,18 @@ async function resolveInclude(
         : []
       : undefined
 
+  const callerShaped =
+    request.predicates.length > 0 ||
+    request.limit !== undefined ||
+    request.offset !== undefined ||
+    shape.fields !== undefined
+  const declaredFetch =
+    !declared && liveDeclaredDependency && callerShaped && reduce === undefined
+      ? access.kind !== 'true'
+        ? [access]
+        : []
+      : undefined
+
   return {
     relation: request.name,
     relatedListName: target.relatedListName,
@@ -647,6 +668,8 @@ async function resolveInclude(
     ...(target.foreignKey ? { foreignKey: target.foreignKey.name } : {}),
     predicates,
     callerRefined: request.predicates.length > 0,
+    callerShaped,
+    ...(declaredFetch ? { declaredFetch } : {}),
     orders,
     limit: request.limit,
     offset: request.offset,

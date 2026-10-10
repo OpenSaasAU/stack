@@ -13,6 +13,7 @@ import {
   filterReadableFields,
   getRelatedListConfig,
 } from '../access/index.js'
+import type { RuleView, RuleViewTree } from '../access/field-visibility.js'
 import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
@@ -1227,6 +1228,86 @@ declare const VISIBLE_ROW: unique symbol
  */
 export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
 
+async function unshapedDeclaredRows(
+  binding: ReadBinding,
+  listName: string,
+  rows: readonly OrmRow[],
+  plans: readonly IncludePlan[],
+): Promise<Map<string, Map<string, unknown>>> {
+  const byRelation = new Map<string, Map<string, unknown>>()
+  const fetched = plans.filter((plan) => plan.declaredFetch !== undefined)
+  const ids = rows
+    .map((row) => row['id'])
+    .filter((id): id is RowLockKey => typeof id === 'string' || typeof id === 'number')
+  if (fetched.length === 0 || ids.length === 0) return byRelation
+  const ops = await whereCombinators()
+  for (const plan of fetched) {
+    const owners = await withOrigin('engine', () =>
+      collectionFor(binding.ormHandle, listName)
+        .where((model) => identityIn(model, listName, ids))
+        .select('id')
+        .include(plan.relation, (child) => {
+          let scoped = child
+          for (const predicate of plan.declaredFetch ?? []) {
+            scoped = scoped.where((model) => lowerWhere(predicate, model, ops))
+          }
+          return scoped
+        })
+        .all(),
+    )
+    const values = new Map<string, unknown>()
+    for (const owner of owners) values.set(String(owner['id']), owner[plan.relation])
+    byRelation.set(plan.relation, values)
+  }
+  return byRelation
+}
+
+async function ruleViewTreeFor(
+  binding: ReadBinding,
+  listName: string,
+  rows: readonly OrmRow[],
+  plans: readonly IncludePlan[],
+): Promise<RuleViewTree> {
+  const unshaped = await unshapedDeclaredRows(binding, listName, rows, plans)
+  const nested: Record<string, RuleViewTree> = {}
+  for (const plan of plans) {
+    if (plan.declared || plan.reduce !== undefined || plan.includes.length === 0) continue
+    const children: OrmRow[] = []
+    for (const row of rows) {
+      const value = row[plan.relation]
+      if (Array.isArray(value)) children.push(...value.filter(isRow))
+      else if (isRow(value)) children.push(value)
+    }
+    if (children.length === 0) continue
+    nested[plan.relation] = await ruleViewTreeFor(
+      binding,
+      plan.relatedListName,
+      children,
+      plan.includes,
+    )
+  }
+  return { viewFor: (row) => ruleViewFor(row, plans, unshaped), nested }
+}
+
+function ruleViewFor(
+  row: OrmRow,
+  plans: readonly IncludePlan[],
+  unshaped: ReadonlyMap<string, ReadonlyMap<string, unknown>>,
+): RuleView {
+  const removed = new Set<string>()
+  const declared: Record<string, unknown> = {}
+  for (const plan of plans) {
+    if (plan.declared || !plan.callerShaped || plan.reduce !== undefined) continue
+    const values = unshaped.get(plan.relation)
+    if (plan.declaredFetch === undefined || values === undefined) {
+      removed.add(plan.relation)
+      continue
+    }
+    declared[plan.relation] = values.get(String(row['id']))
+  }
+  return { removed, declared }
+}
+
 /**
  * What every terminal returns rows through — the one place a row this engine
  * read becomes a row a caller may see, and the only place any foreign-key
@@ -1244,6 +1325,7 @@ async function visibleRows(
   plan: ReadPlan,
 ): Promise<VisibleRow[]> {
   const { listConfig, context, config, listName } = binding
+  const ruleViews = await ruleViewTreeFor(binding, listName, rows, plan.includes)
   const results = await Promise.all(
     rows.map(async (row) => {
       const filtered = await filterReadableFields(
@@ -1256,6 +1338,7 @@ async function visibleRows(
         plan.additions,
         plan.selection,
         plan.reducedDeclared,
+        ruleViews,
       )
       applyForeignKeys(filtered, plan.includes)
       restoreReductions(filtered, row, plan.includes)
