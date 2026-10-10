@@ -292,18 +292,20 @@ This is not a closed list of six base-model fields — it also covers **plugin
 table** credential fields the stack has first-class support for (ADR-0034),
 since a plugin table derives through the same scalar-field derivation pass:
 
-| Model (better-auth key) | Field(s)                                             | Source                 |
-| ----------------------- | ---------------------------------------------------- | ---------------------- |
-| `session`               | `token`                                              | base                   |
-| `verification`          | `value`                                              | base                   |
-| `account`               | `password`, `accessToken`, `refreshToken`, `idToken` | base                   |
-| `oauthClient`           | `clientSecret`                                       | `mcp` / oauth-provider |
-| `oauthAccessToken`      | `token`                                              | `mcp` / oauth-provider |
-| `oauthRefreshToken`     | `token`                                              | `mcp` / oauth-provider |
-| `twoFactor`             | `secret`, `backupCodes`                              | `twoFactor()`          |
+| Model (better-auth key) | Field(s)                                             | Source                  |
+| ----------------------- | ---------------------------------------------------- | ----------------------- |
+| `session`               | `token`                                              | base                    |
+| `verification`          | `identifier`, `value`                                | base                    |
+| `account`               | `password`, `accessToken`, `refreshToken`, `idToken` | base                    |
+| `oauthClient`           | `clientSecret`                                       | `mcp` / oauth-provider  |
+| `oauthAccessToken`      | `token`                                              | `mcp` / oauth-provider  |
+| `oauthRefreshToken`     | `token`                                              | `mcp` / oauth-provider  |
+| `twoFactor`             | `secret`, `backupCodes`                              | `twoFactor()`           |
+| `jwks`                  | `privateKey`                                         | `jwt()`                 |
+| `deviceCode`            | `deviceCode`, `userCode`                             | `deviceAuthorization()` |
 
 The deny is applied in the scalar-field derivation loop
-(`withCredentialAccess` in `derive-auth-lists.ts`), against a registry built
+(`withFieldAccess` in `derive-auth-lists.ts`), against a registry built
 by `buildCredentialFieldRegistry` — the stack-seeded `CREDENTIAL_FIELDS` table
 above merged with an app's `authPlugin({ credentialFields })` — keyed by
 better-auth's own model/field key, not the app's list key or column `db.map`,

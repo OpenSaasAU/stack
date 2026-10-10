@@ -116,19 +116,22 @@ const TIMESTAMP_FIELDS = new Set(['createdAt', 'updatedAt'])
  *
  * Covers the four base models plus every better-auth plugin table the stack
  * has first-class support for (ADR-0034's registry of known plugins) — the
- * `mcp`/oauth-provider plugin's client secret and token columns, and
- * `twoFactor()`'s encrypted secret/backup codes (issue #1014). An app can
+ * `mcp`/oauth-provider plugin's client secret and token columns,
+ * `twoFactor()`'s encrypted secret/backup codes (issue #1014), `jwt()`'s
+ * private key and `deviceAuthorization()`'s device/user codes. An app can
  * mark further fields via `authPlugin({ credentialFields })`, merged in by
  * {@link buildCredentialFieldRegistry} — this constant is never mutated.
  */
 const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
   session: ['token'],
-  verification: ['value'],
+  verification: ['identifier', 'value'],
   account: ['password', 'accessToken', 'refreshToken', 'idToken'],
   oauthClient: ['clientSecret'],
   oauthAccessToken: ['token'],
   oauthRefreshToken: ['token'],
   twoFactor: ['secret', 'backupCodes'],
+  jwks: ['privateKey'],
+  deviceCode: ['deviceCode', 'userCode'],
 }
 
 const DENY_READ: Exclude<FieldAccess, { write: 'hooks' }> = { read: () => false }
@@ -198,7 +201,7 @@ function buildCredentialFieldRegistry(
       // trailing `Id` off its own key is a no-op, in which case it falls
       // back to a scalar column instead (#1222) — the same fallback as a
       // non-`id`-target reference, and the one case where
-      // withCredentialAccess actually applies. Every other id-referencing
+      // withFieldAccess actually applies. Every other id-referencing
       // field stays a relationship, never a scalar field, so a deny
       // registered against one would silently never apply. Fail loudly
       // instead of accepting a config that has no effect.
