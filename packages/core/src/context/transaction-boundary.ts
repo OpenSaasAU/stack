@@ -1,4 +1,4 @@
-import type { ListConfig } from '../config/types.js'
+import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import {
   executeBeforeTransaction,
@@ -9,6 +9,7 @@ import {
 } from '../hooks/index.js'
 import type { WriteOperation } from './write-pipeline.js'
 import type {
+  AfterTransactionFailure,
   TransactionRegistry,
   TransactionSettleOutcome,
 } from '../access/transaction-registry.js'
@@ -110,9 +111,12 @@ export async function runAfterTransactionForList(
   involved: InvolvedList,
   outcome: TransactionOutcome,
   context: AccessContext,
-  errors: unknown[],
+  errors: AfterTransactionFailure[],
 ): Promise<void> {
   const { listKey, listConfig, operation, inputData, originalItem } = involved
+  const fail = (error: unknown): void => {
+    errors.push({ error, status: outcome.status, listKey, operation })
+  }
 
   try {
     if (outcome.status === 'committed') {
@@ -177,23 +181,19 @@ export async function runAfterTransactionForList(
       }
     }
   } catch (err) {
-    // A throwing afterTransaction must NOT stop the remaining compensators.
-    errors.push(err)
+    fail(err)
   }
 
-  try {
-    await executeFieldAfterTransactionHooks(
-      outcome,
-      inputData,
-      listConfig.fields,
-      operation,
-      context,
-      listKey,
-      originalItem,
-    )
-  } catch (err) {
-    errors.push(err)
-  }
+  await executeFieldAfterTransactionHooks(
+    outcome,
+    inputData,
+    listConfig.fields,
+    operation,
+    context,
+    listKey,
+    originalItem,
+    fail,
+  )
 }
 
 /**
@@ -214,19 +214,32 @@ export class WriteMatchedNothingError extends Error {
 }
 
 /**
- * Aggregated error surfaced when one or more `afterTransaction` hooks throw.
- * The DB state is already final; all compensators still ran.
+ * Hands each failed `afterTransaction` hook to the configured
+ * `onAfterTransactionError`, or to `console.error` when none is set or the
+ * callback itself throws. Never throws: the write's outcome is already final.
  */
-export class AfterTransactionError extends Error {
-  public errors: unknown[]
-  constructor(errors: unknown[]) {
-    super(
-      `afterTransaction hook(s) failed: ${errors
-        .map((e) => (e instanceof Error ? e.message : String(e)))
-        .join('; ')}`,
+export async function reportAfterTransactionFailures(
+  config: OpenSaasConfig,
+  failures: readonly AfterTransactionFailure[],
+): Promise<void> {
+  for (const report of failures) {
+    const callback = config.onAfterTransactionError
+    if (callback !== undefined) {
+      try {
+        await callback(report)
+        continue
+      } catch (callbackError) {
+        console.error(
+          'onAfterTransactionError threw while reporting an afterTransaction failure:',
+          callbackError,
+        )
+      }
+    }
+    console.error(
+      `afterTransaction hook for ${report.listKey}.${report.operation} threw ` +
+        `(${report.status}); the write's outcome is unchanged:`,
+      report.error,
     )
-    this.name = 'AfterTransactionError'
-    this.errors = errors
   }
 }
 
@@ -252,12 +265,13 @@ function resolveDeferredOutcome(
  * `args.joinedOwner`'s {@link TransactionRegistry} for a joined write, run
  * eagerly (draining `args.ownedRegistry`) for the write that opened the
  * transaction, or run eagerly with neither set. See ADR-0028 for why. A
- * joined write's `afterTransaction` errors therefore surface as an
- * {@link AfterTransactionError} from the OWNER's promise, not this write's.
+ * `afterTransaction` errors never change the write's outcome: they go to
+ * {@link reportAfterTransactionFailures} (ADR-0074).
  *
  * Sudo bypasses access control only — never these hooks.
  */
 export async function runWithTransactionBoundary(args: {
+  config: OpenSaasConfig
   involvedLists: InvolvedList[]
   /**
    * The context `beforeTransaction` runs with — unchanged from what the
@@ -287,6 +301,7 @@ export async function runWithTransactionBoundary(args: {
   runTransaction: () => Promise<Record<string, unknown> | null>
 }): Promise<Record<string, unknown> | null> {
   const {
+    config,
     involvedLists,
     context,
     afterTransactionContext,
@@ -317,19 +332,17 @@ export async function runWithTransactionBoundary(args: {
   if (beforeError !== undefined) {
     const outcome: TransactionOutcome = { status: 'rolled-back', error: beforeError }
     if (joinedOwner) {
-      // Discards any afterTransaction errors on this path — only beforeError
-      // propagates, matching the eager branch below.
-      joinedOwner.enqueue(async (_settle, _errors) => {
-        const discarded: unknown[] = []
+      joinedOwner.enqueue(async (_settle, errors) => {
         for (const involved of ran) {
-          await runAfterTransactionForList(involved, outcome, afterTransactionContext, discarded)
+          await runAfterTransactionForList(involved, outcome, afterTransactionContext, errors)
         }
       })
     } else {
-      const afterErrors: unknown[] = []
+      const afterErrors: AfterTransactionFailure[] = []
       for (const involved of ran) {
         await runAfterTransactionForList(involved, outcome, afterTransactionContext, afterErrors)
       }
+      await reportAfterTransactionFailures(config, afterErrors)
     }
     const owner = joinedOwner ?? ownedRegistry
     owner?.poison(beforeError)
@@ -373,22 +386,24 @@ export async function runWithTransactionBoundary(args: {
   }
 
   // All compensators run even if one throws.
-  const afterErrors: unknown[] = []
+  const afterErrors: AfterTransactionFailure[] = []
   for (const involved of ran) {
     await runAfterTransactionForList(involved, outcome, afterTransactionContext, afterErrors)
   }
 
   // Owner: drain joined writes' deferred brackets with this write's own settle
   // outcome (ADR-0028).
-  if (ownedRegistry) {
-    const settle: TransactionSettleOutcome =
-      txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
-    await ownedRegistry.drain(settle, afterErrors)
+  try {
+    if (ownedRegistry) {
+      const settle: TransactionSettleOutcome =
+        txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
+      await ownedRegistry.drain(settle, afterErrors)
+    }
+  } finally {
+    await reportAfterTransactionFailures(config, afterErrors)
   }
 
-  // Transaction error takes precedence over afterTransaction errors (ADR-0028).
   if (txError !== undefined) throw txError
-  if (afterErrors.length > 0) throw new AfterTransactionError(afterErrors)
 
   return result
 }

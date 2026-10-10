@@ -57,8 +57,8 @@
     "@electric-sql/pglite-socket": "0.2.11",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opensaas/stack-core": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.13",
-    "@prisma/orm-toolchain": "8.0.0-rc.13",
+    "@prisma/orm-postgres": "8.0.0-rc.17",
+    "@prisma/orm-toolchain": "8.0.0-rc.17",
     "chalk": "^6.0.0",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
@@ -66,7 +66,7 @@
     "glob": "^13.0.6",
     "jiti": "^2.7.0",
     "ora": "^9.4.1",
-    "prisma": "8.0.0-rc.19",
+    "prisma": "8.0.0-rc.22",
     "prompts": "^2.4.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "zod": "^4.6.5"
@@ -75,13 +75,13 @@
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-storage": "workspace:*",
     "@opensaas/stack-tiptap": "workspace:*",
-    "@prisma/orm-extension-pgvector": "8.0.0-rc.13",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.17",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.6.3",
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "5.0.3",
     "pg": "^8.23.0",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

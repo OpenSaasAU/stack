@@ -16,6 +16,7 @@ export { config, list, getPluginData } from './config/index.js'
 // alongside their builders.
 export type {
   OpenSaasConfig,
+  AfterTransactionErrorReport,
   OutputConfig,
   ListConfig,
   ListUIOption,
@@ -221,6 +222,12 @@ export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-coun
 
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
+export { transitionGuard } from './hooks/transition-guard.js'
+export type {
+  TransitionSpec,
+  FlatTransitionSpec,
+  KeyedTransitionSpec,
+} from './hooks/transition-guard.js'
 
 // The stack-owned database errors every engine terminal raises in place of the
 // driver's own, and their predicates (ADR-0042). The Unsafe surface is excluded

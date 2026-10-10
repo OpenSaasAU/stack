@@ -104,6 +104,9 @@ export const JUNCTION_EDGE_RELATIONSHIP_REASON =
  */
 export const FIELD_WRITE_DENIED_REASON = "Not editable — you don't have permission to change this."
 
+/** Shown beneath a field declared `access: { write: 'hooks' }`. */
+export const FIELD_HOOK_ONLY_REASON = 'Not editable — this value is set by the system.'
+
 /**
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
  * non-serializable properties (access, hooks, typePatch, valueForClientSerialization).
@@ -111,6 +114,11 @@ export const FIELD_WRITE_DENIED_REASON = "Not editable — you don't have permis
 export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {
   const config: SerializableFieldConfig = {
     type: fieldConfig.type,
+  }
+
+  if (fieldConfig.access?.write === 'hooks') {
+    config.readOnly = true
+    config.readOnlyReason = FIELD_HOOK_ONLY_REASON
   }
 
   if (fieldConfig.ui) {

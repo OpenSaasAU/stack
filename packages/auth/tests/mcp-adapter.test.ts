@@ -8,10 +8,8 @@ import {
   mcpSessionToContextSession,
   hasScopes,
   isSessionExpired,
-  createOAuthDiscoveryHandler,
-  createOAuthProtectedResourceHandler,
 } from '../src/mcp/better-auth.js'
-import type { BetterAuthInstance, BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
+import type { BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
 import type { McpSession } from '@opensaas/stack-core/mcp'
 
 describe('Better Auth MCP Adapter', () => {
@@ -69,6 +67,32 @@ describe('Better Auth MCP Adapter', () => {
       const session = await createBetterAuthMcpAdapter(options)(bearer(token))
 
       expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
+    })
+
+    it('drops registered JWT claims but keeps custom ones', async () => {
+      const token = mint({
+        sub: 'user-123',
+        jti: 'j1',
+        azp: 'client',
+        client_id: 'client',
+        sid: 's1',
+        nbf: 1,
+        role: 'admin',
+      })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({ userId: 'user-123', role: 'admin' })
+      for (const claim of ['iss', 'aud', 'iat', 'nbf', 'jti', 'azp', 'client_id', 'sid']) {
+        expect(session).not.toHaveProperty(claim)
+      }
+    })
+
+    it('does not let a custom claim supply scopes', async () => {
+      const token = mint({ sub: 'user-123', scopes: ['mcp:write'], expiresAt: 'x' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.scopes).toBeUndefined()
+      expect(session?.expiresAt).toBeInstanceOf(Date)
     })
 
     it('does not let a claim override the userId', async () => {
@@ -258,58 +282,6 @@ describe('Better Auth MCP Adapter', () => {
       }
 
       expect(isSessionExpired(session)).toBe(false)
-    })
-  })
-
-  describe('createOAuthDiscoveryHandler', () => {
-    it('should create a handler that proxies to Better Auth', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {},
-      }
-
-      const handler = createOAuthDiscoveryHandler(mockAuth)
-
-      // Mock fetch to capture the proxy call
-      const originalFetch = global.fetch
-      const mockFetch = vi.fn(async () => new Response('{"issuer":"http://localhost"}'))
-      global.fetch = mockFetch as typeof fetch
-
-      const request = new Request('http://localhost/.well-known/oauth-authorization-server')
-      await handler(request)
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost/api/auth/.well-known/oauth-authorization-server',
-        expect.any(Object),
-      )
-
-      // Restore original fetch
-      global.fetch = originalFetch
-    })
-  })
-
-  describe('createOAuthProtectedResourceHandler', () => {
-    it('should create a handler that proxies to Better Auth', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {},
-      }
-
-      const handler = createOAuthProtectedResourceHandler(mockAuth)
-
-      // Mock fetch to capture the proxy call
-      const originalFetch = global.fetch
-      const mockFetch = vi.fn(async () => new Response('{"resource":"http://localhost"}'))
-      global.fetch = mockFetch as typeof fetch
-
-      const request = new Request('http://localhost/.well-known/oauth-protected-resource')
-      await handler(request)
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost/api/auth/.well-known/oauth-protected-resource',
-        expect.any(Object),
-      )
-
-      // Restore original fetch
-      global.fetch = originalFetch
     })
   })
 })

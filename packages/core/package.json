@@ -96,8 +96,8 @@
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-pgvector": "0.0.9",
     "@electric-sql/pglite-socket": "0.2.11",
-    "@prisma/orm-postgres": "8.0.0-rc.13",
-    "@prisma/orm-toolchain": "8.0.0-rc.13"
+    "@prisma/orm-postgres": "8.0.0-rc.17",
+    "@prisma/orm-toolchain": "8.0.0-rc.17"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
@@ -122,15 +122,15 @@
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-pgvector": "0.0.9",
     "@electric-sql/pglite-socket": "0.2.11",
-    "@prisma/orm-extension-pgvector": "8.0.0-rc.13",
-    "@prisma/orm-postgres": "8.0.0-rc.13",
-    "@prisma/orm-toolchain": "8.0.0-rc.13",
+    "@prisma/orm-extension-pgvector": "8.0.0-rc.17",
+    "@prisma/orm-postgres": "8.0.0-rc.17",
+    "@prisma/orm-toolchain": "8.0.0-rc.17",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "5.0.3",
     "esbuild": "0.27.7",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

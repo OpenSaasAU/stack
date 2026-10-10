@@ -95,17 +95,17 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.48.0",
     "react-hook-form": "^7.89.0",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-socket": "0.2.11",
     "@opensaas/stack-core": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.13",
-    "@prisma/orm-toolchain": "8.0.0-rc.13",
+    "@prisma/orm-postgres": "8.0.0-rc.17",
+    "@prisma/orm-toolchain": "8.0.0-rc.17",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
@@ -114,7 +114,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^5.1.4",
     "@vitest/browser": "5.0.3",
-    "@vitest/browser-playwright": "5.0.2",
+    "@vitest/browser-playwright": "5.0.3",
     "@vitest/coverage-v8": "5.0.3",
     "happy-dom": "^20.14.5",
     "next": "^16.3.8",
@@ -126,6 +126,6 @@
     "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

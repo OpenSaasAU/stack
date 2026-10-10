@@ -271,6 +271,7 @@ Stated so the build's documentation says them rather than a user discovering the
 - An approximate HNSW scan under a selective access filter can return fewer than `limit` rows; exactness holds under an exact scan and is bounded by the iterative-scan budget otherwise. (ADR-0045)
 - `aggregate`'s count throws beyond ±(2^53 − 1). (ADR-0041)
 - The Auth adapter implements no joins and no `createSchema`; better-auth's `generate`/`migrate` CLI is unsupported; a raced unique violation surfaces raw. (ADR-0060)
+- A unique constraint or a restrictive foreign key on an access-scoped list is an existence oracle: a violation tells a writer that a row it cannot read holds that value or references that row, and stack-owned errors keep their field-mapped message on purpose because no wording closes the channel. Mitigate by scoping the constraint to the access boundary. (ADR-0042, ADR-0050)
 - A hand-managed index the generator did not emit gets no per-field unique-violation messages. (ADR-0042)
 - pgvector needs superuser or a provider grant on the migrating role, or a DBA pre-creates it. (ADR-0065)
 - `pnpm db:update` requires the dev loop to be running; a destructive mid-session change restarts the app. (ADR-0063)
