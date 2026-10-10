@@ -75,8 +75,8 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "^0",
-    "@opensaas/stack-ui": "^0",
+    "@opensaas/stack-core": "workspace:^",
+    "@opensaas/stack-ui": "workspace:^",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.17",
     "openai": "^6.8.0",
     "react": "^19.0.0",
