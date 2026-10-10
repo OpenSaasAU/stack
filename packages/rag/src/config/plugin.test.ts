@@ -1299,6 +1299,30 @@ describe('ragPlugin', () => {
   describe('beforeGenerate', () => {
     const listsWith = articleWithEmbedding
 
+    it('warns once per indexed embedding field that no vector index is built', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+      })
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const indexed = listsWith(1536)
+        const field = indexed.lists.Article.fields.contentEmbedding
+        if (!field) throw new Error('fixture has no contentEmbedding')
+        Reflect.set(field, 'index', { method: 'hnsw' })
+
+        expect(() => plugin.beforeGenerate!(indexed)).not.toThrow()
+        expect(warned).toHaveBeenCalledTimes(1)
+        expect(warned.mock.calls[0]?.[0]).toContain('"Article.contentEmbedding"')
+        expect(warned.mock.calls[0]?.[0]).toContain('no vector index is built')
+
+        warned.mockClear()
+        plugin.beforeGenerate!(listsWith(1536))
+        expect(warned).not.toHaveBeenCalled()
+      } finally {
+        warned.mockRestore()
+      }
+    })
+
     it('passes when the declared dimension matches the provider model', () => {
       const plugin = ragPlugin({
         provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' },

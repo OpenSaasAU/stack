@@ -572,6 +572,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
             )
           }
 
+          if (fieldConfig.index !== undefined) {
+            console.warn(
+              `RAG plugin: "${listName}.${fieldName}" declares an index, but no vector index is ` +
+                `built — the pgvector pack registers no index types yet (see ` +
+                `https://github.com/OpenSaasAU/stack/issues/1265), so nearest() scans sequentially.`,
+            )
+          }
+
           // A field that declared nothing took its provider's dimension in
           // `init`, so only an author's own value can disagree here.
           const declared = fieldConfig.dimensions

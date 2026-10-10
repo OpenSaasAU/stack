@@ -257,6 +257,8 @@ fields: {
 }
 ```
 
+> **Known limit:** `embedding({ index })` builds no `CREATE INDEX` yet because the pgvector pack registers no index types, so `nearest()` scans sequentially and `pnpm generate` warns ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
+
 ### Low-Level: Manual `embedding()` Field
 
 For advanced use cases where you need more control:
