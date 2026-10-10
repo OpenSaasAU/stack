@@ -74,7 +74,7 @@
   },
   "peerDependencies": {
     "@better-auth/mcp": "^1.7.0",
-    "@opensaas/stack-core": "^0",
+    "@opensaas/stack-core": "workspace:^",
     "@prisma/orm-postgres": "8.0.0-rc.17",
     "better-auth": "^1.4.0",
     "next": "^15.0.0 || ^16.0.0",
