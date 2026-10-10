@@ -273,6 +273,15 @@ export class SchemaApplyError extends Error {
   }
 }
 
+async function refuseEveryQuestion(questions: readonly unknown[]): Promise<readonly never[]> {
+  if (questions.length > 0) {
+    throw new Error(
+      `The test harness will not lose data or widen access: ${JSON.stringify(questions)}`,
+    )
+  }
+  return []
+}
+
 async function applySchema(
   url: string,
   migrationsDir: string,
@@ -285,6 +294,7 @@ async function applySchema(
       contract: toEmittedContract(contract),
       mode: 'apply',
       migrationsDir,
+      answerQuestions: refuseEveryQuestion,
     })
     if (!result.ok) throw new SchemaApplyError(url, result.failure)
   } finally {

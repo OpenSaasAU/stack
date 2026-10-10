@@ -114,10 +114,9 @@ export type EmbeddingField<
    * one caps the dimension: over 2,000 the column becomes `halfvec`, and over
    * 4,000 generation fails, because no pgvector index can be built there.
    *
-   * Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no
-   * index types, so a declaration is NOT yet lowered to a `CREATE INDEX` —
-   * today it derives the column type and the operator class and nothing else.
-   * Re-check when the pack reaches GA.
+   * Known limits: the pgvector pack registers no index types yet, so a declaration
+   * is NOT lowered to a `CREATE INDEX` and `nearest()` scans sequentially; see
+   * https://github.com/OpenSaasAU/stack/issues/1265. `pnpm generate` warns.
    */
   index?: EmbeddingIndexConfig
 
@@ -283,9 +282,15 @@ export function embedding<
     }
   }
 
-  const access: FieldAccess | undefined = allowManualWrites
-    ? options?.access
-    : { ...options?.access, create: () => false, update: () => false }
+  const access: FieldAccess | undefined =
+    allowManualWrites || options?.access?.write === 'hooks'
+      ? options?.access
+      : {
+          read: options?.access?.read,
+          allowCreateDefault: options?.access?.allowCreateDefault,
+          create: () => false,
+          update: () => false,
+        }
 
   const showVector = options?.ui?.showVector ?? false
   const showMetadata = options?.ui?.showMetadata ?? true

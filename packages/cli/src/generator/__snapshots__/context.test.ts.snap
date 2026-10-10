@@ -41,23 +41,40 @@ function createClient(config: OpenSaasConfig) {
   })
 }
 
+type RuntimeClient = ReturnType<typeof createClient>
+
+interface PublishedClient {
+  hash: string
+  client: RuntimeClient
+}
+
 /**
- * A duck-type check for the constructed client, used to decide whether a
- * value already published under the process-wide registry key is one of
- * these rather than trust it blindly.
+ * A duck-type check for the value already published under the process-wide
+ * registry key, so a foreign value is replaced rather than trusted blindly.
  */
-function isRuntimeClient(value: unknown): value is ReturnType<typeof createClient> {
+function isPublishedClient(value: unknown): value is PublishedClient {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'orm' in value &&
-    'sql' in value &&
-    'raw' in value &&
-    'transaction' in value
+    'hash' in value &&
+    typeof value.hash === 'string' &&
+    'client' in value &&
+    typeof value.client === 'object' &&
+    value.client !== null &&
+    'orm' in value.client &&
+    'sql' in value.client &&
+    'raw' in value.client &&
+    'transaction' in value.client
   )
 }
 
-let clientPromise: Promise<ReturnType<typeof createClient>> | null = null
+const contractHash: string = JSON.stringify([
+  contractJson.storage.storageHash,
+  contractJson.roots,
+  contractJson.domain,
+])
+
+let clientPromise: Promise<RuntimeClient> | null = null
 
 function getClient() {
   if (clientPromise) return clientPromise
@@ -68,15 +85,23 @@ function getClient() {
   // connection URL is read at construction, not at import.
   //
   // \`processGlobal\` carries the constructed client past this module's own
-  // scope, in every environment: a bundler that compiles this file into more
-  // than one bundle gives each copy its own module scope, so \`clientPromise\`
-  // alone would let each construct its own client and its own pool against
-  // the same database. There is exactly one process to agree across, so this
-  // is unconditional rather than gated to development the way an earlier
-  // version of this file gated it (ADR-0070).
+  // scope, in every environment (ADR-0070). It publishes a holder naming the
+  // contract the client was built from: a holder built from another contract
+  // is replaced and its pool ended, never adopted, so a hot-reloaded bundle
+  // after an additive promote does not run new config over a stale client.
   const attempt = (async () => {
     const config = await getConfig()
-    return processGlobal('client', isRuntimeClient, () => createClient(config))
+    const published = processGlobal('client', isPublishedClient, () => ({
+      hash: contractHash,
+      client: createClient(config),
+    }))
+    if (published.hash === contractHash) return published.client
+    const stale = published.client
+    const replacement = createClient(config)
+    published.client = replacement
+    published.hash = contractHash
+    void Promise.resolve(stale.close()).catch(() => {})
+    return replacement
   })().catch((error: unknown) => {
     if (clientPromise === attempt) clientPromise = null
     throw error

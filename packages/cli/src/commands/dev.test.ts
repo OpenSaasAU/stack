@@ -366,12 +366,127 @@ describe('devCommand', () => {
     await until(() => stagedGenerations === 2)
 
     const said: string[] = []
-    const ok = await requestDatabaseUpdate(tempDir, ['postgres'], (message) => said.push(message))
+    const ok = await requestDatabaseUpdate(tempDir, 'abc', (message) => said.push(message))
 
     expect(ok).toBe(false)
     expect(said.join('\n')).toContain('Nothing was staged')
     expect(fs.existsSync(live.contractModule)).toBe(false)
 
+    child.emit('exit', 0, null)
+    await pendingLoop
+  })
+
+  it('refuses a pack the running Dev database did not load, before planning', async () => {
+    child.hold = true
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    startLoop({ appCommand: ['node', 'server.mjs'] })
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    const withPack = {
+      db: {
+        provider: 'postgresql',
+        extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+      },
+      lists: {},
+    } as never
+    vi.mocked(generateCommand).mockImplementationOnce(async (options) => {
+      options?.checkConfig?.(withPack)
+      throw new Error('generation should have been refused')
+    })
+    vi.mocked(runPrismaCli).mockClear()
+
+    editConfig()
+    watcherHandlers.get('change')?.()
+    await until(() => log.mock.calls.some((call) => String(call[0]).includes('Restart')))
+
+    expect(runPrismaCli).not.toHaveBeenCalled()
+
+    child.emit('exit', 0, null)
+    await pendingLoop
+  })
+
+  it('applies a parked destructive plan only when `db update` names its id', async () => {
+    child.hold = true
+    const said: string[] = []
+    vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+      said.push(parts.map((part) => String(part)).join(' '))
+    })
+
+    const { paths: live } = resolveOutputPaths(tempDir)
+    const stagingDir = path.join(tempDir, '.opensaas', 'staged')
+    const staged = stageWritePaths(live, stagingDir)
+    vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+      if (options.stagingDir === undefined) {
+        return {
+          paths: live,
+          livePaths: live,
+          prismaConfig: live.prismaConfig,
+          resolvedModules: [],
+        }
+      }
+      fs.mkdirSync(path.dirname(staged.contractModule), { recursive: true })
+      fs.writeFileSync(staged.contractModule, 'the parked generation', 'utf-8')
+      return {
+        paths: staged,
+        livePaths: live,
+        prismaConfig: staged.prismaConfig,
+        resolvedModules: [],
+      }
+    })
+
+    const destructivePlan = JSON.stringify({
+      kind: 'result',
+      envelope: {
+        result: {
+          dataLoss: [{ text: 'Post.title' }],
+          plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
+        },
+      },
+    })
+    vi.mocked(runPrismaCli).mockImplementation(async () => ({
+      exitCode: 0,
+      signal: null,
+      output: destructivePlan,
+      stdout: destructivePlan,
+    }))
+
+    startLoop({ appCommand: ['node', 'server.mjs'] })
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    editConfig()
+    watcherHandlers.get('change')?.()
+    await until(() => said.join('\n').includes('db:update --plan'))
+    const id = /db:update --plan ([0-9a-f]+)/.exec(said.join('\n'))?.[1]
+    expect(id).toBeDefined()
+    expect(said.join('\n')).not.toContain('--delete')
+
+    const applyCalls = (): string[][] =>
+      vi
+        .mocked(runPrismaCli)
+        .mock.calls.map(([, args]) => [...args])
+        .filter((args) => !args.includes('--dry-run') && args.includes('--no-interactive'))
+
+    const refusedWithoutId: string[] = []
+    expect(await requestDatabaseUpdate(tempDir, undefined, (m) => refusedWithoutId.push(m))).toBe(
+      false,
+    )
+    expect(refusedWithoutId.join('\n')).toContain(`--plan ${id}`)
+
+    const refusedWrongId: string[] = []
+    expect(await requestDatabaseUpdate(tempDir, 'deadbeef', (m) => refusedWrongId.push(m))).toBe(
+      false,
+    )
+    expect(applyCalls()).toHaveLength(0)
+    expect(fs.existsSync(live.contractModule)).toBe(false)
+
+    expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
+    const applied = applyCalls()
+    expect(applied).toHaveLength(1)
+    expect(applied[0]).toEqual(expect.arrayContaining(['--delete', 'Post.title']))
+
+    child.emit('exit', 0, null)
+    await new Promise((resolve) => setTimeout(resolve, 50))
     child.emit('exit', 0, null)
     await pendingLoop
   })
@@ -888,7 +1003,7 @@ describe('devCommand', () => {
 
       // No prior config edit — `staged` is undefined, so this drives its own
       // fresh stage rather than reusing a parked one.
-      const ok = await requestDatabaseUpdate(tempDir, ['postgres'], () => {})
+      const ok = await requestDatabaseUpdate(tempDir, 'abc', () => {})
       expect(ok).toBe(true)
 
       expect(watcherApi.add).toHaveBeenCalledWith([moduleB])

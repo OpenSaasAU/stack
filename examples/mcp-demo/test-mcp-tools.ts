@@ -126,7 +126,10 @@ async function main(): Promise<void> {
   const signUp = await auth.api.signUpEmail({ body: AUTHOR })
   const userId = signUp.user.id
 
-  let session: McpSession | null = { userId, scopes: ['openid', 'profile', 'email'] }
+  let session: McpSession | null = {
+    userId,
+    scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
+  }
   const { POST } = createMcpHandlers({
     config: await config,
     getSession: async () => session,
@@ -242,7 +245,7 @@ async function main(): Promise<void> {
     )
     assert.equal(refused.status, 401)
     assert.match(refused.headers.get('WWW-Authenticate') ?? '', /^Bearer realm="\/api\/mcp"/)
-    session = { userId, scopes: ['openid', 'profile', 'email'] }
+    session = { userId, scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'] }
   })
 
   console.log('\nDeletes')

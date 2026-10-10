@@ -9,11 +9,7 @@ export function generateZodSchema(
 
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
     // Virtual fields don't accept input - they only compute output
-    if (
-      ['id', 'createdAt', 'updatedAt'].includes(fieldName) ||
-      fieldConfig.type === 'relationship' ||
-      fieldConfig.virtual
-    ) {
+    if (fieldName === 'id' || fieldConfig.type === 'relationship' || fieldConfig.virtual) {
       continue
     }
 

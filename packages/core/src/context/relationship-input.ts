@@ -333,6 +333,26 @@ function connectId(value: unknown): string | number | undefined {
 }
 
 /**
+ * A copy of the caller's payload that a hook mutating `resolvedData` in place
+ * cannot reach: relation input is `{ connect: { id } }`, so two levels of plain
+ * objects are copied and every other value is kept as is.
+ */
+export function snapshotCallerInput(inputData: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(inputData)) {
+    if (!isPlainObject(value)) {
+      copy[key] = value
+      continue
+    }
+    copy[key] = {
+      ...value,
+      ...(isPlainObject(value.connect) ? { connect: { ...value.connect } } : {}),
+    }
+  }
+  return copy
+}
+
+/**
  * Refuse a payload carrying both spellings of one edge. Checked over the whole
  * payload before any per-key refusal, so the answer does not turn on which of
  * the two keys the caller happened to write first.
@@ -464,6 +484,8 @@ export interface LowerRelationInputArgs {
   ormHandle: OrmClient
   ops: WhereCombinators
   data: Record<string, unknown>
+  /** What the caller supplied; an edge whose id is not the caller's own is a hook's and is trusted. */
+  inputData: Record<string, unknown>
 }
 
 /**
@@ -483,8 +505,18 @@ export interface LowerRelationInputArgs {
  * the caller could not make anyway.
  */
 export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<RelationLowering> {
-  const { listName, listConfig, config, data } = args
+  const { listName, listConfig, config, data, inputData } = args
   let lowered: Record<string, unknown> | undefined
+
+  for (const [fieldKey, value] of Object.entries(inputData)) {
+    const key = classifyKey(fieldKey, listConfig, listName, config)
+    if (key.kind !== 'owning' && key.kind !== 'foreignKey') continue
+    const id = key.kind === 'owning' ? connectId(value) : foreignKeyIdOf(listName, key, value)
+    if (id === undefined || id === null) continue
+    if (!(await reachable(listName, key.field, key.target, id, args))) {
+      return { status: 'unreachable' }
+    }
+  }
 
   for (const [fieldKey, value] of Object.entries(data)) {
     const key = classifyKey(fieldKey, listConfig, listName, config)
@@ -495,11 +527,7 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
     }
 
     if (key.kind === 'foreignKey') {
-      const id = foreignKeyIdOf(listName, key, value)
-      if (id === undefined || id === null) continue
-      if (!(await reachable(listName, key.field, key.target, id, args))) {
-        return { status: 'unreachable' }
-      }
+      foreignKeyIdOf(listName, key, value)
       continue
     }
 
@@ -513,9 +541,6 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
 
     const id = connectId(value)
     if (id === undefined) throw new MalformedRelationInputError(listName, fieldKey)
-    if (!(await reachable(listName, fieldKey, key.target, id, args))) {
-      return { status: 'unreachable' }
-    }
     lowered[key.column] = id
   }
 

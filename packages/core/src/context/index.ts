@@ -1,9 +1,11 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
+import { isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
@@ -38,8 +40,12 @@ import {
 import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
 import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
-import { AfterTransactionError } from './transaction-boundary.js'
-import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
+import { reportAfterTransactionFailures } from './transaction-boundary.js'
+import {
+  TransactionRegistry,
+  TransactionRolledBackError,
+  type AfterTransactionFailure,
+} from '../access/transaction-registry.js'
 export { TransactionRolledBackError }
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
 
@@ -273,9 +279,10 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
   for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
     if (fieldConfig.virtual) continue
 
-    if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
+    if (fieldKey === 'id') continue
 
     if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
+      if (isNowSentinel(fieldConfig.defaultValue)) continue
       data[fieldKey] = fieldConfig.defaultValue
     }
   }
@@ -518,11 +525,8 @@ function throwIfPoisoned(registry: TransactionRegistry): void {
 /**
  * Drain a `context.transaction()` owner's deferral registry once its callback
  * (and any real underlying transaction) has settled (ADR-0028). A transaction/
- * callback error always wins — compensators still all run, but their errors
- * are discarded in favor of re-surfacing the original, matching the Write
- * Pipeline's `txError` precedence — otherwise any deferred `afterTransaction`
- * errors reject with {@link AfterTransactionError} even though the callback
- * succeeded and the transaction committed.
+ * callback error always wins and is re-surfaced; deferred `afterTransaction`
+ * errors never reject — they go to `onAfterTransactionError` (ADR-0074).
  *
  * The settle is the second normalisation site (ADR-0042). PostgreSQL raises
  * some failures at `COMMIT`, after every terminal in the callback has already
@@ -536,19 +540,24 @@ async function settleTransactionOwner<T>(
   registry: TransactionRegistry,
   config: OpenSaasConfig,
 ): Promise<T> {
-  const errors: unknown[] = []
+  const errors: AfterTransactionFailure[] = []
   let result: T
   try {
     result = await settled
   } catch (raised) {
     const err = normalizeDatabaseError(raised, config)
     const outcome: TransactionSettleOutcome = { status: 'rolled-back', error: err }
-    await registry.drain(outcome, errors)
+    try {
+      await registry.drain(outcome, errors)
+    } finally {
+      await reportAfterTransactionFailures(config, errors)
+    }
     throw err
   }
-  await registry.drain({ status: 'committed' }, errors)
-  if (errors.length > 0) {
-    throw new AfterTransactionError(errors)
+  try {
+    await registry.drain({ status: 'committed' }, errors)
+  } finally {
+    await reportAfterTransactionFailures(config, errors)
   }
   return result
 }
@@ -592,6 +601,31 @@ function transactionFace(
 function logDatabaseFailure(error: unknown, listKey: string, action: string): void {
   if (!(error instanceof DatabaseError)) return
   console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
+}
+
+function clientFailure(
+  error: unknown,
+  config: OpenSaasConfig,
+  listKey: string,
+  action: string,
+  options: { shownListKey?: string; genericMessage?: string } = {},
+): { error: string; fieldErrors?: Record<string, string> } {
+  const normalized = databaseErrorMessage(error, config)
+  if (!isClientSafeError(normalized)) {
+    console.error(`Action "${action}" on list "${listKey}" failed:`, error)
+    const label = action.charAt(0).toUpperCase() + action.slice(1)
+    return {
+      error:
+        options.genericMessage ??
+        `${label} on "${options.shownListKey ?? listKey}" failed due to an internal error.`,
+    }
+  }
+  logDatabaseFailure(normalized, listKey, action)
+  const fieldErrors =
+    normalized instanceof ValidationError || normalized instanceof DatabaseError
+      ? normalized.fieldErrors
+      : undefined
+  return { error: normalized.message, fieldErrors }
 }
 
 /**
@@ -846,17 +880,17 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
-      if (action.hasAccess) {
-        const allowed = await action.hasAccess({
-          session: context.session,
-          context,
-          listKey: props.listKey,
-        })
-        if (!allowed) {
-          return { bulkAction: false, error: 'Access denied' }
-        }
-      }
       try {
+        if (action.hasAccess) {
+          const allowed = await action.hasAccess({
+            session: context.session,
+            context,
+            listKey: props.listKey,
+          })
+          if (!allowed) {
+            return { bulkAction: false, error: 'Access denied' }
+          }
+        }
         const result = await action.handler({
           listKey: props.listKey,
           ids: props.ids,
@@ -864,21 +898,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
         })
         return { bulkAction: true, message: result?.message }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { bulkAction: false, error: error.message }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        // A normalised database error carries a user-safe, translated message.
-        if (dbError instanceof DatabaseError) {
-          logDatabaseFailure(dbError, props.listKey, props.action)
-          return { bulkAction: false, error: dbError.message }
-        }
-        // Anything else is an unexpected handler bug whose raw `.message` could
-        // leak internal detail to the client — log it server-side and return a
-        // generic client-facing message instead.
-        console.error(`Bulk action "${props.key}" on list "${props.listKey}" failed:`, error)
-        return { bulkAction: false, error: 'Action failed' }
+        const failure = clientFailure(error, config, props.listKey, props.action, {
+          genericMessage: 'Action failed',
+        })
+        return { bulkAction: false, error: failure.error }
       }
     }
 
@@ -1018,13 +1041,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { removed: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { removed: false, error: error.message }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return { removed: false, error: dbError.message }
+        return { removed: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1091,17 +1108,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
             : undefined
         return { created: true, id }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { created: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          created: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { created: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1148,16 +1155,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
             : undefined
         return { added: true, id }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, edge.junctionListKey, props.action)
-          return { added: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, edge.junctionListKey, props.action)
         return {
           added: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
+          ...clientFailure(error, config, edge.junctionListKey, props.action, {
+            shownListKey: props.listKey,
+          }),
         }
       }
     }
@@ -1198,17 +1200,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { linked: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { linked: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          linked: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { linked: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1230,17 +1222,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         return { updated: true }
       } catch (error) {
-        if (error instanceof ValidationError || error instanceof DatabaseError) {
-          logDatabaseFailure(error, props.listKey, props.action)
-          return { updated: false, error: error.message, fieldErrors: error.fieldErrors }
-        }
-        const dbError = databaseErrorMessage(error, config)
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          updated: false,
-          error: dbError.message,
-          fieldErrors: dbError instanceof DatabaseError ? dbError.fieldErrors : undefined,
-        }
+        return { updated: false, ...clientFailure(error, config, props.listKey, props.action) }
       }
     }
 
@@ -1293,37 +1275,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         data: result,
       }
     } catch (error) {
-      if (error instanceof ValidationError) {
-        return {
-          success: false,
-          error: error.message,
-          fieldErrors: error.fieldErrors,
-        }
-      }
-
-      if (error instanceof DatabaseError) {
-        logDatabaseFailure(error, props.listKey, props.action)
-        return {
-          success: false,
-          error: error.message,
-          fieldErrors: error.fieldErrors,
-        }
-      }
-
-      const dbError = databaseErrorMessage(error, config)
-      if (dbError instanceof DatabaseError) {
-        logDatabaseFailure(dbError, props.listKey, props.action)
-        return {
-          success: false,
-          error: dbError.message,
-          fieldErrors: dbError.fieldErrors,
-        }
-      }
-
-      return {
-        success: false,
-        error: dbError.message,
-      }
+      return { success: false, ...clientFailure(error, config, props.listKey, props.action) }
     }
   }
 
@@ -1594,6 +1546,40 @@ export function buildDbDelegate(
   return db as AccessControlledDB
 }
 
+const WRITE_ARG_KEYS = {
+  create: ['data'],
+  update: ['where', 'data'],
+  delete: ['where'],
+} as const
+
+function assertWriteArgs(
+  args: object | null | undefined,
+  listName: string,
+  operation: keyof typeof WRITE_ARG_KEYS,
+  isSingleton: boolean,
+): void {
+  const allowed: readonly string[] = WRITE_ARG_KEYS[operation]
+  if (args === null || typeof args !== 'object') {
+    throw new ValidationError(
+      [`${operation}() on "${listName}" takes an argument object with ${allowed.join(', ')}.`],
+      {},
+    )
+  }
+  for (const [key, value] of Object.entries(args)) {
+    if (allowed.includes(key) || value === undefined) continue
+
+    const readBack = isSingleton
+      ? `context.db.${listName}.get({ include: { … } }) (a singleton has no select)`
+      : `context.db.${listName}.where({ id: { equals: row.id } }).${key}(…).first()`
+    const reason =
+      key === 'select' || key === 'include'
+        ? `\`${key}\` is not supported on a write. Write first, then read the row back with ` +
+          `${readBack}, inside context.transaction() when the two must be atomic.`
+        : `\`${key}\` is not an argument of ${operation}(); it takes ${allowed.join(', ')}.`
+    throw new ValidationError([`${operation}() on "${listName}": ${reason}`], {})
+  }
+}
+
 function createCreate(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1605,6 +1591,7 @@ function createCreate(
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { data: Record<string, unknown> }) => {
+    assertWriteArgs(args, listName, 'create', isSingletonList(listConfig))
     return runWritePipeline({
       listName,
       listConfig,
@@ -1630,6 +1617,7 @@ function createUpdate(
   return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     // Runs before the pipeline's access gate — a `where` the engine cannot
     // lower is the caller's own shape error, not a denial.
+    assertWriteArgs(args, listName, 'update', isSingletonList(listConfig))
     assertIdentityWhere(args.where, listName, 'update')
 
     return runWritePipeline({
@@ -1655,6 +1643,7 @@ function createDelete(
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { where: Record<string, unknown> }) => {
+    assertWriteArgs(args, listName, 'delete', isSingletonList(listConfig))
     assertIdentityWhere(args.where, listName, 'delete')
 
     return runWritePipeline({

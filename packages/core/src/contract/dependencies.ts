@@ -145,12 +145,8 @@ function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>
   const fields = listConfig.fields ?? {}
   const timestamps = resolveListTimestamps({ ...listConfig, fields }, config.db)
   const names = ['id']
-  if (timestamps.createdAt || Object.prototype.hasOwnProperty.call(fields, 'createdAt')) {
-    names.push('createdAt')
-  }
-  if (timestamps.updatedAt || Object.prototype.hasOwnProperty.call(fields, 'updatedAt')) {
-    names.push('updatedAt')
-  }
+  if (timestamps.createdAt) names.push('createdAt')
+  if (timestamps.updatedAt) names.push('updatedAt')
   return names
 }
 

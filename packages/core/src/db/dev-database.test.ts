@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  statSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -69,6 +77,61 @@ async function ask(url: string, sql: string): Promise<QueryResult> {
 }
 
 const CONNECTION_VARIABLES = ['DATABASE_URL', 'DIRECT_DATABASE_URL'] as const
+
+describe.skipIf(process.platform === 'win32')('Dev database file permissions', () => {
+  let projectRoot: string
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-mode-'))
+  })
+
+  afterEach(() => {
+    rmSync(projectRoot, { recursive: true, force: true })
+  })
+
+  const modeOf = (file: string) => statSync(file).mode & 0o777
+
+  test(
+    'a fresh data directory is 0700 and the state and lock files are 0600',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+        expect(modeOf(database.stateFile)).toBe(0o600)
+        expect(modeOf(path.join(dataDir, '.opensaas-dev-database.lock'))).toBe(0o600)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a pre-existing 0755 data directory is tightened to 0700',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      mkdirSync(dataDir)
+      chmodSync(dataDir, 0o755)
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test('writeDevDatabaseState leaves the state file at 0600', () => {
+    const file = path.join(projectRoot, 'state.json')
+    writeDevDatabaseState(file, {
+      url: 'postgres://postgres@127.0.0.1:1/postgres',
+      pid: process.pid,
+    })
+    expect(modeOf(file)).toBe(0o600)
+  })
+})
 
 describe('startDevDatabase', () => {
   let projectRoot: string

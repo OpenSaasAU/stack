@@ -50,7 +50,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       type: { pack: 'pg', type: 'int' },
     })
     expect(table(contract, 'Settings').columns.id).toMatchObject({
-      nativeType: 'int4',
+      dataType: 'pg/int4',
       default: { kind: 'literal', value: 1 },
     })
     expect(table(contract, 'Settings').primaryKey).toEqual({ columns: ['id'] })
@@ -60,7 +60,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       type: { pack: 'pg', type: 'uuid' },
     })
     expect(table(contract, 'User').columns.id).toMatchObject({
-      nativeType: 'uuid',
+      dataType: 'pg/uuid',
       nullable: false,
     })
     expect(contract.execution?.mutations.defaults).toContainEqual({
@@ -74,6 +74,9 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       codecId: 'pg/timestamptz-string@1',
       default: { kind: 'function', expression: 'now()' },
     })
+    expect(contract.execution?.mutations.defaults).not.toContainEqual(
+      expect.objectContaining({ ref: { namespace: 'public', entry: 'User', field: 'createdAt' } }),
+    )
     expect(table(contract, 'User').columns.updatedAt).toMatchObject({
       codecId: 'pg/timestamptz-string@1',
       nullable: false,
@@ -135,7 +138,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
       },
     ])
     expect(table(contract, 'Post').columns.authorId).toMatchObject({
-      nativeType: 'uuid',
+      dataType: 'pg/uuid',
       nullable: true,
     })
 
@@ -155,10 +158,10 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
 
     expect(data.enums).toEqual([{ name: 'PostStatus', values: ['draft', 'published'] }])
     expect(table(contract, 'Post').columns.status).toMatchObject({
-      nativeType: 'PostStatus',
+      dataType: 'pg/enum',
       default: { kind: 'literal', value: 'draft' },
     })
-    expect(table(contract, 'Post').columns.publish_date).toMatchObject({ nativeType: 'date' })
+    expect(table(contract, 'Post').columns.publish_date).toMatchObject({ dataType: 'pg/date' })
 
     assertRelationGraphAgrees(data, emitted)
   })
@@ -191,7 +194,7 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     expect(table(contract, 'rateLimit').uniques).toEqual([
       { columns: ['key'], name: 'RateLimit_key_key' },
     ])
-    expect(table(contract, 'rateLimit').columns.lastRequest).toMatchObject({ nativeType: 'int8' })
+    expect(table(contract, 'rateLimit').columns.lastRequest).toMatchObject({ dataType: 'pg/int8' })
 
     expect(emittedModel(emitted, 'User').relations).toEqual({
       sessions: {
@@ -221,9 +224,10 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     const contract = buildPrismaContract(data, { packs: { pgvector } })
     const emitted = toEmittedContract(contract)
     expect(table(contract, 'Document').columns.embedding).toEqual({
-      nativeType: 'vector',
+      dataType: 'pgvector/vector',
       codecId: 'pg/vector@1',
       nullable: true,
+      many: false,
       typeParams: { length: 3 },
     })
     expect(Object.keys(contract.extensions)).toEqual(['pgvector'])
@@ -289,7 +293,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
 
     expect(table(contract, 'Profile').uniques).toEqual([{ columns: ['userId'] }])
     expect(table(contract, 'Profile').columns.userId).toMatchObject({
-      nativeType: 'int4',
+      dataType: 'pg/int4',
       nullable: false,
     })
     expect(emittedModel(emitted, 'User').relations.profile).toEqual({
@@ -365,7 +369,7 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
     expect(model(data, 'User').id.strategy).toBe('int autoincrement')
     expect(model(data, 'Profile').id.strategy).toBe('cuid2')
     expect(table(contract, 'User').columns.id).toMatchObject({
-      nativeType: 'int4',
+      dataType: 'pg/int4',
       default: { kind: 'function', expression: 'autoincrement()' },
     })
     expect(table(contract, 'Profile').columns.id).toMatchObject({ codecId: 'sql/char@1' })
@@ -476,33 +480,33 @@ describe('native types — every honoured db.nativeType lowers to its own column
 
   test('the built contract binds each to its native type, codec and type params', () => {
     expect(columns.code).toMatchObject({
-      nativeType: 'character varying',
+      dataType: 'pg/varchar',
       typeParams: { length: 255 },
     })
-    expect(columns.tag).toMatchObject({ nativeType: 'character', typeParams: { length: 3 } })
+    expect(columns.tag).toMatchObject({ dataType: 'pg/char', typeParams: { length: 3 } })
     expect(columns.amount).toMatchObject({
-      nativeType: 'numeric',
+      dataType: 'pg/numeric',
       typeParams: { precision: 10, scale: 2 },
     })
-    expect(columns.ratio).toMatchObject({ nativeType: 'float4', codecId: 'pg/float4@1' })
-    expect(columns.raw).toMatchObject({ nativeType: 'json', codecId: 'pg/json@1' })
-    expect(columns.doc).toMatchObject({ nativeType: 'jsonb', codecId: 'pg/jsonb@1' })
+    expect(columns.ratio).toMatchObject({ dataType: 'pg/float4', codecId: 'pg/float4@1' })
+    expect(columns.raw).toMatchObject({ dataType: 'pg/json', codecId: 'pg/json@1' })
+    expect(columns.doc).toMatchObject({ dataType: 'pg/jsonb', codecId: 'pg/jsonb@1' })
     expect(columns.takenAt).toMatchObject({
-      nativeType: 'timestamp',
+      dataType: 'pg/timestamp',
       codecId: 'pg/timestamp-string@1',
       typeParams: { precision: 3 },
     })
     expect(columns.seenAt).toMatchObject({
-      nativeType: 'timestamptz',
+      dataType: 'pg/timestamptz',
       codecId: 'pg/timestamptz-string@1',
       typeParams: { precision: 6 },
     })
     expect(columns.atTime).toMatchObject({
-      nativeType: 'time',
+      dataType: 'pg/time',
       codecId: 'pg/time-string@1',
       typeParams: { precision: 2 },
     })
-    expect(columns.day).toMatchObject({ nativeType: 'date', codecId: 'pg/date-string@1' })
+    expect(columns.day).toMatchObject({ dataType: 'pg/date', codecId: 'pg/date-string@1' })
   })
 })
 
