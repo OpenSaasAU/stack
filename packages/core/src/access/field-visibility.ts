@@ -68,7 +68,15 @@ export interface RuleView {
   readonly declared: Readonly<Record<string, unknown>>
 }
 
-const NO_RULE_VIEW: RuleView = Object.freeze({ removed: new Set<string>(), declared: {} })
+const EMPTY_RULE_VIEW: RuleView = Object.freeze({ removed: new Set<string>(), declared: {} })
+
+/** The {@link RuleView} of every row at one level, and of the levels beneath it. */
+export interface RuleViewTree {
+  readonly viewFor: (row: Record<string, unknown>) => RuleView
+  readonly nested: Readonly<Record<string, RuleViewTree>>
+}
+
+const NO_RULE_VIEWS: RuleViewTree = Object.freeze({ viewFor: () => EMPTY_RULE_VIEW, nested: {} })
 
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
@@ -232,7 +240,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // field runs on it (ADR-0051), and `restoreReductions` in `read.ts`
   // overwrites the key with the reduction's own value afterwards.
   reducedDeclared: ReducedDeclaredKeys = noReducedDeclaredKeys(),
-  ruleView: RuleView = NO_RULE_VIEW,
+  ruleViews: RuleViewTree = NO_RULE_VIEWS,
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
 
@@ -281,6 +289,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
    * exercising field access in isolation) has no table to read, so the whole
    * working row stands in — there is no declaration to honour there.
    */
+  const ruleView = ruleViews.viewFor(item)
   const ruleItem: Record<string, unknown> =
     ruleView.removed.size === 0 && Object.keys(ruleView.declared).length === 0
       ? workingItem
@@ -409,6 +418,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       // named a further relation that is both reduced and declared (#1357).
       // Falls back to empty — the common case.
       const nestedReducedDeclared = reducedDeclared.nested[fieldName] ?? noReducedDeclaredKeys()
+      const nestedRuleViews = ruleViews.nested[fieldName] ?? NO_RULE_VIEWS
 
       if (relatedConfig) {
         if (Array.isArray(value)) {
@@ -424,6 +434,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 nestedAdditions,
                 nestedSelection,
                 nestedReducedDeclared,
+                nestedRuleViews,
               ),
             ),
           )
@@ -438,6 +449,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
             nestedAdditions,
             nestedSelection,
             nestedReducedDeclared,
+            nestedRuleViews,
           )
         }
       } else {

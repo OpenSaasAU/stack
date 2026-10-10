@@ -30,6 +30,7 @@ const config: OpenSaasConfig = {
               ),
           },
         }),
+        folder: relationship({ ref: 'Folder.docs' }),
         blocked: relationship({ ref: 'Person.blockedDoc', many: true }),
         blockedCount: virtual({
           type: 'number',
@@ -38,6 +39,13 @@ const config: OpenSaasConfig = {
             resolveOutput: ({ item }) => (Array.isArray(item.blocked) ? item.blocked.length : -1),
           },
         }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Folder: {
+      fields: {
+        name: text(),
+        docs: relationship({ ref: 'Doc.folder', many: true }),
       },
       access: { operation: { query: () => true, create: () => true } },
     },
@@ -79,7 +87,10 @@ describe('a caller-shaped include on a declared dependency', () => {
   beforeEach(async () => {
     await db.truncate()
     const admin = db.context({}).sudo()
-    const doc = await admin.db.Doc.create({ data: { body: 'TOP SECRET' } })
+    const folder = await admin.db.Folder.create({ data: { name: 'f' } })
+    const doc = await admin.db.Doc.create({
+      data: { body: 'TOP SECRET', folder: { connect: { id: folder!.id } } },
+    })
     const blocked = await admin.db.Person.create({
       data: { email: 'blocked@x', blockedDoc: { connect: { id: doc!.id } } },
     })
@@ -120,6 +131,19 @@ describe('a caller-shaped include on a declared dependency', () => {
       .all()
     expect(doc).not.toHaveProperty('body')
     expect(doc).toMatchObject({ blockedCount: 1 })
+  })
+
+  test('a where on a declared relation below another include does not unlock the body', async () => {
+    const [folder] = await db
+      .context({ userId: blockedId })
+      .db.Folder.include('docs', (docs) =>
+        docs.include('blocked', (blocked) => blocked.where({ id: { equals: aliceId } })),
+      )
+      .all()
+    const docs: unknown = Reflect.get(folder, 'docs')
+    if (!Array.isArray(docs)) throw new Error('docs not included')
+    expect(docs[0]).not.toHaveProperty('body')
+    expect(docs[0]).toMatchObject({ blockedCount: 1, blocked: [] })
   })
 
   test('an unblocked user still reads the body under a shaped include', async () => {

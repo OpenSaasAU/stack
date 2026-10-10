@@ -13,7 +13,7 @@ import {
   filterReadableFields,
   getRelatedListConfig,
 } from '../access/index.js'
-import type { RuleView } from '../access/field-visibility.js'
+import type { RuleView, RuleViewTree } from '../access/field-visibility.js'
 import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
@@ -1230,6 +1230,7 @@ export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
 
 async function unshapedDeclaredRows(
   binding: ReadBinding,
+  listName: string,
   rows: readonly OrmRow[],
   plans: readonly IncludePlan[],
 ): Promise<Map<string, Map<string, unknown>>> {
@@ -1242,8 +1243,8 @@ async function unshapedDeclaredRows(
   const ops = await whereCombinators()
   for (const plan of fetched) {
     const owners = await withOrigin('engine', () =>
-      collectionFor(binding.ormHandle, binding.listName)
-        .where((model) => identityIn(model, binding.listName, ids))
+      collectionFor(binding.ormHandle, listName)
+        .where((model) => identityIn(model, listName, ids))
         .select('id')
         .include(plan.relation, (child) => {
           let scoped = child
@@ -1259,6 +1260,33 @@ async function unshapedDeclaredRows(
     byRelation.set(plan.relation, values)
   }
   return byRelation
+}
+
+async function ruleViewTreeFor(
+  binding: ReadBinding,
+  listName: string,
+  rows: readonly OrmRow[],
+  plans: readonly IncludePlan[],
+): Promise<RuleViewTree> {
+  const unshaped = await unshapedDeclaredRows(binding, listName, rows, plans)
+  const nested: Record<string, RuleViewTree> = {}
+  for (const plan of plans) {
+    if (plan.declared || plan.reduce !== undefined || plan.includes.length === 0) continue
+    const children: OrmRow[] = []
+    for (const row of rows) {
+      const value = row[plan.relation]
+      if (Array.isArray(value)) children.push(...value.filter(isRow))
+      else if (isRow(value)) children.push(value)
+    }
+    if (children.length === 0) continue
+    nested[plan.relation] = await ruleViewTreeFor(
+      binding,
+      plan.relatedListName,
+      children,
+      plan.includes,
+    )
+  }
+  return { viewFor: (row) => ruleViewFor(row, plans, unshaped), nested }
 }
 
 function ruleViewFor(
@@ -1297,7 +1325,7 @@ async function visibleRows(
   plan: ReadPlan,
 ): Promise<VisibleRow[]> {
   const { listConfig, context, config, listName } = binding
-  const unshaped = await unshapedDeclaredRows(binding, rows, plan.includes)
+  const ruleViews = await ruleViewTreeFor(binding, listName, rows, plan.includes)
   const results = await Promise.all(
     rows.map(async (row) => {
       const filtered = await filterReadableFields(
@@ -1310,7 +1338,7 @@ async function visibleRows(
         plan.additions,
         plan.selection,
         plan.reducedDeclared,
-        ruleViewFor(row, plan.includes, unshaped),
+        ruleViews,
       )
       applyForeignKeys(filtered, plan.includes)
       restoreReductions(filtered, row, plan.includes)
