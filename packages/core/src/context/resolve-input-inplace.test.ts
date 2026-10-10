@@ -5,7 +5,7 @@ import { createTestContext, type TestContext } from '../testing/context.js'
 
 const BOOT = 120_000
 
-const mutateInPlace = ({ resolvedData }: { resolvedData: Record<string, unknown> }) => {
+const mutateInPlace = async ({ resolvedData }: { resolvedData: Record<string, unknown> }) => {
   if (resolvedData.title === 'drop') delete resolvedData.note
   else resolvedData.note = 'set-by-hook'
   return resolvedData
