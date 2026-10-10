@@ -454,6 +454,8 @@ interface IncludeTarget {
   arity: 'one' | 'many'
   /** The relationship field this key names, or `undefined` for a synthetic back-relation. */
   fieldConfig: FieldConfig | undefined
+  /** The declared field whose `read` rule gates this key: the key's own field, or a synthetic's source field. */
+  readGate: FieldConfig | undefined
   /** The foreign key this side owns, as the contract derives it. */
   foreignKey: ContractForeignKeyDescriptor | undefined
 }
@@ -532,6 +534,7 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
       relatedListConfig: related.listConfig,
       arity: resolved.fieldConfig.many === true ? 'many' : 'one',
       fieldConfig: resolved.fieldConfig,
+      readGate: resolved.fieldConfig,
       foreignKey: foreignKeyOf(name, resolved.fieldConfig, ctx),
     }
   }
@@ -543,6 +546,7 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
         relatedListConfig: synthetic.sourceListConfig,
         arity: 'many',
         fieldConfig: undefined,
+        readGate: synthetic.sourceFieldConfig,
         foreignKey: undefined,
       }
     }
@@ -574,8 +578,8 @@ async function isOmittedBeforeQuery(
   ctx: ResolveContext,
 ): Promise<boolean> {
   if (!ctx.checkFieldRead) return false
-  if (target.fieldConfig?.access === undefined) return false
-  const answer = await classifyRowIndependentRead(target.fieldConfig.access, {
+  if (target.readGate?.access === undefined) return false
+  const answer = await classifyRowIndependentRead(target.readGate.access, {
     session: ctx.session,
     context: ctx.context,
   })

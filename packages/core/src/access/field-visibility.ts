@@ -310,7 +310,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   }
 
   // Process existing fields from the database result
-  for (const [fieldName, value] of Object.entries(workingItem)) {
+  for (const [fieldName, rawValue] of Object.entries(workingItem)) {
+    let value = rawValue
     const fieldConfig = fieldConfigs[fieldName]
 
     if (systemFields.has(fieldName)) {
@@ -395,13 +396,21 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
         relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
       } else if (synthetic) {
-        // No declared field means no field-level `read` gate of its own to
-        // check here — the owning list's OWN field-level access is enforced
-        // by the recursive `filterReadableFields` call below, exactly as it
-        // would be for a declared relationship's related rows.
         relatedConfig = {
           listName: synthetic.sourceListName,
           listConfig: synthetic.sourceListConfig,
+        }
+        if (Array.isArray(value)) {
+          const allowed = await Promise.all(
+            value.map((relatedItem) =>
+              checkFieldAccess(synthetic.sourceFieldConfig.access, 'read', {
+                ...args,
+                item: relatedItem,
+              }),
+            ),
+          )
+          const readable = value.filter((_, index) => allowed[index])
+          value = readable
         }
       }
       // The additions beneath THIS relation, e.g. a field on the related list
