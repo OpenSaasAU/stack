@@ -17,11 +17,11 @@ import {
   generateFieldSchemas,
   ownsForeignKey,
 } from './field-schema.js'
-import { listIdColumn, listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
+import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { coerceWhereIds, idBoundaryRefusal } from './where-id-boundary.js'
+import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
@@ -593,9 +593,6 @@ function coerceConnectIds(
     if (criterion === undefined) continue
 
     const relatedListKey = fieldConfig.ref.split('.')[0]
-    const strategy = listIdColumn(config, relatedListKey)?.strategy
-    if (strategy !== 'int autoincrement' && strategy !== 'singleton') continue
-
     const parsed = parseListId(config, relatedListKey, criterion.id)
     if (!parsed.ok) return null
 
@@ -707,7 +704,12 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            const coercedWhere = coerceWhereIds(args.where, config, listKey)
+            const coercedWhere = coerceWhereIds(
+              args.where,
+              config,
+              listKey,
+              await foreignKeyVisibility(config, context.session, context),
+            )
             if (coercedWhere === null) {
               return createErrorResultResponse(idBoundaryRefusal('query records'), id)
             }

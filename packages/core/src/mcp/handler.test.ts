@@ -2000,6 +2000,24 @@ describe('the MCP surface', () => {
       },
       BOOT,
     )
+
+    test(
+      'a malformed uuid connect.id is refused at the boundary',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const malformed = await callTool('list_comment_create', {
+          data: { body: 'x', post: { connect: { id: 'not-a-uuid' } } },
+        })
+        const result = malformed.body?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('validation failed')
+        expect(await context.db.Comment.all()).toEqual([])
+      },
+      BOOT,
+    )
   })
 
   /**

@@ -9,7 +9,7 @@ import type { SecuredQuery } from '../secured/read.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
-import { coerceWhereIds, idBoundaryRefusal } from './where-id-boundary.js'
+import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
 function scalarSelectorSchema(fieldName: string): Record<string, unknown> {
@@ -480,6 +480,7 @@ export async function resolveFieldsProjection(
         entry.where as Record<string, unknown>,
         config,
         related.listName,
+        await foreignKeyVisibility(config, session, context),
       )
       if (coercedWhere === null) {
         throw new McpProjectionRefusedError(idBoundaryRefusal('query records'))
