@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -127,6 +127,17 @@ describe('startDevDatabase', () => {
       await expect(ask(anonymous.toString(), 'select 1')).rejects.toThrow()
       expect(new URL(database.url).password).toMatch(/^[0-9a-f]{32}$/)
       expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'the state file carrying the password is readable by its owner alone',
+    async () => {
+      const database = await start()
+      if (process.platform !== 'win32') {
+        expect(statSync(database.stateFile).mode & 0o777).toBe(0o600)
+      }
     },
     BOOT_TIMEOUT,
   )

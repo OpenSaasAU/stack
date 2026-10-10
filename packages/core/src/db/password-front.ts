@@ -3,6 +3,8 @@ import { createConnection, createServer, type Server, type Socket } from 'node:n
 
 const SSL_REQUEST_CODE = 80877103
 const GSS_ENC_REQUEST_CODE = 80877104
+const CANCEL_REQUEST_CODE = 80877102
+const HANDSHAKE_TIMEOUT_MS = 10_000
 const PROTOCOL_VERSION_3 = 196608
 
 const CLEARTEXT_PASSWORD_REQUEST = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 3])
@@ -42,17 +44,23 @@ function admit(client: Socket, innerPath: string, password: string): void {
   let user = ''
   let settled = false
 
+  const handshakeTimer = setTimeout(() => client.destroy(), HANDSHAKE_TIMEOUT_MS)
+  client.once('close', () => clearTimeout(handshakeTimer))
+
   const reject = (): void => {
-    client.end(authenticationFailed(user))
+    settled = true
+    client.removeListener('data', onData)
+    client.end(authenticationFailed(user.replace(/[^\w.@-]/g, '?')))
   }
 
   const proxy = (leftover: Buffer): void => {
     settled = true
+    clearTimeout(handshakeTimer)
     client.pause()
     client.removeListener('data', onData)
     const inner = createConnection(innerPath)
-    inner.once('error', () => client.destroy())
-    client.once('error', () => inner.destroy())
+    inner.on('error', () => client.destroy())
+    client.on('error', () => inner.destroy())
     client.once('close', () => inner.destroy())
     inner.once('close', () => client.destroy())
     inner.once('connect', () => {
@@ -79,6 +87,12 @@ function admit(client: Socket, innerPath: string, password: string): void {
         if (code === SSL_REQUEST_CODE || code === GSS_ENC_REQUEST_CODE) {
           client.write('N')
           continue
+        }
+        if (code === CANCEL_REQUEST_CODE) {
+          const inner = createConnection(innerPath)
+          inner.on('error', () => undefined)
+          inner.end(Buffer.from(frame))
+          return void client.destroy()
         }
         if (code !== PROTOCOL_VERSION_3) return void client.destroy()
         startup = Buffer.from(frame)
