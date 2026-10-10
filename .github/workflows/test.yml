@@ -10,42 +10,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  checks:
     runs-on: ubuntu-latest
 
-    # The escape belongs to the job, not to the steps that happen to need it: a
-    # suite whose guarantee PGlite cannot exercise skips itself by name when the
-    # variable is absent, and a skip that reads as coverage is what this guards
-    # against (ADR-0063). It names the service container below.
-    #
-    # Setting it here is necessary but not sufficient: turbo's strict env mode
-    # (the default since 2.x) strips any variable a task does not declare, so
-    # every task that dials the escape must also list `DATABASE_URL` under
-    # `env` in turbo.json. `test` did not, and silently ran on PGlite while
-    # `test:coverage` ran on the container beside it.
+    # No step here dials a database. The variable is set only so turbo's `build`
+    # hash (which lists `DATABASE_URL`) matches the test jobs' and the cache is shared.
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
-
-    # The real Postgres the test harness runs against (ADR-0057's
-    # `DATABASE_URL` escape, #1143). pgvector's image rather than the plain
-    # one, so a pack-declaring contract's `CREATE EXTENSION vector` has
-    # something to install — ADR-0065 makes provisioning the deployment's job,
-    # and CI is a deployment.
-    services:
-      postgres:
-        # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
-        # would change CI's database with no commit here. Resolved from
-        # pgvector/pgvector:pg17 on 2026-09-06; bump both together.
-        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -245,6 +216,33 @@ jobs:
       - name: Check documented TypeScript blocks compile
         run: pnpm check:doc-ts-blocks
 
+  examples-build:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    # Pinned by the same digest as the `unit-tests` job's; bump both together.
+    services:
+      postgres:
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
       # turbo's `test` task depends on `build`, so this run also builds every
       # examples/* package it names: `starter`/`starter-auth` (#1170), the
       # three demos added by #1172 — each of which also carries a `test` script
@@ -264,10 +262,9 @@ jobs:
       # rag-openai-chatbot has no suite, and rag-ollama-demo's is `test:rag`,
       # deliberately off `test` because it needs an Ollama server on
       # localhost:11434 that CI does not run. Both are build gates here.
-      - name: Run package tests and build the converted examples
+      - name: Build the converted examples and run their suites
         run: >
           turbo run test
-          --filter='./packages/*'
           --filter=./examples/starter
           --filter=./examples/starter-auth
           --filter=./examples/custom-field
@@ -290,17 +287,80 @@ jobs:
       # failure anywhere in this job's steps — including the known flakes
       # #1260 and #1404 — cannot skip them. #1175 replaces this enumeration
       # and must keep that split, or reproduce it some other way.
-      #
+
+  # Package suites with coverage, one runner per shard. core and cli are the
+  # two long poles and would otherwise contend for the same four vCPUs.
+  unit-tests:
+    name: unit-tests (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            filter: --filter=@opensaas/stack-core
+          - shard: cli
+            filter: --filter=@opensaas/stack-cli
+          - shard: rest
+            filter: >-
+              --filter='./packages/*'
+              --filter='!@opensaas/stack-core'
+              --filter='!@opensaas/stack-cli'
+
+    # The escape belongs to the job, not to the steps that happen to need it: a
+    # suite whose guarantee PGlite cannot exercise skips itself by name when the
+    # variable is absent, and a skip that reads as coverage is what this guards
+    # against (ADR-0063). It names the service container below.
+    #
+    # Setting it here is necessary but not sufficient: turbo's strict env mode
+    # (the default since 2.x) strips any variable a task does not declare, so
+    # every task that dials the escape must also list `DATABASE_URL` under
+    # `env` in turbo.json. `test` did not, and silently ran on PGlite while
+    # `test:coverage` ran on the container beside it.
+    env:
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    # The real Postgres the test harness runs against (ADR-0057's
+    # `DATABASE_URL` escape, #1143). pgvector's image rather than the plain
+    # one, so a pack-declaring contract's `CREATE EXTENSION vector` has
+    # something to install — ADR-0065 makes provisioning the deployment's job,
+    # and CI is a deployment.
+    services:
+      postgres:
+        # Pinned by digest: `pg17` is a mutable tag, and an upstream retag
+        # would change CI's database with no commit here. Resolved from
+        # pgvector/pgvector:pg17 on 2026-09-06; bump both together.
+        image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
       # Coverage is a package property; the examples carry no `test:coverage`.
       - name: Run package tests with coverage
-        run: turbo run test:coverage --filter='./packages/*'
+        run: turbo run test:coverage ${{ matrix.filter }}
         env:
           OPENAI_API_KEY: 'sk-testing-key'
 
       - name: Install Playwright browsers
+        if: matrix.shard == 'rest'
         uses: ./.github/actions/playwright
 
       - name: Run browser tests with coverage
+        if: matrix.shard == 'rest'
         working-directory: ./packages/ui
         run: pnpm test:browser:coverage
 
@@ -308,24 +368,35 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-reports
+          name: coverage-reports-${{ matrix.shard }}
           path: |
             packages/*/coverage/
           retention-days: 1
 
       - name: Upload browser test screenshots
-        if: failure()
+        if: failure() && matrix.shard == 'rest'
         uses: actions/upload-artifact@v7
         with:
           name: browser-test-screenshots
           path: packages/ui/tests/browser/**/__screenshots__/
           retention-days: 7
 
+  # Keeps the single `test` check that branch protection requires, now that the
+  # work it used to do runs as the parallel jobs above.
+  test:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [checks, examples-build, unit-tests]
+    steps:
+      - name: Require every split job to pass
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
+
   # The blog's access-control script and the mcp-demo's tool checks are the
   # gates that actually protect those examples. Running them as their own job
-  # — rather than as steps late in `test` — means a failure anywhere in
-  # `test` (including the known flakes #1260 and #1404) cannot silently skip
-  # them: this job runs on its own runner, in parallel with `test`, and its
+  # — rather than as steps late in another job — means a failure anywhere
+  # else (including the known flakes #1260 and #1404) cannot silently skip
+  # them: this job runs on its own runner, in parallel with the rest, and its
   # pass/fail is its own entry on the pull request's check list rather than a
   # buried, possibly-skipped step (#1407).
   #
@@ -342,7 +413,7 @@ jobs:
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
 
-    # Pinned by the same digest as the `test` job's; bump both together.
+    # Pinned by the same digest as the `unit-tests` job's; bump both together.
     services:
       postgres:
         image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
@@ -493,7 +564,7 @@ jobs:
       # still starts the sidecar.
       DATABASE_URL: ${{ matrix.database_url }}
 
-    # Pinned by the same digest as the `test` job's; bump both together.
+    # Pinned by the same digest as the `unit-tests` job's; bump both together.
     services:
       postgres:
         image: pgvector/pgvector@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
@@ -651,7 +722,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    needs: test
+    needs: unit-tests
 
     steps:
       - name: Checkout code
@@ -660,7 +731,8 @@ jobs:
       - name: Download coverage artifacts
         uses: actions/download-artifact@v8
         with:
-          name: coverage-reports
+          pattern: coverage-reports-*
+          merge-multiple: true
           path: packages/
 
       - name: Report coverage for Core Package
