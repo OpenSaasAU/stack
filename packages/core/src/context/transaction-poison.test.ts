@@ -260,6 +260,7 @@ describe('a caught failing secured read poisons its transaction owner', () => {
 
   beforeEach(async () => {
     await harness.truncate()
+    bridge.mockReset()
   })
 
   const count = async (): Promise<number> => (await harness.context.sudo().db.Bill.all()).length
@@ -296,6 +297,22 @@ describe('a caught failing secured read poisons its transaction owner', () => {
         .transaction(async (tx) => tx.db.Audited.create({ data: { name: 'p' } }))
         .catch((err: unknown) => err)
       expect(outcome).toBeInstanceOf(TransactionRolledBackError)
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught failing all() rejects instead of resolving a rolled-back transaction',
+    async () => {
+      await expect(
+        harness.context.transaction(async (tx) => {
+          await tx.db.Bill.create({ data: { name: 'kept' } })
+          await tx.db.Bill.where({ id: { equals: 'not-a-uuid' } })
+            .all()
+            .catch(() => [])
+        }),
+      ).rejects.toBeInstanceOf(TransactionRolledBackError)
+      expect(await count()).toBe(0)
     },
     BOOT,
   )
