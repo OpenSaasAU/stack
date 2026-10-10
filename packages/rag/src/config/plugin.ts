@@ -85,7 +85,7 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  stored: StoredEmbedding,
+  stored: StoredEmbedding | null,
 ) => Promise<void>
 
 type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
@@ -323,8 +323,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
               //    carries a persisted `item` for the top-level record only.
               //  - #1271: a provider failure is logged, not thrown. The write
               //    the caller made did succeed, and reporting it as a failure
-              //    would invite a retry that duplicates the row. The row keeps
-              //    a null embedding and there is no regeneration path yet.
+              //    would invite a retry that duplicates the row. A failed update
+              //    clears the previous embedding; there is no regeneration path yet.
               afterTransaction: async (args) => {
                 if (args.status !== 'committed') return
                 if (args.operation !== 'create' && args.operation !== 'update') return
@@ -352,6 +352,19 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   return
                 }
 
+                const clearEmbedding = async (): Promise<void> => {
+                  try {
+                    await embeddingWriter(args.context)(listName, id, fieldName, null)
+                  } catch (error) {
+                    console.error(
+                      `RAG plugin: "${listName}.${fieldName}" could not be cleared for ` +
+                        `${listName} ${id}, so its previous embedding is still searchable.`,
+                      error,
+                    )
+                  }
+                }
+
+                let sourceChanged = false
                 try {
                   const write = embeddingWriter(args.context)
 
@@ -371,10 +384,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   if (persisted === null) return
 
                   const sourceText = persisted.sourceText
-                  if (typeof sourceText !== 'string' || sourceText.length === 0) return
+                  if (typeof sourceText !== 'string' || sourceText.length === 0) {
+                    if (persisted.hasEmbedding) await clearEmbedding()
+                    return
+                  }
 
                   const sourceHash = hashText(sourceText)
                   if (storedSourceHash(persisted.metadata) === sourceHash) return
+                  sourceChanged = true
 
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
@@ -390,6 +407,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                     },
                   })
                 } catch (error) {
+                  if (sourceChanged && args.operation === 'update') await clearEmbedding()
                   reportGenerationFailure({
                     listName,
                     fieldName,
@@ -649,11 +667,18 @@ async function readForRegenerationCheck(
   id: string | number,
   sourceField: string,
   fieldName: string,
-): Promise<{ sourceText: unknown; metadata: unknown } | null> {
+): Promise<{ sourceText: unknown; metadata: unknown; hasEmbedding: boolean } | null> {
   const row = await readPluginOwnedRow({ context, listName: listKey, id })
   if (row === null) return null
   const metadataColumn = embeddingMetadataColumn(fieldName)
-  return { sourceText: row[sourceField], metadata: row[metadataColumn] }
+  const vector = row[fieldName]
+  const metadata = row[metadataColumn]
+  return {
+    sourceText: row[sourceField],
+    metadata,
+    hasEmbedding:
+      (vector !== null && vector !== undefined) || (metadata !== null && metadata !== undefined),
+  }
 }
 
 /** The `sourceHash` on a stored embedding's metadata, when there is one. */
