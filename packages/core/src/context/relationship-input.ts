@@ -488,13 +488,11 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
   const { listName, listConfig, config, data, inputData } = args
   let lowered: Record<string, unknown> | undefined
 
-  const callerIds = new Map<string, string | number>()
   for (const [fieldKey, value] of Object.entries(inputData)) {
     const key = classifyKey(fieldKey, listConfig, listName, config)
     if (key.kind !== 'owning' && key.kind !== 'foreignKey') continue
     const id = key.kind === 'owning' ? connectId(value) : foreignKeyIdOf(listName, key, value)
     if (id === undefined || id === null) continue
-    callerIds.set(key.field, id)
     if (!(await reachable(listName, key.field, key.target, id, args))) {
       return { status: 'unreachable' }
     }
