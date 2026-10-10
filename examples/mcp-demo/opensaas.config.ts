@@ -158,7 +158,8 @@ export default config({
           ref: 'User.posts',
           access: {
             read: () => true,
-            create: ({ session, inputData }) => !!session && inputData?.author === undefined,
+            create: ({ session, inputData }) =>
+              !!session?.userId && inputData?.author === undefined,
             update: () => false,
           },
         }),
