@@ -1,3 +1,4 @@
+import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import {
   getItemLabel,
@@ -384,11 +385,14 @@ export async function RelationshipTable({
   // Resolve relationship-column values to { id, label } and drop everything
   // outside the shown columns (keeping `id` for the row link).
   const preparedRows = rows.map((row) => {
+    const clientRow = relatedListConfig
+      ? applyClientValueTransforms(relatedListConfig.fields, row)
+      : row
     const prepared: Record<string, unknown> = { id: row.id }
     for (const column of section.columns) {
       prepared[column] = columnRelatedList.has(column)
-        ? toRelationshipCellValue(row[column], columnRelatedList.get(column))
-        : row[column]
+        ? toRelationshipCellValue(clientRow[column], columnRelatedList.get(column))
+        : clientRow[column]
     }
     return prepared
   })
