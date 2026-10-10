@@ -225,8 +225,8 @@ export default config({
           ref: 'User.posts',
           access: {
             read: () => true,
-            create: isSignedIn,
-            update: isSignedIn,
+            create: ({ session, inputData }) => !!session && inputData?.author === undefined,
+            update: () => false,
           },
         }),
       },
@@ -288,8 +288,7 @@ export default config({
         resolveInput: async ({ operation, resolvedData, item, context }) => {
           let data = { ...resolvedData }
 
-          // Auto-set author on create if not provided
-          if (operation === 'create' && !data.author && context.session?.userId) {
+          if (operation === 'create' && context.session?.userId) {
             data.author = { connect: { id: context.session.userId } }
           }
 
