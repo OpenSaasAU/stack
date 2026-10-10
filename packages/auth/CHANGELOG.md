@@ -1,5 +1,663 @@
 # @opensaas/stack-auth
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove `findMany` / `findFirst` / `findUnique` / `count` from the generated read surface
+
+  The Prisma 7 read names outlived the client that could serve them: every one of
+  them type-checked and then threw `TypeError: … is not a function`, under `sudo`
+  too. Reaching for one is now a compile error rather than a runtime failure.
+
+  ```typescript
+  // Before
+  const posts = await context.db.Post.findMany({ where: { published: { equals: true } } })
+  const post = await context.db.Post.findUnique({ where: { id } })
+  const first = await context.db.Post.findFirst({ where: { slug: { equals: slug } } })
+  const total = await context.db.Post.count()
+
+  // After
+  const posts = await context.db.Post.where({ published: { equals: true } }).all()
+  const post = await context.db.Post.where({ id }).first()
+  const first = await context.db.Post.where({ slug: { equals: slug } }).first()
+  const { total } = await context.db.Post.aggregate((aggregate) => ({ total: aggregate.count() }))
+  ```
+
+  A singleton's `get()` is unchanged in shape and now resolves through the same
+  composed read an ordinary list reads through, so its operation access, Access
+  Filter, Field Visibility and related-list `query` access are the engine's rather
+  than a second copy of them.
+
+  Its auto-create is also tightened on a security path. `get()` previously fired
+  the auto-create for any `query` rule that did not answer a strict `false`, so a
+  rule that answered a **filter** — a first-class form, used to scope a read —
+  fell through it. On an absent row that created the singleton and handed it to a
+  session the filter excluded; on a present row it reached the singleton-create
+  constraint's unscoped row count and threw
+  `Cannot create: … is a singleton list with an existing record`, turning a read
+  whose whole design is silent failure into an existence oracle. The auto-create
+  now fires only for a rule that answered a strict `true` (or under `sudo`), and
+  the created row is handed back through the composed read rather than raw. Every
+  other form — `false`, a filter, a missing rule — answers the same `null` an
+  absent row answers, writes nothing, and raises nothing; a rule that throws still
+  propagates.
+
+  If you relied on a filter-returning `query` rule auto-creating a singleton, give
+  that list a `query` rule that answers `true` and scope it with the Access Filter
+  on the fields instead.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `AccessContext.prisma` becomes `AccessContext.ormHandle`
+
+  The engine's internal ORM handle now carries a name that says what it is. The public bypass was renamed to `context.unsafe` first; until now the handle underneath it was still called `prisma`, so a reader could not tell which of the two a `prisma` in the source meant.
+
+  `ormHandle` is the client the secured surface's terminals, the Write Pipeline and the access filter actually issue their queries through. The engine applies the Access Filter, Field Visibility and hooks _around_ it, so the handle itself enforces none of them — the same absence of protection as `context.unsafe`, on a different object. `AccessContext` has no `unsafe` member, so `ormHandle` is what a hook or a plugin `runtime()` factory is handed.
+
+  ```typescript
+  // Before
+  const plugin = {
+    runtime: (context) => ({
+      getAuditTrail: (listName: string) =>
+        context.prisma.auditLog.findMany({ where: { listName } }),
+    }),
+  }
+
+  // After
+  const plugin = {
+    runtime: (context) => ({
+      getAuditTrail: (listName: string) =>
+        context.ormHandle.auditLog.findMany({ where: { listName } }),
+    }),
+  }
+  ```
+
+  The Write Pipeline rebinds `ormHandle` wherever it rebinds `context.db`, exactly as it did before — this rename changes nothing about when a hook's database work is transactional. Every write opens a transaction (ADR-0010), so a hook's own write through either handle rolls back with the write that failed.
+
+  `getContext()`'s second positional parameter is renamed to match; it is positional, so no call site changes. `@opensaas/stack-auth`'s better-auth wiring and `@opensaas/stack-rag`'s vector search now read `context.ormHandle`.
+
+- [#1550](https://github.com/OpenSaasAU/stack/pull/1550) [`b79da07`](https://github.com/OpenSaasAU/stack/commit/b79da070019f96d60ccf12178e3f9f47ce74747b) Thanks [@borisno2](https://github.com/borisno2)! - `authPlugin` no longer hardcodes `uuid7` on every list it injects. It now resolves the Auth lists' id strategy from an explicit `authPlugin({ idField })`, else the app's own `db.idField` default, else `uuid7` — so an app already on a non-uuid7 default (adopting a live better-auth install whose ids are text, say) keeps its Auth lists on it without a separate override:
+
+  ```typescript
+  authPlugin({
+    ...adoptBetterAuthTables({ idField: 'cuid2' }),
+    emailAndPassword: { enabled: true },
+  })
+  ```
+
+  Only `'uuid7'` and `'cuid2'` are accepted (never `'int autoincrement'`, since the Auth adapter treats every id as a string) — a resolution to `'int autoincrement'` now throws a config-time error naming the fix. An app-declared list under one of the derived keys whose own `db.idField` disagrees with the resolved strategy also throws, naming both values, instead of silently diverging. The adapter's `supportsUUIDs`/`supportsNumericIds` are now derived from the resolved strategy rather than hardcoded, so they can never contradict the emitted column type.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `context.db` is keyed by the PascalCase list name and carries the opaque read wrapper
+
+  `context.db.<List>` is now spelled the way the config spells the list — `context.db.AuthUser`, not
+  `context.db.authUser` — and `getDbKey()` is deleted (`getUrlKey()` and `getListKeyFromUrl()` stay).
+  Every call site through the secured surface, and every ORM handle the engine reaches a model
+  through, moves to the list key.
+
+  ```typescript
+  // Before
+  const posts = await context.db.blogPost.findMany()
+
+  // After
+  const posts = await context.db.BlogPost.findMany()
+  ```
+
+  The same member is now also a query value: `.where(...)` composes an immutable read and `.all()` /
+  `.first()` are the terminals that run it. A terminal resolves operation-level `query` access, adds
+  the access filter as a second entry in the collection's own filter list (nothing is hand-merged),
+  enters the engine origin around the ORM call, applies Field Visibility, and returns `[]` / `null`
+  on denial — indistinguishable from an empty result.
+
+  ```typescript
+  const mine = await context.db.Post.where({ published: true }).all()
+  const first = await context.db.Post.where({ authorId: session.userId }).first()
+  ```
+
+  `where` takes an equality predicate (`{ column: value }` or `{ column: { equals: value } }`); an
+  operator the engine does not lower yet is refused rather than passed through.
+
+  The three read members belong to a list you can query for many rows, so a singleton list does not
+  carry them — `get()` stays the way to read one. That matches the type the generator has always
+  emitted for a singleton.
+
+  Code the CLI writes into your project moves to the list key with everything else: the feature
+  generator's blog and auth pages (`context.db.Post.findMany(…)`), and the Keystone migration guide,
+  which now says list names are PascalCase.
+
+  A predicate whose condition is `undefined` is still skipped rather than refused, matching Prisma's
+  `undefined`-means-omitted semantics — so an access filter spelled `({ session }) => ({ authorId:
+session?.userId })` constrains nothing for an anonymous caller, while the explicit `{ equals:
+undefined }` spelling of the same rule is refused. Making the lowering total is the closed Where
+  vocabulary's job ([#1147](https://github.com/OpenSaasAU/stack/issues/1147)). Relation-valued `needs` are likewise not yet widened on `all()`/`first()`
+  the way `findMany` widens them ([#1149](https://github.com/OpenSaasAU/stack/issues/1149)).
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Rewrite each package README against the Prisma 8 surface
+
+  The READMEs now document the API the packages actually ship, replacing the
+  Prisma 7 spellings that no longer resolve.
+
+  Reads compose on `context.db` keyed by the list's PascalCase config key and end
+  in a terminal, rather than calling a Prisma delegate:
+
+  ```ts
+  const posts = await context.db.Post.where({ status: { equals: 'published' } })
+    .orderBy({ createdAt: 'desc' })
+    .limit(20)
+    .all()
+
+  const post = await context.db.Post.where({ id }).first()
+  if (!post) return null
+  ```
+
+  `findMany`, `findUnique`, `findFirst` and `count()` are gone; the terminals are
+  `all()`, `first()`, `aggregate()` and `nearest()`. A denied read is silent, so
+  every `first()` result is a null check.
+
+  Writes take an args object with an identity-only `where`, and a relationship is
+  set with `connect` or cleared with `null`:
+
+  ```ts
+  const updated = await context.db.Post.update({
+    where: { id },
+    data: { title, author: { connect: { id: authorId } } },
+  })
+  ```
+
+  The database config documented in each README is the one `DatabaseConfig`
+  carries — `provider: 'postgresql'`, `idField`, `timestamps`, `schemas`,
+  `extensions` and `client`. `prismaClientConstructor`, `db.url` and
+  `extendPrismaSchema` are gone, and the connection is resolved from the
+  environment rather than named in the config.
+
+  Review round two swept each README against the built `.d.ts` rather than against
+  another doc, and corrected what the grep-shaped sweep had missed:
+
+  - The UI README's theming block documented bare `--background`/`--primary` HSL
+    triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
+    `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
+    stylesheet's own header says the design exists "without a duplicated `.dark`
+    block". Its primitives list also omitted eight real exports (`Textarea`,
+    `Popover`, `Calendar`, `TimePicker`, `DateTimePicker`, `Combobox`, `Badge`,
+    `Avatar`), and two samples read `config.lists` without awaiting `config`.
+  - The tiptap README reused a filter-returning `AccessControl` rule as
+    **field-level** `access.update`. `FieldAccess` types those slots as
+    boolean-returning, so that is a type error and a runtime
+    `InvalidFieldAccessResultError`, not a scoped update.
+  - The storage README's upload route was the last copy still casting
+    `formData.get(...) as string` / `as 'file' | 'image'` off a
+    `FormDataEntryValue | null`.
+  - The auth README's Account shape named `providerId: 'credentials'`; better-auth
+    1.7 uses `'credential'` for email/password, and the model carries `issuer`.
+  - The Vercel Blob README passed `cacheControl` to `vercelBlobStorage()`. The
+    provider option is `cacheControlMaxAge` (a number of seconds);
+    `VercelBlobStorageConfig` carries an index signature, so the wrong spelling
+    type-checked and was silently ignored.
+
+  Round three corrected what round two's sweeps could not see, each having keyed
+  on where a construct sat rather than on what it was:
+
+  - The Vercel Blob README's **options listing** still named `cacheControl` 112
+    lines above the call site round two fixed, so the page contradicted itself and
+    the half a reader consults first was the wrong half.
+  - Sixteen hook samples across the docs and the core, cli and example READMEs
+    destructured a member the `delete` branch of its args union does not carry, so
+    the destructure failed before any in-body `operation` guard could narrow. Three
+    more named an argument on no branch at all: `value` and `inputValue` on
+    `resolveInput`/`afterOperation`, and `session` on `ResolveInputHookArgs`.
+  - The core README carried a third instance of the field-access class — a bare
+    `text({ access: … })` excerpt with no enclosing `fields: {` — plus
+    `query: true` where `OperationAccess.query` takes a function, a
+    `ValidationError` built from a string where the constructor takes `string[]`,
+    and a stale claim that `password()` is excluded from reads.
+  - The cli README's "What it does" block under `opensaas db update` described
+    `opensaas dev`, and called `migrate` a command group when it has no
+    subcommands.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - `pnpm generate` emits the Prisma 8 artifact set: a Contract module, `prisma.config.ts` and the committed contract artifacts
+
+  `opensaas generate` no longer writes a Prisma schema or a generated Prisma client. It derives the contract from `opensaas.config.ts`, renders a standalone, fully literal `prisma/contract.ts`, writes a `prisma.config.ts` at the project root, shells to the pinned `prisma contract emit` for `prisma/contract.json` + `prisma/contract.d.ts`, checks the emitted relation graph against the derivation, then writes the `.opensaas/` bundle.
+
+  The Contract module imports nothing from your config — only `@prisma/orm-postgres/contract-builder`, the column-type helpers, and each pack declared in `db.extensions`:
+
+  ```typescript
+  // prisma/contract.ts — generated
+  import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
+  import pgvector from '@prisma/orm-extension-pgvector/pack'
+
+  export const contract = defineContract({ extensions: { pgvector } }, ({ field, model, rel }) => {
+    // ...
+  })
+  ```
+
+  `prisma.config.ts` imports each pack's `/control` façade, loads the project's `.env`, and resolves its connection through the stack's URL lookup (`DIRECT_DATABASE_URL`, then `DATABASE_URL`). Prisma's config evaluation loads no dotenv of its own, so without that load a project keeping its connection only in `.env` would reach `db update` and `migrate` with nothing set. The load is native — `process.loadEnvFile`, no dependency — and guarded, so a project with no `.env` still generates and runs:
+
+  ```typescript
+  // prisma.config.ts — generated
+  import { existsSync } from 'node:fs'
+  import { join } from 'node:path'
+  import { definePrismaConfig } from 'prisma/config'
+  import { defineConfig } from '@prisma/orm-postgres/config'
+  import { findDatabaseUrl } from '@opensaas/stack-core'
+  import pgvector from '@prisma/orm-extension-pgvector/control'
+
+  const envFile = join(import.meta.dirname, '.env')
+  if (existsSync(envFile)) process.loadEnvFile(envFile)
+
+  export default definePrismaConfig({
+    orm: defineConfig({
+      contract: './prisma/contract.ts',
+      output: './prisma',
+      extensions: [pgvector],
+      db: { connection: findDatabaseUrl() },
+    }),
+  })
+  ```
+
+  Commit `prisma/contract.ts`, `prisma/contract.json` and `prisma/contract.d.ts` — a schema change is then reviewable in the PR that made it, and CI can fail on a stale artifact.
+
+  The generated `.opensaas/context.ts` constructs its client from the committed `contract.json` rather than from a generated client package:
+
+  ```typescript
+  postgres<Contract>({ contractJson, url: resolveDatabaseUrl() })
+  ```
+
+  Core adds `resolveDatabaseUrl()` (throws when nothing is set) and `findDatabaseUrl()` (returns `undefined`) — the one place a connection string is read from `DIRECT_DATABASE_URL` or `DATABASE_URL` — plus `resolveListTimestamps`. `output.prismaSchema` is now `output.contractModule` (default `prisma/contract.ts`), and a plugin's `afterGenerate` receives `contractModule` where it received `prismaSchema`. The hook runs **before** `prisma contract emit`, so a rewritten `contractModule` is the one the emitted artifacts describe and the one the relation-graph gate checks — a rewrite the toolchain rejects fails `opensaas generate` rather than landing on disk unemitted.
+
+  Until the bundle is rewritten against `prisma/contract.d.ts`, the per-model `Select`, `Include`, `WhereInput`, `*Args` and write-`data` shapes in `.opensaas/types.ts` are unnarrowed placeholders: a query result is typed as the full model row (no `select`/`include` narrowing), and only the scalars OpenSaaS itself narrows are checked on a write.
+
+  `authPlugin`'s per-model `indexes` no longer document a `sort` direction on a field reference; an index column cannot carry one, and a `sort` key is refused at generation.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Remove the PSL-shaped and TypeScript-face members from the field-builder contract
+
+  **Third-party field packages must migrate.** The generator emits a TypeScript
+  contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
+  `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
+  any more, so they are gone from `BaseFieldConfig` and from every builder:
+
+  - `getPrismaType`
+  - `getPrismaColumns`
+  - `getPrismaRelation`
+  - `getTypeScriptType`
+  - `getTypeScriptImports`
+  - `resultExtension`
+  - `VirtualField.outputType` (the required `string` narrowing; the optional
+    `outputType: TypeDescriptor` on `BaseFieldConfig` is what a virtual field
+    declares now)
+
+  The `PrismaRelationResult`, `MultiColumnPrismaResult` and `ResultExtensionConfig`
+  types they were shaped by are removed with them.
+
+  Migrating a field builder — describe the column instead of the PSL line:
+
+  ```ts
+  // Before
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getPrismaType: () => ({ type: 'String', modifiers: '? @unique' }),
+      getTypeScriptType: () => ({ type: 'string', optional: true }),
+    }
+  }
+
+  // After
+  export function slug(options?: Omit<SlugField, 'type'>): SlugField {
+    return {
+      type: 'slug',
+      ...options,
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldName) => ({
+        kind: 'column',
+        name: fieldName,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+        unique: true,
+      }),
+    }
+  }
+  ```
+
+  A field whose TypeScript face differs from its column's codec type declares it
+  directly, rather than through `resultExtension` or `getTypeScriptType`:
+
+  ```ts
+  // Before
+  resultExtension: { outputType: "import('@my/pkg').Metadata | null" },
+  getTypeScriptType: () => ({ type: 'Metadata | null', optional: true }),
+  getTypeScriptImports: () => [{ names: ['Metadata'], from: '@my/pkg' }],
+
+  // After — the import is inline, so no separate import declaration is needed
+  outputType: "import('@my/pkg').Metadata | null",
+  inputType: "File | import('@my/pkg').Metadata | null",
+  ```
+
+  A field spanning several physical columns returns `{ kind: 'columns', columns }`
+  from `getContractField` and keeps `getColumnNames`/`assembleColumns`/`splitColumns`.
+
+  **The generate-time gate moved with the contract.** `validateFieldConfig` now
+  requires `getContractField` and `getZodSchema` from a stored field (a
+  relationship only the former), and additionally `outputType` from a field that
+  has no single column to be typed from — one whose descriptor is
+  `kind: 'columns'` or `kind: 'computed'`. Both are read off the descriptor, so a
+  `computed` field carries the obligation whether or not its builder also sets the
+  `virtual` flag that core's own `virtual()` sets alongside it. That closes a hole
+  where such a field passed
+  the gate, generated successfully, and left every consumer reading it as
+  `unknown` (issue [#1292](https://github.com/OpenSaasAU/stack/issues/1292)). `FieldConfigValidationError.missingMethod` is renamed
+  to `missingMember` to carry `outputType` alongside the two methods.
+
+  `validateFieldConfig`'s signature changed with it: `listKey` and a new fourth
+  `config` argument are both **required**, because they are what
+  `getContractField` takes and reading the descriptor is what makes the rule
+  decidable. The optional `getColumnNames` is not consulted — it is a separate
+  member that only travels with `kind: 'columns'` by convention, so reading it
+  would both miss a `columns` field that does not implement it ([#1292](https://github.com/OpenSaasAU/stack/issues/1292)'s hole) and
+  wrongly demand `outputType` from a single-column field that does.
+  `FieldConfigValidationError.listKey` is likewise no longer optional.
+
+  The gate swallows a throw out of `getContractField`: that is a field's own
+  refusal seam (`embedding()` throws there for an impossible `dimensions`).
+  `opensaas generate` runs this gate first of all, and its config-surface step —
+  `validateDatabaseConfig` → `validateExtensionPacks` — re-reads every descriptor
+  straight afterwards and reports the throw as a `field-descriptor-error` refusal
+  carrying the field's own message, so the run still fails with
+  `List "<List>": fields.<field> cannot describe its contract column — <message>`
+  rather than a raw stack trace. Derivation is never reached.
+
+  `inputType` is never required by the generator. On a single-column field its
+  absence means the column's own input type; a `kind: 'columns'` field has no
+  single column for that to name, so it should declare `inputType` alongside
+  `outputType` — every multi-column field in this repo does, and what the
+  generator emits for one that does not is untested.
+
+  **A field-level hook's value type is resolved from the field key, and is
+  `unknown` when there is no single key to resolve.** `FieldHooks`'
+  `resolveInput`/`resolveOutput` positions used to be typed from the deleted
+  `getTypeScriptType`. `FieldHooks<TTypeInfo, 'title'>` now resolves to the
+  field's statically declared `outputType`, or else to the property the generated
+  `Lists.<List>.Item` carries for it.
+
+  But `BaseFieldConfig.hooks` cannot pin a field key — a builder is written
+  before it knows where it is mounted — so through the config surface
+  (`list<Lists.Post.TypeInfo>({ fields: { title: text({ hooks }) } })`) the
+  instantiation is `FieldHooks<TTypeInfo>`, whose key is the union of every field
+  on the list, and the value type is **`unknown`**: the same open type as before
+  this change. Resolving that union would type each field's hook by the whole
+  row, so a `text()` hook would accept a `Date` and reject its own `string`. An
+  honestly `unknown` type is better than a confidently wrong one; narrowing it
+  needs the field key threaded into `BaseFieldConfig`, tracked in issue [#1306](https://github.com/OpenSaasAU/stack/issues/1306).
+
+  Two related limits, for the same reason: `lists.ts` emits `Fields` as the field
+  _interfaces_, on which `outputType` is optional, so a declared face never
+  survives into a generated `TypeInfo` — the declared branch is reachable only
+  from a hand-authored one. And a virtual field's hook value stays `unknown`,
+  since it has no declared face there and no column in the stored row.
+
+  `db.keystoneCompat`'s implicit empty-string text default is now carried by
+  `text()`'s contract column, where the deleted `getPrismaType` used to emit it —
+  but only where the field's own create validator accepts **both** the omission
+  that default is there to fill **and** the `''` it inserts. Both questions are
+  asked of the schema rather than restated, so the column and the validator
+  cannot drift apart:
+
+  - a column default drops the column from the required half of the generated
+    `CreateInput`, so carrying one where the validator refuses an omission would
+    type-check a `create` that then threw `ValidationError`;
+  - and the value a column default inserts is never seen by validation — the
+    database supplies it — so carrying one where the validator refuses `''`
+    would store a row the config forbids on every omitted `create`. That is the
+    outcome an explicit `defaultValue: ''` already gets right: it is filled by
+    `applyCreateDefaults` before validation and correctly rejected. The two
+    spellings of "this column defaults to an empty string" now agree.
+
+  **Known limit: the flag is therefore inert for
+  `validation: { isRequired: true }` text — Keystone's commonest text column —
+  and for `validation: { length: { min: N } }` with `N` above zero.** Keystone 6
+  renders both as `NOT NULL DEFAULT ''`, so a migrating project sees
+  `DROP DEFAULT` for them in `migrate diff`. Setting `defaultValue: ''` by hand
+  is refused at runtime for the same reason, so the field's validation has to be
+  relaxed alongside it. Full parity would need the flag to relax the create
+  validator itself, which `getZodSchema` has no config to read; that is a
+  separate change. A column made non-null through `db: { isNullable: false }`
+  alone still gets the default, as does one carrying only a `length.max`.
+
+  Relatedly, `text()` no longer treats `validation: { length: { min: 0 } }` as
+  `min(1)`. A zero minimum now means no minimum, so `''` validates — which is
+  what the option says, and what lets such a column keep its compat default
+  without the column and the validator disagreeing. `isRequired` still imposes a
+  floor of `min(1)` on a field that declares `length: { min: 0 }` or no minimum
+  at all, and never lowers a larger declared one — `isRequired` with
+  `length: { min: 5 }` is still `min(5)`.
+
+  **Test coverage that thinned.** Three assertions were lost rather than ported,
+  and are recorded here so the change is not silent:
+
+  - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
+    provided" — `getContractField` is always given a `listKey`.
+  - The quoted-vs-unquoted PSL default rendering for a string versus an enum
+    `select()` — the contract carries one `{ kind: 'literal' }` for both.
+  - The per-field `getTypeScriptType` blocks in `tests/field-types.test.ts`
+    became `expect(field.outputType).toBeUndefined()` — "declares no override",
+    which is weaker than the old "text is `string`, optional when not required".
+    Column nullability is still asserted on the same fields, and the codec now
+    owns the type (ADR-0052), so the fact has moved rather than vanished.
+
+- [#1855](https://github.com/OpenSaasAU/stack/pull/1855) [`06318ff`](https://github.com/OpenSaasAU/stack/commit/06318ff0919e2be4d5a9c5def5c4b0911cc01434) Thanks [@borisno2](https://github.com/borisno2)! - Read-deny `Verification.identifier` (it holds the live password-reset token), `jwks.privateKey` and `deviceCode.deviceCode`/`userCode`. These fields are now stripped from `context.db` reads, and a `where`/`orderBy` naming them throws; `sudo()` still reads them.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The Auth adapter implements better-auth's factory transaction option, so sign-up is atomic
+
+  `opensaasAuthAdapter` resolves its lane per operation. The factory's
+  `transaction` option runs a second, transaction-bound instance against the
+  transaction's own Unsafe surface, so sign-up's user, account and session writes
+  commit or roll back as one — a failing account write now leaves no user row.
+  That instance ships the option off and brackets `consumeOne` on the lane it
+  already holds.
+
+  No isolation level is selectable and auth transactions run at Read Committed
+  (ADR-0042), which is unchanged.
+
+  Nothing in an application changes:
+
+  ```typescript
+  // lib/auth.ts — unchanged
+  import { createAuth } from '@opensaas/stack-auth/server'
+  import config from '../opensaas.config'
+  import { rawOpensaasContext } from '@/.opensaas/context'
+
+  export const auth = createAuth(config, rawOpensaasContext)
+  ```
+
+  better-auth's own `transactions` and `authFlow` conformance suites now run over
+  the Test context alongside `normal`, `uuid` and `caseInsensitive`.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Framework components and `createAuth` accept the app's generated context; core is declared side-effect free
+
+  The generated `Context` and the engine's `AccessContext` describe one request from two faces, and neither type is assignable to the other. `@opensaas/stack-ui`'s public components (`AdminUI`, `Dashboard`, `Navigation`, `ListView`, `ItemForm`, `SingletonView`, `RelationshipTable`) and `@opensaas/stack-auth`'s `createAuth` / `buildBetterAuthOptions` now take the app-facing context — what `getContext()` and `rawOpensaasContext` produce — so a page passes it straight through:
+
+  ```tsx
+  import { getContext, config } from '@/.opensaas/context'
+
+  export default async function AdminPage() {
+    return (
+      <AdminUI context={await getContext()} config={await config} serverAction={serverAction} />
+    )
+  }
+  ```
+
+  Core exports the bridge for other framework code: `AnyStackContext` is the type of a context on either face, and `engineContextOf(context)` returns the engine's `AccessContext` for it (`EngineContextUnavailableError` for a hand-assembled object).
+
+  **Watch for this when you upgrade.** The seven components above previously read `context.db[listKey]` and `context.session` and worked with any object carrying them. They now narrow through `engineContextOf`, which accepts a context the engine built or a full `AccessContext` and throws otherwise. A hand-assembled stand-in — a component test's double, a Storybook story, a wrapper that rebuilds `{ db, session, … }` by hand instead of passing `getContext()`'s result through — now throws at render. Pass a context from `getContext()`, or from `createTestContext` in `@opensaas/stack-core/testing`.
+
+  Two engine fixes the first Next app on Prisma 8 exposed:
+
+  - The origin store the tripwire reads, and the key an app-facing context carries its engine face under, are one per process rather than one per module instance. Next.js compiles the page layer and the route-handler layer separately, each with its own copy of the module, while the generated context caches one client for both: a query marked through one layer's Unsafe surface was refused as unmarked by the other layer's tripwire (every `/api/auth/*` route answered 500), and a context built by one layer's `getContext()` could not be narrowed by the other layer's `engineContextOf`. Both now resolve through one helper over the symbol registry `globalThis` shares.
+  - On the include path the ORM hands an included to-one back under its foreign-key key as well as its own, so a row-dependent field `read` rule comparing `item.authorId` saw the related row rather than its id and denied the author. A field `read` rule is now answered against the row's own stored foreign key whichever way the row was read, so the same rule gives the same answer with and without `.include()` — including where the related list's Access Filter scopes the relation away, which previously made `item.authorId` read as `null` and could open a field whose rule tests for an absent relation. Every terminal (`all()`, `first()`, the `forUpdate()` lane, `nearest()`) returns rows through one funnel that runs both foreign-key passes; a read whose to-one include is narrowed costs one extra query to read the column the include's alias overwrites ([#1236](https://github.com/OpenSaasAU/stack/issues/1236)).
+
+  Core's `package.json` now declares `"sideEffects": false`. The root barrel re-exports modules that import `node:fs` and `node:async_hooks`; a client component importing a value from the barrel — as the admin's own do — would otherwise pull them into the browser bundle and fail to compile under Turbopack. The declaration is truthful: no module in core has an import-time effect a consumer relies on.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Drive better-auth through a stack-authored Auth adapter over the Unsafe surface
+
+  `@opensaas/stack-auth` no longer hands better-auth `prismaAdapter`. It builds its
+  own adapter with better-auth's `createAdapterFactory`, running on the Unsafe
+  surface a Prisma 8 context carries: eight methods on the ORM lane, and
+  `incrementOne` plus an unconditional `deleteMany` as single typed-SQL statements
+  through the surface's own executors. `consumeOne` is `where(…).delete()` inside one
+  transaction on the surface's transaction-bound lanes, answering the row only
+  when the delete itself claimed it — the at-most-one guarantee better-auth asks
+  for, held against concurrent replays of the same token. See ADR-0060.
+
+  `createAuth(config, rawOpensaasContext)` keeps its signature; nothing in an
+  app's `lib/auth.ts` changes. Two new keys are refused at config time, alongside
+  the existing `betterAuthOptions.database`:
+
+  ```typescript
+  authPlugin({
+    betterAuthOptions: {
+      // both throw: the database mints auth ids, and the adapter implements no joins
+      advanced: { database: { generateId: () => id, joins: true } },
+    },
+  })
+  ```
+
+  `authPlugin` now pins `db.idField: 'uuid7'` on every list it injects, so auth
+  ids are minted by the database like every other list's.
+
+  `@opensaas/stack-core` gains the engine-owned LIKE-pattern escaping the adapter
+  lowers `contains` / `starts_with` / `ends_with` and insensitive `eq` through
+  (`escapeLikeLiteral` and the four pattern builders, on
+  `@opensaas/stack-core/internal`) — one escaper, shared with the secured
+  surface's Where vocabulary.
+
+  Known limits of the adapter, all stated: no joins, no `createSchema` (so
+  better-auth's CLI is unsupported against it), no better-auth transaction option
+  yet, no issuer-scoped account uniqueness until the schema gap in [#986](https://github.com/OpenSaasAU/stack/issues/986) closes,
+  and errors arrive as the driver's own rather than normalised.
+
+- [#1485](https://github.com/OpenSaasAU/stack/pull/1485) [`6cfe96c`](https://github.com/OpenSaasAU/stack/commit/6cfe96c248889a268b9505178db1da9b177dafe6) Thanks [@borisno2](https://github.com/borisno2)! - Rewrite public API docblocks (and the `opensaas generate` CLI description) that still described the generator's output in Prisma-schema-language terms (`@@map`/`@@schema`/`@@unique`/`@@index`/`multiSchema`/`@default(...)`/`@db.<type>`) — the Prisma 8 pipeline emits a TypeScript contract, not a `.prisma` schema (ADR-0040), and no such attributes are ever produced. Affected options include `ListConfig.db.map`/`db.schema`/`db.indexes`/`db.nativeType`, `SelectField.db.type`/`db.enumName`/`db.isNullable`, `RelationshipField.isIndexed`/`db.isNullable`, `DatabaseConfig.schemas`/`db.timestamps`, `OpenSaasConfig.output`, `Plugin.beforeGenerate`, and the equivalent auth-plugin model config (`AuthModelConfig.tableName`/`fields`/`schema`, `AuthConfig.schema`/`rateLimit`/`betterAuthOptions`). Docs now describe what the contract actually carries: a model's `table`/`namespace`, a column's `map`/type/nullability, a declared `enums` entry, and `unique`/`index` constraints.
+
+- [#1672](https://github.com/OpenSaasAU/stack/pull/1672) [`00c3760`](https://github.com/OpenSaasAU/stack/commit/00c3760449f890f5d365798f5b3b3e1367333762) Thanks [@{](https://github.com/{), [@{](https://github.com/{)! - Derived Auth list fields that better-auth marks `input: false` now ship field-level write-denied on `context.db`, independent of whatever operation-level access the application grants — the write-side twin of the existing credential read-deny (ADR-0036). This closes a privilege-escalation hole (issue [#1618](https://github.com/OpenSaasAU/stack/issues/1618)): a whole-row owner-update rule (`update: ({ session, item }) => session?.userId === item.id`) no longer lets a signed-in user set `User.emailVerified` (denied unconditionally), or — once the `admin()` plugin is registered — `User.role`, `User.banned`, `User.banReason`, `User.banExpires` and `Session.impersonatedBy`. A field that is both a credential and `input: false` gets both denies, composed rather than one overwriting the other. `sudo()` and better-auth's own flows (sign-up, `setRole`, `banUser`, email verification) are unaffected, since they bypass field-level access or write through the Auth adapter.
+
+  **Reopen a seeded deny with the new `authPlugin({ fieldAccess })` option**, keyed by better-auth model key then field key like `credentialFields`, each value overriding one or more of a field's `read`/`create`/`update` rules:
+
+  ```typescript
+  import { admin } from 'better-auth/plugins'
+
+  authPlugin({
+    betterAuthPlugins: [admin()],
+    access: {
+
+        operation: {
+          update: ({ session, item }) => session?.userId === item.id || session?.role === 'admin',
+        },
+      },
+    },
+    fieldAccess: {
+
+        role: { update: ({ session }) => session?.role === 'admin' },
+      },
+    },
+  })
+  ```
+
+  An entry cannot reopen a credential's `read` deny (throws at config time, naming the model and field) — ADR-0036's read-deny stays permanently closed. Validation otherwise matches `credentialFields`: a field missing from a model you actually derive throws; a model you haven't registered a plugin for is a silent no-op. See ADR-0073.
+
+### Patch Changes
+
+- [#1782](https://github.com/OpenSaasAU/stack/pull/1782) [`df052c2`](https://github.com/OpenSaasAU/stack/commit/df052c26942001262ad90670ec60139b2fbc9689) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.17 (CLI rc.22); `opensaas db update --plan <id>` now consents with `--delete`/`--allow` per subject instead of `--confirm`.
+  Run Prisma's `data-type-in-contract` upgrade script and `pnpm generate` to re-emit committed contracts.
+
+- [#1724](https://github.com/OpenSaasAU/stack/pull/1724) [`d976774`](https://github.com/OpenSaasAU/stack/commit/d9767747b285c42d4027d6ff6f77fce77bae55d5) Thanks [@borisno2](https://github.com/borisno2)! - Fix `consumeOne` on the root auth adapter opening a second transaction inside better-auth's transaction, which hung sign-up on the Dev database.
+
+- [#1728](https://github.com/OpenSaasAU/stack/pull/1728) [`6f1a94c`](https://github.com/OpenSaasAU/stack/commit/6f1a94c005b231ea78be8bb9ce0163937bf37fa3) Thanks [@borisno2](https://github.com/borisno2)! - Correct agent-facing docs on `needs` relation visibility, `createAuth`'s required context and `Session` typing.
+
+- [#1500](https://github.com/OpenSaasAU/stack/pull/1500) [`d8efee4`](https://github.com/OpenSaasAU/stack/commit/d8efee430b9ff188c2547da3b7737204e490b8c3) Thanks [@borisno2](https://github.com/borisno2)! - Fix the generated `rawOpensaasContext` permanently rejecting for the rest of the process if the database wasn't reachable on its first construction attempt (e.g. a cold boot racing the database). It now retries on each `await`, like the client singleton it wraps.
+
+  `createAuth()` no longer pre-resolves its `context`/`opensaasConfig` arguments into a fixed `Promise.resolve(...)` at construction time — doing so settled a retryable `rawOpensaasContext` into a plain, permanently-rejected Promise on its first failed attempt, defeating the fix above for the framework's own documented `createAuth(config, rawOpensaasContext)` recipe. It also drops its own internal memo on a failed construction attempt, matching the retry-on-failure pattern used everywhere else in this chain.
+
+- [#1494](https://github.com/OpenSaasAU/stack/pull/1494) [`d4c0ecd`](https://github.com/OpenSaasAU/stack/commit/d4c0ecd103bd2d31b2a4f459529fc200506874e2) Thanks [@borisno2](https://github.com/borisno2)! - Add `getPluginData<T>(config, pluginName)`, a typed reader paired with `setPluginData<T>`, so a consumer reading a plugin's stored data no longer casts `config._pluginData` itself:
+
+  ```typescript
+  import { getPluginData } from '@opensaas/stack-core'
+  import type { NormalizedAuthConfig } from '@opensaas/stack-auth'
+
+  const resolvedConfig = await config
+  const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
+  ```
+
+  `@opensaas/stack-auth`'s `buildBetterAuthOptions` and the core MCP handler's plugin-tool lookup both adopt it in place of their own casts.
+
+- [#1549](https://github.com/OpenSaasAU/stack/pull/1549) [`2c000b1`](https://github.com/OpenSaasAU/stack/commit/2c000b1bd5d4efe985720a818ae4dcccfd471a57) Thanks [@borisno2](https://github.com/borisno2)! - Fix `deriveAuthLists` deriving a relation that collided with its own foreign-key column for a better-auth reference field whose name doesn't end in `Id`; it now falls back to a plain scalar column, same as a non-`id`-target reference.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - The Prisma 8 config surface: `db.idField`, `db.extensions`, `db.client`, `db.provider` (postgresql only), typed `onDelete`/`onUpdate` on relationships, `db.indexes` without `sort`, and `PluginContext.addExtension` (ADR-0040, ADR-0048, ADR-0049, ADR-0064).
+
+  ```typescript
+  export default config({
+    db: {
+      provider: 'postgresql',
+      idField: 'uuid7', // the default; 'cuid2' | 'int autoincrement'
+      extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+      client: {
+        pg: () => new Pool({ connectionString: process.env.DATABASE_URL }), // a lazy factory
+      },
+    },
+    lists: {
+      Invoice: list({
+        fields: {
+          customer: relationship({ ref: 'Customer.invoices', db: { onDelete: 'restrict' } }),
+        },
+        db: {
+          idField: 'int autoincrement',
+          indexes: [{ fields: ['customer'], name: 'Invoice_customer_idx' }],
+        },
+      }),
+    },
+  })
+
+  // A plugin declares the pack its field types need; the same name from the same
+  // package merges, the same name from a different package throws.
+  init: async (context) => {
+    context.addExtension({ name: 'pgvector', from: '@prisma/orm-extension-pgvector' })
+  }
+  ```
+
+  `pnpm generate` now refuses, naming the list, the entry and the fix (`validateDatabaseConfig` and `validateRelations` are exported for the same checks elsewhere): a `sort` direction on a `db.indexes` field reference; `many: true` on both sides of a relationship or on a list-only ref (author the junction as its own list); `db.idField` on a singleton; `db.foreignKey: true` on both sides of a one-to-one; `db.isNullable: false`, `db.onDelete`/`db.onUpdate` or a `db.indexes` entry on a side that owns no foreign key column; `'setNull'` together with `db.isNullable: false`; a `many: false` relationship whose `ref` is its own field; the same extension pack name declared from two packages; and a relationship at a composite-keyed list.
+
+  `prismaClientConstructor`, `extendPrismaSchema` (config- and field-level), `joinTableNaming` and `db.relationName` are removed from the config types. `@opensaas/stack-auth`'s derived lists declare their cascade through `db.onDelete` instead of `extendPrismaSchema`.
+
+- [#1729](https://github.com/OpenSaasAU/stack/pull/1729) [`8d8a338`](https://github.com/OpenSaasAU/stack/commit/8d8a338ea4606b03ef859c4128b93b40a5fc9a21) Thanks [@borisno2](https://github.com/borisno2)! - Publish only `dist`, and docs; tarballs no longer include src, tests, compiled test files or build logs.
+
+- [#1691](https://github.com/OpenSaasAU/stack/pull/1691) [`99d9870`](https://github.com/OpenSaasAU/stack/commit/99d98700398539b2e145a87b18ab6e6d4df6fac4) Thanks [@borisno2](https://github.com/borisno2)! - Fix MCP OAuth never authenticating: `createBetterAuthMcpAdapter` and `withMcpAuth` now verify the bearer JWT via `@better-auth/mcp` (signature, issuer, audience, expiry) instead of calling the removed `auth.api.getMcpSession`. They take `{ resource, baseURL }` in place of the auth instance. `createAuth()` now throws on a missing `auth.api.*` member instead of resolving `undefined`.
+
+- [#1764](https://github.com/OpenSaasAU/stack/pull/1764) [`0a18d1f`](https://github.com/OpenSaasAU/stack/commit/0a18d1f74117a61f495870c26c975c49802a1547) Thanks [@borisno2](https://github.com/borisno2)! - The better-auth MCP adapter no longer forwards registered JWT claims (`iss`, `aud`, `nbf`, `iat`, `jti`, `azp`, `client_id`, `sid`) into the session access rules see; custom claims still pass through.
+
+- [#1522](https://github.com/OpenSaasAU/stack/pull/1522) [`c322241`](https://github.com/OpenSaasAU/stack/commit/c322241a7a8a293ce6824df13dcb9765cd9479a2) Thanks [@borisno2](https://github.com/borisno2)! - Add a `typecheck` script to every package, covering `tests/**/*` alongside `src/**/*` (not just what `build` compiles), and fix the type errors it surfaced in existing test files.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
+- [#1708](https://github.com/OpenSaasAU/stack/pull/1708) [`cf575b0`](https://github.com/OpenSaasAU/stack/commit/cf575b0330f8709096c6097e0a97e9a1ba1291e2) Thanks [@borisno2](https://github.com/borisno2)! - Remove pre-Prisma-8 residue: the dead `resolveForeignKeyVisibility` module, the never-thrown `RelationFilterAccessDeniedError` (now deprecated), and the `authPlugin` TSDoc's sqlite example.
+
+- [#1763](https://github.com/OpenSaasAU/stack/pull/1763) [`7a63db9`](https://github.com/OpenSaasAU/stack/commit/7a63db916adb35efa6471cdf5547a3ed3fdefcca) Thanks [@borisno2](https://github.com/borisno2)! - `sessionFields` entries that better-auth's session lacks but the user list carries (such as an `extendUserList` field) are now read from the signed-in user's own row, so the documented `role`/`tier` recipe works. A `sessionFields` entry that resolves nowhere now throws at startup instead of warning at runtime.
+
+- [#1766](https://github.com/OpenSaasAU/stack/pull/1766) [`985a362`](https://github.com/OpenSaasAU/stack/commit/985a36243836d6756c0d21315971d653d7e26f15) Thanks [@borisno2](https://github.com/borisno2)! - Security: `createOAuthDiscoveryHandler` and `createOAuthProtectedResourceHandler` now answer in-process through the Better Auth instance instead of fetching a request-derived URL with every inbound header forwarded.
+
+- [#1495](https://github.com/OpenSaasAU/stack/pull/1495) [`cfb397a`](https://github.com/OpenSaasAU/stack/commit/cfb397ad72f1b27c854b0a765ebb249fbc7dab3e) Thanks [@borisno2](https://github.com/borisno2)! - `getSessionFromAuth` now omits a `sessionFields` entry resolved to `undefined` instead of passing it through — `getContext` refuses a session holding `undefined` for one of its own keys ([#1397](https://github.com/OpenSaasAU/stack/issues/1397)), and a resolved-but-unset custom field (e.g. from a `customSession` plugin) is a real signed-in session, not a malformed one.
+
+- [#1554](https://github.com/OpenSaasAU/stack/pull/1554) [`73b8231`](https://github.com/OpenSaasAU/stack/commit/73b823117aaf5935a38e80fc6d33482fbb384afc) Thanks [@borisno2](https://github.com/borisno2)! - Fix a `databaseHooks` hook (e.g. `user.create.before`) reading or writing through `context.context.adapter` during sign-up hanging on the Dev database's single connection, or reading outside the transaction on pooled Postgres. The Auth adapter's root instance now shares the transaction-bound instance's lane for the life of the transaction.
+
+- [#1592](https://github.com/OpenSaasAU/stack/pull/1592) [`dbfd148`](https://github.com/OpenSaasAU/stack/commit/dbfd14887b885e2e8c9bccebebebc627a0c3d8bb) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update the `Account.issuer` test and docs to match better-auth 1.7.4, which reverted the column it added in 1.7.0/1.7.1. No runtime behavior change — `deriveAuthLists` reads better-auth's own schema at derive time and already tracked the revert automatically.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Fix `betterAuthOptions.advanced.database.generateId` being refused for `false`, `'uuid'`, and `undefined` — the check now only refuses a custom function or `'serial'`, the values genuinely incompatible with the adapter's id strategy.
+
+- [#1543](https://github.com/OpenSaasAU/stack/pull/1543) [`925478c`](https://github.com/OpenSaasAU/stack/commit/925478cc958895a1e4275898ceb51fab10b45270) Thanks [@borisno2](https://github.com/borisno2)! - Add Auth adapter test coverage for `incrementOne`/`set` against a mapped counter and remapped `int8` column.
+
+- [#1532](https://github.com/OpenSaasAU/stack/pull/1532) [`f9b4e2c`](https://github.com/OpenSaasAU/stack/commit/f9b4e2cd5ee2e6db5ad23ca3e13e07635291747d) Thanks [@borisno2](https://github.com/borisno2)! - Fail a package's vitest run with a named, actionable error when its `dist/` was not built from its current `src/`, instead of silently testing stale built output through a cross-package import or a spawned CLI binary.
+
+- [#1583](https://github.com/OpenSaasAU/stack/pull/1583) [`895d91c`](https://github.com/OpenSaasAU/stack/commit/895d91c142770624e7e674f136fd71e096f98f58) Thanks [@borisno2](https://github.com/borisno2)! - Refuse (at `pnpm generate` time) an `authPlugin({ user/session/account/verification/rateLimit: { fields } })` remap whose target column string equals another field's own default key on the same model, naming both fields. Left unrefused, better-auth's direct-hit-first `getDefaultFieldName` resolution would silently misattribute a field's attributes to the colliding field — for example skipping the `BigInt` widening a remapped `int8` column needs — with no error raised ([#1545](https://github.com/OpenSaasAU/stack/issues/1545)).
+
+- [#1848](https://github.com/OpenSaasAU/stack/pull/1848) [`1c8f2a0`](https://github.com/OpenSaasAU/stack/commit/1c8f2a0b35ca2dd167151c9c68096f9b810981c3) Thanks [@borisno2](https://github.com/borisno2)! - Peer ranges on `@opensaas/stack-core`, `@opensaas/stack-storage` and `@opensaas/stack-ui` now track the release version instead of `^0`, so a mismatched minor is flagged.
+- Updated dependencies [[`2daa64f`](https://github.com/OpenSaasAU/stack/commit/2daa64f5722b6e85653a0cf834353db070541ab3), [`df052c2`](https://github.com/OpenSaasAU/stack/commit/df052c26942001262ad90670ec60139b2fbc9689), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`05fc094`](https://github.com/OpenSaasAU/stack/commit/05fc0949071feb6c69cb735a82494421e1c7c189), [`de2bd7a`](https://github.com/OpenSaasAU/stack/commit/de2bd7a035ee60fc09d0718885148eeaafecd798), [`dcf3a89`](https://github.com/OpenSaasAU/stack/commit/dcf3a891161bedcab679f79f0332176ab4bafe67), [`ef3060c`](https://github.com/OpenSaasAU/stack/commit/ef3060c89a6a122bade9a6a7bb3492c4877e6ab5), [`0ef9495`](https://github.com/OpenSaasAU/stack/commit/0ef9495d0f7f53c0a84ac6e5fd0fe3f8da183e4b), [`6e0db6b`](https://github.com/OpenSaasAU/stack/commit/6e0db6bdc39f047f4eb62523765054826327214e), [`a0d613f`](https://github.com/OpenSaasAU/stack/commit/a0d613fe344e7cc6eca8d1b35171bbbfc0ae2a5b), [`b7aee49`](https://github.com/OpenSaasAU/stack/commit/b7aee491198c6dc7216e7323705ff36e1646e5c5), [`274b0a5`](https://github.com/OpenSaasAU/stack/commit/274b0a57b3e2d307a9d5563b08f8a9d60b3ff7b4), [`6f1a94c`](https://github.com/OpenSaasAU/stack/commit/6f1a94c005b231ea78be8bb9ce0163937bf37fa3), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`d4c0ecd`](https://github.com/OpenSaasAU/stack/commit/d4c0ecd103bd2d31b2a4f459529fc200506874e2), [`5334468`](https://github.com/OpenSaasAU/stack/commit/5334468181b2716897c0fce29965fc590b1dc239), [`be9466e`](https://github.com/OpenSaasAU/stack/commit/be9466e947d04a8091030ffef2588ba5bec431b0), [`28795bb`](https://github.com/OpenSaasAU/stack/commit/28795bb0b39c4a6f73c860d16c1b5240aa238f8f), [`7f287d4`](https://github.com/OpenSaasAU/stack/commit/7f287d48579a815c67441c8336b1372d9f41c61e), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`00c3760`](https://github.com/OpenSaasAU/stack/commit/00c3760449f890f5d365798f5b3b3e1367333762), [`17bb5d5`](https://github.com/OpenSaasAU/stack/commit/17bb5d5a3afa78007afdd80eaa5a09f27a408890), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`b79436b`](https://github.com/OpenSaasAU/stack/commit/b79436b34e1f1ad84c70efc2c4aaad1a64e27717), [`b1f838b`](https://github.com/OpenSaasAU/stack/commit/b1f838b2df2aae4e6edf2598b28b6bec2b8bfba7), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`71714f6`](https://github.com/OpenSaasAU/stack/commit/71714f6ea2859455af0203bea6fbd13371a80cb9), [`0c33f68`](https://github.com/OpenSaasAU/stack/commit/0c33f68b5d9449b4cdaecc792815bbd64afd7e9f), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`e5ea5b3`](https://github.com/OpenSaasAU/stack/commit/e5ea5b3bd803106ed00a892ddffcdc365f4cde1e), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`d8d5822`](https://github.com/OpenSaasAU/stack/commit/d8d58220e809ef64d7c63ee26ce9f0f491ac836d), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`5aa3815`](https://github.com/OpenSaasAU/stack/commit/5aa38159fe5a54f3f0c294cc47f439ec9175d544), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`21bd0d5`](https://github.com/OpenSaasAU/stack/commit/21bd0d53860d8ad2f801c65e83637e523adc19f6), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`8d8a338`](https://github.com/OpenSaasAU/stack/commit/8d8a338ea4606b03ef859c4128b93b40a5fc9a21), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`6b40b3a`](https://github.com/OpenSaasAU/stack/commit/6b40b3aaa6174530a990a8f258778993f9501c98), [`e6a7fb2`](https://github.com/OpenSaasAU/stack/commit/e6a7fb28b57c56743537804231ed40e9d36ca4df), [`99d9870`](https://github.com/OpenSaasAU/stack/commit/99d98700398539b2e145a87b18ab6e6d4df6fac4), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`f097958`](https://github.com/OpenSaasAU/stack/commit/f097958cba46015072b7b118d1ca78471700571e), [`ee0d3d3`](https://github.com/OpenSaasAU/stack/commit/ee0d3d3e20201e2ad3859f081597fb5e623518eb), [`c1b689a`](https://github.com/OpenSaasAU/stack/commit/c1b689ae2c8783426a684af19e7962346af15124), [`a1dbf13`](https://github.com/OpenSaasAU/stack/commit/a1dbf1360fd2beef632b3575d82d464db6af136a), [`2d5d159`](https://github.com/OpenSaasAU/stack/commit/2d5d159dab277af9b6e29f3b07ce69debeeacce5), [`3e298af`](https://github.com/OpenSaasAU/stack/commit/3e298af86ebfa9c359fb4fbbd8fcde4262fb84c7), [`b784cd9`](https://github.com/OpenSaasAU/stack/commit/b784cd94e44f2a34420a125aff5c099c15e21ba0), [`548dd00`](https://github.com/OpenSaasAU/stack/commit/548dd0014551b07c3ff3fefccb2945bb025c6864), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`ad294d8`](https://github.com/OpenSaasAU/stack/commit/ad294d8e934bda0606870078e72e3d0c01a9c9f8), [`c322241`](https://github.com/OpenSaasAU/stack/commit/c322241a7a8a293ce6824df13dcb9765cd9479a2), [`405951c`](https://github.com/OpenSaasAU/stack/commit/405951cd67f1127701246364c873b457e39afd04), [`d94c528`](https://github.com/OpenSaasAU/stack/commit/d94c528ab490245a081d7e84b53287559f224866), [`6b9e24e`](https://github.com/OpenSaasAU/stack/commit/6b9e24e348b711a92c9610df554f03098bde97c7), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`e70ab87`](https://github.com/OpenSaasAU/stack/commit/e70ab87f7bae9eccc0212f0d43d58b9dd427394c), [`5c23069`](https://github.com/OpenSaasAU/stack/commit/5c23069861fda7ebfd77ac0726200800b597d60a), [`2b17424`](https://github.com/OpenSaasAU/stack/commit/2b1742453308c34e8294785e48f979bee25e75a3), [`e1f93c0`](https://github.com/OpenSaasAU/stack/commit/e1f93c0a9cd2c5e0a5ccb82b8a2cfcce9ef1db0e), [`4cb0892`](https://github.com/OpenSaasAU/stack/commit/4cb0892c7ec815d8f75fd04c8f29f315e98f7c83), [`5432400`](https://github.com/OpenSaasAU/stack/commit/54324009f724168a02b3a5577b0877011748732e), [`f51ca12`](https://github.com/OpenSaasAU/stack/commit/f51ca12b793c2131e04f6d997af24eb42f2198f0), [`721b7c0`](https://github.com/OpenSaasAU/stack/commit/721b7c0eeca000966c7a419e3946d34cef9b2bc1), [`cae8c1e`](https://github.com/OpenSaasAU/stack/commit/cae8c1e562bf6f780bd2d870948f407dbabbf4fe), [`bc2614f`](https://github.com/OpenSaasAU/stack/commit/bc2614f3ebd662737d22d5e47bf03f26a1aca5a6), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`c3ce7b6`](https://github.com/OpenSaasAU/stack/commit/c3ce7b6f23240144ae424d47685c71c0e553b877), [`7ffacbf`](https://github.com/OpenSaasAU/stack/commit/7ffacbfe1cee35ae7d9922519e94a68c13d0b34b), [`a2c8e59`](https://github.com/OpenSaasAU/stack/commit/a2c8e59e39d303c97dbdb51875261fff0169be8d), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`4af852c`](https://github.com/OpenSaasAU/stack/commit/4af852c8d166e80e9197a7ba97779ff784f42156), [`cf575b0`](https://github.com/OpenSaasAU/stack/commit/cf575b0330f8709096c6097e0a97e9a1ba1291e2), [`f06fbf4`](https://github.com/OpenSaasAU/stack/commit/f06fbf4055f51946d89c72985176d54f43af217d), [`6d8c6c7`](https://github.com/OpenSaasAU/stack/commit/6d8c6c78d590f0dc804578fd3f8f2b32b02677ce), [`5cfa783`](https://github.com/OpenSaasAU/stack/commit/5cfa7832f48f905391c5a76b979a9ca93024d207), [`42b141b`](https://github.com/OpenSaasAU/stack/commit/42b141b644fbf90d3d976431557e15a90e9ce518), [`0a18d1f`](https://github.com/OpenSaasAU/stack/commit/0a18d1f74117a61f495870c26c975c49802a1547), [`407c1b8`](https://github.com/OpenSaasAU/stack/commit/407c1b842a35829c4cdfc3b0f4ff99b1e62ce032), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`c7284be`](https://github.com/OpenSaasAU/stack/commit/c7284be4eb17d27f3dd6b36feee604561df98986), [`96dfeee`](https://github.com/OpenSaasAU/stack/commit/96dfeee7648c0431cb956f15cd5ca4c2210b0afb), [`e11271b`](https://github.com/OpenSaasAU/stack/commit/e11271b523cf92f9d60236ea02715b1fa87c6028), [`3cb2d50`](https://github.com/OpenSaasAU/stack/commit/3cb2d504e90128dfc7952b19bbea49eabab13f0d), [`caf883a`](https://github.com/OpenSaasAU/stack/commit/caf883a88629ac5eeb41375e220d9c11427edaee), [`32b9afa`](https://github.com/OpenSaasAU/stack/commit/32b9afadab65cbe6445dcd15da8df54218880f7b), [`8fe4ea2`](https://github.com/OpenSaasAU/stack/commit/8fe4ea2a52e2e0202c4568fca46d1da76a87652d), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`b1fec28`](https://github.com/OpenSaasAU/stack/commit/b1fec28fa5c07fe5aa8d3ba15e07f269bf1c645b), [`27d91d5`](https://github.com/OpenSaasAU/stack/commit/27d91d54fcd79122dfe695b5dea94c14572a2b98), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`477a75b`](https://github.com/OpenSaasAU/stack/commit/477a75bbfd2ee6e95ed78941b837cad7eea6a5f1), [`22f03bc`](https://github.com/OpenSaasAU/stack/commit/22f03bca2f190a9c1d854e22efe5beb3807da264), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`12bd183`](https://github.com/OpenSaasAU/stack/commit/12bd183112000abe7d34487ee0f8c874b5623507), [`53f2d20`](https://github.com/OpenSaasAU/stack/commit/53f2d202d5a58bcdb4d016aef929ae68a5151ed4), [`d40c4bb`](https://github.com/OpenSaasAU/stack/commit/d40c4bb1700bc4f52203d4082cc13fb9efaa098a), [`95cb6dc`](https://github.com/OpenSaasAU/stack/commit/95cb6dc70a6c622c70c8cd74a14abb53f25bc95f), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`04a00f4`](https://github.com/OpenSaasAU/stack/commit/04a00f4ae87611b879829b9d20fbfe9cdb656da2), [`3d0d4db`](https://github.com/OpenSaasAU/stack/commit/3d0d4db7923a75cf77f665ef8f915edcf99a408d), [`80b3e20`](https://github.com/OpenSaasAU/stack/commit/80b3e204d20f60aded2d6d10cd9a04b8da5119da), [`c267d3c`](https://github.com/OpenSaasAU/stack/commit/c267d3c1aa2423374ae1f0b9e24e9b4f8bdf4b7c), [`6eab4e2`](https://github.com/OpenSaasAU/stack/commit/6eab4e28e2a42168db2fb8bb99c94c1f22d527cd), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`c63d79f`](https://github.com/OpenSaasAU/stack/commit/c63d79fd92c6265030eddae6dcfb4a5faa4a5a69), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`5d0ec1b`](https://github.com/OpenSaasAU/stack/commit/5d0ec1b3961fe63fad41a33096802faa4111507d), [`d59945a`](https://github.com/OpenSaasAU/stack/commit/d59945a36ba6615823e22822f366fb2507fbad68), [`d9b4b37`](https://github.com/OpenSaasAU/stack/commit/d9b4b3740df3573d090b140eb32daaec5c319485), [`9fe6917`](https://github.com/OpenSaasAU/stack/commit/9fe6917f37f4110740e2aa9ee174355699f8b36d), [`d049f38`](https://github.com/OpenSaasAU/stack/commit/d049f3804cc2974b98c854ff4ecfd1660e6d5a75), [`2739ad8`](https://github.com/OpenSaasAU/stack/commit/2739ad8923ab3db893eefb718d21fcb2d079a519), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`bb37e04`](https://github.com/OpenSaasAU/stack/commit/bb37e04003946eea4396efc90d42d067de6276e3), [`aa9296c`](https://github.com/OpenSaasAU/stack/commit/aa9296cd3af11e3e0c1b13969d986915e7673c9a), [`3fb20e0`](https://github.com/OpenSaasAU/stack/commit/3fb20e05ce986e25d317910280cfd45abb034c8a), [`4dd1dd0`](https://github.com/OpenSaasAU/stack/commit/4dd1dd0b555a6838a989d2ee43399c676742be0c), [`7242781`](https://github.com/OpenSaasAU/stack/commit/7242781e1d27e6e7a4a08ed63d7ecb544e20db6e), [`52b79a7`](https://github.com/OpenSaasAU/stack/commit/52b79a7519eadce9a2dc812e63a32df022f3c578), [`781b819`](https://github.com/OpenSaasAU/stack/commit/781b8196064835637b93e34ec31e6a3dc959ccae), [`f9b4e2c`](https://github.com/OpenSaasAU/stack/commit/f9b4e2cd5ee2e6db5ad23ca3e13e07635291747d), [`6cfe96c`](https://github.com/OpenSaasAU/stack/commit/6cfe96c248889a268b9505178db1da9b177dafe6), [`cfb397a`](https://github.com/OpenSaasAU/stack/commit/cfb397ad72f1b27c854b0a765ebb249fbc7dab3e), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`dbb52c7`](https://github.com/OpenSaasAU/stack/commit/dbb52c79021880302e361d13570765d2fee4e4af), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`6975d3e`](https://github.com/OpenSaasAU/stack/commit/6975d3e76cb0280d9960461698e079276b56f8c0), [`eedb0f7`](https://github.com/OpenSaasAU/stack/commit/eedb0f7b4b856fea9927c2a06f827d38fc28f75c), [`a4227e9`](https://github.com/OpenSaasAU/stack/commit/a4227e9dd8097a38ec80a430b725dc5f0838f8c2), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ffacbf`](https://github.com/OpenSaasAU/stack/commit/7ffacbfe1cee35ae7d9922519e94a68c13d0b34b), [`b0317b4`](https://github.com/OpenSaasAU/stack/commit/b0317b475ecd2cff6f11fe42ef964c80696c60ec), [`bed0cc3`](https://github.com/OpenSaasAU/stack/commit/bed0cc3197cd4b1ab5aebf40eda6289ae8a955fd), [`0a3cba5`](https://github.com/OpenSaasAU/stack/commit/0a3cba5197d98ff780036a0805d660af84dfbc50), [`1ecc97e`](https://github.com/OpenSaasAU/stack/commit/1ecc97ec31580d778d138122f89798f4be651744), [`4f65926`](https://github.com/OpenSaasAU/stack/commit/4f65926af88e62a053ac1c795e1b9e214744267b), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`8b7eb1f`](https://github.com/OpenSaasAU/stack/commit/8b7eb1f902b73e89579f4a7ca3256c8d8a3ef950), [`7adac1b`](https://github.com/OpenSaasAU/stack/commit/7adac1bfdbce5c49c8f09a3f69bd9684a77d4cc2), [`07999bb`](https://github.com/OpenSaasAU/stack/commit/07999bb4c6e7748f8b3434ce82db780dbf6a8e9f), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`b84c28d`](https://github.com/OpenSaasAU/stack/commit/b84c28d2fd5088fdb56a7ba30e719e4f52b57d7d)]:
+  - @opensaas/stack-core@0.44.0
+
 ## 0.43.0
 
 ## 0.42.3

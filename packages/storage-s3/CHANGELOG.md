@@ -1,5 +1,39 @@
 # @opensaas/stack-storage-s3
 
+## 0.44.0
+
+### Minor Changes
+
+- [#1499](https://github.com/OpenSaasAU/stack/pull/1499) [`bcea6de`](https://github.com/OpenSaasAU/stack/commit/bcea6dea0766f510da59188cb70fb41b2fd2573b) Thanks [@borisno2](https://github.com/borisno2)! - Add the missing `[key: string]: unknown` index member to `S3StorageConfig` so it matches `LocalStorageConfig` and `VercelBlobStorageConfig` and is assignable to core's `BaseStorageConfig`:
+
+  ```typescript
+  import type { BaseStorageConfig } from '@opensaas/stack-storage'
+  import { s3Storage } from '@opensaas/stack-storage-s3'
+
+  // Previously a type error: S3StorageConfig was not assignable to BaseStorageConfig.
+  const slot: BaseStorageConfig = s3Storage({ bucket: 'my-bucket', region: 'us-east-1' })
+  ```
+
+  `@opensaas/stack-storage` and `@opensaas/stack-storage-vercel` each gain a test pinning their own provider config's assignability to `BaseStorageConfig`, alongside the new S3 one, so a future provider can't regress this.
+
+### Patch Changes
+
+- [#1729](https://github.com/OpenSaasAU/stack/pull/1729) [`8d8a338`](https://github.com/OpenSaasAU/stack/commit/8d8a338ea4606b03ef859c4128b93b40a5fc9a21) Thanks [@borisno2](https://github.com/borisno2)! - Publish only `dist`, and docs; tarballs no longer include src, tests, compiled test files or build logs.
+
+- [#1739](https://github.com/OpenSaasAU/stack/pull/1739) [`97e428b`](https://github.com/OpenSaasAU/stack/commit/97e428b17ad99998c86a354e5a8be4c35a1d6c59) Thanks [@borisno2](https://github.com/borisno2)! - S3 and Vercel Blob providers refuse a filename that is not a single plain segment (`/`, `\`, NUL, `.`, `..`), matching `LocalStorageProvider`.
+
+- [#1522](https://github.com/OpenSaasAU/stack/pull/1522) [`c322241`](https://github.com/OpenSaasAU/stack/commit/c322241a7a8a293ce6824df13dcb9765cd9479a2) Thanks [@borisno2](https://github.com/borisno2)! - Add a `typecheck` script to every package, covering `tests/**/*` alongside `src/**/*` (not just what `build` compiles), and fix the type errors it surfaced in existing test files.
+
+- [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Declare the Node >=22.18.0 floor in `engines`.
+
+- [#1723](https://github.com/OpenSaasAU/stack/pull/1723) [`a69fabb`](https://github.com/OpenSaasAU/stack/commit/a69fabbffafc60da248543dcba5697775f915528) Thanks [@borisno2](https://github.com/borisno2)! - Derive the uploaded object's file extension with `path.extname` so extension-less or dotted-directory names can no longer put the client filename or a `/` into the S3 key.
+
+- [#1532](https://github.com/OpenSaasAU/stack/pull/1532) [`f9b4e2c`](https://github.com/OpenSaasAU/stack/commit/f9b4e2cd5ee2e6db5ad23ca3e13e07635291747d) Thanks [@borisno2](https://github.com/borisno2)! - Fail a package's vitest run with a named, actionable error when its `dist/` was not built from its current `src/`, instead of silently testing stale built output through a cross-package import or a spawned CLI binary.
+
+- [#1848](https://github.com/OpenSaasAU/stack/pull/1848) [`1c8f2a0`](https://github.com/OpenSaasAU/stack/commit/1c8f2a0b35ca2dd167151c9c68096f9b810981c3) Thanks [@borisno2](https://github.com/borisno2)! - Peer ranges on `@opensaas/stack-core`, `@opensaas/stack-storage` and `@opensaas/stack-ui` now track the release version instead of `^0`, so a mismatched minor is flagged.
+- Updated dependencies [[`f1ed144`](https://github.com/OpenSaasAU/stack/commit/f1ed144dd42fa69023960838b5cc28f046f48aae), [`04f4249`](https://github.com/OpenSaasAU/stack/commit/04f4249576e12894420d0ed469575ffd3bdfb46a), [`d94a2e3`](https://github.com/OpenSaasAU/stack/commit/d94a2e3dcd77cb289620818fa862bd3163e5ab59), [`e39a4b5`](https://github.com/OpenSaasAU/stack/commit/e39a4b5f9983fae97738bcba0afe6e59ba1358b4), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`8d8a338`](https://github.com/OpenSaasAU/stack/commit/8d8a338ea4606b03ef859c4128b93b40a5fc9a21), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`00c2208`](https://github.com/OpenSaasAU/stack/commit/00c22086b1f33a126b7010f83e8087f937860119), [`8cca21a`](https://github.com/OpenSaasAU/stack/commit/8cca21a2e681a4afed908b93802ed260290ea319), [`c322241`](https://github.com/OpenSaasAU/stack/commit/c322241a7a8a293ce6824df13dcb9765cd9479a2), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`501decb`](https://github.com/OpenSaasAU/stack/commit/501decb746a6b6507ac22dc61dbeb9338b6ef77f), [`7fd56ac`](https://github.com/OpenSaasAU/stack/commit/7fd56ac747df69ecdb65e728006e55cfdc122075), [`c267d3c`](https://github.com/OpenSaasAU/stack/commit/c267d3c1aa2423374ae1f0b9e24e9b4f8bdf4b7c), [`bb37e04`](https://github.com/OpenSaasAU/stack/commit/bb37e04003946eea4396efc90d42d067de6276e3), [`f9b4e2c`](https://github.com/OpenSaasAU/stack/commit/f9b4e2cd5ee2e6db5ad23ca3e13e07635291747d), [`6cfe96c`](https://github.com/OpenSaasAU/stack/commit/6cfe96c248889a268b9505178db1da9b177dafe6), [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03), [`bcea6de`](https://github.com/OpenSaasAU/stack/commit/bcea6dea0766f510da59188cb70fb41b2fd2573b), [`1c8f2a0`](https://github.com/OpenSaasAU/stack/commit/1c8f2a0b35ca2dd167151c9c68096f9b810981c3)]:
+  - @opensaas/stack-storage@0.44.0
+
 ## 0.43.0
 
 ## 0.42.3
