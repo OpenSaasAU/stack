@@ -86,11 +86,20 @@ const front = net.createServer((c) => {
 await new Promise((r) => front.listen(0, '127.0.0.1', r))
 const port = front.address().port
 
-const t = async (name, fn) => {
+let failures = 0
+const t = async (name, fn, { expectReject = false } = {}) => {
   try {
-    console.log(name, 'OK', await fn())
+    const v = await fn()
+    if (expectReject) {
+      failures++
+      console.log(name, 'FAIL (connected, expected rejection)')
+    } else console.log(name, 'OK', v)
   } catch (e) {
-    console.log(name, 'FAIL', e.message)
+    if (expectReject) console.log(name, 'OK (rejected)')
+    else {
+      failures++
+      console.log(name, 'FAIL', e.message)
+    }
   }
 }
 const q = async (pw) => {
@@ -107,8 +116,8 @@ const q = async (pw) => {
   return r.rows[0].x
 }
 await t('pg good pw', () => q(PASSWORD))
-await t('pg bad pw', () => q('nope'))
-await t('pg no pw', () => q(undefined))
+await t('pg bad pw', () => q('nope'), { expectReject: true })
+await t('pg no pw', () => q(undefined), { expectReject: true })
 await t('pool concurrent', async () => {
   const p = new pg.Pool({
     host: '127.0.0.1',
@@ -134,15 +143,16 @@ const env = { ...process.env, PGSSLMODE: 'disable' }
 const ps = async (url, e = env) =>
   (await ef('psql', [url, '-Atc', 'select 42'], { env: e, timeout: 20000 })).stdout.trim()
 await t('psql good', async () => ps(`postgres://postgres:${PASSWORD}@127.0.0.1:${port}/postgres`))
-await t('psql bad', async () => ps(`postgres://postgres:bad@127.0.0.1:${port}/postgres`))
+await t('psql bad', async () => ps(`postgres://postgres:bad@127.0.0.1:${port}/postgres`), {
+  expectReject: true,
+})
 await t('psql sslmode=prefer default', async () =>
   ps(`postgres://postgres:${PASSWORD}@127.0.0.1:${port}/postgres`, {
     ...process.env,
     PGSSLMODE: 'prefer',
   }),
 )
-await t('inner trust baseline (any pw, direct)', async () => 'n/a')
 front.close()
 await inner.stop()
 await db.close()
-process.exit(0)
+process.exit(failures === 0 ? 0 : 1)
