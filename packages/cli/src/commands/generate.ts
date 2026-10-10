@@ -105,6 +105,12 @@ export interface GenerateCommandOptions {
   stagingDir?: string
   /** Print the standalone "Next steps" hint. Defaults to true; the dev loop turns it off. */
   showNextSteps?: boolean
+  /**
+   * Runs on the resolved config before anything is written. Throwing refuses
+   * the generation by that message, so the dev loop can turn away a config the
+   * running Dev database cannot carry without touching the live tree.
+   */
+  checkConfig?: (config: OpenSaasConfig) => void
 }
 
 /** Where one generation put its files, and how to point Prisma at them. */
@@ -208,6 +214,14 @@ export async function generateCommand(
       throw new GenerationFailedError('config surface invalid')
     }
     surfaceSpinner.succeed(chalk.green('Config surface valid'))
+
+    try {
+      options.checkConfig?.(config)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(chalk.red('\n❌ Error:'), message)
+      throw new GenerationFailedError(message)
+    }
 
     const deriveSpinner = ora('Deriving the contract...').start()
     let contractData: ContractData

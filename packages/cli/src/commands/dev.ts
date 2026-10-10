@@ -79,6 +79,18 @@ function declaredDevDatabaseExtensions(config: OpenSaasConfig): DevDatabaseExten
   return [...loadable]
 }
 
+function assertExtensionsLoaded(
+  config: OpenSaasConfig,
+  loaded: readonly DevDatabaseExtension[],
+): void {
+  const missing = declaredDevDatabaseExtensions(config).filter((name) => !loaded.includes(name))
+  if (missing.length === 0) return
+  throw new Error(
+    `The config now declares the ${missing.join(', ')} extension pack, which the running Dev database ` +
+      'did not load: PGlite loads extensions only when it starts. Restart `opensaas dev` to pick it up.',
+  )
+}
+
 async function reconcile(cwd: string): Promise<boolean> {
   console.log(chalk.gray('\nReconciling the database with the emitted contract...\n'))
 
@@ -125,6 +137,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   let control: ControlChannel | undefined
   let app: AppRunner | undefined
   let interrupted = false
+  let loadedExtensions: readonly DevDatabaseExtension[] = []
 
   /** A staged generation the database does not carry yet. */
   let staged: GenerationResult | undefined
@@ -256,7 +269,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     parkedPlanId = undefined
     fs.rmSync(stagingDir, { recursive: true, force: true })
     try {
-      return await generateCommand({ stagingDir })
+      return await generateCommand({
+        stagingDir,
+        checkConfig: (config) =>
+          database === undefined ? undefined : assertExtensionsLoaded(config, loadedExtensions),
+      })
     } catch (error) {
       return sayNothingStaged(say, error)
     }
@@ -447,10 +464,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       const dataDir = path.join(cwd, DEV_DATABASE_DIR)
       fs.mkdirSync(path.dirname(dataDir), { recursive: true })
 
+      loadedExtensions = declaredDevDatabaseExtensions(config)
       database = await startDevDatabase({
         cwd,
         dataDir,
-        extensions: declaredDevDatabaseExtensions(config),
+        extensions: loadedExtensions,
       })
       process.env.OPENSAAS_DEV_DATABASE_STATE_FILE = database.stateFile
       console.log(chalk.green(`Dev database listening on ${database.url}\n`))
