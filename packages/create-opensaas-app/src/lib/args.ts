@@ -23,7 +23,7 @@ export function removedDbFlagMessage(args: readonly string[]): string | undefine
  */
 export function missingNonInteractiveFlags(args: readonly string[]): string[] {
   const missing: string[] = []
-  if (!args.some((arg) => !arg.startsWith('--'))) missing.push('<project-name>')
+  if (!args.some((arg) => !arg.startsWith('-'))) missing.push('<project-name>')
   if (!args.includes('--with-auth') && !args.includes('--no-auth')) {
     missing.push('--with-auth or --no-auth')
   }

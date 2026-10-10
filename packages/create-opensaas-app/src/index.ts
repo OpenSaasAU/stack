@@ -45,7 +45,7 @@ async function main() {
     }
   }
 
-  let projectName = args.find((arg) => !arg.startsWith('--'))
+  let projectName = args.find((arg) => !arg.startsWith('-'))
   const hasAuthFlag = args.includes('--with-auth')
   const hasNoAuthFlag = args.includes('--no-auth')
   const hasAiFlag = args.includes('--with-ai')

@@ -33,6 +33,10 @@ describe('missingNonInteractiveFlags', () => {
     expect(missingNonInteractiveFlags(['my-app', '--no-auth', '--with-ai'])).toEqual([])
   })
 
+  it('does not mistake a short flag for the project name', () => {
+    expect(missingNonInteractiveFlags(['-y', '--no-auth', '--no-ai'])).toEqual(['<project-name>'])
+  })
+
   it('names only what is missing', () => {
     expect(missingNonInteractiveFlags(['my-app', '--with-auth'])).toEqual(['--with-ai or --no-ai'])
   })
