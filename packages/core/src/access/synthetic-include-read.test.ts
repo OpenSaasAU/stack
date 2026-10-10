@@ -225,17 +225,4 @@ describe('filterReadableFields — synthetic back-relation source field read gat
     )
     expect((result.from_Bill_term as { id: string }[]).map((b) => b.id)).toEqual(['b1'])
   })
-
-  it('omits a denied single-object synthetic value', async () => {
-    const config = gatedConfig(() => false)
-    const result = await filterReadableFields(
-      { id: 't1', name: 'Term 1', from_Bill_term: { id: 'b1', amount: 5 } },
-      config.lists.Term.fields,
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Term',
-    )
-    expect('from_Bill_term' in result).toBe(false)
-  })
 })

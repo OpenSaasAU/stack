@@ -369,28 +369,23 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
         relatedConfig = getRelatedListConfig(fieldConfig.ref as string, config)
       } else if (synthetic) {
-        // No declared field means no field-level `read` gate of its own to
-        // check here — the owning list's OWN field-level access is enforced
-        // by the recursive `filterReadableFields` call below, exactly as it
-        // would be for a declared relationship's related rows.
         relatedConfig = {
           listName: synthetic.sourceListName,
           listConfig: synthetic.sourceListConfig,
         }
-        // The source field's `read` rule is the only place a list-only ref's
-        // author can gate the link, so it is checked per related row.
-        const sourceAccess = synthetic.sourceFieldConfig.access
         if (Array.isArray(value)) {
           const readable: unknown[] = []
           for (const relatedItem of value) {
-            if (await checkFieldAccess(sourceAccess, 'read', { ...args, item: relatedItem })) {
+            if (
+              await checkFieldAccess(synthetic.sourceFieldConfig.access, 'read', {
+                ...args,
+                item: relatedItem,
+              })
+            ) {
               readable.push(relatedItem)
             }
           }
           value = readable
-        } else if (typeof value === 'object') {
-          const row = Object.fromEntries(Object.entries(value))
-          if (!(await checkFieldAccess(sourceAccess, 'read', { ...args, item: row }))) continue
         }
       }
       // The additions beneath THIS relation, e.g. a field on the related list

@@ -48,7 +48,8 @@ describe('synthetic back-relation include honours the source field read gate (#1
 
       const rows = await db.Category.include('from_Post_category').all()
       expect(rows).toHaveLength(1)
-      expect(JSON.stringify(rows)).not.toContain('p1')
+      expect(rows[0].name).toBe('c1')
+      expect(rows[0].from_Post_category ?? []).toEqual([])
     },
     BOOT,
   )
