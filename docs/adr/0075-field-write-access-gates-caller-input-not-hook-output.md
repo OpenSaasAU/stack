@@ -1,8 +1,10 @@
-# Field write access gates caller input, not hook output
+# Field write access and relationship reachability gate caller input, not hook output
 
 Status: accepted
 
 Field-level `create`/`update` access is evaluated over the keys the caller supplied in `inputData`, including a foreign-key column or multi-column part column mapped back to its owning field. Keys a list-level or field-level `resolveInput` introduces or changes are trusted and persisted. A caller-supplied denied key is refused even if a hook later overwrites or removes it.
+
+The same rule holds for relationship reachability (#1778). The reachability query against the target list's `query` access runs over the edges the caller supplied in `inputData`, in either spelling (`author` or `authorId`), checked against the caller's own value. An edge whose final value a hook introduced or changed is lowered to the foreign key with no reachability query; shape checks still apply. A caller-supplied unreachable target still makes the write return `null` even if a hook overwrote it, and a hook naming a non-existent id surfaces as the foreign-key `DatabaseError`. A `connect` a service passes straight to `context.db` is caller input and stays gated.
 
 ## Context
 

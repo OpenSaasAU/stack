@@ -484,7 +484,7 @@ Field Visibility is the unconditional boundary. A missed pre-query omission is a
 4. Field `validate`
 5. Field validation (isRequired, length, min/max)
 6. Field-level access control (filter writable fields)
-7. Relationship resolution — a `connect`'s reachability query and the foreign-key write
+7. Relationship resolution — the reachability query covers caller-supplied edges (hook-introduced edges are trusted; ADR-0075), then the foreign-key write
 8. Field `beforeOperation`
 9. List `beforeOperation`
 10. **Database operation**

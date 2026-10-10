@@ -37,7 +37,11 @@ import {
 import { visibleWrittenRow, writtenRowQueryable } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
-import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
+import {
+  lowerRelationInput,
+  refuseNestedRelationInput,
+  snapshotCallerInput,
+} from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
@@ -407,6 +411,7 @@ async function runWriteInTransaction(
 
   // `inputData` is always present here; `?? {}` is only a defensive fallback.
   const input = inputData ?? {}
+  const callerInput = snapshotCallerInput(input)
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
@@ -447,6 +452,7 @@ async function runWriteInTransaction(
     ormHandle: tx,
     ops,
     data,
+    inputData: callerInput,
   })
   if (linked.status === 'unreachable') return null
   const writeData = linked.data
