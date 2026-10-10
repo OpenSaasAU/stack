@@ -679,6 +679,88 @@ describe('writePluginOwnedField (ADR-0068)', () => {
   )
 
   it(
+    'skips the write when the guard field no longer holds the expected value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: 'someone-else' },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'writes when the guard field still holds the expected value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: 'ada' },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:written')
+    },
+    BOOT,
+  )
+
+  it(
+    'guards on a null value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: null },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a multi-column field as the guard, and writes nothing',
+    async () => {
+      const id = await seed()
+
+      await expect(
+        writePluginOwnedField({
+          context: internalContext(),
+          listName: 'Owned',
+          id,
+          fieldName: 'label',
+          value: 'label:written',
+          onlyIfUnchanged: { fieldName: 'avatar', value: 'x' },
+        }),
+      ).rejects.toThrow('spans several columns')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
     'refuses a field the list does not declare, and writes nothing',
     async () => {
       const id = await seed()

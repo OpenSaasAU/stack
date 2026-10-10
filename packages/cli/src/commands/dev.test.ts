@@ -376,6 +376,36 @@ describe('devCommand', () => {
     await pendingLoop
   })
 
+  it('refuses a pack the running Dev database did not load, before planning', async () => {
+    child.hold = true
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    startLoop({ appCommand: ['node', 'server.mjs'] })
+    await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+
+    const withPack = {
+      db: {
+        provider: 'postgresql',
+        extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
+      },
+      lists: {},
+    } as never
+    vi.mocked(generateCommand).mockImplementationOnce(async (options) => {
+      options?.checkConfig?.(withPack)
+      throw new Error('generation should have been refused')
+    })
+    vi.mocked(runPrismaCli).mockClear()
+
+    editConfig()
+    watcherHandlers.get('change')?.()
+    await until(() => log.mock.calls.some((call) => String(call[0]).includes('Restart')))
+
+    expect(runPrismaCli).not.toHaveBeenCalled()
+
+    child.emit('exit', 0, null)
+    await pendingLoop
+  })
+
   it('applies a parked destructive plan only when `db update` names its id', async () => {
     child.hold = true
     const said: string[] = []
