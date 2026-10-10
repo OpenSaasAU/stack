@@ -179,3 +179,63 @@ describe('filterReadableFields — synthetic back-relation (#1082)', () => {
     expect(result.from_Bill_term).toEqual([{ id: 'b1', amount: 5 }])
   })
 })
+
+describe('filterReadableFields — synthetic back-relation source field read gate (#1812)', () => {
+  function gatedConfig(
+    read: (args: { item?: Record<string, unknown> }) => boolean,
+  ): OpenSaasConfig {
+    const config = syntheticConfig()
+    config.lists.Bill.fields.term = {
+      ...rel('Term'),
+      access: { read },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
+    } as any as FieldConfig
+    return config
+  }
+
+  it('drops every related row when the source field read rule denies', async () => {
+    const config = gatedConfig(() => false)
+    const result = await filterReadableFields(
+      { id: 't1', name: 'Term 1', from_Bill_term: [{ id: 'b1', amount: 5 }] },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      'Term',
+    )
+    expect(result.from_Bill_term).toEqual([])
+  })
+
+  it('filters related rows one by one when the rule depends on the row', async () => {
+    const config = gatedConfig(({ item }) => item?.amount === 5)
+    const result = await filterReadableFields(
+      {
+        id: 't1',
+        name: 'Term 1',
+        from_Bill_term: [
+          { id: 'b1', amount: 5 },
+          { id: 'b2', amount: 9 },
+        ],
+      },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      'Term',
+    )
+    expect((result.from_Bill_term as { id: string }[]).map((b) => b.id)).toEqual(['b1'])
+  })
+
+  it('omits a denied single-object synthetic value', async () => {
+    const config = gatedConfig(() => false)
+    const result = await filterReadableFields(
+      { id: 't1', name: 'Term 1', from_Bill_term: { id: 'b1', amount: 5 } },
+      config.lists.Term.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      'Term',
+    )
+    expect('from_Bill_term' in result).toBe(false)
+  })
+})

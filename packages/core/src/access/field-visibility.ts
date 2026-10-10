@@ -283,7 +283,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   }
 
   // Process existing fields from the database result
-  for (const [fieldName, value] of Object.entries(workingItem)) {
+  for (const [fieldName, rawValue] of Object.entries(workingItem)) {
+    let value = rawValue
     const fieldConfig = fieldConfigs[fieldName]
 
     if (systemFields.has(fieldName)) {
@@ -375,6 +376,21 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         relatedConfig = {
           listName: synthetic.sourceListName,
           listConfig: synthetic.sourceListConfig,
+        }
+        // The source field's `read` rule is the only place a list-only ref's
+        // author can gate the link, so it is checked per related row.
+        const sourceAccess = synthetic.sourceFieldConfig.access
+        if (Array.isArray(value)) {
+          const readable: unknown[] = []
+          for (const relatedItem of value) {
+            if (await checkFieldAccess(sourceAccess, 'read', { ...args, item: relatedItem })) {
+              readable.push(relatedItem)
+            }
+          }
+          value = readable
+        } else if (typeof value === 'object') {
+          const row = Object.fromEntries(Object.entries(value))
+          if (!(await checkFieldAccess(sourceAccess, 'read', { ...args, item: row }))) continue
         }
       }
       // The additions beneath THIS relation, e.g. a field on the related list
