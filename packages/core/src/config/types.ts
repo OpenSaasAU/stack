@@ -425,6 +425,8 @@ export type FieldHooks<
    *   }
    * }
    * ```
+   *
+   * A throw is reported to `onAfterTransactionError`, never propagated.
    */
   afterTransaction?: (
     args: FieldAfterTransactionHookArgs<TTypeInfo, TFieldKey>,
@@ -2046,6 +2048,9 @@ export type Hooks<
    * AND only for the top-level record (`undefined` for nested lists). The
    * compensation half of the transaction-boundary bracket. See
    * {@link AfterTransactionHookArgs}.
+   *
+   * A throw is reported to `onAfterTransactionError`, never propagated: the
+   * write's result is unchanged and every other compensator still runs.
    */
   afterTransaction?: (
     args: AfterTransactionHookArgs<TOutput, TCreateInput, TUpdateInput, TDb>,
@@ -3052,6 +3057,12 @@ export type McpCustomTool = {
   name: string
   description: string
   /**
+   * OAuth scopes the session's token must carry to see or call this tool.
+   * A token missing any of them gets a tool error naming them, and the tool is
+   * left out of `tools/list`. Unset means no scope is required.
+   */
+  scopes?: string[]
+  /**
    * Input schema (Zod schema)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3063,12 +3074,33 @@ export type McpCustomTool = {
   }) => Promise<unknown>
 }
 
+/**
+ * OAuth scopes gating the CRUD tools. `read` gates `query`; `write` gates
+ * `create`, `update` and `delete`. Scopes are only enforced where configured.
+ *
+ * @example
+ * ```typescript
+ * mcp: { enabled: true, scopes: { read: 'mcp:read', write: ['mcp:write'] } }
+ * ```
+ */
+export type McpScopesConfig = {
+  /** Scope(s) a token must carry to call `query` tools */
+  read?: string | string[]
+  /** Scope(s) a token must carry to call `create`, `update` and `delete` tools */
+  write?: string | string[]
+}
+
 export type ListMcpConfig = {
   /**
    * Enable MCP tools for this list
    * @default true
    */
   enabled?: boolean
+  /**
+   * Scopes required by this list's CRUD tools. Each of `read` and `write`
+   * set here takes precedence over the config-level `mcp.scopes`.
+   */
+  scopes?: McpScopesConfig
   /**
    * Configure which CRUD tools to enable
    */
@@ -3161,6 +3193,11 @@ export type McpConfig = {
    * Can be overridden per-list
    */
   defaultTools?: McpToolsConfig
+  /**
+   * OAuth scopes the session's token must carry for CRUD tools. Not enforced
+   * unless configured. Overridable per list with `list.mcp.scopes`.
+   */
+  scopes?: McpScopesConfig
   /**
    * Resource identifier for OAuth protected resource metadata
    * @default "https://yourdomain.com"
@@ -3454,12 +3491,39 @@ export interface OutputConfig {
   opensaasDir?: string
 }
 
+/** What {@link OpenSaasConfig.onAfterTransactionError} receives for one failed `afterTransaction` hook. */
+export interface AfterTransactionErrorReport {
+  error: unknown
+  status: 'committed' | 'rolled-back'
+  listKey: string
+  operation: 'create' | 'update' | 'delete'
+}
+
 /**
  * Main configuration type.
  * Uses an interface, not a type alias, so it can be extended via module augmentation.
  */
 export interface OpenSaasConfig {
   db: DatabaseConfig
+  /**
+   * Receives every error an `afterTransaction` hook throws. Such an error never
+   * changes the write's or transaction's result: a committed write resolves and
+   * a rolled-back one still rejects with its own error. Called once per failed
+   * hook. When unset, or when this callback itself throws, the error is written
+   * to `console.error`.
+   *
+   * @example
+   * ```typescript
+   * config({
+   *   db: { provider: 'postgresql' },
+   *   lists: {},
+   *   onAfterTransactionError: ({ error, status, listKey, operation }) => {
+   *     logger.error({ error, status, listKey, operation }, 'afterTransaction failed')
+   *   },
+   * })
+   * ```
+   */
+  onAfterTransactionError?: (report: AfterTransactionErrorReport) => void | Promise<void>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
   lists: Record<string, ListConfig<any>>
   session?: SessionConfig

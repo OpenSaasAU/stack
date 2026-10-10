@@ -66,6 +66,8 @@ export default config({
         mcp({
           loginPage: '/sign-in',
           consentPage: '/consent',
+          // Register the scopes the tool gate below requires
+          scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
           resource: `${process.env.BETTER_AUTH_URL || 'http://localhost:3000'}/api/mcp`,
         }),
       ],
@@ -95,8 +97,10 @@ export default config({
     auth: {
       type: 'better-auth',
       loginPage: '/sign-in',
-      scopes: ['openid', 'profile', 'email'],
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
     },
+    // Enforce OAuth scopes per tool (see "Scopes" below)
+    scopes: { read: 'mcp:read', write: 'mcp:write' },
     // Global defaults for all lists
     defaultTools: {
       read: true,
@@ -222,32 +226,24 @@ export { GET, POST, DELETE }
 
 ### 2. Create OAuth Discovery Endpoints
 
-Better Auth provides OAuth endpoints automatically, but some MCP clients need them at specific paths.
+Better Auth provides OAuth endpoints automatically, but MCP clients look for them at the root `.well-known` paths. The helpers answer those paths in-process through your Better Auth instance: they make no outbound fetch, forward no request headers, and the request's host selects no server.
 
 Create `app/.well-known/oauth-authorization-server/route.ts`:
 
 ```typescript
-export async function GET(req: Request) {
-  // Delegate to Better Auth's built-in handler
-  const authUrl = new URL('/api/auth/.well-known/oauth-authorization-server', req.url)
+import { createOAuthDiscoveryHandler } from '@opensaas/stack-auth/mcp'
+import { auth } from '@/lib/auth'
 
-  return fetch(authUrl.toString(), {
-    headers: req.headers,
-  })
-}
+export const GET = createOAuthDiscoveryHandler(auth)
 ```
 
-Create `app/.well-known/oauth-protected-resource/route.ts`:
+Create `app/.well-known/oauth-protected-resource/[[...resource]]/route.ts` (the optional catch-all also serves the resource-path variant, e.g. `/.well-known/oauth-protected-resource/api/mcp`):
 
 ```typescript
-export async function GET() {
-  const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+import { createOAuthProtectedResourceHandler } from '@opensaas/stack-auth/mcp'
+import { auth } from '@/lib/auth'
 
-  return Response.json({
-    resource: baseUrl,
-    authorization_servers: [`${baseUrl}/api/auth`],
-  })
-}
+export const GET = createOAuthProtectedResourceHandler(auth)
 ```
 
 ## How Tools Are Built
@@ -450,6 +446,30 @@ All MCP tools respect your existing access control rules defined in `opensaas.co
 ### Tool Listing Is Per-Session
 
 `tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner.
+
+### Scopes
+
+OAuth scopes are **not enforced unless you configure them**; a valid token otherwise gets every tool access control allows. Set `mcp.scopes` to gate tools by scope:
+
+```typescript
+mcp: {
+  enabled: true,
+  scopes: { read: 'mcp:read', write: ['mcp:write'] },
+},
+lists: {
+  Report: list({
+    // Overrides the config-level value for this list
+    mcp: { scopes: { write: 'reports:write' } },
+    // ...
+  }),
+}
+```
+
+- `query` tools need the `read` scope(s); `create`, `update` and `delete` need the `write` scope(s).
+- A custom tool (`mcp.customTools` or a plugin's `registerMcpTool`) can declare `scopes: ['reports:run']`.
+- A token missing a scope gets a tool error naming it, and the tool is left out of that session's `tools/list`.
+- Scopes gate tools only; access control still decides rows and fields.
+- In your own route handlers, `hasScopes(session, [...])` from `@opensaas/stack-auth/mcp` does the same check.
 
 ### Operation-Level Access
 

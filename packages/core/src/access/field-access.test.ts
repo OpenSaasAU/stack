@@ -357,35 +357,31 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('tagsId', 'tag-456')
   })
 
-  it('should filter out system fields', async () => {
-    const fieldConfigs = {
-      title: { type: 'text' },
-    }
-
-    const data = {
-      id: 'post-123',
-      title: 'Test',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      session: null,
-      context: {
+  it.each([
+    ['id', { id: 'post-123' }],
+    ['createdAt', { createdAt: new Date() }],
+    ['updatedAt', { updatedAt: new Date() }],
+  ])('refuses system field %s, even under sudo', async (name, extra) => {
+    const data = { title: 'Test', ...extra }
+    await expect(
+      filterWritableFields(data, { title: { type: 'text' } }, 'create', {
         session: null,
-        _isSudo: true,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any,
+        context: { session: null, _isSudo: true } as any,
+        inputData: data,
+      }),
+    ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('treats a declared createdAt as an ordinary field', async () => {
+    const data = { createdAt: 'hello' }
+    const filtered = await filterWritableFields(data, { createdAt: { type: 'text' } }, 'create', {
+      session: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      context: { session: null } as any,
       inputData: data,
     })
-
-    // System fields should be filtered out
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
-
-    // Regular fields should remain
-    expect(filtered).toHaveProperty('title', 'Test')
+    expect(filtered).toEqual({ createdAt: 'hello' })
   })
 
   it('should handle update operation', async () => {
@@ -513,15 +509,12 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('from_Enrolment_student')
   })
 
-  it('still skips system fields, and keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
+  it('keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
     const fieldConfigs = {
       title: { type: 'text' },
       author: { type: 'relationship', many: false },
     }
     const data = {
-      id: 'post-1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
       title: 'Test',
       authorId: 'user-1', // No `access` on `author` — `checkFieldAccess` allows (#1326)
     }
@@ -532,97 +525,64 @@ describe('filterWritableFields', () => {
       inputData: data,
     })
 
-    expect(filtered).not.toHaveProperty('id')
-    expect(filtered).not.toHaveProperty('createdAt')
-    expect(filtered).not.toHaveProperty('updatedAt')
     expect(filtered).toHaveProperty('authorId', 'user-1')
     expect(filtered).toHaveProperty('title', 'Test')
   })
 
-  it('passes through raw per-part columns from a multi-column field whose write access ALLOWS (non-sudo)', async () => {
-    // Multi-column fields inject raw columns (e.g. m_url/m_size) that are not
-    // declared in fieldConfigs; they must not trip the undeclared-key reject.
-    // With no field-level access (allow), they pass through.
-    const fieldConfigs = {
-      media: {
-        type: 'image',
-        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
-      },
-    }
-    const data = {
-      media_url: 'https://x/y.jpg',
-      media_size: 99,
-    }
+  const mediaConfigs = {
+    media: {
+      type: 'image',
+      getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
+    },
+  }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+  it('passes through part columns the field produced itself (not in caller input)', async () => {
+    const data = { media_url: 'https://x/y.jpg', media_size: 99 }
+
+    const filtered = await filterWritableFields(data, mediaConfigs, 'create', {
       session: null,
       context: nonSudoContext(),
-      inputData: data,
+      inputData: { media: { url: 'https://x/y.jpg' } },
     })
 
     expect(filtered).toHaveProperty('media_url', 'https://x/y.jpg')
     expect(filtered).toHaveProperty('media_size', 99)
   })
 
-  it('THROWS when raw split columns are supplied for a field whose write access is DENIED (non-sudo)', async () => {
-    // Security (#568): a non-sudo caller who supplies the raw per-part columns
-    // DIRECTLY must not bypass the owning field's write-access gate. The
-    // logical-key gate in the hooks layer never fires here (no `media` key), so
-    // this filter is the only enforcement point — it must throw.
-    const fieldConfigs = {
-      media: {
-        type: 'image',
-        access: { create: () => false, update: () => false },
-        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
-      },
-    }
-    const data = {
-      media_url: 'https://evil/x.jpg',
-      media_size: 1,
+  it('THROWS when a hook swaps a write-denied logical key for its part columns', async () => {
+    const configs = {
+      media: { ...mediaConfigs.media, access: { create: () => false, update: () => false } },
     }
 
-    // Throws ValidationError, and the message names the owning field.
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, configs, 'create', {
         session: null,
         context: nonSudoContext(),
-        inputData: data,
+        inputData: { media: { url: 'https://x/y.jpg' } },
       }),
-    ).rejects.toThrow(ValidationError)
-    await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
-        session: null,
-        item: { id: 'item-1' },
-        context: nonSudoContext(),
-        inputData: data,
-      }),
-    ).rejects.toThrow(/media/)
+    ).rejects.toThrow(/"media".*access denied/)
   })
 
-  it('passes raw split columns through under sudo regardless of denied owning-field access', async () => {
-    // sudo is the single trusted bypass; `checkFieldAccess` returns true under
-    // sudo, so even a would-be-denied multi-column field passes through.
-    const fieldConfigs = {
-      media: {
-        type: 'image',
-        access: { create: () => false, update: () => false },
-        getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
-      },
-    }
-    const data = {
-      media_url: 'https://x/y.jpg',
-      media_size: 99,
-    }
+  for (const [label, makeContext] of [
+    ['non-sudo', nonSudoContext],
+    ['sudo', sudoContext],
+  ] as const) {
+    for (const operation of ['create', 'update'] as const) {
+      it(`THROWS when a caller supplies a raw part column (${label}, ${operation})`, async () => {
+        const data = { media_url: 'javascript:alert(1)', media_size: 5 }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      session: null,
-      context: sudoContext(),
-      inputData: data,
-    })
+        const result = filterWritableFields(data, mediaConfigs, operation, {
+          session: null,
+          item: operation === 'update' ? { id: 'item-1' } : undefined,
+          context: makeContext(),
+          inputData: data,
+        })
 
-    expect(filtered).toHaveProperty('media_url', 'https://x/y.jpg')
-    expect(filtered).toHaveProperty('media_size', 99)
-  })
+        await expect(result).rejects.toThrow(ValidationError)
+        await expect(result).rejects.toThrow(/"media_url".*"media"/)
+      })
+    }
+  }
 
   // ── #1326: a directly-written foreign-key column must not be silently
   // dropped, and must enforce the same write access as the owning
@@ -924,7 +884,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'update', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: true },
         defaultedFields: new Set(['emailVerified']),
       }),
     ).rejects.toThrow(ValidationError)
@@ -943,7 +903,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
       filterWritableFields(data, fieldConfigs, 'create', {
         session: null,
         context: nonSudoContext(),
-        inputData: {},
+        inputData: { emailVerified: false },
       }),
     ).rejects.toThrow(ValidationError)
   })
@@ -1077,5 +1037,66 @@ describe('the virtual-field write skip (issue #1531)', () => {
 
     expect(filtered).toHaveProperty('title', 'Test')
     expect(filtered).not.toHaveProperty('summary')
+  })
+})
+
+describe('filterWritableFields — gates caller input, not hook output (issue #1643)', () => {
+  const fieldConfigs = {
+    name: { type: 'text' },
+    locked: { type: 'text', access: { create: () => false, update: () => false } },
+  }
+
+  it('persists a write-denied field a hook set when the caller did not supply it', async () => {
+    for (const operation of ['create', 'update'] as const) {
+      const filtered = await filterWritableFields(
+        { name: 'a', locked: 'server-set' },
+        fieldConfigs,
+        operation,
+        { session: null, context: nonSudoContext(), inputData: { name: 'a' } },
+      )
+      expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
+    }
+  })
+
+  it('throws when the caller supplies the denied field', async () => {
+    await expect(
+      filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('throws when the caller supplied the denied field and a hook removed it', async () => {
+    await expect(
+      filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: { name: 'a', locked: 'x' },
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('refuses a caller-supplied foreign key but persists a hook-set one', async () => {
+    const rels = {
+      author: { type: 'relationship', ref: 'User.posts', access: { create: () => false } },
+    }
+    const config = {
+      lists: {
+        User: { fields: { posts: { type: 'relationship', ref: 'Post.author', many: true } } },
+        Post: { fields: rels },
+      },
+    } as unknown as OpenSaasConfig
+    const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', {
+        ...base,
+        inputData: { authorId: 'u1' },
+      }),
+    ).rejects.toThrow(ValidationError)
+    await expect(
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
+    ).resolves.toEqual({ authorId: 'u1' })
   })
 })

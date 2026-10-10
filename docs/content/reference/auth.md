@@ -245,9 +245,21 @@ returns) against a fixed precedence, so a collision between sources is predictab
    a session-only field (e.g. the admin plugin's `impersonatedBy`) reachable, not just fields
    on the user.
 
-A name that can't be resolved is omitted from the session and logs a warning (once per field,
-per process) naming what was checked, instead of silently surfacing later as an access-control
-function reading `undefined`.
+A name better-auth's session does not carry but the user list does — a field added through
+`extendUserList`, say — is read from the signed-in user's own row, by id, in one query for all
+such names together. No query runs when every name comes from better-auth. Values are the
+stored ones, before any `resolveOutput`. Naming a field here is a deliberate config choice, like
+`needs`: it does **not** pass through that field's `read` access, because the session must exist
+before access can be evaluated. The fill-in stays server-side; better-auth's client session
+endpoint and `useSession` do not gain the field. If the user row is gone mid-session,
+`getSessionFromAuth()` returns `null`.
+
+A name that exists nowhere (not in better-auth's session or plugin schemas, and not a scalar
+field of the user list) throws a configuration error at startup naming the entry and where it
+was looked for. The check is skipped when a `customSession` plugin is registered, since that
+plugin replaces the session shape. If a field is both in `extendUserList` and already supplied
+by better-auth (for example `role` with the `admin()` plugin) and is listed in `sessionFields`,
+startup throws, naming the collision — drop it from `extendUserList` and let the plugin supply it.
 
 A `customSession` better-auth plugin fully **replaces** the resolved session and can nest its
 fields anywhere — e.g. under its own custom key. When that happens, `sessionFields` and the
@@ -483,7 +495,7 @@ Stores OAuth provider information and password hashes:
 Stores email verification and password reset tokens:
 
 - `id` (String, auto-generated)
-- `identifier` (String, email address)
+- `identifier` (String, lookup key such as `reset-password:<token>` — **read-denied**)
 - `value` (String, token — **read-denied**, see below)
 - `expiresAt` (DateTime)
 - `createdAt` (DateTime, auto)
@@ -491,7 +503,7 @@ Stores email verification and password reset tokens:
 
 ### Credential fields are read-denied (ADR-0036)
 
-`Session.token`, `Verification.value`, and `Account.password`/`accessToken`/`refreshToken`/`idToken`
+`Session.token`, `Verification.identifier`/`value`, and `Account.password`/`accessToken`/`refreshToken`/`idToken`
 hold live, presentable credentials — reading one is equivalent to holding it (session hijack, account
 takeover, replaying an OAuth token). The plugin sets a field-level `read` deny on each of them when it
 derives the list, so granting operation-level access to a list (e.g. `access: { session: { operation:

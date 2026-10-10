@@ -93,6 +93,7 @@ pnpm dev
 pnpm generate
 
 # Apply a schema change the running loop staged but did not promote
+# (a destructive one prints its plan id: pnpm db:update --plan <id>)
 pnpm db:update
 
 # Run a one-off script against the loop's database instead of `next dev`
@@ -164,8 +165,8 @@ The hooks system provides data transformation and side effects during database o
 3. List-level `validate` - Custom validation logic
 4. Field-level `validate` - Custom validation logic for individual fields
 5. Field validation - Built-in rules (isRequired, length, min/max)
-6. Field-level access control - Filter writable fields
-7. Relationship resolution - a `connect`'s reachability query and the foreign-key write
+6. Field-level access control - Gates the keys the caller supplied in `inputData` (hook output is trusted; ADR-0075)
+7. Relationship resolution - reachability query over the caller-supplied edges (hook-introduced edges are trusted; ADR-0075) and the foreign-key write
 8. Field-level `beforeOperation` - Side effects for individual fields
 9. List-level `beforeOperation` - Side effects at list level
 10. **Database operation**
@@ -225,6 +226,8 @@ All hooks receive these common arguments:
 - `resolvedData` - The data after transformations (updated by `resolveInput` hooks)
 - `item` - The existing item from the database (undefined for create, present for update/delete)
 - `originalItem` - The item before the operation (undefined for create, present for update/delete in `afterOperation`)
+
+**`afterTransaction` never changes a write's result.** A throw is reported to the config's `onAfterTransactionError` (default `console.error`), never propagated, so a rejected write always means nothing persisted (ADR-0074).
 
 A `resolveOutput` hook sees **exactly its own declared dependency set plus the list's system fields** — never another computed field's output, and never what the caller happened to select. Reaching for anything it did not declare finds nothing there. See `needs` in `packages/core/CLAUDE.md` and ADR-0051.
 
@@ -320,7 +323,7 @@ export default config({
 - **Extend Lists**: Add fields or hooks to existing lists
 - **Declare Extension packs**: `context.addExtension({ name, from })`, so a field type needing a pack does not push that declaration onto the application
 - **Hook Chaining**: Multiple plugins can add hooks that execute in sequence
-- **Deep Merging**: Plugins safely merge fields, hooks, and access control
+- **Merging**: Hooks chain (`mergeHooks`); fields are replaced per key, and a plugin may redeclare an app-declared field or its own, but redeclaring a field another plugin introduced throws; operation-level access on an existing list is refused (ADR-0013, ADR-0077)
 - **Lifecycle Hooks**: `beforeGenerate`, `afterGenerate` for code generation control
 - **Dependency Resolution**: Automatic execution ordering via topological sort
 
@@ -445,7 +448,7 @@ An entry naming a field the list doesn't have, a virtual field, a to-many relati
 
 The workflow splits on history, not on provider: **dev reconciles, production migrates** (ADR-0003 as amended, ADR-0063).
 
-- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan and the `pnpm db:update` instruction, and keeps serving.
+- `opensaas dev` starts the Dev database, generates, runs Prisma's reconcile, and spawns the app. On a config change it **stages** generation behind reconciliation — emitting to a staging directory, planning the update, and promoting the contract and bundle only once the plan applies. A destructive plan mid-session leaves bundle and database at the previous schema, prints the plan, its id and `pnpm db:update --plan <id>`, and keeps serving.
 - `pnpm db:update` (`opensaas db update`) is the promoting wrapper. It runs **during** `dev` — the loop holds the database and the staged generation, so this command opens no connection of its own — and errors when nothing is listening.
 - Production runs Prisma's migrate from the committed `migrations/` directory, which carries the app's migration packages and every declared pack's extension space.
 - Prisma runs `CREATE EXTENSION IF NOT EXISTS` on every path. The deployment's job is provisioning: make the extension available and give the migrating role the privilege, or have a DBA pre-create it. pgvector is untrusted, so it needs superuser or a provider grant.
@@ -652,7 +655,7 @@ const context = userId ? await getContext({ userId }) : await getContext()
 
 **Reads are composed, then run by a terminal.** `where`, `orderBy`, `select`, `include`, `limit`, `offset`, `cursor`, `distinct`/`distinctOn` build an immutable value; `all()`, `first()`, `aggregate()` and `nearest()` run it. A method appears on the surface only where the engine knows how to scope it — omission is the signal, not an oversight. A read materialises: no terminal is an async iterable, and a caller that needs a cursor uses `context.unsafe`.
 
-**Writes take scalars plus `connect`.** `create({ data })`, `update({ where, data })` and `delete({ where })` are members of the list itself, never terminals chained off a composed read — and `where` there is the row's identity, `{ id }`, alone. `data` accepts the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
+**Writes take scalars plus `connect`.** `create({ data })`, `update({ where, data })` and `delete({ where })` are members of the list itself, never terminals chained off a composed read — and `where` there is the row's identity, `{ id }`, alone. `data` accepts the row's own columns plus `connect` on a field that owns the foreign key, where it lowers to a reachability query against the target's `query` access and a scalar foreign-key write. Assigning `null` clears the edge. There is no nested `create`/`update`/`delete`/`connectOrCreate`/`set`. A write takes no `select`/`include` — passing one throws `ValidationError`; read the row back with `context.db.<List>.where({ id: { equals: row.id } }).include(…).first()`, inside `context.transaction` when atomicity matters. A caller writing several rows atomically does so inside `context.transaction` (ADR-0050).
 
 **Interactive transactions:** `context.transaction(async (txContext) => { … })` runs several access-checked, hook-firing `context.db` operations atomically. Unlike a transaction on `context.unsafe` (which bypasses access control and hooks), `txContext.db` keeps the security and validation boundary. The transaction takes no options — there is no isolation level to select, so a concurrency-sensitive invariant is expressed as a **row lock** on the contended parent: `.forUpdate()`, available only on a transaction-bound builder. See ADR-0012, ADR-0042 and ADR-0047, and `packages/core/CLAUDE.md`.
 
@@ -751,12 +754,12 @@ An included to-one the related list's `query` access scopes away is `null`, and 
 
 ### 4. System Fields
 
-`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by declaring the two fields itself or by setting `db: { timestamps: true }`, per list or on `db` for every list at once.
+`id` is the only column the generator adds on its own. `createdAt`/`updatedAt` are **off by default** (ADR-0004, `resolveListTimestamps` in `packages/core/src/contract/derive.ts`): a list opts in by setting `db: { timestamps: true }`, per list or on `db` for every list at once. A list that declares `createdAt`/`updatedAt` itself gets ordinary fields the application maintains — access, hooks, validation and defaults all apply, and no auto-maintenance.
 
-All three names, where the list has them, are:
+`id` and an auto-pair `createdAt`/`updatedAt` are system fields:
 
 - Excluded from access control (always readable)
-- Excluded from field-level write operations
+- Refused in a `create`/`update` payload with a `ValidationError`, sudo included. Writing explicit ids goes through `context.unsafe`
 
 `updatedAt` is maintained **application-side**, with no database backstop: a write that bypasses the ORM — `psql`, a reconcile, `context.unsafe` — leaves it stale, and an `update` with an empty payload no longer moves it (ADR-0048).
 
@@ -1223,6 +1226,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - `contains` and text equality in filter URLs are case-insensitive; a to-many count filter other than presence degrades to free text
 - An approximate vector scan under a selective access filter can return fewer rows than asked for
 - The Auth adapter implements no joins and no schema creation, so better-auth's own CLI is unsupported
+- A unique constraint or restrictive foreign key on an access-scoped list tells a writer that a row it cannot read holds that value or references that row. Scope the uniqueness to the access boundary; see "Uniqueness and existence" in `docs/content/concepts/access-control.md`
 - `pnpm db:update` requires the dev loop to be running, and a destructive mid-session change restarts the app
 - The staged promotion set is not atomic to an outside observer: a direct `prisma` invocation, `psql`, or a hot-reloading app child can see a mix of old and new artifacts for a measured window (1–2 ms on macOS, up to 127 ms on a loaded 2-CPU Linux runner) during `opensaas dev`. Only a second-terminal `opensaas db update` is serialised against it. See ADR-0072
 

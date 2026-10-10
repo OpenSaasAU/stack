@@ -1,5 +1,10 @@
 # Contributing to OpenSaas Stack
 
+> [!IMPORTANT]
+> **We are not accepting outside contributions at this stage.** Pull requests from people who are not already maintainers will be closed without review. If you are interested in helping out with this project, please get in contact through our website: https://opensaas.au/
+>
+> Bug reports are still welcome — see [Reporting issues](#reporting-issues).
+
 Thanks for working on OpenSaas Stack itself. This guide covers the **monorepo** workflow. If you just want to _build an app_ with the stack, start with the [README Quick Start](./README.md#quick-start-3-steps) instead.
 
 ## Prerequisites

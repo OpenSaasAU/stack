@@ -292,18 +292,20 @@ This is not a closed list of six base-model fields — it also covers **plugin
 table** credential fields the stack has first-class support for (ADR-0034),
 since a plugin table derives through the same scalar-field derivation pass:
 
-| Model (better-auth key) | Field(s)                                             | Source                 |
-| ----------------------- | ---------------------------------------------------- | ---------------------- |
-| `session`               | `token`                                              | base                   |
-| `verification`          | `value`                                              | base                   |
-| `account`               | `password`, `accessToken`, `refreshToken`, `idToken` | base                   |
-| `oauthClient`           | `clientSecret`                                       | `mcp` / oauth-provider |
-| `oauthAccessToken`      | `token`                                              | `mcp` / oauth-provider |
-| `oauthRefreshToken`     | `token`                                              | `mcp` / oauth-provider |
-| `twoFactor`             | `secret`, `backupCodes`                              | `twoFactor()`          |
+| Model (better-auth key) | Field(s)                                             | Source                  |
+| ----------------------- | ---------------------------------------------------- | ----------------------- |
+| `session`               | `token`                                              | base                    |
+| `verification`          | `identifier`, `value`                                | base                    |
+| `account`               | `password`, `accessToken`, `refreshToken`, `idToken` | base                    |
+| `oauthClient`           | `clientSecret`                                       | `mcp` / oauth-provider  |
+| `oauthAccessToken`      | `token`                                              | `mcp` / oauth-provider  |
+| `oauthRefreshToken`     | `token`                                              | `mcp` / oauth-provider  |
+| `twoFactor`             | `secret`, `backupCodes`                              | `twoFactor()`           |
+| `jwks`                  | `privateKey`                                         | `jwt()`                 |
+| `deviceCode`            | `deviceCode`, `userCode`                             | `deviceAuthorization()` |
 
 The deny is applied in the scalar-field derivation loop
-(`withCredentialAccess` in `derive-auth-lists.ts`), against a registry built
+(`withFieldAccess` in `derive-auth-lists.ts`), against a registry built
 by `buildCredentialFieldRegistry` — the stack-seeded `CREDENTIAL_FIELDS` table
 above merged with an app's `authPlugin({ credentialFields })` — keyed by
 better-auth's own model/field key, not the app's list key or column `db.map`,
@@ -574,8 +576,9 @@ config at runtime. Each name resolves against a fixed precedence (a top-level ke
 resolved session, then `user`, then `session`), with `userId` special-cased to the user's `id`.
 A `customSession` better-auth plugin fully replaces the resolved shape and can nest fields
 anywhere; reconciling that against `sessionFields` is the app's job — an unresolvable name is
-omitted and warns once (per field, per process) rather than silently becoming `undefined`. See
-the `sessionFields` reference (`docs/content/reference/auth.md`) for the full contract.
+omitted and warns once (per field, per process) rather than silently becoming `undefined`.
+
+A name better-auth's session lacks but the user list carries (an `extendUserList` field) is filled in from the user's own row: one primary-key read over the Unsafe surface for all such names, none when there are none, and `null` session if the row is gone. `createAuth`'s proxy hands `getSessionFromAuth` the reader through the `SESSION_FILL_IN` symbol (`src/server/session-fill-in.ts`); a hand-wired `betterAuth()` has none. Such a name does not pass through its field's `read` access. A name found nowhere throws at startup (`buildBetterAuthOptions`), except under a `customSession` plugin; an `extendUserList` field that collides with a better-auth-supplied one (e.g. `role` with `admin()`) and is in `sessionFields` throws too.
 
 ### Session Type Safety
 

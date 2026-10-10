@@ -4,6 +4,7 @@ import type { BulkAction, OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
+import { ValidationError } from '../hooks/index.js'
 import { getContext } from './index.js'
 
 /**
@@ -26,6 +27,7 @@ function schemaConfig(): OpenSaasConfig {
         fields: {
           name: text(),
           email: text(),
+          apiToken: text({ ui: { valueForClientSerialization: () => null } }),
           posts: relationship({ ref: 'Post.author', many: true }),
         },
         access: { operation: OPEN },
@@ -99,6 +101,27 @@ describe('context.serverAction', () => {
   }
 
   describe('the CRUD actions', () => {
+    test('no write response carries a column other than id', async () => {
+      const context = harness.context
+      const created = await context.serverAction({
+        listKey: 'User',
+        action: 'create',
+        data: { name: 'a', email: 'a@x.io', apiToken: 'sk_live_secret' },
+      })
+      const id = String((created as { data: { id: unknown } }).data.id)
+      const updated = await context.serverAction({
+        listKey: 'User',
+        action: 'update',
+        id,
+        data: { apiToken: 'sk_live_other' },
+      })
+      const deleted = await context.serverAction({ listKey: 'User', action: 'delete', id })
+      for (const response of [created, updated, deleted]) {
+        expect(JSON.stringify(response)).not.toContain('sk_live')
+        expect(response).toEqual({ success: true, data: { id } })
+      }
+    })
+
     test(
       'create, update and delete each round-trip through the secured surface',
       async () => {
@@ -109,7 +132,8 @@ describe('context.serverAction', () => {
           action: 'create',
           data: { name: 'John', email: 'john@example.com' },
         })
-        expect(created).toMatchObject({ success: true, data: { name: 'John' } })
+        expect(created).toMatchObject({ success: true })
+        expect(Object.keys((created as { data: object }).data)).toEqual(['id'])
         const id = String((created as { data: { id: unknown } }).data.id)
 
         expect(
@@ -119,7 +143,7 @@ describe('context.serverAction', () => {
             id,
             data: { name: 'John Updated' },
           }),
-        ).toMatchObject({ success: true, data: { name: 'John Updated' } })
+        ).toMatchObject({ success: true, data: { id } })
 
         expect(await context.serverAction({ listKey: 'User', action: 'delete', id })).toMatchObject(
           { success: true },
@@ -160,6 +184,123 @@ describe('context.serverAction', () => {
             data: { name: 'John' },
           }),
         ).toEqual({ success: false, error: 'Access denied or operation failed' })
+      },
+      BOOT,
+    )
+  })
+
+  describe('error redaction', () => {
+    test(
+      'a throwing bulk-action hasAccess is redacted',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const context = contextAt(
+            withBulkAction({
+              hasAccess: () => {
+                throw new Error('INTERNAL sk-live-123')
+              },
+            }),
+          )
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'bulkAction',
+            key: 'publish',
+            ids: [],
+          })
+          expect(result).toEqual({ bulkAction: false, error: 'Action failed' })
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    function withHook(throwing: () => never): OpenSaasConfig {
+      const config = schemaConfig()
+      config.lists.Post.hooks = { beforeOperation: throwing }
+      return config
+    }
+
+    test(
+      'a non-validation error is logged and replaced with a generic message',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const context = contextAt(
+            withHook(() => {
+              throw new Error('INTERNAL api key sk-live-123')
+            }),
+          )
+          const result = await context.serverAction({
+            listKey: 'Post',
+            action: 'create',
+            data: { title: 'x' },
+          })
+          expect(result).toEqual({
+            success: false,
+            error: 'Create on "Post" failed due to an internal error.',
+            fieldErrors: undefined,
+          })
+          expect(JSON.stringify(result)).not.toContain('sk-live-123')
+          expect(
+            logged.mock.calls
+              .flat()
+              .some((arg) => arg instanceof Error && /sk-live/.test(arg.message)),
+          ).toBe(true)
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'update and delete redact a throwing afterOperation too',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const seeded = await harness.context.db.Post.create({ data: { title: 'x' } })
+          if (seeded === null) throw new Error('seed failed')
+          const id = String(seeded.id)
+          const config = schemaConfig()
+          config.lists.Post.hooks = {
+            afterOperation: () => {
+              throw new Error('INTERNAL api key sk-live-123')
+            },
+          }
+          const context = contextAt(config)
+          for (const action of ['update', 'delete'] as const) {
+            const result = await context.serverAction(
+              action === 'update'
+                ? { listKey: 'Post', action, id, data: { title: 'y' } }
+                : { listKey: 'Post', action, id },
+            )
+            expect(result).toMatchObject({ success: false })
+            expect(JSON.stringify(result)).not.toContain('sk-live-123')
+          }
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a ValidationError reaches the client verbatim',
+      async () => {
+        const context = contextAt(
+          withHook(() => {
+            throw new ValidationError(['Title is taken'])
+          }),
+        )
+        const result = await context.serverAction({
+          listKey: 'Post',
+          action: 'create',
+          data: { title: 'x' },
+        })
+        expect(result).toMatchObject({ success: false })
+        expect(JSON.stringify(result)).toContain('Title is taken')
       },
       BOOT,
     )

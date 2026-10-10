@@ -49,6 +49,7 @@ export default config({
           // Not implemented in this demo — a real project needs a page here
           // for users to approve/deny an MCP client's requested scopes.
           consentPage: '/consent',
+          scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
           // RFC 8707/9728 canonical resource identifier — must match the
           // `mcp.basePath` below. HTTP is accepted only on loopback hosts.
           resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
@@ -102,8 +103,11 @@ export default config({
     auth: {
       type: 'better-auth',
       loginPage: '/sign-in',
-      scopes: ['openid', 'profile', 'email'],
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
     },
+    // Tokens need mcp:read to query and mcp:write to create/update/delete.
+    // Omit `scopes` and no scope is enforced.
+    scopes: { read: 'mcp:read', write: 'mcp:write' },
     // Global defaults for all lists
     defaultTools: {
       read: true,

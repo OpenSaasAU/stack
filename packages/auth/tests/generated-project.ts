@@ -192,7 +192,7 @@ export async function generateProject(
 async function closeCachedClient(): Promise<void> {
   const key = Symbol.for(processGlobalKey('client'))
   const cached: unknown = Reflect.get(globalThis, key)
-  if (isClosable(cached)) await cached.close()
+  if (isRecord(cached) && isClosable(cached.client)) await cached.client.close()
   Reflect.deleteProperty(globalThis, key)
 }
 

@@ -312,6 +312,17 @@ export interface IncludePlan {
    */
   readonly foreignKey?: string
   readonly predicates: readonly WherePlan[]
+  /** Whether the caller's own refinement composed a predicate on this relation. */
+  readonly callerRefined: boolean
+  /** Whether the caller's own refinement bounded or narrowed what this relation returns. */
+  readonly callerShaped: boolean
+  /**
+   * Present when the caller shaped a relation that is also a live declared
+   * dependency: the Access Filter predicates for the unshaped rows the
+   * declaring hooks and `read` rules are owed (ADR-0051), fetched apart from
+   * the caller's own view of the relation.
+   */
+  readonly declaredFetch?: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
   readonly limit?: number
   readonly offset?: number
@@ -443,6 +454,8 @@ interface IncludeTarget {
   arity: 'one' | 'many'
   /** The relationship field this key names, or `undefined` for a synthetic back-relation. */
   fieldConfig: FieldConfig | undefined
+  /** The declared field whose `read` rule gates this key: the key's own field, or a synthetic's source field. */
+  readGate: FieldConfig | undefined
   /** The foreign key this side owns, as the contract derives it. */
   foreignKey: ContractForeignKeyDescriptor | undefined
 }
@@ -521,6 +534,7 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
       relatedListConfig: related.listConfig,
       arity: resolved.fieldConfig.many === true ? 'many' : 'one',
       fieldConfig: resolved.fieldConfig,
+      readGate: resolved.fieldConfig,
       foreignKey: foreignKeyOf(name, resolved.fieldConfig, ctx),
     }
   }
@@ -532,6 +546,7 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
         relatedListConfig: synthetic.sourceListConfig,
         arity: 'many',
         fieldConfig: undefined,
+        readGate: synthetic.sourceFieldConfig,
         foreignKey: undefined,
       }
     }
@@ -563,8 +578,8 @@ async function isOmittedBeforeQuery(
   ctx: ResolveContext,
 ): Promise<boolean> {
   if (!ctx.checkFieldRead) return false
-  if (target.fieldConfig?.access === undefined) return false
-  const answer = await classifyRowIndependentRead(target.fieldConfig.access, {
+  if (target.readGate?.access === undefined) return false
+  const answer = await classifyRowIndependentRead(target.readGate.access, {
     session: ctx.session,
     context: ctx.context,
   })
@@ -638,12 +653,27 @@ async function resolveInclude(
         : []
       : undefined
 
+  const callerShaped =
+    request.predicates.length > 0 ||
+    request.limit !== undefined ||
+    request.offset !== undefined ||
+    shape.fields !== undefined
+  const declaredFetch =
+    !declared && liveDeclaredDependency && callerShaped && reduce === undefined
+      ? access.kind !== 'true'
+        ? [access]
+        : []
+      : undefined
+
   return {
     relation: request.name,
     relatedListName: target.relatedListName,
     arity: target.arity,
     ...(target.foreignKey ? { foreignKey: target.foreignKey.name } : {}),
     predicates,
+    callerRefined: request.predicates.length > 0,
+    callerShaped,
+    ...(declaredFetch ? { declaredFetch } : {}),
     orders,
     limit: request.limit,
     offset: request.offset,

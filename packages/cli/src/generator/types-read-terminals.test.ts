@@ -316,6 +316,31 @@ void run
     expect(output).toBe('')
   })
 
+  it('takes no select or include on a write', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Context } from './.opensaas/types.ts'
+
+declare const context: Context
+
+async function run() {
+  const created = await context.db.Post.create({ data: { title: 't' } })
+  const read = await context.db.Post.where({ id: { equals: 'x' } }).first()
+  assertType<Exact<typeof created, typeof read>>()
+
+  // @ts-expect-error include is not a write argument
+  await context.db.Post.create({ data: { title: 't' }, include: { author: true } })
+  // @ts-expect-error select is not a write argument
+  await context.db.Post.update({ where: { id: 'x' }, data: {}, select: { id: true } })
+  // @ts-expect-error select is not a write argument
+  await context.db.Post.delete({ where: { id: 'x' }, select: { id: true } })
+}
+
+void run
+`)
+
+    expect(output).toBe('')
+  })
+
   it('reduces a to-many relation only, and only a where()', { timeout: 300_000 }, () => {
     const output = fixture.check(`${CONSUMER_PRELUDE}
 import type { Context } from './.opensaas/types.ts'

@@ -134,7 +134,7 @@ export function FieldRenderer(props: FieldRendererProps) {
 
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
 
-  if (mode === 'edit' && ['id', 'createdAt', 'updatedAt'].includes(fieldName)) {
+  if (mode === 'edit' && fieldName === 'id') {
     return null
   }
 

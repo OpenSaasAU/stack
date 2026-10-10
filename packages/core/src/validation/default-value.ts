@@ -38,7 +38,7 @@ export function validateDefaultValues(config: OpenSaasConfig): ConfigRefusal[] {
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       if (field.virtual || isRelationshipField(field) || !field.getContractField) continue
-      if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
+      if (fieldKey === 'id') continue
       if (!('defaultValue' in field) || field.defaultValue === undefined) continue
       if (isNowSentinel(field.defaultValue)) continue
       if (!field.getZodSchema) continue
