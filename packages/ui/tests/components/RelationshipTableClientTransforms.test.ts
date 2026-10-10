@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import type { AnyStackContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
-import { relationship, text } from '@opensaas/stack-core/fields'
+import { integer, relationship, text } from '@opensaas/stack-core/fields'
 import { RelationshipTable } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 
@@ -13,6 +13,9 @@ const config: OpenSaasConfig = {
       fields: {
         name: text(),
         team: relationship({ ref: 'Team.members' }),
+        salary: integer({
+          ui: { valueForClientSerialization: ({ value }) => ({ isSet: value != null }) },
+        }),
         apiToken: text({
           ui: { valueForClientSerialization: ({ value }) => ({ isSet: !!value }) },
         }),
@@ -60,5 +63,25 @@ describe('RelationshipTable client value transforms', () => {
 
     expect(element.props.rows).toEqual([{ id: 'm1', name: 'm', apiToken: { isSet: true } }])
     expect(JSON.stringify(element.props.rows)).not.toContain('sk_live_SECRET')
+  })
+
+  it('does not total a redacted column into the footer sums', async () => {
+    const element = await RelationshipTable({
+      config,
+      section: { ...section, columns: ['name', 'salary'], sumColumns: ['salary'] },
+      rows: [
+        { id: 'm1', name: 'a', salary: 100 },
+        { id: 'm2', name: 'b', salary: 250 },
+      ],
+      total: 2,
+      basePath: '/admin',
+      context: harness.context as unknown as AnyStackContext,
+      parentListKey: 'Team',
+      parentId: 't1',
+      serverAction: async () => null,
+      readOnly: true,
+    })
+
+    expect(element.props.sums).toEqual({ salary: 0 })
   })
 })
