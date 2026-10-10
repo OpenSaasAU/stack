@@ -86,6 +86,7 @@ type EmbeddingWriter = (
   id: string | number,
   fieldName: string,
   stored: StoredEmbedding | null,
+  onlyIfUnchanged?: { fieldName: string; value: string },
 ) => Promise<void>
 
 type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
@@ -396,16 +397,22 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
-                  await write(listName, id, fieldName, {
-                    vector,
-                    metadata: {
-                      model: provider.model,
-                      provider: provider.type,
-                      dimensions: provider.dimensions,
-                      generatedAt: new Date().toISOString(),
-                      sourceHash,
+                  await write(
+                    listName,
+                    id,
+                    fieldName,
+                    {
+                      vector,
+                      metadata: {
+                        model: provider.model,
+                        provider: provider.type,
+                        dimensions: provider.dimensions,
+                        generatedAt: new Date().toISOString(),
+                        sourceHash,
+                      },
                     },
-                  })
+                    { fieldName: sourceField, value: sourceText },
+                  )
                 } catch (error) {
                   if (sourceChanged && args.operation === 'update') await clearEmbedding()
                   reportGenerationFailure({
@@ -635,13 +642,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
         generateEmbeddings: async (texts: string[], providerName?: string) =>
           await requireProvider(providerName).embedBatch(texts),
 
-        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored) => {
+        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored, onlyIfUnchanged) => {
           await writePluginOwnedField({
             context,
             listName: listKey,
             id,
             fieldName,
             value: stored,
+            onlyIfUnchanged,
           })
         },
       }
