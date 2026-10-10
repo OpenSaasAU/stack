@@ -225,8 +225,7 @@ export default config({
           ref: 'User.posts',
           access: {
             read: () => true,
-            create: ({ session, inputData }) =>
-              !!session?.userId && inputData?.author === undefined,
+            create: () => false,
             update: () => false,
           },
         }),
@@ -323,7 +322,10 @@ export default config({
     Note: list<Lists.Note.TypeInfo>({
       fields: {
         body: text({ validation: { isRequired: true }, ui: { displayMode: 'textarea' } }),
-        owner: relationship({ ref: 'User.notes' }),
+        owner: relationship({
+          ref: 'User.notes',
+          access: { create: () => false, update: () => false },
+        }),
       },
       access: {
         operation: {
@@ -338,7 +340,7 @@ export default config({
         // admin create form only needs the note body.
         resolveInput: async ({ operation, resolvedData, context }) => {
           const data = { ...resolvedData }
-          if (operation === 'create' && !data.owner && context.session?.userId) {
+          if (operation === 'create' && context.session?.userId) {
             data.owner = { connect: { id: context.session.userId } }
           }
           return data
