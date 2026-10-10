@@ -995,7 +995,7 @@ async function narrowUnincludedForeignKeys(
     if (idMap.size === 0) continue
 
     const ops = await whereCombinators()
-    const visible = await withOrigin('engine', () =>
+    const visible = await engineRead(binding, () =>
       collectionFor(binding.ormHandle, related.listName)
         .where((model) => lowerWhere(access, model, ops))
         .where((model) => identityIn(model, related.listName, [...idMap.values()] as RowLockKey[]))
@@ -1336,6 +1336,7 @@ function lockLane(
  * vanished between the two statements and is dropped (ADR-0047).
  */
 async function locked(
+  binding: ReadBinding,
   taken: { lane: RowLockLane; identity: RowLockIdentity },
   listName: string,
   rows: readonly OrmRow[],
@@ -1353,11 +1354,22 @@ async function locked(
     keys.push(value)
   }
   if (keys.length === 0) return []
-  const held = new Set<RowLockKey>(await taken.lane.lock(listName, taken.identity, keys))
+  const held = new Set<RowLockKey>(
+    await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys)),
+  )
   return rows.filter((row) => {
     const value = row[column]
     return (typeof value === 'string' || typeof value === 'number') && held.has(value)
   })
+}
+
+async function engineRead<T>(binding: ReadBinding, run: () => PromiseLike<T>): Promise<T> {
+  try {
+    return await withOrigin('engine', run)
+  } catch (error) {
+    binding.context._transactionOwner?.poison(error)
+    throw error
+  }
 }
 
 async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleRow[]> {
@@ -1371,8 +1383,8 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleR
     ALL_DISPOSITIONS,
     unreachableRefusal,
   )
-  const read = await withOrigin('engine', () => collection.all())
-  const rows = taken === undefined ? read : await locked(taken, binding.listName, read)
+  const read = await engineRead(binding, () => collection.all())
+  const rows = taken === undefined ? read : await locked(binding, taken, binding.listName, read)
   return await visibleRows(binding, rows, plan)
 }
 
@@ -1387,9 +1399,9 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<Visibl
     FIRST_DISPOSITIONS,
     unreachableRefusal,
   )
-  const read = await withOrigin('engine', () => collection.first())
+  const read = await engineRead(binding, () => collection.first())
   if (read === null) return null
-  const rows = taken === undefined ? [read] : await locked(taken, binding.listName, [read])
+  const rows = taken === undefined ? [read] : await locked(binding, taken, binding.listName, [read])
   if (rows.length === 0) return null
   return (await visibleRows(binding, rows, plan))[0]
 }
@@ -1470,7 +1482,7 @@ async function runAggregate(
     AGGREGATE_DISPOSITIONS,
     refuseUncountable(binding.listName),
   )
-  const result = await withOrigin('engine', () =>
+  const result = await engineRead(binding, () =>
     collection.aggregate((aggregate) =>
       Object.fromEntries(keys.map((key) => [key, aggregate.count()])),
     ),
@@ -1595,7 +1607,7 @@ async function runNearest(
     collection = collection.where((model) => vectors.bound(near, model, bound))
   }
 
-  const rows = await withOrigin('engine', () => collection.limit(near.limit).all())
+  const rows = await engineRead(binding, () => collection.limit(near.limit).all())
   const scores = rows.map((row) => score(near, row))
   const items = await visibleRows(binding, rows, plan)
   return items.map((item, index) => ({ item, score: scores[index] }))
