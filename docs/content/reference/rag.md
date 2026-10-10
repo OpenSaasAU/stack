@@ -345,7 +345,7 @@ rather than replaced. Under an **exact** scan the result is exact — `limit` ro
 whenever `limit` rows qualify. Under an approximate scan it is bounded by
 pgvector's iterative-scan budget instead (ADR-0045).
 
-**A known limit.** `embedding({ index })` builds no `CREATE INDEX` yet because the pgvector pack registers no index types, so `nearest()` scans sequentially and `pnpm generate` warns ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
+**A known limit.** `embedding({ index })` builds no `CREATE INDEX` yet because the pgvector pack registers no index types, so every `nearest()` is an exact sequential scan today and `pnpm generate` warns ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
 
 ### Automatic Embedding Generation
 

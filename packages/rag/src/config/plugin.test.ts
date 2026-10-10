@@ -1305,15 +1305,27 @@ describe('ragPlugin', () => {
       })
       const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
-        const indexed = listsWith(1536)
-        const field = indexed.lists.Article.fields.contentEmbedding
-        if (!field) throw new Error('fixture has no contentEmbedding')
-        Reflect.set(field, 'index', { method: 'hnsw' })
+        const indexed: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {
+            Article: {
+              fields: {
+                contentEmbedding: embedding({ dimensions: 1536, index: { method: 'hnsw' } }),
+              },
+            },
+            Note: {
+              fields: {
+                bodyEmbedding: embedding({ dimensions: 1536, index: { method: 'ivfflat' } }),
+              },
+            },
+          },
+        }
 
         expect(() => plugin.beforeGenerate!(indexed)).not.toThrow()
-        expect(warned).toHaveBeenCalledTimes(1)
+        expect(warned).toHaveBeenCalledTimes(2)
         expect(warned.mock.calls[0]?.[0]).toContain('"Article.contentEmbedding"')
         expect(warned.mock.calls[0]?.[0]).toContain('no vector index is built')
+        expect(warned.mock.calls[1]?.[0]).toContain('"Note.bodyEmbedding"')
 
         warned.mockClear()
         plugin.beforeGenerate!(listsWith(1536))
