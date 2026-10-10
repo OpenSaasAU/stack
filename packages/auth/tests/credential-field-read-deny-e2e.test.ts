@@ -153,7 +153,9 @@ describe.skipIf(!prerequisitesPresent)(
 
         // Naming a denied field in a read's predicate is rejected up front by
         // the predicate-time read-access check, not silently stripped.
-        await expect(context.db.Session.where({ token: { equals: token } }).all()).rejects.toThrow(/identifier/)
+        await expect(context.db.Session.where({ token: { equals: token } }).all()).rejects.toThrow(
+          /identifier/,
+        )
         await expect(
           context
             .sudo()
