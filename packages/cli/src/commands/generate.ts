@@ -429,7 +429,7 @@ export async function generateCommand(
     if (staging === undefined) {
       console.log(chalk.gray('Next steps:'))
       console.log(chalk.gray('  1. Commit prisma/contract.json and prisma/contract.d.ts'))
-      console.log(chalk.gray('  2. Run: npx prisma db update'))
+      console.log(chalk.gray('  2. Run: pnpm dev (or pnpm db:update while dev is running)'))
       console.log(chalk.gray('  3. Start using your generated types!\n'))
     }
 
