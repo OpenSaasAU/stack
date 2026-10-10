@@ -531,9 +531,9 @@ contentEmbedding: embedding({
 })
 ```
 
-Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
-types, so an `index` declaration derives the column type and the operator class
-and is not yet lowered to a `CREATE INDEX` (#1265).
+Known limits: the pgvector pack registers no index types yet, so an `index`
+declaration derives the column type and the operator class and is not lowered to
+a `CREATE INDEX` (#1265); `pnpm generate` warns for each such field.
 
 ## Type Safety
 

@@ -1299,6 +1299,42 @@ describe('ragPlugin', () => {
   describe('beforeGenerate', () => {
     const listsWith = articleWithEmbedding
 
+    it('warns once per indexed embedding field that no vector index is built', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+      })
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const indexed: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {
+            Article: {
+              fields: {
+                contentEmbedding: embedding({ dimensions: 1536, index: { method: 'hnsw' } }),
+              },
+            },
+            Note: {
+              fields: {
+                bodyEmbedding: embedding({ dimensions: 1536, index: { method: 'ivfflat' } }),
+              },
+            },
+          },
+        }
+
+        expect(() => plugin.beforeGenerate!(indexed)).not.toThrow()
+        expect(warned).toHaveBeenCalledTimes(2)
+        expect(warned.mock.calls[0]?.[0]).toContain('"Article.contentEmbedding"')
+        expect(warned.mock.calls[0]?.[0]).toContain('no vector index is built')
+        expect(warned.mock.calls[1]?.[0]).toContain('"Note.bodyEmbedding"')
+
+        warned.mockClear()
+        plugin.beforeGenerate!(listsWith(1536))
+        expect(warned).not.toHaveBeenCalled()
+      } finally {
+        warned.mockRestore()
+      }
+    })
+
     it('passes when the declared dimension matches the provider model', () => {
       const plugin = ragPlugin({
         provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-large' },

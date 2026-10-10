@@ -575,20 +575,31 @@ export function ragPlugin(config: RAGConfig): Plugin {
           // A field that declared nothing took its provider's dimension in
           // `init`, so only an author's own value can disagree here.
           const declared = fieldConfig.dimensions
-          if (declared === undefined) continue
           const providerConfig = providerFor(providerName)
-          if (!providerConfig) continue
+          const providerDimensions =
+            declared !== undefined && providerConfig ? knownDimensions(providerConfig) : undefined
 
-          const providerDimensions = knownDimensions(providerConfig)
-          if (providerDimensions === undefined) continue
-          if (declared === providerDimensions) continue
+          if (
+            declared !== undefined &&
+            providerConfig &&
+            providerDimensions !== undefined &&
+            declared !== providerDimensions
+          ) {
+            throw new Error(
+              `RAG plugin: "${listName}.${fieldName}" declares ${declared} ` +
+                `dimensions, but its ${providerLabel(providerName ?? 'default', providerConfig)} ` +
+                `produces ${providerDimensions}. The dimension is a column's type, so the two have ` +
+                `to agree before a migration is planned.`,
+            )
+          }
 
-          throw new Error(
-            `RAG plugin: "${listName}.${fieldName}" declares ${declared} ` +
-              `dimensions, but its ${providerLabel(providerName ?? 'default', providerConfig)} ` +
-              `produces ${providerDimensions}. The dimension is a column's type, so the two have ` +
-              `to agree before a migration is planned.`,
-          )
+          if (fieldConfig.index !== undefined) {
+            console.warn(
+              `RAG plugin: "${listName}.${fieldName}" declares an index, but no vector index is ` +
+                `built — the pgvector pack registers no index types yet (see ` +
+                `https://github.com/OpenSaasAU/stack/issues/1265), so nearest() scans sequentially.`,
+            )
+          }
         }
       }
 
