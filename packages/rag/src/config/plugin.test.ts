@@ -179,7 +179,7 @@ type EmbeddingWriter = (
   listKey: string,
   id: string | number,
   fieldName: string,
-  stored: StoredEmbedding,
+  stored: StoredEmbedding | null,
 ) => Promise<void>
 
 /**
@@ -484,6 +484,49 @@ describe('ragPlugin', () => {
       expect(harness.mcpTools[0].inputSchema.properties.field.enum).toEqual(['contentEmbedding'])
     })
 
+    const articleLists = (mcp?: NonNullable<OpenSaasConfig['lists'][string]['mcp']>) => ({
+      Article: {
+        fields: { content: text(), contentEmbedding: embedding({ sourceField: 'content' }) },
+        ...(mcp ? { mcp } : {}),
+      },
+    })
+
+    it('skips a list that opted out of MCP', async () => {
+      const harness = pluginContext({ lists: articleLists({ enabled: false }) })
+      await ragPlugin(openai).init!(harness.context)
+      expect(harness.mcpTools).toEqual([])
+    })
+
+    it('skips a list whose read tool is disabled', async () => {
+      const harness = pluginContext({ lists: articleLists({ tools: { read: false } }) })
+      await ragPlugin(openai).init!(harness.context)
+      expect(harness.mcpTools).toEqual([])
+    })
+
+    it('honours defaultTools.read unless the list overrides it', async () => {
+      const mcp = { enabled: true, defaultTools: { read: false } }
+      const off = pluginContext({ lists: articleLists(), mcp })
+      await ragPlugin(openai).init!(off.context)
+      expect(off.mcpTools).toEqual([])
+
+      const on = pluginContext({ lists: articleLists({ tools: { read: true } }), mcp })
+      await ragPlugin(openai).init!(on.context)
+      expect(on.mcpTools.map((tool) => tool.name)).toEqual(['semantic_search_article'])
+    })
+
+    it('gates the tool on the list read scope, falling back to the config scope', async () => {
+      const listScoped = pluginContext({ lists: articleLists({ scopes: { read: 'mcp:read' } }) })
+      await ragPlugin(openai).init!(listScoped.context)
+      expect(listScoped.mcpTools[0].scopes).toEqual(['mcp:read'])
+
+      const configScoped = pluginContext({
+        lists: articleLists(),
+        mcp: { enabled: true, scopes: { read: ['a', 'b'] } },
+      })
+      await ragPlugin(openai).init!(configScoped.context)
+      expect(configScoped.mcpTools[0].scopes).toEqual(['a', 'b'])
+    })
+
     it('registers nothing when MCP tools are disabled', async () => {
       const harness = pluginContext({
         lists: {
@@ -712,7 +755,7 @@ describe('ragPlugin', () => {
         listKey: string
         id: string | number
         fieldName: string
-        stored: StoredEmbedding
+        stored: StoredEmbedding | null
       }[] = []
       const { key } = writeEmbeddingOf(
         ragPlugin({ provider: { type: 'counting', dimensions: 1 } }).runtime!(
@@ -879,7 +922,7 @@ describe('ragPlugin', () => {
         context,
       })
 
-      expect(writes.map((write) => write.stored.vector)).toEqual([[4]])
+      expect(writes.map((write) => write.stored?.vector)).toEqual([[4]])
     })
 
     it('logs rather than throws when the provider fails, since the row is committed', async () => {
@@ -1112,6 +1155,71 @@ describe('ragPlugin', () => {
       expect(writes).toHaveLength(1)
     })
 
+    it.each([[''], [null]])(
+      'clears the stored embedding when the source becomes %j',
+      async (next) => {
+        const { hook, writes, context } = await generationHook()
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: { content: 'four' },
+          item: { id: 'a1', content: 'four', contentEmbedding: null },
+          context,
+        })
+
+        await hook!({
+          listKey: 'Article',
+          operation: 'update',
+          status: 'committed',
+          inputData: { content: next },
+          originalItem: { id: 'a1', content: 'four' },
+          item: { id: 'a1', content: next, contentEmbedding: writes[0].stored },
+          context,
+        })
+
+        expect(writes.map((write) => write.stored)).toEqual([writes[0].stored, null])
+      },
+    )
+
+    it('writes nothing when an empty source has no stored embedding to clear', async () => {
+      const { hook, writes, context } = await generationHook()
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { content: '' },
+        originalItem: { id: 'a1', content: 'four' },
+        item: { id: 'a1', content: '', contentEmbedding: null },
+        context,
+      })
+
+      expect(writes).toEqual([])
+    })
+
+    it('nulls the stored embedding when regeneration fails on update', async () => {
+      const { hook, writes, context } = await generationHook('flaky')
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await hook!({
+        listKey: 'Article',
+        operation: 'update',
+        status: 'committed',
+        inputData: { content: 'unknown text' },
+        originalItem: { id: 'a1', content: 'red' },
+        item: {
+          id: 'a1',
+          content: 'unknown text',
+          contentEmbedding: { vector: [1], metadata: { sourceHash: 'old' } },
+        },
+        context,
+      })
+
+      expect(writes.map((write) => write.stored)).toEqual([null])
+      logged.mockRestore()
+    })
+
     it('regenerates when the source text changed', async () => {
       const { hook, writes, context } = await generationHook()
 
@@ -1134,7 +1242,7 @@ describe('ragPlugin', () => {
         context,
       })
 
-      expect(writes.map((write) => write.stored.vector)).toEqual([[4], [6]])
+      expect(writes.map((write) => write.stored?.vector)).toEqual([[4], [6]])
     })
 
     it('reports a missing rag context as a standing defect rather than throwing', async () => {
@@ -1233,6 +1341,42 @@ describe('ragPlugin', () => {
 
   describe('beforeGenerate', () => {
     const listsWith = articleWithEmbedding
+
+    it('warns once per indexed embedding field that no vector index is built', () => {
+      const plugin = ragPlugin({
+        provider: { type: 'openai', apiKey: 'k', model: 'text-embedding-3-small' },
+      })
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const indexed: OpenSaasConfig = {
+          db: { provider: 'postgresql' },
+          lists: {
+            Article: {
+              fields: {
+                contentEmbedding: embedding({ dimensions: 1536, index: { method: 'hnsw' } }),
+              },
+            },
+            Note: {
+              fields: {
+                bodyEmbedding: embedding({ dimensions: 1536, index: { method: 'ivfflat' } }),
+              },
+            },
+          },
+        }
+
+        expect(() => plugin.beforeGenerate!(indexed)).not.toThrow()
+        expect(warned).toHaveBeenCalledTimes(2)
+        expect(warned.mock.calls[0]?.[0]).toContain('"Article.contentEmbedding"')
+        expect(warned.mock.calls[0]?.[0]).toContain('no vector index is built')
+        expect(warned.mock.calls[1]?.[0]).toContain('"Note.bodyEmbedding"')
+
+        warned.mockClear()
+        plugin.beforeGenerate!(listsWith(1536))
+        expect(warned).not.toHaveBeenCalled()
+      } finally {
+        warned.mockRestore()
+      }
+    })
 
     it('passes when the declared dimension matches the provider model', () => {
       const plugin = ragPlugin({

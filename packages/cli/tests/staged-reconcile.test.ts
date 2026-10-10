@@ -234,6 +234,13 @@ async function waitForOutput(
   )
 }
 
+function parkedPlanId(loop: Loop): string {
+  const ids = [...loop.output().matchAll(/pnpm db:update --plan ([0-9a-f]+)/g)]
+  const id = ids.at(-1)?.[1]
+  if (id === undefined) throw new Error(`No plan id in the loop's output:\n\n${loop.output()}`)
+  return id
+}
+
 function writeConfig(projectDir: string, extraField: string): void {
   const configPath = path.join(projectDir, 'opensaas.config.ts')
   const source = fs.readFileSync(fixtureConfig, 'utf-8')
@@ -341,7 +348,7 @@ describe('staged reconcile under opensaas dev', () => {
     expect(serving.contract, 'the bundle is not promoted either').toContain('"note"')
     expect(serving.pid).toBe(booted.pid)
 
-    const update = await captureCli(projectDir, ['db', 'update', '--confirm', 'postgres'])
+    const update = await captureCli(projectDir, ['db', 'update', '--plan', parkedPlanId(loop)])
     expect(update.exitCode, update.output).toBe(0)
 
     const dropped = await waitForState(
@@ -371,7 +378,7 @@ describe('staged reconcile under opensaas dev', () => {
   test('`db update` with no dev loop listening names `opensaas dev`', async () => {
     const projectDir = createProject('no-loop')
 
-    const run = await captureCli(projectDir, ['db', 'update', '--confirm', 'postgres'])
+    const run = await captureCli(projectDir, ['db', 'update'])
 
     expect(run.exitCode, run.output).not.toBe(0)
     expect(run.output).toContain('opensaas dev')
@@ -380,7 +387,7 @@ describe('staged reconcile under opensaas dev', () => {
   // #1226: a config edit that both declares a pack for the first time and
   // carries a destructive change parks the pack's seed alongside the parked
   // plan. Restoring the pre-stage refs to discard that plan must not also
-  // strand the newly-seeded pack refless — `db update --confirm` later has
+  // strand the newly-seeded pack refless — `db update --plan` later has
   // nothing else to re-seed from.
   //
   // The dev loop's own PGlite freezes its loaded extensions at boot, and this
@@ -416,7 +423,7 @@ describe('staged reconcile under opensaas dev', () => {
       'the seed for the newly-declared pack must survive the parked plan',
     ).toBe(true)
 
-    const update = await captureCli(projectDir, ['db', 'update', '--confirm', 'postgres'])
+    const update = await captureCli(projectDir, ['db', 'update', '--plan', parkedPlanId(loop)])
     expect(update.exitCode, update.output).toBe(0)
 
     const dropped = await waitForState(

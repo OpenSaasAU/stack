@@ -16,3 +16,19 @@ export function removedDbFlagMessage(args: readonly string[]): string | undefine
     'change it.'
   )
 }
+
+/**
+ * The flags a non-interactive run must pass because a prompt would otherwise
+ * be needed to answer them. Empty when every question is already answered.
+ */
+export function missingNonInteractiveFlags(args: readonly string[]): string[] {
+  const missing: string[] = []
+  if (!args.some((arg) => !arg.startsWith('-'))) missing.push('<project-name>')
+  if (!args.includes('--with-auth') && !args.includes('--no-auth')) {
+    missing.push('--with-auth or --no-auth')
+  }
+  if (!args.includes('--with-ai') && !args.includes('--no-ai')) {
+    missing.push('--with-ai or --no-ai')
+  }
+  return missing
+}

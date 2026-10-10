@@ -70,7 +70,7 @@ export function SearchBar({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (onSearch) onSearch(searchInput.trim())
-    else router.push(`${pathname}?search=${searchInput.trim()}`)
+    else router.push(`${pathname}?search=${encodeURIComponent(searchInput.trim())}`)
   }
 
   const handleClear = () => {

@@ -7,6 +7,13 @@ import type { UnsafeSurface } from '@opensaas/stack-core/unsafe'
 import { opensaasAuthAdapter } from '../adapter/index.js'
 import { getAuthListRegistry } from '../lists/index.js'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
+import {
+  SESSION_FILL_IN,
+  assertSessionFieldsResolvable,
+  createSessionFillIn,
+  isSessionFillIn,
+  type SessionFillIn,
+} from './session-fill-in.js'
 
 /**
  * `BetterAuthOptions['plugins']` narrowed to the app's literal tuple plus the
@@ -351,6 +358,7 @@ export async function buildBetterAuthOptions<const TPlugins extends readonly Bet
   }
 
   assertNoUnsupportedPassthroughKeys(authConfig.betterAuthOptions as Record<string, unknown>)
+  assertSessionFieldsResolvable(resolvedConfig, authConfig)
 
   const resolvedPlugins = authConfig.betterAuthPlugins || []
   if (plugins) {
@@ -496,6 +504,7 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
   type AuthInstance = Auth<BetterAuthOptions> | Auth<ResolvedBetterAuthOptions<TPlugins>>
   let authInstance: AuthInstance | null = null
   let authPromise: Promise<AuthInstance> | null = null
+  let sessionFillIn: SessionFillIn | null = null
 
   async function buildAuthInstance(): Promise<AuthInstance> {
     // `opensaasConfig`/`context` are passed straight through on every attempt,
@@ -510,7 +519,15 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
     const betterAuthConfig = plugins
       ? await buildBetterAuthOptions(opensaasConfig, context, plugins)
       : await buildBetterAuthOptions(opensaasConfig, context)
+    const resolvedConfig = await Promise.resolve(opensaasConfig)
+    const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
+    const unsafe = Reflect.get(await Promise.resolve(context), 'unsafe')
+    const fillIn =
+      authConfig && isUnsafeSurface(unsafe)
+        ? createSessionFillIn(resolvedConfig, authConfig, unsafe)
+        : null
     const instance = betterAuth(betterAuthConfig)
+    sessionFillIn = fillIn
     authInstance = instance
     return instance
   }
@@ -536,6 +553,13 @@ export function createAuth<const TPlugins extends readonly BetterAuthPlugin[]>(
       if (prop === 'then') {
         // Support await on the proxy itself
         return undefined
+      }
+
+      if (prop === SESSION_FILL_IN) {
+        return async () => {
+          await getAuthInstance()
+          return sessionFillIn
+        }
       }
 
       const lazyWrapper = async (...args: unknown[]) => {
@@ -672,6 +696,8 @@ export async function getSessionFromAuth<TResolvedSession>(
 
   const resolvedSessionRecord = resolvedSession as Record<string, unknown>
   const result: Record<string, unknown> = {}
+  const fillIn = await resolveSessionFillIn(auth)
+  const fromUserRow: string[] = []
 
   for (const field of sessionFields) {
     const resolved = resolveSessionField(field, resolvedSessionRecord)
@@ -681,12 +707,34 @@ export async function getSessionFromAuth<TResolvedSession>(
     // reject, for a session that is genuinely signed in.
     if (resolved.found && resolved.value !== undefined) {
       result[field] = resolved.value
+    } else if (fillIn?.userFields.has(field)) {
+      fromUserRow.push(field)
     } else {
       warnUnresolvedSessionField(field, resolvedSessionRecord)
     }
   }
 
+  if (fillIn && fromUserRow.length > 0) {
+    const userId = resolveSessionField('userId', resolvedSessionRecord)
+    if (!userId.found || typeof userId.value !== 'string') {
+      for (const field of fromUserRow) warnUnresolvedSessionField(field, resolvedSessionRecord)
+      return result
+    }
+    const row = await fillIn.read(userId.value, fromUserRow)
+    if (row === null) return null
+    for (const field of fromUserRow) {
+      if (row[field] !== undefined) result[field] = row[field]
+    }
+  }
+
   return result
+}
+
+async function resolveSessionFillIn(auth: object): Promise<SessionFillIn | null> {
+  const accessor = Reflect.get(auth, SESSION_FILL_IN)
+  if (typeof accessor !== 'function') return null
+  const fillIn: unknown = await accessor.call(auth)
+  return isSessionFillIn(fillIn) ? fillIn : null
 }
 
 export type { BetterAuthOptions }

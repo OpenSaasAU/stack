@@ -169,7 +169,7 @@ export async function ListView({
   basePath = '/admin',
   columns,
   page = 1,
-  pageSize = 50,
+  pageSize: requestedPageSize = 50,
   search,
   initialSort,
   sort,
@@ -225,6 +225,7 @@ export async function ListView({
       .map(([name]) => name),
   )
 
+  const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
   const skip = (page - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0

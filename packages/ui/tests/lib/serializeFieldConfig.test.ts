@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import {
+  FIELD_HOOK_ONLY_REASON,
   JUNCTION_EDGE_RELATIONSHIP_REASON,
   markUnwritableRelationships,
   serializeFieldConfig,
@@ -212,5 +213,17 @@ describe('the reason a to-many is read-only names the control that can write it'
 
     expect(fields.tags.readOnly).toBe(true)
     expect(fields.tags.readOnlyReason).toBe('Locked by the workflow')
+  })
+})
+
+describe('serializeFieldConfig hook-only fields', () => {
+  it('marks a write: "hooks" field read-only with the system reason', () => {
+    const [field] = Object.values(
+      makeFields({ state: { type: 'select', access: { write: 'hooks' } } }),
+    )
+    expect(serializeFieldConfig(field)).toMatchObject({
+      readOnly: true,
+      readOnlyReason: FIELD_HOOK_ONLY_REASON,
+    })
   })
 })

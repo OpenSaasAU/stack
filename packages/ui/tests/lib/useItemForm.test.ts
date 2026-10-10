@@ -133,7 +133,7 @@ describe('transformInitialData', () => {
 })
 
 describe('getEditableFields', () => {
-  it('drops system fields and preserves declaration order', () => {
+  it('drops id, keeps declared createdAt/updatedAt, and preserves declaration order', () => {
     const fields = {
       id: text(),
       title: text(),
@@ -141,7 +141,12 @@ describe('getEditableFields', () => {
       body: text(),
       updatedAt: text(),
     }
-    expect(getEditableFields(fields).map(([k]) => k)).toEqual(['title', 'body'])
+    expect(getEditableFields(fields).map(([k]) => k)).toEqual([
+      'title',
+      'createdAt',
+      'body',
+      'updatedAt',
+    ])
   })
 
   it('keeps virtual fields by default (update mode) so they render read-only', () => {

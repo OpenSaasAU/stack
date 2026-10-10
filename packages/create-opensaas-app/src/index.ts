@@ -7,9 +7,11 @@ import prompts from 'prompts'
 import chalk from 'chalk'
 import ora from 'ora'
 import { validateProjectName } from './lib/project-name.js'
-import { generateEnvFiles } from './lib/env.js'
+import { generateAuthEnv, generateEnvFiles } from './lib/env.js'
+import { restoreGitignore } from './lib/templates.js'
+import { randomBytes } from 'node:crypto'
 import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
-import { removedDbFlagMessage } from './lib/args.js'
+import { removedDbFlagMessage, missingNonInteractiveFlags } from './lib/args.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
 import { removeAiTooling } from './lib/ai-tooling.js'
 
@@ -33,7 +35,19 @@ async function main() {
     process.exit(1)
   }
 
-  let projectName = args.find((arg) => !arg.startsWith('--'))
+  if (!process.stdin.isTTY) {
+    const missing = missingNonInteractiveFlags(args)
+    if (missing.length > 0) {
+      console.error(
+        chalk.red(
+          `\n❌ stdin is not a TTY, so prompts cannot be answered. Pass: ${missing.join(', ')}`,
+        ),
+      )
+      process.exit(1)
+    }
+  }
+
+  let projectName = args.find((arg) => !arg.startsWith('-'))
   const hasAuthFlag = args.includes('--with-auth')
   const hasNoAuthFlag = args.includes('--no-auth')
   const hasAiFlag = args.includes('--with-ai')
@@ -57,7 +71,7 @@ async function main() {
 
     if (!response.projectName) {
       console.log(chalk.yellow('\n👋 Cancelled'))
-      process.exit(0)
+      process.exit(1)
     }
 
     projectName = response.projectName
@@ -84,7 +98,7 @@ async function main() {
 
     if (response.withAuth === undefined) {
       console.log(chalk.yellow('\n👋 Cancelled'))
-      process.exit(0)
+      process.exit(1)
     }
 
     withAuth = response.withAuth
@@ -101,7 +115,7 @@ async function main() {
 
     if (mcpResponse.enableMCP === undefined) {
       console.log(chalk.yellow('\n👋 Cancelled'))
-      process.exit(0)
+      process.exit(1)
     }
 
     enableMCP = mcpResponse.enableMCP
@@ -135,6 +149,7 @@ async function createProject(options: TemplateOptions) {
     }
 
     await fs.copy(templateDir, targetDir)
+    await restoreGitignore(targetDir)
 
     const pkgPath = path.join(targetDir, 'package.json')
     const pkg = await fs.readJSON(pkgPath)
@@ -176,8 +191,8 @@ async function createProject(options: TemplateOptions) {
     console.log(chalk.dim('   e.g. "add a comments feature to posts" — it builds it for you.\n'))
 
     if (withAuth) {
-      console.log(chalk.dim('💡 Set BETTER_AUTH_SECRET in .env before signing in.'))
-      console.log(chalk.dim('   Generate a secret with: openssl rand -base64 32\n'))
+      console.log(chalk.dim('💡 A random BETTER_AUTH_SECRET was written to .env (git-ignored).'))
+      console.log(chalk.dim('   Set your own in production: openssl rand -base64 32\n'))
     } else {
       console.log(chalk.dim('Once running, visit http://localhost:3000/admin for your admin UI.\n'))
     }
@@ -210,7 +225,7 @@ async function writeEnvFile(
 
   if (withAuth && (await fs.pathExists(envExamplePath))) {
     const example = await fs.readFile(envExamplePath, 'utf-8')
-    await fs.writeFile(envPath, example)
+    await fs.writeFile(envPath, generateAuthEnv(example, randomBytes(32).toString('base64')))
     return
   }
 

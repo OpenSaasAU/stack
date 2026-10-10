@@ -7,13 +7,7 @@ import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentCreateAccess } from '../access/field-access.js'
 import { pascalToCamel } from '../lib/case-utils.js'
 import { isRelationshipField } from '../fields/index.js'
-import { AccessScopeDepthExceededError, ResolveOutputCycleError } from '../access/errors.js'
-import { ValidationError } from '../hooks/index.js'
-import { DatabaseError } from '../lib/database-errors.js'
-import {
-  MalformedRelationInputError,
-  NonOwningRelationInputError,
-} from '../context/relationship-input.js'
+import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { decideAdvertisement } from './advertise.js'
@@ -23,11 +17,11 @@ import {
   generateFieldSchemas,
   ownsForeignKey,
 } from './field-schema.js'
-import { listIdColumn, listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
+import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { coerceWhereIds, idBoundaryRefusal } from './where-id-boundary.js'
+import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
   generateFieldsProjectionSchema,
@@ -70,6 +64,34 @@ function toContextSession(session: McpSession): ContextSession {
  */
 function getPluginMcpTools(config: OpenSaasConfig): McpCustomTool[] {
   return getPluginData<McpCustomTool[]>(config, '__mcpTools') ?? []
+}
+
+type CrudOperation = 'query' | 'create' | 'update' | 'delete'
+
+function asScopeList(value: string | string[] | undefined): string[] {
+  return value === undefined ? [] : typeof value === 'string' ? [value] : value
+}
+
+function requiredCrudScopes(
+  config: OpenSaasConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
+  listConfig: ListConfig<any>,
+  operation: CrudOperation,
+): string[] {
+  const key = operation === 'query' ? 'read' : 'write'
+  return asScopeList(listConfig.mcp?.scopes?.[key] ?? config.mcp?.scopes?.[key])
+}
+
+function missingScopes(session: McpSession, required: string[]): string[] {
+  const held = session.scopes ?? []
+  return required.filter((scope) => !held.includes(scope))
+}
+
+function scopeRefusal(toolName: string, missing: string[], id?: number | string): Response {
+  return createErrorResultResponse(
+    `Tool "${toolName}" requires the OAuth scope(s): ${missing.join(', ')}.`,
+    id,
+  )
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing across zod instances
@@ -174,7 +196,7 @@ export function createMcpHandlers(options: {
 
       if (body.method === 'tools/list') {
         const context = await getContext(toContextSession(session))
-        return await handleToolsList(config, context, body.id)
+        return await handleToolsList(config, context, session, body.id)
       }
 
       if (body.method === 'tools/call') {
@@ -301,6 +323,7 @@ async function listReachableOverMcp(
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
+  session: McpSession,
   id?: number | string,
 ): Promise<Response> {
   const tools: McpTool[] = []
@@ -312,8 +335,10 @@ async function handleToolsList(
     if (!(await listReachableOverMcp(listConfig, context))) continue
 
     const enabledTools = enabledToolsFor(config, listConfig)
+    const permitted = (operation: CrudOperation): boolean =>
+      missingScopes(session, requiredCrudScopes(config, listConfig, operation)).length === 0
 
-    if (enabledTools.query) {
+    if (enabledTools.query && permitted('query')) {
       const fieldsSchema = await generateFieldsProjectionSchema(
         listKey,
         listConfig,
@@ -343,7 +368,7 @@ async function handleToolsList(
       })
     }
 
-    if (enabledTools.create) {
+    if (enabledTools.create && permitted('create')) {
       // A flat, row-independent `create` denial (`access: { operation: {
       // create: () => false } }`) refuses every call before a row is even
       // considered — the same defect #1163 closed for a denied required
@@ -391,7 +416,7 @@ async function handleToolsList(
       }
     }
 
-    if (enabledTools.update) {
+    if (enabledTools.update && permitted('update')) {
       const fieldSchemas = await generateFieldSchemas(
         listKey,
         listConfig.fields,
@@ -425,7 +450,7 @@ async function handleToolsList(
       })
     }
 
-    if (enabledTools.delete) {
+    if (enabledTools.delete && permitted('delete')) {
       tools.push({
         name: `list_${toolKey}_delete`,
         description: `Delete a ${listKey} record`,
@@ -448,6 +473,7 @@ async function handleToolsList(
 
     if (listConfig.mcp?.customTools) {
       for (const customTool of listConfig.mcp.customTools) {
+        if (missingScopes(session, customTool.scopes ?? []).length > 0) continue
         tools.push({
           name: customTool.name,
           description: customTool.description,
@@ -459,6 +485,7 @@ async function handleToolsList(
 
   // Tools registered globally by plugins (e.g. the RAG plugin's semantic search)
   for (const pluginTool of getPluginMcpTools(config)) {
+    if (missingScopes(session, pluginTool.scopes ?? []).length > 0) continue
     tools.push({
       name: pluginTool.name,
       description: pluginTool.description,
@@ -566,9 +593,6 @@ function coerceConnectIds(
     if (criterion === undefined) continue
 
     const relatedListKey = fieldConfig.ref.split('.')[0]
-    const strategy = listIdColumn(config, relatedListKey)?.strategy
-    if (strategy !== 'int autoincrement' && strategy !== 'singleton') continue
-
     const parsed = parseListId(config, relatedListKey, criterion.id)
     if (!parsed.ok) return null
 
@@ -588,15 +612,10 @@ function coerceConnectIds(
  */
 function isSafeMcpError(error: unknown): error is Error {
   return (
+    isClientSafeError(error) ||
     error instanceof McpProjectionRefusedError ||
     error instanceof McpWriteRefusedError ||
-    error instanceof ValidationError ||
-    error instanceof AccessScopeDepthExceededError ||
-    error instanceof ResolveOutputCycleError ||
-    error instanceof DatabaseError ||
-    error instanceof McpToolError ||
-    error instanceof NonOwningRelationInputError ||
-    error instanceof MalformedRelationInputError
+    error instanceof McpToolError
   )
 }
 
@@ -653,6 +672,13 @@ async function handleCrudTool(
     ) {
       return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
     }
+    const missing = missingScopes(
+      session,
+      requiredCrudScopes(config, listConfig, operation as CrudOperation),
+    )
+    if (missing.length > 0) {
+      return scopeRefusal(`list_${toolKey}_${operation}`, missing, id)
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
     let result: any
 
@@ -678,7 +704,12 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            const coercedWhere = coerceWhereIds(args.where, config, listKey)
+            const coercedWhere = coerceWhereIds(
+              args.where,
+              config,
+              listKey,
+              await foreignKeyVisibility(config, context.session, context),
+            )
             if (coercedWhere === null) {
               return createErrorResultResponse(idBoundaryRefusal('query records'), id)
             }
@@ -843,6 +874,9 @@ async function handleCustomTool(
   if (!customTool) {
     return createErrorResponse(`Unknown tool: ${toolName}`, id)
   }
+
+  const missing = missingScopes(session, customTool.scopes ?? [])
+  if (missing.length > 0) return scopeRefusal(toolName, missing, id)
 
   let input = args
   if (isZodSchema(customTool.inputSchema)) {

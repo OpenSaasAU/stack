@@ -162,7 +162,6 @@ export async function assertWritableData(
 
   for (const fieldName of Object.keys(data)) {
     if (advertised.has(fieldName)) continue
-    if (fieldName === 'id' || fieldName === 'createdAt' || fieldName === 'updatedAt') continue
 
     const fieldConfig = fields[fieldName]
     if (
@@ -196,7 +195,7 @@ export async function generateFieldSchemas(
   let deniedRequiredField: string | null = null
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    if (['id', 'createdAt', 'updatedAt'].includes(fieldName)) continue
+    if (fieldName === 'id') continue
 
     // A relationship whose foreign key lives on the related row — a to-many,
     // and the non-owning end of a one-to-one — has no column here to lower a
@@ -223,6 +222,7 @@ export async function generateFieldSchemas(
     // the default — not only when the column is genuinely omittable.
     const isRequired =
       operation === 'create' &&
+      fieldConfig.access?.write !== 'hooks' &&
       (('validation' in fieldConfig &&
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
         !!(fieldConfig.validation as any)?.isRequired) ||

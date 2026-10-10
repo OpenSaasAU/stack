@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import * as z from 'zod'
 import type { AccessContext, Session } from '../access/types.js'
-import type { OpenSaasConfig } from '../config/types.js'
+import type { McpCustomTool, OpenSaasConfig } from '../config/types.js'
 import { checkbox, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
@@ -1576,6 +1576,110 @@ describe('the MCP surface', () => {
     )
   })
 
+  describe('opt-in OAuth scopes', () => {
+    const readOnly: McpSessionProvider = async () => ({ userId: 'user-123', scopes: ['mcp:read'] })
+    const resultText = (body: Record<string, unknown> | null) =>
+      (body?.result as { content: { text: string }[]; isError?: boolean }).content[0].text
+
+    function scoped(
+      scopes: { read?: string; write?: string },
+      listScopes?: { write?: string },
+      tool?: McpCustomTool,
+    ): OpenSaasConfig {
+      const base = schemaConfig()
+      return {
+        ...base,
+        mcp: { ...base.mcp, enabled: true, scopes },
+        lists: {
+          ...base.lists,
+          User: {
+            ...base.lists.User,
+            access: { operation: { query: () => true, create: () => true } },
+            mcp: { scopes: listScopes, customTools: tool ? [tool] : undefined },
+          },
+        },
+      }
+    }
+
+    const names = async (config: OpenSaasConfig, provider: McpSessionProvider) => {
+      const { body } = await rpc('tools/list', undefined, config, provider)
+      return (body?.result as { tools: ToolList }).tools.map((t) => t.name)
+    }
+
+    test(
+      'a read-only token queries, is refused writes naming the scope, and does not see write tools',
+      async () => {
+        const config = scoped({ read: 'mcp:read', write: 'mcp:write' })
+        const query = await rpc(
+          'tools/call',
+          { name: 'list_user_query', arguments: {} },
+          config,
+          readOnly,
+        )
+        expect((query.body?.result as { isError?: boolean }).isError).toBeUndefined()
+
+        const create = await rpc(
+          'tools/call',
+          { name: 'list_user_create', arguments: { data: {} } },
+          config,
+          readOnly,
+        )
+        expect((create.body?.result as { isError?: boolean }).isError).toBe(true)
+        expect(resultText(create.body)).toContain('mcp:write')
+
+        const listed = await names(config, readOnly)
+        expect(listed).toContain('list_user_query')
+        expect(listed).not.toContain('list_user_create')
+        expect(listed).not.toContain('list_user_delete')
+      },
+      BOOT,
+    )
+
+    test(
+      'a list override takes precedence over the config-level scope',
+      async () => {
+        const config = scoped({ write: 'mcp:write' }, { write: 'user:write' })
+        const holder: McpSessionProvider = async () => ({
+          userId: 'user-123',
+          scopes: ['user:write'],
+        })
+        expect(await names(config, holder)).toContain('list_user_create')
+        expect(await names(config, readOnly)).not.toContain('list_user_create')
+      },
+      BOOT,
+    )
+
+    test(
+      'a custom tool with scopes is refused without them and runs with them',
+      async () => {
+        const tool: McpCustomTool = {
+          name: 'runReport',
+          description: 'r',
+          inputSchema: z.object({}),
+          scopes: ['reports:run'],
+          handler: async () => ({ ran: true }),
+        }
+        const config = scoped({}, undefined, tool)
+        const refused = await rpc(
+          'tools/call',
+          { name: 'runReport', arguments: {} },
+          config,
+          readOnly,
+        )
+        expect(resultText(refused.body)).toContain('reports:run')
+
+        const holder: McpSessionProvider = async () => ({
+          userId: 'user-123',
+          scopes: ['reports:run'],
+        })
+        const ran = await rpc('tools/call', { name: 'runReport', arguments: {} }, config, holder)
+        expect(resultText(ran.body)).toContain('ran')
+        expect(await names(config, readOnly)).not.toContain('runReport')
+      },
+      BOOT,
+    )
+  })
+
   describe('a throwing query rule on tools/call', () => {
     function throwing(): OpenSaasConfig {
       const base = schemaConfig()
@@ -1893,6 +1997,24 @@ describe('the MCP surface', () => {
         expect(malformedResult.content[0].text).toContain('validation failed')
         // The malformed connect never reached the write — still exactly one row.
         expect(await context.db.Tally.all()).toMatchObject([{ label: 'first' }])
+      },
+      BOOT,
+    )
+
+    test(
+      'a malformed uuid connect.id is refused at the boundary',
+      async () => {
+        const context = await contextFor(schemaConfig())()
+        const malformed = await callTool('list_comment_create', {
+          data: { body: 'x', post: { connect: { id: 'not-a-uuid' } } },
+        })
+        const result = malformed.body?.result as {
+          isError?: boolean
+          content: Array<{ text: string }>
+        }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('validation failed')
+        expect(await context.db.Comment.all()).toEqual([])
       },
       BOOT,
     )

@@ -37,10 +37,48 @@ describe('coerceWhereIds', () => {
     expect(coerceWhereIds({ id: { in: ['not-an-int'] } }, config(), 'Counter')).toBeNull()
   })
 
-  test('a string-keyed list is unaffected: contains and a non-numeric id pass through', () => {
-    expect(coerceWhereIds({ id: 'anything', label: { contains: 'x' } }, config(), 'Tally')).toEqual(
-      { id: 'anything', label: { contains: 'x' } },
-    )
+  test('a string-keyed list refuses a malformed uuid and passes a well-formed one', () => {
+    const uuid = '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60'
+    expect(coerceWhereIds({ id: uuid, label: { contains: 'x' } }, config(), 'Tally')).toEqual({
+      id: uuid,
+      label: { contains: 'x' },
+    })
+    expect(coerceWhereIds({ id: 'not-a-uuid' }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ id: { in: ['not-a-uuid'] } }, config(), 'Tally')).toBeNull()
+  })
+
+  test('a foreign-key column is parsed against the related list id strategy', () => {
+    expect(coerceWhereIds({ counterId: '3' }, config(), 'Tally')).toEqual({ counterId: 3 })
+    expect(coerceWhereIds({ counterId: { equals: 'bad' } }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ counterId: null }, config(), 'Tally')).toEqual({ counterId: null })
+  })
+
+  test('null operators on a foreign key pass; non-id operator values are left alone', () => {
+    expect(coerceWhereIds({ counterId: { not: null } }, config(), 'Tally')).toEqual({
+      counterId: { not: null },
+    })
+    expect(coerceWhereIds({ counterId: { in: ['3', null] } }, config(), 'Tally')).toEqual({
+      counterId: { in: [3, null] },
+    })
+    expect(
+      coerceWhereIds(
+        { id: { equals: '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60', mode: 'insensitive' } },
+        config(),
+        'Tally',
+      ),
+    ).toEqual({ id: { equals: '0190f3a2-7b1c-7d2e-8f3a-1b2c3d4e5f60', mode: 'insensitive' } })
+  })
+
+  test('a foreign key the session may not read is left for the engine to refuse', () => {
+    const hidden = () => false
+    expect(coerceWhereIds({ counterId: 'bad' }, config(), 'Tally', hidden)).toEqual({
+      counterId: 'bad',
+    })
+  })
+
+  test('contains on a uuid or integer id is refused', () => {
+    expect(coerceWhereIds({ id: { contains: 'ab' } }, config(), 'Tally')).toBeNull()
+    expect(coerceWhereIds({ id: { contains: '3' } }, config(), 'Counter')).toBeNull()
   })
 
   test('walks AND/OR/NOT at any depth, coercing every id it finds', () => {

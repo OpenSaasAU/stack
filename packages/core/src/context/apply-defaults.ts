@@ -31,7 +31,7 @@ export function applyCreateDefaults(
 ): Record<string, unknown> {
   for (const [fieldKey, fieldConfig] of Object.entries(fieldConfigs)) {
     if (fieldConfig.virtual) continue
-    if (fieldKey === 'id' || fieldKey === 'createdAt' || fieldKey === 'updatedAt') continue
+    if (fieldKey === 'id') continue
     // Relationships carry connect/create payloads, not literal defaults.
     if (fieldConfig.type === 'relationship') continue
     if (!('defaultValue' in fieldConfig) || fieldConfig.defaultValue === undefined) continue

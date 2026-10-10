@@ -679,6 +679,88 @@ describe('writePluginOwnedField (ADR-0068)', () => {
   )
 
   it(
+    'skips the write when the guard field no longer holds the expected value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: 'someone-else' },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'writes when the guard field still holds the expected value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: 'ada' },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:written')
+    },
+    BOOT,
+  )
+
+  it(
+    'guards on a null value',
+    async () => {
+      const id = await seed()
+
+      await writePluginOwnedField({
+        context: internalContext(),
+        listName: 'Owned',
+        id,
+        fieldName: 'label',
+        value: 'label:written',
+        onlyIfUnchanged: { fieldName: 'title', value: null },
+      })
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
+    'refuses a multi-column field as the guard, and writes nothing',
+    async () => {
+      const id = await seed()
+
+      await expect(
+        writePluginOwnedField({
+          context: internalContext(),
+          listName: 'Owned',
+          id,
+          fieldName: 'label',
+          value: 'label:written',
+          onlyIfUnchanged: { fieldName: 'avatar', value: 'x' },
+        }),
+      ).rejects.toThrow('spans several columns')
+
+      const stored = await database.context(null).db.Owned.where({}).first()
+      expect(stored?.label).toBe('label:ada')
+    },
+    BOOT,
+  )
+
+  it(
     'refuses a field the list does not declare, and writes nothing',
     async () => {
       const id = await seed()
@@ -970,6 +1052,18 @@ describe('multi-column write split respects field-level write access', () => {
     await expect(
       splitMultiColumnFields(inputData, { ...inputData }, fields, 'create', makeContext()),
     ).rejects.toThrow('Cannot create "media": field-level access denied.')
+  })
+
+  it('splits a hook-set value for a denied field the caller did not supply (issue #1643)', async () => {
+    const fields = { media: multiColumnField({ create: () => false }) }
+    const result = await splitMultiColumnFields(
+      {},
+      { media: { url: 'https://x/y.jpg', size: 99 } },
+      fields,
+      'create',
+      makeContext(),
+    )
+    expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })
 
   it('still splits/writes the columns when write access is granted', async () => {
