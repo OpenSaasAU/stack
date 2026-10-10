@@ -34,12 +34,13 @@ export function generateEnvFiles(options: { projectName: string }): EnvFiles {
 
 /** The auth template's `.env`: its example with a real secret and rate limiting left on. */
 export function generateAuthEnv(example: string, secret: string): string {
-  return example
-    .split('\n')
-    .filter(
-      (line) => !/^\s*(DISABLE_RATE_LIMITING=|# Set to true to disable rate limiting)/.test(line),
-    )
-    .map((line) => (line.startsWith('BETTER_AUTH_SECRET=') ? `BETTER_AUTH_SECRET=${secret}` : line))
-    .join('\n')
-    .replace(/# Rate Limiting\n\n/, '')
+  const lines = example.split(/\r?\n/)
+  const hasSecret = lines.some((line) => line.startsWith('BETTER_AUTH_SECRET='))
+  const out = lines.map((line) => {
+    if (line.startsWith('BETTER_AUTH_SECRET=')) return `BETTER_AUTH_SECRET=${secret}`
+    if (line.startsWith('DISABLE_RATE_LIMITING=')) return '# DISABLE_RATE_LIMITING=true'
+    return line
+  })
+  if (!hasSecret) out.splice(out.length - 1, 0, `BETTER_AUTH_SECRET=${secret}`)
+  return out.join('\n')
 }

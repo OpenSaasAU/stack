@@ -104,6 +104,9 @@ export async function copyTemplate(
 
   const files = await templateFiles(target)
   if (files.length === 0) throw new UnusableTemplateError(target, 'came out empty')
+  if (!files.includes(PACKED_GITIGNORE)) {
+    throw new UnusableTemplateError(target, 'has no .gitignore')
+  }
   if (!files.includes('package.json')) {
     throw new UnusableTemplateError(target, 'has no package.json')
   }

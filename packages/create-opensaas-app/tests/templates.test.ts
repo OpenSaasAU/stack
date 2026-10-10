@@ -27,6 +27,7 @@ async function checkoutRoot(): Promise<string> {
 async function seedExample(root: string, name: string): Promise<string> {
   const source = path.join(root, 'examples', name)
   await fs.outputJSON(path.join(source, 'package.json'), { name })
+  await fs.outputFile(path.join(source, '.gitignore'), '.env\n')
   await fs.outputFile(path.join(source, 'opensaas.config.ts'), 'export default {}\n')
   await fs.outputFile(path.join(source, 'app', 'page.tsx'), 'export default () => null\n')
   await fs.outputFile(path.join(source, 'lib', 'prisma-helpers.ts'), 'export const x = 1\n')
@@ -103,9 +104,20 @@ describe('copyTemplate from a checkout whose path contains prisma and migrations
     const root = await checkoutRoot()
     const source = path.join(root, 'examples', 'manifestless')
     await fs.outputFile(path.join(source, 'app', 'page.tsx'), 'export default () => null\n')
+    await fs.outputFile(path.join(source, '.gitignore'), '.env\n')
 
     await expect(copyTemplate(source, path.join(root, 'templates', 'basic'))).rejects.toThrow(
       /no package\.json/,
+    )
+  })
+
+  it('refuses a template with no .gitignore', async () => {
+    const root = await checkoutRoot()
+    const source = path.join(root, 'examples', 'unignored')
+    await fs.outputJSON(path.join(source, 'package.json'), { name: 'unignored' })
+
+    await expect(copyTemplate(source, path.join(root, 'templates', 'basic'))).rejects.toThrow(
+      /no \.gitignore/,
     )
   })
 })

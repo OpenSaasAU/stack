@@ -44,7 +44,13 @@ describe('generateAuthEnv', () => {
     expect(out).not.toContain('your_secret_key_here')
   })
 
-  it('leaves DISABLE_RATE_LIMITING unset', () => {
-    expect(out).not.toContain('DISABLE_RATE_LIMITING')
+  it('leaves DISABLE_RATE_LIMITING inactive, even with CRLF endings', () => {
+    for (const text of [out, generateAuthEnv(example.replace(/\n/g, '\r\n'), 'abc123')]) {
+      expect(text).not.toMatch(/^DISABLE_RATE_LIMITING=/m)
+    }
+  })
+
+  it('adds a secret when the example has none', () => {
+    expect(generateAuthEnv('FOO=bar\n', 'abc123')).toContain('BETTER_AUTH_SECRET=abc123')
   })
 })
