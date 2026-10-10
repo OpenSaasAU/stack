@@ -13,8 +13,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
 
-    # No step here dials a database. The variable is set only so turbo's `build`
-    # hash (which lists `DATABASE_URL`) matches the test jobs' and the cache is shared.
+    # No step here or in `doc-blocks` dials a database. The variable is set only so
+    # turbo's `build` hash (which lists `DATABASE_URL`) matches the test jobs' and
+    # the cache is shared.
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
 
@@ -192,13 +193,22 @@ jobs:
         env:
           OPENAI_API_KEY: 'sk-testing-key'
 
-      # Unlike its two sibling checks above, this one reads compiled output: it
-      # resolves @opensaas/* through each package's own `exports` to its dist,
-      # so it measures this branch's own declarations. The regeneration step
-      # above builds the CLI and the two examples' dependency closures, so the
-      # packages the doc blocks import beyond those are built here. turbo
-      # caches it, and the test steps below depend on the same task, so this is
-      # a reordering rather than an extra build.
+  doc-blocks:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      # Unlike the doc import-specifier check in `checks`, this one reads
+      # compiled output: it resolves @opensaas/* through each package's own
+      # `exports` to its dist, so it measures this branch's own declarations.
       #
       # The doc-block fixtures describe THIS tree: `files.txt` names the
       # repository's documents and each fenced block carries its own excuse in
@@ -386,7 +396,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     if: always()
-    needs: [checks, examples-build, unit-tests]
+    needs: [checks, doc-blocks, examples-build, unit-tests]
     steps:
       - name: Require every split job to pass
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
