@@ -86,6 +86,7 @@ type EmbeddingWriter = (
   id: string | number,
   fieldName: string,
   stored: StoredEmbedding | null,
+  onlyIfUnchanged?: { fieldName: string; value: string | null },
 ) => Promise<void>
 
 type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
@@ -352,9 +353,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   return
                 }
 
-                const clearEmbedding = async (): Promise<void> => {
+                const clearEmbedding = async (sourceText: unknown): Promise<void> => {
+                  if (sourceText !== null && typeof sourceText !== 'string') return
                   try {
-                    await embeddingWriter(args.context)(listName, id, fieldName, null)
+                    await embeddingWriter(args.context)(listName, id, fieldName, null, {
+                      fieldName: sourceField,
+                      value: sourceText,
+                    })
                   } catch (error) {
                     console.error(
                       `RAG plugin: "${listName}.${fieldName}" could not be cleared for ` +
@@ -365,6 +370,7 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 }
 
                 let sourceChanged = false
+                let embeddedText: string | null = null
                 try {
                   const write = embeddingWriter(args.context)
 
@@ -385,29 +391,37 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
                   const sourceText = persisted.sourceText
                   if (typeof sourceText !== 'string' || sourceText.length === 0) {
-                    if (persisted.hasEmbedding) await clearEmbedding()
+                    if (persisted.hasEmbedding) await clearEmbedding(sourceText)
                     return
                   }
 
                   const sourceHash = hashText(sourceText)
                   if (storedSourceHash(persisted.metadata) === sourceHash) return
                   sourceChanged = true
+                  embeddedText = sourceText
 
                   const provider = createEmbeddingProvider(providerConfig)
                   const vector = await provider.embed(sourceText)
 
-                  await write(listName, id, fieldName, {
-                    vector,
-                    metadata: {
-                      model: provider.model,
-                      provider: provider.type,
-                      dimensions: provider.dimensions,
-                      generatedAt: new Date().toISOString(),
-                      sourceHash,
+                  await write(
+                    listName,
+                    id,
+                    fieldName,
+                    {
+                      vector,
+                      metadata: {
+                        model: provider.model,
+                        provider: provider.type,
+                        dimensions: provider.dimensions,
+                        generatedAt: new Date().toISOString(),
+                        sourceHash,
+                      },
                     },
-                  })
+                    { fieldName: sourceField, value: sourceText },
+                  )
                 } catch (error) {
-                  if (sourceChanged && args.operation === 'update') await clearEmbedding()
+                  if (sourceChanged && args.operation === 'update')
+                    await clearEmbedding(embeddedText)
                   reportGenerationFailure({
                     listName,
                     fieldName,
@@ -635,13 +649,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
         generateEmbeddings: async (texts: string[], providerName?: string) =>
           await requireProvider(providerName).embedBatch(texts),
 
-        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored) => {
+        [WRITE_EMBEDDING]: async (listKey, id, fieldName, stored, onlyIfUnchanged) => {
           await writePluginOwnedField({
             context,
             listName: listKey,
             id,
             fieldName,
             value: stored,
+            onlyIfUnchanged,
           })
         },
       }

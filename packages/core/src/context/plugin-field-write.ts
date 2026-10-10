@@ -3,6 +3,7 @@ import type { FieldConfig } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 import { isRelationshipField } from '../fields/index.js'
 import {
+  columnEqualsPredicate,
   identityPredicate,
   updateFirst,
   whereCombinators,
@@ -109,6 +110,8 @@ export interface PluginOwnedFieldWrite {
   fieldName: string
   /** The field's logical value, or `null` to clear it. `undefined` is refused. */
   value: unknown
+  /** Skip the write unless this scalar field still holds exactly this value. */
+  onlyIfUnchanged?: { fieldName: string; value: string | number | boolean | null }
 }
 
 function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
@@ -148,6 +151,18 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
   return field
 }
 
+function guardColumn(context: AccessContext, listName: string, fieldName: string): string {
+  const field = ownedField(context, listName, fieldName)
+  if (field.splitColumns) {
+    throw new UnknownPluginFieldWriteError(
+      listName,
+      fieldName,
+      'it spans several columns, so it cannot guard a write',
+    )
+  }
+  return fieldName
+}
+
 /**
  * Write one plugin-owned field's columns on one row, running no hook.
  *
@@ -185,7 +200,7 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
  * that is gone is a silent no-op, as it is on every write terminal.
  */
 export async function writePluginOwnedField(args: PluginOwnedFieldWrite): Promise<void> {
-  const { context, listName, id, fieldName, value } = args
+  const { context, listName, id, fieldName, value, onlyIfUnchanged } = args
 
   if (context.ormHandle === undefined) {
     throw new HandlelessPluginFieldWriteError(listName, fieldName)
@@ -205,7 +220,18 @@ export async function writePluginOwnedField(args: PluginOwnedFieldWrite): Promis
 
   await updateFirst(
     writeCollection(context.ormHandle, listName),
-    [identityPredicate(listName, id)],
+    [
+      identityPredicate(listName, id),
+      ...(onlyIfUnchanged === undefined
+        ? []
+        : [
+            columnEqualsPredicate(
+              listName,
+              guardColumn(context, listName, onlyIfUnchanged.fieldName),
+              onlyIfUnchanged.value,
+            ),
+          ]),
+    ],
     ops,
     columns,
   )

@@ -38,13 +38,18 @@ const VECTORS: Record<string, number[]> = {
 /** Texts no field is written with directly — only a hook can produce them. */
 const DERIVED: Record<string, number[]> = {
   'red hot': [0, 0, 1],
+  'slow red': [1, 0, 0],
 }
+
+const DELAYS_MS: Record<string, number> = { 'slow red': 400 }
 
 const fakeProvider: EmbeddingProvider = {
   type: 'fake',
   model: 'fake-3',
   dimensions: 3,
   embed: async (input: string) => {
+    const delay = DELAYS_MS[input]
+    if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay))
     const vector = VECTORS[input] ?? DERIVED[input]
     if (vector === undefined) throw new Error(`the fake provider has no vector for "${input}"`)
     return vector
@@ -236,6 +241,24 @@ describe.skipIf(!available)(
         expect(after?.contentEmbedding).toBeNull()
       },
     )
+
+    test('a slow generation superseded by a newer one does not overwrite it', async () => {
+      const id = await writeSource('reddish')
+      const context = database.context(null)
+
+      const slow = context.db.Article.update({ where: { id }, data: { content: 'slow red' } })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      await context.db.Article.update({ where: { id }, data: { content: 'blue' } })
+      await slow
+      await new Promise((resolve) => setTimeout(resolve, 600))
+
+      const stored = await context.db.Article.where({ id: { equals: id } }).first()
+      expect(stored?.content).toBe('blue')
+      expect(stored?.contentEmbedding).toMatchObject({
+        vector: [0, 1, 0],
+        metadata: { sourceHash: hashText('blue') },
+      })
+    })
 
     test('a row with no vector reads back as a null embedding', async () => {
       // Metadata present and the vector absent, so a null answer can only come
