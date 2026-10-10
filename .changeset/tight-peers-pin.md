@@ -8,4 +8,4 @@
 '@opensaas/stack-storage-vercel': patch
 ---
 
-Pin `@opensaas/stack-core` and `@opensaas/stack-storage` peer ranges to the release minor instead of `^0`.
+Peer ranges on `@opensaas/stack-core`, `@opensaas/stack-storage` and `@opensaas/stack-ui` now track the release version instead of `^0`, so a mismatched minor is flagged.
