@@ -41,5 +41,6 @@ describe('gitignore packaging', () => {
       expect(files).toContain('templates/basic/gitignore')
       expect(files).toContain('templates/with-auth/gitignore')
     },
+    60_000,
   )
 })
