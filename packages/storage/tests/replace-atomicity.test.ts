@@ -200,4 +200,16 @@ describe('cleanupOnDelete only deletes once the delete committed', () => {
 
     expect(await readdir(uploadDir)).toEqual([])
   })
+  it('deletes the files once a surrounding transaction commits', async () => {
+    const row = await harness.context.db.Doc.create({
+      data: { attachment: pdf('a.pdf'), avatar: png('a.png') },
+    })
+    const id = (row as { id: string }).id
+
+    await harness.context.transaction(async (tx) => {
+      await tx.db.Doc.delete({ where: { id } })
+    })
+
+    expect(await readdir(uploadDir)).toEqual([])
+  })
 })
