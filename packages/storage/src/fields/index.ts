@@ -305,19 +305,30 @@ interface PendingUpload<TMetadata> {
 }
 
 function createPendingUploads<TMetadata>() {
-  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>>>()
+  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>[]>>()
+  const queueFor = (write: object, fieldKey: string) => {
+    const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>[]>()
+    pending.set(write, forWrite)
+    const queue = forWrite.get(fieldKey) ?? []
+    forWrite.set(fieldKey, queue)
+    return queue
+  }
   return {
     set: (write: object, fieldKey: string, value: PendingUpload<TMetadata>) => {
-      const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>>()
-      forWrite.set(fieldKey, value)
-      pending.set(write, forWrite)
+      queueFor(write, fieldKey).push(value)
     },
     take: (write: unknown, fieldKey: string): PendingUpload<TMetadata> | undefined => {
       if (typeof write !== 'object' || write === null) return undefined
-      const forWrite = pending.get(write)
-      const value = forWrite?.get(fieldKey)
-      forWrite?.delete(fieldKey)
-      return value
+      return pending.get(write)?.get(fieldKey)?.shift()
+    },
+    amendLast: (
+      write: unknown,
+      fieldKey: string,
+      amend: (value: PendingUpload<TMetadata>) => PendingUpload<TMetadata>,
+    ) => {
+      if (typeof write !== 'object' || write === null) return
+      const queue = pending.get(write)?.get(fieldKey)
+      if (queue?.length) queue[queue.length - 1] = amend(queue[queue.length - 1])
     },
   }
 }
@@ -344,8 +355,10 @@ function composeFieldHooks(
         resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
       })
       if (final?.filename !== resolved?.filename) {
-        const pending = uploads.take(args.inputData, args.fieldKey)
-        if (pending) uploads.set(args.inputData, args.fieldKey, { ...pending, replaced: null })
+        uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
+          ...pending,
+          replaced: null,
+        }))
       }
       return final
     },

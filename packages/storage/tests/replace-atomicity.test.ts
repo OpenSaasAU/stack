@@ -137,6 +137,31 @@ describe('cleanupOnReplace only deletes once the write committed', () => {
     expect(after).toHaveLength(2)
     expect(after.some((name) => before.includes(name))).toBe(false)
   })
+
+  it('removes every upload when two writes in one transaction share a data object and it rolls back', async () => {
+    const data = { title: 'ok', attachment: pdf('shared.pdf') }
+
+    await harness.context
+      .transaction(async (tx) => {
+        await tx.db.Doc.create({ data })
+        await tx.db.Doc.create({ data })
+        throw new Error('rollback')
+      })
+      .catch(() => undefined)
+
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('keeps both uploads when two writes sharing a data object commit', async () => {
+    const data = { title: 'ok', attachment: pdf('shared.pdf') }
+
+    await harness.context.transaction(async (tx) => {
+      await tx.db.Doc.create({ data })
+      await tx.db.Doc.create({ data })
+    })
+
+    expect(await readdir(uploadDir)).toHaveLength(2)
+  })
 })
 
 describe('cleanupOnDelete only deletes once the delete committed', () => {
