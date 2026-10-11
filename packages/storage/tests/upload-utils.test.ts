@@ -160,6 +160,10 @@ describe('Upload Utilities', () => {
           expect(result.valid).toBe(true)
         })
 
+        it('refuses an undeclared .xsl upload (type looked up from the name)', () => {
+          expect(validateFile({ size: 10, name: 'x.xsl', type: '' }).valid).toBe(false)
+        })
+
         it.each([
           ['x.png', 'image/png'],
           ['x.pdf', 'application/pdf'],
