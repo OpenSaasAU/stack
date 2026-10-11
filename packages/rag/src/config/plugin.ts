@@ -91,6 +91,18 @@ type EmbeddingWriter = (
 
 type RAGInternalServices = RAGRuntimeServices & { [WRITE_EMBEDDING]: EmbeddingWriter }
 
+const warnedNonStringSources = new Set<string>()
+
+function warnNonStringSource(listName: string, fieldName: string): void {
+  const key = `${listName}.${fieldName}`
+  if (warnedNonStringSources.has(key)) return
+  warnedNonStringSources.add(key)
+  console.warn(
+    `RAG plugin: "${key}" holds a value that is not a string, so no embedding was ` +
+      `generated and any stored embedding is left unchanged. The source of an embedding must be a text() field.`,
+  )
+}
+
 function rowId(value: unknown): string | number | undefined {
   return typeof value === 'string' || typeof value === 'number' ? value : undefined
 }
@@ -390,6 +402,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                   if (persisted === null) return
 
                   const sourceText = persisted.sourceText
+                  if (
+                    sourceText !== null &&
+                    sourceText !== undefined &&
+                    typeof sourceText !== 'string'
+                  ) {
+                    warnNonStringSource(listName, sourceField)
+                  }
                   if (typeof sourceText !== 'string' || sourceText.length === 0) {
                     if (persisted.hasEmbedding) await clearEmbedding(sourceText)
                     return
@@ -579,6 +598,14 @@ export function ragPlugin(config: RAGConfig): Plugin {
 
       for (const [listName, listConfig] of Object.entries(generateConfig.lists)) {
         for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
+          if ('_searchable' in fieldConfig && fieldConfig.type !== 'text') {
+            throw new Error(
+              `RAG plugin: "${listName}.${fieldName}" is a ${fieldConfig.type}() wrapped in ` +
+                `searchable(), but only text() can be embedded. Use a text() source — for ` +
+                `example a plain-text field a hook keeps in sync with this one.`,
+            )
+          }
+
           if (!isEmbeddingField(fieldConfig)) continue
 
           const providerName = fieldConfig.provider
