@@ -135,6 +135,45 @@ describe('Upload Utilities', () => {
     })
 
     describe('active content types (issue #1625)', () => {
+      describe('+xml family (issue #1797)', () => {
+        const xmlTypes = [
+          'application/xslt+xml',
+          'application/mathml+xml',
+          'application/rdf+xml',
+          'application/vnd.mozilla.xul+xml',
+          'application/foo+xml',
+          'APPLICATION/RDF+XML; charset=utf-8',
+        ]
+
+        it.each(xmlTypes)('refuses %s by default', (type) => {
+          const result = validateFile({ size: 10, name: 'x.bin', type })
+          expect(result.valid).toBe(false)
+          expect(result.error).toContain('active content')
+        })
+
+        it.each(xmlTypes)('accepts %s when acceptedMimeTypes names it exactly', (type) => {
+          const essence = type.split(';')[0].trim().toLowerCase()
+          const result = validateFile(
+            { size: 10, name: 'x.bin', type: essence },
+            { acceptedMimeTypes: [essence] },
+          )
+          expect(result.valid).toBe(true)
+        })
+
+        it('refuses an undeclared .xsl upload (type looked up from the name)', () => {
+          expect(validateFile({ size: 10, name: 'x.xsl', type: '' }).valid).toBe(false)
+        })
+
+        it.each([
+          ['x.png', 'image/png'],
+          ['x.pdf', 'application/pdf'],
+          ['x.json', 'application/json'],
+          ['x.txt', 'text/plain'],
+        ])('still accepts inert %s', (name, type) => {
+          expect(validateFile({ size: 10, name, type }).valid).toBe(true)
+        })
+      })
+
       it('refuses text/html by default, with no validation config at all', () => {
         const file = { size: 10, name: 'x.html', type: 'text/html' }
         const result = validateFile(file)

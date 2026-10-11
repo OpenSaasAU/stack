@@ -60,7 +60,7 @@ packages/storage-vercel/  # Separate Vercel Blob provider package
 - `validateFile(file, options)` - Validate size, and the EFFECTIVE MIME type against `acceptedMimeTypes` (refusing active content types by default; see Security)
 - `resolveEffectiveMimeType(file)` - The declared type, or the type looked up from the filename when none is declared
 - `extensionForMimeType(mimeType)` / `withEffectiveExtension(name, mimeType)` - Derive the stored extension from a MIME type, never from the client's own filename
-- `ACTIVE_MIME_TYPES` - The set of MIME types refused unless a field's `acceptedMimeTypes` names them explicitly
+- `ACTIVE_MIME_TYPES` - The set of MIME types refused unless a field's `acceptedMimeTypes` names them explicitly. `isActiveMimeType()` extends it to any `+xml` essence
 - `formatFileSize(bytes)` - Human-readable file sizes
 - `getMimeType(filename)` - Get MIME type from filename
 - `parseFileFromFormData(formData, fieldName)` - Extract file from FormData
