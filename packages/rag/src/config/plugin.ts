@@ -97,8 +97,8 @@ function warnNonStringSource(listName: string, fieldName: string): void {
   if (warnedNonStringSources.has(key)) return
   warnedNonStringSources.add(key)
   console.warn(
-    `RAG plugin: "${key}" holds a value that is not a string, so the record keeps a null ` +
-      `embedding. The source of an embedding must be a text() field.`,
+    `RAG plugin: "${key}" holds a value that is not a string, so no embedding was ` +
+      `generated and any stored embedding is left unchanged. The source of an embedding must be a text() field.`,
   )
 }
 
