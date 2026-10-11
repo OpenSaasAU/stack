@@ -114,6 +114,19 @@ function refuseNullabilityOverride(db: ImageDbConfig | FileDbConfig | undefined)
   )
 }
 
+function refuseMultiColumnTransformations(
+  db: ImageDbConfig | undefined,
+  transformations: Record<string, ImageTransformationConfig> | undefined,
+): void {
+  if (!isMultiColumn(db?.columns)) return
+  if (transformations == null || Object.keys(transformations).length === 0) return
+  throw new Error(
+    'image() sets both db.columns (multi-column mode) and transformations. Multi-column mode has ' +
+      'no column to store the generated variants, so they would be uploaded and never recorded. ' +
+      'Remove transformations, or remove db.columns to use the single-Json column that stores variants.',
+  )
+}
+
 /** The metadata blob's single-column backing, honouring the `db` overrides the field documents. */
 function metadataColumn(
   fieldName: string,
@@ -259,7 +272,7 @@ export interface ImageFieldConfig<
   type: 'image'
   /** Name of the storage provider from config.storage */
   storage: string
-  /** Image transformations to generate on upload */
+  /** Image transformations to generate on upload. Not allowed with `db.columns` (multi-column mode). */
   transformations?: Record<string, ImageTransformationConfig>
   /** File validation options */
   validation?: FileValidationOptions
@@ -554,6 +567,7 @@ export function file<
  * Creates an image upload field with optional transformations
  *
  * Uses JSON field backing to store image metadata including dimensions, transformations, etc.
+ * `transformations` cannot be combined with `db.columns` (multi-column mode); the field throws.
  *
  * @example
  * ```typescript
@@ -577,6 +591,7 @@ export function image<
   TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 >(options: Omit<ImageFieldConfig<TTypeInfo, TKey>, 'type'>): ImageFieldConfig<TTypeInfo, TKey> {
   const { hooks: userHooks, ...restOptions } = options
+  refuseMultiColumnTransformations(options.db, options.transformations)
 
   // See ADR-0006.
   const multiColumn = isMultiColumn(options.db?.columns)
@@ -667,7 +682,7 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
-                transformations: fieldConfig.transformations,
+                transformations: multiColumn ? undefined : fieldConfig.transformations,
               },
             )) as ImageMetadata
 

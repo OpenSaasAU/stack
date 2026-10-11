@@ -356,6 +356,8 @@ Multi-column mode is the alternative, for adopting a live Keystone database in
 place: the field maps onto Keystone's existing per-part columns (seven for an
 image, three for a file) and assembles them into one metadata value on read.
 
+Multi-column `image()` cannot be combined with `transformations`: there is no column to store the generated variants, so the field throws when built. Use the default single-`jsonb` backing if you need transformations.
+
 ### File Metadata
 
 ```typescript
