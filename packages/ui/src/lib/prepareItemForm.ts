@@ -1,4 +1,9 @@
-import { type AccessContext, getRelationshipOptions, OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  type AccessContext,
+  getRelationshipOptions,
+  isRelationshipLabelReadable,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
 import {
   markToManyEdgeWrites,
@@ -106,6 +111,7 @@ export async function prepareItemForm(
 
       try {
         const options = await getRelationshipOptions(context, config, relatedListName, {
+          labelReadable: await isRelationshipLabelReadable(context, config, relatedListName),
           selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many),
         })
         return [fieldName, options] as const

@@ -134,9 +134,11 @@ describe('prepareItemForm', () => {
     ])
     expect(relationshipData.tags).toEqual([{ id: 't1', label: 'engineering' }])
     expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      labelReadable: true,
       selectedIds: [],
     })
     expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Tag', {
+      labelReadable: true,
       selectedIds: [],
     })
   })
@@ -148,6 +150,7 @@ describe('prepareItemForm', () => {
     await prepareItemForm(context, config, 'Post', config.lists.Post, itemData, 'update')
 
     expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      labelReadable: true,
       selectedIds: ['a9'],
     })
   })
@@ -166,6 +169,7 @@ describe('prepareItemForm', () => {
     await prepareItemForm(context, config, 'Post', config.lists.Post, itemData, 'update')
 
     expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Tag', {
+      labelReadable: true,
       selectedIds: ['t1', 't9'],
     })
   })
@@ -200,8 +204,10 @@ describe('prepareItemForm', () => {
     const config = makeConfig()
     const promise = prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
-    expect(authorCalled).toBe(true)
-    expect(tagCalled).toBe(true)
+    await vi.waitFor(() => {
+      expect(authorCalled).toBe(true)
+      expect(tagCalled).toBe(true)
+    })
 
     resolveAuthor([])
     resolveTag([])
@@ -214,6 +220,7 @@ describe('prepareItemForm', () => {
     await prepareItemForm(context, config, 'Post', config.lists.Post, {}, 'create')
 
     expect(mockedGetRelationshipOptions).toHaveBeenCalledWith(context, config, 'Author', {
+      labelReadable: true,
       selectedIds: [],
     })
   })
