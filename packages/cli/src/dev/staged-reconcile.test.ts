@@ -11,6 +11,7 @@ import {
   PartialPromotionError,
   promoteStagedGeneration,
   restoreMigrationRefs,
+  restoreRefsAfterReconcile,
   snapshotMigrationRefs,
 } from './staged-reconcile.js'
 
@@ -257,5 +258,61 @@ describe('promoting a staged generation', () => {
     expect(message).toContain('opensaas generate')
     expect(fs.readFileSync(live.contractModule, 'utf-8')).toBe('next')
     expect(fs.existsSync(stagingDir)).toBe(true)
+  })
+})
+
+describe('refs after an applied reconcile', () => {
+  let cwd: string
+  const dbRef = (): string => path.join(cwd, 'migrations', 'app', 'refs', 'db.json')
+  const hashOf = (): string => JSON.parse(fs.readFileSync(dbRef(), 'utf-8')).hash
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-refs-'))
+    fs.mkdirSync(path.dirname(dbRef()), { recursive: true })
+    fs.writeFileSync(dbRef(), JSON.stringify({ hash: 'before', invariants: [] }), 'utf-8')
+  })
+
+  afterEach(() => {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  })
+
+  const advance = (): void =>
+    fs.writeFileSync(dbRef(), JSON.stringify({ hash: 'after', invariants: [] }), 'utf-8')
+
+  it('leaves refs unchanged once the app space has a migration package', () => {
+    const packageDir = path.join(cwd, 'migrations', 'app', '20261010T0743_baseline')
+    fs.mkdirSync(packageDir, { recursive: true })
+    fs.writeFileSync(path.join(packageDir, 'migration.json'), '{}', 'utf-8')
+
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('before')
+  })
+
+  it('leaves a regenerated extension-space ref alone', () => {
+    const packageDir = path.join(cwd, 'migrations', 'app', '20261010T0743_baseline')
+    fs.mkdirSync(packageDir, { recursive: true })
+    fs.writeFileSync(path.join(packageDir, 'migration.json'), '{}', 'utf-8')
+    const headRef = path.join(cwd, 'migrations', 'pgvector', 'refs', 'head.json')
+    fs.mkdirSync(path.dirname(headRef), { recursive: true })
+    fs.writeFileSync(headRef, JSON.stringify({ hash: 'old', invariants: [] }), 'utf-8')
+
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    fs.writeFileSync(headRef, JSON.stringify({ hash: 'regenerated', invariants: [] }), 'utf-8')
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('before')
+    expect(JSON.parse(fs.readFileSync(headRef, 'utf-8')).hash).toBe('regenerated')
+  })
+
+  it('keeps the ref Prisma wrote while no migration package exists yet', () => {
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('after')
   })
 })

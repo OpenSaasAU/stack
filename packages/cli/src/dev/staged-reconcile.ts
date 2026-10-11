@@ -198,6 +198,30 @@ export function restoreMigrationRefs(cwd: string, snapshots: readonly RefSnapsho
   }
 }
 
+function hasAppMigrationPackage(cwd: string): boolean {
+  const appDir = path.join(cwd, 'migrations', 'app')
+  if (!fs.existsSync(appDir)) return false
+  return fs
+    .readdirSync(appDir, { withFileTypes: true })
+    .some(
+      (entry) =>
+        entry.isDirectory() && fs.existsSync(path.join(appDir, entry.name, 'migration.json')),
+    )
+}
+
+/**
+ * Restores the refs after an applied reconcile, unless the app space has no
+ * migration package yet: then Prisma's `db` ref write stays, because
+ * `migration plan --name init` derives its baseline from it (ADR-0065).
+ */
+export function restoreRefsAfterReconcile(cwd: string, snapshots: readonly RefSnapshot[]): void {
+  if (!hasAppMigrationPackage(cwd)) return
+  restoreMigrationRefs(
+    cwd,
+    snapshots.filter((snapshot) => spaceOf(snapshot.file) === 'app'),
+  )
+}
+
 /** Thrown when promotion stopped part-way, leaving the live bundle split. */
 export class PartialPromotionError extends Error {
   /** The live files that already carry the staged generation. */

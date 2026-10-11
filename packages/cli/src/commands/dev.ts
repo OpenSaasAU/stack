@@ -19,6 +19,7 @@ import {
   planDatabaseUpdate,
   promoteStagedGeneration,
   restoreMigrationRefs,
+  restoreRefsAfterReconcile,
   snapshotMigrationRefs,
   STAGING_DIR,
 } from '../dev/staged-reconcile.js'
@@ -97,7 +98,9 @@ async function reconcile(cwd: string): Promise<boolean> {
   // Interactive, so a destructive plan reaches the user as Prisma's own
   // consent prompt rather than failing or applying unasked — the loop goes no
   // further until that is answered (ADR-0063).
+  const refs = snapshotMigrationRefs(cwd)
   const run = await runPrismaCli(cwd, ['db', 'update'], 'interactive')
+  restoreRefsAfterReconcile(cwd, refs)
   if (run.exitCode === 0) return true
 
   console.error(
@@ -368,6 +371,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
+    restoreRefsAfterReconcile(cwd, refs)
     promote(generation)
     syncWatchedModules(generation.resolvedModules)
     reconciledModules = snapshotModules(watchedModules)
@@ -429,6 +433,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
+    restoreRefsAfterReconcile(cwd, refs)
     promote(generation)
     syncWatchedModules(generation.resolvedModules)
     reconciledModules = snapshotModules(watchedModules)
