@@ -4,6 +4,7 @@ import type { McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
 export type BetterAuthInstance = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth API types vary by plugins, must use any
   api: any
+  handler: (request: Request) => Promise<Response>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Allows additional Better Auth instance properties
   [key: string]: any
 }
@@ -31,12 +32,16 @@ function verificationOptions(options: BetterAuthMcpOptions): McpProtectedRequest
   }
 }
 
+const REGISTERED_CLAIMS = ['iss', 'aud', 'nbf', 'iat', 'jti', 'azp', 'client_id', 'sid'] as const
+
 function claimsToSession(
   claims: { sub?: string; scope?: unknown; exp?: number; [claim: string]: unknown },
   req: Request,
 ): McpSession | null {
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
+  for (const claim of REGISTERED_CLAIMS) delete customClaims[claim]
+  for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId']) delete customClaims[claim]
   const session: McpSession = { ...customClaims, userId: sub }
   if (typeof claims.scope === 'string') {
     session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')
@@ -169,36 +174,92 @@ export function isSessionExpired(session: McpSession): boolean {
   return new Date() > session.expiresAt
 }
 
-/**
- * Exposes OAuth authorization server metadata for MCP clients.
- *
- * Place at `/.well-known/oauth-authorization-server/route.ts`. Better Auth
- * already handles `/api/auth/.well-known/oauth-authorization-server`, but
- * some clients may fail to parse the `WWW-Authenticate` header.
- */
-export function createOAuthDiscoveryHandler(_auth: BetterAuthInstance) {
-  return async (req: Request) => {
-    const authPath = '/api/auth/.well-known/oauth-authorization-server'
-    const authUrl = new URL(authPath, req.url)
+const AUTHORIZATION_SERVER_METADATA_PATH = '/.well-known/oauth-authorization-server'
+const PROTECTED_RESOURCE_METADATA_PATH = '/.well-known/oauth-protected-resource'
+const DEFAULT_AUTH_BASE_PATH = '/api/auth'
 
-    return fetch(authUrl.toString(), {
-      headers: req.headers,
-    })
+function metadataStatus(req: Request, rootPath: string, allowSuffix: boolean): 404 | 405 | null {
+  const pathname = new URL(req.url).pathname.replace(/\/+$/, '')
+  const matches = pathname === rootPath || (allowSuffix && pathname.startsWith(`${rootPath}/`))
+  if (!matches) return 404
+  if (req.method !== 'GET' && req.method !== 'HEAD') return 405
+  return null
+}
+
+function statusResponse(status: 404 | 405): Response {
+  return new Response(
+    null,
+    status === 405 ? { status, headers: { Allow: 'GET, HEAD' } } : { status },
+  )
+}
+
+async function serveInProcess(
+  auth: BetterAuthInstance,
+  req: Request,
+  pathFor: (basePath: string) => string,
+): Promise<Response> {
+  const context = typeof auth.$context === 'function' ? await auth.$context() : await auth.$context
+  const baseURL: unknown = context?.baseURL
+  let origin = new URL(req.url).origin
+  let basePath = DEFAULT_AUTH_BASE_PATH
+  if (typeof baseURL === 'string' && URL.canParse(baseURL)) {
+    const parsed = new URL(baseURL)
+    origin = parsed.origin
+    basePath = parsed.pathname.replace(/\/+$/, '')
+  }
+  const response = await auth.handler(new Request(new URL(pathFor(basePath), origin)))
+  return req.method === 'HEAD'
+    ? new Response(null, { status: response.status, headers: response.headers })
+    : response
+}
+
+/**
+ * Serves OAuth authorization server metadata for MCP clients at
+ * `/.well-known/oauth-authorization-server`.
+ *
+ * The public metadata document is produced in-process by the Better Auth
+ * instance: no outbound fetch is made, no inbound header is forwarded, and the
+ * request's host selects no server. Only `GET`/`HEAD` are answered; any other
+ * path is a `404`.
+ *
+ * @example
+ * ```typescript
+ * // app/.well-known/oauth-authorization-server/route.ts
+ * export const GET = createOAuthDiscoveryHandler(auth)
+ * ```
+ */
+export function createOAuthDiscoveryHandler(auth: BetterAuthInstance) {
+  return async (req: Request): Promise<Response> => {
+    const status = metadataStatus(req, AUTHORIZATION_SERVER_METADATA_PATH, false)
+    if (status !== null) return statusResponse(status)
+    return serveInProcess(
+      auth,
+      req,
+      (basePath) => `${AUTHORIZATION_SERVER_METADATA_PATH}${basePath}`,
+    )
   }
 }
 
 /**
- * Exposes OAuth protected resource metadata for MCP clients.
+ * Serves OAuth protected resource metadata (RFC 9728) for MCP clients at
+ * `/.well-known/oauth-protected-resource`, including the resource-path variant.
  *
- * Place at `/.well-known/oauth-protected-resource/route.ts`.
+ * The public metadata document is produced in-process by the Better Auth
+ * `mcp()` plugin: no outbound fetch is made, no inbound header is forwarded, and
+ * the request's host selects no server. Only `GET`/`HEAD` are answered; any
+ * other path is a `404`.
+ *
+ * @example
+ * ```typescript
+ * // app/.well-known/oauth-protected-resource/route.ts
+ * export const GET = createOAuthProtectedResourceHandler(auth)
+ * ```
  */
-export function createOAuthProtectedResourceHandler(_auth: BetterAuthInstance) {
-  return async (req: Request) => {
-    const authPath = '/api/auth/.well-known/oauth-protected-resource'
-    const authUrl = new URL(authPath, req.url)
-
-    return fetch(authUrl.toString(), {
-      headers: req.headers,
-    })
+export function createOAuthProtectedResourceHandler(auth: BetterAuthInstance) {
+  return async (req: Request): Promise<Response> => {
+    const status = metadataStatus(req, PROTECTED_RESOURCE_METADATA_PATH, true)
+    if (status !== null) return statusResponse(status)
+    const pathname = new URL(req.url).pathname.replace(/\/+$/, '')
+    return serveInProcess(auth, req, () => pathname)
   }
 }

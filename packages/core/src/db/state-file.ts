@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { identifiesLiveProcess, processClaimSchema, processStartTime } from './process-identity.js'
@@ -96,7 +96,8 @@ export function writeDevDatabaseState(filePath: string, state: PublishedDevDatab
   const contents = `${JSON.stringify(stateSchema.parse(record), null, 2)}\n`
   const temporary = path.join(directory, `${path.basename(filePath)}.${process.pid}.tmp`)
   try {
-    writeFileSync(temporary, contents, 'utf8')
+    writeFileSync(temporary, contents, { encoding: 'utf8', mode: 0o600 })
+    chmodSync(temporary, 0o600)
     renameSync(temporary, filePath)
   } catch (error) {
     rmSync(temporary, { force: true })

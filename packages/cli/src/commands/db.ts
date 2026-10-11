@@ -4,12 +4,8 @@ import { DevLoopUnreachableError, NoDevLoopError, requestDatabaseUpdate } from '
 
 /** Options for {@link dbUpdateCommand}. */
 export interface DbUpdateCommandOptions {
-  /**
-   * Consent tokens passed straight through to Prisma's `--confirm`. Prisma
-   * asks for the database name before it destroys data; the Dev database's is
-   * `postgres`.
-   */
-  confirm?: readonly string[]
+  /** The id of the destructive plan the loop printed; it is the consent to apply it. */
+  plan?: string
 }
 
 /**
@@ -17,17 +13,17 @@ export interface DbUpdateCommandOptions {
  *
  * The reconcile itself runs inside the `opensaas dev` loop: it holds the Dev
  * database's data directory, the staged generation and the app child, so this
- * command opens no connection of its own. It hands the loop the consent and
+ * command opens no connection of its own. It hands the loop the plan id and
  * prints what the loop reports (ADR-0063).
  *
  * @example
  * ```bash
- * opensaas db update --confirm postgres
+ * opensaas db update --plan <id>
  * ```
  */
 export async function dbUpdateCommand(options: DbUpdateCommandOptions = {}): Promise<void> {
   try {
-    const ok = await requestDatabaseUpdate(process.cwd(), options.confirm ?? [], (message) => {
+    const ok = await requestDatabaseUpdate(process.cwd(), options.plan, (message) => {
       console.log(message)
     })
     if (!ok) process.exitCode = 1
@@ -45,14 +41,9 @@ export function createDbCommand(): Command {
 
   db.command('update')
     .description('Apply the staged schema change through the running `opensaas dev` loop')
-    .option(
-      '--confirm <token>',
-      "Consent token for a destructive change — the database name (the Dev database's is `postgres`)",
-      (value: string, previous: string[]) => [...previous, value],
-      [],
-    )
-    .action(async (options: { confirm: string[] }) => {
-      await dbUpdateCommand({ confirm: options.confirm })
+    .option('--plan <id>', 'The id of the destructive plan the loop printed, to apply it')
+    .action(async (options: { plan?: string }) => {
+      await dbUpdateCommand({ plan: options.plan })
     })
 
   return db

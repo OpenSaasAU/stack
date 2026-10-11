@@ -579,7 +579,7 @@ describe('Access Control', () => {
       expect(result).toEqual(data)
     })
 
-    it('should skip system fields', async () => {
+    it('should refuse system fields', async () => {
       const data = {
         id: '1',
         createdAt: new Date(),
@@ -591,15 +591,12 @@ describe('Access Control', () => {
         name: { type: 'text' },
       }
 
-      const result = await filterWritableFields(data, fieldConfigs, 'create', {
-        session: null,
-        context: mockContext,
-      })
-
-      expect(result.id).toBeUndefined()
-      expect(result.createdAt).toBeUndefined()
-      expect(result.updatedAt).toBeUndefined()
-      expect(result.name).toBe('John')
+      await expect(
+        filterWritableFields(data, fieldConfigs, 'create', {
+          session: null,
+          context: mockContext,
+        }),
+      ).rejects.toThrow(/"id": it is system-managed/)
     })
 
     // #568: a denied write field must THROW (Keystone fail-loud parity), rather

@@ -74,6 +74,7 @@ async function applyContract(db: Database, contract: PrismaContract): Promise<vo
       contract: contractJson,
       mode: 'plan',
       migrationsDir: db.migrationsDir,
+      answerQuestions: async () => [],
     })
     expect(plan.assertOk().plan.operations).toEqual([])
   } finally {

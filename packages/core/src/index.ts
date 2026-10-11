@@ -16,6 +16,7 @@ export { config, list, getPluginData } from './config/index.js'
 // alongside their builders.
 export type {
   OpenSaasConfig,
+  AfterTransactionErrorReport,
   OutputConfig,
   ListConfig,
   ListUIOption,
@@ -221,6 +222,12 @@ export { resolveNavCounts, isListQueryStaticallyDenied } from './config/nav-coun
 
 // Validation error surfaced by write operations
 export { ValidationError } from './hooks/index.js'
+export { transitionGuard } from './hooks/transition-guard.js'
+export type {
+  TransitionSpec,
+  FlatTransitionSpec,
+  KeyedTransitionSpec,
+} from './hooks/transition-guard.js'
 
 // The stack-owned database errors every engine terminal raises in place of the
 // driver's own, and their predicates (ADR-0042). The Unsafe surface is excluded
@@ -353,7 +360,10 @@ export type {
 // Relationship-options read primitive — bounded, projected fetch for
 // relationship editors. Backs the `relationshipOptions` context.serverAction
 // op; also callable directly wherever a full context is already in hand.
-export { getRelationshipOptions } from './query/relationship-options.js'
+export {
+  getRelationshipOptions,
+  isRelationshipLabelReadable,
+} from './query/relationship-options.js'
 export type { RelationshipOption, RelationshipOptionsArgs } from './query/relationship-options.js'
 
 // Filter engine (ADR-0017) — the admin UI's Filter builder. The pure seam

@@ -61,6 +61,10 @@ jobs:
           cd "$WORKDIR"
           # Real, networked install of the published package + its template deps.
           npx --yes create-opensaas-app@latest myapp --no-auth --no-ai
+          if [ ! -d myapp ]; then
+            echo '::error::create-opensaas-app exited without scaffolding myapp (an unanswered prompt exits 0 without a TTY)'
+            exit 1
+          fi
 
       # The CLI auto-runs the scaffolded project's own setup; re-run generate and
       # build explicitly so the job fails loudly (and points at the failed step)

@@ -142,22 +142,22 @@
               "columns": {
                 "content": {
                   "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
+                  "dataType": "pg/jsonb",
                   "nullable": true
                 },
                 "id": {
                   "codecId": "pg/uuid@1",
-                  "nativeType": "uuid",
+                  "dataType": "pg/uuid",
                   "nullable": false
                 },
                 "taxonomy": {
                   "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
+                  "dataType": "pg/jsonb",
                   "nullable": true
                 },
                 "title": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 }
               },
@@ -174,27 +174,27 @@
               "columns": {
                 "configuration": {
                   "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
+                  "dataType": "pg/jsonb",
                   "nullable": false
                 },
                 "id": {
                   "codecId": "pg/uuid@1",
-                  "nativeType": "uuid",
+                  "dataType": "pg/uuid",
                   "nullable": false
                 },
                 "metadata": {
                   "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
+                  "dataType": "pg/jsonb",
                   "nullable": true
                 },
                 "name": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 },
                 "settings": {
                   "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
+                  "dataType": "pg/jsonb",
                   "nullable": true
                 }
               },
@@ -213,7 +213,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "bc6c4509222142b9dcac123b533f86a70fa3769774d7d21dec19917421889fd1"
+    "storageHash": "3b430c71c8e2dfdd754dc4327d7d38908a482e6623a816f6f1388b725ebb74bf"
   },
   "execution": {
     "executionHash": "3cc9cb98b3171e8b5701d3570b83306a599a3711438ac515d082dfe6d695090a",
@@ -247,6 +247,8 @@
   "capabilities": {
     "postgres": {
       "distinctOn": true,
+      "forKeyShare": true,
+      "forNoKeyUpdate": true,
       "jsonAgg": true,
       "lateral": true,
       "limit": true,
@@ -257,9 +259,14 @@
       "checkConstraint": true,
       "defaultInInsert": true,
       "enums": true,
+      "forShare": true,
+      "forUpdate": true,
       "insertOnConflictSkip": true,
       "insertOnConflictWithoutTarget": true,
       "lateral": true,
+      "lockNowait": true,
+      "lockOf": true,
+      "lockSkipLocked": true,
       "returning": true,
       "scalarList": true
     }

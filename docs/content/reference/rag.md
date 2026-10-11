@@ -318,7 +318,7 @@ names it and no SQL is yours to run. The declaration is a generator emission
 `migrations/pgvector/`, and applying the contract enables the extension ahead of
 your tables. Locally that is `pnpm db:update` with `pnpm dev` up in another
 terminal; [Migrations and the dev loop](/docs/how-to/migrate) covers why the
-command needs that loop and what `--confirm` asks for. In a deployment there is
+command needs that loop and what `--plan` asks for. In a deployment there is
 no loop, so it is `prisma migration plan` once, committed, then
 `prisma db migrate`. There is no `opensaas db migrate` — `opensaas db` carries
 only `update`.
@@ -345,13 +345,7 @@ rather than replaced. Under an **exact** scan the result is exact — `limit` ro
 whenever `limit` rows qualify. Under an approximate scan it is bounded by
 pgvector's iterative-scan budget instead (ADR-0045).
 
-**A known limit of the pack this ships against.**
-`@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index types, so an
-`index` declaration derives the column type and the operator class and nothing
-else — no `CREATE INDEX` is emitted. Every search today is therefore an exact
-scan, and the paragraph above describes what changes when the pack gains index
-support. Tracked as
-[#1265](https://github.com/OpenSaasAU/stack/issues/1265).
+**A known limit.** `embedding({ index })` builds no `CREATE INDEX` yet because the pgvector pack registers no index types, so every `nearest()` is an exact sequential scan today and `pnpm generate` warns ([#1265](https://github.com/OpenSaasAU/stack/issues/1265)).
 
 ### Automatic Embedding Generation
 

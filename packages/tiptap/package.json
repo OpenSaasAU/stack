@@ -57,14 +57,14 @@
     "url": "https://github.com/OpenSaasAU/stack/issues"
   },
   "peerDependencies": {
-    "@opensaas/stack-core": "^0",
-    "@opensaas/stack-ui": "^0",
+    "@opensaas/stack-core": "workspace:^",
+    "@opensaas/stack-ui": "workspace:^",
     "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@tiptap/extension-placeholder": "^3.31.3",
+    "@tiptap/extension-placeholder": "^3.31.4",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
@@ -74,18 +74,18 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^5.1.4",
-    "@vitest/coverage-v8": "5.0.2",
+    "@vitest/coverage-v8": "5.0.3",
     "happy-dom": "^20.14.5",
-    "next": "^16.3.5",
+    "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "5.0.2"
+    "vitest": "5.0.3"
   }
 }

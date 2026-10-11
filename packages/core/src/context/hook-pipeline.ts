@@ -53,7 +53,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
           listKey: listName,
           operation: 'create',
           inputData,
-          resolvedData: inputData,
+          resolvedData: { ...inputData },
           item: undefined,
           context,
         }
@@ -61,7 +61,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
           listKey: listName,
           operation: 'update',
           inputData,
-          resolvedData: inputData,
+          resolvedData: { ...inputData },
           item,
           context,
         },

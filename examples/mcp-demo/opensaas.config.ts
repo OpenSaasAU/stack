@@ -3,7 +3,7 @@ import { text, relationship, select, timestamp } from '@opensaas/stack-core/fiel
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
-import type { AccessControl } from '@opensaas/stack-core'
+import type { AccessControl, Session } from '@opensaas/stack-core'
 import { z } from 'zod'
 
 /**
@@ -35,6 +35,23 @@ const isAuthor: AccessControl = ({ session }) => {
  *
  * Uses authPlugin with Better Auth MCP plugin for authentication
  */
+function isSessionUserOrCleared(value: unknown, userId: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof userId !== 'string') return false
+  if (value === userId) return true
+  if (typeof value !== 'object' || !('connect' in value)) return false
+  const target = value.connect
+  return typeof target === 'object' && target !== null && 'id' in target && target.id === userId
+}
+
+// Not `write: 'hooks'`: the admin relationship table's pre-linked create and disconnect
+// (ADR-0018) write this edge as caller input, so the rule must allow the session's own id.
+const linksOnlyToSessionUser =
+  (field: string) =>
+  ({ session, inputData }: { session: Session | null; inputData?: Record<string, unknown> }) =>
+    isSessionUserOrCleared(inputData?.[field], session?.userId) &&
+    isSessionUserOrCleared(inputData?.[`${field}Id`], session?.userId)
+
 export default config({
   plugins: [
     authPlugin({
@@ -49,6 +66,7 @@ export default config({
           // Not implemented in this demo — a real project needs a page here
           // for users to approve/deny an MCP client's requested scopes.
           consentPage: '/consent',
+          scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
           // RFC 8707/9728 canonical resource identifier — must match the
           // `mcp.basePath` below. HTTP is accepted only on loopback hosts.
           resource: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/mcp`,
@@ -102,8 +120,11 @@ export default config({
     auth: {
       type: 'better-auth',
       loginPage: '/sign-in',
-      scopes: ['openid', 'profile', 'email'],
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
     },
+    // Tokens need mcp:read to query and mcp:write to create/update/delete.
+    // Omit `scopes` and no scope is enforced.
+    scopes: { read: 'mcp:read', write: 'mcp:write' },
     // Global defaults for all lists
     defaultTools: {
       read: true,
@@ -156,6 +177,11 @@ export default config({
         publishedAt: timestamp(),
         author: relationship({
           ref: 'User.posts',
+          access: {
+            read: () => true,
+            create: linksOnlyToSessionUser('author'),
+            update: linksOnlyToSessionUser('author'),
+          },
         }),
       },
       access: {
@@ -177,14 +203,15 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ resolvedData, item }) => {
-          if (resolvedData?.status === 'published' && !item?.publishedAt) {
-            return {
-              ...resolvedData,
-              publishedAt: new Date().toISOString(),
-            }
+        resolveInput: async ({ operation, resolvedData, item, context }) => {
+          const data = { ...resolvedData }
+          if (operation === 'create' && context.session?.userId) {
+            data.author = { connect: { id: context.session.userId } }
           }
-          return { ...resolvedData }
+          if (data.status === 'published' && !item?.publishedAt) {
+            data.publishedAt = new Date().toISOString()
+          }
+          return data
         },
       },
       // MCP configuration for Post list with custom tools
@@ -199,6 +226,7 @@ export default config({
         customTools: [
           {
             name: 'publishPost',
+            scopes: ['mcp:write'],
             description: 'Publish a draft post and set publishedAt timestamp',
             inputSchema: z.object({
               postId: z.string(),
@@ -227,6 +255,7 @@ export default config({
           },
           {
             name: 'unpublishPost',
+            scopes: ['mcp:write'],
             description: 'Unpublish a post and clear publishedAt timestamp',
             inputSchema: z.object({
               postId: z.string(),

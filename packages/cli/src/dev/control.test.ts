@@ -36,13 +36,11 @@ describe('the dev loop control channel', () => {
     })
 
     const said: string[] = []
-    const ok = await requestDatabaseUpdate(projectDir, ['postgres'], (message) =>
-      said.push(message),
-    )
+    const ok = await requestDatabaseUpdate(projectDir, 'abc', (message) => said.push(message))
 
     expect(ok).toBe(true)
     expect(seen).toHaveLength(1)
-    expect(seen[0]?.confirm).toEqual(['postgres'])
+    expect(seen[0]?.plan).toBe('abc')
     expect(said).toEqual(['planning', 'applied'])
   })
 
@@ -52,7 +50,9 @@ describe('the dev loop control channel', () => {
     })
 
     const said: string[] = []
-    expect(await requestDatabaseUpdate(projectDir, [], (message) => said.push(message))).toBe(false)
+    expect(
+      await requestDatabaseUpdate(projectDir, undefined, (message) => said.push(message)),
+    ).toBe(false)
     expect(said).toContain('the database is unchanged')
   })
 
@@ -66,13 +66,17 @@ describe('the dev loop control channel', () => {
     const published = JSON.parse(fs.readFileSync(file, 'utf-8'))
     fs.writeFileSync(file, JSON.stringify({ ...published, token: 'guessed' }), 'utf-8')
 
-    expect(await requestDatabaseUpdate(projectDir, [], () => {})).toBe(false)
+    expect(await requestDatabaseUpdate(projectDir, undefined, () => {})).toBe(false)
     expect(handled).toBe(false)
   })
 
   it('names `opensaas dev` when no loop is listening', async () => {
-    await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow(NoDevLoopError)
-    await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow('opensaas dev')
+    await expect(requestDatabaseUpdate(projectDir, undefined, () => {})).rejects.toThrow(
+      NoDevLoopError,
+    )
+    await expect(requestDatabaseUpdate(projectDir, undefined, () => {})).rejects.toThrow(
+      'opensaas dev',
+    )
   })
 
   it('names `opensaas dev` when the control file outlived the loop that wrote it', async () => {
@@ -83,7 +87,9 @@ describe('the dev loop control channel', () => {
       'utf-8',
     )
 
-    await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow(NoDevLoopError)
+    await expect(requestDatabaseUpdate(projectDir, undefined, () => {})).rejects.toThrow(
+      NoDevLoopError,
+    )
   })
 
   it('publishes the control file 0600 over one pre-created world-readable', async () => {
@@ -128,7 +134,7 @@ describe('the dev loop control channel', () => {
       void closing.close()
     }, 50)
 
-    await expect(requestDatabaseUpdate(projectDir, [], () => {})).rejects.toThrow(
+    await expect(requestDatabaseUpdate(projectDir, undefined, () => {})).rejects.toThrow(
       DevLoopUnreachableError,
     )
   })
@@ -145,9 +151,7 @@ describe('the dev loop control channel', () => {
     const parked = net.createConnection({ host: '127.0.0.1', port: published.port })
     await new Promise<void>((resolve) => parked.once('connect', () => resolve()))
     parked.on('error', () => {})
-    parked.write(
-      `${JSON.stringify({ token: published.token, command: 'db-update', confirm: [] })}\n`,
-    )
+    parked.write(`${JSON.stringify({ token: published.token, command: 'db-update' })}\n`)
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     const closing = channel

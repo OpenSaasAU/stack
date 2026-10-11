@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  statSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -70,6 +78,61 @@ async function ask(url: string, sql: string): Promise<QueryResult> {
 
 const CONNECTION_VARIABLES = ['DATABASE_URL', 'DIRECT_DATABASE_URL'] as const
 
+describe.skipIf(process.platform === 'win32')('Dev database file permissions', () => {
+  let projectRoot: string
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-mode-'))
+  })
+
+  afterEach(() => {
+    rmSync(projectRoot, { recursive: true, force: true })
+  })
+
+  const modeOf = (file: string) => statSync(file).mode & 0o777
+
+  test(
+    'a fresh data directory is 0700 and the state and lock files are 0600',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+        expect(modeOf(database.stateFile)).toBe(0o600)
+        expect(modeOf(path.join(dataDir, '.opensaas-dev-database.lock'))).toBe(0o600)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a pre-existing 0755 data directory is tightened to 0700',
+    async () => {
+      const dataDir = path.join(projectRoot, 'dev-db')
+      mkdirSync(dataDir)
+      chmodSync(dataDir, 0o755)
+      const database = await startDevDatabase({ cwd: projectRoot, dataDir })
+      try {
+        expect(modeOf(dataDir)).toBe(0o700)
+      } finally {
+        await database.stop()
+      }
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test('writeDevDatabaseState leaves the state file at 0600', () => {
+    const file = path.join(projectRoot, 'state.json')
+    writeDevDatabaseState(file, {
+      url: 'postgres://postgres@127.0.0.1:1/postgres',
+      pid: process.pid,
+    })
+    expect(modeOf(file)).toBe(0o600)
+  })
+})
+
 describe('startDevDatabase', () => {
   let projectRoot: string
   let started: DevDatabase[]
@@ -108,6 +171,36 @@ describe('startDevDatabase', () => {
       expect(first.port).not.toBe(second.port)
       expect((await ask(first.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
       expect((await ask(second.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'a wrong password is refused and the published password is accepted',
+    async () => {
+      const database = await start()
+      const wrong = new URL(database.url)
+      wrong.password = 'f'.repeat(32)
+      const anonymous = new URL(database.url)
+      anonymous.password = ''
+
+      await expect(ask(wrong.toString(), 'select 1')).rejects.toThrow(
+        /password authentication failed/,
+      )
+      await expect(ask(anonymous.toString(), 'select 1')).rejects.toThrow()
+      expect(new URL(database.url).password).toMatch(/^[0-9a-f]{32}$/)
+      expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
+    },
+    BOOT_TIMEOUT,
+  )
+
+  test(
+    'the state file carrying the password is readable by its owner alone',
+    async () => {
+      const database = await start()
+      if (process.platform !== 'win32') {
+        expect(statSync(database.stateFile).mode & 0o777).toBe(0o600)
+      }
     },
     BOOT_TIMEOUT,
   )
@@ -226,7 +319,9 @@ describe('startDevDatabase', () => {
       started.push(database)
 
       expect(database.host).toBe('127.0.0.1')
-      expect(database.url).toBe(`postgres://postgres@127.0.0.1:${database.port}/postgres`)
+      expect(database.url).toMatch(
+        new RegExp(`^postgres://postgres:[0-9a-f]{32}@127\\.0\\.0\\.1:${database.port}/postgres$`),
+      )
       expect((await ask(database.url, 'select 1 as one')).rows).toEqual([{ one: 1 }])
     },
     BOOT_TIMEOUT,
@@ -238,13 +333,16 @@ describe('startDevDatabase', () => {
       const database = await startDevDatabase({ cwd: projectRoot, host: '::1' })
       started.push(database)
 
-      expect(database.url).toBe(`postgres://postgres@[::1]:${database.port}/postgres`)
-      expect(new URL(database.url).port).toBe(String(database.port))
+      const parsed = new URL(database.url)
+      expect(parsed.hostname).toBe('[::1]')
+      expect(parsed.port).toBe(String(database.port))
+      expect(parsed.password).toMatch(/^[0-9a-f]{32}$/)
 
       const client = new pg.Client({
         host: '::1',
         port: database.port,
         user: 'postgres',
+        password: parsed.password,
         database: 'postgres',
       })
       await client.connect()

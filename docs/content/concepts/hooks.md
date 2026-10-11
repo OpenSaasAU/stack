@@ -151,8 +151,8 @@ hooks split into two families by where they run relative to that transaction:
   `beforeTransaction` aborts the write (the transaction never opens) and triggers
   `afterTransaction` (`rolled-back`) only for the lists whose `beforeTransaction`
   already ran. If an `afterTransaction` itself throws, the remaining
-  compensators still run and the error(s) are surfaced afterward — the database
-  state is already final. Sudo does not affect these hooks; they always run.
+  compensators still run and the error is reported to `onAfterTransactionError`
+  (default `console.error`) — it never changes the write's result. Sudo does not affect these hooks; they always run.
 
   Important caveats for these hooks:
   - **`item`/`originalItem` are populated only for the TOP-LEVEL record.** On
@@ -190,14 +190,13 @@ hooks split into two families by where they run relative to that transaction:
       that write persisted it, captured at write time — not re-read at flush —
       so a later write to the same record in the same transaction leaves it
       stale in what the compensator sees.
-    - **A rejected `context.transaction()` no longer implies rollback.** If the
-      transaction commits and a deferred `afterTransaction` then throws,
-      `context.transaction()` rejects with an `AfterTransactionError` over data
-      that is already final. That class is not exported, so match on
-      `error.name`. A transaction error — `SerializationFailure` among
-      them — still takes precedence, so a retry loop keyed on it is unaffected;
-      one that catches broadly should not treat every rejection as "not
-      committed".
+    - **A rejection always means the write did not persist.** An
+      `afterTransaction` that throws — list or field level, on a commit or a
+      rollback — never rejects the write or `context.transaction()`. Its error is
+      handed to the top-level `onAfterTransactionError` callback (with `error`,
+      `status`, `listKey` and `operation`), or to `console.error` when none is
+      configured or the callback throws. A transaction error still reaches the
+      caller as before.
     - **`beforeTransaction` can now run with the transaction already open.**
       Under `context.transaction()` it runs on the write's way in, so it holds
       that transaction open for its duration. Keep it fast, or hoist slow
@@ -397,6 +396,47 @@ row it runs on.
 
 See [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md)
 and [ADR-0052](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0052-the-generated-types-declare-the-contract-remainder-and-instantiate-core-generics.md).
+
+## Enforcing a state machine
+
+`transitionGuard()` returns a list-level `validate` hook that enforces allowed transitions on a `select` field, optionally keyed by a stored sibling field. It runs for every caller, `sudo()` included, and checks a value set by `resolveInput` the same as one the caller supplied.
+
+```typescript
+import { list, transitionGuard } from '@opensaas/stack-core'
+
+Operation: list({
+  fields: {/* action, state */},
+  hooks: {
+    validate: transitionGuard({
+      field: 'state',
+      discriminator: 'action',
+      initial: { EDIT: ['PREPARED'] },
+      allowed: { EDIT: { PREPARED: ['DISPATCHING'] } },
+    }),
+  },
+})
+```
+
+- **Create:** the state must be in `initial[key]`.
+- **Update that changes the field:** the new state must be in `allowed[key][previous]`.
+- **Update that changes only the discriminator:** the current state must be legal under the new key.
+- **Update that changes neither, and delete:** not checked.
+
+Omit `discriminator` for a plain guard: `initial` is a flat array and `allowed` a flat `from → to[]` map. The guard reads the row loaded for the write and takes no lock, so two concurrent updates from the same state can both pass. Where that matters, read the row under `.forUpdate()` inside `context.transaction`. A create that omits the field is checked as `undefined`, because database defaults are not visible to the hook.
+
+To combine the guard with your own `validate`, call both:
+
+```typescript
+const guard = transitionGuard({ field: 'state', initial: ['DRAFT'], allowed: { DRAFT: ['SENT'] } })
+
+hooks: {
+  validate: async (args) => {
+    await guard(args)
+    if (args.operation === 'delete') return
+    // ...your own checks
+  },
+}
+```
 
 ## Best Practices
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
-import { admin, twoFactor } from 'better-auth/plugins'
+import { admin, deviceAuthorization, jwt, twoFactor } from 'better-auth/plugins'
 import {
   deriveAuthLists as deriveAuthListsImpl,
   type DerivedAuthLists,
@@ -534,6 +534,7 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
 
     const denied: Array<[string, string]> = [
       ['Session', 'token'],
+      ['Verification', 'identifier'],
       ['Verification', 'value'],
       ['Account', 'password'],
       ['Account', 'accessToken'],
@@ -554,6 +555,7 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
 
     const denied: Array<[string, string]> = [
       ['Session', 'token'],
+      ['Verification', 'identifier'],
       ['Verification', 'value'],
       ['Account', 'password'],
       ['Account', 'accessToken'],
@@ -580,7 +582,6 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
       ['Account', 'providerId'],
       ['Account', 'accountId'],
       ['Account', 'scope'],
-      ['Verification', 'identifier'],
       ['Verification', 'expiresAt'],
       ['User', 'name'],
       ['User', 'email'],
@@ -618,7 +619,9 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
       ...Object.entries(lists.Account.fields).filter(
         ([k]) => !['password', 'accessToken', 'refreshToken', 'idToken'].includes(k),
       ),
-      ...Object.entries(lists.Verification.fields).filter(([k]) => k !== 'value'),
+      ...Object.entries(lists.Verification.fields).filter(
+        ([k]) => k !== 'identifier' && k !== 'value',
+      ),
     ]
     for (const [, field] of nonCredentialFields) {
       expect(field.access).toBeUndefined()
@@ -648,6 +651,22 @@ describe('deriveAuthLists - credential fields on plugin tables (issue #1014)', (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
       expect(await field.access!.read!({} as any)).toBe(false)
       expect(field.ui?.listView?.defaultColumn).toBe(false)
+    }
+  })
+
+  it('denies read on jwks.privateKey and deviceCode.deviceCode/userCode', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [jwt(), deviceAuthorization()])
+
+    const denied: Array<[string, string]> = [
+      ['Jwks', 'privateKey'],
+      ['DeviceCode', 'deviceCode'],
+      ['DeviceCode', 'userCode'],
+    ]
+
+    for (const [listKey, fieldKey] of denied) {
+      const field = lists[listKey].fields[fieldKey]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal read-access call fixture
+      expect(await field.access!.read!({} as any)).toBe(false)
     }
   })
 

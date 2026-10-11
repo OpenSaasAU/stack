@@ -30,6 +30,15 @@ function schemaConfig(): OpenSaasConfig {
         fields: { name: text() },
         access: { operation: { ...OPEN, create: () => false } },
       },
+      Audited: {
+        fields: { name: text() },
+        access: { operation: OPEN },
+        hooks: {
+          afterOperation: async ({ context }) => {
+            await bridge(context)
+          },
+        },
+      },
       Parent: {
         fields: { name: text() },
         access: { operation: OPEN },
@@ -233,6 +242,77 @@ describe('a joined write that throws poisons its transaction owner', () => {
         await tx.db.Bill.create({ data: { name: 'a' } })
       })
       expect(await count('Bill')).toBe(1)
+    },
+    BOOT,
+  )
+})
+
+describe('a caught failing secured read poisons its transaction owner', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    harness = await createTestContext(schemaConfig(), { userId: 'u1' })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+    bridge.mockReset()
+  })
+
+  const count = async (): Promise<number> => (await harness.context.sudo().db.Bill.all()).length
+
+  test(
+    'a caught malformed-id read rejects instead of resolving a rolled-back transaction',
+    async () => {
+      await expect(
+        harness.context.transaction(async (tx) => {
+          const created = await tx.db.Bill.create({ data: { name: 'kept' } })
+          try {
+            await tx.db.Bill.where({ id: { equals: 'not-a-uuid' } }).first()
+          } catch {
+            // treated as not found
+          }
+          return created
+        }),
+      ).rejects.toBeInstanceOf(TransactionRolledBackError)
+      expect(await count()).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught failing read in an afterOperation hook does not report a lost write as success',
+    async () => {
+      bridge.mockImplementation(async (context: { db: TestContext['context']['db'] }) => {
+        await context.db.Credit.where({ id: { equals: 'not-a-uuid' } })
+          .first()
+          .catch(() => null)
+      })
+
+      const outcome = await harness.context
+        .transaction(async (tx) => tx.db.Audited.create({ data: { name: 'p' } }))
+        .catch((err: unknown) => err)
+      expect(outcome).toBeInstanceOf(TransactionRolledBackError)
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught failing all() rejects instead of resolving a rolled-back transaction',
+    async () => {
+      await expect(
+        harness.context.transaction(async (tx) => {
+          await tx.db.Bill.create({ data: { name: 'kept' } })
+          await tx.db.Bill.where({ id: { equals: 'not-a-uuid' } })
+            .all()
+            .catch(() => [])
+        }),
+      ).rejects.toBeInstanceOf(TransactionRolledBackError)
+      expect(await count()).toBe(0)
     },
     BOOT,
   )

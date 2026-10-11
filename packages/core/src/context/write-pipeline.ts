@@ -34,14 +34,23 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
-import { visibleWrittenRow } from '../secured/read.js'
+import { visibleWrittenRow, writtenRowQueryable } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
-import { lowerRelationInput, refuseNestedRelationInput } from './relationship-input.js'
+import {
+  lowerRelationInput,
+  refuseNestedRelationInput,
+  snapshotCallerInput,
+} from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
-import type { RowLockLane } from '../secured/lock.js'
+import {
+  RowLockIdentityError,
+  RowLockLaneUnavailableError,
+  type RowLockIdentity,
+  type RowLockLane,
+} from '../secured/lock.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -242,6 +251,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // keeps running through `context` as given — see `runWithTransactionBoundary`'s
   // own param doc for why that one is deliberately left alone.
   return runWithTransactionBoundary({
+    config,
     involvedLists,
     context,
     afterTransactionContext: resolveAfterTransactionContext(context, config),
@@ -267,6 +277,40 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
         return written
       }),
   })
+}
+
+/**
+ * Take the row lock on an update/delete target, then resolve the target again
+ * under it so `originalItem`, item-based access rules and the Access Filter all
+ * see the row as it is while no one else can change it (ADR-0078). A row that is
+ * gone, or no longer in scope, resolves to `denied`.
+ */
+async function lockTarget(
+  args: WritePipelineArgs,
+  collection: WriteCollection,
+  ops: WhereCombinators,
+  gated: TargetResolution,
+): Promise<TargetResolution> {
+  const lane = args.context._rowLock
+  if (args.strategy.operation === 'create' || lane === undefined || gated.status !== 'ok') {
+    return gated
+  }
+  const { originalItem } = gated
+  if (originalItem === undefined) return gated
+  let identity: RowLockIdentity
+  try {
+    identity = lane.identity(args.listName)
+  } catch (error) {
+    if (error instanceof RowLockIdentityError || error instanceof RowLockLaneUnavailableError) {
+      return gated
+    }
+    throw error
+  }
+  const key = originalItem[identity.column]
+  if (typeof key !== 'string' && typeof key !== 'number') return gated
+  const held = await lane.lock(args.listName, identity, [key])
+  if (held.length === 0) return { status: 'denied' }
+  return args.strategy.resolveTarget(collection, ops)
 }
 
 /**
@@ -378,7 +422,8 @@ async function runWriteInTransaction(
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than
   // reading the target twice; falls back to resolving here when invoked
   // directly (e.g. a unit test) without that bracket.
-  const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
+  const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
+  const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
     return null
   }
@@ -406,6 +451,7 @@ async function runWriteInTransaction(
 
   // `inputData` is always present here; `?? {}` is only a defensive fallback.
   const input = inputData ?? {}
+  const callerInput = snapshotCallerInput(input)
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
@@ -428,7 +474,7 @@ async function runWriteInTransaction(
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
-    inputData: input,
+    inputData: callerInput,
     listName,
     config,
     defaultedFields,
@@ -446,6 +492,7 @@ async function runWriteInTransaction(
     ormHandle: tx,
     ops,
     data,
+    inputData: callerInput,
   })
   if (linked.status === 'unreachable') return null
   const writeData = linked.data
@@ -528,7 +575,8 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
-  return visibleWrittenRow({ listName, listConfig, ormHandle: tx, context, config }, item)
+  const binding = { listName, listConfig, ormHandle: tx, context, config }
+  return visibleWrittenRow(binding, item, await writtenRowQueryable(binding, item.id))
 }
 
 /**
@@ -601,6 +649,9 @@ async function runDeletePath(args: {
     context,
   })
 
+  const binding = { listName, listConfig, ormHandle, context, config }
+  const queryable = await writtenRowQueryable(binding, item.id)
+
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
   if (deleted === null) return null
@@ -625,7 +676,7 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return visibleWrittenRow({ listName, listConfig, ormHandle, context, config }, deleted)
+  return visibleWrittenRow(binding, deleted, queryable)
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

@@ -410,7 +410,7 @@ export type FieldAccessControl<
  * requires is a valid substitute, same as anywhere else function parameters
  * are contravariant.
  */
-export type FieldAccess<
+type FieldAccessBase<
   TItem = Record<string, unknown>,
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
@@ -440,3 +440,26 @@ export type FieldAccess<
    */
   allowCreateDefault?: boolean
 }
+
+/**
+ * `write: 'hooks'` makes the field hook-only: no caller — a session, `sudo()`,
+ * a server action, the admin UI, MCP or another list's hook — may name it in a
+ * create or update payload (a `ValidationError` names the field). Only the
+ * list's own list-level and field-level `resolveInput` may set it. It cannot be
+ * combined with `create`/`update` rules; `read` is unaffected.
+ *
+ * @example
+ * state: select({ options, access: { write: 'hooks' } })
+ */
+export type FieldAccess<
+  TItem = Record<string, unknown>,
+  TCreateInput = Record<string, unknown>,
+  TUpdateInput = Record<string, unknown>,
+> =
+  | (FieldAccessBase<TItem, TCreateInput, TUpdateInput> & { write?: undefined })
+  | (Pick<FieldAccessBase<TItem, TCreateInput, TUpdateInput>, 'read'> & {
+      write: 'hooks'
+      create?: never
+      update?: never
+      allowCreateDefault?: never
+    })

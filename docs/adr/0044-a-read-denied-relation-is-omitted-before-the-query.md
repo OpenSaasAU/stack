@@ -1,6 +1,6 @@
 # A read-denied relation is omitted before the query, and Field Visibility stays the boundary
 
-Status: accepted
+Status: accepted (amended by [ADR-0078](0078-a-root-update-or-delete-locks-its-target-before-hooks-run.md))
 
 Prisma 8 makes projection an ORM native (#1031) and ADR-0039 turned `context.db` into a query-value surface whose terminals the engine composes, so the obvious optimisation is to encode field-level `read` denial as a projection: never select what the session cannot read, and delete the post-query pass that removes it. We decided **not** to, for scalars — and to make one narrow pre-query change for relations.
 
