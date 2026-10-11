@@ -3,7 +3,7 @@ import { text, relationship, select, timestamp } from '@opensaas/stack-core/fiel
 import { authPlugin } from '@opensaas/stack-auth'
 import { mcp } from '@opensaas/stack-auth/plugins'
 import { jwt } from 'better-auth/plugins'
-import type { AccessControl } from '@opensaas/stack-core'
+import type { AccessControl, Session } from '@opensaas/stack-core'
 import { z } from 'zod'
 
 /**
@@ -35,6 +35,23 @@ const isAuthor: AccessControl = ({ session }) => {
  *
  * Uses authPlugin with Better Auth MCP plugin for authentication
  */
+function isSessionUserOrCleared(value: unknown, userId: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof userId !== 'string') return false
+  if (value === userId) return true
+  if (typeof value !== 'object' || !('connect' in value)) return false
+  const target = value.connect
+  return typeof target === 'object' && target !== null && 'id' in target && target.id === userId
+}
+
+// Not `write: 'hooks'`: the admin relationship table's pre-linked create and disconnect
+// (ADR-0018) write this edge as caller input, so the rule must allow the session's own id.
+const linksOnlyToSessionUser =
+  (field: string) =>
+  ({ session, inputData }: { session: Session | null; inputData?: Record<string, unknown> }) =>
+    isSessionUserOrCleared(inputData?.[field], session?.userId) &&
+    isSessionUserOrCleared(inputData?.[`${field}Id`], session?.userId)
+
 export default config({
   plugins: [
     authPlugin({
@@ -160,6 +177,11 @@ export default config({
         publishedAt: timestamp(),
         author: relationship({
           ref: 'User.posts',
+          access: {
+            read: () => true,
+            create: linksOnlyToSessionUser('author'),
+            update: linksOnlyToSessionUser('author'),
+          },
         }),
       },
       access: {
@@ -181,14 +203,15 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ resolvedData, item }) => {
-          if (resolvedData?.status === 'published' && !item?.publishedAt) {
-            return {
-              ...resolvedData,
-              publishedAt: new Date().toISOString(),
-            }
+        resolveInput: async ({ operation, resolvedData, item, context }) => {
+          const data = { ...resolvedData }
+          if (operation === 'create' && context.session?.userId) {
+            data.author = { connect: { id: context.session.userId } }
           }
-          return { ...resolvedData }
+          if (data.status === 'published' && !item?.publishedAt) {
+            data.publishedAt = new Date().toISOString()
+          }
+          return data
         },
       },
       // MCP configuration for Post list with custom tools

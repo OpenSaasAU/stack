@@ -1,7 +1,7 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
-import type { AccessControl } from '@opensaas/stack-core'
+import type { AccessControl, Session } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
 
 /**
@@ -33,6 +33,23 @@ const isAuthor: AccessControl = ({ session }) => {
 /**
  * OpenSaas Configuration with Better-Auth
  */
+function isSessionUserOrCleared(value: unknown, userId: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof userId !== 'string') return false
+  if (value === userId) return true
+  if (typeof value !== 'object' || !('connect' in value)) return false
+  const target = value.connect
+  return typeof target === 'object' && target !== null && 'id' in target && target.id === userId
+}
+
+// Not `write: 'hooks'`: the admin relationship table's pre-linked create and disconnect
+// (ADR-0018) write this edge as caller input, so the rule must allow the session's own id.
+const linksOnlyToSessionUser =
+  (field: string) =>
+  ({ session, inputData }: { session: Session | null; inputData?: Record<string, unknown> }) =>
+    isSessionUserOrCleared(inputData?.[field], session?.userId) &&
+    isSessionUserOrCleared(inputData?.[`${field}Id`], session?.userId)
+
 export default config({
   plugins: [
     authPlugin({
@@ -150,6 +167,11 @@ export default config({
         publishedAt: timestamp(),
         author: relationship({
           ref: 'User.posts',
+          access: {
+            read: () => true,
+            create: linksOnlyToSessionUser('author'),
+            update: linksOnlyToSessionUser('author'),
+          },
         }),
       },
       access: {
@@ -172,24 +194,17 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ operation, resolvedData, item }) => {
-          // If changing status to published and publishedAt isn't set yet
-          if (operation === 'create' && resolvedData?.status === 'published') {
-            return {
-              ...resolvedData,
-              publishedAt: new Date().toISOString(),
-            }
-          } else if (
-            operation === 'update' &&
-            resolvedData?.status === 'published' &&
-            !item?.publishedAt
-          ) {
-            return {
-              ...resolvedData,
-              publishedAt: new Date().toISOString(),
-            }
+        resolveInput: async ({ operation, resolvedData, item, context }) => {
+          const data = { ...resolvedData }
+          if (operation === 'create' && context.session?.userId) {
+            data.author = { connect: { id: context.session.userId } }
           }
-          return { ...resolvedData }
+          if (operation === 'create' && data.status === 'published') {
+            data.publishedAt = new Date().toISOString()
+          } else if (operation === 'update' && data.status === 'published' && !item?.publishedAt) {
+            data.publishedAt = new Date().toISOString()
+          }
+          return data
         },
         // Example validation: title must not contain "spam"
         validateInput: async (args) => {
