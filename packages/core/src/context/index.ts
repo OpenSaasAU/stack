@@ -981,23 +981,19 @@ export function getContext<TConfig extends OpenSaasConfig>(
               const visible = await relatedList.where({ id: { equals: relatedId } }).first()
               if (visible === null) return 'denied' as const
               const currentParentId = current[foreignKeyColumn]
-              const linkHidden =
-                currentParentId !== null && visible[foreignKeyColumn] !== currentParentId
+              if (currentParentId !== null && visible[foreignKeyColumn] === null) {
+                return 'denied' as const
+              }
               if (currentParentId !== expectedParentId) {
                 return visible[foreignKeyColumn] === null
                   ? ('denied' as const)
                   : ('conflict' as const)
               }
-              try {
-                const updated = await relatedList.update({
-                  where: { id: relatedId },
-                  data: { [fieldName]: null },
-                })
-                return updated === null ? ('denied' as const) : ('ok' as const)
-              } catch (error) {
-                if (linkHidden && error instanceof ValidationError) return 'denied' as const
-                throw error
-              }
+              const updated = await relatedList.update({
+                where: { id: relatedId },
+                data: { [fieldName]: null },
+              })
+              return updated === null ? ('denied' as const) : ('ok' as const)
             })
             if (outcome === 'conflict') {
               return {
