@@ -1222,6 +1222,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - Every to-one read off an included row is a null check, `NOT NULL` column or not
 - A secured read holds its whole result; bounding a large read is the caller's job
 - A row lock is two round trips, and `.forUpdate().all()` binds a bounded key set
+- Every root `update` and `delete` takes a row lock on its target and resolves it a second time before hooks run, an extra round trip per write (ADR-0078)
 - A required-foreign-key cycle is unwritable through the secured surface
 - `contains` and text equality in filter URLs are case-insensitive; a to-many count filter other than presence degrades to free text
 - An approximate vector scan under a selective access filter can return fewer rows than asked for

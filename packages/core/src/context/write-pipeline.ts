@@ -45,7 +45,12 @@ import {
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
-import type { RowLockLane } from '../secured/lock.js'
+import {
+  RowLockIdentityError,
+  RowLockLaneUnavailableError,
+  type RowLockIdentity,
+  type RowLockLane,
+} from '../secured/lock.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -275,6 +280,40 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
 }
 
 /**
+ * Take the row lock on an update/delete target, then resolve the target again
+ * under it so `originalItem`, item-based access rules and the Access Filter all
+ * see the row as it is while no one else can change it (ADR-0078). A row that is
+ * gone, or no longer in scope, resolves to `denied`.
+ */
+async function lockTarget(
+  args: WritePipelineArgs,
+  collection: WriteCollection,
+  ops: WhereCombinators,
+  gated: TargetResolution,
+): Promise<TargetResolution> {
+  const lane = args.context._rowLock
+  if (args.strategy.operation === 'create' || lane === undefined || gated.status !== 'ok') {
+    return gated
+  }
+  const { originalItem } = gated
+  if (originalItem === undefined) return gated
+  let identity: RowLockIdentity
+  try {
+    identity = lane.identity(args.listName)
+  } catch (error) {
+    if (error instanceof RowLockIdentityError || error instanceof RowLockLaneUnavailableError) {
+      return gated
+    }
+    throw error
+  }
+  const key = originalItem[identity.column]
+  if (typeof key !== 'string' && typeof key !== 'number') return gated
+  const held = await lane.lock(args.listName, identity, [key])
+  if (held.length === 0) return { status: 'denied' }
+  return args.strategy.resolveTarget(collection, ops)
+}
+
+/**
  * Build an {@link AccessContext} whose `db`/`ormHandle` target the transaction
  * client `tx`, so a `context.db` write a hook performs runs inside — and rolls
  * back with — this write's transaction (ADR-0010).
@@ -383,7 +422,8 @@ async function runWriteInTransaction(
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than
   // reading the target twice; falls back to resolving here when invoked
   // directly (e.g. a unit test) without that bracket.
-  const resolution = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
+  const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
+  const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
     return null
   }
