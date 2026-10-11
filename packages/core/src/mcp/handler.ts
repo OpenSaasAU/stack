@@ -82,6 +82,15 @@ function requiredCrudScopes(
   return asScopeList(listConfig.mcp?.scopes?.[key] ?? config.mcp?.scopes?.[key])
 }
 
+function requiredCustomToolScopes(
+  config: OpenSaasConfig,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
+  listConfig: ListConfig<any>,
+  customTool: McpCustomTool,
+): string[] {
+  return customTool.scopes ?? requiredCrudScopes(config, listConfig, 'create')
+}
+
 function missingScopes(session: McpSession, required: string[]): string[] {
   const held = session.scopes ?? []
   return required.filter((scope) => !held.includes(scope))
@@ -473,7 +482,11 @@ async function handleToolsList(
 
     if (listConfig.mcp?.customTools) {
       for (const customTool of listConfig.mcp.customTools) {
-        if (missingScopes(session, customTool.scopes ?? []).length > 0) continue
+        if (
+          missingScopes(session, requiredCustomToolScopes(config, listConfig, customTool)).length >
+          0
+        )
+          continue
         tools.push({
           name: customTool.name,
           description: customTool.description,
@@ -854,11 +867,13 @@ async function handleCustomTool(
   const context = await getContext(toContextSession(session))
 
   let customTool: McpCustomTool | undefined
+  let owningList: ListConfig<any> | undefined // eslint-disable-line @typescript-eslint/no-explicit-any -- List config generics vary per list
   try {
     for (const listConfig of Object.values(config.lists)) {
       const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
       if (found && (await listReachableOverMcp(listConfig, context))) {
         customTool = found
+        owningList = listConfig
         break
       }
     }
@@ -875,7 +890,12 @@ async function handleCustomTool(
     return createErrorResponse(`Unknown tool: ${toolName}`, id)
   }
 
-  const missing = missingScopes(session, customTool.scopes ?? [])
+  const missing = missingScopes(
+    session,
+    owningList
+      ? requiredCustomToolScopes(config, owningList, customTool)
+      : (customTool.scopes ?? []),
+  )
   if (missing.length > 0) return scopeRefusal(toolName, missing, id)
 
   let input = args

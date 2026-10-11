@@ -3059,7 +3059,12 @@ export type McpCustomTool = {
   /**
    * OAuth scopes the session's token must carry to see or call this tool.
    * A token missing any of them gets a tool error naming them, and the tool is
-   * left out of `tools/list`. Unset means no scope is required.
+   * left out of `tools/list`.
+   *
+   * On a list custom tool, omitting this requires the configured write scope
+   * (`mcp.scopes.write`, or the list's own override) when scopes are
+   * configured, and nothing otherwise. Pass `[]` to opt out explicitly.
+   * A plugin-registered tool with no scopes requires nothing.
    */
   scopes?: string[]
   /**
