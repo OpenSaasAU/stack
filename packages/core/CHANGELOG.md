@@ -422,6 +422,7 @@
 - [#890](https://github.com/OpenSaasAU/stack/pull/890) [`17eb72f`](https://github.com/OpenSaasAU/stack/commit/17eb72f0a9a4b7508e3f318da66bb8d4c6cbd705) Thanks [@list({](https://github.com/list({)! - A computed field — any field carrying a `resolveOutput` hook, virtual or not — is now computed if and only if a read is actually going to return it. A fragment `query` that selects three fields no longer runs every `resolveOutput` on the list and discards the rest: an unselected field's field-level read access is never evaluated and its hook never runs. Its declared relations (`needs`, ADR-0025) are fetched under exactly the same condition, folded recursively at every nesting level — a nested fragment selecting a subset computes only that subset, while a nested `include` still computes every computed field at that level, matching bare and `include`-based reads, which are unaffected: they still compute every computed field on the list, exactly as before. See ADR-0027.
 
   **This is a silent break — detect it before you upgrade, the same way ADR-0024's and ADR-0026's were.** Two independent behaviors changed with no thrown error:
+
   1. **A hook's `item` never carries another computed field's resolved output, on any read path.** Previously a virtual field received the already-assembled, already-resolved object, so a virtual field could read an _earlier-declared_ virtual (or any field carrying its own `resolveOutput`, e.g. a `password()`'s wrapper or a formatted display field) and see its resolved value — working only by declaration order, with reordering two fields silently changing the result. Now every computed field's hook sees only the row's stored columns and its own declared dependencies; reaching for a sibling that is itself computed finds nothing there (or its raw stored form, never the wrapped/resolved value), the same as reaching for a field that was never declared. **Grep your config for a `resolveOutput` whose `item` reads a field that is itself computed** — virtual fields reading other virtual fields, or a hook reading a stored field that carries its own `resolveOutput` (a password wrapper, a formatted date) — and recompute from the shared stored columns instead of relying on another field's hook having already run.
   2. **A field's hook no longer runs just because it's on the list — only because a read selects it.** If you relied on a `resolveOutput` hook running for a side effect (logging, cache warming) on every read regardless of a fragment's own field selection, that side effect now only fires when the fragment actually names the field. **Grep for a fragment `query` that intentionally omits a field whose hook you were relying on for a side effect**, and select that field explicitly (or move the side effect to a hook that isn't projection-gated, e.g. `afterOperation`).
 
@@ -555,6 +556,7 @@
 - [#853](https://github.com/OpenSaasAU/stack/pull/853) [`d0c94a9`](https://github.com/OpenSaasAU/stack/commit/d0c94a994e8be67742c97b6757ca4dd4e454f682) Thanks [@borisno2](https://github.com/borisno2)! - **This break is silent.** A `context.db` read with no `include` (and no fragment `query`) used to auto-include every readable relationship of the list, recursing up to 5 levels deep. It now returns the row's own columns plus its virtual fields only — matching Prisma's own semantics for a bare read — and relations arrive only when you name them. A read that used to return `post.author` now returns no `author` key at all: no error, no warning, just less data (ADR-0024). This applies uniformly to `findUnique`, `findMany`, and a singleton's `get()`, under sudo and under a session alike. Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`.
 
   **Detect call sites that need updating:**
+
   - Grep for bare reads: `context.db.*.find*` calls (or a singleton's `.get()`) with no `include` and no `query` argument, whose result is later used to access a relationship field.
   - Grep for `resolveOutput` hooks on `virtual` fields that read a relation off `item` (e.g. `item.author`, `item.posts`) — these silently degrade the same way, since a hook's own `context.db` read is subject to the same rule.
 
@@ -640,11 +642,7 @@
 
   try {
     await context.db.post.findMany({
-      include: {
-        author: {
-          include: {/* … nested past the depth cap */},
-        },
-      },
+      include: { author: { include: {/* … nested past the depth cap */} } },
     })
   } catch (err) {
     if (err instanceof AccessScopeDepthExceededError) {
@@ -725,6 +723,7 @@
   ```
 
   New exports:
+
   - `@opensaas/stack-core`: `resolveNavCounts`, `isListQueryStaticallyDenied`
   - `@opensaas/stack-ui`: `Avatar` primitive, `AvatarLabelCell`, and the
     `getInitials`, `getAvatarTone`, `AVATAR_TONES` helpers. New Slots:
@@ -736,12 +735,7 @@
 
   ```typescript
   Post: list({
-    fields: {
-      title: text(),
-      status: select({
-        options: [/* ... */],
-      }),
-    },
+    fields: { title: text(), status: select({ options: [/* ... */] }) },
     ui: {
       listView: {
         bulkActions: [
@@ -851,6 +845,7 @@
   (filter-scoped) denials surface at commit as a revert. Non-editable cells keep
   click-to-navigate; main list tables are unchanged (this is Relationship-table
   only).
+
   - `@opensaas/stack-core`: the generic server action gains a distinct
     `updateRelated` result shape (`{ updated, error?, fieldErrors? }`), and
     `checkFieldAccess` is exposed on `@opensaas/stack-core/internal` so the UI can
@@ -1018,6 +1013,7 @@
   The read-only Relationship tables on a record's edit page (issue [#734](https://github.com/OpenSaasAU/stack/issues/734)) previously
   fetched every related row unbounded. They now fetch a bounded page of related rows
   and surface the full access-scoped total in the footer.
+
   - **Bounded fetch:** each to-many Relationship table fetches at most a default cap
     of related rows (`DEFAULT_ITEM_VIEW_TAKE`, 10), overridable per relationship via
     `ui.itemView.take`. Rows are still fetched through the secured context, so only
@@ -1080,6 +1076,7 @@
 ### Minor Changes
 
 - [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - MCP runtime: serve plugin-registered tools, support Zod input schemas, and pass custom session fields through to access control
+
   - Tools registered by plugins via `registerMcpTool` (e.g. the RAG plugin's `semantic_search_*` tools) are now listed by `tools/list` and callable via `tools/call` — previously they were stored but never served.
   - Custom tool `inputSchema` may now be a Zod schema or a plain JSON Schema object. Zod schemas are converted to JSON Schema for `tools/list` and validated on `tools/call` (invalid input returns a JSON-RPC `-32602` error):
 

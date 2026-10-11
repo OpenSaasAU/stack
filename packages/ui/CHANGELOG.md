@@ -211,6 +211,7 @@
   ```
 
   New exports:
+
   - `@opensaas/stack-core`: `resolveNavCounts`, `isListQueryStaticallyDenied`
   - `@opensaas/stack-ui`: `Avatar` primitive, `AvatarLabelCell`, and the
     `getInitials`, `getAvatarTone`, `AVATAR_TONES` helpers. New Slots:
@@ -222,12 +223,7 @@
 
   ```typescript
   Post: list({
-    fields: {
-      title: text(),
-      status: select({
-        options: [/* ... */],
-      }),
-    },
+    fields: { title: text(), status: select({ options: [/* ... */] }) },
     ui: {
       listView: {
         bulkActions: [
@@ -337,6 +333,7 @@
   (filter-scoped) denials surface at commit as a revert. Non-editable cells keep
   click-to-navigate; main list tables are unchanged (this is Relationship-table
   only).
+
   - `@opensaas/stack-core`: the generic server action gains a distinct
     `updateRelated` result shape (`{ updated, error?, fieldErrors? }`), and
     `checkFieldAccess` is exposed on `@opensaas/stack-core/internal` so the UI can
@@ -536,6 +533,7 @@
   The read-only Relationship tables on a record's edit page (issue [#734](https://github.com/OpenSaasAU/stack/issues/734)) previously
   fetched every related row unbounded. They now fetch a bounded page of related rows
   and surface the full access-scoped total in the footer.
+
   - **Bounded fetch:** each to-many Relationship table fetches at most a default cap
     of related rows (`DEFAULT_ITEM_VIEW_TAKE`, 10), overridable per relationship via
     `ui.itemView.take`. Rows are still fetched through the secured context, so only
@@ -616,6 +614,7 @@
 - [#723](https://github.com/OpenSaasAU/stack/pull/723) [`a7babf9`](https://github.com/OpenSaasAU/stack/commit/a7babf9c6f579c333462adf58018a594d09790c6) Thanks [@borisno2](https://github.com/borisno2)! - Admin chrome polish pass: consistent page headers, designed empty states, skeleton coverage, nav active states, and table density (issue [#710](https://github.com/OpenSaasAU/stack/issues/710)).
 
   The prebuilt admin now shares a restrained, token-driven chrome across every screen. Two new composable components are exported and used throughout:
+
   - `PageHeader` — the consistent title/description/back-link/actions pattern used by the dashboard, list, item, and singleton screens. Exposes `data-slot` parts (`page-header`, `page-header-title`, `page-header-description`, `page-header-actions`, `page-header-back`, `page-header-icon`) and a structured `classNames` contract. An opt-in `gradient` prop frames the dashboard — the design system's single signature gradient moment.
   - `EmptyState` — a designed empty surface (icon + title + description + actions) now shown on every list and relationship surface. Also exposes `data-slot` parts and a `classNames` contract.
 
@@ -633,6 +632,7 @@
   ```
 
   Also included:
+
   - Full-screen skeleton fallbacks (`DashboardSkeleton`, `ListViewSkeleton`, `ItemFormSkeleton`, `PageHeaderSkeleton`) wired through a `Suspense` boundary in `AdminUI`, so every data-loading screen streams behind a placeholder of the same shape.
   - Navigation active states now use `aria-current="page"` and a flat solid brand fill (no gradient/pulse); nav and dashboard icons use `lucide-react` instead of emoji.
   - Tables right-align numeric columns and use tabular numerals; a new `isNumericField(fieldType)` helper is exported.
@@ -647,6 +647,7 @@
   fully reskins the admin with no token falling through to another preset. Presets
   also carry their own shape and elevation, and the theme compiler merges them
   under any config overrides:
+
   - `modern` (default): the restrained, low-chroma direction with one saturated
     brand color and the gradient pair as garnish. Inherits the stylesheet's radius
     and soft shadows (kept in sync with `globals.css`).
@@ -670,6 +671,7 @@
   The admin chrome now ships a light/dark/system color-scheme control built on the
   `light-dark()` token contract. A `data-theme` attribute on the document root pins
   `color-scheme` (overriding the OS preference); its absence follows the system.
+
   - `ThemeToggle` — a client component that cycles light → dark → system, writes
     `data-theme` on `<html>`, persists the choice to `localStorage`
     (`opensaas-theme`), and restores it on mount. It appears in the default Admin
@@ -703,6 +705,7 @@
   **Field components** now share one label / help / error rhythm via a small shell (`FieldRoot`, `FieldLabel`, `FieldHelp`, `FieldError`, `FieldWarning`, `FieldReadValue`). Every field consumes theme tokens only — the previously hardcoded status colours (a green upload check, an amber JSON warning) now use the `success` / `warning` tokens. All fields accept a consistent `helpText` prop.
 
   **Composites accept structured, strongly-typed `classNames` slots** merged per part via tailwind-merge, and every part carries a stable `data-slot`:
+
   - `ListTable` — `classNames={{ root, frame, table, header, headerRow, headerCell, body, row, cell, actionsHeader, actionsCell, empty }}`; root `data-slot="list-table"`.
   - `SearchBar` — `classNames={{ root, form, inputWrapper, input, clearButton, submit }}`; root `data-slot="search-bar"`.
   - `DeleteButton` — `classNames={{ button, error }}`; error `data-slot="delete-button-error"`.
@@ -713,6 +716,7 @@
 
   ```tsx
   import { Badge } from '@opensaas/stack-ui/primitives'
+
   ;<Badge variant={post.status === 'published' ? 'success' : 'warning'}>{post.status}</Badge>
   ```
 

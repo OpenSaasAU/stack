@@ -67,12 +67,14 @@
   **Workspace-wide: pins `@better-auth/utils` to `0.5.0` via a root `pnpm.overrides`.** better-auth 1.7.1's own published packages disagree on this transitive dependency — `better-auth` pins it at exactly `0.4.2` while `better-call` (used by `@better-auth/core`, `@better-auth/oauth-provider`, and `@better-auth/mcp`) requires `^0.5.0` — so pnpm resolves two separate physical instances of `@better-auth/core` depending on which peer chain a given package sits in. That split is invisible at runtime but breaks TypeScript: `jwt()` (from `better-auth/plugins`) and `mcp()` (from `@better-auth/mcp`) end up typed against different `@better-auth/core` instances, so `betterAuthPlugins: [jwt(), mcp(...)]` fails to type-check with a `BetterAuthPlugin` structural-mismatch error even though both plugins are otherwise correctly configured. The override forces one instance workspace-wide. If you hit the same error in your own app, add the equivalent override to your own `package.json`.
 
   Also fixes two `deriveAuthLists` gaps surfaced by the MCP plugin's expanded schema:
+
   - the scalar-field builder now threads a static `defaultValue` through for `number`-typed fields (`integer()`/`bigInt()`), matching the existing `string`/`boolean` behavior (e.g. `oauthResource.policyVersion`, which defaults to `1`)
   - a plugin table that declares only one of `createdAt`/`updatedAt` upstream (several of the new OAuth tables declare `createdAt` alone) is no longer silently dropped — it derives as an ordinary required column instead. Previously any model with an asymmetric timestamp pair had the field skipped entirely with no replacement, which crashed the first real write that supplied it (better-auth's own OAuth Provider does this at `betterAuth()` init time, seeding an `oauthResource` row)
 
 - [#1019](https://github.com/OpenSaasAU/stack/pull/1019) [`77b7314`](https://github.com/OpenSaasAU/stack/commit/77b731452f24045995a1d3a2ffede0246d5743d3) Thanks [@borisno2](https://github.com/borisno2)! - Extend the ADR-0036 credential field read-deny from the four base Auth models to better-auth plugin tables, and add a `credentialFields` config option for plugins the stack doesn't seed a set for.
 
   The following fields now ship field-level `read`-denied, on top of the existing `Session.token`/`Verification.value`/`Account.password`/`accessToken`/`refreshToken`/`idToken`:
+
   - `oauthClient.clientSecret`, `oauthAccessToken.token`, `oauthRefreshToken.token` (the `mcp`/oauth-provider plugin)
   - `twoFactor.secret`, `twoFactor.backupCodes` (`twoFactor()`)
 
@@ -114,6 +116,7 @@
   No config changes are required — `authPlugin()`/`getAuthLists()` are unchanged. If your app already had an MCP-enabled config generated with an older version, regenerate and diff your schema: the OAuth tables' `userId` columns gain a foreign key, cascade and index they didn't have before.
 
 - [#1013](https://github.com/OpenSaasAU/stack/pull/1013) [`49687ea`](https://github.com/OpenSaasAU/stack/commit/49687eaf8ad80696d62e2616ba3dfef992985282) Thanks [@borisno2](https://github.com/borisno2)! - BREAKING (pre-1.0): The derived auth lists' credential-bearing fields now ship with a field-level `read` deny, so opening operation-level access to a list no longer exposes them:
+
   - `Session.token`
   - `Verification.value`
   - `Account.password`
@@ -260,6 +263,7 @@
   If not provided, reset/verification emails are logged to console instead of sent — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled and these callbacks are configured.
 
   Two related fixes, both changing existing behavior:
+
   - `session.updateAge` is retyped from `boolean` to `number | false` — the number of seconds between session refreshes, passed straight through to better-auth's own `session.updateAge` instead of being computed as `expiresIn / 10`. The default changes from `true` to `86400` (1 day), matching better-auth's own default. Update any `updateAge: true` config to a duration in seconds (e.g. `86400`). `updateAge: false` now correctly maps to better-auth's `disableSessionRefresh: true` (previously it mapped to `updateAge: 0`, which better-auth treats as "refresh on every request" — the opposite of disabling refresh).
   - `getSessionFromAuth(auth, sessionFields, headers)` gains a required third `headers: Headers` parameter. Previously it always called `auth.api.getSession({ headers: new Headers() })`, an empty header set that could never resolve a session cookie, so the function always returned `null`. Callers must now pass the request's real headers (e.g. Next.js `await headers()`).
 
