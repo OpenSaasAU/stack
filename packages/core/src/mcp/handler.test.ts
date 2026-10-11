@@ -1680,6 +1680,81 @@ describe('the MCP surface', () => {
     )
   })
 
+  describe('custom tool default scope', () => {
+    const asScopes =
+      (scopes: string[]): McpSessionProvider =>
+      async () => ({ userId: 'user-123', scopes })
+    const tool = (scopes?: string[]): McpCustomTool => ({
+      name: 'doThing',
+      description: 'd',
+      inputSchema: z.object({}),
+      ...(scopes ? { scopes } : {}),
+      handler: async () => ({ ran: true }),
+    })
+    const build = (mcpScopes: { read?: string; write?: string } | undefined, t: McpCustomTool) => {
+      const base = schemaConfig()
+      return {
+        ...base,
+        mcp: { ...base.mcp, enabled: true, scopes: mcpScopes },
+        lists: {
+          ...base.lists,
+          User: {
+            ...base.lists.User,
+            access: { operation: { query: () => true, create: () => true } },
+            mcp: { customTools: [t] },
+          },
+        },
+      } satisfies OpenSaasConfig
+    }
+    const listed = async (config: OpenSaasConfig, provider: McpSessionProvider) => {
+      const { body } = await rpc('tools/list', undefined, config, provider)
+      return (body?.result as { tools: ToolList }).tools.map((x) => x.name)
+    }
+    const call = (config: OpenSaasConfig, provider: McpSessionProvider) =>
+      rpc('tools/call', { name: 'doThing', arguments: {} }, config, provider)
+    const text = (body: Record<string, unknown> | null) =>
+      (body?.result as { content: { text: string }[] }).content[0].text
+    const scopes = { read: 'mcp:read', write: 'mcp:write' }
+
+    test(
+      'a tool omitting scopes requires the write scope',
+      async () => {
+        const config = build(scopes, tool())
+        const readOnly = asScopes(['mcp:read'])
+        expect(await listed(config, readOnly)).not.toContain('doThing')
+        const refused = await call(config, readOnly)
+        expect(text(refused.body)).toContain('requires the OAuth scope(s): mcp:write')
+
+        const writer = asScopes(['mcp:write'])
+        expect(await listed(config, writer)).toContain('doThing')
+        expect(text((await call(config, writer)).body)).toContain('ran')
+      },
+      BOOT,
+    )
+
+    test(
+      'an explicit empty scopes list stays open to a read-only token',
+      async () => {
+        const config = build(scopes, tool([]))
+        const readOnly = asScopes(['mcp:read'])
+        expect(await listed(config, readOnly)).toContain('doThing')
+        expect(text((await call(config, readOnly)).body)).toContain('ran')
+      },
+      BOOT,
+    )
+
+    test(
+      'with mcp.scopes unset nothing is enforced',
+      async () => {
+        const config = build(undefined, tool())
+        const none = asScopes([])
+        expect(await listed(config, none)).toContain('doThing')
+        expect(text((await call(config, none)).body)).toContain('ran')
+      },
+      BOOT,
+    )
+  })
+
   describe('a throwing query rule on tools/call', () => {
     function throwing(): OpenSaasConfig {
       const base = schemaConfig()

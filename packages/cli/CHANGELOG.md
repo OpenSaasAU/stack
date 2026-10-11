@@ -304,7 +304,6 @@
 - [#853](https://github.com/OpenSaasAU/stack/pull/853) [`d0c94a9`](https://github.com/OpenSaasAU/stack/commit/d0c94a994e8be67742c97b6757ca4dd4e454f682) Thanks [@borisno2](https://github.com/borisno2)! - **This break is silent.** A `context.db` read with no `include` (and no fragment `query`) used to auto-include every readable relationship of the list, recursing up to 5 levels deep. It now returns the row's own columns plus its virtual fields only — matching Prisma's own semantics for a bare read — and relations arrive only when you name them. A read that used to return `post.author` now returns no `author` key at all: no error, no warning, just less data (ADR-0024). This applies uniformly to `findUnique`, `findMany`, and a singleton's `get()`, under sudo and under a session alike. Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`.
 
   **Detect call sites that need updating:**
-
   - Grep for bare reads: `context.db.*.find*` calls (or a singleton's `.get()`) with no `include` and no `query` argument, whose result is later used to access a relationship field.
   - Grep for `resolveOutput` hooks on `virtual` fields that read a relation off `item` (e.g. `item.author`, `item.posts`) — these silently degrade the same way, since a hook's own `context.db` read is subject to the same rule.
 
@@ -439,7 +438,6 @@
 ### Minor Changes
 
 - [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - MCP feature wizards now generate current-API code for all five features
-
   - `comments`, `file-upload`, and `semantic-search` wizards previously returned "coming soon" stubs — they now generate real config (Comment list with moderation/threading, storage config with local/S3/R2/Vercel Blob providers, ragPlugin with OpenAI or Ollama embeddings and `searchable()` fields).
   - The `authentication` wizard output was rewritten to the current API: `authPlugin` with `socialProviders`/`extendUserList`/`access` (ADR-0013), the required `prismaClientConstructor`, `SignInForm`/`SignUpForm` with the `authClient` prop, and `lib/auth.ts` wiring via `createAuth(config, rawOpensaasContext)`.
   - The `blog` wizard now emits valid `select()` options, wires Category/Tag relationships on both sides, and uses filter-based query access.

@@ -226,6 +226,7 @@ export default config({
         customTools: [
           {
             name: 'publishPost',
+            scopes: ['mcp:write'],
             description: 'Publish a draft post and set publishedAt timestamp',
             inputSchema: z.object({
               postId: z.string(),
@@ -254,6 +255,7 @@ export default config({
           },
           {
             name: 'unpublishPost',
+            scopes: ['mcp:write'],
             description: 'Unpublish a post and clear publishedAt timestamp',
             inputSchema: z.object({
               postId: z.string(),

@@ -466,7 +466,7 @@ lists: {
 ```
 
 - `query` tools need the `read` scope(s); `create`, `update` and `delete` need the `write` scope(s).
-- A custom tool (`mcp.customTools` or a plugin's `registerMcpTool`) can declare `scopes: ['reports:run']`.
+- A custom tool (`mcp.customTools` or a plugin's `registerMcpTool`) can declare `scopes: ['reports:run']`. A list custom tool that omits `scopes` requires the configured `write` scope (fail closed) when `mcp.scopes` is set; declare `scopes: []` to leave it open to any token.
 - A token missing a scope gets a tool error naming it, and the tool is left out of that session's `tools/list`.
 - Scopes gate tools only; access control still decides rows and fields.
 - In your own route handlers, `hasScopes(session, [...])` from `@opensaas/stack-auth/mcp` does the same check.
