@@ -967,22 +967,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
             }
             const outcome = await transaction(async (tx) => {
               const relatedList = tx.db[props.listKey]
-              // The secured read establishes existence/visibility (Silent
-              // failure: absent-or-denied is `null` either way) and takes the
-              // row lock. Its OWN columns are unfit for the comparison below
-              // for two independent reasons: they are the row as of BEFORE
-              // the lock (ADR-0047), and — regardless of any race at all — a
-              // caller whose field- or relation-level read access is scoped
-              // sees this same column narrowed to `null` by Field Visibility
-              // (`narrowUnincludedForeignKeys`), which would misread a
-              // same-parent row as a conflict. So the value compared here
-              // comes from a second, unscoped statement issued directly
-              // against the transaction's own ORM handle (never the outer
-              // one — a second connection deadlocks the dev database's
-              // single-connection pool, ADR-0063) — after the lock is held,
-              // so it is the row's true current value and cannot go stale
-              // under a concurrent write (no one else can commit one while
-              // this transaction holds the lock).
+              // The secured read locks the row, but its columns are pre-lock and
+              // may be narrowed by Field Visibility, so the comparison value is
+              // re-read unscoped on the transaction's own handle (a second
+              // connection deadlocks the dev pool, ADR-0063). A stored link the
+              // session's own read cannot see is denied whatever `parentId` was
+              // sent, so a guess never confirms a hidden row (#1818).
               const locked = await relatedList
                 .where({ id: { equals: relatedId } })
                 .forUpdate()
@@ -1009,23 +999,19 @@ export function getContext<TConfig extends OpenSaasConfig>(
               const visible = await relatedList.where({ id: { equals: relatedId } }).first()
               if (visible === null) return 'denied' as const
               const currentParentId = current[foreignKeyColumn]
-              const linkHidden =
-                currentParentId !== null && visible[foreignKeyColumn] !== currentParentId
+              if (currentParentId !== null && visible[foreignKeyColumn] === null) {
+                return 'denied' as const
+              }
               if (currentParentId !== expectedParentId) {
                 return visible[foreignKeyColumn] === null
                   ? ('denied' as const)
                   : ('conflict' as const)
               }
-              try {
-                const updated = await relatedList.update({
-                  where: { id: relatedId },
-                  data: { [fieldName]: null },
-                })
-                return updated === null ? ('denied' as const) : ('ok' as const)
-              } catch (error) {
-                if (linkHidden && error instanceof ValidationError) return 'denied' as const
-                throw error
-              }
+              const updated = await relatedList.update({
+                where: { id: relatedId },
+                data: { [fieldName]: null },
+              })
+              return updated === null ? ('denied' as const) : ('ok' as const)
             })
             if (outcome === 'conflict') {
               return {

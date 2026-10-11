@@ -339,51 +339,6 @@ describe('the relationship table server actions over a real database', () => {
   )
 
   /**
-   * The compare-and-set must not read the row it is comparing through the
-   * SECURED surface: `narrowUnincludedForeignKeys` nulls an un-included
-   * to-one's foreign key whenever the related list's own `query` access
-   * denies this session — independent of any race at all — which would
-   * otherwise misread "still ada's, but ada is invisible to me" as "someone
-   * re-pointed this row" and refuse a disconnect that has nothing wrong with
-   * it. Author's `query` access denies every session here; Post's own
-   * `update` access (what actually decides this write) stays open.
-   */
-  test(
-    'removeRelated disconnect with a matching parentId succeeds even when the related list hides the parent row',
-    async () => {
-      const authorId = await seedAuthor('ada')
-      const post = await harness.context.db.Post.create({
-        data: { title: 'ship it', author: { connect: { id: authorId } } },
-      })
-
-      const hiddenAuthorConfig: OpenSaasConfig = {
-        ...schemaConfig(),
-        lists: {
-          ...schemaConfig().lists,
-          Author: {
-            ...schemaConfig().lists.Author,
-            access: { operation: { ...OPEN, query: () => false } },
-          },
-        },
-      }
-      const blindToAuthor = contextAt(hiddenAuthorConfig, { userId: 'u1' })
-
-      const result = await blindToAuthor.serverAction({
-        listKey: 'Post',
-        action: 'removeRelated',
-        mode: 'disconnect',
-        id: String(post?.id),
-        field: 'author',
-        parentId: authorId,
-      })
-
-      expect(result).toEqual({ removed: true })
-      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: null }])
-    },
-    BOOT,
-  )
-
-  /**
    * The lost-update race the issue describes: Alice's form rendered Post P as
    * ada's, Bob re-points it to grace before Alice submits, and Alice's stale
    * disconnect must not revert Bob's write. The row is locked and its CURRENT
@@ -476,6 +431,49 @@ describe('the relationship table server actions over a real database', () => {
         { title: 'loose', author: null },
         { title: 'ship it', author: ada },
       ])
+    },
+    BOOT,
+  )
+
+  test(
+    'removeRelated disconnect denies a hidden link whatever parentId is sent, and still clears it without one',
+    async () => {
+      const ada = await seedAuthor('ada')
+      const grace = await seedAuthor('grace')
+      const post = await harness.context.db.Post.create({
+        data: { title: 'ship it', author: { connect: { id: ada } } },
+      })
+
+      const blindToAuthor: OpenSaasConfig = {
+        ...schemaConfig(),
+        lists: {
+          ...schemaConfig().lists,
+          Author: {
+            ...schemaConfig().lists.Author,
+            access: { operation: { ...OPEN, query: () => false } },
+          },
+        },
+      }
+      const eve = contextAt(blindToAuthor, { userId: 'eve' })
+      const probe = (parentId?: string) =>
+        eve.serverAction({
+          listKey: 'Post',
+          action: 'removeRelated',
+          mode: 'disconnect',
+          id: String(post?.id),
+          field: 'author',
+          ...(parentId === undefined ? {} : { parentId }),
+        })
+
+      const wrong = await probe(grace)
+      const right = await probe(ada)
+
+      expect(wrong).toEqual({ removed: false, error: 'Access denied or operation failed' })
+      expect(right).toEqual(wrong)
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: ada }])
+
+      expect(await probe()).toEqual({ removed: true })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'ship it', author: null }])
     },
     BOOT,
   )
