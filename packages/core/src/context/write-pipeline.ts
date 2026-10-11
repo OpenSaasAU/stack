@@ -45,7 +45,12 @@ import {
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
-import type { RowLockLane } from '../secured/lock.js'
+import {
+  RowLockIdentityError,
+  RowLockLaneUnavailableError,
+  type RowLockIdentity,
+  type RowLockLane,
+} from '../secured/lock.js'
 // NOTE: `index.ts` imports from this module too — this is an intentional cyclic
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
@@ -292,7 +297,15 @@ async function lockTarget(
   }
   const { originalItem } = gated
   if (originalItem === undefined) return gated
-  const identity = lane.identity(args.listName)
+  let identity: RowLockIdentity
+  try {
+    identity = lane.identity(args.listName)
+  } catch (error) {
+    if (error instanceof RowLockIdentityError || error instanceof RowLockLaneUnavailableError) {
+      return gated
+    }
+    throw error
+  }
   const key = originalItem[identity.column]
   if (typeof key !== 'string' && typeof key !== 'number') return gated
   const held = await lane.lock(args.listName, identity, [key])
@@ -410,9 +423,6 @@ async function runWriteInTransaction(
   // reading the target twice; falls back to resolving here when invoked
   // directly (e.g. a unit test) without that bracket.
   const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
-  if (gated.status === 'denied') {
-    return null
-  }
   const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
     return null

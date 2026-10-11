@@ -19,3 +19,4 @@ The pre-transaction gate stays, so a denied write still fires no `beforeTransact
 - One extra round trip for the lock and a second target resolution on every root update and delete.
 - The lock is taken on the target's identity; scope is checked by the re-resolution, so a write waiting on a row that moved out of scope returns `null` once the lock is granted.
 - Isolation levels are unchanged (ADR-0042). Locking rows touched by `connect` reachability checks is out of scope.
+- A list with no single-column primary key, and a context whose client cannot compose the lock statement, write without the lock rather than refusing writes that worked before.
