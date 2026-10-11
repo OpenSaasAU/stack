@@ -119,7 +119,7 @@ function refuseMultiColumnTransformations(
   transformations: Record<string, ImageTransformationConfig> | undefined,
 ): void {
   if (!isMultiColumn(db?.columns)) return
-  if (transformations === undefined || Object.keys(transformations).length === 0) return
+  if (transformations == null || Object.keys(transformations).length === 0) return
   throw new Error(
     'image() sets both db.columns (multi-column mode) and transformations. Multi-column mode has ' +
       'no column to store the generated variants, so they would be uploaded and never recorded. ' +
@@ -567,6 +567,7 @@ export function file<
  * Creates an image upload field with optional transformations
  *
  * Uses JSON field backing to store image metadata including dimensions, transformations, etc.
+ * `transformations` cannot be combined with `db.columns` (multi-column mode); the field throws.
  *
  * @example
  * ```typescript
@@ -681,7 +682,7 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
-                transformations: fieldConfig.transformations,
+                transformations: multiColumn ? undefined : fieldConfig.transformations,
               },
             )) as ImageMetadata
 

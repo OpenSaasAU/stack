@@ -104,7 +104,17 @@ describe('image() / file() multi-column mode', () => {
           db: { columns: 'keystone' },
           transformations: { thumb: { width: 100 } },
         }),
-      ).toThrow(/db\.columns.*transformations/)
+      ).toThrow(/image\(\) sets both db\.columns .* and transformations/)
+      expect(() =>
+        image({
+          storage: 'images',
+          db: { columns: { mode: 'keystone', map: { url: 'img_url' } } },
+          transformations: { thumb: { width: 100 } },
+        }),
+      ).toThrow(/transformations/)
+      expect(() =>
+        image({ storage: 'images', db: { columns: 'keystone' }, transformations: {} }),
+      ).not.toThrow()
       expect(() => image({ storage: 'images', db: { columns: 'keystone' } })).not.toThrow()
       expect(() =>
         image({ storage: 'images', transformations: { thumb: { width: 100 } } }),
