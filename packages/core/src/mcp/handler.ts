@@ -144,7 +144,7 @@ export function createMcpHandlers(options: {
   const basePath = config.mcp.basePath || '/api/mcp'
 
   const handler = async (req: Request): Promise<Response> => {
-    const session = await getSession(req)
+    const session = await getSession(req.clone())
     if (!session) {
       return new Response(null, {
         status: 401,

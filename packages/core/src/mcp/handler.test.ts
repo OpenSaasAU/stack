@@ -499,6 +499,7 @@ describe('the MCP surface', () => {
         const seen: Array<{ method: string; url: string }> = []
         const handlers = handlersFor(schemaConfig(), async (req) => {
           seen.push({ method: req.method, url: req.url })
+          await req.text()
           return { userId: 'user-123' }
         })
 
