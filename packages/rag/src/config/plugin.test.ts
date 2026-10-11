@@ -11,7 +11,8 @@ import {
 } from '@opensaas/stack-core/extend'
 import { WriteCollectionMissingError } from '@opensaas/stack-core'
 import { embedding } from '../fields/embedding.js'
-import { text } from '@opensaas/stack-core/fields'
+import { json, text } from '@opensaas/stack-core/fields'
+import { searchable } from '../fields/searchable.js'
 import { registerEmbeddingProvider } from '../providers/index.js'
 import type { EmbeddingProvider } from '../providers/types.js'
 import type { StoredEmbedding } from '../index.js'
@@ -1232,6 +1233,23 @@ describe('ragPlugin', () => {
   })
 
   describe('beforeGenerate', () => {
+    const searchableOn = (source: FieldConfig): OpenSaasConfig => ({
+      ...articleWithEmbedding(3),
+      lists: { Article: { fields: { body: searchable(source, { dimensions: 3 }) } } },
+    })
+
+    it('refuses a searchable() over a non-text source, naming the list and field', () => {
+      const plugin = ragPlugin({ provider: { type: 'openai', apiKey: 'k' } })
+      expect(() => plugin.beforeGenerate!(searchableOn(json()))).toThrow(
+        /"Article\.body" is a json\(\) wrapped in searchable\(\)/,
+      )
+    })
+
+    it('accepts a searchable() over text()', () => {
+      const plugin = ragPlugin({ provider: { type: 'openai', apiKey: 'k' } })
+      expect(() => plugin.beforeGenerate!(searchableOn(text()))).not.toThrow()
+    })
+
     const listsWith = articleWithEmbedding
 
     it('passes when the declared dimension matches the provider model', () => {

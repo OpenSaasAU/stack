@@ -33,7 +33,7 @@ import type { SearchableOptions, SearchableMetadata } from '../config/types.js'
  * }
  * ```
  *
- * @param field - The field to make searchable (usually text() or richText())
+ * @param field - The field to make searchable (must be text(); other types fail `opensaas generate`)
  * @param options - Embedding provider and dimensions for the companion embedding field
  * @returns The same field with searchable metadata attached
  */

@@ -438,6 +438,8 @@ ragPlugin({
 `searchable(baseField, options)` keeps the base field as authored and adds the
 companion embedding column beside it.
 
+The wrapped field must be `text()`; any other type fails `opensaas generate`. To search rich text or JSON, keep a plain-text field in sync with a hook and wrap that.
+
 | Option               | Type     | Default                           |
 | -------------------- | -------- | --------------------------------- |
 | `provider`           | `string` | the plugin's default              |
