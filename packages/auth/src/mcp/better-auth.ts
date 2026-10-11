@@ -94,10 +94,10 @@ async function verifyMcpRequest(
  * ```
  */
 export function createBetterAuthMcpAdapter(options: BetterAuthMcpOptions): McpSessionProvider {
-  return async (headers: Headers): Promise<McpSession | null> => {
+  return async (req: Request): Promise<McpSession | null> => {
     const result = await verifyMcpRequest(
       options,
-      new Request(options.resource, { method: 'POST', headers }),
+      new Request(req.url, { method: req.method, headers: req.headers }),
     )
     return 'session' in result ? result.session : null
   }
@@ -137,7 +137,7 @@ export function withMcpAuth(
  *
  * @example
  * ```typescript
- * const mcpSession = await createBetterAuthMcpAdapter(options)(req.headers)
+ * const mcpSession = await createBetterAuthMcpAdapter(options)(req)
  * const context = await getContext(mcpSessionToContextSession(mcpSession))
  * const posts = await context.db.Post.all()
  * ```

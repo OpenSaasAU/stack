@@ -13,6 +13,8 @@ export type McpSession = {
 
 /**
  * Session provider function type
- * Auth packages should implement this interface to integrate with MCP
+ * Auth packages should implement this interface to integrate with MCP. It receives
+ * the incoming request so a provider can check its method and URL; do not read the
+ * body, which the handler consumes afterwards.
  */
-export type McpSessionProvider = (headers: Headers) => Promise<McpSession | null>
+export type McpSessionProvider = (req: Request) => Promise<McpSession | null>

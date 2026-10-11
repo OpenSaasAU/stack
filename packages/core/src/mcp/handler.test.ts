@@ -494,6 +494,29 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'the provider receives the incoming request and the body stays readable',
+      async () => {
+        const seen: Array<{ method: string; url: string }> = []
+        const handlers = handlersFor(schemaConfig(), async (req) => {
+          seen.push({ method: req.method, url: req.url })
+          return { userId: 'user-123' }
+        })
+
+        const response = await handlers.POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+          }),
+        )
+
+        expect(response.status).toBe(200)
+        expect(seen).toEqual([{ method: 'POST', url: 'http://localhost/api/mcp' }])
+      },
+      BOOT,
+    )
+
+    test(
       'the session the provider returns reaches getContext',
       async () => {
         const config = schemaConfig()
