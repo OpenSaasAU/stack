@@ -11,6 +11,7 @@ import {
   PartialPromotionError,
   promoteStagedGeneration,
   restoreMigrationRefs,
+  restoreRefsAfterReconcile,
   snapshotMigrationRefs,
 } from './staged-reconcile.js'
 
@@ -257,5 +258,44 @@ describe('promoting a staged generation', () => {
     expect(message).toContain('opensaas generate')
     expect(fs.readFileSync(live.contractModule, 'utf-8')).toBe('next')
     expect(fs.existsSync(stagingDir)).toBe(true)
+  })
+})
+
+describe('refs after an applied reconcile', () => {
+  let cwd: string
+  const dbRef = (): string => path.join(cwd, 'migrations', 'app', 'refs', 'db.json')
+  const hashOf = (): string => JSON.parse(fs.readFileSync(dbRef(), 'utf-8')).hash
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-refs-'))
+    fs.mkdirSync(path.dirname(dbRef()), { recursive: true })
+    fs.writeFileSync(dbRef(), JSON.stringify({ hash: 'before', invariants: [] }), 'utf-8')
+  })
+
+  afterEach(() => {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  })
+
+  const advance = (): void =>
+    fs.writeFileSync(dbRef(), JSON.stringify({ hash: 'after', invariants: [] }), 'utf-8')
+
+  it('leaves refs unchanged once the app space has a migration package', () => {
+    const packageDir = path.join(cwd, 'migrations', 'app', '20261010T0743_baseline')
+    fs.mkdirSync(packageDir, { recursive: true })
+    fs.writeFileSync(path.join(packageDir, 'migration.json'), '{}', 'utf-8')
+
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('before')
+  })
+
+  it('keeps the ref Prisma wrote while no migration package exists yet', () => {
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('after')
   })
 })
