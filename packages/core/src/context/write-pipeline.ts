@@ -434,7 +434,7 @@ async function runWriteInTransaction(
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
-    inputData: input,
+    inputData: callerInput,
     listName,
     config,
     defaultedFields,
