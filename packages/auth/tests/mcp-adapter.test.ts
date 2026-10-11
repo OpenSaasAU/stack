@@ -49,7 +49,8 @@ describe('Better Auth MCP Adapter', () => {
       return `${signingInput}.${signature.toString('base64url')}`
     }
 
-    const bearer = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
+    const bearer = (token: string, method = 'POST') =>
+      new Request(resource, { method, headers: { Authorization: `Bearer ${token}` } })
 
     it('maps a valid token to a session', async () => {
       const token = mint({ sub: 'user-123', scope: 'read write' })
@@ -104,7 +105,9 @@ describe('Better Auth MCP Adapter', () => {
     })
 
     it('returns null without a token', async () => {
-      expect(await createBetterAuthMcpAdapter(options)(new Headers())).toBeNull()
+      expect(
+        await createBetterAuthMcpAdapter(options)(new Request(resource, { method: 'POST' })),
+      ).toBeNull()
     })
 
     it('rejects a token for another audience', async () => {
@@ -121,6 +124,12 @@ describe('Better Auth MCP Adapter', () => {
     it('rejects a token from another issuer', async () => {
       const token = mint({ sub: 'user-123', iss: 'http://evil.example/api/auth' })
       expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it.each(['GET', 'DELETE'])('maps a valid token on a %s request', async (method) => {
+      const token = mint({ sub: 'user-123' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token, method))
+      expect(session?.userId).toBe('user-123')
     })
 
     it('rejects a token signed by another key', async () => {
@@ -141,10 +150,7 @@ describe('Better Auth MCP Adapter', () => {
 
     it('withMcpAuth challenges a verified token that has no subject', async () => {
       const handler = vi.fn(async () => new Response('OK'))
-      const response = await withMcpAuth(
-        options,
-        handler,
-      )(new Request(resource, { headers: bearer(mint({})) }))
+      const response = await withMcpAuth(options, handler)(bearer(mint({}), 'GET'))
 
       expect(response.status).toBe(401)
       expect(response.headers.get('WWW-Authenticate')).toContain('Bearer')
@@ -153,10 +159,7 @@ describe('Better Auth MCP Adapter', () => {
 
     it('withMcpAuth calls the handler with the session', async () => {
       const handler = vi.fn(async () => new Response('OK'))
-      const response = await withMcpAuth(
-        options,
-        handler,
-      )(new Request(resource, { headers: bearer(mint({ sub: 'user-123' })) }))
+      const response = await withMcpAuth(options, handler)(bearer(mint({ sub: 'user-123' }), 'GET'))
 
       expect(response.status).toBe(200)
       expect(handler).toHaveBeenCalledWith(
