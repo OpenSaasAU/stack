@@ -97,6 +97,20 @@ describe('image() / file() multi-column mode', () => {
       })
     })
 
+    it('image() refuses transformations in multi-column mode', () => {
+      expect(() =>
+        image({
+          storage: 'images',
+          db: { columns: 'keystone' },
+          transformations: { thumb: { width: 100 } },
+        }),
+      ).toThrow(/db\.columns.*transformations/)
+      expect(() => image({ storage: 'images', db: { columns: 'keystone' } })).not.toThrow()
+      expect(() =>
+        image({ storage: 'images', transformations: { thumb: { width: 100 } } }),
+      ).not.toThrow()
+    })
+
     it('image() in keystone mode describes its seven physical columns instead', () => {
       const field = image({ storage: 'images', db: { columns: 'keystone' } })
       const descriptor = field.getContractField?.('image', 'Post', CONFIG)
