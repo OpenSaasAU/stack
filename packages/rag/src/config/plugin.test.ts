@@ -1087,6 +1087,32 @@ describe('ragPlugin', () => {
       warned.mockRestore()
     })
 
+    it('warns once per field about a non-string source and stays silent for null and empty', async () => {
+      const { hook, writes, context } = await generationHook()
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const committed = async (content: unknown) =>
+        await hook!({
+          listKey: 'Article',
+          operation: 'create',
+          status: 'committed',
+          inputData: {},
+          item: { id: 'a1', content, contentEmbedding: null },
+          context,
+        })
+
+      await committed(null)
+      await committed('')
+      expect(warned).not.toHaveBeenCalled()
+
+      await committed({ type: 'doc' })
+      await committed({ type: 'doc' })
+      expect(writes).toEqual([])
+      expect(warned).toHaveBeenCalledTimes(1)
+      expect(warned.mock.calls[0][0]).toContain('"Article.content"')
+      warned.mockRestore()
+    })
+
     it('writes nothing when the source text hashes to what is already stored', async () => {
       const { hook, writes, context } = await generationHook()
 
