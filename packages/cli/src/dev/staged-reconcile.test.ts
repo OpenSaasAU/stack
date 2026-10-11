@@ -291,6 +291,23 @@ describe('refs after an applied reconcile', () => {
     expect(hashOf()).toBe('before')
   })
 
+  it('leaves a regenerated extension-space ref alone', () => {
+    const packageDir = path.join(cwd, 'migrations', 'app', '20261010T0743_baseline')
+    fs.mkdirSync(packageDir, { recursive: true })
+    fs.writeFileSync(path.join(packageDir, 'migration.json'), '{}', 'utf-8')
+    const headRef = path.join(cwd, 'migrations', 'pgvector', 'refs', 'head.json')
+    fs.mkdirSync(path.dirname(headRef), { recursive: true })
+    fs.writeFileSync(headRef, JSON.stringify({ hash: 'old', invariants: [] }), 'utf-8')
+
+    const snapshot = snapshotMigrationRefs(cwd)
+    advance()
+    fs.writeFileSync(headRef, JSON.stringify({ hash: 'regenerated', invariants: [] }), 'utf-8')
+    restoreRefsAfterReconcile(cwd, snapshot)
+
+    expect(hashOf()).toBe('before')
+    expect(JSON.parse(fs.readFileSync(headRef, 'utf-8')).hash).toBe('regenerated')
+  })
+
   it('keeps the ref Prisma wrote while no migration package exists yet', () => {
     const snapshot = snapshotMigrationRefs(cwd)
     advance()

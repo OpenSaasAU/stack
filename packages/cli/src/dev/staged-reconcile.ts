@@ -198,7 +198,10 @@ function hasAppMigrationPackage(cwd: string): boolean {
  */
 export function restoreRefsAfterReconcile(cwd: string, snapshots: readonly RefSnapshot[]): void {
   if (!hasAppMigrationPackage(cwd)) return
-  restoreMigrationRefs(cwd, snapshots)
+  restoreMigrationRefs(
+    cwd,
+    snapshots.filter((snapshot) => spaceOf(snapshot.file) === 'app'),
+  )
 }
 
 /** Thrown when promotion stopped part-way, leaving the live bundle split. */
