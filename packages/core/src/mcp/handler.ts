@@ -154,6 +154,12 @@ export function createMcpHandlers(options: {
    * once, the way `AdminUI` and `createAuth` do.
    */
   getContext: (session?: ContextSession) => Promise<AnyStackContext>
+  /**
+   * Absolute URL of the RFC 9728 protected resource metadata document. When set,
+   * the 401 challenge carries it as `resource_metadata` so a spec-following MCP
+   * client can discover the authorization server.
+   */
+  resourceMetadataUrl?: string
 }): {
   GET: (req: Request) => Promise<Response>
   POST: (req: Request) => Promise<Response>
@@ -174,14 +180,16 @@ export function createMcpHandlers(options: {
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
+  const challenge =
+    `Bearer realm="${basePath}", error="invalid_token"` +
+    (options.resourceMetadataUrl ? `, resource_metadata="${options.resourceMetadataUrl}"` : '')
+
   const handler = async (req: Request): Promise<Response> => {
     const session = await getSession(req.clone())
     if (!session) {
       return new Response(null, {
         status: 401,
-        headers: {
-          'WWW-Authenticate': `Bearer realm="${basePath}", error="invalid_token"`,
-        },
+        headers: { 'WWW-Authenticate': challenge },
       })
     }
 

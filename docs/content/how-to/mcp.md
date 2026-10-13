@@ -224,6 +224,8 @@ const { GET, POST, DELETE } = createMcpHandlers({
 export { GET, POST, DELETE }
 ```
 
+Pass `resourceMetadataUrl` to `createMcpHandlers` (for example `https://example.com/.well-known/oauth-protected-resource`) and the 401 challenge carries it as `resource_metadata`, per RFC 9728, so an MCP client can discover your authorization server. Serve that document with `createOAuthProtectedResourceHandler`, and the authorization server metadata with `createOAuthDiscoveryHandler`, both from `@opensaas/stack-auth/mcp`.
+
 ### 2. Create OAuth Discovery Endpoints
 
 Better Auth provides OAuth endpoints automatically, but MCP clients look for them at the root `.well-known` paths. The helpers answer those paths in-process through your Better Auth instance: they make no outbound fetch, forward no request headers, and the request's host selects no server.
