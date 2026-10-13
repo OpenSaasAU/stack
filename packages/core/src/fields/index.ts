@@ -547,6 +547,7 @@ export function checkbox<
   return {
     type: 'checkbox',
     ...options,
+    defaultValue: options?.defaultValue ?? false,
     getZodSchema: () => {
       return z.boolean().optional().nullable()
     },
@@ -555,7 +556,7 @@ export function checkbox<
         type: pgType('boolean'),
         nullable: options?.db?.isNullable === true,
         map: options?.db?.map,
-        default: literalDefault(options?.defaultValue, listKey, fieldName),
+        default: literalDefault(options?.defaultValue ?? false, listKey, fieldName),
       }),
     // Anything other than true/false degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({

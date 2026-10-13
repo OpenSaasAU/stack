@@ -488,11 +488,27 @@ describe('Field Types', () => {
     })
 
     describe('the contract column', () => {
-      test('a plain checkbox is a non-nullable pg boolean column', () => {
+      test('a plain checkbox is a non-nullable pg boolean column defaulting to false', () => {
         expect(columnOf(checkbox(), 'isActive')).toEqual({
           name: 'isActive',
           type: { pack: 'pg', type: 'boolean' },
           nullable: false,
+          default: { kind: 'literal', value: false },
+        })
+      })
+
+      test('a plain checkbox fills false on create', () => {
+        expect(checkbox().defaultValue).toBe(false)
+      })
+
+      test('an explicit true default is kept', () => {
+        expect(checkbox({ defaultValue: true }).defaultValue).toBe(true)
+      })
+
+      test('a nullable checkbox still defaults to false', () => {
+        expect(columnOf(checkbox({ db: { isNullable: true } }), 'agreed')).toMatchObject({
+          nullable: true,
+          default: { kind: 'literal', value: false },
         })
       })
 

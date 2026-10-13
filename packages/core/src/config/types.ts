@@ -1010,6 +1010,8 @@ export type CheckboxField<
   TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 > = BaseFieldConfig<TTypeInfo, TKey> & {
   type: 'checkbox'
+  /** Value filled when the field is omitted on create. Defaults to `false`. */
+  defaultValue?: boolean
 }
 
 export type TimestampField<

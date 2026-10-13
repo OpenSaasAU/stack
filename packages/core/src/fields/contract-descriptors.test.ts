@@ -155,6 +155,7 @@ describe('getContractField — every core builder describes its contract contrib
       name: 'done',
       type: { pack: 'pg', type: 'boolean' },
       nullable: false,
+      default: { kind: 'literal', value: false },
     })
   })
 
