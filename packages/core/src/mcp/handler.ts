@@ -131,10 +131,11 @@ function assertResourceMetadataUrl(value: string): void {
   } catch {
     throw new Error(`createMcpHandlers: resourceMetadataUrl "${value}" is not an absolute URL.`)
   }
-  if (
-    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
-    /["\\\u0000-\u001f\u007f]/.test(value)
-  ) {
+  const hasUnsafeCharacter = Array.from(value).some((char) => {
+    const code = char.charCodeAt(0)
+    return char === '"' || char === '\\' || code < 0x20 || code === 0x7f
+  })
+  if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || hasUnsafeCharacter) {
     throw new Error('createMcpHandlers: resourceMetadataUrl must be a plain http(s) URL.')
   }
 }
