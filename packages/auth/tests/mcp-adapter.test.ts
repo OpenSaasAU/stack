@@ -78,6 +78,30 @@ describe('Better Auth MCP Adapter', () => {
       expect(session?.userId).toBe('user-123')
     })
 
+    it.each([
+      ['sub equals client_id and azp', { sub: 'c1', client_id: 'c1', azp: 'c1' }],
+      ['sub equals client_id', { sub: 'c1', client_id: 'c1' }],
+      ['sub equals azp', { sub: 'c1', azp: 'c1' }],
+    ])('rejects a machine token where %s', async (_name, claims) => {
+      const token = mint({ ...claims, scope: 'read' })
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+
+      const handler = vi.fn(async () => new Response('ok'))
+      const response = await withMcpAuth(
+        options,
+        handler,
+      )(new Request(resource, { headers: bearer(token) }))
+      expect(response.status).toBe(401)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('maps a user token whose client_id differs from sub', async () => {
+      const token = mint({ sub: 'user-123', client_id: 'c1', azp: 'c1' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.userId).toBe('user-123')
+    })
+
     it('returns null without a token', async () => {
       expect(await createBetterAuthMcpAdapter(options)(new Headers())).toBeNull()
     })
