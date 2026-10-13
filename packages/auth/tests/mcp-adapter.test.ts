@@ -113,10 +113,7 @@ describe('Better Auth MCP Adapter', () => {
       expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
 
       const handler = vi.fn(async () => new Response('ok'))
-      const response = await withMcpAuth(
-        options,
-        handler,
-      )(new Request(resource, { headers: bearer(token) }))
+      const response = await withMcpAuth(options, handler)(bearer(token))
       expect(response.status).toBe(401)
       expect(handler).not.toHaveBeenCalled()
     })
