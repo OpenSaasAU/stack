@@ -466,6 +466,18 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a resourceMetadataUrl that is not a plain http(s) URL is refused at creation',
+      () => {
+        for (const bad of ['not a url', 'javascript:alert(1)', 'https://x.test/a", evil="1']) {
+          expect(() =>
+            handlersFor(schemaConfig(), async () => null, { resourceMetadataUrl: bad }),
+          ).toThrow(/resourceMetadataUrl/)
+        }
+      },
+      BOOT,
+    )
+
+    test(
       'resourceMetadataUrl adds resource_metadata to the 401 challenge',
       async () => {
         const handlers = handlersFor(schemaConfig(), async () => null, {

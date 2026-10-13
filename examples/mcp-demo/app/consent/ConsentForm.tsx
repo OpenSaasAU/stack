@@ -23,7 +23,8 @@ export function ConsentForm({ consentCode, scopes }: ConsentFormProps) {
       const result: { redirectURI?: string; redirect_uri?: string; message?: string } =
         await response.json()
       const target = result.redirectURI ?? result.redirect_uri
-      if (!response.ok || !target) {
+      const scheme = target ? new URL(target, window.location.origin).protocol : null
+      if (!response.ok || !target || scheme === 'javascript:' || scheme === 'data:') {
         setError(result.message ?? 'Consent failed')
         setPending(false)
         return

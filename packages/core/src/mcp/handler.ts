@@ -124,6 +124,21 @@ function toolInputSchemaToJson(inputSchema: any): McpTool['inputSchema'] {
   return inputSchema as McpTool['inputSchema']
 }
 
+function assertResourceMetadataUrl(value: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new Error(`createMcpHandlers: resourceMetadataUrl "${value}" is not an absolute URL.`)
+  }
+  if (
+    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+    /["\\\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error('createMcpHandlers: resourceMetadataUrl must be a plain http(s) URL.')
+  }
+}
+
 /**
  * Create MCP route handlers
  *
@@ -179,6 +194,9 @@ export function createMcpHandlers(options: {
   }
 
   const basePath = config.mcp.basePath || '/api/mcp'
+
+  if (options.resourceMetadataUrl !== undefined)
+    assertResourceMetadataUrl(options.resourceMetadataUrl)
 
   const challenge =
     `Bearer realm="${basePath}", error="invalid_token"` +
