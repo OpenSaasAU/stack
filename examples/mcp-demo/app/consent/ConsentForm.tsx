@@ -3,11 +3,20 @@
 import { useState } from 'react'
 
 interface ConsentFormProps {
-  consentCode: string
   scopes: string[]
 }
 
-export function ConsentForm({ consentCode, scopes }: ConsentFormProps) {
+function signedOAuthQuery(search: string): string {
+  const params = new URLSearchParams(search)
+  const signedNames = new Set(params.getAll('ba_param'))
+  const signed = new URLSearchParams()
+  for (const [key, value] of params.entries()) {
+    if (key === 'sig' || key === 'ba_param' || signedNames.has(key)) signed.append(key, value)
+  }
+  return signed.toString()
+}
+
+export function ConsentForm({ scopes }: ConsentFormProps) {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -18,11 +27,11 @@ export function ConsentForm({ consentCode, scopes }: ConsentFormProps) {
       const response = await fetch('/api/auth/oauth2/consent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accept, consent_code: consentCode }),
+        body: JSON.stringify({ accept, oauth_query: signedOAuthQuery(window.location.search) }),
       })
-      const result: { redirectURI?: string; redirect_uri?: string; message?: string } =
+      const result: { url?: string; redirect_uri?: string; message?: string } =
         await response.json()
-      const target = result.redirectURI ?? result.redirect_uri
+      const target = result.url ?? result.redirect_uri
       const scheme = target ? new URL(target, window.location.origin).protocol : null
       if (!response.ok || !target || scheme === 'javascript:' || scheme === 'data:') {
         setError(result.message ?? 'Consent failed')
