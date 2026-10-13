@@ -294,7 +294,7 @@ When Claude Desktop connects to your MCP server:
 5. **MCP Connection** - Claude uses token to authenticate tool calls
 6. **Access Control** - All operations respect your access control rules
 
-> **Machine clients are not supported.** A `client_credentials` token represents no user (its `sub` is the client id), so the MCP surface answers it with a 401. Only user-delegated tokens are accepted.
+> **Machine clients are not supported.** A `client_credentials` token represents no user and carries the client id as its `sub`, so a token whose `sub` equals its `client_id` or `azp` claim is answered with a 401. Only user-delegated tokens are accepted.
 
 ## Generated Tools
 
