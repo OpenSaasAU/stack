@@ -86,6 +86,20 @@ export function identityPredicate(listName: string, id: string | number): WhereP
   return { kind: 'scalar', listName, column: 'id', steps: [{ op: 'eq', value: id }] }
 }
 
+/** The engine's own `column = <value>` (or `IS NULL`) predicate for a guarded write. */
+export function columnEqualsPredicate(
+  listName: string,
+  column: string,
+  value: string | number | boolean | null,
+): WherePlan {
+  return {
+    kind: 'scalar',
+    listName,
+    column,
+    steps: [value === null ? { op: 'isNull' } : { op: 'eq', value }],
+  }
+}
+
 function scoped(
   collection: WriteCollection,
   scope: WriteScope,

@@ -17,6 +17,7 @@
  * `_resolveOutputChain` (see `AccessContext['_transactionOwner']`), never
  * exposed on the public `StackContext` type.
  */
+import type { AfterTransactionErrorReport } from '../config/types.js'
 
 /**
  * Thrown by a transaction owner that cannot commit: a joined `context.db`
@@ -45,13 +46,15 @@ export interface TransactionSettleOutcome {
   error?: unknown
 }
 
+export type AfterTransactionFailure = AfterTransactionErrorReport
+
 /**
  * One deferred write's flush: given the owner's settle outcome, runs that
  * write's `afterTransaction` bracket and appends any hook errors to `errors`.
  */
 export type QueuedTransactionFlush = (
   settle: TransactionSettleOutcome,
-  errors: unknown[],
+  errors: AfterTransactionFailure[],
 ) => Promise<void>
 
 /**
@@ -94,7 +97,7 @@ export class TransactionRegistry {
     this.queue.push(flush)
   }
 
-  async drain(settle: TransactionSettleOutcome, errors: unknown[]): Promise<void> {
+  async drain(settle: TransactionSettleOutcome, errors: AfterTransactionFailure[]): Promise<void> {
     for (const flush of this.queue) {
       await flush(settle, errors)
     }

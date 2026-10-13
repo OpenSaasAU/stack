@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getRelationshipOptions } from './relationship-options.js'
+import { getRelationshipOptions, isRelationshipLabelReadable } from './relationship-options.js'
 import type { QueryRunnerContext, RelationshipOptionsQuery } from './relationship-options.js'
 import type { OrderBy, Where } from '../secured/vocabulary.js'
 import type { OpenSaasConfig } from '../config/types.js'
@@ -114,6 +114,37 @@ describe('getRelationshipOptions', () => {
     expect(delegate.calls[0].limit).toBe(2)
   })
 
+  it('clamps take to 200', async () => {
+    const delegate = makeDelegate(authors)
+    await getRelationshipOptions(makeContext({ Author: delegate }), makeConfig(), 'Author', {
+      take: 1e9,
+    })
+
+    expect(delegate.calls[0].limit).toBe(200)
+  })
+
+  it('bounds the selectedIds lookup to 200 ids', async () => {
+    const delegate = makeDelegate(authors)
+    const selectedIds = Array.from({ length: 500 }, (_, i) => `x${i}`)
+    await getRelationshipOptions(makeContext({ Author: delegate }), makeConfig(), 'Author', {
+      selectedIds,
+    })
+
+    const inClause = delegate.calls
+      .flatMap((call) => call.where)
+      .map((w) => (w as { id?: { in?: string[] } }).id?.in)
+      .find((ids) => ids !== undefined)
+    expect(inClause).toHaveLength(200)
+  })
+
+  it.each([-1, 0, NaN, 1.5])('rejects take %s with a ValidationError', async (take) => {
+    const context = makeContext({ Author: makeDelegate(authors) })
+
+    await expect(
+      getRelationshipOptions(context, makeConfig(), 'Author', { take }),
+    ).rejects.toMatchObject({ name: 'ValidationError' })
+  })
+
   it('orders by the label field ascending and filters via contains on a text label field', async () => {
     const delegate = makeDelegate([authors[0]])
     const context = makeContext({ Author: delegate })
@@ -163,6 +194,21 @@ describe('getRelationshipOptions', () => {
     await getRelationshipOptions(context, config, 'VirtualLabel', { search: 'One' })
 
     expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
+  })
+
+  it('neither orders nor searches by the label field when it is not readable', async () => {
+    const delegate = makeDelegate([{ id: 'a1' }])
+    const context = makeContext({ Author: delegate })
+
+    const result = await getRelationshipOptions(context, makeConfig(), 'Author', {
+      search: 'Ada',
+      labelReadable: false,
+    })
+
+    expect(delegate.calls[0].where).toEqual([])
+    expect(delegate.calls[0].orderBy).toEqual({ id: 'asc' })
+    expect(delegate.calls[0].select).toEqual(['id'])
+    expect(result).toEqual([{ id: 'a1', label: 'a1' }])
   })
 
   it('unions currently-selected ids even when beyond take / not matching search', async () => {
@@ -220,5 +266,19 @@ describe('getRelationshipOptions', () => {
     const result = await getRelationshipOptions(context, config, 'Missing', {})
 
     expect(result).toEqual([])
+  })
+})
+
+describe('isRelationshipLabelReadable', () => {
+  it('is false when the label field read rule denies the session', async () => {
+    const config = makeConfig()
+    config.lists.Author.fields.name = { type: 'text', access: { read: () => false } } as never
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, config, 'Author')).toBe(false)
+  })
+
+  it('is true when the label field has no read rule', async () => {
+    const context = { session: null } as never
+    expect(await isRelationshipLabelReadable(context, makeConfig(), 'Author')).toBe(true)
   })
 })

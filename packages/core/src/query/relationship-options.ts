@@ -1,5 +1,8 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { getLabelFieldName, getItemLabel } from '../config/label.js'
+import type { AccessContext } from '../access/types.js'
+import { isFieldReadableForPredicate } from '../access/field-access.js'
+import { ValidationError } from '../hooks/index.js'
 import type { OrderBy, Where } from '../secured/vocabulary.js'
 
 /**
@@ -23,6 +26,7 @@ export interface QueryRunnerContext {
 }
 
 const DEFAULT_TAKE = 50
+export const MAX_TAKE = 200
 
 export interface RelationshipOption {
   id: string
@@ -32,10 +36,16 @@ export interface RelationshipOption {
 export interface RelationshipOptionsArgs {
   /** Filters the label field via `contains` when it is a text field. */
   search?: string
-  /** Bounds the primary (search-scoped) window. @default 50 */
+  /** Bounds the primary (search-scoped) window. A positive integer, clamped to 200. @default 50 */
   take?: number
   /** Always unioned into the result, even outside the search/take window. */
   selectedIds?: string[]
+  /**
+   * Whether the session may read the label field. When `false` the primitive
+   * neither orders nor searches by it and projects `id` alone, so the label
+   * falls back as {@link getItemLabel} does. @default true
+   */
+  labelReadable?: boolean
 }
 
 /**
@@ -60,27 +70,41 @@ export async function getRelationshipOptions(
 
   const labelField = getLabelFieldName(relatedListConfig)
 
-  const { search, take = DEFAULT_TAKE, selectedIds = [] } = args
+  const {
+    search,
+    take: requestedTake = DEFAULT_TAKE,
+    selectedIds = [],
+    labelReadable = true,
+  } = args
+  if (!Number.isInteger(requestedTake) || requestedTake < 1) {
+    throw new ValidationError(['take must be a positive integer'], {
+      take: 'must be a positive integer',
+    })
+  }
+  const take = Math.min(requestedTake, MAX_TAKE)
   const labelFieldConfig = relatedListConfig.fields[labelField] as
     { type?: string; virtual?: boolean } | undefined
   const where =
-    search && labelFieldConfig?.type === 'text' ? { [labelField]: { contains: search } } : undefined
+    labelReadable && search && labelFieldConfig?.type === 'text'
+      ? { [labelField]: { contains: search } }
+      : undefined
 
   // Virtual/computed label fields (resolved at read time via `resolveOutput`)
   // have no backing database column, so passing them into `orderBy` fails
   // Prisma validation and 500s the request. Fall back to ordering by `id` —
   // always a real, orderable column — whenever the label field is virtual.
   const isVirtualLabel = labelFieldConfig?.type === 'virtual' || labelFieldConfig?.virtual === true
-  const orderBy: Record<string, 'asc'> = isVirtualLabel ? { id: 'asc' } : { [labelField]: 'asc' }
+  const orderBy: Record<string, 'asc'> =
+    isVirtualLabel || !labelReadable ? { id: 'asc' } : { [labelField]: 'asc' }
 
   const options = (query: RelationshipOptionsQuery): RelationshipOptionsQuery =>
-    query.select('id', labelField)
+    labelReadable ? query.select('id', labelField) : query.select('id')
 
   const scoped = where ? context.db[relatedListKey].where(where) : context.db[relatedListKey]
   const primary = await options(scoped).orderBy(orderBy).limit(take).all()
 
   const seenIds = new Set(primary.map((item) => String(item.id)))
-  const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id))
+  const missingSelectedIds = selectedIds.filter((id) => !seenIds.has(id)).slice(0, MAX_TAKE)
 
   const selected = missingSelectedIds.length
     ? await options(context.db[relatedListKey].where({ id: { in: missingSelectedIds } })).all()
@@ -90,4 +114,18 @@ export async function getRelationshipOptions(
     id: String(item.id),
     label: getItemLabel(relatedListConfig, item),
   }))
+}
+
+/** Whether the session may name the related list's label field in a `where`/`orderBy`. */
+export async function isRelationshipLabelReadable(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  relatedListKey: string,
+): Promise<boolean> {
+  const relatedListConfig = config.lists[relatedListKey]
+  if (!relatedListConfig) return true
+  return isFieldReadableForPredicate(
+    relatedListConfig.fields[getLabelFieldName(relatedListConfig)]?.access,
+    { session: context.session, context },
+  )
 }

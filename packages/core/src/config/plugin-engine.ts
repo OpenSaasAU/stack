@@ -156,6 +156,15 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
 
   const mcpToolsRegistry: McpCustomTool[] = []
 
+  // listKey -> fieldKey -> the plugin that introduced it. A field absent here
+  // belongs to the application.
+  const fieldOwners = new Map<string, Map<string, string>>()
+  const claimFields = (listKey: string, fieldKeys: string[], owner: string) => {
+    const owners = fieldOwners.get(listKey) ?? new Map<string, string>()
+    for (const key of fieldKeys) if (!owners.has(key)) owners.set(key, owner)
+    fieldOwners.set(listKey, owners)
+  }
+
   for (const plugin of sortedPlugins) {
     const context: PluginContext = {
       config: currentConfig,
@@ -174,6 +183,7 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           )
         }
         currentConfig.lists[name] = listConfig
+        claimFields(name, Object.keys(listConfig.fields), plugin.name)
       },
 
       extendList: (name, extension) => {
@@ -205,10 +215,28 @@ export async function executePlugins(config: OpenSaasConfig): Promise<OpenSaasCo
           )
         }
 
+        const owners = fieldOwners.get(name)
+        for (const fieldKey of Object.keys(extension.fields ?? {})) {
+          const owner = owners?.get(fieldKey)
+          if (owner !== undefined && owner !== plugin.name) {
+            throw new Error(
+              `Plugin "${plugin.name}" tried to redeclare field "${fieldKey}" on list "${name}", but that field ` +
+                `was introduced by plugin "${owner}". A field belongs to the plugin that introduced it — ` +
+                `redeclaring it would silently discard its access, hooks and options. See ADR-0013.`,
+            )
+          }
+        }
+
         const mergedFields = {
           ...existing.fields,
           ...extension.fields,
         }
+
+        claimFields(
+          name,
+          Object.keys(extension.fields ?? {}).filter((key) => !Object.hasOwn(existing.fields, key)),
+          plugin.name,
+        )
 
         const mergedHooks = mergeHooks(existing.hooks, extension.hooks)
 

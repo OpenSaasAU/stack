@@ -291,6 +291,8 @@ pnpm migrate
 
 > **Local dev vs production.** `pnpm dev` reconciles the Dev database with your config directly, and `opensaas db update` hands that loop your consent for a change it is waiting on. That path has **no migration history** and can drop data on a schema change, so it is **not** a route to production — there is no `opensaas db migrate`, and `opensaas migrate` is an unrelated project-analysis assistant. Production always migrates from the committed `migrations/` directory with the Prisma CLI.
 
+> **Refs stay put.** Once `migrations/app` holds a migration package, the dev loop never moves the committed refs (`migrations/app/refs/db.json`), so `pnpm migrate` keeps planning from your migration history. Before the first package exists the loop does write the `db` ref, which is what the first `pnpm migrate` plans its baseline from.
+
 ## Step 5: Deploy to Vercel
 
 You have two options: Vercel CLI (faster) or Vercel Dashboard (more visual).

@@ -59,6 +59,17 @@ describe('SearchBar', () => {
   })
 
   describe('user interactions', () => {
+    it('should URL-encode the search term', async () => {
+      const user = userEvent.setup()
+      mockPush.mockClear()
+      render(<SearchBar />)
+
+      await user.type(screen.getByPlaceholderText('Search...'), 'a&b#c+d')
+      await user.keyboard('{Enter}')
+
+      expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('?search=a%26b%23c%2Bd'))
+    })
+
     it('should update input value when user types', async () => {
       const user = userEvent.setup()
       render(<SearchBar />)
@@ -150,7 +161,7 @@ describe('SearchBar', () => {
       const searchButton = screen.getByRole('button', { name: 'Search' })
       await user.click(searchButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/posts?search=test query')
+      expect(mockPush).toHaveBeenCalledWith('/admin/posts?search=test%20query')
     })
 
     it('should call onClear when clear button clicked', async () => {

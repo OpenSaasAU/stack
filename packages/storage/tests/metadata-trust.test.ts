@@ -288,3 +288,172 @@ describe('image()/file() metadata trust and cleanup provider (issue #1619)', () 
     })
   })
 })
+
+describe('user hooks compose with the built-in file()/image() hooks (issue #1796)', () => {
+  let harness: TestContext
+  let dir: string
+  const calls: string[] = []
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'opensaas-storage-compose-'))
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      storage: { files: localStorage({ uploadDir: dir, serveUrl: '/uploads' }) },
+      lists: {
+        Doc: {
+          fields: {
+            attachment: file({
+              storage: 'files',
+              cleanupOnDelete: true,
+              hooks: {
+                resolveInput: ({ resolvedData, fieldKey }) => {
+                  calls.push('resolveInput')
+                  return resolvedData[fieldKey]
+                },
+                afterOperation: () => {
+                  calls.push('afterOperation')
+                },
+              },
+            }),
+            avatar: image({
+              storage: 'files',
+              cleanupOnDelete: true,
+              hooks: {
+                resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey],
+                afterOperation: () => {
+                  calls.push('imageAfterOperation')
+                },
+              },
+            }),
+          },
+          access: { operation: OPEN },
+        },
+      },
+    }
+    harness = await createTestContext(config, null, { storage: createStorageUtils(config) })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  beforeEach(async () => {
+    calls.length = 0
+    await harness.truncate()
+  })
+
+  it('still uploads a File when the user declares resolveInput', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const stored = present(created.attachment, 'attachment') as FileMetadata
+    expect(await exists(join(dir, stored.filename))).toBe(true)
+    expect(calls).toContain('resolveInput')
+  })
+
+  it('still refuses another row’s metadata when the user declares resolveInput', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const stored = present(created.attachment, 'attachment') as FileMetadata
+    await expect(harness.context.db.Doc.create({ data: { attachment: stored } })).rejects.toThrow()
+  })
+
+  it('still cleans up a file on delete when the user declares afterOperation', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const stored = present(created.attachment, 'attachment') as FileMetadata
+    await harness.context.db.Doc.delete({ where: { id: idOf(created) } })
+    expect(await exists(join(dir, stored.filename))).toBe(false)
+    expect(calls).toContain('afterOperation')
+  })
+
+  it('image(): upload, trust check and delete cleanup survive user hooks', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { avatar: pngFile('a.png') } }),
+      'create',
+    )
+    const stored = present(created.avatar, 'avatar') as ImageMetadata
+    expect(await exists(join(dir, stored.filename))).toBe(true)
+    await expect(harness.context.db.Doc.create({ data: { avatar: stored } })).rejects.toThrow()
+    await harness.context.db.Doc.delete({ where: { id: idOf(created) } })
+    expect(await exists(join(dir, stored.filename))).toBe(false)
+    expect(calls).toContain('imageAfterOperation')
+  })
+})
+
+describe('user hook interplay with cleanup (issue #1796 review)', () => {
+  let harness: TestContext
+  let dir: string
+  let rejectReplace = false
+  let failAfterOperation = false
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'opensaas-storage-interplay-'))
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      storage: { files: localStorage({ uploadDir: dir, serveUrl: '/uploads' }) },
+      lists: {
+        Doc: {
+          fields: {
+            attachment: file({
+              storage: 'files',
+              cleanupOnDelete: true,
+              cleanupOnReplace: true,
+              hooks: {
+                resolveInput: ({ resolvedData, fieldKey, item }) =>
+                  rejectReplace && item ? item[fieldKey] : resolvedData[fieldKey],
+                afterOperation: () => {
+                  if (failAfterOperation) throw new Error('user hook failed')
+                },
+              },
+            }),
+          },
+          access: { operation: OPEN },
+        },
+      },
+    }
+    harness = await createTestContext(config, null, { storage: createStorageUtils(config) })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  beforeEach(async () => {
+    rejectReplace = false
+    failAfterOperation = false
+    await harness.truncate()
+  })
+
+  it('keeps the previous file when the user hook rejects a replacement', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const original = present(created.attachment, 'attachment') as FileMetadata
+    rejectReplace = true
+    await harness.context.db.Doc.update({
+      where: { id: idOf(created) },
+      data: { attachment: pdfFile('b.pdf') },
+    })
+    expect(await exists(join(dir, original.filename))).toBe(true)
+  })
+
+  it('does not delete the file when a throwing user afterOperation rolls the delete back', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const stored = present(created.attachment, 'attachment') as FileMetadata
+    failAfterOperation = true
+    await expect(harness.context.db.Doc.delete({ where: { id: idOf(created) } })).rejects.toThrow()
+    expect(await exists(join(dir, stored.filename))).toBe(true)
+  })
+})

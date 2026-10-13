@@ -31,14 +31,17 @@
  *   form; node-postgres does not strip those brackets when it parses a
  *   connection string, so such a client takes `host` and `port` off the handle
  *   instead of the URL.
- * - `PGLiteSocketServer` reports the port it bound only through the
- *   `host:port` string of `getServerConn()`, so the port is parsed back out of
- *   it rather than read from a field.
+ * - PGlite is served on a unix socket in a 0700 temp directory; the TCP port
+ *   is a cleartext-password front carrying a per-boot password in the URL.
+ *   Platforms without unix-domain sockets are not supported.
  */
 
 import type { Extension } from '@electric-sql/pglite'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { startPasswordFront } from './password-front.js'
 import {
   describeSelf,
   identifiesLiveProcess,
@@ -143,14 +146,6 @@ function authorityOf(host: string): string {
   return host.includes(':') ? `[${host}]` : host
 }
 
-function portOf(connection: string): number {
-  const port = Number(connection.slice(connection.lastIndexOf(':') + 1))
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`The dev database socket server reported no TCP port (got "${connection}").`)
-  }
-  return port
-}
-
 /** Thrown by {@link startDevDatabase} when another sidecar already holds `dataDir`. */
 export class DevDatabaseInUseError extends Error {
   constructor(dataDir: string, pid: number) {
@@ -171,6 +166,21 @@ export class DevDatabaseInUseError extends Error {
  */
 const DATA_DIR_LOCK_FILE_NAME = '.opensaas-dev-database.lock'
 
+function restrictDataDir(dataDir: string): void {
+  if (process.platform === 'win32') return
+  try {
+    chmodSync(dataDir, 0o700)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Could not restrict the Dev database data directory ${dataDir} to 0700: ${reason}`,
+      {
+        cause: error,
+      },
+    )
+  }
+}
+
 function readDataDirLock(lockFile: string) {
   let contents: string
   try {
@@ -189,7 +199,11 @@ function readDataDirLock(lockFile: string) {
 }
 
 function writeDataDirLock(lockFile: string, claim: ProcessClaim): void {
-  writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+  writeFileSync(lockFile, `${JSON.stringify(claim, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  })
 }
 
 /** Removes the lock only while it still names the claim that took it. */
@@ -225,7 +239,8 @@ const MAX_DATA_DIR_LOCK_ATTEMPTS = 5
  * @throws {DevDatabaseInUseError} when a live sidecar already holds `dataDir`.
  */
 function acquireDataDirLock(dataDir: string): () => void {
-  mkdirSync(dataDir, { recursive: true })
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 })
+  restrictDataDir(dataDir)
   const lockFile = path.join(dataDir, DATA_DIR_LOCK_FILE_NAME)
   const claim = describeSelf()
 
@@ -307,17 +322,23 @@ export async function startDevDatabase(
     teardown.unshift(() => pglite.close())
     await pglite.waitReady
 
+    const socketDir = mkdtempSync(path.join(tmpdir(), 'opensaas-dev-db-'))
+    teardown.unshift(async () => rmSync(socketDir, { recursive: true, force: true }))
+    const socketPath = path.join(socketDir, 'pg.sock')
     const server = new PGLiteSocketServer({
       db: pglite,
-      host,
-      port: 0,
+      path: socketPath,
       maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
     })
     await server.start()
     teardown.unshift(() => server.stop())
 
-    const port = portOf(server.getServerConn())
-    const url = `postgres://${DATABASE_NAME}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
+    const password = randomBytes(16).toString('hex')
+    const front = await startPasswordFront({ host, innerPath: socketPath, password })
+    teardown.unshift(() => front.stop())
+
+    const port = front.port
+    const url = `postgres://${DATABASE_NAME}:${password}@${authorityOf(host)}:${port}/${DATABASE_NAME}`
     const location: DevDatabaseStateLocation = {
       cwd,
       ...(options.stateFile !== undefined && { stateFile: options.stateFile }),

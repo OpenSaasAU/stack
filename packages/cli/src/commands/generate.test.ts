@@ -586,6 +586,39 @@ describe('Generate Command Integration', () => {
     })
   })
 
+  describe('generateCommand checkConfig', () => {
+    let originalCwd: string
+
+    beforeEach(() => {
+      originalCwd = process.cwd()
+    })
+
+    afterEach(() => {
+      process.chdir(originalCwd)
+    })
+
+    it("refuses by the check's message and writes nothing", async () => {
+      fs.writeFileSync(
+        path.join(tempDir, 'opensaas.config.ts'),
+        "export default { db: { provider: 'postgresql' }, lists: {} }\n",
+      )
+      process.chdir(tempDir)
+
+      await expect(
+        generateCommand({
+          stagingDir: path.join(tempDir, 'staged'),
+          checkConfig: () => {
+            throw new Error('restart please')
+          },
+        }),
+      ).rejects.toThrow('restart please')
+
+      expect(fs.existsSync(path.join(tempDir, 'migrations'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'staged'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'prisma'))).toBe(false)
+    })
+  })
+
   describe('generateCommand .env loading (#1403)', () => {
     let originalCwd: string
     let originalValue: string | undefined

@@ -7,6 +7,7 @@ import type {
 } from './types.js'
 import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
+import { assertValidHookOnlyFields } from './hook-only-fields.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -38,10 +39,10 @@ function normalizeListAccess<T>(
  */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
-    return assertUniqueMcpToolNames(userConfig)
+    return assertValidHookOnlyFields(assertUniqueMcpToolNames(userConfig))
   }
 
-  return executePlugins(userConfig).then(assertUniqueMcpToolNames)
+  return executePlugins(userConfig).then(assertUniqueMcpToolNames).then(assertValidHookOnlyFields)
 }
 
 export { getPluginData }
@@ -116,6 +117,7 @@ export function list<TTypeInfo extends import('./types.js').TypeInfo>(
 
 export type {
   OpenSaasConfig,
+  AfterTransactionErrorReport,
   OutputConfig,
   ListConfig,
   ListConfigInput,
@@ -175,6 +177,7 @@ export type {
   McpAuthConfig,
   ListMcpConfig,
   McpCustomTool,
+  McpScopesConfig,
   FileMetadata,
   ImageMetadata,
   ImageTransformationResult,

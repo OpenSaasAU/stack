@@ -370,9 +370,12 @@ export type AuthConfig = {
    * A `customSession` better-auth plugin fully replaces the resolved shape
    * (it can nest fields anywhere, e.g. under its own custom key) —
    * reconciling that shape against `sessionFields` is the application's job.
-   * A listed name that can't be resolved is omitted and warns once per
-   * field per process, naming what was checked, rather than silently
-   * becoming `undefined` in an access control function.
+   * A name better-auth's session lacks but the user list carries (e.g. an
+   * `extendUserList` field) is read from the signed-in user's own row by id,
+   * as stored. Naming a field here is a deliberate choice, like `needs`: it
+   * does not pass through that field's `read` access, since the session must
+   * exist before access can be evaluated. A name found nowhere throws at
+   * startup.
    *
    * @default ['userId', 'email', 'name']
    *

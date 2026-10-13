@@ -98,7 +98,7 @@ pnpm db:update
 
 `pnpm db:update` needs that loop running. See
 [Migrations and the dev loop](/docs/how-to/migrate) for why, and for the
-`--confirm` token a destructive change asks for.
+`--plan <id>` a destructive change asks for.
 
 In a deployment there is no loop, so the same committed space is applied as a
 migration instead: `prisma migration plan` once against a database you are

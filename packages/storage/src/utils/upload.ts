@@ -17,6 +17,11 @@ export const ACTIVE_MIME_TYPES: ReadonlySet<string> = new Set([
   'application/x-javascript',
 ])
 
+export function isActiveMimeType(type: string): boolean {
+  const essence = mimeEssence(type)
+  return ACTIVE_MIME_TYPES.has(essence) || essence.endsWith('+xml')
+}
+
 export interface FileValidationOptions {
   /** Maximum file size in bytes */
   maxFileSize?: number
@@ -124,7 +129,7 @@ export function validateFile(
         error: `File type '${effectiveType}' is not allowed. Accepted types: ${acceptedMimeTypes.join(', ')}`,
       }
     }
-  } else if (ACTIVE_MIME_TYPES.has(effectiveType)) {
+  } else if (isActiveMimeType(effectiveType)) {
     // No accept-list was configured to opt in explicitly, so an active type is
     // refused even for a field with no `validation` at all (issue #1625).
     return {

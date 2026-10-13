@@ -137,4 +137,104 @@ describe('cleanupOnReplace only deletes once the write committed', () => {
     expect(after).toHaveLength(2)
     expect(after.some((name) => before.includes(name))).toBe(false)
   })
+
+  it('removes every upload when two writes in one transaction share a data object and it rolls back', async () => {
+    const data = { title: 'ok', attachment: pdf('shared.pdf') }
+
+    await harness.context
+      .transaction(async (tx) => {
+        await tx.db.Doc.create({ data })
+        await tx.db.Doc.create({ data })
+        throw new Error('rollback')
+      })
+      .catch(() => undefined)
+
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('keeps both uploads when two writes sharing a data object commit', async () => {
+    const data = { title: 'ok', attachment: pdf('shared.pdf') }
+
+    await harness.context.transaction(async (tx) => {
+      await tx.db.Doc.create({ data })
+      await tx.db.Doc.create({ data })
+    })
+
+    expect(await readdir(uploadDir)).toHaveLength(2)
+  })
+})
+
+describe('cleanupOnDelete only deletes once the delete committed', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    uploadDir = await mkdtemp(join(tmpdir(), 'opensaas-storage-delete-'))
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      storage: { files: localStorage({ uploadDir, serveUrl: '/uploads' }) },
+      lists: {
+        Doc: {
+          fields: {
+            attachment: file({ storage: 'files', cleanupOnDelete: true }),
+            avatar: image({ storage: 'files', cleanupOnDelete: true }),
+          },
+          access: { operation: OPEN },
+        },
+      },
+    }
+    harness = await createTestContext(config, null, { storage: createStorageUtils(config) })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+    await rm(uploadDir, { recursive: true, force: true })
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+    for (const name of await readdir(uploadDir))
+      await rm(join(uploadDir, name), { recursive: true, force: true })
+  })
+
+  it('keeps the files when the surrounding transaction rolls back', async () => {
+    const row = await harness.context.db.Doc.create({
+      data: { attachment: pdf('a.pdf'), avatar: png('a.png') },
+    })
+    const id = (row as { id: string }).id
+    const before = await readdir(uploadDir)
+    expect(before).toHaveLength(2)
+
+    await expect(
+      harness.context.transaction(async (tx) => {
+        await tx.db.Doc.delete({ where: { id } })
+        throw new Error('later step failed')
+      }),
+    ).rejects.toThrow('later step failed')
+
+    expect(await readdir(uploadDir)).toEqual(before)
+    expect(await harness.context.db.Doc.where({ id: { equals: id } }).first()).not.toBeNull()
+  })
+
+  it('deletes the files after a committed delete', async () => {
+    const row = await harness.context.db.Doc.create({
+      data: { attachment: pdf('a.pdf'), avatar: png('a.png') },
+    })
+    const id = (row as { id: string }).id
+
+    await harness.context.db.Doc.delete({ where: { id } })
+
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+  it('deletes the files once a surrounding transaction commits', async () => {
+    const row = await harness.context.db.Doc.create({
+      data: { attachment: pdf('a.pdf'), avatar: png('a.png') },
+    })
+    const id = (row as { id: string }).id
+
+    await harness.context.transaction(async (tx) => {
+      await tx.db.Doc.delete({ where: { id } })
+    })
+
+    expect(await readdir(uploadDir)).toEqual([])
+  })
 })

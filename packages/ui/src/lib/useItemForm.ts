@@ -5,7 +5,7 @@ import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type ItemFormAction = 'create' | 'update'
 
-const SYSTEM_FIELDS = ['id', 'createdAt', 'updatedAt']
+const SYSTEM_FIELDS = ['id']
 
 /**
  * A to-many selection reached the submit transform from a control that never
@@ -262,7 +262,7 @@ export function transformInitialData<TData extends Record<string, unknown>>(
 }
 
 /**
- * Drop system fields (id, createdAt, updatedAt) from a field-config map,
+ * Drop system fields (id) from a field-config map,
  * returning the fields an item form should render, in declaration order.
  *
  * On `create` there is no item yet, so a virtual (computed) field has nothing

@@ -75,11 +75,12 @@ opensaas db update
 
 The command opens **no connection of its own**: it hands the request to the
 running loop and exits non-zero when none is listening. A destructive change
-needs consent, passed through to Prisma's `--confirm` as the database name (the
-Dev database's is `postgres`):
+needs consent: the loop prints the plan with a plan id, and `--plan` names it.
+The loop applies it only if the plan it computes now still has that id, and
+supplies Prisma's own consent for the database it is connected to:
 
 ```bash
-opensaas db update --confirm postgres
+opensaas db update --plan <id>
 ```
 
 `update` is the only subcommand under `db`. There is no `opensaas db migrate` —
@@ -90,7 +91,7 @@ migrate`).
 
 1. Sends one reconcile request to the `opensaas dev` loop already running
 2. Exits — non-zero if no loop is listening, or if the change needs a
-   `--confirm` token it was not given
+   `--plan <id>` it was not given, or one that no longer matches
 
 It is not a watcher and it does not stay resident: the watching, regenerating
 and Ctrl+C-until-stopped behaviour all belong to [`opensaas dev`](#opensaas-dev),
@@ -412,11 +413,10 @@ terminal:
 pnpm db:update
 ```
 
-If the change would destroy data, pass the database name as consent — `postgres`
-for the Dev database:
+If the change would destroy data, pass the plan id the loop printed:
 
 ```bash
-pnpm db:update --confirm postgres
+pnpm db:update --plan <id>
 ```
 
 ### Preparing a production migration

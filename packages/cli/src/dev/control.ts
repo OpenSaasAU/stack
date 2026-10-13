@@ -28,7 +28,7 @@ const controlFileSchema = z.object({
 const requestSchema = z.object({
   token: z.string(),
   command: z.literal('db-update'),
-  confirm: z.array(z.string()).default([]),
+  plan: z.string().optional(),
 })
 
 /** What a second terminal asked the loop to do. */
@@ -232,7 +232,7 @@ export class DevLoopUnreachableError extends Error {
  */
 export async function requestDatabaseUpdate(
   cwd: string,
-  confirm: readonly string[],
+  plan: string | undefined,
   log: (message: string) => void,
 ): Promise<boolean> {
   let published: z.infer<typeof controlFileSchema>
@@ -259,9 +259,7 @@ export async function requestDatabaseUpdate(
 
     socket.once('connect', () => {
       connected = true
-      socket.write(
-        `${JSON.stringify({ token: published.token, command: 'db-update', confirm: [...confirm] })}\n`,
-      )
+      socket.write(`${JSON.stringify({ token: published.token, command: 'db-update', plan })}\n`)
     })
 
     socket.on('data', (chunk: string) => {

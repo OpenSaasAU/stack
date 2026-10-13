@@ -1,6 +1,4 @@
-// Always present, never declared in a list's `fields` — the write path
-// (`filterWritableFields`) excludes the same three names from `fieldConfigs`.
-const SYSTEM_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
+import { isSystemFieldName } from './system-fields.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- field configs are heterogeneous across field types
 type FieldConfigMap = Record<string, any>
@@ -19,9 +17,8 @@ export interface ResolvedQueryField {
  * validity is decided in exactly one place.
  *
  * A key is valid when it is:
- * - a system field (`id`, `createdAt`, `updatedAt`) — always present, and never
- *   declared in `fields` (the write path excludes them from `fieldConfigs` the
- *   same way), or
+ * - a system field (`id`, or an auto-timestamp not declared in `fields`) —
+ *   always present, or
  * - a field declared directly in the list config, or
  * - the foreign-key scalar a to-one `relationship` field implies (e.g. `authorId`
  *   for `author: relationship(...)`) — the config never names this column
@@ -38,7 +35,7 @@ export function resolveQueryField(
   key: string,
   fields: FieldConfigMap,
 ): ResolvedQueryField | undefined {
-  if (SYSTEM_FIELDS.has(key)) {
+  if (isSystemFieldName(key, fields)) {
     return { fieldConfig: undefined, isRelationship: false }
   }
 

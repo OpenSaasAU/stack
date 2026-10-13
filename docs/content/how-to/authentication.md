@@ -1467,7 +1467,7 @@ authPlugin({
 
 There is no `fields` block here, and none is needed for the credential columns:
 `Account.accessToken`/`refreshToken`/`password`, `Session.token` and
-`Verification.value` ship field-level read-denied already (ADR-0036), so granting
+`Verification.identifier`/`value` ship field-level read-denied already (ADR-0036), so granting
 operation access above does **not** expose them. See [Credential fields are
 read-denied](/docs/reference/auth#credential-fields-are-read-denied-adr-0036) for
 the full set. To deny a further field, declare the rule on the field itself —

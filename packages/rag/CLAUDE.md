@@ -531,9 +531,9 @@ contentEmbedding: embedding({
 })
 ```
 
-Known limits: `@prisma/orm-extension-pgvector@8.0.0-rc.8` registers no index
-types, so an `index` declaration derives the column type and the operator class
-and is not yet lowered to a `CREATE INDEX` (#1265).
+Known limits: the pgvector pack registers no index types yet, so an `index`
+declaration derives the column type and the operator class and is not lowered to
+a `CREATE INDEX` (#1265); `pnpm generate` warns for each such field.
 
 ## Type Safety
 
@@ -688,11 +688,11 @@ consent from a second terminal (`packages/cli/src/commands/dev.ts`). With the
 loop still running:
 
 ```bash
-pnpm db:update --confirm postgres
+pnpm db:update --plan <id>
 ```
 
-The token is the name of the database being changed — that is what Prisma asks
-for before it destroys data, and the Dev database's name is `postgres`. The loop
+The id is the one the loop printed with the plan; the loop supplies Prisma's own
+consent for the database it is connected to. The loop
 stages its own generation, so there is no separate `pnpm generate` step. In a
 deployment, apply it as a migration instead (see "Applying the change" above).
 

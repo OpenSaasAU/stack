@@ -391,6 +391,48 @@ owns the column:
 await context.db.Post.update({ where: { id: postId }, data: { author: null } })
 ```
 
+## Uniqueness and existence
+
+A unique constraint is enforced by the database across every row, including rows the session cannot read. When a write collides with one, the resulting `UniqueConstraintViolation` (with its `fieldErrors`, for any constraint the generator emitted) tells the caller that some row holds that value. A scoped `User` list shows the shape:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+const User = list({
+  fields: { email: text({ isIndexed: 'unique' }) },
+  access: {
+    operation: {
+      query: ({ session }) => (session === null ? false : { id: { equals: session.userId } }),
+      update: ({ session }) => (session === null ? false : { id: { equals: session.userId } }),
+    },
+  },
+})
+```
+
+A session that updates its own `email` to another user's address receives the violation, confirming that address is taken even though it cannot read that user. The same applies to `create` for any caller with create access. A restrictive foreign key (`onDelete: 'restrict'`) likewise reveals, by blocking a delete, that rows the session cannot read still reference the target.
+
+No check inside the stack can close this for a write whose success the caller observes: the database alone knows about the colliding row, and any outcome other than success differs from success. The stack keeps the field-mapped message on purpose (see ADR-0042). Mitigate in the schema and at the edge:
+
+- **Scope the constraint to the access boundary.** On a tenant-scoped list, make the pair unique so a caller can only collide with rows in its own tenant. This only holds when the access filter or a `resolveInput` hook pins the tenant to the session's own; a caller who can choose any tenant can still probe other tenants' values:
+
+  ```typescript
+  import { list } from '@opensaas/stack-core'
+  import { relationship, text } from '@opensaas/stack-core/fields'
+
+  const Member = list({
+    fields: {
+      tenant: relationship({ ref: 'Tenant.members' }),
+      email: text(),
+    },
+    db: { indexes: [{ fields: ['tenant', 'email'], unique: true }] },
+  })
+  ```
+
+- **Return a uniform response** where the caller does not need the written row (registration, invitations, password recovery): catch the violation in your endpoint and answer exactly as you would a success, so an existing value is indistinguishable from a new one. This is the mitigation when uniqueness must stay global.
+- **Rate-limit** create and update on endpoints that expose a unique field to untrusted callers.
+- **Avoid `restrict`** on references that cross the access boundary, where the domain allows it. `onDelete` is set on the relationship field as `db: { onDelete: 'setNull' }` (or `'cascade'`).
+
 ## Access Control Execution Order
 
 For **write operations** (create/update):

@@ -114,6 +114,19 @@ function refuseNullabilityOverride(db: ImageDbConfig | FileDbConfig | undefined)
   )
 }
 
+function refuseMultiColumnTransformations(
+  db: ImageDbConfig | undefined,
+  transformations: Record<string, ImageTransformationConfig> | undefined,
+): void {
+  if (!isMultiColumn(db?.columns)) return
+  if (transformations == null || Object.keys(transformations).length === 0) return
+  throw new Error(
+    'image() sets both db.columns (multi-column mode) and transformations. Multi-column mode has ' +
+      'no column to store the generated variants, so they would be uploaded and never recorded. ' +
+      'Remove transformations, or remove db.columns to use the single-Json column that stores variants.',
+  )
+}
+
 /** The metadata blob's single-column backing, honouring the `db` overrides the field documents. */
 function metadataColumn(
   fieldName: string,
@@ -259,7 +272,7 @@ export interface ImageFieldConfig<
   type: 'image'
   /** Name of the storage provider from config.storage */
   storage: string
-  /** Image transformations to generate on upload */
+  /** Image transformations to generate on upload. Not allowed with `db.columns` (multi-column mode). */
   transformations?: Record<string, ImageTransformationConfig>
   /** File validation options */
   validation?: FileValidationOptions
@@ -305,25 +318,78 @@ interface PendingUpload<TMetadata> {
 }
 
 function createPendingUploads<TMetadata>() {
-  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>>>()
+  const pending = new WeakMap<object, Map<string, PendingUpload<TMetadata>[]>>()
+  const queueFor = (write: object, fieldKey: string) => {
+    const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>[]>()
+    pending.set(write, forWrite)
+    const queue = forWrite.get(fieldKey) ?? []
+    forWrite.set(fieldKey, queue)
+    return queue
+  }
   return {
     set: (write: object, fieldKey: string, value: PendingUpload<TMetadata>) => {
-      const forWrite = pending.get(write) ?? new Map<string, PendingUpload<TMetadata>>()
-      forWrite.set(fieldKey, value)
-      pending.set(write, forWrite)
+      queueFor(write, fieldKey).push(value)
     },
     take: (write: unknown, fieldKey: string): PendingUpload<TMetadata> | undefined => {
       if (typeof write !== 'object' || write === null) return undefined
-      const forWrite = pending.get(write)
-      const value = forWrite?.get(fieldKey)
-      forWrite?.delete(fieldKey)
-      return value
+      return pending.get(write)?.get(fieldKey)?.shift()
+    },
+    size: (write: unknown, fieldKey: string): number => {
+      if (typeof write !== 'object' || write === null) return 0
+      return pending.get(write)?.get(fieldKey)?.length ?? 0
+    },
+    amendLast: (
+      write: unknown,
+      fieldKey: string,
+      amend: (value: PendingUpload<TMetadata>) => PendingUpload<TMetadata>,
+    ) => {
+      if (typeof write !== 'object' || write === null) return
+      const queue = pending.get(write)?.get(fieldKey)
+      if (queue?.length) queue[queue.length - 1] = amend(queue[queue.length - 1])
     },
   }
 }
 
 const pendingFileUploads = createPendingUploads<FileMetadata>()
 const pendingImageUploads = createPendingUploads<ImageMetadata>()
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime */
+function composeFieldHooks(
+  builtIn: {
+    resolveInput: (args: any) => Promise<any>
+  },
+  userHooks: any,
+  cleanupAfterTransaction: (args: any) => Promise<void>,
+  uploads: ReturnType<typeof createPendingUploads<any>>,
+): any {
+  return {
+    ...userHooks,
+    resolveInput: async (args: any) => {
+      const queuedBefore = uploads.size(args.inputData, args.fieldKey)
+      const resolved = await builtIn.resolveInput(args)
+      if (!userHooks?.resolveInput) return resolved
+      const final = await userHooks.resolveInput({
+        ...args,
+        resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
+      })
+      if (
+        final?.filename !== resolved?.filename &&
+        uploads.size(args.inputData, args.fieldKey) > queuedBefore
+      ) {
+        uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
+          ...pending,
+          replaced: null,
+        }))
+      }
+      return final
+    },
+    afterTransaction: async (args: any) => {
+      await cleanupAfterTransaction(args)
+      await userHooks?.afterTransaction?.(args)
+    },
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
  * Creates a file upload field
@@ -358,8 +424,26 @@ export function file<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').FileMetadata", nullable)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+  const cleanupAfterTransaction = async ({
+    status,
+    operation,
+    inputData,
+    originalItem,
+    fieldKey,
+    context,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  }: any) => {
+    if (operation === 'delete') {
+      if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
+      const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as FileMetadata | null
+      if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
+      try {
+        await context.storage.deleteFile(fieldConfig.storage, deleted.filename)
+      } catch (error) {
+        console.error(`Failed to cleanup file on delete: ${deleted.filename}`, error)
+      }
+      return
+    }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
@@ -381,82 +465,67 @@ export function file<
     inputType: faces.inputType,
     ...restOptions,
 
-    hooks: {
-      // Keystone-compliant field resolveInput args: the field value lives at
-      // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async (args: any) => {
-        const { resolvedData, inputData, fieldKey, context, item, operation } = args
-        const inputValue = resolvedData?.[fieldKey]
+    hooks: composeFieldHooks(
+      {
+        // Keystone-compliant field resolveInput args: the field value lives at
+        // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+        resolveInput: async (args: any) => {
+          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const inputValue = resolvedData?.[fieldKey]
 
-        if (inputValue === null || inputValue === undefined) {
-          return inputValue
-        }
-
-        // An existing metadata value is AUTHORITATIVE and must never
-        // re-upload — but only when it is genuinely the row's own currently
-        // stored value, or the write is sudo. See ADR-0006 and issue #1619.
-        if (isFileMetadataShaped(inputValue)) {
-          return authorizeStoredMetadata({
-            value: inputValue,
-            fieldKey,
-            operation,
-            isSudo: context._isSudo === true,
-            currentValue: () =>
-              fieldConfig.assembleColumns
-                ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
-                : (item?.[fieldKey] ?? null),
-          })
-        }
-
-        if (isFileLike(inputValue)) {
-          const fileObj = inputValue
-          const arrayBuffer = await fileObj.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
-
-          const metadata = (await context.storage.uploadFile(fieldConfig.storage, fileObj, buffer, {
-            validation: fieldConfig.validation,
-          })) as FileMetadata
-
-          const previous = logicalValue(fieldConfig, fieldKey, item) as
-            FileMetadata | null | undefined
-          pendingFileUploads.set(inputData, fieldKey, {
-            uploaded: metadata,
-            replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
-          })
-
-          return metadata
-        }
-
-        // Unknown type - return as-is and let validation catch it
-        return inputValue
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-        // The deleted row is `originalItem`.
-        if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const fileMetadata = logicalValue(
-            fieldConfig,
-            fieldKey,
-            originalItem,
-          ) as FileMetadata | null
-
-          if (fileMetadata && typeof fileMetadata === 'object' && fileMetadata.filename) {
-            try {
-              await context.storage.deleteFile(fieldConfig.storage, fileMetadata.filename)
-            } catch (error) {
-              console.error(`Failed to cleanup file on delete: ${fileMetadata.filename}`, error)
-            }
+          if (inputValue === null || inputValue === undefined) {
+            return inputValue
           }
-        }
+
+          // An existing metadata value is AUTHORITATIVE and must never
+          // re-upload — but only when it is genuinely the row's own currently
+          // stored value, or the write is sudo. See ADR-0006 and issue #1619.
+          if (isFileMetadataShaped(inputValue)) {
+            return authorizeStoredMetadata({
+              value: inputValue,
+              fieldKey,
+              operation,
+              isSudo: context._isSudo === true,
+              currentValue: () =>
+                fieldConfig.assembleColumns
+                  ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
+                  : (item?.[fieldKey] ?? null),
+            })
+          }
+
+          if (isFileLike(inputValue)) {
+            const fileObj = inputValue
+            const arrayBuffer = await fileObj.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
+
+            const metadata = (await context.storage.uploadFile(
+              fieldConfig.storage,
+              fileObj,
+              buffer,
+              {
+                validation: fieldConfig.validation,
+              },
+            )) as FileMetadata
+
+            const previous = logicalValue(fieldConfig, fieldKey, item) as
+              FileMetadata | null | undefined
+            pendingFileUploads.set(inputData, fieldKey, {
+              uploaded: metadata,
+              replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
+            })
+
+            return metadata
+          }
+
+          // Unknown type - return as-is and let validation catch it
+          return inputValue
+        },
       },
-      ...userHooks,
-      afterTransaction: async (args) => {
-        await cleanupAfterTransaction(args)
-        await userHooks?.afterTransaction?.(args)
-      },
-    },
+      userHooks,
+      cleanupAfterTransaction,
+      pendingFileUploads,
+    ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
       const fileMetadataSchema = z.object({
@@ -498,6 +567,7 @@ export function file<
  * Creates an image upload field with optional transformations
  *
  * Uses JSON field backing to store image metadata including dimensions, transformations, etc.
+ * `transformations` cannot be combined with `db.columns` (multi-column mode); the field throws.
  *
  * @example
  * ```typescript
@@ -521,6 +591,7 @@ export function image<
   TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 >(options: Omit<ImageFieldConfig<TTypeInfo, TKey>, 'type'>): ImageFieldConfig<TTypeInfo, TKey> {
   const { hooks: userHooks, ...restOptions } = options
+  refuseMultiColumnTransformations(options.db, options.transformations)
 
   // See ADR-0006.
   const multiColumn = isMultiColumn(options.db?.columns)
@@ -529,8 +600,26 @@ export function image<
   const nullable = resolveNullable(options.db)
   const faces = metadataFaces("import('@opensaas/stack-storage').ImageMetadata", nullable)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-  const cleanupAfterTransaction = async ({ status, inputData, fieldKey, context }: any) => {
+  const cleanupAfterTransaction = async ({
+    status,
+    operation,
+    inputData,
+    originalItem,
+    fieldKey,
+    context,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+  }: any) => {
+    if (operation === 'delete') {
+      if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
+      const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as ImageMetadata | null
+      if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
+      try {
+        await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
+      } catch (error) {
+        console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
+      }
+      return
+    }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
@@ -553,91 +642,68 @@ export function image<
     inputType: faces.inputType,
     ...restOptions,
 
-    hooks: {
-      // Keystone-compliant field resolveInput args: the field value lives at
-      // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      resolveInput: async (args: any) => {
-        const { resolvedData, inputData, fieldKey, context, item, operation } = args
-        const inputValue = resolvedData?.[fieldKey]
+    hooks: composeFieldHooks(
+      {
+        // Keystone-compliant field resolveInput args: the field value lives at
+        // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
+        resolveInput: async (args: any) => {
+          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const inputValue = resolvedData?.[fieldKey]
 
-        if (inputValue === null || inputValue === undefined) {
-          return inputValue
-        }
-
-        // An existing metadata value is AUTHORITATIVE and must never
-        // re-upload — but only when it is genuinely the row's own currently
-        // stored value, or the write is sudo. See ADR-0006 and issue #1619.
-        if (isImageMetadataShaped(inputValue)) {
-          return authorizeStoredMetadata({
-            value: inputValue,
-            fieldKey,
-            operation,
-            isSudo: context._isSudo === true,
-            currentValue: () =>
-              fieldConfig.assembleColumns
-                ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
-                : (item?.[fieldKey] ?? null),
-          })
-        }
-
-        if (isFileLike(inputValue)) {
-          const fileObj = inputValue
-          const arrayBuffer = await fileObj.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
-
-          const metadata = (await context.storage.uploadImage(
-            fieldConfig.storage,
-            fileObj,
-            buffer,
-            {
-              validation: fieldConfig.validation,
-              transformations: fieldConfig.transformations,
-            },
-          )) as ImageMetadata
-
-          const previous = logicalValue(fieldConfig, fieldKey, item) as
-            ImageMetadata | null | undefined
-          pendingImageUploads.set(inputData, fieldKey, {
-            uploaded: metadata,
-            replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
-          })
-
-          return metadata
-        }
-
-        // Unknown type - return as-is and let validation catch it
-        return inputValue
-      },
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
-      afterOperation: async ({ operation, originalItem, fieldKey, context }: any) => {
-        // The deleted row is `originalItem`.
-        if (operation === 'delete' && fieldConfig.cleanupOnDelete) {
-          const imageMetadata = logicalValue(
-            fieldConfig,
-            fieldKey,
-            originalItem,
-          ) as ImageMetadata | null
-
-          if (imageMetadata && typeof imageMetadata === 'object' && imageMetadata.filename) {
-            try {
-              await context.storage.deleteImage({
-                ...imageMetadata,
-                storageProvider: fieldConfig.storage,
-              })
-            } catch (error) {
-              console.error(`Failed to cleanup image on delete: ${imageMetadata.filename}`, error)
-            }
+          if (inputValue === null || inputValue === undefined) {
+            return inputValue
           }
-        }
+
+          // An existing metadata value is AUTHORITATIVE and must never
+          // re-upload — but only when it is genuinely the row's own currently
+          // stored value, or the write is sudo. See ADR-0006 and issue #1619.
+          if (isImageMetadataShaped(inputValue)) {
+            return authorizeStoredMetadata({
+              value: inputValue,
+              fieldKey,
+              operation,
+              isSudo: context._isSudo === true,
+              currentValue: () =>
+                fieldConfig.assembleColumns
+                  ? fieldConfig.assembleColumns(fieldKey, (item ?? {}) as Record<string, unknown>)
+                  : (item?.[fieldKey] ?? null),
+            })
+          }
+
+          if (isFileLike(inputValue)) {
+            const fileObj = inputValue
+            const arrayBuffer = await fileObj.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
+
+            const metadata = (await context.storage.uploadImage(
+              fieldConfig.storage,
+              fileObj,
+              buffer,
+              {
+                validation: fieldConfig.validation,
+                transformations: multiColumn ? undefined : fieldConfig.transformations,
+              },
+            )) as ImageMetadata
+
+            const previous = logicalValue(fieldConfig, fieldKey, item) as
+              ImageMetadata | null | undefined
+            pendingImageUploads.set(inputData, fieldKey, {
+              uploaded: metadata,
+              replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
+            })
+
+            return metadata
+          }
+
+          // Unknown type - return as-is and let validation catch it
+          return inputValue
+        },
       },
-      ...userHooks,
-      afterTransaction: async (args) => {
-        await cleanupAfterTransaction(args)
-        await userHooks?.afterTransaction?.(args)
-      },
-    },
+      userHooks,
+      cleanupAfterTransaction,
+      pendingImageUploads,
+    ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
       const imageMetadataSchema = z.object({

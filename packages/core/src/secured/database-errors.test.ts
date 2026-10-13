@@ -2,7 +2,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import pg from 'pg'
 import { text } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { AfterTransactionError } from '../context/transaction-boundary.js'
 import { DatabaseError, isUniqueConstraintViolation } from '../lib/database-errors.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
@@ -245,7 +244,6 @@ describe('a database refusal through the secured surface', () => {
       )
 
       expect(isUniqueConstraintViolation(error)).toBe(true)
-      expect(error).not.toBeInstanceOf(AfterTransactionError)
       expect(afterTransaction).toHaveBeenCalled()
       expect(afterTransaction.mock.calls.every((call) => call[0].status === 'rolled-back')).toBe(
         true,

@@ -8,10 +8,8 @@ import {
   mcpSessionToContextSession,
   hasScopes,
   isSessionExpired,
-  createOAuthDiscoveryHandler,
-  createOAuthProtectedResourceHandler,
 } from '../src/mcp/better-auth.js'
-import type { BetterAuthInstance, BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
+import type { BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
 import type { McpSession } from '@opensaas/stack-core/mcp'
 
 describe('Better Auth MCP Adapter', () => {
@@ -24,6 +22,7 @@ describe('Better Auth MCP Adapter', () => {
     let options: BetterAuthMcpOptions
 
     beforeAll(async () => {
+      await import('@better-auth/mcp')
       server = createServer((_, res) => {
         res.setHeader('content-type', 'application/json')
         res.end(JSON.stringify({ keys: [jwk] }))
@@ -50,7 +49,8 @@ describe('Better Auth MCP Adapter', () => {
       return `${signingInput}.${signature.toString('base64url')}`
     }
 
-    const bearer = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
+    const bearer = (token: string, method = 'POST') =>
+      new Request(resource, { method, headers: { Authorization: `Bearer ${token}` } })
 
     it('maps a valid token to a session', async () => {
       const token = mint({ sub: 'user-123', scope: 'read write' })
@@ -69,6 +69,32 @@ describe('Better Auth MCP Adapter', () => {
       const session = await createBetterAuthMcpAdapter(options)(bearer(token))
 
       expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
+    })
+
+    it('drops registered JWT claims but keeps custom ones', async () => {
+      const token = mint({
+        sub: 'user-123',
+        jti: 'j1',
+        azp: 'client',
+        client_id: 'client',
+        sid: 's1',
+        nbf: 1,
+        role: 'admin',
+      })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({ userId: 'user-123', role: 'admin' })
+      for (const claim of ['iss', 'aud', 'iat', 'nbf', 'jti', 'azp', 'client_id', 'sid']) {
+        expect(session).not.toHaveProperty(claim)
+      }
+    })
+
+    it('does not let a custom claim supply scopes', async () => {
+      const token = mint({ sub: 'user-123', scopes: ['mcp:write'], expiresAt: 'x' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.scopes).toBeUndefined()
+      expect(session?.expiresAt).toBeInstanceOf(Date)
     })
 
     it('does not let a claim override the userId', async () => {
@@ -103,7 +129,9 @@ describe('Better Auth MCP Adapter', () => {
     })
 
     it('returns null without a token', async () => {
-      expect(await createBetterAuthMcpAdapter(options)(new Headers())).toBeNull()
+      expect(
+        await createBetterAuthMcpAdapter(options)(new Request(resource, { method: 'POST' })),
+      ).toBeNull()
     })
 
     it('rejects a token for another audience', async () => {
@@ -120,6 +148,12 @@ describe('Better Auth MCP Adapter', () => {
     it('rejects a token from another issuer', async () => {
       const token = mint({ sub: 'user-123', iss: 'http://evil.example/api/auth' })
       expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+    })
+
+    it.each(['GET', 'DELETE'])('maps a valid token on a %s request', async (method) => {
+      const token = mint({ sub: 'user-123' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token, method))
+      expect(session?.userId).toBe('user-123')
     })
 
     it('rejects a token signed by another key', async () => {
@@ -140,10 +174,7 @@ describe('Better Auth MCP Adapter', () => {
 
     it('withMcpAuth challenges a verified token that has no subject', async () => {
       const handler = vi.fn(async () => new Response('OK'))
-      const response = await withMcpAuth(
-        options,
-        handler,
-      )(new Request(resource, { headers: bearer(mint({})) }))
+      const response = await withMcpAuth(options, handler)(bearer(mint({}), 'GET'))
 
       expect(response.status).toBe(401)
       expect(response.headers.get('WWW-Authenticate')).toContain('Bearer')
@@ -152,10 +183,7 @@ describe('Better Auth MCP Adapter', () => {
 
     it('withMcpAuth calls the handler with the session', async () => {
       const handler = vi.fn(async () => new Response('OK'))
-      const response = await withMcpAuth(
-        options,
-        handler,
-      )(new Request(resource, { headers: bearer(mint({ sub: 'user-123' })) }))
+      const response = await withMcpAuth(options, handler)(bearer(mint({ sub: 'user-123' }), 'GET'))
 
       expect(response.status).toBe(200)
       expect(handler).toHaveBeenCalledWith(
@@ -282,58 +310,6 @@ describe('Better Auth MCP Adapter', () => {
       }
 
       expect(isSessionExpired(session)).toBe(false)
-    })
-  })
-
-  describe('createOAuthDiscoveryHandler', () => {
-    it('should create a handler that proxies to Better Auth', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {},
-      }
-
-      const handler = createOAuthDiscoveryHandler(mockAuth)
-
-      // Mock fetch to capture the proxy call
-      const originalFetch = global.fetch
-      const mockFetch = vi.fn(async () => new Response('{"issuer":"http://localhost"}'))
-      global.fetch = mockFetch as typeof fetch
-
-      const request = new Request('http://localhost/.well-known/oauth-authorization-server')
-      await handler(request)
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost/api/auth/.well-known/oauth-authorization-server',
-        expect.any(Object),
-      )
-
-      // Restore original fetch
-      global.fetch = originalFetch
-    })
-  })
-
-  describe('createOAuthProtectedResourceHandler', () => {
-    it('should create a handler that proxies to Better Auth', async () => {
-      const mockAuth: BetterAuthInstance = {
-        api: {},
-      }
-
-      const handler = createOAuthProtectedResourceHandler(mockAuth)
-
-      // Mock fetch to capture the proxy call
-      const originalFetch = global.fetch
-      const mockFetch = vi.fn(async () => new Response('{"resource":"http://localhost"}'))
-      global.fetch = mockFetch as typeof fetch
-
-      const request = new Request('http://localhost/.well-known/oauth-protected-resource')
-      await handler(request)
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost/api/auth/.well-known/oauth-protected-resource',
-        expect.any(Object),
-      )
-
-      // Restore original fetch
-      global.fetch = originalFetch
     })
   })
 })
