@@ -264,10 +264,8 @@ const result = await context.transaction(async (tx) => {
     .first()
   if (held === null) return { booked: false }
 
-  // BOTH sides of the gate are read after the lock, each in its own statement.
-  // `held`'s own columns are the row as of BEFORE the lock was granted, so
-  // `held.capacity` can be stale; this re-read cannot be, because no one else
-  // can commit an update to a row this transaction holds.
+  // `held` is itself re-read after the lock, so its columns are current. The
+  // count is a different list, so it is read in its own statement after the lock.
   const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
   const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
     (aggregate) => ({ taken: aggregate.count() }),
@@ -283,7 +281,7 @@ const result = await context.transaction(async (tx) => {
   it, so it would compile, run, return rows and guard nothing. The generated
   bundle names two faces per list (`SlotList`, `SlotTxList`) and
   `context.db.Slot.forUpdate()` is a compile error.
-- **Two statements.** The scoped read runs first — operation access, the Access
+- **Three statements.** The scoped read runs first — operation access, the Access
   Filter and Field Visibility exactly as any read — and the engine then locks
   the identity rows it returned. The locked set is provably a subset of the
   readable set.

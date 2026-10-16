@@ -214,6 +214,40 @@ describe.skipIf(escape.kind !== 'postgres')(
     )
 
     test(
+      'a cursor still bounds the refreshed rows',
+      async () => {
+        const low = await seed('alice', 5)
+        const crosses = await seed('alice', 20)
+        const result = await whileLockWaits(
+          [low, crosses],
+          async (b) => {
+            await b.query('update "Doc" set balance = 1 where id = $1', [crosses])
+          },
+          (tx) => tx.db.Doc.orderBy({ balance: 'asc' }).cursor({ balance: 5 }).forUpdate().all(),
+        )
+        expect(result.map((row) => row.id)).not.toContain(crosses)
+      },
+      BOOT,
+    )
+
+    test(
+      'distinct still collapses rows whose key converged',
+      async () => {
+        const first = await seed('alice', 1, 'a')
+        const second = await seed('alice', 2, 'b')
+        const result = await whileLockWaits(
+          [first, second],
+          async (b) => {
+            await b.query(`update "Doc" set note = 'a' where id = $1`, [second])
+          },
+          (tx) => tx.db.Doc.distinct('note').forUpdate().all(),
+        )
+        expect(result).toHaveLength(1)
+      },
+      BOOT,
+    )
+
+    test(
       'includes are read fresh after the lock',
       async () => {
         const folder = await database

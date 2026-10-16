@@ -1491,7 +1491,9 @@ function lockLane(
  * between the scoped read and the lock is stale in the first read. The locked
  * keys are therefore re-read under the same predicates and Access Filter: a row
  * that is gone or no longer in scope drops out, and the rest carry their
- * current values. The re-read never widens the locked key set.
+ * current values. The re-read never widens the locked key set, and keeps the
+ * cursor and distinct the caller composed so the refreshed rows still honour
+ * them; the key set already carries the limit and offset.
  *
  * No keys, no statement: an empty scoped read has nothing to lock, and `IN ()`
  * is a Postgres syntax error rather than an empty result (ADR-0062).
@@ -1520,7 +1522,7 @@ async function locked(
   if (held.length === 0) return []
   const refreshed = scope(
     binding,
-    { ...plan, limit: undefined, offset: undefined, distinct: undefined, cursor: undefined },
+    { ...plan, limit: undefined, offset: undefined },
     await whereCombinators(),
     ALL_DISPOSITIONS,
     unreachableRefusal,
