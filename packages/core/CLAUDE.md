@@ -264,10 +264,8 @@ const result = await context.transaction(async (tx) => {
     .first()
   if (held === null) return { booked: false }
 
-  // BOTH sides of the gate are read after the lock, each in its own statement.
-  // `held`'s own columns are the row as of BEFORE the lock was granted, so
-  // `held.capacity` can be stale; this re-read cannot be, because no one else
-  // can commit an update to a row this transaction holds.
+  // `held` is itself re-read after the lock, so its columns are current. The
+  // count is a different list, so it is read in its own statement after the lock.
   const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
   const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
     (aggregate) => ({ taken: aggregate.count() }),
@@ -283,20 +281,17 @@ const result = await context.transaction(async (tx) => {
   it, so it would compile, run, return rows and guard nothing. The generated
   bundle names two faces per list (`SlotList`, `SlotTxList`) and
   `context.db.Slot.forUpdate()` is a compile error.
-- **Two statements.** The scoped read runs first — operation access, the Access
+- **Three statements.** The scoped read runs first — operation access, the Access
   Filter and Field Visibility exactly as any read — and the engine then locks
   the identity rows it returned. The locked set is provably a subset of the
   readable set.
-- **The lock is a mutex on the row; the columns come back as of before it.**
-  Each statement takes its own snapshot under Read Committed, so a column
-  another transaction committed between the read and the lock reaches the
-  caller **stale** — only the row's identity is post-lock. This diverges from a
-  single-statement `SELECT … FOR UPDATE`, which Postgres re-evaluates after
-  acquiring. So a threshold the gate compares against is read in its **own
-  statement after the lock**, exactly as the count is; reading it off the
-  locked row is the stale read the gate exists to close. ADR-0047 states the
-  same thing from the other side: the parent row lock is a **mutex token**, not
-  protection for the parent's own data.
+- **The locked rows are re-read after the lock.** The engine re-reads exactly the
+  locked keys under the same predicates and Access Filter, then applies
+  selection, includes and Field Visibility to that refreshed read. A row another
+  transaction changed while the lock waited comes back with its current values;
+  one it moved out of scope or deleted is dropped. The re-read never widens the
+  locked key set. Counts and other statements still need their own read after
+  the lock.
 - **A terminal never returns a row it did not lock.** A row deleted between the
   two statements locks nothing: `first()` yields `null` and `all()` the
   surviving subset. `null` therefore means denied-or-vanished.

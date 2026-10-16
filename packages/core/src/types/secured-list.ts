@@ -449,14 +449,10 @@ type RowLock<
    * `first()` yields `null` and `all()` the surviving subset — so `null` here
    * means denied-or-vanished (ADR-0047).
    *
-   * Because the read is the FIRST of the two statements, the row handed back
-   * carries its columns as of BEFORE the lock: each statement takes its own
-   * snapshot under Read Committed, so a column another transaction committed
-   * in between arrives stale. Only the identity is post-lock — the lock is a
-   * mutex token on the row, not protection for the row's own data, and this
-   * differs from a single-statement `SELECT … FOR UPDATE`, which Postgres
-   * re-evaluates after acquiring. A gate's threshold is therefore read in its
-   * own statement AFTER this one, exactly as its count is.
+   * The locked rows are re-read after the lock, under the same predicates and
+   * Access Filter, so the row handed back carries its current columns and a row
+   * another transaction moved out of scope is dropped. A gate's count is still
+   * read in its own statement.
    *
    * `aggregate()` and `nearest()` do not carry it: an aggregate returns no
    * primary keys to lock, and a ranking is not a gate. A list whose table has

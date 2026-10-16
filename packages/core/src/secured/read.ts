@@ -189,14 +189,10 @@ export interface SecuredQuery<TRow = OrmRow> {
    * means denied-or-vanished, which extends a conflation Silent failure
    * already makes deliberately (ADR-0047).
    *
-   * Because the read is the FIRST of the two statements, the row it hands back
-   * carries its columns as of BEFORE the lock: each statement takes its own
-   * snapshot under Read Committed, so a column another transaction committed
-   * in between arrives stale. Only the identity is post-lock — the lock is a
-   * mutex token on the row, not protection for the row's own data, and this
-   * differs from a single-statement `SELECT … FOR UPDATE`, which Postgres
-   * re-evaluates after acquiring. A gate's threshold is therefore read in its
-   * own statement AFTER this one, exactly as its count is.
+   * The locked rows are re-read after the lock, under the same predicates and
+   * Access Filter, so the row handed back carries its current columns and a row
+   * another transaction moved out of scope is dropped. A gate's count is still
+   * read in its own statement.
    *
    * `aggregate()` and `nearest()` do not carry it: an aggregate returns no
    * primary keys to lock, and a ranking is not a gate.
@@ -884,9 +880,10 @@ function identityIn(
   model: PredicateAccessor,
   listName: string,
   keys: readonly RowLockKey[],
+  column = 'id',
 ): AnyExpression {
-  const expression = model['id']?.in?.(keys)
-  if (expression === undefined) throw unqueryableKey(listName, 'id')
+  const expression = model[column]?.in?.(keys)
+  if (expression === undefined) throw unqueryableKey(listName, column)
   return expression
 }
 
@@ -1488,20 +1485,26 @@ function lockLane(
 }
 
 /**
- * Lock the rows the scoped read returned, and keep the ones that were still
- * there.
+ * Lock the rows the scoped read returned, then read them again.
  *
- * No keys, no statement: an empty scoped read — unmatched, or scoped away —
- * has nothing to lock, and `IN ()` is a Postgres syntax error rather than an
- * empty result (ADR-0062). A row whose key the lock did not come back with
- * vanished between the two statements and is dropped (ADR-0047).
+ * Each statement takes its own snapshot, so a row another transaction changed
+ * between the scoped read and the lock is stale in the first read. The locked
+ * keys are therefore re-read under the same predicates and Access Filter: a row
+ * that is gone or no longer in scope drops out, and the rest carry their
+ * current values. The re-read never widens the locked key set, and keeps the
+ * cursor and distinct the caller composed so the refreshed rows still honour
+ * them; the key set already carries the limit and offset.
+ *
+ * No keys, no statement: an empty scoped read has nothing to lock, and `IN ()`
+ * is a Postgres syntax error rather than an empty result (ADR-0062).
  */
 async function locked(
   binding: ReadBinding,
   taken: { lane: RowLockLane; identity: RowLockIdentity },
-  listName: string,
+  plan: ReadPlan,
   rows: readonly OrmRow[],
 ): Promise<OrmRow[]> {
+  const { listName } = binding
   const column = taken.identity.column
   const keys: RowLockKey[] = []
   for (const row of rows) {
@@ -1515,13 +1518,16 @@ async function locked(
     keys.push(value)
   }
   if (keys.length === 0) return []
-  const held = new Set<RowLockKey>(
-    await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys)),
-  )
-  return rows.filter((row) => {
-    const value = row[column]
-    return (typeof value === 'string' || typeof value === 'number') && held.has(value)
-  })
+  const held = await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys))
+  if (held.length === 0) return []
+  const refreshed = scope(
+    binding,
+    { ...plan, limit: undefined, offset: undefined },
+    await whereCombinators(),
+    ALL_DISPOSITIONS,
+    unreachableRefusal,
+  ).where((model) => identityIn(model, listName, held, column))
+  return await engineRead(binding, () => refreshed.all())
 }
 
 async function engineRead<T>(binding: ReadBinding, run: () => PromiseLike<T>): Promise<T> {
@@ -1545,7 +1551,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleR
     unreachableRefusal,
   )
   const read = await engineRead(binding, () => collection.all())
-  const rows = taken === undefined ? read : await locked(binding, taken, binding.listName, read)
+  const rows = taken === undefined ? read : await locked(binding, taken, plan, read)
   return await visibleRows(binding, rows, plan)
 }
 
@@ -1562,7 +1568,7 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<Visibl
   )
   const read = await engineRead(binding, () => collection.first())
   if (read === null) return null
-  const rows = taken === undefined ? [read] : await locked(binding, taken, binding.listName, [read])
+  const rows = taken === undefined ? [read] : await locked(binding, taken, plan, [read])
   if (rows.length === 0) return null
   return (await visibleRows(binding, rows, plan))[0]
 }
