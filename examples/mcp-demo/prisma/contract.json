@@ -2650,6 +2650,10 @@
                 "backchannelLogoutSessionRequired": {
                   "codecId": "pg/bool@1",
                   "dataType": "pg/bool",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
                   "nullable": true
                 },
                 "backchannelLogoutUri": {
@@ -2712,6 +2716,10 @@
                 "enableEndSession": {
                   "codecId": "pg/bool@1",
                   "dataType": "pg/bool",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
                   "nullable": true
                 },
                 "grantTypes": {
@@ -2772,6 +2780,10 @@
                 "requirePKCE": {
                   "codecId": "pg/bool@1",
                   "dataType": "pg/bool",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
                   "nullable": true
                 },
                 "responseTypes": {
@@ -2787,6 +2799,10 @@
                 "skipConsent": {
                   "codecId": "pg/bool@1",
                   "dataType": "pg/bool",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
                   "nullable": true
                 },
                 "softwareId": {
@@ -3340,7 +3356,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "bcf8d33b8a50c54d1b0663803f5a887783ff05475a69e22a2f44c7a97aea9bb2"
+    "storageHash": "ed9ce22753001b9002bf83baba49e70d34ccc8316229313ce7fdcfd70c58e404"
   },
   "execution": {
     "executionHash": "533a10e68a7fa3d5e00e352970fcf8fd05eeda4c7e92dd60c3731497106ab904",
