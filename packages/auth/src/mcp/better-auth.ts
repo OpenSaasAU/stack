@@ -39,6 +39,7 @@ function claimsToSession(
   req: Request,
 ): McpSession | null {
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
+  if (claims.sub === claims.client_id || claims.sub === claims.azp) return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
   for (const claim of REGISTERED_CLAIMS) delete customClaims[claim]
   for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId']) delete customClaims[claim]

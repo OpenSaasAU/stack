@@ -290,6 +290,8 @@ When Claude Desktop connects to your MCP server:
 5. **MCP Connection** - Claude uses token to authenticate tool calls
 6. **Access Control** - All operations respect your access control rules
 
+> **Machine clients are not supported.** A `client_credentials` token represents no user and carries the client id as its `sub`, so a token whose `sub` equals its `client_id` or `azp` claim is answered with a 401. Only user-delegated tokens are accepted.
+
 ## Generated Tools
 
 The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase form of the list key (`Post` → `list_post_query`, `BlogPost` → `list_blogPost_query`):
