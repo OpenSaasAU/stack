@@ -143,7 +143,8 @@ async function release(steps: readonly (() => Promise<void>)[]): Promise<void> {
 }
 
 /**
- * pglite-socket 0.2.x runs a closed socket's detach (transaction rollback
+ * pglite-socket 0.2.x (https://github.com/electric-sql/pglite/tree/main/packages/pglite-socket,
+ * `PGLiteSocketHandler.handleClose`) runs a closed socket's detach (transaction rollback
  * included) on `setImmediate`, and `server.stop()` resolves without awaiting
  * it. One turn of the check phase runs every detach already scheduled, and
  * the exclusive lock queues behind any rollback they started.
