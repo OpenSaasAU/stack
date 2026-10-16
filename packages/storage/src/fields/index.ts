@@ -315,6 +315,29 @@ function logicalValue(
 interface PendingUpload<TMetadata> {
   uploaded: TMetadata | null
   replaced: TMetadata | null
+  discarded?: boolean
+}
+
+function staleAssets<TMetadata extends { filename: string }>(
+  pending: PendingUpload<TMetadata>,
+  status: string,
+): TMetadata[] {
+  if (status !== 'committed') return pending.uploaded?.filename ? [pending.uploaded] : []
+  const stale: (TMetadata | null)[] = [pending.discarded ? pending.uploaded : null]
+  if (pending.replaced?.filename !== pending.uploaded?.filename || pending.discarded) {
+    stale.push(pending.replaced)
+  }
+  return stale.filter((asset): asset is TMetadata => Boolean(asset?.filename))
+}
+
+function previousOnClear(
+  fieldConfig: {
+    cleanupOnReplace?: boolean
+    assembleColumns?: (fieldName: string, row: Record<string, unknown>) => unknown
+  },
+  { item, fieldKey }: { item: Record<string, unknown> | null | undefined; fieldKey: string },
+): unknown {
+  return fieldConfig.cleanupOnReplace ? logicalValue(fieldConfig, fieldKey, item) : null
 }
 
 function createPendingUploads<TMetadata>() {
@@ -374,8 +397,16 @@ function composeFieldHooks(
             resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
           })
         : resolved
-      if (final === null && uploads.size(args.inputData, args.fieldKey) === queuedBefore) {
+      if (final === null) {
         const replaced = replacedOnClear(args) as { filename?: string } | null | undefined
+        if (uploads.size(args.inputData, args.fieldKey) > queuedBefore) {
+          uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
+            ...pending,
+            replaced: replaced?.filename ? replaced : null,
+            discarded: true,
+          }))
+          return final
+        }
         if (replaced?.filename && typeof args.inputData === 'object' && args.inputData !== null) {
           uploads.set(args.inputData, args.fieldKey, { uploaded: null, replaced })
         }
@@ -455,16 +486,12 @@ export function file<
     }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
-    const stale = status === 'committed' ? pending.replaced : pending.uploaded
-    if (
-      !stale?.filename ||
-      (status === 'committed' && stale.filename === pending.uploaded?.filename)
-    )
-      return
-    try {
-      await context.storage.deleteFile(fieldConfig.storage, stale.filename)
-    } catch (error) {
-      console.error(`Failed to cleanup file: ${stale.filename}`, error)
+    for (const stale of staleAssets(pending, status)) {
+      try {
+        await context.storage.deleteFile(fieldConfig.storage, stale.filename)
+      } catch (error) {
+        console.error(`Failed to cleanup file: ${stale.filename}`, error)
+      }
     }
   }
 
@@ -534,13 +561,8 @@ export function file<
       userHooks,
       cleanupAfterTransaction,
       pendingFileUploads,
-      ({
-        item,
-        fieldKey,
-      }: {
-        item: Record<string, unknown> | null | undefined
-        fieldKey: string
-      }) => (fieldConfig.cleanupOnReplace ? logicalValue(fieldConfig, fieldKey, item) : null),
+      (args: { item: Record<string, unknown> | null | undefined; fieldKey: string }) =>
+        previousOnClear(fieldConfig, args),
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
@@ -638,17 +660,12 @@ export function image<
     }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
-    const stale = status === 'committed' ? pending.replaced : pending.uploaded
-    if (
-      !stale?.filename ||
-      (status === 'committed' && stale.filename === pending.uploaded?.filename)
-    ) {
-      return
-    }
-    try {
-      await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
-    } catch (error) {
-      console.error(`Failed to cleanup image: ${stale.filename}`, error)
+    for (const stale of staleAssets(pending, status)) {
+      try {
+        await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+      } catch (error) {
+        console.error(`Failed to cleanup image: ${stale.filename}`, error)
+      }
     }
   }
 
@@ -719,13 +736,8 @@ export function image<
       userHooks,
       cleanupAfterTransaction,
       pendingImageUploads,
-      ({
-        item,
-        fieldKey,
-      }: {
-        item: Record<string, unknown> | null | undefined
-        fieldKey: string
-      }) => (fieldConfig.cleanupOnReplace ? logicalValue(fieldConfig, fieldKey, item) : null),
+      (args: { item: Record<string, unknown> | null | undefined; fieldKey: string }) =>
+        previousOnClear(fieldConfig, args),
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {

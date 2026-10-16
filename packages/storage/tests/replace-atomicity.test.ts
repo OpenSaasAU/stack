@@ -258,6 +258,11 @@ describe('cleanupOnReplace when a file or image is cleared with null', () => {
               cleanupOnReplace: true,
               hooks: { resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey] },
             }),
+            nulled: file({
+              storage: 'files',
+              cleanupOnReplace: true,
+              hooks: { resolveInput: () => null },
+            }),
             keep: file({ storage: 'files' }),
           },
           access: { operation: OPEN },
@@ -359,5 +364,13 @@ describe('cleanupOnReplace when a file or image is cleared with null', () => {
     const id = idOf(await harness.context.db.Multi.create({ data: { attachment: pdf('a.pdf') } }))
     await harness.context.db.Multi.update({ where: { id }, data: { attachment: null } })
     expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('removes both the old file and the new upload when a hook nulls an upload', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', attachment: pdf('a.pdf') } }),
+    )
+    await harness.context.db.Doc.update({ where: { id }, data: { nulled: pdf('n.pdf') } })
+    expect(await readdir(uploadDir)).toHaveLength(1)
   })
 })
