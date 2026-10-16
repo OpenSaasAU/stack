@@ -238,3 +238,126 @@ describe('cleanupOnDelete only deletes once the delete committed', () => {
     expect(await readdir(uploadDir)).toEqual([])
   })
 })
+
+describe('cleanupOnReplace when a file or image is cleared with null', () => {
+  let harness: TestContext
+
+  beforeAll(async () => {
+    uploadDir = await mkdtemp(join(tmpdir(), 'opensaas-storage-clear-'))
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      storage: { files: localStorage({ uploadDir, serveUrl: '/uploads' }) },
+      lists: {
+        Doc: {
+          fields: {
+            title: text({ validation: { length: { max: 5 } } }),
+            attachment: file({ storage: 'files', cleanupOnReplace: true }),
+            avatar: image({ storage: 'files', cleanupOnReplace: true }),
+            hooked: file({
+              storage: 'files',
+              cleanupOnReplace: true,
+              hooks: { resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey] },
+            }),
+            keep: file({ storage: 'files' }),
+          },
+          access: { operation: OPEN },
+        },
+        Multi: {
+          fields: {
+            attachment: file({
+              storage: 'files',
+              cleanupOnReplace: true,
+              db: { columns: 'keystone' },
+            }),
+          },
+          access: { operation: OPEN },
+        },
+      },
+    }
+    harness = await createTestContext(config, null, { storage: createStorageUtils(config) })
+  }, BOOT)
+
+  afterAll(async () => {
+    await harness?.close()
+    await rm(uploadDir, { recursive: true, force: true })
+  })
+
+  beforeEach(async () => {
+    await harness.truncate()
+    for (const name of await readdir(uploadDir))
+      await rm(join(uploadDir, name), { recursive: true, force: true })
+  })
+
+  const idOf = (row: unknown) => (row as { id: string }).id
+
+  it('removes the old file and image after a committed clear', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({
+        data: { title: 'ok', attachment: pdf('a.pdf'), avatar: png('a.png') },
+      }),
+    )
+    await harness.context.db.Doc.update({ where: { id }, data: { attachment: null, avatar: null } })
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('keeps the asset when the field is omitted', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', attachment: pdf('a.pdf') } }),
+    )
+    await harness.context.db.Doc.update({ where: { id }, data: { title: 'new' } })
+    expect(await readdir(uploadDir)).toHaveLength(1)
+  })
+
+  it('keeps the asset when cleanupOnReplace is off', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', keep: pdf('a.pdf') } }),
+    )
+    await harness.context.db.Doc.update({ where: { id }, data: { keep: null } })
+    expect(await readdir(uploadDir)).toHaveLength(1)
+  })
+
+  it('keeps the asset when another field fails validation', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', attachment: pdf('a.pdf') } }),
+    )
+    await expect(
+      harness.context.db.Doc.update({
+        where: { id },
+        data: { title: 'waytoolong', attachment: null },
+      }),
+    ).rejects.toThrow()
+    expect(await readdir(uploadDir)).toHaveLength(1)
+  })
+
+  it('keeps the asset on rollback and removes it once the transaction commits', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', attachment: pdf('a.pdf') } }),
+    )
+    await harness.context
+      .transaction(async (tx) => {
+        await tx.db.Doc.update({ where: { id }, data: { attachment: null } })
+        throw new Error('rollback')
+      })
+      .catch(() => undefined)
+    expect(await readdir(uploadDir)).toHaveLength(1)
+
+    await harness.context.transaction(async (tx) => {
+      await tx.db.Doc.update({ where: { id }, data: { attachment: null } })
+    })
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('removes the old file when a field with its own resolveInput hook is cleared', async () => {
+    const id = idOf(
+      await harness.context.db.Doc.create({ data: { title: 'ok', hooked: pdf('a.pdf') } }),
+    )
+    await harness.context.db.Doc.update({ where: { id }, data: { hooked: null } })
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+
+  it('removes the old file in multi-column mode', async () => {
+    const id = idOf(await harness.context.db.Multi.create({ data: { attachment: pdf('a.pdf') } }))
+    await harness.context.db.Multi.update({ where: { id }, data: { attachment: null } })
+    expect(await readdir(uploadDir)).toEqual([])
+  })
+})

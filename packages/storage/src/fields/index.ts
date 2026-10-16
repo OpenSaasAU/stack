@@ -313,7 +313,7 @@ function logicalValue(
 }
 
 interface PendingUpload<TMetadata> {
-  uploaded: TMetadata
+  uploaded: TMetadata | null
   replaced: TMetadata | null
 }
 
@@ -361,17 +361,26 @@ function composeFieldHooks(
   userHooks: any,
   cleanupAfterTransaction: (args: any) => Promise<void>,
   uploads: ReturnType<typeof createPendingUploads<any>>,
+  replacedOnClear: (args: any) => unknown,
 ): any {
   return {
     ...userHooks,
     resolveInput: async (args: any) => {
       const queuedBefore = uploads.size(args.inputData, args.fieldKey)
       const resolved = await builtIn.resolveInput(args)
-      if (!userHooks?.resolveInput) return resolved
-      const final = await userHooks.resolveInput({
-        ...args,
-        resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
-      })
+      const final = userHooks?.resolveInput
+        ? await userHooks.resolveInput({
+            ...args,
+            resolvedData: { ...args.resolvedData, [args.fieldKey]: resolved },
+          })
+        : resolved
+      if (final === null && uploads.size(args.inputData, args.fieldKey) === queuedBefore) {
+        const replaced = replacedOnClear(args) as { filename?: string } | null | undefined
+        if (replaced?.filename && typeof args.inputData === 'object' && args.inputData !== null) {
+          uploads.set(args.inputData, args.fieldKey, { uploaded: null, replaced })
+        }
+      }
+      if (!userHooks?.resolveInput) return final
       if (
         final?.filename !== resolved?.filename &&
         uploads.size(args.inputData, args.fieldKey) > queuedBefore
@@ -449,7 +458,7 @@ export function file<
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
     if (
       !stale?.filename ||
-      (status === 'committed' && stale.filename === pending.uploaded.filename)
+      (status === 'committed' && stale.filename === pending.uploaded?.filename)
     )
       return
     try {
@@ -525,6 +534,13 @@ export function file<
       userHooks,
       cleanupAfterTransaction,
       pendingFileUploads,
+      ({
+        item,
+        fieldKey,
+      }: {
+        item: Record<string, unknown> | null | undefined
+        fieldKey: string
+      }) => (fieldConfig.cleanupOnReplace ? logicalValue(fieldConfig, fieldKey, item) : null),
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
@@ -625,7 +641,7 @@ export function image<
     const stale = status === 'committed' ? pending.replaced : pending.uploaded
     if (
       !stale?.filename ||
-      (status === 'committed' && stale.filename === pending.uploaded.filename)
+      (status === 'committed' && stale.filename === pending.uploaded?.filename)
     ) {
       return
     }
@@ -703,6 +719,13 @@ export function image<
       userHooks,
       cleanupAfterTransaction,
       pendingImageUploads,
+      ({
+        item,
+        fieldKey,
+      }: {
+        item: Record<string, unknown> | null | undefined
+        fieldKey: string
+      }) => (fieldConfig.cleanupOnReplace ? logicalValue(fieldConfig, fieldKey, item) : null),
     ),
 
     getZodSchema: (_fieldName: string, operation: 'create' | 'update') => {
