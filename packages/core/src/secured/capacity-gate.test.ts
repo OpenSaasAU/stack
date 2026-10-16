@@ -212,7 +212,7 @@ describe.skipIf(escape.kind !== 'postgres')(
     )
 
     test(
-      'the gate compares against the threshold read after the lock, not the one on the locked row',
+      'the locked row carries the values committed while the lock waited',
       async () => {
         const slotId = await slot()
 
@@ -257,10 +257,7 @@ describe.skipIf(escape.kind !== 'postgres')(
 
           const outcome = await running
 
-          // The two values the gate could have compared against, and they
-          // differ: the locked row still carries the capacity from before the
-          // lock was granted, the database carries the committed one.
-          expect(outcome.onLockedRow).toBe(CAPACITY)
+          expect(outcome.onLockedRow).toBe(0)
           expect(outcome.afterLock).toBe(0)
           expect(outcome.admitted).toBe(false)
           expect(await booked(slotId)).toBe(0)

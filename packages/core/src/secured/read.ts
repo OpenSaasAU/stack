@@ -1488,20 +1488,24 @@ function lockLane(
 }
 
 /**
- * Lock the rows the scoped read returned, and keep the ones that were still
- * there.
+ * Lock the rows the scoped read returned, then read them again.
  *
- * No keys, no statement: an empty scoped read — unmatched, or scoped away —
- * has nothing to lock, and `IN ()` is a Postgres syntax error rather than an
- * empty result (ADR-0062). A row whose key the lock did not come back with
- * vanished between the two statements and is dropped (ADR-0047).
+ * Each statement takes its own snapshot, so a row another transaction changed
+ * between the scoped read and the lock is stale in the first read. The locked
+ * keys are therefore re-read under the same predicates and Access Filter: a row
+ * that is gone or no longer in scope drops out, and the rest carry their
+ * current values. The re-read never widens the locked key set.
+ *
+ * No keys, no statement: an empty scoped read has nothing to lock, and `IN ()`
+ * is a Postgres syntax error rather than an empty result (ADR-0062).
  */
 async function locked(
   binding: ReadBinding,
   taken: { lane: RowLockLane; identity: RowLockIdentity },
-  listName: string,
+  plan: ReadPlan,
   rows: readonly OrmRow[],
 ): Promise<OrmRow[]> {
+  const { listName } = binding
   const column = taken.identity.column
   const keys: RowLockKey[] = []
   for (const row of rows) {
@@ -1515,13 +1519,16 @@ async function locked(
     keys.push(value)
   }
   if (keys.length === 0) return []
-  const held = new Set<RowLockKey>(
-    await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys)),
-  )
-  return rows.filter((row) => {
-    const value = row[column]
-    return (typeof value === 'string' || typeof value === 'number') && held.has(value)
-  })
+  const held = await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys))
+  if (held.length === 0) return []
+  const refreshed = scope(
+    binding,
+    { ...plan, limit: undefined, offset: undefined, distinct: undefined, cursor: undefined },
+    await whereCombinators(),
+    ALL_DISPOSITIONS,
+    unreachableRefusal,
+  ).where((model) => identityIn(model, listName, held))
+  return await engineRead(binding, () => refreshed.all())
 }
 
 async function engineRead<T>(binding: ReadBinding, run: () => PromiseLike<T>): Promise<T> {
@@ -1545,7 +1552,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleR
     unreachableRefusal,
   )
   const read = await engineRead(binding, () => collection.all())
-  const rows = taken === undefined ? read : await locked(binding, taken, binding.listName, read)
+  const rows = taken === undefined ? read : await locked(binding, taken, plan, read)
   return await visibleRows(binding, rows, plan)
 }
 
@@ -1562,7 +1569,7 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<Visibl
   )
   const read = await engineRead(binding, () => collection.first())
   if (read === null) return null
-  const rows = taken === undefined ? [read] : await locked(binding, taken, binding.listName, [read])
+  const rows = taken === undefined ? [read] : await locked(binding, taken, plan, [read])
   if (rows.length === 0) return null
   return (await visibleRows(binding, rows, plan))[0]
 }
