@@ -60,6 +60,22 @@ describe('richText() document shape', () => {
     }
   })
 
+  it('rejects an over-depth document on update and accepts a legitimately nested one', () => {
+    const nest = (levels: number) => {
+      let node: Record<string, unknown> = { type: 'text', text: 'x' }
+      for (let i = 0; i < levels; i++) node = { type: 'paragraph', content: [node] }
+      return { type: 'doc', content: [node] }
+    }
+    for (const isRequired of [true, false]) {
+      const schema = asKey(
+        'content',
+        richText({ validation: { isRequired } }).getZodSchema!('content', 'update'),
+      )
+      expect(schema.safeParse({ content: nest(30) }).success).toBe(true)
+      expect(schema.safeParse({ content: nest(500) }).success).toBe(false)
+    }
+  })
+
   it('rejects an empty document when required, on create and update', () => {
     const field = richText({ validation: { isRequired: true } })
     for (const operation of ['create', 'update'] as const) {

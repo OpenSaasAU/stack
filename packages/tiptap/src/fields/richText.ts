@@ -13,6 +13,8 @@ const JSON_CONTENT = "import('@opensaas/stack-tiptap').JSONContent"
 
 const MAX_DOCUMENT_LENGTH = 1_000_000
 
+const MAX_DOCUMENT_DEPTH = 100
+
 const TEXT_CONTAINERS = new Set([
   'doc',
   'text',
@@ -33,20 +35,33 @@ function isWithinSizeCap(value: unknown): boolean {
   }
 }
 
-function hasContent(node: unknown): boolean {
-  try {
-    return containsContent(node)
-  } catch {
-    return false
-  }
+function childNodes(node: unknown): unknown[] {
+  if (typeof node !== 'object' || node === null) return []
+  const { content } = node as { content?: unknown }
+  return Array.isArray(content) ? content : []
 }
 
-function containsContent(node: unknown): boolean {
-  if (typeof node !== 'object' || node === null) return false
-  const { type, text, content } = node as { type?: unknown; text?: unknown; content?: unknown }
-  if (typeof text === 'string' && text.trim() !== '') return true
-  if (Array.isArray(content) && content.some(containsContent)) return true
-  return typeof type === 'string' && !TEXT_CONTAINERS.has(type)
+function isWithinDepthCap(root: unknown): boolean {
+  const pending: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 1 }]
+  for (let entry = pending.pop(); entry !== undefined; entry = pending.pop()) {
+    if (entry.depth > MAX_DOCUMENT_DEPTH) return false
+    for (const child of childNodes(entry.node)) {
+      pending.push({ node: child, depth: entry.depth + 1 })
+    }
+  }
+  return true
+}
+
+function hasContent(root: unknown): boolean {
+  const pending: unknown[] = [root]
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if (typeof node !== 'object' || node === null) continue
+    const { type, text } = node as { type?: unknown; text?: unknown }
+    if (typeof text === 'string' && text.trim() !== '') return true
+    if (typeof type === 'string' && !TEXT_CONTAINERS.has(type)) return true
+    pending.push(...childNodes(node))
+  }
+  return false
 }
 
 /**
@@ -85,6 +100,9 @@ export function richText<
       const document = z
         .object({ type: z.literal('doc'), content: z.array(z.unknown()).optional() })
         .passthrough()
+        .refine(isWithinDepthCap, {
+          message: `${formatFieldName(fieldName)} is nested too deeply`,
+        })
         .refine(isWithinSizeCap, {
           message: `${formatFieldName(fieldName)} is too large`,
         })
