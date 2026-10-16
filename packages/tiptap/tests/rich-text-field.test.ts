@@ -76,6 +76,31 @@ describe('richText() document shape', () => {
     }
   })
 
+  it('enforces the depth limit at its boundary on create and update', () => {
+    const nest = (levels: number) => {
+      let node: Record<string, unknown> = { type: 'text', text: 'x' }
+      for (let i = 0; i < levels - 2; i++) node = { type: 'paragraph', content: [node] }
+      return { type: 'doc', content: [node] }
+    }
+    for (const operation of ['create', 'update'] as const) {
+      const schema = asKey(
+        'content',
+        richText({ validation: { isRequired: true } }).getZodSchema!('content', operation),
+      )
+      expect(schema.safeParse({ content: nest(100) }).success).toBe(true)
+      expect(schema.safeParse({ content: nest(101) }).success).toBe(false)
+    }
+  })
+
+  it('validates a very wide content array without throwing', () => {
+    const wide = { type: 'doc', content: Array.from({ length: 200_000 }, () => ({ type: 'a' })) }
+    const schema = asKey(
+      'content',
+      richText({ validation: { isRequired: true } }).getZodSchema!('content', 'create'),
+    )
+    expect(() => schema.safeParse({ content: wide })).not.toThrow()
+  })
+
   it('rejects an empty document when required, on create and update', () => {
     const field = richText({ validation: { isRequired: true } })
     for (const operation of ['create', 'update'] as const) {

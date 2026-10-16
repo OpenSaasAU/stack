@@ -59,7 +59,7 @@ function hasContent(root: unknown): boolean {
     const { type, text } = node as { type?: unknown; text?: unknown }
     if (typeof text === 'string' && text.trim() !== '') return true
     if (typeof type === 'string' && !TEXT_CONTAINERS.has(type)) return true
-    pending.push(...childNodes(node))
+    for (const child of childNodes(node)) pending.push(child)
   }
   return false
 }
@@ -102,6 +102,7 @@ export function richText<
         .passthrough()
         .refine(isWithinDepthCap, {
           message: `${formatFieldName(fieldName)} is nested too deeply`,
+          abort: true,
         })
         .refine(isWithinSizeCap, {
           message: `${formatFieldName(fieldName)} is too large`,
