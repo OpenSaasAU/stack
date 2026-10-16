@@ -398,8 +398,9 @@ describe('the MCP surface', () => {
   function handlersFor(
     config: OpenSaasConfig = schemaConfig(),
     getSession: McpSessionProvider = session,
+    extra: { resourceMetadataUrl?: string } = {},
   ) {
-    return createMcpHandlers({ config, getSession, getContext: contextFor(config) })
+    return createMcpHandlers({ config, getSession, getContext: contextFor(config), ...extra })
   }
 
   async function rpc(
@@ -445,6 +446,50 @@ describe('the MCP surface', () => {
 
         expect(status).toBe(404)
         expect(body).toEqual({ error: 'MCP not enabled' })
+      },
+      BOOT,
+    )
+
+    test(
+      'no session is a 401 whose challenge is unchanged without resourceMetadataUrl',
+      async () => {
+        const handlers = handlersFor(schemaConfig(), async () => null)
+        const response = await handlers.POST(
+          new Request('http://localhost/api/mcp', { method: 'POST' }),
+        )
+
+        expect(response.headers.get('WWW-Authenticate')).toBe(
+          'Bearer realm="/api/mcp", error="invalid_token"',
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'a resourceMetadataUrl that is not a plain http(s) URL is refused at creation',
+      () => {
+        for (const bad of ['not a url', 'javascript:alert(1)', 'https://x.test/a", evil="1']) {
+          expect(() =>
+            handlersFor(schemaConfig(), async () => null, { resourceMetadataUrl: bad }),
+          ).toThrow(/resourceMetadataUrl/)
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'resourceMetadataUrl adds resource_metadata to the 401 challenge',
+      async () => {
+        const handlers = handlersFor(schemaConfig(), async () => null, {
+          resourceMetadataUrl: 'http://localhost/.well-known/oauth-protected-resource',
+        })
+        const response = await handlers.POST(
+          new Request('http://localhost/api/mcp', { method: 'POST' }),
+        )
+
+        expect(response.headers.get('WWW-Authenticate')).toBe(
+          'Bearer realm="/api/mcp", error="invalid_token", resource_metadata="http://localhost/.well-known/oauth-protected-resource"',
+        )
       },
       BOOT,
     )

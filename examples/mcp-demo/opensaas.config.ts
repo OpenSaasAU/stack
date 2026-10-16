@@ -63,8 +63,6 @@ export default config({
         jwt(),
         mcp({
           loginPage: '/sign-in',
-          // Not implemented in this demo — a real project needs a page here
-          // for users to approve/deny an MCP client's requested scopes.
           consentPage: '/consent',
           scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
           // RFC 8707/9728 canonical resource identifier — must match the

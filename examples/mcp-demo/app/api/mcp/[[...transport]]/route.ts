@@ -17,6 +17,7 @@ const { GET, POST, DELETE } = createMcpHandlers({
     baseURL: `${appUrl}/api/auth`,
   }),
   getContext,
+  resourceMetadataUrl: `${appUrl}/.well-known/oauth-protected-resource`,
 })
 
 export { GET, POST, DELETE }
