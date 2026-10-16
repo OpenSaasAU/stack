@@ -234,7 +234,7 @@ describe.skipIf(escape.kind !== 'postgres')(
               .forUpdate()
               .first(),
         )
-        expect(result?.folder?.name).toBe('after')
+        expect(result?.folder).toEqual(expect.objectContaining({ name: 'after' }))
       },
       BOOT,
     )
