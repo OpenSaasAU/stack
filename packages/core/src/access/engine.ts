@@ -205,7 +205,7 @@ function findVacuousPredicate(where: Record<string, unknown>, trail: string[]): 
   for (const [key, value] of Object.entries(where)) {
     if (key === 'AND' || key === 'OR' || key === 'NOT') {
       const branches = Array.isArray(value) ? value : [value]
-      if (key === 'AND' && Array.isArray(value) && value.length === 0) return [...trail, key]
+      if (key !== 'OR' && Array.isArray(value) && value.length === 0) return [...trail, key]
       for (const [index, branch] of branches.entries()) {
         if (!isRecord(branch)) continue
         const at = Array.isArray(value) ? [...trail, key, `${index}`] : [...trail, key]

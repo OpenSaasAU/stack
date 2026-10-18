@@ -70,6 +70,7 @@ beforeEach(async () => {
 const vacuous: Record<string, () => unknown> = {
   'an empty object': () => ({}),
   'an empty AND': () => ({ AND: [] }),
+  'an empty NOT': () => ({ NOT: [] }),
   'an empty object nested in AND': () => ({ AND: [{}, { orgId: { equals: 'o1' } }] }),
   'an empty AND nested in OR': () => ({ OR: [{ AND: [] }, { orgId: { equals: 'o1' } }] }),
   'an empty predicate under every': () => ({ tenant: { every: {} } }),
