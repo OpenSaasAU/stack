@@ -5,8 +5,8 @@ import { getContext } from '@/.opensaas/context'
  * directory. That is enough of a session for the rules in `opensaas.config.ts`
  * to apply throughout: a signed-in caller sees drafts and creates posts, and
  * only a post's author updates it, deletes it, or reads its `internalNotes`.
- * `pnpm seed` puts that user there; with an empty directory there is no
- * session and every page reads as an anonymous visitor would.
+ * With an empty directory there is no session: create a user in `/admin` (the
+ * one thing an anonymous caller may do) and every page acts as that user.
  *
  * In a real app this comes from your auth session — `@opensaas/stack-auth` is
  * the supported one (see `examples/auth-demo`).

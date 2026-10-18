@@ -6,10 +6,14 @@ A minimal starter template for building applications with OpenSaas Stack.
 
 - **Admin UI** at `/admin` for managing your data
 - **User & Post models** with relationships
-- **Access control** examples
+- **Access control** examples — anonymous visitors see published posts only; signed-in users create posts, and only a post's author edits, deletes or reads its `internalNotes`
 - **Postgres** — the Dev database `pnpm dev` runs for you, or your own via `DATABASE_URL`
 - **TypeScript** with full type safety
 - **Next.js 16** with App Router
+
+## Sessions
+
+There is no auth provider in this starter. `lib/demo-session.ts` acts as the first user in the database, so the access rules apply everywhere. On an empty database, create a user in `/admin` first. Swap `demoSession()` for your real session lookup — `@opensaas/stack-auth` is the supported one (the `with-auth` template).
 
 ## Getting Started
 
