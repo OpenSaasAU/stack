@@ -1589,7 +1589,7 @@ function createCreate(
       context,
       config,
       inputData: args.data,
-      strategy: createWriteStrategy(listName, listConfig, context),
+      strategy: createWriteStrategy(listName, listConfig),
     })
   }
 }
@@ -1617,7 +1617,7 @@ function createUpdate(
       context,
       config,
       inputData: args.data,
-      strategy: updateWriteStrategy(listName, listConfig, config, context, args.where),
+      strategy: updateWriteStrategy(listName, listConfig, config, args.where),
     })
   }
 }
@@ -1643,7 +1643,7 @@ function createDelete(
       context,
       config,
       inputData: undefined,
-      strategy: deleteWriteStrategy(listName, listConfig, config, context, args.where),
+      strategy: deleteWriteStrategy(listName, listConfig, config, args.where),
     })
   }
 }
