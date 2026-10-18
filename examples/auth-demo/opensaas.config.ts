@@ -58,6 +58,10 @@ export default config({
         enabled: true,
         minPasswordLength: 8,
         requireConfirmation: true,
+        // Demo only: replace with a real email transport before deploying.
+        sendResetPassword: async ({ user, url }) => {
+          console.log(`Password reset for ${user.email}: ${url}`)
+        },
       },
 
       // Enable password reset
