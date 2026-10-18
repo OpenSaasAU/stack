@@ -51,7 +51,8 @@ export type EmailPasswordConfig = {
    * Send a password reset email. Passed straight through to better-auth's own
    * `emailAndPassword.sendResetPassword` — the stack does not wrap or
    * reshape it. If not provided, reset emails are logged to console instead
-   * of sent outside production; in production, omitting it throws.
+   * of sent outside production; when `NODE_ENV` is `production` and
+   * `passwordReset.enabled` is set, omitting it throws.
    *
    * @example
    * ```typescript
@@ -83,7 +84,8 @@ export type EmailVerificationConfig = {
    * Send a verification email. Passed straight through to better-auth's own
    * `emailVerification.sendVerificationEmail` — the stack does not wrap or
    * reshape it. If not provided, verification emails are logged to console
-   * instead of sent outside production; in production, omitting it throws.
+   * instead of sent outside production; when `NODE_ENV` is `production`,
+   * omitting it throws.
    *
    * @example
    * ```typescript

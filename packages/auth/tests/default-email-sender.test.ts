@@ -11,9 +11,17 @@ describe('default email senders', () => {
 
   it('throws in production when password reset is enabled without sendResetPassword', () => {
     vi.stubEnv('NODE_ENV', 'production')
-    expect(() => normalizeAuthConfig({ emailAndPassword: { enabled: true } })).toThrow(
-      /emailAndPassword\.sendResetPassword/,
-    )
+    expect(() =>
+      normalizeAuthConfig({
+        emailAndPassword: { enabled: true },
+        passwordReset: { enabled: true },
+      }),
+    ).toThrow(/emailAndPassword\.sendResetPassword/)
+  })
+
+  it('does not throw in production when email/password is enabled without password reset', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(() => normalizeAuthConfig({ emailAndPassword: { enabled: true } })).not.toThrow()
   })
 
   it('throws in production when email verification is enabled without sendVerificationEmail', () => {
@@ -28,6 +36,7 @@ describe('default email senders', () => {
     expect(() =>
       normalizeAuthConfig({
         emailAndPassword: { enabled: true, sendResetPassword: noop },
+        passwordReset: { enabled: true },
         emailVerification: { enabled: true, sendVerificationEmail: noop },
       }),
     ).not.toThrow()
