@@ -121,6 +121,18 @@ describe('setupClaudeCode', () => {
       /Could not parse .*settings\.json/,
     )
     expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(original)
+    expect(fs.existsSync(path.join(cwd, '.claude', 'opensaas-project.json'))).toBe(false)
+  })
+
+  it.each(['null', '[]', '"text"'])('refuses non-object settings.json (%s)', async (content) => {
+    const settingsPath = path.join(cwd, '.claude', 'settings.json')
+    fs.mkdirSync(path.dirname(settingsPath))
+    fs.writeFileSync(settingsPath, content)
+
+    await expect(setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })).rejects.toThrow(
+      /expected a JSON object/,
+    )
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(content)
   })
 
   it('defaults the recorded provider to postgresql', async () => {
