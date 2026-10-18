@@ -4,29 +4,35 @@ import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
 /**
  * Access control helpers
+ *
+ * The session shape these read is declared in `types/session.d.ts`, which
+ * augments `Session` from `@opensaas/stack-core`.
  */
 
-// Check if user is signed in
-//
-// Typed as `Parameters<AccessControl>[0]` rather than the whole function as
-// `: AccessControl`, and returning `boolean` explicitly: these helpers are
-// reused for both operation-level access (which accepts a Prisma filter) and
-// field-level access (which does not, and never has — field access is a
-// per-field visibility decision, not a row filter). Since none of these
-// return a filter, pinning the return type to `boolean` keeps them valid at
-// both call sites.
-const isSignedIn = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
-  return true
+// Typed by its parameter rather than as a whole `: AccessControl`, with an
+// explicit `boolean` return: it is reused for field-level access, which cannot
+// honour a row filter.
+const isSignedIn = ({ session }: Parameters<AccessControl>[0]): boolean => {
+  return !!session
 }
 
-// Check if user is the author of a post
-const isAuthor = ({ session: _session }: Parameters<AccessControl>[0]): boolean => {
-  return true
+// Scopes rows, so it is used only at the operation level.
+const isAuthor: AccessControl = ({ session }) => {
+  if (!session) return false
+  return {
+    authorId: { equals: session.userId },
+  }
 }
 
-// Check if user is the owner of their own user record
-const isOwner = ({ session: _session, item: _item }: Parameters<AccessControl>[0]): boolean => {
-  return true
+// The per-field counterpart of `isAuthor`. The admin UI's inline-edit check
+// calls field-level `update` rules without an `item` and treats a throw as
+// "let the per-row check at commit time decide", hence the `!`.
+const isAuthorOfItem = ({ session, item }: Parameters<AccessControl>[0]): boolean => {
+  return !!session && session.userId === item!.authorId
+}
+
+const isOwner = ({ session, item }: Parameters<AccessControl>[0]): boolean => {
+  return !!session && session.userId === item?.id
 }
 
 /**
@@ -80,7 +86,7 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            update: isAuthorOfItem,
           },
         }),
         slug: text({
@@ -92,16 +98,17 @@ export default config({
           access: {
             read: () => true,
             create: isSignedIn,
-            update: isAuthor,
+            update: isAuthorOfItem,
           },
         }),
         internalNotes: text({
           ui: { displayMode: 'textarea' },
-          // Only the author can read/write internal notes
+          // Only the author can read/write internal notes. There is no `item`
+          // yet on create, so "signed in" is the create-time check.
           access: {
-            read: isAuthor,
-            create: isAuthor,
-            update: isAuthor,
+            read: isAuthorOfItem,
+            create: isSignedIn,
+            update: isAuthorOfItem,
           },
         }),
         status: select({
@@ -121,7 +128,10 @@ export default config({
         operation: {
           // Non-authenticated users can only see published posts
           // Authenticated users can see all posts
-          query: ({ session: _session }) => {
+          query: ({ session }) => {
+            if (!session) {
+              return { status: { equals: 'published' } }
+            }
             return true
           },
           // Must be signed in to create
