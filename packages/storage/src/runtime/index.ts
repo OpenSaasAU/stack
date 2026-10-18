@@ -201,13 +201,18 @@ export async function uploadImage(
   let transformations:
     Record<string, { url: string; width: number; height: number; size: number }> | undefined
   if (options?.transformations) {
-    transformations = await processImageTransformations(
-      buffer,
-      storedName,
-      options.transformations,
-      provider,
-      contentType,
-    )
+    try {
+      transformations = await processImageTransformations(
+        buffer,
+        storedName,
+        options.transformations,
+        provider,
+        contentType,
+      )
+    } catch (error) {
+      await provider.delete(result.filename).catch(() => undefined)
+      throw error
+    }
   }
 
   return {

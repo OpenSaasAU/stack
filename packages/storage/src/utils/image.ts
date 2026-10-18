@@ -101,34 +101,44 @@ export async function processImageTransformations(
 ): Promise<Record<string, ImageTransformationResult>> {
   const results: Record<string, ImageTransformationResult> = {}
 
-  for (const [name, config] of Object.entries(transformations)) {
-    const transformedBuffer = await transformImage(buffer, config)
+  try {
+    for (const [name, config] of Object.entries(transformations)) {
+      const transformedBuffer = await transformImage(buffer, config)
 
-    const { width, height } = await getImageDimensions(transformedBuffer)
+      const { width, height } = await getImageDimensions(transformedBuffer)
 
-    const ext = config.format ? `.${config.format}` : ''
-    const transformedFilename = `${originalFilename}-${name}${ext}`
+      const ext = config.format ? `.${config.format}` : ''
+      const transformedFilename = `${originalFilename}-${name}${ext}`
 
-    const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
-      contentType:
-        config.format === 'jpeg'
-          ? 'image/jpeg'
-          : config.format === 'png'
-            ? 'image/png'
-            : config.format === 'webp'
-              ? 'image/webp'
-              : config.format === 'avif'
-                ? 'image/avif'
-                : contentType,
-    })
+      const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
+        contentType:
+          config.format === 'jpeg'
+            ? 'image/jpeg'
+            : config.format === 'png'
+              ? 'image/png'
+              : config.format === 'webp'
+                ? 'image/webp'
+                : config.format === 'avif'
+                  ? 'image/avif'
+                  : contentType,
+      })
 
-    results[name] = {
-      url: uploadResult.url,
-      width,
-      height,
-      size: uploadResult.size,
-      filename: uploadResult.filename,
+      results[name] = {
+        url: uploadResult.url,
+        width,
+        height,
+        size: uploadResult.size,
+        filename: uploadResult.filename,
+      }
     }
+  } catch (error) {
+    await Promise.all(
+      Object.values(results).map((r) => {
+        const filename = r.filename ?? r.url.split('/').pop()
+        return filename ? storageProvider.delete(filename).catch(() => undefined) : undefined
+      }),
+    )
+    throw error
   }
 
   return results
