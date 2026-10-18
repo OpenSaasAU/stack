@@ -268,7 +268,7 @@ The vocabulary is a **closed set**. It is the same grammar for a caller's `where
 
 **Relation quantifiers:** `some`, `every`, `none` — the same three for a to-one relation as for a to-many.
 
-**Logical keys:** `AND` and `NOT` each take one predicate object or an array of them. `OR` takes an **array only** on the generated types — the runtime accepts a bare object, but writing one is a compile error.
+**Logical keys:** `AND` and `NOT` each take one predicate object or an array of them. `NOT: [a, b]` means none of the predicates match (`NOT a AND NOT b`), as in Prisma and Keystone, and `NOT: []` adds no constraint. `OR` takes an **array only** on the generated types — the runtime accepts a bare object, but writing one is a compile error.
 
 ```typescript
 const rows = await context.db.Post.where({

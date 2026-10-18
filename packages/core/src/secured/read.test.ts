@@ -547,6 +547,21 @@ describe('the Where vocabulary', () => {
   )
 
   test(
+    'NOT over a list excludes every branch, and an empty list constrains nothing',
+    async () => {
+      expect(
+        titles(
+          await owned({
+            NOT: [{ title: { contains: 'draft' } }, { views: { equals: 5 } }],
+          }).all(),
+        ),
+      ).toEqual(["ada's published"])
+      expect(titles(await owned({ NOT: [] }).all())).toEqual(titles(await owned({}).all()))
+    },
+    BOOT,
+  )
+
+  test(
     'a relation quantifier lowers to an EXISTS over the related list',
     async () => {
       const handles = async (predicate: Where): Promise<unknown[]> =>
