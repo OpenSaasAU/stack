@@ -24,6 +24,19 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Note: {
+      fields: { name: text() },
+      access: {
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: async ({ context }) => {
+            const permission = await context.db.Permission.first()
+            return permission === null ? false : { name: { equals: 'before' } }
+          },
+        },
+      },
+    },
   },
 }
 
@@ -46,7 +59,8 @@ describe('a root update or delete whose access rule reads context.db', () => {
     const admin = database.context(null).sudo()
     if (withPermission) await admin.db.Permission.create({ data: { name: 'p' } })
     const row = await admin.db.Doc.create({ data: { name: 'before' } })
-    return String(row?.id)
+    if (row === null) throw new Error('seed failed')
+    return String(row.id)
   }
 
   test(
@@ -95,6 +109,21 @@ describe('a root update or delete whose access rule reads context.db', () => {
         await tx.sudo().db.Permission.create({ data: { name: 'p' } })
         return tx.db.Doc.update({ where: { id }, data: { name: 'after' } })
       })
+      expect(result).toMatchObject({ name: 'after' })
+    },
+    PROBE,
+  )
+
+  test(
+    'a filter-returning rule that reads context.db completes',
+    async () => {
+      const admin = database.context(null).sudo()
+      await admin.db.Permission.create({ data: { name: 'p' } })
+      const note = await admin.db.Note.create({ data: { name: 'before' } })
+      if (note === null) throw new Error('seed failed')
+      const result = await database
+        .context(null)
+        .db.Note.update({ where: { id: String(note.id) }, data: { name: 'after' } })
       expect(result).toMatchObject({ name: 'after' })
     },
     PROBE,
