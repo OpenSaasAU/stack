@@ -120,21 +120,9 @@ function getMarketplaceSource():
   return { source: 'github', repo: 'OpenSaasAU/stack' }
 }
 
-async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<void> {
+export async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<void> {
   const claudeDir = path.join(cwd, '.claude')
   ensureDir(claudeDir)
-
-  const projectMetadata = {
-    projectTypes: analysis.projectTypes,
-    provider: analysis.provider || 'sqlite',
-    models: analysis.models || [],
-    hasAuth: analysis.hasAuth || false,
-    cwd: analysis.cwd,
-  }
-  fs.writeFileSync(
-    path.join(claudeDir, 'opensaas-project.json'),
-    JSON.stringify(projectMetadata, null, 2),
-  )
 
   const settingsPath = path.join(claudeDir, 'settings.json')
   let settings: {
@@ -151,11 +139,21 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
   } = {}
 
   if (fs.existsSync(settingsPath)) {
+    let parsed: unknown
     try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    } catch {
-      settings = {}
+      parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `Could not parse ${settingsPath}: ${reason}. Fix or remove the file and retry.`,
+      )
     }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(
+        `Could not use ${settingsPath}: expected a JSON object. Fix or remove the file and retry.`,
+      )
+    }
+    settings = parsed
   }
 
   const marketplaceSource = getMarketplaceSource()
@@ -174,6 +172,18 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
 
   const migrationPluginId = 'opensaas-migration@opensaas-stack-marketplace'
   settings.enabledPlugins[migrationPluginId] = true
+
+  const projectMetadata = {
+    projectTypes: analysis.projectTypes,
+    provider: analysis.provider || 'postgresql',
+    models: analysis.models || [],
+    hasAuth: analysis.hasAuth || false,
+    cwd: analysis.cwd,
+  }
+  fs.writeFileSync(
+    path.join(claudeDir, 'opensaas-project.json'),
+    JSON.stringify(projectMetadata, null, 2),
+  )
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
 
@@ -312,6 +322,8 @@ async function migrateCommand(options: MigrateOptions): Promise<void> {
     } catch (error) {
       claudeSpinner.fail(chalk.red('Failed to setup Claude Code'))
       console.error(error)
+      process.exitCode = 1
+      return
     }
   }
 
