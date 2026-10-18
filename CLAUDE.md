@@ -679,8 +679,8 @@ const result = await context.transaction(async (tx) => {
     .first()
   if (held === null) return { booked: false }
 
-  // `held.capacity` is the value as of before the lock; this re-read is not,
-  // because no one else can commit an update to a row we hold.
+  // `held` is re-read after the lock; this read keeps the gate's two sides
+  // in separate statements, exactly as the count is.
   const slot = await tx.db.Slot.where({ id: { equals: slotId } }).first()
   const { taken } = await tx.db.Booking.where({ slotId: { equals: slotId } }).aggregate(
     (aggregate) => ({ taken: aggregate.count() }),
