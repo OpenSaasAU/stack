@@ -54,7 +54,15 @@ export function applyCreateDefaults(
 }
 
 export function cloneDefault<T>(value: T): T {
-  return typeof value === 'object' && value !== null ? structuredClone(value) : value
+  if (Array.isArray(value)) return structuredClone(value)
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    return structuredClone(value)
+  }
+  return value
 }
 
 export function isNowSentinel(value: unknown): boolean {

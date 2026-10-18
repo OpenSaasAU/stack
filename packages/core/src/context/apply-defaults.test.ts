@@ -118,7 +118,7 @@ describe('applyCreateDefaults', () => {
     const date = new Date('2021-06-15T12:00:00Z')
     const resolved = applyCreateDefaults({}, fields({ when: timestamp({ defaultValue: date }) }))
 
-    expect(resolved.when).toEqual(date)
+    expect(resolved.when).toBe(date)
   })
 
   it('returns the same resolvedData object it was given (mutation contract)', () => {
