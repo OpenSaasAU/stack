@@ -4,12 +4,7 @@ import { createJiti } from 'jiti'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveTsconfigAlias } from './tsconfig-alias.js'
 
-export const DEV_ENV_FILES = [
-  '.env.development.local',
-  '.env.local',
-  '.env.development',
-  '.env',
-] as const
+const DEV_ENV_FILES = ['.env.development.local', '.env.local', '.env.development', '.env'] as const
 
 /**
  * Loads the project's env files before `opensaas.config.ts` is read, in the
