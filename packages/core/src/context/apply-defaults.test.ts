@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { applyCreateDefaults } from './apply-defaults.js'
-import { text, integer, checkbox, timestamp, virtual, relationship } from '../fields/index.js'
+import { json, text, integer, checkbox, timestamp, virtual, relationship } from '../fields/index.js'
 import type { FieldConfig } from '../config/types.js'
 
 /**
@@ -16,6 +16,16 @@ function fields(config: Record<string, FieldConfig>): Record<string, FieldConfig
 }
 
 describe('applyCreateDefaults', () => {
+  it('does not share object/array defaults by reference across calls', () => {
+    const config = fields({ meta: json({ defaultValue: { tags: [] as string[] } }) })
+
+    const first = applyCreateDefaults({}, config)
+    ;(first.meta as { tags: string[] }).tags.push('leaked')
+    const second = applyCreateDefaults({}, config)
+
+    expect(second.meta).toEqual({ tags: [] })
+  })
+
   it('injects a declared defaultValue into an omitted field', () => {
     const resolved = applyCreateDefaults(
       {},
@@ -108,7 +118,7 @@ describe('applyCreateDefaults', () => {
     const date = new Date('2021-06-15T12:00:00Z')
     const resolved = applyCreateDefaults({}, fields({ when: timestamp({ defaultValue: date }) }))
 
-    expect(resolved.when).toBe(date)
+    expect(resolved.when).toEqual(date)
   })
 
   it('returns the same resolvedData object it was given (mutation contract)', () => {

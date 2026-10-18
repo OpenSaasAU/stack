@@ -1,5 +1,5 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
-import { isNowSentinel } from './apply-defaults.js'
+import { cloneDefault, isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
@@ -286,7 +286,7 @@ function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
 
     if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
       if (isNowSentinel(fieldConfig.defaultValue)) continue
-      data[fieldKey] = fieldConfig.defaultValue
+      data[fieldKey] = cloneDefault(fieldConfig.defaultValue)
     }
   }
 
