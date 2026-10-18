@@ -90,7 +90,11 @@ export interface WriteStrategy {
    * Axis 1: resolve the target row and check operation-level access.
    * Implementations must honour `context._isSudo`.
    */
-  resolveTarget(collection: WriteCollection, ops: WhereCombinators): Promise<TargetResolution>
+  resolveTarget(
+    collection: WriteCollection,
+    ops: WhereCombinators,
+    context: AccessContext,
+  ): Promise<TargetResolution>
 
   /**
    * Axis 2: whether to run the input-shaping phases (resolveInput → validate
@@ -205,7 +209,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // read exactly once (#569).
   let gate: TargetResolution
   try {
-    gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops)
+    gate = await strategy.resolveTarget(writeCollection(ormHandle, listName), ops, context)
     if (gate.status === 'denied') {
       return null
     }
@@ -315,7 +319,7 @@ async function lockTarget(
   if (typeof key !== 'string' && typeof key !== 'number') return gated
   const held = await lane.lock(args.listName, identity, [key])
   if (held.length === 0) return { status: 'denied' }
-  return args.strategy.resolveTarget(collection, ops)
+  return args.strategy.resolveTarget(collection, ops, args.context)
 }
 
 /**
@@ -427,7 +431,7 @@ async function runWriteInTransaction(
   // Reuses `preResolvedTarget` from the pre-transaction gate rather than
   // reading the target twice; falls back to resolving here when invoked
   // directly (e.g. a unit test) without that bracket.
-  const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
+  const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops, context))
   const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
     if (gated.status === 'ok') args.onTargetLocked?.(undefined)
@@ -702,13 +706,12 @@ export function createWriteStrategy(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
-  context: AccessContext,
 ): WriteStrategy {
   const singleton = isSingletonList(listConfig)
   return {
     operation: 'create',
     runInputPhases: true,
-    async resolveTarget(collection) {
+    async resolveTarget(collection, _ops, context) {
       // Singleton constraint is enforced even under sudo.
       if (singleton) {
         const existing = await countRows(collection, listName)
@@ -781,11 +784,14 @@ function resolveExistingTarget(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
-  context: AccessContext,
   where: { id: string | number },
   access: 'update' | 'delete',
-): (collection: WriteCollection, ops: WhereCombinators) => Promise<TargetResolution> {
-  return async (collection, ops) => {
+): (
+  collection: WriteCollection,
+  ops: WhereCombinators,
+  context: AccessContext,
+) => Promise<TargetResolution> {
+  return async (collection, ops, context) => {
     const identity = identityPredicate(listName, where.id)
     const item = await firstMatching(collection, [identity], ops)
     if (!item) {
@@ -833,13 +839,12 @@ export function updateWriteStrategy(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
-  context: AccessContext,
   where: { id: string | number },
 ): WriteStrategy {
   return {
     operation: 'update',
     runInputPhases: true,
-    resolveTarget: resolveExistingTarget(listName, listConfig, config, context, where, 'update'),
+    resolveTarget: resolveExistingTarget(listName, listConfig, config, where, 'update'),
     async persist(collection, ops, scope, data) {
       if (Object.values(data).every((value) => value === undefined))
         return firstMatching(collection, scope, ops)
@@ -861,26 +866,18 @@ export function deleteWriteStrategy(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   config: OpenSaasConfig,
-  context: AccessContext,
   where: { id: string | number },
 ): WriteStrategy {
-  const resolveTarget = resolveExistingTarget(
-    listName,
-    listConfig,
-    config,
-    context,
-    where,
-    'delete',
-  )
+  const resolveTarget = resolveExistingTarget(listName, listConfig, config, where, 'delete')
   return {
     operation: 'delete',
     runInputPhases: false,
-    async resolveTarget(collection, ops) {
+    async resolveTarget(collection, ops, context) {
       // Singleton lists may not be deleted (enforced even under sudo).
       if (isSingletonList(listConfig)) {
         throw new ValidationError([`Cannot delete: ${listName} is a singleton list`], {})
       }
-      return resolveTarget(collection, ops)
+      return resolveTarget(collection, ops, context)
     },
     async persist(collection, ops, scope) {
       return deleteFirst(collection, scope, ops)
