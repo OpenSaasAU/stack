@@ -165,7 +165,9 @@ export default config({
     provider: 'postgresql',
     timestamps: true,
   },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 
@@ -192,7 +194,9 @@ export default config({
     provider: 'postgresql',
     keystoneCompat: true,
   },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 
@@ -235,8 +239,10 @@ Generate, then read the plan before anything touches the live database:
 
 ```bash
 pnpm opensaas generate
-npx prisma db update --dry-run
+DATABASE_URL="$DATABASE_URL" npx prisma db update --dry-run
 ```
+
+`opensaas generate` writes the `prisma.config.ts` this command reads, so run it first; the plan prints without touching the database.
 
 For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --plan <id>`, using the plan id the loop printed, which requires the loop to be running.
 
@@ -549,11 +555,15 @@ export default config({
   },
   lists: {
     AuthUser: list({
-      fields: {/* ... */},
+      fields: {
+        /* ... */
+      },
       db: { schema: 'auth', map: 'user' },
     }),
     Post: list({
-      fields: {/* ... */},
+      fields: {
+        /* ... */
+      },
     }),
   },
 })
@@ -614,7 +624,9 @@ export default config({
     opensaasDir: '.opensaas',
   },
   db: { provider: 'postgresql' },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 

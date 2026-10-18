@@ -828,7 +828,9 @@ authPlugin({
 
   extendUserList: {
     fields: {
-      role: select({/* ... */}),
+      role: select({
+        /* ... */
+      }),
       company: text(),
     },
   },
@@ -1235,7 +1237,7 @@ tables, so adding the plugin produces **no destructive auth migration**. The
 lists are modelled for runtime and types, not migrated.
 
 Regenerate, then plan against your live database (with `DATABASE_URL` pointing
-at it) — the auth tables should report no changes:
+at it) — the plan should list no changes to the auth tables (other tables in the database may appear):
 
 ```bash
 pnpm generate
@@ -2084,7 +2086,9 @@ authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'], // Include 'role'
   extendUserList: {
     fields: {
-      role: select({/* ... */}),
+      role: select({
+        /* ... */
+      }),
     },
   },
 })

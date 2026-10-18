@@ -153,7 +153,7 @@ model Teacher {
 1. Read the config to find all `image()` and `file()` fields and the models they belong to.
 2. For each, update the import to `@opensaas/stack-storage/fields` and add `db: { columns: 'keystone' }` (with per-part `map` overrides only if the live column names differ from Keystone defaults).
 3. Confirm the `storage` provider exists in `config.storage` (add one if needed — see below).
-4. Run `pnpm opensaas generate` and a `prisma migrate diff` to confirm the diff is clean / non-destructive.
+4. Run `pnpm opensaas generate` and a `prisma db update --dry-run` to confirm the diff is clean / non-destructive.
 5. Report the config changes and confirm: no SQL run, no data migration, no re-upload.
 
 ---
@@ -375,6 +375,6 @@ If anything goes wrong, restore from the backup taken in Step A.
 ## Decision summary
 
 1. Read the config; identify every `image()` / `file()` field and its model.
-2. **Default:** switch each field's import to `@opensaas/stack-storage/fields` and add `db: { columns: 'keystone' }` (with per-part `map` overrides only if needed). Confirm the `storage` provider. Run `opensaas generate` + `prisma migrate diff` to show a clean, non-destructive diff. No SQL, no re-upload.
+2. **Default:** switch each field's import to `@opensaas/stack-storage/fields` and add `db: { columns: 'keystone' }` (with per-part `map` overrides only if needed). Confirm the `storage` provider. Run `opensaas generate` + `prisma db update --dry-run` to show a clean, non-destructive diff. No SQL, no re-upload.
 3. **Only if the user explicitly asks to consolidate to JSON:** back up first, drop the `db.columns` option, run the destructive SQL BEFORE applying the schema change, then generate and reconcile.
 4. Report what changed in the config, which path was taken, and (for the destructive path only) the SQL location and the backup reminder.
