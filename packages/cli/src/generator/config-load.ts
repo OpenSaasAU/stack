@@ -4,19 +4,32 @@ import { createJiti } from 'jiti'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveTsconfigAlias } from './tsconfig-alias.js'
 
+export const DEV_ENV_FILES = [
+  '.env.development.local',
+  '.env.local',
+  '.env.development',
+  '.env',
+] as const
+
 /**
- * Loads the project's `.env` before `opensaas.config.ts` is read.
+ * Loads the project's env files before `opensaas.config.ts` is read, in the
+ * precedence Next applies under `next dev`. A variable already in the
+ * environment is never overwritten, so a shell value wins.
  *
- * Every command that loads the config calls this first, so a config that
- * reads `process.env` at module scope — a provider factory branching on an
- * API key, say — sees the same values whether it ran under `generate` or
- * under `dev`. `process.loadEnvFile` throws when the file is absent, and
- * leaves variables already in the environment untouched, so a shell
- * variable still wins.
+ * Returns the file each newly set variable came from.
  */
-export function loadProjectEnvFile(cwd: string): void {
-  const envFile = path.join(cwd, '.env')
-  if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
+export function loadProjectEnvFile(cwd: string): Map<string, string> {
+  const sources = new Map<string, string>()
+  for (const name of DEV_ENV_FILES) {
+    const file = path.join(cwd, name)
+    if (!fs.existsSync(file)) continue
+    const before = new Set(Object.keys(process.env))
+    process.loadEnvFile(file)
+    for (const key of Object.keys(process.env)) {
+      if (!before.has(key)) sources.set(key, name)
+    }
+  }
+  return sources
 }
 
 /** A loaded `opensaas.config.ts`, with whatever the alias resolution wants to say. */

@@ -262,6 +262,24 @@ describe('devCommand', () => {
     expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/from-dotenv')
   })
 
+  it('takes the escape from a DATABASE_URL in .env.local and names the file', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, '.env.local'),
+      'DATABASE_URL=postgres://someone@example.test:5432/from-local\n',
+    )
+    vi.mocked(findDatabaseConnection).mockImplementationOnce(() => {
+      const url = process.env.DATABASE_URL
+      return url === undefined || url.length === 0 ? undefined : { url, provenance: 'env' as const }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await startLoop({ appCommand: ['node', 'server.mjs'] })
+
+    expect(startDevDatabase).not.toHaveBeenCalled()
+    expect(log.mock.calls.flat().join('\n')).toContain('DATABASE_URL from .env.local')
+    log.mockRestore()
+  })
+
   it('stops the dev database when the boot sequence fails before the app starts', async () => {
     vi.mocked(runPrismaCli).mockRejectedValueOnce(new Error('The `prisma` CLI is not installed'))
 
