@@ -125,7 +125,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
   console.log(chalk.bold.cyan('\nOpenSaas Dev Mode\n'))
 
-  loadProjectEnvFile(cwd)
+  const envSources = loadProjectEnvFile(cwd)
+  const connectionVariable = ['DIRECT_DATABASE_URL', 'DATABASE_URL'].find(
+    (name) => (process.env[name] ?? '').length > 0,
+  )
+  const connectionFile =
+    connectionVariable === undefined ? undefined : envSources.get(connectionVariable)
 
   const appCommand =
     options.appCommand !== undefined && options.appCommand.length > 0
@@ -459,7 +464,19 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
   try {
     if (findDatabaseConnection({ cwd })?.provenance === 'env') {
-      console.log(chalk.gray('DATABASE_URL is set: using it, and starting no dev database.\n'))
+      if (
+        connectionVariable !== undefined &&
+        connectionFile !== undefined &&
+        connectionFile !== '.env'
+      ) {
+        console.log(
+          chalk.yellow(
+            `⚠️  ${connectionVariable} from ${connectionFile}: using it — no dev database, schema changes apply to that database.\n`,
+          ),
+        )
+      } else {
+        console.log(chalk.gray('DATABASE_URL is set: using it, and starting no dev database.\n'))
+      }
     } else {
       const { config, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
       for (const warning of aliasWarnings) console.log(chalk.yellow(`⚠️  ${warning}`))

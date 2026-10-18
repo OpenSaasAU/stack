@@ -190,6 +190,27 @@ describe('loadProjectEnvFile', () => {
     expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBe('from-shell')
   })
 
+  it.each(['.env.local', '.env.development', '.env.development.local'])(
+    'loads %s and reports it as the source',
+    (name) => {
+      fs.writeFileSync(path.join(tempDir, name), 'LOAD_PROJECT_ENV_FILE_TEST=from-file\n')
+
+      const sources = loadProjectEnvFile(tempDir)
+
+      expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBe('from-file')
+      expect(sources.get('LOAD_PROJECT_ENV_FILE_TEST')).toBe(name)
+    },
+  )
+
+  it('applies Next precedence between files', () => {
+    fs.writeFileSync(path.join(tempDir, '.env'), 'LOAD_PROJECT_ENV_FILE_TEST=base\n')
+    fs.writeFileSync(path.join(tempDir, '.env.local'), 'LOAD_PROJECT_ENV_FILE_TEST=local\n')
+
+    loadProjectEnvFile(tempDir)
+
+    expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBe('local')
+  })
+
   it('does nothing when the project has no .env', () => {
     expect(() => loadProjectEnvFile(tempDir)).not.toThrow()
     expect(process.env.LOAD_PROJECT_ENV_FILE_TEST).toBeUndefined()
