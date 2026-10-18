@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import { generateCommand, GenerationFailedError } from './commands/generate.js'
 import { initCommand } from './commands/init.js'
@@ -8,9 +9,13 @@ import { createDbCommand } from './commands/db.js'
 import { createMCPCommand } from './commands/mcp.js'
 import { createMigrateCommand } from './commands/migrate.js'
 
+const manifest: { version: string } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+)
+
 const program = new Command()
 
-program.name('opensaas').description('OpenSaas Stack CLI').version('0.1.0')
+program.name('opensaas').description('OpenSaas Stack CLI').version(manifest.version)
 
 program
   .command('generate')
