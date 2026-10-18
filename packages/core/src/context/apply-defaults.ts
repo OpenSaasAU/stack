@@ -46,11 +46,23 @@ export function applyCreateDefaults(
     // value — injecting the sentinel object itself would corrupt the payload.
     if (isNowSentinel(defaultValue)) continue
 
-    resolvedData[fieldKey] = defaultValue
+    resolvedData[fieldKey] = cloneDefault(defaultValue)
     defaultedFields?.add(fieldKey)
   }
 
   return resolvedData
+}
+
+export function cloneDefault<T>(value: T): T {
+  if (Array.isArray(value)) return structuredClone(value)
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    return structuredClone(value)
+  }
+  return value
 }
 
 export function isNowSentinel(value: unknown): boolean {
