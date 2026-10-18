@@ -1234,11 +1234,12 @@ Auth lists therefore reach **Schema parity** — they diff clean against your li
 tables, so adding the plugin produces **no destructive auth migration**. The
 lists are modelled for runtime and types, not migrated.
 
-Regenerate, then diff the result against your live database with your project's
-own `prisma migrate diff` setup — the auth tables should report no changes:
+Regenerate, then plan against your live database (with `DATABASE_URL` pointing
+at it) — the plan should list no changes to the auth tables (other tables in the database may appear):
 
 ```bash
 pnpm generate
+npx prisma db update --dry-run
 ```
 
 ### Customising the recipe

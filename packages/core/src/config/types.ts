@@ -2855,7 +2855,7 @@ export type DatabaseConfig = {
    * carrying the default would write a row the config forbids. Full parity
    * would need the flag to relax the create validator too, which
    * `getZodSchema` has no config to read. Until then a migrating project sees
-   * `DROP DEFAULT` in `migrate diff` for those columns and must set
+   * `DROP DEFAULT` in `prisma db update --dry-run` for those columns and must set
    * `defaultValue: ''` on them by hand — which is refused at runtime for the
    * same reason, so the validation has to be relaxed alongside it. A column
    * made non-null through `db: { isNullable: false }` alone still gets the

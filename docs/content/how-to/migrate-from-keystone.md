@@ -25,7 +25,7 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 ## The migration in five moves
 
 1. **Config** — translate `schema.ts` + `keystone.ts` into one `opensaas.config.ts`.
-2. **Generator parity** — set the generator to match your live schema so `prisma migrate diff` shows no destructive changes.
+2. **Generator parity** — set the generator to match your live schema so `prisma db update --dry-run` shows no destructive changes.
 3. **Data access** — replace `context.graphql.run` / `context.query.*` with composed `context.db.*` reads.
 4. **Assets & auth** — adopt existing image/file columns and an existing Better Auth install in place.
 5. **Coexistence** — optionally relocate generated output so the new stack can run side-by-side with Keystone during the cut-over.
@@ -144,7 +144,7 @@ For the complete option reference on every built-in field, see [Field Types](/do
 
 ## 3. Generator parity (matching your live schema)
 
-The generator's defaults are deliberately tuned so a Keystone database migrates without destructive schema changes (**Schema parity**; see [ADR-0004](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0004-generator-emits-keystone-compatible-defaults.md)). Understanding these knobs is the difference between a clean `prisma migrate diff` and an accidental column drop.
+The generator's defaults are deliberately tuned so a Keystone database migrates without destructive schema changes (**Schema parity**; see [ADR-0004](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0004-generator-emits-keystone-compatible-defaults.md)). Understanding these knobs is the difference between a clean `prisma db update --dry-run` and an accidental column drop.
 
 ### `defaultValue` is honoured
 
@@ -198,7 +198,7 @@ export default config({
 
 The flag is opt-in (a greenfield project would not want it) and only affects **non-null** text columns with **no explicit `defaultValue`**. An explicit `text({ defaultValue: 'x' })` always wins, and nullable text / non-text fields are untouched.
 
-It also stops short of any column whose own create validator would refuse the default: a column default drops the field from the required half of the generated create input, and the value the database inserts is never seen by validation. So `validation: { isRequired: true }` and `validation: { length: { min: N } }` with `N` above zero get **no** default — the first refuses the omission, the second refuses the `''`. Those are Keystone's commonest text columns, so expect `DROP DEFAULT` for them in the first `migrate diff`. Closing that gap means relaxing the field's validation as well as setting `defaultValue: ''` on it, because the explicit spelling is refused for the same reason.
+It also stops short of any column whose own create validator would refuse the default: a column default drops the field from the required half of the generated create input, and the value the database inserts is never seen by validation. So `validation: { isRequired: true }` and `validation: { length: { min: N } }` with `N` above zero get **no** default — the first refuses the omission, the second refuses the `''`. Those are Keystone's commonest text columns, so expect `DROP DEFAULT` for them in the first `prisma db update --dry-run`. Closing that gap means relaxing the field's validation as well as setting `defaultValue: ''` on it, because the explicit spelling is refused for the same reason.
 
 ### Singleton `id` is bare
 
@@ -235,11 +235,10 @@ Generate, then read the plan before anything touches the live database:
 
 ```bash
 pnpm opensaas generate
-npx prisma migrate diff \
-  --from-url "$DATABASE_URL" \
-  --to-schema-datamodel prisma/contract.ts \
-  --script
+DATABASE_URL="$DATABASE_URL" npx prisma db update --dry-run
 ```
+
+`opensaas generate` writes the `prisma.config.ts` this command reads, so run it first; the plan prints without touching the database.
 
 For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --plan <id>`, using the plan id the loop printed, which requires the loop to be running.
 
@@ -637,7 +636,7 @@ Work through this in order. Each step links to the relevant section above.
 6. **[ ] Set generator parity** — `keystoneCompat`, `timestamps`, and `select` `db.isNullable` / `db.enumName` to match the live schema (§3).
 7. **[ ] (Optional) Relocate output** — set `output.contractModule` / `output.opensaasDir` for coexistence (§11).
 8. **[ ] Generate** — `pnpm opensaas generate`.
-9. **[ ] Verify the diff** — `prisma migrate diff`, or the plan `opensaas dev` prints, shows **no destructive changes** (§3).
+9. **[ ] Verify the diff** — `prisma db update --dry-run`, or the plan `opensaas dev` prints, shows **no destructive changes** (§3).
 10. **[ ] Migrate images/files** — set `db.columns: 'keystone'` on `image()` / `file()` (§8).
 11. **[ ] Adopt auth** — `authPlugin` + `adoptBetterAuthTables()` if Better Auth is already live (§9).
 12. **[ ] Replace data access** — run the `migrate-context-calls` skill to convert `context.graphql.run` / `context.query.*` to composed `context.db.*` reads (§5).

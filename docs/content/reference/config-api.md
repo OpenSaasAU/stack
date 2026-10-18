@@ -369,7 +369,7 @@ db: {
 
 It never affects nullable text, a field with an explicit `defaultValue`, or any non-text field.
 
-**Known limit:** the flag is inert for `validation: { isRequired: true }` and for `validation: { length: { min: N } }` with `N > 0` — and `isRequired` is Keystone's commonest text column. Keystone renders both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own validator refuses, so carrying the default would write a row the config forbids. A migrating project sees `DROP DEFAULT` in `migrate diff` for those columns and has to relax the validation alongside setting the default. A column made non-null through `db: { isNullable: false }` alone still gets the default, as does one declaring `length: { min: 0 }` or a `length.max`.
+**Known limit:** the flag is inert for `validation: { isRequired: true }` and for `validation: { length: { min: N } }` with `N > 0` — and `isRequired` is Keystone's commonest text column. Keystone renders both as `NOT NULL DEFAULT ''`, but here `''` is a value the field's own validator refuses, so carrying the default would write a row the config forbids. A migrating project sees `DROP DEFAULT` in `prisma db update --dry-run` for those columns and has to relax the validation alongside setting the default. A column made non-null through `db: { isNullable: false }` alone still gets the default, as does one declaring `length: { min: 0 }` or a `length.max`.
 
 ##### `prismaGeneratorOptions`
 
