@@ -66,7 +66,17 @@ function normalizeAuthModels(config: AuthConfig): NormalizedAuthModels {
   return models
 }
 
-function defaultSendAuthEmail(kind: 'password reset' | 'verification'): SendAuthEmail {
+function defaultSendAuthEmail(
+  kind: 'password reset' | 'verification',
+  option: string,
+  enabled: boolean,
+): SendAuthEmail {
+  if (enabled && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      `[@opensaas/stack-auth] ${kind} is enabled but \`${option}\` is not set. ` +
+        'Supply a sender; the default only logs the URL, which is a bearer token.',
+    )
+  }
   return async ({ user, url }) => {
     console.log(
       `[Auth] ${kind[0].toUpperCase()}${kind.slice(1)} email not sent (no callback configured):`,
@@ -85,13 +95,17 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
           (config.emailAndPassword as EmailPasswordConfig).requireConfirmation ?? true,
         sendResetPassword:
           (config.emailAndPassword as EmailPasswordConfig).sendResetPassword ??
-          defaultSendAuthEmail('password reset'),
+          defaultSendAuthEmail('password reset', 'emailAndPassword.sendResetPassword', true),
       }
     : {
         enabled: false as const,
         minPasswordLength: 8,
         requireConfirmation: true,
-        sendResetPassword: defaultSendAuthEmail('password reset'),
+        sendResetPassword: defaultSendAuthEmail(
+          'password reset',
+          'emailAndPassword.sendResetPassword',
+          false,
+        ),
       }
 
   const emailVerification = config.emailVerification?.enabled
@@ -102,13 +116,17 @@ export function normalizeAuthConfig(config: AuthConfig): NormalizedAuthConfig {
           (config.emailVerification as EmailVerificationConfig).tokenExpiration ?? 86400,
         sendVerificationEmail:
           (config.emailVerification as EmailVerificationConfig).sendVerificationEmail ??
-          defaultSendAuthEmail('verification'),
+          defaultSendAuthEmail('verification', 'emailVerification.sendVerificationEmail', true),
       }
     : {
         enabled: false as const,
         sendOnSignUp: true,
         tokenExpiration: 86400,
-        sendVerificationEmail: defaultSendAuthEmail('verification'),
+        sendVerificationEmail: defaultSendAuthEmail(
+          'verification',
+          'emailVerification.sendVerificationEmail',
+          false,
+        ),
       }
 
   const passwordReset = config.passwordReset?.enabled
