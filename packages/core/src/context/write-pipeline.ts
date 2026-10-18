@@ -176,6 +176,8 @@ export interface WritePipelineArgs {
    * pre-transaction gate in {@link runWritePipeline}.
    */
   preResolvedTarget?: TargetResolution
+  /** Called with the row as resolved under the row lock, before any in-transaction hook runs. */
+  onTargetLocked?: (originalItem: OrmRow | undefined) => void
 }
 
 /**
@@ -265,6 +267,9 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
             ormHandle: tx,
             // Reuse the pre-transaction target resolution (#569 call-count semantics).
             preResolvedTarget: gate,
+            onTargetLocked: (lockedItem) => {
+              for (const involved of involvedLists) involved.originalItem = lockedItem
+            },
             // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
             // transaction owner (ADR-0028) — see bindContextToTransaction below.
             context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
@@ -425,9 +430,11 @@ async function runWriteInTransaction(
   const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
   const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
+    if (gated.status === 'ok') args.onTargetLocked?.(undefined)
     return null
   }
   const { originalItem, scope } = resolution
+  args.onTargetLocked?.(originalItem)
 
   // ── Delete path: skip input phases, run only validate/field-validate ────────
   if (!strategy.runInputPhases) {
