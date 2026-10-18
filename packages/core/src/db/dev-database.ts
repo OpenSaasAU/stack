@@ -142,6 +142,21 @@ async function release(steps: readonly (() => Promise<void>)[]): Promise<void> {
   }
 }
 
+/**
+ * pglite-socket 0.2.x (https://github.com/electric-sql/pglite/tree/main/packages/pglite-socket,
+ * `PGLiteSocketHandler.handleClose`) runs a closed socket's detach (transaction rollback
+ * included) on `setImmediate`, and `server.stop()` resolves without awaiting
+ * it. One turn of the check phase runs every detach already scheduled, and
+ * the exclusive lock queues behind any rollback they started.
+ */
+async function settleSocketCleanup(pglite: {
+  runExclusive<T>(fn: () => Promise<T>): Promise<T>
+}): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  await pglite.runExclusive(async () => {})
+  await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
 function authorityOf(host: string): string {
   return host.includes(':') ? `[${host}]` : host
 }
@@ -331,6 +346,7 @@ export async function startDevDatabase(
       maxConnections: options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
     })
     await server.start()
+    teardown.unshift(() => settleSocketCleanup(pglite))
     teardown.unshift(() => server.stop())
 
     const password = randomBytes(16).toString('hex')
