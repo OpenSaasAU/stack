@@ -551,7 +551,9 @@ export async function resolveWhere(
       const resolved = await resolveBranches(ctx.listName, key, value, ctx)
       if (key === 'AND') nodes.push({ kind: 'and', nodes: resolved })
       else if (key === 'OR') nodes.push({ kind: 'or', nodes: resolved })
-      else nodes.push({ kind: 'not', node: { kind: 'and', nodes: resolved } })
+      else if (Array.isArray(value)) {
+        nodes.push({ kind: 'and', nodes: resolved.map((node) => ({ kind: 'not', node })) })
+      } else nodes.push({ kind: 'not', node: resolved[0] })
       continue
     }
     nodes.push(await resolveKey(key, value, ctx))
