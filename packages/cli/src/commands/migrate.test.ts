@@ -1,3 +1,6 @@
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   MIGRATION_GUIDE_URL,
@@ -5,6 +8,7 @@ import {
   MIGRATION_PLUGIN_INSTALL_STEPS,
   printMigrationResources,
   createMigrateCommand,
+  setupClaudeCode,
 } from './migrate.js'
 
 // chalk is mocked to a pass-through so assertions see plain text without ANSI codes.
@@ -93,5 +97,38 @@ describe('migrate command discoverability', () => {
       expect(helpText).toContain(`/plugin install ${MIGRATION_PLUGIN_ID}`)
       expect(helpText).toContain('/plugin marketplace add OpenSaasAU/stack')
     })
+  })
+})
+
+describe('setupClaudeCode', () => {
+  let cwd: string
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-migrate-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  })
+
+  it('refuses to overwrite an unparseable settings.json', async () => {
+    const settingsPath = path.join(cwd, '.claude', 'settings.json')
+    fs.mkdirSync(path.dirname(settingsPath))
+    const original = '{ "permissions": { "allow": ["Bash"], }, }'
+    fs.writeFileSync(settingsPath, original)
+
+    await expect(setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })).rejects.toThrow(
+      /Could not parse .*settings\.json/,
+    )
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(original)
+  })
+
+  it('defaults the recorded provider to postgresql', async () => {
+    await setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })
+
+    const metadata = JSON.parse(
+      fs.readFileSync(path.join(cwd, '.claude', 'opensaas-project.json'), 'utf-8'),
+    )
+    expect(metadata.provider).toBe('postgresql')
   })
 })

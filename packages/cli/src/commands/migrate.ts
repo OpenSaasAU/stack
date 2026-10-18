@@ -120,13 +120,13 @@ function getMarketplaceSource():
   return { source: 'github', repo: 'OpenSaasAU/stack' }
 }
 
-async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<void> {
+export async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<void> {
   const claudeDir = path.join(cwd, '.claude')
   ensureDir(claudeDir)
 
   const projectMetadata = {
     projectTypes: analysis.projectTypes,
-    provider: analysis.provider || 'sqlite',
+    provider: analysis.provider || 'postgresql',
     models: analysis.models || [],
     hasAuth: analysis.hasAuth || false,
     cwd: analysis.cwd,
@@ -153,8 +153,11 @@ async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): Promise<
   if (fs.existsSync(settingsPath)) {
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    } catch {
-      settings = {}
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `Could not parse ${settingsPath}: ${reason}. Fix or remove the file and retry.`,
+      )
     }
   }
 
