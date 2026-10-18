@@ -114,4 +114,16 @@ describe('afterTransaction reports the row as resolved under the lock', () => {
       title: 'b',
     })
   })
+
+  test('a delete whose row vanished before the lock reports no original', async () => {
+    const id = await seed()
+    const admin = database.context(null).sudo()
+    replace = () => admin.db.Doc.delete({ where: { id } })
+    const result = await database.context({ userId: 'u' }).db.Doc.delete({ where: { id } })
+    expect(result).toBeNull()
+    expect(seen.filter((s) => s.hook === 'afterTransaction:rolled-back').at(-1)).toEqual({
+      hook: 'afterTransaction:rolled-back',
+      title: undefined,
+    })
+  })
 })

@@ -430,6 +430,7 @@ async function runWriteInTransaction(
   const gated = args.preResolvedTarget ?? (await strategy.resolveTarget(collection, ops))
   const resolution = await lockTarget(args, collection, ops, gated)
   if (resolution.status === 'denied') {
+    if (gated.status === 'ok') args.onTargetLocked?.(undefined)
     return null
   }
   const { originalItem, scope } = resolution
