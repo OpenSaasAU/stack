@@ -92,6 +92,14 @@ export async function transformImage(
   return await image.toBuffer()
 }
 
+export async function deleteQuietly(storageProvider: StorageProvider, filename: string) {
+  try {
+    await storageProvider.delete(filename)
+  } catch {
+    return
+  }
+}
+
 export async function processImageTransformations(
   buffer: Buffer | Uint8Array,
   originalFilename: string,
@@ -100,6 +108,7 @@ export async function processImageTransformations(
   contentType: string,
 ): Promise<Record<string, ImageTransformationResult>> {
   const results: Record<string, ImageTransformationResult> = {}
+  const uploadedFilenames: string[] = []
 
   try {
     for (const [name, config] of Object.entries(transformations)) {
@@ -123,6 +132,7 @@ export async function processImageTransformations(
                   : contentType,
       })
 
+      uploadedFilenames.push(uploadResult.filename)
       results[name] = {
         url: uploadResult.url,
         width,
@@ -132,12 +142,7 @@ export async function processImageTransformations(
       }
     }
   } catch (error) {
-    await Promise.all(
-      Object.values(results).map((r) => {
-        const filename = r.filename ?? r.url.split('/').pop()
-        return filename ? storageProvider.delete(filename).catch(() => undefined) : undefined
-      }),
-    )
+    await Promise.all(uploadedFilenames.map((filename) => deleteQuietly(storageProvider, filename)))
     throw error
   }
 

@@ -101,7 +101,7 @@ describe('uploadImage: a failing transformation leaves nothing behind', () => {
 
   it('rethrows the original error even when cleanup itself fails', async () => {
     failOnUpload = 3
-    FlakyStorageProvider.prototype.delete = async () => {
+    FlakyStorageProvider.prototype.delete = () => {
       throw new Error('delete failed')
     }
     await expect(upload()).rejects.toThrow('upload failed')

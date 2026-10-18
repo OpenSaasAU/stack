@@ -5,6 +5,7 @@ import type {
   FileMetadata,
   ImageMetadata,
   ImageTransformationConfig,
+  ImageTransformationResult,
 } from '../config/types.js'
 import {
   validateFile,
@@ -14,7 +15,7 @@ import {
   isFileValidationOptions,
   type FileValidationOptions,
 } from '../utils/upload.js'
-import { detectImage, processImageTransformations } from '../utils/image.js'
+import { deleteQuietly, detectImage, processImageTransformations } from '../utils/image.js'
 import { getStorageProviderFactory } from './registry.js'
 
 /**
@@ -198,8 +199,7 @@ export async function uploadImage(
     metadata: options?.metadata,
   })
 
-  let transformations:
-    Record<string, { url: string; width: number; height: number; size: number }> | undefined
+  let transformations: Record<string, ImageTransformationResult> | undefined
   if (options?.transformations) {
     try {
       transformations = await processImageTransformations(
@@ -210,7 +210,7 @@ export async function uploadImage(
         contentType,
       )
     } catch (error) {
-      await provider.delete(result.filename).catch(() => undefined)
+      await deleteQuietly(provider, result.filename)
       throw error
     }
   }
