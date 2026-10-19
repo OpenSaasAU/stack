@@ -180,13 +180,14 @@ export function extensionForMimeType(mimeType: string): string | undefined {
  * the client's base name for readability. The stored name is never derived
  * from the client's own extension (issue #1625) — an `x.html` declared as
  * `application/pdf` is renamed to `x.pdf`, and a type with no known
- * extension is stored with no extension at all (every client extension is dropped, including inner ones).
+ * extension is stored with no extension at all (remaining dots in the client name become underscores).
  */
 export function withEffectiveExtension(originalName: string, effectiveMimeType: string): string {
   const ext = extensionForMimeType(effectiveMimeType)
   const stem = originalName.replace(/^\.+/, '')
-  const dot = stem.indexOf('.')
-  const base = (dot >= 0 ? stem.slice(0, dot) : stem) || 'file'
+  const lastDot = stem.lastIndexOf('.')
+  const core = lastDot > 0 ? stem.slice(0, lastDot) : stem
+  const base = core.replaceAll('.', '_') || 'file'
   return ext ? `${base}${ext}` : base
 }
 

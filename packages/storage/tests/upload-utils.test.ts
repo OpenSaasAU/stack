@@ -280,7 +280,9 @@ describe('Upload Utilities', () => {
 
   describe('withEffectiveExtension double extensions (issue #1922)', () => {
     it('drops every client extension when the type has no known extension', () => {
-      expect(withEffectiveExtension('invoice.html.pdf', 'application/x-anything')).toBe('invoice')
+      expect(withEffectiveExtension('invoice.html.pdf', 'application/x-anything')).toBe(
+        'invoice_html',
+      )
     })
 
     it('does not keep a leading-dot name as an extension', () => {
@@ -288,8 +290,14 @@ describe('Upload Utilities', () => {
       expect(withEffectiveExtension('.x.html', 'application/x-anything')).toBe('x')
     })
 
+    it('keeps distinct dotted names distinct', () => {
+      expect(withEffectiveExtension('report.v1.bin', 'application/x-anything')).not.toBe(
+        withEffectiveExtension('report.v2.bin', 'application/x-anything'),
+      )
+    })
+
     it('drops inner extensions for a known type too', () => {
-      expect(withEffectiveExtension('x.php.html.pdf', 'application/pdf')).toBe('x.pdf')
+      expect(withEffectiveExtension('x.php.html.pdf', 'application/pdf')).toBe('x_php_html.pdf')
     })
   })
 
