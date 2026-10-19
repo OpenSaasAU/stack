@@ -66,9 +66,16 @@ describe('typed-SQL where parity with the ORM lowering', () => {
   })
 
   test('insensitive not_in negates every ILIKE', () => {
-    const sql = lower({ operator: 'not_in', value: ['A', 'b'], mode: 'insensitive' })
-    expect(sql).toContain('email NOT ILIKE')
-    expect(sql).toContain(' AND ')
+    const bound = (value: string) =>
+      JSON.stringify({ kind: 'param-ref', value, codec: { codecId: 'pg/text@1' } })
+    expect(lower({ operator: 'not_in', value: ['A', 'b'], mode: 'insensitive' })).toBe(
+      `(email NOT ILIKE ${bound('A')} AND email NOT ILIKE ${bound('b')})`,
+    )
+  })
+
+  test('empty insensitive lists fall back to plain IN / NOT IN', () => {
+    expect(lower({ operator: 'in', value: [], mode: 'insensitive' })).toBe('email IN []')
+    expect(lower({ operator: 'not_in', value: [], mode: 'insensitive' })).toBe('email NOT IN []')
   })
 
   test('sensitive in stays a plain IN', () => {
