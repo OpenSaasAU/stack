@@ -278,6 +278,20 @@ describe('Upload Utilities', () => {
     })
   })
 
+  describe('withEffectiveExtension double extensions (issue #1922)', () => {
+    it('drops every client extension when the type has no known extension', () => {
+      expect(withEffectiveExtension('invoice.html.pdf', 'application/x-anything')).toBe('invoice')
+    })
+
+    it('keeps a dotfile name intact', () => {
+      expect(withEffectiveExtension('.html', 'application/x-anything')).toBe('.html')
+    })
+
+    it('still renames to the effective extension for a known type', () => {
+      expect(withEffectiveExtension('invoice.html.pdf', 'application/pdf')).toBe('invoice.html.pdf')
+    })
+  })
+
   describe('isFileValidationOptions', () => {
     // The guard must narrow only what it has actually checked: passing zero
     // of these caused `{ maxFileSize: 'one megabyte', acceptedMimeTypes: 42 }`
