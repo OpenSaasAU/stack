@@ -51,7 +51,10 @@ interface CollectionDouble {
  * deletes nothing — the state a consumer that lost the race observes between
  * its own two statements.
  */
-function lostRaceSurface(row: Record<string, unknown>): UnsafeSurface {
+function lostRaceSurface(
+  row: Record<string, unknown>,
+  overrides: (collection: CollectionDouble) => Partial<CollectionDouble> = () => ({}),
+): UnsafeSurface {
   const collection: CollectionDouble = {
     where: () => collection,
     select: () => collection,
@@ -67,6 +70,7 @@ function lostRaceSurface(row: Record<string, unknown>): UnsafeSurface {
     delete: async () => row,
     deleteAndCount: async () => 0,
   }
+  Object.assign(collection, overrides(collection))
   return {
     sql: {},
     raw: {},
@@ -222,15 +226,12 @@ describe('consumeOne is atomic', () => {
 
   test("the claiming delete re-applies the caller's where beside the id", async () => {
     const row = { id: randomUUID(), identifier: 'guarded', value: 'token' }
-    const base = lostRaceSurface(row)
     let narrowings = 0
     let claimNarrowings = 0
-    const table = base.orm.public.Verification
-    const recording = {
-      ...table,
+    const surface = lostRaceSurface(row, (collection) => ({
       where: () => {
         narrowings += 1
-        return recording
+        return collection
       },
       first: async () => {
         narrowings = 0
@@ -240,8 +241,7 @@ describe('consumeOne is atomic', () => {
         claimNarrowings = narrowings
         return 1
       },
-    }
-    const surface = { ...base, orm: { public: { Verification: recording } } }
+    }))
     const adapter = opensaasAuthAdapter({
       config: plain.config,
       unsafe: surface,
