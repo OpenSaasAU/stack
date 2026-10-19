@@ -455,6 +455,7 @@ export function opensaasAuthAdapter(
               const claimed = await narrow(
                 model,
                 [
+                  ...where,
                   {
                     field: 'id',
                     operator: 'eq',

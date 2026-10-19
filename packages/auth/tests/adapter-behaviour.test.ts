@@ -220,6 +220,43 @@ describe('consumeOne is atomic', () => {
     ).toBeNull()
   })
 
+  test("the claiming delete re-applies the caller's where beside the id", async () => {
+    const row = { id: randomUUID(), identifier: 'guarded', value: 'token' }
+    const base = lostRaceSurface(row)
+    let narrowings = 0
+    let claimNarrowings = 0
+    const table = base.orm.public.Verification
+    const recording = {
+      ...table,
+      where: () => {
+        narrowings += 1
+        return recording
+      },
+      first: async () => {
+        narrowings = 0
+        return row
+      },
+      deleteAndCount: async () => {
+        claimNarrowings = narrowings
+        return 1
+      },
+    }
+    const surface = { ...base, orm: { public: { Verification: recording } } }
+    const adapter = opensaasAuthAdapter({
+      config: plain.config,
+      unsafe: surface,
+      registry: plain.registry,
+      transaction: (body) => body(surface),
+    })(plain.betterAuthOptions)
+
+    await adapter.consumeOne({
+      model: 'verification',
+      where: [{ field: 'identifier', value: 'guarded' }],
+    })
+
+    expect(claimNarrowings).toBe(2)
+  })
+
   test('answers null when nothing matches', async () => {
     expect(
       await plain.adapter.consumeOne({
