@@ -213,12 +213,17 @@ function sqlClause(
   const like = (build: (value: string) => string): Expression<ScopeField> =>
     fns.raw`${column} LIKE ${bound(build)}`.returns(BOOLEAN_CODEC)
 
+  const equalsAny = (values: readonly string[]): Expression<ScopeField> =>
+    fns.or(...values.map((v) => fns.ilike(column, likeEqualsPattern(v))))
+
   switch (clause.operator) {
     case 'eq':
+      if (clause.value === null) return fns.raw`${column} IS NULL`.returns(BOOLEAN_CODEC)
       return isInsensitive(clause)
         ? fns.ilike(column, pattern(clause, likeEqualsPattern))
         : fns.eq(column, scalar(clause, isBigInt))
     case 'ne':
+      if (clause.value === null) return fns.raw`${column} IS NOT NULL`.returns(BOOLEAN_CODEC)
       return isInsensitive(clause)
         ? fns.raw`${column} NOT ILIKE ${bound(likeEqualsPattern)}`.returns(BOOLEAN_CODEC)
         : fns.ne(column, scalar(clause, isBigInt))
@@ -230,10 +235,18 @@ function sqlClause(
       return fns.gt(column, scalar(clause, isBigInt))
     case 'gte':
       return fns.gte(column, scalar(clause, isBigInt))
-    case 'in':
-      return fns.in(column, list(clause, isBigInt))
-    case 'not_in':
-      return fns.notIn(column, list(clause, isBigInt))
+    case 'in': {
+      const insensitive = insensitiveList(clause)
+      return insensitive ? equalsAny(insensitive) : fns.in(column, list(clause, isBigInt))
+    }
+    case 'not_in': {
+      const insensitive = insensitiveList(clause)
+      if (!insensitive) return fns.notIn(column, list(clause, isBigInt))
+      const patterns = insensitive.map((v) => param(likeEqualsPattern(v), PATTERN_CODEC))
+      return fns.and(
+        ...patterns.map((p) => fns.raw`${column} NOT ILIKE ${p}`.returns(BOOLEAN_CODEC)),
+      )
+    }
     case 'contains':
       return isInsensitive(clause)
         ? fns.ilike(column, pattern(clause, likeContainsPattern))
