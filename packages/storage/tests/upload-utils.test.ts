@@ -283,12 +283,13 @@ describe('Upload Utilities', () => {
       expect(withEffectiveExtension('invoice.html.pdf', 'application/x-anything')).toBe('invoice')
     })
 
-    it('keeps a dotfile name intact', () => {
-      expect(withEffectiveExtension('.html', 'application/x-anything')).toBe('.html')
+    it('does not keep a leading-dot name as an extension', () => {
+      expect(withEffectiveExtension('.html', 'application/x-anything')).toBe('html')
+      expect(withEffectiveExtension('.x.html', 'application/x-anything')).toBe('x')
     })
 
-    it('still renames to the effective extension for a known type', () => {
-      expect(withEffectiveExtension('invoice.html.pdf', 'application/pdf')).toBe('invoice.html.pdf')
+    it('drops inner extensions for a known type too', () => {
+      expect(withEffectiveExtension('x.php.html.pdf', 'application/pdf')).toBe('x.pdf')
     })
   })
 
