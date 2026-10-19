@@ -170,6 +170,10 @@ Search the knowledge base using natural language:
 
 Results are ranked by semantic similarity (cosine distance).
 
+The `searchKnowledge` server action is callable by anyone, so it clamps `limit` (1–20),
+`minScore` (0–1) and the query length server-side. Each call still spends one OpenAI
+embedding request: add authentication or rate limiting before exposing it publicly.
+
 ### Admin Panel (`/admin`)
 
 A browse-and-delete interface for the knowledge base. Browsing and deleting work.
