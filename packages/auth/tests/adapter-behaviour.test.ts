@@ -472,6 +472,27 @@ describe('where lowering', () => {
     expect(rows).toHaveLength(1)
   })
 
+  test('insensitive in / not_in guards on the typed-SQL lane match like the ORM lane', async () => {
+    await plain.adapter.create({
+      model: 'rateLimit',
+      data: { key: 'ip:Mixed-Case', count: 1, lastRequest: 10 },
+    })
+    const guard = (operator: 'in' | 'not_in', value: string[]) =>
+      plain.adapter.incrementOne<{ count: number }>({
+        model: 'rateLimit',
+        where: [
+          { field: 'key', value: 'ip:Mixed-Case' },
+          { field: 'key', operator, value, mode: 'insensitive' },
+        ],
+        increment: { count: 1 },
+      })
+
+    expect(await guard('in', ['IP:MIXED-CASE'])).toMatchObject({ count: 2 })
+    expect(await guard('not_in', ['IP:MIXED-CASE'])).toBeNull()
+    expect(await guard('not_in', ['ip:other'])).toMatchObject({ count: 3 })
+    expect(await guard('in', ['ip:other'])).toBeNull()
+  })
+
   test('a null guard on the typed-SQL lane compares with IS NULL', async () => {
     await plain.adapter.create({
       model: 'verification',
