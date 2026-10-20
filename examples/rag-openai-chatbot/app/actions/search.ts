@@ -11,16 +11,28 @@ export interface SearchResult {
   score: number
 }
 
+const MAX_LIMIT = 20
+const MAX_QUERY_LENGTH = 500
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.min(Math.max(value, min), max) : fallback
+}
+
 export async function searchKnowledge(
   query: string,
   options?: { limit?: number; minScore?: number }
 ): Promise<SearchResult[]> {
   // `contentEmbedding` is a cosine column, so a score is the raw cosine on
   // [-1, 1] rather than a normalised 0-1: 0.2 is a loose floor, not a strict one.
-  const { limit = 5, minScore = 0.2 } = options || {}
+  const { limit: requestedLimit = 5, minScore: requestedMinScore = 0.2 } = options || {}
+  const limit = Math.trunc(clamp(requestedLimit, 1, MAX_LIMIT, 5))
+  const minScore = clamp(requestedMinScore, 0, 1, 0.2)
 
-  if (!query || query.trim().length === 0) {
+  if (typeof query !== 'string' || query.trim().length === 0) {
     return []
+  }
+  if (query.length > MAX_QUERY_LENGTH) {
+    throw new Error('Query is too long')
   }
 
   try {
