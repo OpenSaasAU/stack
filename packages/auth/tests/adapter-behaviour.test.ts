@@ -51,7 +51,10 @@ interface CollectionDouble {
  * deletes nothing — the state a consumer that lost the race observes between
  * its own two statements.
  */
-function lostRaceSurface(row: Record<string, unknown>): UnsafeSurface {
+function lostRaceSurface(
+  row: Record<string, unknown>,
+  overrides: (collection: CollectionDouble) => Partial<CollectionDouble> = () => ({}),
+): UnsafeSurface {
   const collection: CollectionDouble = {
     where: () => collection,
     select: () => collection,
@@ -67,6 +70,7 @@ function lostRaceSurface(row: Record<string, unknown>): UnsafeSurface {
     delete: async () => row,
     deleteAndCount: async () => 0,
   }
+  Object.assign(collection, overrides(collection))
   return {
     sql: {},
     raw: {},
@@ -218,6 +222,39 @@ describe('consumeOne is atomic', () => {
         where: [{ field: 'identifier', value: 'raced' }],
       }),
     ).toBeNull()
+  })
+
+  test("the claiming delete re-applies the caller's where beside the id", async () => {
+    const row = { id: randomUUID(), identifier: 'guarded', value: 'token' }
+    let narrowings = 0
+    let claimNarrowings = 0
+    const surface = lostRaceSurface(row, (collection) => ({
+      where: () => {
+        narrowings += 1
+        return collection
+      },
+      first: async () => {
+        narrowings = 0
+        return row
+      },
+      deleteAndCount: async () => {
+        claimNarrowings = narrowings
+        return 1
+      },
+    }))
+    const adapter = opensaasAuthAdapter({
+      config: plain.config,
+      unsafe: surface,
+      registry: plain.registry,
+      transaction: (body) => body(surface),
+    })(plain.betterAuthOptions)
+
+    await adapter.consumeOne({
+      model: 'verification',
+      where: [{ field: 'identifier', value: 'guarded' }],
+    })
+
+    expect(claimNarrowings).toBe(2)
   })
 
   test('answers null when nothing matches', async () => {
