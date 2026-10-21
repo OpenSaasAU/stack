@@ -60,24 +60,27 @@ export function TiptapField({
     [features, placeholder],
   )
 
-  const editor = useEditor({
-    extensions,
-    content: value || undefined,
-    editable: isEditable,
-    // Don't render immediately on the server to avoid SSR issues
-    immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      if (!isEditable || !onChange) return
-      const json = editor.getJSON()
-      lastEmitted.current = json
-      onChange(json)
-    },
-    editorProps: {
-      attributes: {
-        class: 'tiptap',
+  const editor = useEditor(
+    {
+      extensions,
+      content: value || undefined,
+      editable: isEditable,
+      // Don't render immediately on the server to avoid SSR issues
+      immediatelyRender: false,
+      onUpdate: ({ editor }) => {
+        if (!isEditable || !onChange) return
+        const json = editor.getJSON()
+        lastEmitted.current = json
+        onChange(json)
+      },
+      editorProps: {
+        attributes: {
+          class: 'tiptap',
+        },
       },
     },
-  })
+    [extensions],
+  )
 
   useEffect(() => {
     if (!editor) return
@@ -266,12 +269,20 @@ export function TiptapField({
                   setLinkError(true)
                   return
                 } else {
-                  editor
-                    ?.chain()
-                    .focus()
-                    .extendMarkRange('link')
-                    .setLink({ href: linkDraft.trim() })
-                    .run()
+                  const href = linkDraft.trim()
+                  if (editor?.state.selection.empty) {
+                    editor
+                      .chain()
+                      .focus()
+                      .insertContent({
+                        type: 'text',
+                        text: href,
+                        marks: [{ type: 'link', attrs: { href } }],
+                      })
+                      .run()
+                  } else {
+                    editor?.chain().focus().extendMarkRange('link').setLink({ href }).run()
+                  }
                 }
                 setLinkDraft(null)
               }}

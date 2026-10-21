@@ -133,7 +133,7 @@ type Article = {
 
 ### With Tiptap
 
-- Uses `@tiptap/react` and `@tiptap/starter-kit`
+- Uses `@tiptap/react` and `@tiptap/starter-kit`, configured from the feature set by `richTextExtensions()`
 - SSR-safe with `immediatelyRender: false`
 - JSON content structure
 

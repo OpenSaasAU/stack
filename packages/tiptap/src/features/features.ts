@@ -31,16 +31,16 @@ export interface RichTextFeatures {
   link?: LinkFeature
 }
 
-export const defaultRichTextFeatures: RichTextFeatures = {
+export const defaultRichTextFeatures: RichTextFeatures = Object.freeze({
   bold: true,
   italic: true,
   strike: true,
-  heading: { levels: [1, 2, 3] },
+  heading: Object.freeze({ levels: Object.freeze([1, 2, 3] as HeadingLevel[]) as HeadingLevel[] }),
   bulletList: true,
   orderedList: true,
   blockquote: true,
   hardBreak: true,
-}
+})
 
 export const DEFAULT_LINK_PROTOCOLS = ['http', 'https', 'mailto', 'tel']
 

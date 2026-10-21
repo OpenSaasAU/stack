@@ -141,7 +141,9 @@ function findOffence(
       }
     }
 
-    if (Array.isArray(content)) pending.push(...content)
+    if (Array.isArray(content)) {
+      for (const child of content) pending.push(child)
+    }
   }
   return undefined
 }
