@@ -130,8 +130,8 @@ importers:
         specifier: ^16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       openai:
-        specifier: ^6.32.0
-        version: 6.32.0(ws@8.22.0)(zod@4.6.7)
+        specifier: ^7.38.0
+        version: 7.38.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(undici@6.29.0)(ws@8.22.0)(zod@4.6.7)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -648,8 +648,8 @@ importers:
         specifier: ^16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.61.1)(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       openai:
-        specifier: ^6.32.0
-        version: 6.32.0(ws@8.22.0)(zod@4.6.5)
+        specifier: ^7.38.0
+        version: 7.38.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(undici@6.29.0)(ws@8.22.0)(zod@4.6.5)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -1163,8 +1163,8 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(vitest@5.0.5)
       openai:
-        specifier: ^6.32.0
-        version: 6.32.0(ws@8.22.0)(zod@4.6.5)
+        specifier: ^7.38.0
+        version: 7.38.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(undici@6.29.0)(ws@8.22.0)(zod@4.6.5)
       pg:
         specifier: ^8.23.0
         version: 8.23.0
@@ -6928,13 +6928,25 @@ packages:
     resolution: {integrity: sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg==}
     engines: {node: '>=20'}
 
-  openai@6.32.0:
-    resolution: {integrity: sha512-j3k+BjydAf8yQlcOI7WUQMQTbbF5GEIMAE2iZYCOzwwB3S2pCheaWYp+XZRNAch4jWVc52PMDGRRjutao3lLCg==}
-    hasBin: true
+  openai@7.38.0:
+    resolution: {integrity: sha512-Ef+YyIeoiisZLP/tV4F4/RieJAl4OEJTyJg6gV0AXOb0T9CDkvYJoU224OY5CTmQ4zDJeku4jEHjz2b3/6Ndhw==}
+    engines: {node: '>=22.0.0'}
     peerDependencies:
-      ws: ^8.18.0
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      undici: ^6.28.0
+      ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      undici:
+        optional: true
       ws:
         optional: true
       zod:
@@ -14054,13 +14066,19 @@ snapshots:
       powershell-utils: 0.2.1
       wsl-utils: 1.0.1
 
-  openai@6.32.0(ws@8.22.0)(zod@4.6.5):
+  openai@7.38.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(undici@6.29.0)(ws@8.22.0)(zod@4.6.5):
     optionalDependencies:
+      '@aws-sdk/credential-provider-node': 3.972.86
+      '@smithy/signature-v4': 5.7.4
+      undici: 6.29.0
       ws: 8.22.0
       zod: 4.6.5
 
-  openai@6.32.0(ws@8.22.0)(zod@4.6.7):
+  openai@7.38.0(@aws-sdk/credential-provider-node@3.972.86)(@smithy/signature-v4@5.7.4)(undici@6.29.0)(ws@8.22.0)(zod@4.6.7):
     optionalDependencies:
+      '@aws-sdk/credential-provider-node': 3.972.86
+      '@smithy/signature-v4': 5.7.4
+      undici: 6.29.0
       ws: 8.22.0
       zod: 4.6.7
 
