@@ -100,6 +100,27 @@ describe('context.serverAction', () => {
     return getContext(config, orm, session, undefined, false, undefined, undefined, harness.client)
   }
 
+  describe('relationshipOptions', () => {
+    test('answers with { options } and never a success key', async () => {
+      const created = await harness.context.serverAction({
+        listKey: 'User',
+        action: 'create',
+        data: { name: 'Ada', email: 'ada@x.io' },
+      })
+      const id = String((created as { data: { id: unknown } }).data.id)
+
+      const response = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+        search: 'Ada',
+      })
+
+      expect(response).not.toHaveProperty('success')
+      expect(response).toMatchObject({ options: [{ id }] })
+    })
+  })
+
   describe('the CRUD actions', () => {
     test('no write response carries a column other than id', async () => {
       const context = harness.context

@@ -62,12 +62,12 @@ describe('useRelationshipSearch — loadOnOpen (#1365)', () => {
 
     // The open-fetch settles first; the debounced search is still pending.
     await act(async () => {
-      openFetch.resolve({ success: true, data: [{ id: 'p1', label: 'Owned' }] })
+      openFetch.resolve({ options: [{ id: 'p1', label: 'Owned' }] })
     })
     expect(result.current.isSearching).toBe(true)
 
     await act(async () => {
-      searchFetch.resolve({ success: true, data: [{ id: 'p2', label: 'Beta' }] })
+      searchFetch.resolve({ options: [{ id: 'p2', label: 'Beta' }] })
     })
     expect(result.current.isSearching).toBe(false)
     expect(result.current.searchResults).toEqual([{ id: 'p2', label: 'Beta' }])
@@ -77,7 +77,7 @@ describe('useRelationshipSearch — loadOnOpen (#1365)', () => {
     const serverAction = vi
       .fn()
       .mockRejectedValueOnce(new Error('network error'))
-      .mockResolvedValueOnce({ success: true, data: [{ id: 'p1', label: 'Owned' }] })
+      .mockResolvedValueOnce({ options: [{ id: 'p1', label: 'Owned' }] })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const { result, rerender } = renderHook(

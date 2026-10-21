@@ -44,10 +44,9 @@ function extractOptions(result: unknown): RelationshipSearchOption[] {
   if (
     result &&
     typeof result === 'object' &&
-    (result as { success?: unknown }).success === true &&
-    Array.isArray((result as { data?: unknown }).data)
+    Array.isArray((result as { options?: unknown }).options)
   ) {
-    return (result as { data: RelationshipSearchOption[] }).data
+    return (result as { options: RelationshipSearchOption[] }).options
   }
   return []
 }

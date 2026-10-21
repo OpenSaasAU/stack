@@ -32,6 +32,7 @@ import { withOrigin } from '../origin.js'
 import type { StackContext, StackTransactionContext } from '../types/context.js'
 import {
   getRelationshipOptions,
+  type RelationshipOption,
   isRelationshipLabelReadable,
 } from '../query/relationship-options.js'
 import {
@@ -144,6 +145,8 @@ export type ServerActionProps =
       field: string
       parentId: string
     }
+  // Returns a distinct `{ options }` shape, never `success`, so a UI wrapper
+  // that redirects on `success` does not navigate away mid-edit.
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -821,6 +824,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
     | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
     | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { options: RelationshipOption[] }
   > {
     if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
@@ -1237,7 +1241,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           selectedIds: props.selectedIds,
         })
 
-        return { success: true, data: options }
+        return { options }
       }
 
       let result: WrittenRow = null
