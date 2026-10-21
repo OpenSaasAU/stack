@@ -222,6 +222,12 @@ _Avoid_: storage backend, storage adapter, uploader
 The lookup from a configured provider `type` to the constructor that builds it, which the storage runtime consults instead of a closed `switch`. A host registers the (optional) provider packages it uses, so non-`local` and custom providers are constructable without the runtime depending on every provider's SDK.
 _Avoid_: provider switch, provider map, plugin registry
 
+### Rich text
+
+**Rich text feature set**:
+The nodes, marks and attribute policies (heading levels, link protocols) a `richText()` field allows. The editor offers exactly these and a write containing anything else is refused; a field that declares none gets the default feature set. It governs writes only — a stored document is never re-checked on read.
+_Avoid_: allowlist, extensions, schema, rich text config
+
 ### Website & docs
 
 **Stack** (public name):
