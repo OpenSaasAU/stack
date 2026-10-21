@@ -235,6 +235,7 @@ export function RelationshipTableClient({
           mode: 'disconnect',
           id: rowId,
           field: backReferenceField,
+          parentId,
         }
       } else {
         return

@@ -74,14 +74,12 @@ export type ServerActionProps =
   // removal.
   //
   // `parentId`, when sent, is the parent the CALLER believes this row is still
-  // linked to (#1358) — the item form's own id, for the stale-baseline
-  // unlink a to-many field's deselect issues. A disconnect that names one locks
+  // linked to (#1358) — the stale-baseline guard for an unlink. A disconnect that names one locks
   // the row, compares its CURRENT back-reference against it, and clears the
   // column only when the two still agree; a mismatch means the row was
   // re-pointed since the caller's baseline was read, and the write is refused
-  // rather than silently reverting that newer write. Omitting it keeps the
-  // unconditional disconnect every other caller (the relationship table's own
-  // unlink control) already relies on.
+  // rather than silently reverting that newer write. Omitting it makes the
+  // disconnect unconditional.
   | {
       listKey: string
       action: 'removeRelated'
