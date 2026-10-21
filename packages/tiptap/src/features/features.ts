@@ -55,7 +55,9 @@ function normaliseProtocol(protocol: string): string {
 }
 
 export function isAllowedHref(href: string, link: LinkFeature): boolean {
-  const compact = href.replace(/[\u0000- \u007f]/g, '')
+  const compact = Array.from(href)
+    .filter((char) => char.charCodeAt(0) > 0x20 && char.charCodeAt(0) !== 0x7f)
+    .join('')
   if (compact === '') return false
   const scheme = /^([^/?#:]*):/.exec(compact)
   if (scheme === null) return link.allowRelative === true
