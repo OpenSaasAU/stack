@@ -461,7 +461,7 @@ Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, n
 
 `props` is a **discriminated union on `action`**, eleven members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case. The one narrow exception is `bulkAction`'s own `hasAccess` check, which runs outside any `try`/`catch` here and so can still reject the call if it throws — see [`bulkAction`](#bulkaction).
 
-`create`, `update`, `delete` and `relationshipOptions` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
+`create`, `update` and `delete` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ options }`, `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
 
 ### `create`, `update`, `delete`
 
@@ -519,9 +519,9 @@ The odd one out: unlike the four above, `listKey` here names the **parent** list
 
 ### `relationshipOptions`
 
-`{ listKey, action: 'relationshipOptions', field, search?, take?, selectedIds? }` → `{ success: true, data: RelationshipOption[] }`, where `RelationshipOption` is `{ id: string, label: string }`.
+`{ listKey, action: 'relationshipOptions', field, search?, take?, selectedIds? }` → `{ options: RelationshipOption[] }`, where `RelationshipOption` is `{ id: string, label: string }`.
 
-Backs a relationship field's combobox: a bounded, projected read of the target list's `id` and label field alone — no other field's `resolveOutput` runs, and no `needs` on the target list widens the read into a further relation. `field` must name a relationship field on `listKey`; otherwise the refusal is `{ success: false, error: 'Field "…" on list "…" is not a relationship field' }`. Operation-level `query` access on the target list still applies and denies the ordinary way — an inaccessible target list answers `{ success: true, data: [] }`, the composed read's own [Silent failure](#silent-failure), not a distinct error. `search` filters the label field with `contains` when it is a text field and is otherwise ignored; `selectedIds` is unioned into the result outside the `take`-bounded window, so an already-chosen option stays visible even once a search or a page size would otherwise drop it.
+Backs a relationship field's combobox: a bounded, projected read of the target list's `id` and label field alone — no other field's `resolveOutput` runs, and no `needs` on the target list widens the read into a further relation. `field` must name a relationship field on `listKey`; otherwise the refusal is `{ success: false, error: 'Field "…" on list "…" is not a relationship field' }`. Operation-level `query` access on the target list still applies and denies the ordinary way — an inaccessible target list answers `{ options: [] }`, the composed read's own [Silent failure](#silent-failure), not a distinct error. `search` filters the label field with `contains` when it is a text field and is otherwise ignored; `selectedIds` is unioned into the result outside the `take`-bounded window, so an already-chosen option stays visible even once a search or a page size would otherwise drop it.
 
 ---
 
