@@ -236,3 +236,66 @@ describe('TiptapField', () => {
     })
   })
 })
+
+describe('TiptapField feature set', () => {
+  const noop = () => undefined
+  const buttons = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.tiptap-toolbar button')).map((b) => b.textContent)
+
+  it('shows the default toolbar and none of the disabled features', async () => {
+    const { container } = render(<TiptapField name="c" label="C" value={null} onChange={noop} />)
+    await mounted(container)
+    const labels = buttons(container)
+    expect(labels).toEqual(
+      expect.arrayContaining(['Bold', 'Italic', 'Strike', 'H1', 'H2', 'H3', 'Quote', 'Line Break']),
+    )
+    for (const absent of ['Link', 'Underline', 'Code', 'Code Block', 'Rule']) {
+      expect(labels).not.toContain(absent)
+    }
+  })
+
+  it('builds the toolbar from the declared set', async () => {
+    const { container } = render(
+      <TiptapField
+        name="c"
+        label="C"
+        value={null}
+        onChange={noop}
+        features={{ underline: true, code: true, codeBlock: true, horizontalRule: true, link: {} }}
+      />,
+    )
+    await mounted(container)
+    expect(buttons(container)).toEqual(['Underline', 'Code', 'Link', 'Code Block', 'Rule'])
+  })
+
+  it('refuses a javascript: link and applies an allowed one', async () => {
+    const { container, getByText, getByLabelText, queryByText } = render(
+      <TiptapField
+        name="c"
+        label="C"
+        value={paragraph('hi')}
+        onChange={noop}
+        features={{ link: {} }}
+      />,
+    )
+    const editor = await mounted(container)
+    editor.commands.selectAll()
+    await act(async () => getByText('Link').click())
+    const input = getByLabelText('Link URL') as HTMLInputElement
+    const setValue = async (value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      await act(async () => {
+        setter?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('javascript:alert(1)')
+    await act(async () => getByText('Apply link').click())
+    expect(queryByText('This link is not allowed')).not.toBeNull()
+    expect(JSON.stringify(editor.getJSON())).not.toContain('javascript')
+
+    await setValue('https://a.test')
+    await act(async () => getByText('Apply link').click())
+    expect(JSON.stringify(editor.getJSON())).toContain('https://a.test')
+  })
+})

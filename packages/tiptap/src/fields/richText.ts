@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { formatFieldName } from '@opensaas/stack-core/extend'
 import type { ContractFieldDescriptor, FieldKeys, TypeInfo } from '@opensaas/stack-core/extend'
 import type { RichTextField } from '../config/types.js'
+import { resolveFeatures } from '../features/features.js'
+import { createFeatureCheck } from '../features/validate.js'
 
 /**
  * Tiptap's document type, referenced through this package rather than
@@ -88,6 +90,8 @@ export function richText<
   TKey extends FieldKeys<TTypeInfo['fields']> = FieldKeys<TTypeInfo['fields']>,
 >(options?: Omit<RichTextField<TTypeInfo, TKey>, 'type'>): RichTextField<TTypeInfo, TKey> {
   const isRequired = options?.validation?.isRequired === true
+  const features = resolveFeatures(options?.features)
+  let featureCheck: ReturnType<typeof createFeatureCheck> | undefined
   const face = isRequired ? JSON_CONTENT : `${JSON_CONTENT} | null`
 
   return {
@@ -95,6 +99,7 @@ export function richText<
     outputType: face,
     inputType: face,
     ...options,
+    ui: { ...options?.ui, features },
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const message = `${formatFieldName(fieldName)} is required`
       const document = z
@@ -106,6 +111,12 @@ export function richText<
         })
         .refine(isWithinSizeCap, {
           message: `${formatFieldName(fieldName)} is too large`,
+          abort: true,
+        })
+        .superRefine((value, ctx) => {
+          featureCheck ??= createFeatureCheck(features)
+          const offence = featureCheck(value)
+          if (offence !== undefined) ctx.addIssue({ code: 'custom', message: offence })
         })
 
       if (!isRequired) return document.nullable().optional()
