@@ -21,7 +21,7 @@ type Option = { id: string; label: string }
 function serverActionReturning(writeResult: unknown, options: Option[]) {
   return vi.fn(async (input: { action?: unknown }) => {
     if (input.action === 'relationshipOptions') {
-      return { success: true, data: options }
+      return { options: options }
     }
     return writeResult
   })
@@ -133,7 +133,7 @@ describe('the to-many section can add an edge across a junction', () => {
     let settle: (value: { added: boolean; id: string }) => void = () => {}
     const serverAction = vi.fn(async (input: { action?: unknown }) => {
       if (input.action === 'relationshipOptions') {
-        return { success: true, data: TAG_OPTIONS }
+        return { options: TAG_OPTIONS }
       }
       return new Promise<{ added: boolean; id: string }>((resolve) => {
         settle = resolve

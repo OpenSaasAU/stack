@@ -54,8 +54,7 @@ describe('ComboboxField', () => {
     it('debounces typed input and calls the relationshipOptions op with listKey/field/search', async () => {
       const user = userEvent.setup()
       const serverAction = vi.fn().mockResolvedValue({
-        success: true,
-        data: [{ id: 'u3', label: 'Grace Hopper' }],
+        options: [{ id: 'u3', label: 'Grace Hopper' }],
       })
 
       render(
@@ -96,8 +95,7 @@ describe('ComboboxField', () => {
       const user = userEvent.setup()
       const onChange = vi.fn()
       const serverAction = vi.fn().mockResolvedValue({
-        success: true,
-        data: [{ id: 'u3', label: 'Grace Hopper' }],
+        options: [{ id: 'u3', label: 'Grace Hopper' }],
       })
 
       render(

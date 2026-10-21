@@ -49,8 +49,7 @@ describe('RelationshipManager', () => {
   it('debounces typed input and calls the relationshipOptions op with listKey/field/search/selectedIds', async () => {
     const user = userEvent.setup()
     const serverAction = vi.fn().mockResolvedValue({
-      success: true,
-      data: [{ id: 't9', label: 'security' }],
+      options: [{ id: 't9', label: 'security' }],
     })
 
     render(
@@ -88,8 +87,7 @@ describe('RelationshipManager', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     const serverAction = vi.fn().mockResolvedValue({
-      success: true,
-      data: [{ id: 't9', label: 'security' }],
+      options: [{ id: 't9', label: 'security' }],
     })
 
     function Wrapper() {
