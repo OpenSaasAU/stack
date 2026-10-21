@@ -510,6 +510,20 @@ function scalarFieldDb(
   }
 }
 
+/** better-auth lowercases the email it looks up, so a stored mixed-case value is unreachable. */
+function withLowercasedEmail(field: FieldConfig): FieldConfig {
+  return {
+    ...field,
+    hooks: {
+      ...field.hooks,
+      resolveInput: ({ resolvedData, fieldKey }) => {
+        const value = resolvedData[fieldKey]
+        return typeof value === 'string' ? value.toLowerCase() : value
+      },
+    },
+  }
+}
+
 function buildScalarField(
   fieldKey: string,
   upstream: DBFieldAttribute,
@@ -886,17 +900,18 @@ export function deriveAuthLists(
           )
         }
       } else {
+        const scalar = buildScalarField(
+          fieldKey,
+          upstream,
+          claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
+        )
         ;(scalarFields[modelKey] ??= {})[fieldKey] = withFieldAccess(
           credentialRegistry,
           fieldAccessRegistry,
           modelKey,
           fieldKey,
           upstream,
-          buildScalarField(
-            fieldKey,
-            upstream,
-            claimedFieldsByModel[modelKey as BaseModelKey]?.has(fieldKey) ?? false,
-          ),
+          modelKey === 'user' && fieldKey === 'email' ? withLowercasedEmail(scalar) : scalar,
         )
       }
     }
