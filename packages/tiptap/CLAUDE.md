@@ -17,8 +17,13 @@ Demonstrates how to create third-party field packages that extend OpenSaas Stack
 ### Component (`src/components/TiptapField.tsx`)
 
 - `TiptapField` - React component (client component)
-- Uses Tiptap editor with StarterKit
+- Builds its extensions and toolbar from `ui.features` (default `defaultRichTextFeatures`)
 - Supports edit/read modes, custom toolbar
+
+### Feature sets (`src/features/`)
+
+- `features.ts` - the `RichTextFeatures` vocabulary, `defaultRichTextFeatures`, `richTextExtensions()` (the one feature-to-extension mapping, shared by server and editor) and `isAllowedHref`
+- `validate.ts` - `createFeatureCheck()`: a ProseMirror schema check plus an explicit attribute policy. Refuses, never normalises; messages never echo caller values. Runs after the depth and size caps. See ADR-0079
 
 ### Cell (`src/components/TiptapCell.tsx`)
 
@@ -128,7 +133,7 @@ type Article = {
 
 ### With Tiptap
 
-- Uses `@tiptap/react` and `@tiptap/starter-kit`
+- Uses `@tiptap/react` and `@tiptap/starter-kit`, configured from the feature set by `richTextExtensions()`
 - SSR-safe with `immediatelyRender: false`
 - JSON content structure
 

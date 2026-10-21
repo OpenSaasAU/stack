@@ -27,6 +27,39 @@ The package requires these peer dependencies (typically already in your project)
 - `next` (v15 or v16)
 - `react` and `react-dom` (v19)
 
+## Feature sets
+
+`richText({ features })` declares the nodes and marks a field accepts. The server refuses any
+write containing anything else, and `TiptapField` builds its editor and toolbar from the same set.
+
+```typescript
+import { richText, defaultRichTextFeatures } from '@opensaas/stack-tiptap/fields'
+
+// Default: bold, italic, strike, headings 1-3, bullet and ordered lists, blockquote, hard break
+body: richText()
+
+// A declared set replaces the default; extend it explicitly
+body: richText({
+  features: { ...defaultRichTextFeatures, link: { protocols: ['https', 'mailto'] } },
+})
+```
+
+Features: `bold`, `italic`, `strike`, `underline`, `code`, `bulletList`, `orderedList`,
+`blockquote`, `codeBlock`, `horizontalRule`, `hardBreak` (each `true`), `heading: { levels }` and
+`link: { protocols?, allowRelative? }`. `doc`, `paragraph` and `text` are always on.
+
+- **Link policy.** `href` must use an allowed protocol (default `http`, `https`, `mailto`, `tel`),
+  matched case-insensitively after trimming. Relative URLs need `allowRelative: true`. `target` must
+  be `_blank` or null, `rel` the value the editor pins (`noopener noreferrer nofollow`) or null, and
+  `class` null.
+- **Refused, never normalised.** A non-conforming write fails validation with a message naming the
+  offending node or mark type, never the caller's value.
+- **Writes only.** Reads return what is stored. A stored document that breaks its field's set is
+  refused when next saved. Documents using link, code, code block, horizontal rule or underline
+  need those features declared.
+- Custom or third-party Tiptap extensions are not supported, and the TypeScript type stays
+  `JSONContent`.
+
 ## Quick Start
 
 ### 1. Register the Field Component

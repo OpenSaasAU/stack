@@ -48,7 +48,7 @@ describe('richText() document shape', () => {
 
   it('rejects a deeply nested document without throwing', () => {
     let node: Record<string, unknown> = { type: 'paragraph' }
-    for (let i = 0; i < 20_000; i++) node = { type: 'paragraph', content: [node] }
+    for (let i = 0; i < 20_000; i++) node = { type: 'blockquote', content: [node] }
     const doc = { type: 'doc', content: [node] }
     for (const isRequired of [true, false]) {
       const schema = asKey(
@@ -62,8 +62,11 @@ describe('richText() document shape', () => {
 
   it('rejects an over-depth document on update and accepts a legitimately nested one', () => {
     const nest = (levels: number) => {
-      let node: Record<string, unknown> = { type: 'text', text: 'x' }
-      for (let i = 0; i < levels; i++) node = { type: 'paragraph', content: [node] }
+      let node: Record<string, unknown> = {
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'x' }],
+      }
+      for (let i = 0; i < levels; i++) node = { type: 'blockquote', content: [node] }
       return { type: 'doc', content: [node] }
     }
     for (const isRequired of [true, false]) {
@@ -78,8 +81,11 @@ describe('richText() document shape', () => {
 
   it('enforces the depth limit at its boundary on create and update', () => {
     const nest = (levels: number) => {
-      let node: Record<string, unknown> = { type: 'text', text: 'x' }
-      for (let i = 0; i < levels - 2; i++) node = { type: 'paragraph', content: [node] }
+      let node: Record<string, unknown> = {
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'x' }],
+      }
+      for (let i = 0; i < levels - 3; i++) node = { type: 'blockquote', content: [node] }
       return { type: 'doc', content: [node] }
     }
     for (const operation of ['create', 'update'] as const) {
@@ -121,10 +127,13 @@ describe('richText() document shape', () => {
   })
 
   it('accepts a document of only a non-text node when required', () => {
-    const field = richText({ validation: { isRequired: true } })
-    const image = { type: 'doc', content: [{ type: 'image', attrs: { src: 'a.png' } }] }
+    const field = richText({
+      validation: { isRequired: true },
+      features: { horizontalRule: true },
+    })
+    const rule = { type: 'doc', content: [{ type: 'horizontalRule' }] }
     const schema = asKey('content', field.getZodSchema!('content', 'create'))
-    expect(schema.safeParse({ content: image }).success).toBe(true)
+    expect(schema.safeParse({ content: rule }).success).toBe(true)
   })
 
   it('accepts an empty document when optional', () => {

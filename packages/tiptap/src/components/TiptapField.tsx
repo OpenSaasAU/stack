@@ -1,9 +1,14 @@
 'use client'
 
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  defaultRichTextFeatures,
+  isAllowedHref,
+  richTextExtensions,
+  type RichTextFeatures,
+} from '../features/features.js'
 import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
@@ -15,6 +20,7 @@ export interface TiptapFieldProps {
   disabled?: boolean
   required?: boolean
   mode?: 'read' | 'edit'
+  features?: RichTextFeatures
   placeholder?: string
   minHeight?: number
   maxHeight?: number
@@ -33,6 +39,7 @@ export function TiptapField({
   disabled,
   required,
   mode = 'edit',
+  features = defaultRichTextFeatures,
   placeholder = 'Start writing...',
   minHeight = 200,
   maxHeight,
@@ -43,33 +50,37 @@ export function TiptapField({
   // the way an initial `null` would with a form resetting the field to null.
   const lastEmitted = useRef<JSONContent | undefined>(undefined)
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: {
-          levels: [1, 2, 3],
-        },
-      }),
-      Placeholder.configure({
-        placeholder,
-      }),
+  const [linkDraft, setLinkDraft] = useState<string | null>(null)
+  const [linkError, setLinkError] = useState(false)
+  const extensions = useMemo(
+    () => [
+      ...richTextExtensions(features, { editor: true }),
+      Placeholder.configure({ placeholder }),
     ],
-    content: value || undefined,
-    editable: isEditable,
-    // Don't render immediately on the server to avoid SSR issues
-    immediatelyRender: false,
-    onUpdate: ({ editor }) => {
-      if (!isEditable || !onChange) return
-      const json = editor.getJSON()
-      lastEmitted.current = json
-      onChange(json)
-    },
-    editorProps: {
-      attributes: {
-        class: 'tiptap',
+    [features, placeholder],
+  )
+
+  const editor = useEditor(
+    {
+      extensions,
+      content: value || undefined,
+      editable: isEditable,
+      // Don't render immediately on the server to avoid SSR issues
+      immediatelyRender: false,
+      onUpdate: ({ editor }) => {
+        if (!isEditable || !onChange) return
+        const json = editor.getJSON()
+        lastEmitted.current = json
+        onChange(json)
+      },
+      editorProps: {
+        attributes: {
+          class: 'tiptap',
+        },
       },
     },
-  })
+    [extensions],
+  )
 
   useEffect(() => {
     if (!editor) return
@@ -116,74 +127,172 @@ export function TiptapField({
       <div className={`tiptap-editor ${error ? 'border-destructive' : ''}`}>
         {isEditable && editor && (
           <div className="tiptap-toolbar">
+            {features.bold && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                disabled={!editor.can().chain().focus().toggleBold().run()}
+                className={editor.isActive('bold') ? 'is-active' : ''}
+              >
+                <strong>Bold</strong>
+              </button>
+            )}
+            {features.italic && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                disabled={!editor.can().chain().focus().toggleItalic().run()}
+                className={editor.isActive('italic') ? 'is-active' : ''}
+              >
+                <em>Italic</em>
+              </button>
+            )}
+            {features.strike && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleStrike().run()}
+                disabled={!editor.can().chain().focus().toggleStrike().run()}
+                className={editor.isActive('strike') ? 'is-active' : ''}
+              >
+                <s>Strike</s>
+              </button>
+            )}
+            {features.underline && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleUnderline().run()}
+                className={editor.isActive('underline') ? 'is-active' : ''}
+              >
+                <u>Underline</u>
+              </button>
+            )}
+            {features.code && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                className={editor.isActive('code') ? 'is-active' : ''}
+              >
+                Code
+              </button>
+            )}
+            {features.link && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLinkError(false)
+                  setLinkDraft(editor.getAttributes('link').href ?? '')
+                }}
+                className={editor.isActive('link') ? 'is-active' : ''}
+              >
+                Link
+              </button>
+            )}
+            {features.heading?.levels.map((level) => (
+              <button
+                key={level}
+                type="button"
+                onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
+                className={editor.isActive('heading', { level }) ? 'is-active' : ''}
+              >
+                {`H${level}`}
+              </button>
+            ))}
+            {features.bulletList && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                className={editor.isActive('bulletList') ? 'is-active' : ''}
+              >
+                Bullet List
+              </button>
+            )}
+            {features.orderedList && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                className={editor.isActive('orderedList') ? 'is-active' : ''}
+              >
+                Ordered List
+              </button>
+            )}
+            {features.blockquote && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                className={editor.isActive('blockquote') ? 'is-active' : ''}
+              >
+                Quote
+              </button>
+            )}
+            {features.codeBlock && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                className={editor.isActive('codeBlock') ? 'is-active' : ''}
+              >
+                Code Block
+              </button>
+            )}
+            {features.horizontalRule && (
+              <button
+                type="button"
+                onClick={() => editor.chain().focus().setHorizontalRule().run()}
+              >
+                Rule
+              </button>
+            )}
+            {features.hardBreak && (
+              <button type="button" onClick={() => editor.chain().focus().setHardBreak().run()}>
+                Line Break
+              </button>
+            )}
+          </div>
+        )}
+
+        {isEditable && features.link && linkDraft !== null && (
+          <div className="tiptap-link-input">
+            <input
+              type="text"
+              aria-label="Link URL"
+              value={linkDraft}
+              onChange={(event) => {
+                setLinkError(false)
+                setLinkDraft(event.target.value)
+              }}
+            />
             <button
               type="button"
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              disabled={!editor.can().chain().focus().toggleBold().run()}
-              className={editor.isActive('bold') ? 'is-active' : ''}
+              onClick={() => {
+                if (linkDraft.trim() === '') {
+                  editor?.chain().focus().extendMarkRange('link').unsetLink().run()
+                } else if (!isAllowedHref(linkDraft, features.link ?? {})) {
+                  setLinkError(true)
+                  return
+                } else {
+                  const href = linkDraft.trim()
+                  if (editor?.state.selection.empty) {
+                    editor
+                      .chain()
+                      .focus()
+                      .insertContent({
+                        type: 'text',
+                        text: href,
+                        marks: [{ type: 'link', attrs: { href } }],
+                      })
+                      .run()
+                  } else {
+                    editor?.chain().focus().extendMarkRange('link').setLink({ href }).run()
+                  }
+                }
+                setLinkDraft(null)
+              }}
             >
-              <strong>Bold</strong>
+              Apply link
             </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              disabled={!editor.can().chain().focus().toggleItalic().run()}
-              className={editor.isActive('italic') ? 'is-active' : ''}
-            >
-              <em>Italic</em>
+            <button type="button" onClick={() => setLinkDraft(null)}>
+              Cancel
             </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleStrike().run()}
-              disabled={!editor.can().chain().focus().toggleStrike().run()}
-              className={editor.isActive('strike') ? 'is-active' : ''}
-            >
-              <s>Strike</s>
-            </button>
-            <div className="tiptap-divider" />
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-              className={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
-            >
-              H1
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              className={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
-            >
-              H2
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-              className={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
-            >
-              H3
-            </button>
-            <div className="tiptap-divider" />
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-              className={editor.isActive('bulletList') ? 'is-active' : ''}
-            >
-              Bullet List
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              className={editor.isActive('orderedList') ? 'is-active' : ''}
-            >
-              Ordered List
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().toggleBlockquote().run()}
-              className={editor.isActive('blockquote') ? 'is-active' : ''}
-            >
-              Quote
-            </button>
+            {linkError && <p className="text-sm text-destructive">This link is not allowed</p>}
           </div>
         )}
 

@@ -1,6 +1,6 @@
 import { config, list } from '@opensaas/stack-core'
 import { text, timestamp, relationship } from '@opensaas/stack-core/fields'
-import { richText } from '@opensaas/stack-tiptap/fields'
+import { richText, defaultRichTextFeatures } from '@opensaas/stack-tiptap/fields'
 import type { AccessControl } from '@opensaas/stack-core'
 import type { Lists } from '@/.opensaas/lists'
 
@@ -89,6 +89,7 @@ export default config({
          * Optional excerpt with rich text
          */
         excerpt: richText({
+          features: { ...defaultRichTextFeatures, link: {} },
           ui: {
             placeholder: 'Write a brief excerpt...',
             minHeight: 150,

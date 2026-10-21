@@ -1,3 +1,4 @@
+import type { RichTextFeatures } from '../features/features.js'
 import type { BaseFieldConfig, FieldKeys, TypeInfo } from '@opensaas/stack-core/extend'
 
 /**
@@ -12,7 +13,15 @@ export type RichTextField<
   validation?: {
     isRequired?: boolean
   }
+  /**
+   * The nodes and marks this field accepts and its editor offers. A declared
+   * set replaces `defaultRichTextFeatures`; extend it with
+   * `{ ...defaultRichTextFeatures, link: {} }`. Enforced on writes only.
+   */
+  features?: RichTextFeatures
   ui?: {
+    /** The resolved feature set, copied in by `richText()` so it reaches the client */
+    features?: RichTextFeatures
     /** Placeholder text for empty editor */
     placeholder?: string
     /** Minimum height for editor in pixels */
