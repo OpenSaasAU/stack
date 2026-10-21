@@ -74,14 +74,13 @@ export type ServerActionProps =
   // removal.
   //
   // `parentId`, when sent, is the parent the CALLER believes this row is still
-  // linked to (#1358) — the item form's own id, for the stale-baseline
-  // unlink a to-many field's deselect issues. A disconnect that names one locks
+  // linked to (#1358) — the item form's or relationship table's own id, for
+  // the stale-baseline unlink they issue. A disconnect that names one locks
   // the row, compares its CURRENT back-reference against it, and clears the
   // column only when the two still agree; a mismatch means the row was
   // re-pointed since the caller's baseline was read, and the write is refused
   // rather than silently reverting that newer write. Omitting it keeps the
-  // unconditional disconnect every other caller (the relationship table's own
-  // unlink control) already relies on.
+  // unconditional disconnect.
   | {
       listKey: string
       action: 'removeRelated'
@@ -179,7 +178,9 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 type BackReferenceClassification =
-  { kind: 'owning'; field: RelationshipField } | { kind: 'nonOwning' } | { kind: 'notRelationship' }
+  | { kind: 'owning'; field: RelationshipField }
+  | { kind: 'nonOwning' }
+  | { kind: 'notRelationship' }
 
 /**
  * Whether `fieldName` on `listKey` owns a foreign-key column — the property
@@ -1220,7 +1221,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     try {
       if (props.action === 'relationshipOptions') {
         const fieldConfig = listConfig.fields[props.field] as
-          { type?: string; ref?: string } | undefined
+          | { type?: string; ref?: string }
+          | undefined
         if (!fieldConfig || fieldConfig.type !== 'relationship' || !fieldConfig.ref) {
           return {
             success: false,

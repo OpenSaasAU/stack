@@ -146,12 +146,34 @@ describe('RelationshipTableClient', () => {
       mode: 'disconnect',
       id: 'p1',
       field: 'author',
+      parentId: 'u1',
     })
     // Optimistically hidden, then the table refreshes so the re-fetch is source of truth.
     expect(screen.queryByText('First')).not.toBeInTheDocument()
     expect(mockRefresh).toHaveBeenCalled()
     // The removal click must not also navigate the row.
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('keeps a stale row and shows the conflict when the server refuses the disconnect', async () => {
+    const conflict = 'This record was linked elsewhere since the form loaded'
+    const serverAction = vi.fn(async () => ({ removed: false, error: conflict }))
+    render(
+      <RelationshipTableClient
+        {...baseProps()}
+        removeMode="disconnect"
+        serverAction={serverAction}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getAllByRole('button', { name: /disconnect posts row/i })[0])
+
+    expect(serverAction).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'disconnect', parentId: baseProps().parentId }),
+    )
+    expect(screen.getByText('First')).toBeInTheDocument()
+    expect(screen.getByText(conflict)).toBeInTheDocument()
+    expect(mockRefresh).not.toHaveBeenCalled()
   })
 
   it('leaves the row in place with a visible reason on a Silent failure', async () => {
