@@ -419,6 +419,7 @@ function composeFieldHooks(
         uploads.amendLast(args.inputData, args.fieldKey, (pending) => ({
           ...pending,
           replaced: null,
+          discarded: true,
         }))
       }
       return final
