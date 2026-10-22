@@ -951,10 +951,22 @@ export function deriveAuthLists(
     return fields
   }
 
+  const derivedUserFields = assembleFields('user')
+  for (const fieldKey of Object.keys(userConfig.fields ?? {})) {
+    if (derivedUserFields[fieldKey]?.access !== undefined) {
+      throw new Error(
+        `deriveAuthLists: extendUserList.fields declares "${fieldKey}", but better-auth already ` +
+          `derives a "${fieldKey}" field on the user list with a write/read deny, and redeclaring ` +
+          `it would discard that deny. Remove it from extendUserList, or adjust its access with ` +
+          `authPlugin({ fieldAccess: { user: { ${fieldKey}: ... } } }).`,
+      )
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   const lists: Record<string, ListConfig<any>> = {
     [keys.user]: list({
-      fields: { ...assembleFields('user'), ...(userConfig.fields || {}) },
+      fields: { ...derivedUserFields, ...(userConfig.fields || {}) },
       db: listDb(models.user, true),
       access: userConfig.access || accessConfig.user,
       hooks: userConfig.hooks,

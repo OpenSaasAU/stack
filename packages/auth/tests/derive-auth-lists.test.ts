@@ -5,6 +5,7 @@ import {
   deriveAuthLists as deriveAuthListsImpl,
   type DerivedAuthLists,
 } from '../src/config/derive-auth-lists.js'
+import { checkbox, text } from '@opensaas/stack-core/fields'
 import type { NormalizedAuthModels } from '../src/config/types.js'
 import type { AnyLists } from './helpers/field-types.js'
 
@@ -1107,5 +1108,34 @@ describe('deriveAuthLists - extendUserList', () => {
     expect(lists.AuthUser.fields).toHaveProperty('role')
     // Base fields still present
     expect(lists.AuthUser.fields).toHaveProperty('email')
+  })
+})
+
+describe('deriveAuthLists - extendUserList field collisions (issue #1917)', () => {
+  it('throws when extendUserList redeclares a field better-auth derives', () => {
+    expect(() =>
+      deriveAuthLists({ ...defaultModels }, { fields: { role: text() } }, {}, [admin()]),
+    ).toThrow(/extendUserList.fields declares "role".*fieldAccess/s)
+  })
+
+  it('throws for a base field such as emailVerified', () => {
+    expect(() => deriveAuthLists(defaultModels, { fields: { emailVerified: checkbox() } })).toThrow(
+      /"emailVerified"/,
+    )
+  })
+
+  it('still allows overriding a derived field that carries no deny', () => {
+    const { lists } = deriveAuthLists(defaultModels, { fields: { name: text() } })
+    expect(lists.User.fields).toHaveProperty('name')
+  })
+
+  it('does not treat a reverse-relation name as a deny collision', () => {
+    expect(() => deriveAuthLists(defaultModels, { fields: { sessions: text() } })).not.toThrow()
+  })
+
+  it('allows a non-colliding extension alongside admin()', () => {
+    expect(() =>
+      deriveAuthLists({ ...defaultModels }, { fields: { company: text() } }, {}, [admin()]),
+    ).not.toThrow()
   })
 })
