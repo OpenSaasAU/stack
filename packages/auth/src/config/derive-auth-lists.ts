@@ -953,11 +953,11 @@ export function deriveAuthLists(
 
   const derivedUserFields = assembleFields('user')
   for (const fieldKey of Object.keys(userConfig.fields ?? {})) {
-    if (fieldKey in derivedUserFields) {
+    if (derivedUserFields[fieldKey]?.access !== undefined) {
       throw new Error(
         `deriveAuthLists: extendUserList.fields declares "${fieldKey}", but better-auth already ` +
-          `derives a "${fieldKey}" field on the user list, and redeclaring it would discard its ` +
-          `write/read deny. Remove it from extendUserList, or adjust its access with ` +
+          `derives a "${fieldKey}" field on the user list with a write/read deny, and redeclaring ` +
+          `it would discard that deny. Remove it from extendUserList, or adjust its access with ` +
           `authPlugin({ fieldAccess: { user: { ${fieldKey}: ... } } }).`,
       )
     }

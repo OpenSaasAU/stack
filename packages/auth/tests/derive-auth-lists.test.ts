@@ -1123,4 +1123,19 @@ describe('deriveAuthLists - extendUserList field collisions (issue #1917)', () =
       /"emailVerified"/,
     )
   })
+
+  it('still allows overriding a derived field that carries no deny', () => {
+    const { lists } = deriveAuthLists(defaultModels, { fields: { name: text() } })
+    expect(lists.User.fields).toHaveProperty('name')
+  })
+
+  it('does not treat a reverse-relation name as a deny collision', () => {
+    expect(() => deriveAuthLists(defaultModels, { fields: { sessions: text() } })).not.toThrow()
+  })
+
+  it('allows a non-colliding extension alongside admin()', () => {
+    expect(() =>
+      deriveAuthLists({ ...defaultModels }, { fields: { company: text() } }, {}, [admin()]),
+    ).not.toThrow()
+  })
 })
