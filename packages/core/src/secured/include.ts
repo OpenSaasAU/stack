@@ -672,7 +672,9 @@ async function resolveInclude(
     request.predicates.length > 0 ||
     request.limit !== undefined ||
     request.offset !== undefined ||
-    shape.fields !== undefined
+    shape.fields !== undefined ||
+    shape.includes.length > 0 ||
+    orders.length > 0
   const declaredFetch =
     !declared && liveDeclaredDependency && callerShaped && reduce === undefined
       ? access.kind !== 'true'
