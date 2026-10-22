@@ -10,7 +10,7 @@
 // passing real write, not just a passing mock.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
@@ -444,6 +444,7 @@ describe('user hook interplay with cleanup (issue #1796 review)', () => {
       data: { attachment: pdfFile('b.pdf') },
     })
     expect(await exists(join(dir, original.filename))).toBe(true)
+    expect(await readdir(dir)).toEqual([original.filename])
   })
 
   it('does not delete the file when a throwing user afterOperation rolls the delete back', async () => {
