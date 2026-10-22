@@ -391,6 +391,7 @@ describe('user hook interplay with cleanup (issue #1796 review)', () => {
   let harness: TestContext
   let dir: string
   let rejectReplace = false
+  let dropReplacement = false
   let failAfterOperation = false
 
   beforeAll(async () => {
@@ -406,11 +407,21 @@ describe('user hook interplay with cleanup (issue #1796 review)', () => {
               cleanupOnDelete: true,
               cleanupOnReplace: true,
               hooks: {
-                resolveInput: ({ resolvedData, fieldKey, item }) =>
-                  rejectReplace && item ? item[fieldKey] : resolvedData[fieldKey],
+                resolveInput: ({ resolvedData, fieldKey, item }) => {
+                  if (dropReplacement && item) return undefined
+                  return rejectReplace && item ? item[fieldKey] : resolvedData[fieldKey]
+                },
                 afterOperation: () => {
                   if (failAfterOperation) throw new Error('user hook failed')
                 },
+              },
+            }),
+            avatar: image({
+              storage: 'files',
+              cleanupOnReplace: true,
+              hooks: {
+                resolveInput: ({ resolvedData, fieldKey, item }) =>
+                  rejectReplace && item ? item[fieldKey] : resolvedData[fieldKey],
               },
             }),
           },
@@ -428,8 +439,10 @@ describe('user hook interplay with cleanup (issue #1796 review)', () => {
 
   beforeEach(async () => {
     rejectReplace = false
+    dropReplacement = false
     failAfterOperation = false
     await harness.truncate()
+    for (const name of await readdir(dir)) await rm(join(dir, name), { force: true })
   })
 
   it('keeps the previous file when the user hook rejects a replacement', async () => {
@@ -447,7 +460,54 @@ describe('user hook interplay with cleanup (issue #1796 review)', () => {
     expect(await readdir(dir)).toEqual([original.filename])
   })
 
-  it('does not delete the file when a throwing user afterOperation rolls the delete back', async () => {
+  it('deletes the rejected upload when the hook returns undefined', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const original = present(created.attachment, 'attachment') as FileMetadata
+    dropReplacement = true
+    await harness.context.db.Doc.update({
+      where: { id: idOf(created) },
+      data: { attachment: pdfFile('b.pdf') },
+    })
+    expect(await readdir(dir)).toEqual([original.filename])
+  })
+
+  it('image(): deletes the rejected upload and its variants when the hook retains the old image', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { avatar: pngFile('a.png') } }),
+      'create',
+    )
+    const original = present(created.avatar, 'avatar') as ImageMetadata
+    const before = await readdir(dir)
+    rejectReplace = true
+    await harness.context.db.Doc.update({
+      where: { id: idOf(created) },
+      data: { avatar: pngFile('b.png') },
+    })
+    expect(await readdir(dir)).toEqual(before)
+    expect(before).toContain(original.filename)
+  })
+
+  it('keeps both files accounted for when the update rolls back', async () => {
+    const created = present(
+      await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
+      'create',
+    )
+    const original = present(created.attachment, 'attachment') as FileMetadata
+    rejectReplace = true
+    failAfterOperation = true
+    await expect(
+      harness.context.db.Doc.update({
+        where: { id: idOf(created) },
+        data: { attachment: pdfFile('b.pdf') },
+      }),
+    ).rejects.toThrow()
+    expect(await readdir(dir)).toEqual([original.filename])
+  })
+
+  it('does not delete the file when a throwing the delete back', async () => {
     const created = present(
       await harness.context.db.Doc.create({ data: { attachment: pdfFile('a.pdf') } }),
       'create',
