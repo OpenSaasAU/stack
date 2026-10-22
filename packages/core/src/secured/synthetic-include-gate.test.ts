@@ -89,4 +89,26 @@ describe('synthetic back-relation include with a row-dependent source rule (#181
     },
     BOOT,
   )
+
+  test(
+    'refuses a bare count and a combine count over the row-dependent synthetic relation',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c2' } })
+      if (category === null) throw new Error('setup')
+      await db.Post.create({
+        data: { title: 'hidden', category: { connect: { id: category.id } } },
+      })
+
+      await expect(
+        db.Category.include('from_Post_category', (posts) => posts.count()).all(),
+      ).rejects.toThrow(/row-dependent read rule/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.combine({ all: posts.count() }),
+        ).all(),
+      ).rejects.toThrow(/row-dependent read rule/)
+    },
+    BOOT,
+  )
 })
