@@ -178,10 +178,7 @@ export class RowDependentReductionError extends Error {
     readonly listName: string,
     readonly relation: string,
   ) {
-    super(
-      `Cannot count "${listName}.${relation}": the relationship field it stands for has a ` +
-        `row-dependent read rule, which a count cannot apply. Include the rows instead.`,
-    )
+    super(`Cannot count "${listName}.${relation}" for this session. ` + `Include the rows instead.`)
     this.name = 'RowDependentReductionError'
   }
 }
@@ -751,7 +748,11 @@ async function resolveReduce(
   if (target.arity !== 'many') {
     throw new ReducedToOneIncludeError(ctx.listName, request.name)
   }
-  if (target.fieldConfig === undefined && target.readGate?.access !== undefined) {
+  if (
+    ctx.checkFieldRead &&
+    target.fieldConfig === undefined &&
+    target.readGate?.access !== undefined
+  ) {
     const answer = await classifyRowIndependentRead(target.readGate.access, {
       session: ctx.session,
       context: ctx.context,
