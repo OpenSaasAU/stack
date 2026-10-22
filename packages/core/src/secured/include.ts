@@ -169,6 +169,21 @@ export class UnreducibleRefinementError extends Error {
 }
 
 /**
+ * Thrown when a count is asked through a synthetic back-relation whose source
+ * field's `read` rule depends on the row. A count cannot apply a per-row rule,
+ * so answering it would reveal links the rows branch hides (#1910).
+ */
+export class RowDependentReductionError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly relation: string,
+  ) {
+    super(`Cannot count "${listName}.${relation}" for this session. ` + `Include the rows instead.`)
+    this.name = 'RowDependentReductionError'
+  }
+}
+
+/**
  * Thrown when a `combine` branch is not a reduction this engine handed out —
  * a branch that named rows rather than a count, or a nested `combine`.
  */
@@ -732,6 +747,17 @@ async function resolveReduce(
   if (reduce === undefined) throw new InvalidRefinementError(request.name)
   if (target.arity !== 'many') {
     throw new ReducedToOneIncludeError(ctx.listName, request.name)
+  }
+  if (
+    ctx.checkFieldRead &&
+    target.fieldConfig === undefined &&
+    target.readGate?.access !== undefined
+  ) {
+    const answer = await classifyRowIndependentRead(target.readGate.access, {
+      session: ctx.session,
+      context: ctx.context,
+    })
+    if (answer === 'row-dependent') throw new RowDependentReductionError(ctx.listName, request.name)
   }
   checkReducible(request, ctx.listName)
   if (reduce.kind === 'count') return { kind: 'count' }
