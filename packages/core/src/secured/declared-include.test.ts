@@ -68,6 +68,25 @@ const config: OpenSaasConfig = {
       },
       access: { operation: { query: () => true, create: () => true } },
     },
+    Writer: {
+      fields: {
+        secret: text({ access: { read: () => false } }),
+        articles: relationship({ ref: 'Article.writer', many: true }),
+        dump: virtual({
+          type: 'string',
+          needs: ['articles'],
+          hooks: { resolveOutput: ({ item }) => JSON.stringify(item.articles) },
+        }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Article: {
+      fields: {
+        title: text(),
+        writer: relationship({ ref: 'Writer.articles' }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
   },
 }
 
@@ -165,5 +184,25 @@ describe('a caller-shaped include on a declared dependency', () => {
       .all()
     expect(hit[0]).toMatchObject({ ownerLabel: 'owned' })
     expect(miss[0]).toMatchObject({ ownerLabel: 'owned' })
+  })
+
+  test('a nested include or order on a declared relation does not change the hook item', async () => {
+    const admin = db.context({}).sudo()
+    const writer = await admin.db.Writer.create({ data: { secret: 'TOPSECRET' } })
+    await admin.db.Article.create({
+      data: { title: 'a', writer: { connect: { id: writer!.id } } },
+    })
+    const [bare] = await db.context({}).db.Writer.all()
+    const [nested] = await db
+      .context({})
+      .db.Writer.include('articles', (articles) => articles.include('writer'))
+      .all()
+    const [ordered] = await db
+      .context({})
+      .db.Writer.include('articles', (articles) => articles.orderBy({ title: 'asc' }))
+      .all()
+    expect(bare.dump).not.toContain('TOPSECRET')
+    expect(nested.dump).toBe(bare.dump)
+    expect(ordered.dump).toBe(bare.dump)
   })
 })
