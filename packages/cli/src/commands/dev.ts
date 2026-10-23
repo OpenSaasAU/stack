@@ -4,6 +4,7 @@ import chalk from 'chalk'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
+import { UnusableDatabaseUrlError } from '@opensaas/stack-core'
 import {
   DevDatabaseInUseError,
   startDevDatabase,
@@ -130,6 +131,14 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   const connectionVariable = ['DIRECT_DATABASE_URL', 'DATABASE_URL'].find(
     (name) => (process.env[name] ?? '').length > 0,
   )
+  let connection: ReturnType<typeof findDatabaseConnection>
+  try {
+    connection = findDatabaseConnection({ cwd })
+  } catch (error) {
+    if (!(error instanceof UnusableDatabaseUrlError)) throw error
+    console.error(chalk.red(`Error: ${error.message}`))
+    process.exit(1)
+  }
   const connectionFile =
     connectionVariable === undefined ? undefined : envSources.get(connectionVariable)
 
@@ -464,7 +473,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   try {
-    if (findDatabaseConnection({ cwd })?.provenance === 'env') {
+    if (connection?.provenance === 'env') {
       if (
         connectionVariable !== undefined &&
         connectionFile !== undefined &&

@@ -25,6 +25,35 @@ export class DatabaseUrlUnresolvedError extends Error {
   }
 }
 
+const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
+
+/** Why a connection string is not a Postgres one, or `undefined` when it is. */
+export function connectionStringFault(url: string): string | undefined {
+  let scheme: string
+  try {
+    scheme = new URL(url).protocol
+  } catch {
+    return 'is not a URL'
+  }
+  return POSTGRES_SCHEMES.has(scheme) ? undefined : `names the \`${scheme}\` scheme, not Postgres`
+}
+
+/** Thrown by the lookup when a connection variable is set to something that is not Postgres. */
+export class UnusableDatabaseUrlError extends Error {
+  constructor(
+    readonly variable: string,
+    readonly url: string,
+    readonly fault: string,
+  ) {
+    super(
+      `${variable} is set to \`${url}\`, which ${fault}. Either unset ${variable} so ` +
+        `\`opensaas dev\` starts the dev database, or point it at a Postgres server ` +
+        `(\`postgres://…\`).`,
+    )
+    this.name = 'UnusableDatabaseUrlError'
+  }
+}
+
 /**
  * Where a connection string came from. `'env'` is a database the stack does
  * not own; `'dev-database'` is the sidecar `opensaas dev` runs, which the
@@ -49,7 +78,10 @@ export type DatabaseUrlLookupOptions = DevDatabaseStateLocation
 function lookupDatabaseUrl(options: DatabaseUrlLookupOptions): ResolvedDatabaseUrl | undefined {
   for (const name of CONNECTION_VARIABLES) {
     const value = process.env[name]
-    if (value !== undefined && value.length > 0) return { url: value, provenance: 'env' }
+    if (value === undefined || value.length === 0) continue
+    const fault = connectionStringFault(value)
+    if (fault !== undefined) throw new UnusableDatabaseUrlError(name, value, fault)
+    return { url: value, provenance: 'env' }
   }
   const state = readDevDatabaseState(options)
   if (state !== undefined) return { url: state.url, provenance: 'dev-database' }

@@ -301,7 +301,12 @@ export type { ConfigRefusal, ConfigRefusalReason } from './validation/config-ref
 // chosen, emitted into `prisma.config.ts` and the generated context. The Dev
 // database it can resolve to lives on `@opensaas/stack-core/dev-database`, so
 // the root stays free of PGlite.
-export { resolveDatabaseUrl, findDatabaseUrl, DatabaseUrlUnresolvedError } from './db/url.js'
+export {
+  resolveDatabaseUrl,
+  findDatabaseUrl,
+  DatabaseUrlUnresolvedError,
+  UnusableDatabaseUrlError,
+} from './db/url.js'
 export type {
   DatabaseUrlLookupOptions,
   DatabaseUrlProvenance,
