@@ -576,6 +576,7 @@ function buildScalarField(
     case 'string[]':
     case 'number[]':
       return text({
+        ...(isRequired ? { validation: { isRequired: true as const } } : {}),
         ...(isIndexed ? { isIndexed } : {}),
         db,
       })

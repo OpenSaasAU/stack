@@ -229,13 +229,14 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
         const plugin = {
           id: 'test-serialised-type',
           schema: {
-            widget: { modelName: 'widget', fields: { metadata: { type, required: false } } },
+            widget: { modelName: 'widget', fields: { metadata: { type, required: true } } },
           },
         } as unknown as BetterAuthPlugin
 
         const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
 
         expect(lists.Widget.fields.metadata.type).toBe('text')
+        expect(lists.Widget.fields.metadata.validation?.isRequired).toBe(true)
         expect(warn).not.toHaveBeenCalled()
       } finally {
         warn.mockRestore()
