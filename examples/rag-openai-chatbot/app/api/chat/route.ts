@@ -1,12 +1,26 @@
 import { openai } from '@ai-sdk/openai'
-import { streamText, type UIMessage, convertToModelMessages } from 'ai'
+import { streamText, convertToModelMessages } from 'ai'
 import { searchKnowledge } from '@/app/actions/search'
+import { clientKey, isRateLimited, parseChatBody } from '@/lib/chat-request'
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30
 
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const messages = parseChatBody(body)
+  if (messages === null) {
+    return Response.json({ error: 'Invalid chat request' }, { status: 400 })
+  }
+
+  if (isRateLimited(clientKey(req))) {
+    return Response.json({ error: 'Too many requests' }, { status: 429 })
+  }
 
   // Get the last user message for RAG search
   const lastMessage = messages[messages.length - 1]
@@ -37,6 +51,7 @@ export async function POST(req: Request) {
   let systemMessage =
     'You are a helpful AI assistant with access to a knowledge base about OpenSaas Stack. When answering questions, use the provided context from the knowledge base when relevant. If the context contains relevant information, cite the sources by their number [1], [2], etc. If the context does not contain relevant information, you can use your general knowledge but mention that you are not using the knowledge base. Be concise and accurate.'
 
+  // Knowledge-base content is untrusted input to the model: rows are a prompt-injection surface.
   if (searchResults.length > 0) {
     systemMessage += '\n\nRelevant information from the knowledge base:\n\n'
     searchResults.forEach((result, index) => {
