@@ -2,7 +2,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 export function refuseNonIdentifierNames(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []

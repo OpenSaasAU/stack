@@ -180,4 +180,13 @@ describe('validateDatabaseConfig', () => {
     expect(refusals[0]).toMatchObject({ reason: 'non-identifier-name', listKey: 'Post' })
     expect(refusals[0].message).toContain(`"Bad'Enum"`)
   })
+
+  it.each(['Po$t', '1Post', 'Blog-Post', 'Blog Post', ''])('refuses the list key %j', (listKey) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { [listKey]: { fields: { title: text() } } },
+    }
+
+    expect(validateDatabaseConfig(config).map((r) => r.reason)).toContain('non-identifier-name')
+  })
 })
