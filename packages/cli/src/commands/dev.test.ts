@@ -3,7 +3,6 @@ import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DevDatabaseInUseError, startDevDatabase } from '@opensaas/stack-core/dev-database'
-import { UnusableDatabaseUrlError } from '@opensaas/stack-core'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import { CONTROL_FILE, requestDatabaseUpdate } from '../dev/control.js'
 import { runPrismaCli } from '../generator/index.js'
@@ -67,9 +66,13 @@ vi.mock('@opensaas/stack-core/dev-database', () => ({
   }),
 }))
 
-vi.mock('@opensaas/stack-core/internal', () => ({
-  findDatabaseConnection: vi.fn(() => undefined),
-}))
+vi.mock('@opensaas/stack-core/internal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opensaas/stack-core/internal')>()
+  return {
+    connectionStringFault: actual.connectionStringFault,
+    findDatabaseConnection: vi.fn(() => undefined),
+  }
+})
 
 vi.mock('./generate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./generate.js')>()
@@ -208,6 +211,7 @@ describe('devCommand', () => {
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
+    vi.unstubAllEnvs()
     if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL
     else process.env.DATABASE_URL = originalDatabaseUrl
     fs.rmSync(tempDir, { recursive: true, force: true })
@@ -325,13 +329,7 @@ describe('devCommand', () => {
 
   it('refuses a non-Postgres connection variable before starting anything', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    vi.mocked(findDatabaseConnection).mockImplementationOnce(() => {
-      throw new UnusableDatabaseUrlError(
-        'DATABASE_URL',
-        'file:./dev.db',
-        'names the `file:` scheme, not Postgres',
-      )
-    })
+    vi.stubEnv('DATABASE_URL', 'file:./dev.db')
 
     await expect(startLoop()).rejects.toThrow('process.exit(1)')
 

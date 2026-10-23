@@ -305,7 +305,6 @@ export {
   resolveDatabaseUrl,
   findDatabaseUrl,
   DatabaseUrlUnresolvedError,
-  UnusableDatabaseUrlError,
 } from './db/url.js'
 export type {
   DatabaseUrlLookupOptions,

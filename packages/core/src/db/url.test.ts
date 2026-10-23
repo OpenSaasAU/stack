@@ -40,6 +40,12 @@ describe('resolveDatabaseUrl', () => {
     expect(() => resolveDatabaseUrl({ cwd: projectRoot })).toThrow(new RegExp(`${name}.*file:`))
   })
 
+  test('the non-throwing lookups pass a file: URL through for the caller to refuse', () => {
+    process.env.DATABASE_URL = 'file:./dev.db'
+
+    expect(findDatabaseUrl({ cwd: projectRoot })).toBe('file:./dev.db')
+  })
+
   test.each(['postgres://u@localhost:5432/db', 'postgresql://u@localhost:5432/db'])(
     'accepts %s',
     (url) => {

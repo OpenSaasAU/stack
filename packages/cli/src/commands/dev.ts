@@ -3,8 +3,7 @@ import * as path from 'path'
 import chalk from 'chalk'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { findDatabaseConnection } from '@opensaas/stack-core/internal'
-import { UnusableDatabaseUrlError } from '@opensaas/stack-core'
+import { connectionStringFault, findDatabaseConnection } from '@opensaas/stack-core/internal'
 import {
   DevDatabaseInUseError,
   startDevDatabase,
@@ -131,12 +130,16 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   const connectionVariable = ['DIRECT_DATABASE_URL', 'DATABASE_URL'].find(
     (name) => (process.env[name] ?? '').length > 0,
   )
-  let connection: ReturnType<typeof findDatabaseConnection>
-  try {
-    connection = findDatabaseConnection({ cwd })
-  } catch (error) {
-    if (!(error instanceof UnusableDatabaseUrlError)) throw error
-    console.error(chalk.red(`Error: ${error.message}`))
+  const connectionFault =
+    connectionVariable === undefined
+      ? undefined
+      : connectionStringFault(process.env[connectionVariable] ?? '')
+  if (connectionVariable !== undefined && connectionFault !== undefined) {
+    console.error(
+      chalk.red(
+        `Error: ${connectionVariable} ${connectionFault}. Point it at a Postgres server (postgres://…), or unset it so \`opensaas dev\` starts the dev database.`,
+      ),
+    )
     process.exit(1)
   }
   const connectionFile =
@@ -473,7 +476,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   try {
-    if (connection?.provenance === 'env') {
+    if (findDatabaseConnection({ cwd })?.provenance === 'env') {
       if (
         connectionVariable !== undefined &&
         connectionFile !== undefined &&
