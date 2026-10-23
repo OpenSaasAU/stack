@@ -54,7 +54,7 @@ function unpinnedTokens(line) {
 if (process.argv.includes('--self-test')) {
   const cases = [
     ['pnpm add prisma', 1],
-    ['pnpm add -D prisma@8.0.0-rc.22', 0],
+    [`pnpm add -D prisma@${pins.prisma}`, 0],
     ['cd app && pnpm add @prisma/orm-postgres@latest;', 1],
     ['npm install "prisma"', 1],
     ['pnpm add @opensaas/stack-core', 0],
