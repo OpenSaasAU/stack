@@ -67,6 +67,26 @@ describe('isExcludedFromTemplate', () => {
   })
 })
 
+describe('copyTemplate with untracked local files in the example', () => {
+  it('leaves .env, databases and test output out of the template', async () => {
+    const root = await checkoutRoot()
+    const source = await seedExample(root, 'starter-auth')
+    await fs.outputFile(path.join(source, '.env'), 'BETTER_AUTH_SECRET=secret\n')
+    await fs.outputFile(path.join(source, '.env.local'), 'X=1\n')
+    await fs.outputFile(path.join(source, '.env.example'), 'X=\n')
+    await fs.outputFile(path.join(source, 'dev.db'), 'sqlite')
+    await fs.outputFile(path.join(source, 'test-results', 'a.json'), '{}\n')
+    await fs.outputFile(path.join(source, 'coverage', 'lcov.info'), '\n')
+
+    const files = await copyTemplate(source, path.join(root, 'templates', 'with-auth'))
+
+    expect(files).toContain('.env.example')
+    expect(
+      files.filter((f) => /^\.env$|^\.env\.local$|\.db$|test-results|coverage/.test(f)),
+    ).toEqual([])
+  })
+})
+
 describe('copyTemplate from a checkout whose path contains prisma and migrations', () => {
   it('populates both templates', async () => {
     const root = await checkoutRoot()
