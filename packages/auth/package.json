@@ -99,7 +99,7 @@
     "@vitest/ui": "5.0.5",
     "better-auth": "^1.7.10",
     "next": "^16.3.8",
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "react": "^19.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "5.0.5"
