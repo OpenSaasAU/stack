@@ -435,7 +435,7 @@ export function renderContractModule(data: ContractData): string {
     )
   }
   for (const extension of data.extensions) {
-    lines.push(`import ${extension.name} from '${packSubpath(extension)}'`)
+    lines.push(`import ${extension.name} from ${quote(packSubpath(extension))}`)
   }
   lines.push('')
 

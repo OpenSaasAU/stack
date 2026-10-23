@@ -45,6 +45,23 @@ afterEach(async () => {
 })
 
 describe('isExcludedFromTemplate', () => {
+  it('excludes local-only files and root-level output, but not example env files', () => {
+    for (const p of [
+      '.env',
+      '.env.production',
+      'dev.db',
+      'lib/x.db',
+      '.DS_Store',
+      'coverage/a',
+      'test-results/a',
+    ]) {
+      expect(isExcludedFromTemplate(p)).toBe(true)
+    }
+    for (const p of ['.env.example', '.env.sample', 'app/coverage/page.tsx']) {
+      expect(isExcludedFromTemplate(p)).toBe(false)
+    }
+  })
+
   it('keeps the example root itself', () => {
     expect(isExcludedFromTemplate('')).toBe(false)
   })
@@ -64,6 +81,34 @@ describe('isExcludedFromTemplate', () => {
   it('keeps a source file whose name merely begins with a pattern', () => {
     expect(isExcludedFromTemplate('lib/prisma-helpers.ts')).toBe(false)
     expect(isExcludedFromTemplate('app/migrations-guide.mdx')).toBe(false)
+  })
+})
+
+describe('copyTemplate with untracked local files in the example', () => {
+  it('leaves .env, databases and test output out of the template', async () => {
+    const root = await checkoutRoot()
+    const source = await seedExample(root, 'starter-auth')
+    await fs.outputFile(path.join(source, '.env'), 'BETTER_AUTH_SECRET=secret\n')
+    await fs.outputFile(path.join(source, '.env.local'), 'X=1\n')
+    await fs.outputFile(path.join(source, '.env.example'), 'X=\n')
+    await fs.outputFile(path.join(source, '.env.production'), 'X=1\n')
+    await fs.outputFile(path.join(source, '.env.local.example'), 'X=\n')
+    await fs.outputFile(path.join(source, '.DS_Store'), '')
+    await fs.outputFile(
+      path.join(source, 'app', 'coverage', 'page.tsx'),
+      'export default () => null\n',
+    )
+    await fs.outputFile(path.join(source, 'dev.db'), 'sqlite')
+    await fs.outputFile(path.join(source, 'test-results', 'a.json'), '{}\n')
+    await fs.outputFile(path.join(source, 'coverage', 'lcov.info'), '\n')
+
+    const files = await copyTemplate(source, path.join(root, 'templates', 'with-auth'))
+
+    expect(files).toContain('.env.example')
+    expect(files).toContain('.env.local.example')
+    expect(files).toContain(path.join('app', 'coverage', 'page.tsx'))
+    expect(files.filter((f) => /(^|[\\/])\.env($|\.)/.test(f) && !/example$/.test(f))).toEqual([])
+    expect(files.filter((f) => /\.db$|\.DS_Store$|^test-results|^coverage/.test(f))).toEqual([])
   })
 })
 

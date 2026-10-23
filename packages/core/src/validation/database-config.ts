@@ -3,6 +3,7 @@ import type { ConfigRefusal } from './config-refusal.js'
 import { validateDefaultValues } from './default-value.js'
 import { validateExtensionPacks } from './extension-packs.js'
 import { validateFieldNames } from './field-names.js'
+import { refuseNonIdentifierNames } from './identifier-names.js'
 
 function refuseIndexSort(listKey: string, listConfig: ListConfig<TypeInfo>): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
@@ -71,6 +72,119 @@ function refuseUnknownIdField(entry: string, value: unknown, listKey?: string): 
   ]
 }
 
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+const RESERVED_IMPORT_NAMES = [
+  'defineContract',
+  'nativeEnum',
+  'pg',
+  'field',
+  'model',
+  'rel',
+  'type',
+  'models',
+  'contract',
+  'ModelToken',
+  'ScalarFieldBuilder',
+  'charColumn',
+  'dateStringColumn',
+  'float4Column',
+  'int2Column',
+  'jsonColumn',
+  'numericColumn',
+  'timeStringColumn',
+  'timestampStringColumn',
+  'timestamptzStringColumn',
+  'varcharColumn',
+  'existsSync',
+  'join',
+  'definePrismaConfig',
+  'defineConfig',
+  'findDatabaseUrl',
+  'envFile',
+  'process',
+  'Object',
+]
+
+const JS_RESERVED_WORDS = [
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+  'let',
+  'static',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'arguments',
+  'eval',
+  'undefined',
+]
+
+function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
+  const refusals: ConfigRefusal[] = []
+
+  ;(config.db?.extensions ?? []).forEach(({ name }, i) => {
+    const entry = `db.extensions[${i}]`
+    if (typeof name !== 'string' || !IDENTIFIER.test(name) || JS_RESERVED_WORDS.includes(name)) {
+      refusals.push({
+        entry,
+        reason: 'invalid-extension-name',
+        message:
+          `${entry} has name ${JSON.stringify(name)}, which is not a usable JavaScript identifier. ` +
+          `The name is the import binding in the generated modules — use letters, digits, "_" or "$", not starting with a digit.`,
+      })
+    } else if (RESERVED_IMPORT_NAMES.includes(name)) {
+      refusals.push({
+        entry,
+        reason: 'invalid-extension-name',
+        message:
+          `${entry} has name "${name}", which collides with an import the generated modules already bind ` +
+          `(${RESERVED_IMPORT_NAMES.join(', ')}). Rename the extension.`,
+      })
+    }
+  })
+
+  return refusals
+}
+
 function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   const firstByName = new Map<string, { index: number; from: string }>()
@@ -113,6 +227,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
  */
 export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = [
+    ...refuseInvalidExtensionNames(config),
     ...refuseDuplicateExtensionPacks(config),
     ...refuseUnknownIdField('db.idField', config.db?.idField),
   ]
@@ -125,6 +240,7 @@ export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] 
     }
   }
 
+  refusals.push(...refuseNonIdentifierNames(config))
   refusals.push(...validateFieldNames(config))
   refusals.push(...validateExtensionPacks(config))
   refusals.push(...validateDefaultValues(config))

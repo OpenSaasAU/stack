@@ -29,7 +29,7 @@
     "openai": "^6.32.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "shiki": "^4.4.3"
+    "shiki": "^4.5.0"
   },
   "devDependencies": {
     "@opensaas/stack-ui": "workspace:*",

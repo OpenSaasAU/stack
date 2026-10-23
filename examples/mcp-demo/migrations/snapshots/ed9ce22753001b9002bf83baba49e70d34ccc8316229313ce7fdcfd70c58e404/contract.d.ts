@@ -18,7 +18,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'bcf8d33b8a50c54d1b0663803f5a887783ff05475a69e22a2f44c7a97aea9bb2'>;
+  StorageHashBase<'ed9ce22753001b9002bf83baba49e70d34ccc8316229313ce7fdcfd70c58e404'>;
 export type ExecutionHash =
   ExecutionHashBase<'533a10e68a7fa3d5e00e352970fcf8fd05eeda4c7e92dd60c3731497106ab904'>;
 export type ProfileHash =
@@ -1533,6 +1533,10 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/bool';
                   readonly codecId: 'pg/bool@1';
                   readonly nullable: true;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
                   readonly many: false;
                 };
                 readonly backchannelLogoutUri: {
@@ -1602,6 +1606,10 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/bool';
                   readonly codecId: 'pg/bool@1';
                   readonly nullable: true;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
                   readonly many: false;
                 };
                 readonly grantTypes: {
@@ -1674,6 +1682,10 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/bool';
                   readonly codecId: 'pg/bool@1';
                   readonly nullable: true;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
                   readonly many: false;
                 };
                 readonly responseTypes: {
@@ -1692,6 +1704,10 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/bool';
                   readonly codecId: 'pg/bool@1';
                   readonly nullable: true;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
                   readonly many: false;
                 };
                 readonly softwareId: {
