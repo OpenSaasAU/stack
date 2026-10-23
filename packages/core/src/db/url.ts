@@ -25,6 +25,34 @@ export class DatabaseUrlUnresolvedError extends Error {
   }
 }
 
+const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
+
+/** Why a connection string is not a Postgres one, or `undefined` when it is. */
+export function connectionStringFault(url: string): string | undefined {
+  let scheme: string
+  try {
+    scheme = new URL(url).protocol
+  } catch {
+    return 'is not a URL'
+  }
+  return POSTGRES_SCHEMES.has(scheme) ? undefined : `names the \`${scheme}\` scheme, not Postgres`
+}
+
+/** Thrown by {@link resolveDatabaseUrl} when a connection variable is set to something that is not Postgres. */
+export class UnusableDatabaseUrlError extends Error {
+  constructor(
+    readonly variable: string,
+    readonly url: string,
+    readonly fault: string,
+  ) {
+    super(
+      `${variable} is set to \`${url}\`, which ${fault}. Point it at a Postgres server ` +
+        `(\`postgres://…\`), or unset it to use the dev database.`,
+    )
+    this.name = 'UnusableDatabaseUrlError'
+  }
+}
+
 /**
  * Where a connection string came from. `'env'` is a database the stack does
  * not own; `'dev-database'` is the sidecar `opensaas dev` runs, which the
@@ -46,10 +74,16 @@ export interface ResolvedDatabaseUrl {
  */
 export type DatabaseUrlLookupOptions = DevDatabaseStateLocation
 
-function lookupDatabaseUrl(options: DatabaseUrlLookupOptions): ResolvedDatabaseUrl | undefined {
+function lookupDatabaseUrl(
+  options: DatabaseUrlLookupOptions,
+  strict: boolean,
+): ResolvedDatabaseUrl | undefined {
   for (const name of CONNECTION_VARIABLES) {
     const value = process.env[name]
-    if (value !== undefined && value.length > 0) return { url: value, provenance: 'env' }
+    if (value === undefined || value.length === 0) continue
+    const fault = strict ? connectionStringFault(value) : undefined
+    if (fault !== undefined) throw new UnusableDatabaseUrlError(name, value, fault)
+    return { url: value, provenance: 'env' }
   }
   const state = readDevDatabaseState(options)
   if (state !== undefined) return { url: state.url, provenance: 'dev-database' }
@@ -83,7 +117,7 @@ export function findDatabaseUrl(options: DatabaseUrlLookupOptions = {}): string 
 export function findDatabaseConnection(
   options: DatabaseUrlLookupOptions = {},
 ): ResolvedDatabaseUrl | undefined {
-  return lookupDatabaseUrl(options)
+  return lookupDatabaseUrl(options, false)
 }
 
 /**
@@ -109,7 +143,7 @@ export function findDatabaseConnection(
  * ```
  */
 export function resolveDatabaseUrl(options: DatabaseUrlLookupOptions = {}): ResolvedDatabaseUrl {
-  const found = lookupDatabaseUrl(options)
+  const found = lookupDatabaseUrl(options, true)
   if (found !== undefined) return found
   throw new DatabaseUrlUnresolvedError(CONNECTION_VARIABLES)
 }

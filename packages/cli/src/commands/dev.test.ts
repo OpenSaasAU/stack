@@ -66,9 +66,13 @@ vi.mock('@opensaas/stack-core/dev-database', () => ({
   }),
 }))
 
-vi.mock('@opensaas/stack-core/internal', () => ({
-  findDatabaseConnection: vi.fn(() => undefined),
-}))
+vi.mock('@opensaas/stack-core/internal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opensaas/stack-core/internal')>()
+  return {
+    connectionStringFault: actual.connectionStringFault,
+    findDatabaseConnection: vi.fn(() => undefined),
+  }
+})
 
 vi.mock('./generate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./generate.js')>()
@@ -207,6 +211,7 @@ describe('devCommand', () => {
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
+    vi.unstubAllEnvs()
     if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL
     else process.env.DATABASE_URL = originalDatabaseUrl
     fs.rmSync(tempDir, { recursive: true, force: true })
@@ -320,6 +325,20 @@ describe('devCommand', () => {
     expect(output).toContain('DATABASE_URL is set: using it')
     expect(output).not.toContain('DATABASE_URL from')
     log.mockRestore()
+  })
+
+  it('refuses a non-Postgres connection variable before starting anything', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubEnv('DATABASE_URL', 'file:./dev.db')
+
+    await expect(startLoop()).rejects.toThrow('process.exit(1)')
+
+    const printed = error.mock.calls.flat().join('\n')
+    error.mockRestore()
+    expect(printed).toContain('DATABASE_URL')
+    expect(printed).toContain('file:')
+    expect(startDevDatabase).not.toHaveBeenCalled()
+    expect(spawned).toHaveLength(0)
   })
 
   it('stops the dev database when the boot sequence fails before the app starts', async () => {

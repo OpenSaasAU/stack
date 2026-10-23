@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { writeDevDatabaseState } from './state-file.js'
-import { DatabaseUrlUnresolvedError, findDatabaseUrl, resolveDatabaseUrl } from './url.js'
+import {
+  DatabaseUrlUnresolvedError,
+  UnusableDatabaseUrlError,
+  findDatabaseUrl,
+  resolveDatabaseUrl,
+} from './url.js'
 
 const CONNECTION_VARIABLES = ['DATABASE_URL', 'DIRECT_DATABASE_URL'] as const
 
@@ -27,6 +32,28 @@ describe('resolveDatabaseUrl', () => {
     vi.unstubAllEnvs()
     rmSync(projectRoot, { recursive: true, force: true })
   })
+
+  test.each(['DATABASE_URL', 'DIRECT_DATABASE_URL'])('refuses a file: %s', (name) => {
+    process.env[name] = 'file:./dev.db'
+
+    expect(() => resolveDatabaseUrl({ cwd: projectRoot })).toThrow(UnusableDatabaseUrlError)
+    expect(() => resolveDatabaseUrl({ cwd: projectRoot })).toThrow(new RegExp(`${name}.*file:`))
+  })
+
+  test('the non-throwing lookups pass a file: URL through for the caller to refuse', () => {
+    process.env.DATABASE_URL = 'file:./dev.db'
+
+    expect(findDatabaseUrl({ cwd: projectRoot })).toBe('file:./dev.db')
+  })
+
+  test.each(['postgres://u@localhost:5432/db', 'postgresql://u@localhost:5432/db'])(
+    'accepts %s',
+    (url) => {
+      process.env.DATABASE_URL = url
+
+      expect(resolveDatabaseUrl({ cwd: projectRoot })).toEqual({ url, provenance: 'env' })
+    },
+  )
 
   test('production does not discover a Dev database from the project root', () => {
     vi.stubEnv('NODE_ENV', 'production')
