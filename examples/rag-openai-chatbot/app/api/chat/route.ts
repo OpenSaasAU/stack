@@ -7,10 +7,6 @@ import { clientKey, isRateLimited, parseChatBody } from '@/lib/chat-request'
 export const maxDuration = 30
 
 export async function POST(req: Request) {
-  if (isRateLimited(clientKey(req))) {
-    return Response.json({ error: 'Too many requests' }, { status: 429 })
-  }
-
   let body: unknown
   try {
     body = await req.json()
@@ -20,6 +16,10 @@ export async function POST(req: Request) {
   const messages = parseChatBody(body)
   if (messages === null) {
     return Response.json({ error: 'Invalid chat request' }, { status: 400 })
+  }
+
+  if (isRateLimited(clientKey(req))) {
+    return Response.json({ error: 'Too many requests' }, { status: 429 })
   }
 
   // Get the last user message for RAG search
