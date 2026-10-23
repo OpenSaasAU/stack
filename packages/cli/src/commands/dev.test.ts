@@ -330,16 +330,17 @@ describe('devCommand', () => {
     expect(stop).toHaveBeenCalled()
   })
 
-  it('prints a second loop refusal as its message alone, without a stack trace', async () => {
+  it('prints a second loop refusal as a plain message, not the error object', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.mocked(startDevDatabase).mockRejectedValueOnce(new DevDatabaseInUseError('/data', 4242))
 
     await startLoop()
 
-    const printed = error.mock.calls.flat().join('\n')
+    const printed = error.mock.calls.flat()
     error.mockRestore()
-    expect(printed).toContain('already open in another process (pid 4242)')
-    expect(printed).not.toContain('\n    at ')
+    expect(printed).toHaveLength(1)
+    expect(typeof printed[0]).toBe('string')
+    expect(printed[0]).toContain('Another `opensaas dev` already holds the dev database')
     expect(process.exitCode).toBe(1)
     expect(spawned).toHaveLength(0)
   })

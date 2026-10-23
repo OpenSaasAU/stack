@@ -496,7 +496,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         })
       } catch (error) {
         if (!(error instanceof DevDatabaseInUseError)) throw error
-        console.error(chalk.red(error.message))
+        console.error(
+          chalk.red(
+            `Another \`opensaas dev\` already holds the dev database (${DEV_DATABASE_DIR}). ` +
+              'Stop that process before starting a new one.',
+          ),
+        )
         process.exitCode = 1
         return
       }
