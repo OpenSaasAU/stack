@@ -110,7 +110,7 @@
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "5.0.5",
     "@vitest/ui": "5.0.5",
-    "openai": "^6.32.0",
+    "openai": "^7.39.0",
     "pg": "^8.23.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
