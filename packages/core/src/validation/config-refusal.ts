@@ -3,6 +3,7 @@ export type ConfigRefusalReason =
   | 'id-field-on-singleton'
   | 'unknown-id-field'
   | 'duplicate-extension-pack'
+  | 'invalid-extension-name'
   | 'undeclared-extension-pack'
   | 'many-to-many'
   | 'foreign-key-on-both-sides'
@@ -18,6 +19,7 @@ export type ConfigRefusalReason =
   | 'synthetic-relation-collision'
   | 'field-descriptor-error'
   | 'default-value-rejected-by-validation'
+  | 'non-identifier-name'
 
 /**
  * A config declaration the Prisma 8 contract cannot carry, found before
