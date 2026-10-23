@@ -93,6 +93,30 @@ describe('validateDatabaseConfig', () => {
     expect(refusals[0].message).toContain('Remove db.idField from "Settings"')
   })
 
+  it.each([
+    "pgvector; console.log('x'); //",
+    '1pack',
+    'my-pack',
+    'findDatabaseUrl',
+    'pg',
+    'default',
+    'envFile',
+    'contract',
+  ])('refuses the extension name %s, naming the entry', (name) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', extensions: [{ name, from: '@acme/pack' }] },
+      lists: {},
+    }
+
+    const refusals = validateDatabaseConfig(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({
+      entry: 'db.extensions[0]',
+      reason: 'invalid-extension-name',
+    })
+  })
+
   it('refuses the same pack name declared from two packages, naming both entries', () => {
     const config: OpenSaasConfig = {
       db: {

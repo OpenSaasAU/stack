@@ -3,6 +3,7 @@ export type ConfigRefusalReason =
   | 'id-field-on-singleton'
   | 'unknown-id-field'
   | 'duplicate-extension-pack'
+  | 'invalid-extension-name'
   | 'undeclared-extension-pack'
   | 'many-to-many'
   | 'foreign-key-on-both-sides'
