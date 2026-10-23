@@ -12,9 +12,9 @@ const EXCLUDED_DIRECTORIES = [
   '.opensaas',
   'prisma',
   'migrations',
-  'test-results',
-  'coverage',
 ]
+
+const EXCLUDED_ROOT_DIRECTORIES = ['test-results', 'coverage']
 
 export const PACKED_GITIGNORE = 'gitignore'
 
@@ -35,10 +35,10 @@ const EXCLUDED_FILES = [
   '.DS_Store',
 ]
 
-const KEPT_ENV_FILES = ['.env.example']
-
 function isLocalOnlyFile(name: string): boolean {
-  if (name === '.env' || name.startsWith('.env.')) return !KEPT_ENV_FILES.includes(name)
+  if (name === '.env' || name.startsWith('.env.')) {
+    return !name.endsWith('.example') && !name.endsWith('.sample')
+  }
   return name.endsWith('.db')
 }
 
@@ -58,6 +58,7 @@ export function isExcludedFromTemplate(relativePath: string): boolean {
   const segments = relativePath.split(/[\\/]/).filter((segment) => segment.length > 0)
   if (segments.length === 0) return false
   if (segments.some((segment) => EXCLUDED_DIRECTORIES.includes(segment))) return true
+  if (EXCLUDED_ROOT_DIRECTORIES.includes(segments[0] ?? '')) return true
   const name = segments[segments.length - 1]
   return name !== undefined && (EXCLUDED_FILES.includes(name) || isLocalOnlyFile(name))
 }
