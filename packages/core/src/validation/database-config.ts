@@ -3,6 +3,7 @@ import type { ConfigRefusal } from './config-refusal.js'
 import { validateDefaultValues } from './default-value.js'
 import { validateExtensionPacks } from './extension-packs.js'
 import { validateFieldNames } from './field-names.js'
+import { refuseNonIdentifierNames } from './identifier-names.js'
 
 function refuseIndexSort(listKey: string, listConfig: ListConfig<TypeInfo>): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
@@ -125,6 +126,7 @@ export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] 
     }
   }
 
+  refusals.push(...refuseNonIdentifierNames(config))
   refusals.push(...validateFieldNames(config))
   refusals.push(...validateExtensionPacks(config))
   refusals.push(...validateDefaultValues(config))

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { validateDatabaseConfig } from './database-config.js'
-import { text, timestamp } from '../fields/index.js'
+import { select, text, timestamp } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 describe('validateDatabaseConfig', () => {
@@ -144,5 +144,49 @@ describe('validateDatabaseConfig', () => {
     expect(
       refusals.some((r) => r.message.includes('Composite primary keys are out of scope')),
     ).toBe(true)
+  })
+
+  it('refuses a non-identifier list key, naming it', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { "Po'st": { fields: { title: text() } } },
+    }
+
+    const refusals = validateDatabaseConfig(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ reason: 'non-identifier-name', listKey: "Po'st" })
+    expect(refusals[0].message).toContain(`"Po'st"`)
+  })
+
+  it('refuses a non-identifier db.enumName, naming the list and the enum', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            status: select({
+              options: [{ label: 'Draft', value: 'draft' }],
+              db: { type: 'enum', enumName: "Bad'Enum" },
+            }),
+          },
+        },
+      },
+    }
+
+    const refusals = validateDatabaseConfig(config)
+
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ reason: 'non-identifier-name', listKey: 'Post' })
+    expect(refusals[0].message).toContain(`"Bad'Enum"`)
+  })
+
+  it.each(['Po$t', '1Post', 'Blog-Post', 'Blog Post', ''])('refuses the list key %j', (listKey) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { [listKey]: { fields: { title: text() } } },
+    }
+
+    expect(validateDatabaseConfig(config).map((r) => r.reason)).toContain('non-identifier-name')
   })
 })
