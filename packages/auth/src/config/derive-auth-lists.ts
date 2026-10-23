@@ -572,14 +572,15 @@ function buildScalarField(
             db,
           })
     }
+    case 'json':
+    case 'string[]':
+    case 'number[]':
+      return text({
+        ...(isRequired ? { validation: { isRequired: true as const } } : {}),
+        ...(isIndexed ? { isIndexed } : {}),
+        db,
+      })
     default:
-      // better-auth's `DBFieldType` also allows `json`, `string[]`/`number[]`,
-      // and an enum array — none of which any built-in plugin (MCP, admin,
-      // organization, two-factor, ...) or the four base models actually use
-      // today. Warn and fall back to a plain `text()` column rather than
-      // throwing, so an app config that happens to hit this still generates
-      // (matching the pre-consolidation plugin-table converter's behavior)
-      // instead of crashing the whole `config()`/`generate` pipeline.
       console.warn(
         `[stack-auth] Unknown better-auth field type "${upstream.type}" for field "${fieldKey}", defaulting to text field`,
       )
