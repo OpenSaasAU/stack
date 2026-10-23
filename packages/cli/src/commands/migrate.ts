@@ -113,10 +113,7 @@ export async function setupClaudeCode(cwd: string, analysis: ProjectAnalysis): P
     extraKnownMarketplaces?: Record<
       string,
       {
-        source:
-          | { source: 'github'; repo: string }
-          | { source: 'git'; url: string }
-          | { source: 'local'; path: string }
+        source: { source: 'github'; repo: string } | { source: 'git'; url: string }
       }
     >
     enabledPlugins?: Record<string, boolean>
@@ -232,8 +229,10 @@ When you open this project in Claude Code, the MCP server will be automatically 
 `
 
   const readmePath = path.join(claudeDir, 'README.md')
-  if (!fs.existsSync(readmePath)) {
-    fs.writeFileSync(readmePath, readmeContent)
+  try {
+    fs.writeFileSync(readmePath, readmeContent, { flag: 'wx' })
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
   }
 }
 
