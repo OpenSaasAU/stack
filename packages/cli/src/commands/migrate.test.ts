@@ -143,4 +143,14 @@ describe('setupClaudeCode', () => {
     )
     expect(metadata.provider).toBe('postgresql')
   })
+
+  it('keeps an existing .claude/README.md', async () => {
+    const readmePath = path.join(cwd, '.claude', 'README.md')
+    fs.mkdirSync(path.dirname(readmePath))
+    fs.writeFileSync(readmePath, 'USER README')
+
+    await setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })
+
+    expect(fs.readFileSync(readmePath, 'utf-8')).toBe('USER README')
+  })
 })
