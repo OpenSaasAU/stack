@@ -60,6 +60,11 @@ jobs:
           pnpm check:doc-import-specifiers
           pnpm check:doc-import-specifiers --self-test
 
+      - name: Check documentation Prisma install pins
+        run: |
+          pnpm check:doc-prisma-pins
+          pnpm check:doc-prisma-pins --self-test
+
       - name: Test documentation code rendering
         run: pnpm --filter opensaas-stack-docs test
 
