@@ -193,8 +193,19 @@ jobs:
         run: |
           for dir in starter starter-auth custom-field blog composable-dashboard auth-demo mcp-demo json-demo tiptap-demo file-upload-demo rag-ollama-demo rag-openai-chatbot; do
             (cd "examples/$dir" && pnpm exec prisma migration plan --json > /dev/null) || { echo "::error::migration plan failed in examples/$dir"; exit 1; }
+            for pkg in examples/$dir/migrations/app/*/; do
+              case "$pkg" in
+                *_baseline/ | */refs/) ;;
+                *) echo "::error::migration plan in examples/$dir produced $pkg; commit the advanced ref and snapshot"; exit 1 ;;
+              esac
+            done
           done
           git clean -fdq -- examples/*/migrations/app
+          if [ -n "$(git status --porcelain -- 'examples/*/migrations')" ]; then
+            echo "::error::migration plan left examples/*/migrations dirty"
+            git status --porcelain -- 'examples/*/migrations'
+            exit 1
+          fi
         env:
           OPENAI_API_KEY: 'sk-testing-key'
 
