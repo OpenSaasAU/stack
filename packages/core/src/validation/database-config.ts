@@ -82,11 +82,79 @@ const RESERVED_IMPORT_NAMES = [
   'rel',
   'type',
   'models',
+  'contract',
+  'ModelToken',
+  'ScalarFieldBuilder',
+  'charColumn',
+  'dateStringColumn',
+  'float4Column',
+  'int2Column',
+  'jsonColumn',
+  'numericColumn',
+  'timeStringColumn',
+  'timestampStringColumn',
+  'timestamptzStringColumn',
+  'varcharColumn',
   'existsSync',
   'join',
   'definePrismaConfig',
   'defineConfig',
   'findDatabaseUrl',
+  'envFile',
+  'process',
+  'Object',
+]
+
+const JS_RESERVED_WORDS = [
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+  'let',
+  'static',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'arguments',
+  'eval',
+  'undefined',
 ]
 
 function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
@@ -94,12 +162,12 @@ function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
 
   ;(config.db?.extensions ?? []).forEach(({ name }, i) => {
     const entry = `db.extensions[${i}]`
-    if (!IDENTIFIER.test(name)) {
+    if (typeof name !== 'string' || !IDENTIFIER.test(name) || JS_RESERVED_WORDS.includes(name)) {
       refusals.push({
         entry,
         reason: 'invalid-extension-name',
         message:
-          `${entry} has name ${JSON.stringify(name)}, which is not a valid JavaScript identifier. ` +
+          `${entry} has name ${JSON.stringify(name)}, which is not a usable JavaScript identifier. ` +
           `The name is the import binding in the generated modules — use letters, digits, "_" or "$", not starting with a digit.`,
       })
     } else if (RESERVED_IMPORT_NAMES.includes(name)) {
