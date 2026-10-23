@@ -26,6 +26,16 @@ function tempDir(): string {
 }
 
 describe('generatePrismaConfig', () => {
+  it("escapes a quote in an extension's from", () => {
+    const output = generatePrismaConfig(
+      contract([{ name: 'pack', from: "@acme/it's" }]),
+      './prisma/contract.ts',
+      './prisma',
+    )
+
+    expect(output).toContain("import pack from '@acme/it\\'s/control'")
+  })
+
   it('wraps the ORM options in the CLI version marker', () => {
     const output = generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')
 

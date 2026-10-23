@@ -71,6 +71,51 @@ function refuseUnknownIdField(entry: string, value: unknown, listKey?: string): 
   ]
 }
 
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+const RESERVED_IMPORT_NAMES = [
+  'defineContract',
+  'nativeEnum',
+  'pg',
+  'field',
+  'model',
+  'rel',
+  'type',
+  'models',
+  'existsSync',
+  'join',
+  'definePrismaConfig',
+  'defineConfig',
+  'findDatabaseUrl',
+]
+
+function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
+  const refusals: ConfigRefusal[] = []
+
+  ;(config.db?.extensions ?? []).forEach(({ name }, i) => {
+    const entry = `db.extensions[${i}]`
+    if (!IDENTIFIER.test(name)) {
+      refusals.push({
+        entry,
+        reason: 'invalid-extension-name',
+        message:
+          `${entry} has name ${JSON.stringify(name)}, which is not a valid JavaScript identifier. ` +
+          `The name is the import binding in the generated modules — use letters, digits, "_" or "$", not starting with a digit.`,
+      })
+    } else if (RESERVED_IMPORT_NAMES.includes(name)) {
+      refusals.push({
+        entry,
+        reason: 'invalid-extension-name',
+        message:
+          `${entry} has name "${name}", which collides with an import the generated modules already bind ` +
+          `(${RESERVED_IMPORT_NAMES.join(', ')}). Rename the extension.`,
+      })
+    }
+  })
+
+  return refusals
+}
+
 function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   const firstByName = new Map<string, { index: number; from: string }>()
@@ -113,6 +158,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
  */
 export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = [
+    ...refuseInvalidExtensionNames(config),
     ...refuseDuplicateExtensionPacks(config),
     ...refuseUnknownIdField('db.idField', config.db?.idField),
   ]

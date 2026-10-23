@@ -83,7 +83,7 @@ export function generatePrismaConfig(
   lines.push("import { defineConfig } from '@prisma/orm-postgres/config'")
   lines.push("import { findDatabaseUrl } from '@opensaas/stack-core'")
   for (const extension of data.extensions) {
-    lines.push(`import ${extension.name} from '${controlSubpath(extension.from)}'`)
+    lines.push(`import ${extension.name} from ${quote(controlSubpath(extension.from))}`)
   }
   lines.push('')
   lines.push('// The Prisma CLI evaluates this file without loading a .env of its own, and')
