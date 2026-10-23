@@ -7,6 +7,7 @@ import type {
   ContractModel,
   ExtensionDescriptor,
 } from '@opensaas/stack-core'
+import { IDENTIFIER, key, quote } from './source-text.js'
 
 /**
  * The column-type helpers the rendered module imports from
@@ -32,28 +33,6 @@ type ColumnTypeHelper = (typeof COLUMN_TYPE_HELPERS)[number]
 type Rendered = {
   expression: string
   helpers: ColumnTypeHelper[]
-}
-
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
-
-/**
- * A single-quoted TypeScript string, matching the repo's own source style.
- *
- * All four ECMAScript LineTerminators are escaped: an unescaped one inside a
- * single-quoted literal ends it, so a `\r` or a U+2028/U+2029 in a user's
- * `defaultValue` would otherwise write a module that will not parse. This is
- * not `JSON.stringify`, which leaves U+2028 and U+2029 raw — legal in JSON,
- * fatal in a JavaScript string literal.
- */
-function quote(value: string): string {
-  const escaped = value
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029')
-  return `'${escaped}'`
 }
 
 /**
@@ -82,14 +61,6 @@ function literal(value: unknown): string {
     )
   }
   return rendered
-}
-
-/**
- * A TypeScript object key, quoted only when it is not a plain identifier, so
- * the common case reads as hand-written source.
- */
-function key(name: string): string {
-  return IDENTIFIER.test(name) ? name : quote(name)
 }
 
 /** A member access on the builder's `cols`/`fields` helper record. */

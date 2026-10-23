@@ -1,6 +1,7 @@
 import type { DependencyTable, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { assertFieldKeysAreIdentifiers } from './source-text.js'
 import { needsEntries } from './types.js'
 
 function capitalize(value: string): string {
@@ -68,6 +69,7 @@ export function generateListsNamespace(
   config: OpenSaasConfig,
   dependencies: DependencyTable,
 ): string {
+  assertFieldKeysAreIdentifiers(config)
   const lines: string[] = []
 
   lines.push('/**')
