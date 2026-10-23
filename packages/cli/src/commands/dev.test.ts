@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startDevDatabase } from '@opensaas/stack-core/dev-database'
+import { DevDatabaseInUseError, startDevDatabase } from '@opensaas/stack-core/dev-database'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import { CONTROL_FILE, requestDatabaseUpdate } from '../dev/control.js'
 import { runPrismaCli } from '../generator/index.js'
@@ -51,6 +51,11 @@ vi.mock('child_process', () => ({
 const stop = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 
 vi.mock('@opensaas/stack-core/dev-database', () => ({
+  DevDatabaseInUseError: class DevDatabaseInUseError extends Error {
+    constructor(dataDir: string, pid: number) {
+      super(`${dataDir} is already open in another process (pid ${pid})`)
+    }
+  },
   startDevDatabase: vi.fn().mockResolvedValue({
     url: 'postgres://postgres@127.0.0.1:54321/postgres',
     host: '127.0.0.1',
@@ -323,6 +328,20 @@ describe('devCommand', () => {
     await expect(startLoop()).rejects.toThrow('The `prisma` CLI is not installed')
     expect(spawned).toHaveLength(0)
     expect(stop).toHaveBeenCalled()
+  })
+
+  it('prints a second loop refusal as its message alone, without a stack trace', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(startDevDatabase).mockRejectedValueOnce(new DevDatabaseInUseError('/data', 4242))
+
+    await startLoop()
+
+    const printed = error.mock.calls.flat().join('\n')
+    error.mockRestore()
+    expect(printed).toContain('already open in another process (pid 4242)')
+    expect(printed).not.toContain('\n    at ')
+    expect(process.exitCode).toBe(1)
+    expect(spawned).toHaveLength(0)
   })
 
   it('runs the loop async stop() when boot generation fails, rather than exiting the process (#1223)', async () => {

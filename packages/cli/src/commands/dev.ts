@@ -5,6 +5,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import {
+  DevDatabaseInUseError,
   startDevDatabase,
   type DevDatabase,
   type DevDatabaseExtension,
@@ -487,11 +488,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       fs.mkdirSync(path.dirname(dataDir), { recursive: true })
 
       loadedExtensions = declaredDevDatabaseExtensions(config)
-      database = await startDevDatabase({
-        cwd,
-        dataDir,
-        extensions: loadedExtensions,
-      })
+      try {
+        database = await startDevDatabase({
+          cwd,
+          dataDir,
+          extensions: loadedExtensions,
+        })
+      } catch (error) {
+        if (!(error instanceof DevDatabaseInUseError)) throw error
+        console.error(chalk.red(error.message))
+        process.exitCode = 1
+        return
+      }
       process.env.OPENSAAS_DEV_DATABASE_STATE_FILE = database.stateFile
       console.log(chalk.green(`Dev database listening on ${database.url}\n`))
     }
