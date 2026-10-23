@@ -174,6 +174,12 @@ The `searchKnowledge` server action is callable by anyone, so it clamps `limit` 
 `minScore` (0–1) and the query length server-side. Each call still spends one OpenAI
 embedding request: add authentication or rate limiting before exposing it publicly.
 
+`POST /api/chat` is unauthenticated by design. It validates the body with Zod (at most 20
+`user`/`assistant` messages of text parts up to 2000 characters; anything else, including a
+client `system` message, is a 400) and applies a per-IP limit of 10 requests per minute
+(429). The limiter is in-memory and keyed on `x-forwarded-for`, so it is per-instance and
+only a starting point: add authentication and a shared limiter before exposing it publicly.
+
 ### Admin Panel (`/admin`)
 
 A browse-and-delete interface for the knowledge base. Browsing and deleting work.
