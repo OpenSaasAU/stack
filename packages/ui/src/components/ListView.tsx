@@ -226,7 +226,8 @@ export async function ListView({
   )
 
   const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
-  const skip = (page - 1) * pageSize
+  const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
+  const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
 
@@ -376,7 +377,7 @@ export async function ListView({
         listKey={listKey}
         urlKey={urlKey}
         basePath={basePath}
-        page={page}
+        page={currentPage}
         pageSize={pageSize}
         total={total || 0}
         search={search}

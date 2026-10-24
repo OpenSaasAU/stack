@@ -252,6 +252,18 @@ describe('ListView total (aggregate over the scoped read)', () => {
   )
 })
 
+describe('ListView page clamping', () => {
+  it.each([Number.NaN, 0, -1, 1.5, Number.POSITIVE_INFINITY, 1e22])(
+    'renders page 1 for page=%s',
+    async (page) => {
+      const props = await render(ada, { listKey: 'Post', page })
+      expect(props.items).toHaveLength(3)
+      expect(props.page).toBe(1)
+    },
+    BOOT,
+  )
+})
+
 describe('ListView server-side filtering (filter engine over the secured surface)', () => {
   it(
     'matches a text token case-insensitively: name:ada finds Ada',
