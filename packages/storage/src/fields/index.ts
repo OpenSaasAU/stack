@@ -28,7 +28,7 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 
-const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![\/\\]))/i, {
+const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
   message: 'url must be an http(s) URL or an absolute path',
 })
 
