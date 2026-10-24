@@ -82,6 +82,24 @@ describe('feature set enforcement', () => {
       expect(accepts(features, linked({ href: '#anchor' }))).toBe(true)
       expect(accepts(features, linked({ href: 'javascript:x' }))).toBe(false)
     })
+    it.each([
+      '//evil.example',
+      '/\\evil.example',
+      '\\\\evil.example',
+      'javascript&colon;alert(1)',
+      'javascript&#58;alert(1)',
+      'javascript&#x3a;alert(1)',
+    ])('refuses %j under allowRelative', (href) => {
+      const features = { ...defaultRichTextFeatures, link: { allowRelative: true } }
+      expect(accepts(features, linked({ href }))).toBe(false)
+    })
+    it.each(['/path', './a', '../a', '?q=1', '#a', '/search?q=a&page=2'])(
+      'accepts %j under allowRelative',
+      (href) => {
+        const features = { ...defaultRichTextFeatures, link: { allowRelative: true } }
+        expect(accepts(features, linked({ href }))).toBe(true)
+      },
+    )
     it('honours a custom protocol list', () => {
       const features = { link: { protocols: ['ftp'] } }
       expect(accepts(features, linked({ href: 'ftp://a.test' }))).toBe(true)
