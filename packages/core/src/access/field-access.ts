@@ -406,9 +406,15 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     foreignKeyOwners.get(key)?.fieldName ?? splitColumnOwners.get(key)?.fieldName ?? key
   const callerFields = new Set(Object.keys(args.inputData ?? {}).map(owningField))
 
+  const suppliedFields = new Set(
+    Object.entries(args.inputData ?? {})
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => owningField(key)),
+  )
+
   for (const fieldName of callerFields) {
     if (Object.hasOwn(data, fieldName) || Object.hasOwn(fieldConfigs, fieldName) === false) continue
-    if (args.inputData?.[fieldName] === undefined) continue
+    if (!suppliedFields.has(fieldName)) continue
     const fieldConfig = fieldConfigs[fieldName]
     if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
     const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
