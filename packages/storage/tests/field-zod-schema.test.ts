@@ -311,12 +311,16 @@ describe('stored metadata url scheme', () => {
   const schemaFor = () => file({ storage: 'documents' }).getZodSchema('doc', 'create')
   const withUrl = (url: string) => ({ ...validFileMetadata, url })
 
-  it.each(['javascript:alert(1)', 'data:text/html,x', 'vbscript:x', 'JaVaScRiPt:x'])(
-    'refuses %s',
-    (url) => {
-      expect(schemaFor().safeParse(withUrl(url)).success).toBe(false)
-    },
-  )
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,x',
+    'vbscript:x',
+    'JaVaScRiPt:x',
+    '//evil.example/x',
+    '/\\evil.example',
+  ])('refuses %s', (url) => {
+    expect(schemaFor().safeParse(withUrl(url)).success).toBe(false)
+  })
 
   it.each(['https://cdn.example.com/a.pdf', 'http://localhost/a.pdf', '/uploads/a.pdf'])(
     'accepts %s',
