@@ -221,13 +221,36 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
     )
   })
 
-  it('falls back to a text() column with a warning for a better-auth field type this derivation does not model (e.g. json)', () => {
+  it.each(['json', 'string[]', 'number[]'])(
+    'maps the better-auth %s field type to a text() column without warning',
+    (type) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const plugin = {
+          id: 'test-serialised-type',
+          schema: {
+            widget: { modelName: 'widget', fields: { metadata: { type, required: true } } },
+          },
+        } as unknown as BetterAuthPlugin
+
+        const { lists } = deriveAuthLists(defaultModels, {}, {}, [plugin])
+
+        expect(lists.Widget.fields.metadata.type).toBe('text')
+        expect(lists.Widget.fields.metadata.validation?.isRequired).toBe(true)
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
+    },
+  )
+
+  it('falls back to a text() column with a warning for a better-auth field type this derivation does not model', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const plugin = {
         id: 'test-unsupported-type',
         schema: {
-          widget: { modelName: 'widget', fields: { metadata: { type: 'json' } } },
+          widget: { modelName: 'widget', fields: { metadata: { type: 'mystery' } } },
         },
       } as unknown as BetterAuthPlugin
 
@@ -235,7 +258,7 @@ describe('deriveAuthLists — better-auth plugin tables (issue #992)', () => {
 
       expect(lists.Widget.fields.metadata.type).toBe('text')
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Unknown better-auth field type "json"'),
+        expect.stringContaining('Unknown better-auth field type "mystery"'),
       )
     } finally {
       warn.mockRestore()

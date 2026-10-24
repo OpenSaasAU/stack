@@ -1,4 +1,4 @@
-import { CONNECTION_VARIABLES } from '../db/url.js'
+import { CONNECTION_VARIABLES, connectionStringFault } from '../db/url.js'
 
 /**
  * The variables the harness reads, in the same order `resolveDatabaseUrl()`
@@ -9,8 +9,6 @@ import { CONNECTION_VARIABLES } from '../db/url.js'
  * usable connection.
  */
 export const ESCAPE_VARIABLES = CONNECTION_VARIABLES
-
-const POSTGRES_SCHEMES = new Set(['postgres:', 'postgresql:'])
 
 /**
  * What {@link ESCAPE_VARIABLES} say. `'absent'` runs the suite on in-process
@@ -77,20 +75,8 @@ export function readDatabaseEscape(): DatabaseEscape {
     const url = process.env[variable]
     if (url === undefined || url.length === 0) continue
 
-    let scheme: string
-    try {
-      scheme = new URL(url).protocol
-    } catch {
-      return { kind: 'unusable', variable, url, fault: 'is not a URL' }
-    }
-    if (!POSTGRES_SCHEMES.has(scheme)) {
-      return {
-        kind: 'unusable',
-        variable,
-        url,
-        fault: `names the \`${scheme}\` scheme, not Postgres`,
-      }
-    }
+    const fault = connectionStringFault(url)
+    if (fault !== undefined) return { kind: 'unusable', variable, url, fault }
     return { kind: 'postgres', url }
   }
   return { kind: 'absent' }

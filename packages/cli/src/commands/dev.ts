@@ -3,7 +3,7 @@ import * as path from 'path'
 import chalk from 'chalk'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
-import { findDatabaseConnection } from '@opensaas/stack-core/internal'
+import { connectionStringFault, findDatabaseConnection } from '@opensaas/stack-core/internal'
 import {
   DevDatabaseInUseError,
   startDevDatabase,
@@ -130,6 +130,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   const connectionVariable = ['DIRECT_DATABASE_URL', 'DATABASE_URL'].find(
     (name) => (process.env[name] ?? '').length > 0,
   )
+  const connectionFault =
+    connectionVariable === undefined
+      ? undefined
+      : connectionStringFault(process.env[connectionVariable] ?? '')
+  if (connectionVariable !== undefined && connectionFault !== undefined) {
+    console.error(
+      chalk.red(
+        `Error: ${connectionVariable} ${connectionFault}. Point it at a Postgres server (postgres://…), or unset it so \`opensaas dev\` starts the dev database.`,
+      ),
+    )
+    process.exit(1)
+  }
   const connectionFile =
     connectionVariable === undefined ? undefined : envSources.get(connectionVariable)
 

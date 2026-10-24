@@ -26,6 +26,17 @@ import { hashPassword, isHashedPassword, HashedPassword } from '../utils/passwor
 import { getLabelFieldName } from '../config/label.js'
 import type { FilterOperator, FilterSpec } from '../filter/types.js'
 
+function quoteStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+  return `'${escaped}'`
+}
+
 /** Operators shared by numeric/date fields' `getFilterSpec`. */
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 
@@ -943,7 +954,7 @@ export function select<
     }
   }
 
-  const unionType = options.options.map((opt) => `'${opt.value}'`).join(' | ')
+  const unionType = options.options.map((opt) => quoteStringLiteral(opt.value)).join(' | ')
 
   return {
     type: 'select',

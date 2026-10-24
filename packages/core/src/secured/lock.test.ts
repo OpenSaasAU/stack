@@ -113,8 +113,7 @@ function recordStatements(): { statements: Statement[]; middleware: SqlMiddlewar
     middleware: {
       name: 'opensaas-lock-statement-recorder',
       familyId: 'sql',
-      beforeQuery: capture,
-      beforeExecute: capture,
+      beforeEncode: capture,
     },
   }
 }

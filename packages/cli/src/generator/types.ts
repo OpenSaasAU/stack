@@ -8,6 +8,7 @@ import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
 import * as path from 'path'
+import { assertFieldKeysAreIdentifiers, quote } from './source-text.js'
 
 /**
  * The empty member of a `Remainder` entry. `Record<never, never>` rather than
@@ -108,7 +109,7 @@ function generateRemainderEntry(
     if (inputType !== null) input.push(`${fieldName}: ${inputType}`)
 
     if (descriptor?.kind === 'columns') {
-      const names = descriptor.columns.map((column) => `'${column.name}'`)
+      const names = descriptor.columns.map((column) => quote(column.name))
       columns.push(`${fieldName}: ${names.length === 0 ? 'never' : names.join(' | ')}`)
     }
   }
@@ -165,7 +166,7 @@ export function needsEntries(
     .map((fieldName): [string, string] => {
       const { columns, relations } = rows[fieldName]
       const keys = [...columns, ...relations]
-      return [fieldName, keys.length === 0 ? 'never' : keys.map((k) => `'${k}'`).join(' | ')]
+      return [fieldName, keys.length === 0 ? 'never' : keys.map((k) => quote(k)).join(' | ')]
     })
 }
 
@@ -320,6 +321,7 @@ export interface TransactionContext<TSession extends ${session} = ${session}>
 const CONTRACT_IMPORT = '../prisma/contract.d.js'
 
 export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTable): string {
+  assertFieldKeysAreIdentifiers(config)
   const listNames = Object.keys(config.lists)
   const needsFields: Array<[string, string]> = Object.entries(config.lists).flatMap(
     ([listName, listConfig]) =>

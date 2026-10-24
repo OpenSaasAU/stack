@@ -18,7 +18,7 @@
   "dependencies": {
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.17",
+    "@prisma/orm-postgres": "8.0.0-rc.18",
     "@tailwindcss/postcss": "^4.3.3",
     "next": "^16.3.8",
     "postcss": "^8.5.28",
@@ -35,7 +35,7 @@
     "@types/react-dom": "^19.2.3",
     "@typescript/native": "npm:typescript@^7.0.2",
     "dotenv": "^18.0.4",
-    "prisma": "8.0.0-rc.22",
+    "prisma": "8.0.0-rc.23",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }

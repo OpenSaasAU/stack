@@ -143,4 +143,29 @@ describe('setupClaudeCode', () => {
     )
     expect(metadata.provider).toBe('postgresql')
   })
+
+  it('keeps an existing .claude/README.md', async () => {
+    const readmePath = path.join(cwd, '.claude', 'README.md')
+    fs.mkdirSync(path.dirname(readmePath))
+    fs.writeFileSync(readmePath, 'USER README')
+
+    await setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })
+
+    expect(fs.readFileSync(readmePath, 'utf-8')).toBe('USER README')
+  })
+
+  it('creates .claude/README.md and registers the GitHub marketplace on a fresh run', async () => {
+    await setupClaudeCode(cwd, { projectTypes: ['prisma'], cwd })
+
+    expect(fs.readFileSync(path.join(cwd, '.claude', 'README.md'), 'utf-8')).toContain(
+      '# OpenSaaS Stack Migration',
+    )
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(cwd, '.claude', 'settings.json'), 'utf-8'),
+    )
+    expect(settings.extraKnownMarketplaces['opensaas-stack-marketplace'].source).toEqual({
+      source: 'github',
+      repo: 'OpenSaasAU/stack',
+    })
+  })
 })

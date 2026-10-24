@@ -14,6 +14,8 @@ const EXCLUDED_DIRECTORIES = [
   'migrations',
 ]
 
+const EXCLUDED_ROOT_DIRECTORIES = ['test-results', 'coverage']
+
 export const PACKED_GITIGNORE = 'gitignore'
 
 /** Packing drops `.gitignore` files, so templates carry it as `gitignore`. */
@@ -30,7 +32,15 @@ const EXCLUDED_FILES = [
   'tsconfig.tsbuildinfo',
   'next-env.d.ts',
   'pnpm-lock.yaml',
+  '.DS_Store',
 ]
+
+function isLocalOnlyFile(name: string): boolean {
+  if (name === '.env' || name.startsWith('.env.')) {
+    return !name.endsWith('.example') && !name.endsWith('.sample')
+  }
+  return name.endsWith('.db')
+}
 
 /**
  * Whether one entry of an example is left out of the template it seeds.
@@ -48,8 +58,9 @@ export function isExcludedFromTemplate(relativePath: string): boolean {
   const segments = relativePath.split(/[\\/]/).filter((segment) => segment.length > 0)
   if (segments.length === 0) return false
   if (segments.some((segment) => EXCLUDED_DIRECTORIES.includes(segment))) return true
+  if (EXCLUDED_ROOT_DIRECTORIES.includes(segments[0] ?? '')) return true
   const name = segments[segments.length - 1]
-  return name !== undefined && EXCLUDED_FILES.includes(name)
+  return name !== undefined && (EXCLUDED_FILES.includes(name) || isLocalOnlyFile(name))
 }
 
 /** Every file under `dir`, relative to it. */
@@ -109,6 +120,10 @@ export async function copyTemplate(
   }
   if (!files.includes('package.json')) {
     throw new UnusableTemplateError(target, 'has no package.json')
+  }
+  const leaked = files.find((file) => isLocalOnlyFile(path.basename(file)))
+  if (leaked !== undefined) {
+    throw new UnusableTemplateError(target, `contains the local-only file ${leaked}`)
   }
   return files
 }

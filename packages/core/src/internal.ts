@@ -73,7 +73,7 @@ export {
 // escape (a URL in the environment) from a Dev database it should start for
 // the project itself (ADR-0063). The public accessor, `findDatabaseUrl`,
 // reports the URL alone.
-export { findDatabaseConnection } from './db/url.js'
+export { findDatabaseConnection, connectionStringFault } from './db/url.js'
 
 // The process-wide singleton registry a bundler-duplicated module has to
 // share a value through — used by the origin store, the engine face, and the
