@@ -226,7 +226,7 @@ export async function ListView({
   )
 
   const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
-  const currentPage = Number.isInteger(page) && page >= 1 ? page : 1
+  const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0

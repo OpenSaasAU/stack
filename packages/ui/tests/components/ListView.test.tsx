@@ -253,7 +253,7 @@ describe('ListView total (aggregate over the scoped read)', () => {
 })
 
 describe('ListView page clamping', () => {
-  it.each([Number.NaN, 0, -1])(
+  it.each([Number.NaN, 0, -1, 1.5, Number.POSITIVE_INFINITY, 1e22])(
     'renders page 1 for page=%s',
     async (page) => {
       const props = await render(ada, { listKey: 'Post', page })
