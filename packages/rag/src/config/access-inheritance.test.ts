@@ -5,7 +5,7 @@
 // plugin's own MCP search tool are each proven against the real engine, not a
 // double.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import pg from 'pg'
 import { config as defineConfig } from '@opensaas/stack-core'
 import type { FieldAccess, OpenSaasConfig } from '@opensaas/stack-core'
@@ -354,6 +354,36 @@ describe.skipIf(!available)(
         })
 
         expect(result).toMatchObject({ count: 1 })
+      })
+
+      test.each([
+        [1e9, 100],
+        [101, 100],
+        [100, 100],
+        [7, 7],
+      ])('limit %s reaches nearest() as %s', async (asked, expected) => {
+        const tool = customTool(resolvedConfig, 'semantic_search_secret')
+        const context = database.context(admin)
+        const nearest = vi.spyOn(context.db.Secret, 'nearest')
+
+        await tool.handler({ input: { query: 'alice salary 200k', limit: asked }, context })
+
+        expect(nearest).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.anything(),
+          expect.objectContaining({ limit: expected }),
+        )
+      })
+
+      test.each([0, -1, 1.5])('rejects limit %s with a tool-prefixed error', async (asked) => {
+        const tool = customTool(resolvedConfig, 'semantic_search_secret')
+
+        await expect(
+          tool.handler({
+            input: { query: 'alice salary 200k', limit: asked },
+            context: database.context(admin),
+          }),
+        ).rejects.toThrow('semantic_search_secret: "limit" must be a positive whole number')
       })
     })
   },

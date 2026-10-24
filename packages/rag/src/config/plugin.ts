@@ -20,6 +20,8 @@ import {
   MissingEmbeddingWriterError,
 } from './generation-failure.js'
 
+const MAX_SEMANTIC_SEARCH_LIMIT = 100
+
 /** The pgvector extension pack, which the app author never has to name (ADR-0049). */
 const PGVECTOR_EXTENSION = {
   name: 'pgvector',
@@ -487,7 +489,13 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 type: 'object',
                 properties: {
                   query: { type: 'string', description: 'Natural language search query' },
-                  limit: { type: 'number', description: 'Maximum results', default: 10 },
+                  limit: {
+                    type: 'number',
+                    description: `Maximum results, capped at ${MAX_SEMANTIC_SEARCH_LIMIT}`,
+                    default: 10,
+                    minimum: 1,
+                    maximum: MAX_SEMANTIC_SEARCH_LIMIT,
+                  },
                   minScore: {
                     type: 'number',
                     description:
@@ -512,7 +520,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 if (query === undefined) {
                   throw new Error(`${toolName}: "query" is required and must be a string`)
                 }
-                const limit = numberArg(input, 'limit', toolName) ?? 10
+                const requestedLimit = numberArg(input, 'limit', toolName) ?? 10
+                if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+                  throw new Error(`${toolName}: "limit" must be a positive whole number`)
+                }
+                const limit = Math.min(requestedLimit, MAX_SEMANTIC_SEARCH_LIMIT)
                 const minScore = numberArg(input, 'minScore', toolName)
                 const field = stringArg(input, 'field', toolName) ?? defaultField
 
