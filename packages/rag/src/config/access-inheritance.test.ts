@@ -5,7 +5,7 @@
 // plugin's own MCP search tool are each proven against the real engine, not a
 // double.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import pg from 'pg'
 import { config as defineConfig } from '@opensaas/stack-core'
 import type { FieldAccess, OpenSaasConfig } from '@opensaas/stack-core'
@@ -354,6 +354,20 @@ describe.skipIf(!available)(
         })
 
         expect(result).toMatchObject({ count: 1 })
+      })
+
+      test('caps limit at 100 however large the caller asks', async () => {
+        const tool = customTool(resolvedConfig, 'semantic_search_secret')
+        const context = database.context(admin)
+        const nearest = vi.spyOn(context.db.Secret, 'nearest')
+
+        await tool.handler({ input: { query: 'alice salary 200k', limit: 1e9 }, context })
+
+        expect(nearest).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.anything(),
+          expect.objectContaining({ limit: 100 }),
+        )
       })
     })
   },
