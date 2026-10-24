@@ -107,7 +107,7 @@ This gives you a summary of your project without setting up AI tools.
 
 ```bash
 pnpm add @opensaas/stack-core @opensaas/stack-cli
-pnpm add -D prisma@8.0.0-rc.22 typescript tsx
+pnpm add -D prisma@8.0.0-rc.23 typescript tsx
 ```
 
 Add authentication if needed:
