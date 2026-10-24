@@ -157,7 +157,7 @@ export function ImageField({
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => window.open(t.url, '_blank')}
+                            onClick={() => window.open(t.url, '_blank', 'noopener,noreferrer')}
                           >
                             {name} ({t.width}×{t.height})
                           </Button>
@@ -203,7 +203,9 @@ export function ImageField({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => window.open((value as ImageMetadata).url, '_blank')}
+                  onClick={() =>
+                    window.open((value as ImageMetadata).url, '_blank', 'noopener,noreferrer')
+                  }
                 >
                   <Eye className="h-3 w-3" />
                 </Button>
@@ -253,7 +255,7 @@ export function ImageField({
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => window.open(t.url, '_blank')}
+                              onClick={() => window.open(t.url, '_blank', 'noopener,noreferrer')}
                             >
                               {name} ({t.width}×{t.height})
                             </Button>

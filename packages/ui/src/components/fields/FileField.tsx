@@ -115,7 +115,9 @@ export function FileField({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => window.open((value as FileMetadata).url, '_blank')}
+              onClick={() =>
+                window.open((value as FileMetadata).url, '_blank', 'noopener,noreferrer')
+              }
             >
               Download
             </Button>
@@ -153,7 +155,9 @@ export function FileField({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => window.open((value as FileMetadata).url, '_blank')}
+              onClick={() =>
+                window.open((value as FileMetadata).url, '_blank', 'noopener,noreferrer')
+              }
             >
               View
             </Button>

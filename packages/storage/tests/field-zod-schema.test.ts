@@ -306,3 +306,38 @@ describe('image()/file() refuse `db.isNullable: false` in multi-column mode', ()
     })
   }
 })
+
+describe('stored metadata url scheme', () => {
+  const schemaFor = () => objectFor(file({ storage: 'documents' }), 'doc', 'create')
+  const withUrl = (url: string) => ({ doc: { ...validFileMetadata, url } })
+
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,x',
+    'vbscript:x',
+    'JaVaScRiPt:x',
+    '//evil.example/x',
+    '/\\evil.example',
+  ])('refuses %s', (url) => {
+    expect(schemaFor().safeParse(withUrl(url)).success).toBe(false)
+  })
+
+  it.each(['https://cdn.example.com/a.pdf', 'http://localhost/a.pdf', '/uploads/a.pdf'])(
+    'accepts %s',
+    (url) => {
+      expect(schemaFor().safeParse(withUrl(url)).success).toBe(true)
+    },
+  )
+
+  it('refuses a javascript: image transformation url', () => {
+    const result = objectFor(image({ storage: 'images' }), 'photo', 'create').safeParse({
+      photo: {
+        ...validImageMetadata,
+        transformations: {
+          thumb: { url: 'javascript:alert(1)', width: 1, height: 1, size: 1 },
+        },
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+})
