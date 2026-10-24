@@ -25,6 +25,10 @@ export function isActiveMimeType(type: string): boolean {
 export interface FileValidationOptions {
   /** Maximum file size in bytes */
   maxFileSize?: number
+  /**
+   * Maximum pixel count (width × height) of an uploaded image; ignored by `file()`. Defaults to {@link DEFAULT_MAX_IMAGE_PIXELS}.
+   */
+  maxPixels?: number
   /** Accepted MIME types (e.g., ['image/jpeg', 'image/png']) */
   acceptedMimeTypes?: string[]
   /** Accepted file extensions (e.g., ['.jpg', '.png']) */
@@ -36,7 +40,14 @@ export interface FileValidationResult {
   error?: string
 }
 
-const FILE_VALIDATION_OPTION_KEYS = ['maxFileSize', 'acceptedMimeTypes', 'acceptedExtensions']
+export const DEFAULT_MAX_IMAGE_PIXELS = 50_000_000
+
+const FILE_VALIDATION_OPTION_KEYS = [
+  'maxFileSize',
+  'maxPixels',
+  'acceptedMimeTypes',
+  'acceptedExtensions',
+]
 
 /**
  * Checks every member {@link FileValidationOptions} declares, not just the
@@ -56,6 +67,8 @@ export function isFileValidationOptions(value: unknown): value is FileValidation
   return (
     Object.keys(candidate).every((key) => FILE_VALIDATION_OPTION_KEYS.includes(key)) &&
     (candidate.maxFileSize === undefined || isFiniteNumber(candidate.maxFileSize)) &&
+    (candidate.maxPixels === undefined ||
+      (isFiniteNumber(candidate.maxPixels) && candidate.maxPixels > 0)) &&
     (candidate.acceptedMimeTypes === undefined ||
       (Array.isArray(candidate.acceptedMimeTypes) &&
         candidate.acceptedMimeTypes.every((entry) => typeof entry === 'string'))) &&
