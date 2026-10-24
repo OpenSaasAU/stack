@@ -308,8 +308,8 @@ describe('image()/file() refuse `db.isNullable: false` in multi-column mode', ()
 })
 
 describe('stored metadata url scheme', () => {
-  const schemaFor = () => file({ storage: 'documents' }).getZodSchema('doc', 'create')
-  const withUrl = (url: string) => ({ ...validFileMetadata, url })
+  const schemaFor = () => objectFor(file({ storage: 'documents' }), 'doc', 'create')
+  const withUrl = (url: string) => ({ doc: { ...validFileMetadata, url } })
 
   it.each([
     'javascript:alert(1)',
@@ -330,14 +330,14 @@ describe('stored metadata url scheme', () => {
   )
 
   it('refuses a javascript: image transformation url', () => {
-    const result = image({ storage: 'images' })
-      .getZodSchema('photo', 'create')
-      .safeParse({
+    const result = objectFor(image({ storage: 'images' }), 'photo', 'create').safeParse({
+      photo: {
         ...validImageMetadata,
         transformations: {
           thumb: { url: 'javascript:alert(1)', width: 1, height: 1, size: 1 },
         },
-      })
+      },
+    })
     expect(result.success).toBe(false)
   })
 })
