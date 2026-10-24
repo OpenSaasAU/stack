@@ -20,10 +20,16 @@ import {
   type AuthSqlFieldProxy,
   type AuthSqlFunctions,
 } from './surface.js'
-import { applyOrmWhere, sqlWhere, type AuthFieldResolution } from './where.js'
+import { applyOrmWhere, AuthWhereError, sqlWhere, type AuthFieldResolution } from './where.js'
 
 export { AuthModelUnreachableError } from './surface.js'
 export { AuthWhereError } from './where.js'
+
+function requirePredicate(operation: string, model: string, where: readonly unknown[]): void {
+  if (where.length === 0) {
+    throw new AuthWhereError(`${operation} on "${model}" needs at least one where clause.`)
+  }
+}
 
 /**
  * The id capabilities to declare to better-auth's adapter factory, derived
@@ -370,6 +376,7 @@ export function opensaasAuthAdapter(
           },
 
           async findOne({ model, where, select }) {
+            requirePredicate('findOne', model, where)
             const found = await project(narrow(model, where), model, select).first()
             return asAdapterResult(outward(model, found))
           },
@@ -416,6 +423,7 @@ export function opensaasAuthAdapter(
           },
 
           async delete({ model, where }) {
+            requirePredicate('delete', model, where)
             await narrow(model, where).delete()
           },
 
@@ -434,6 +442,7 @@ export function opensaasAuthAdapter(
           },
 
           async consumeOne({ model, where }) {
+            requirePredicate('consumeOne', model, where)
             // The ORM lane lowers a single-row delete to two statements: a SELECT
             // that resolves the identity, then the DELETE. Unbracketed, two
             // racing consumers both resolve the same row and both are answered
