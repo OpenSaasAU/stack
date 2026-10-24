@@ -48,6 +48,14 @@ describe('uploadImage pixel cap', () => {
     ).rejects.toThrow(/exceed the maximum of 50000000 pixels/)
   })
 
+  it('refuses an oversized canvas even with no transformations', async () => {
+    const buffer = pngDeclaring(16000, 16000)
+    const file = new File([buffer], 'big.png', { type: 'image/png' })
+    await expect(uploadImage(config, 'local', { file, buffer })).rejects.toThrow(
+      /exceed the maximum/,
+    )
+  })
+
   it('honours a custom maxPixels', async () => {
     const buffer = pngDeclaring(100, 100)
     const file = new File([buffer], 'a.png', { type: 'image/png' })

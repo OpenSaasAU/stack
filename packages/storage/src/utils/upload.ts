@@ -26,8 +26,7 @@ export interface FileValidationOptions {
   /** Maximum file size in bytes */
   maxFileSize?: number
   /**
-   * Maximum decoded pixel count (width × height) for an image that is
-   * transformed. Defaults to {@link DEFAULT_MAX_IMAGE_PIXELS}.
+   * Maximum pixel count (width × height) of an uploaded image; ignored by `file()`. Defaults to {@link DEFAULT_MAX_IMAGE_PIXELS}.
    */
   maxPixels?: number
   /** Accepted MIME types (e.g., ['image/jpeg', 'image/png']) */
@@ -68,7 +67,8 @@ export function isFileValidationOptions(value: unknown): value is FileValidation
   return (
     Object.keys(candidate).every((key) => FILE_VALIDATION_OPTION_KEYS.includes(key)) &&
     (candidate.maxFileSize === undefined || isFiniteNumber(candidate.maxFileSize)) &&
-    (candidate.maxPixels === undefined || isFiniteNumber(candidate.maxPixels)) &&
+    (candidate.maxPixels === undefined ||
+      (isFiniteNumber(candidate.maxPixels) && candidate.maxPixels > 0)) &&
     (candidate.acceptedMimeTypes === undefined ||
       (Array.isArray(candidate.acceptedMimeTypes) &&
         candidate.acceptedMimeTypes.every((entry) => typeof entry === 'string'))) &&
