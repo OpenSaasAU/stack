@@ -493,6 +493,8 @@ export function ragPlugin(config: RAGConfig): Plugin {
                     type: 'number',
                     description: `Maximum results, capped at ${MAX_SEMANTIC_SEARCH_LIMIT}`,
                     default: 10,
+                    minimum: 1,
+                    maximum: MAX_SEMANTIC_SEARCH_LIMIT,
                   },
                   minScore: {
                     type: 'number',
@@ -518,10 +520,11 @@ export function ragPlugin(config: RAGConfig): Plugin {
                 if (query === undefined) {
                   throw new Error(`${toolName}: "query" is required and must be a string`)
                 }
-                const limit = Math.min(
-                  numberArg(input, 'limit', toolName) ?? 10,
-                  MAX_SEMANTIC_SEARCH_LIMIT,
-                )
+                const requestedLimit = numberArg(input, 'limit', toolName) ?? 10
+                if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+                  throw new Error(`${toolName}: "limit" must be a positive whole number`)
+                }
+                const limit = Math.min(requestedLimit, MAX_SEMANTIC_SEARCH_LIMIT)
                 const minScore = numberArg(input, 'minScore', toolName)
                 const field = stringArg(input, 'field', toolName) ?? defaultField
 
