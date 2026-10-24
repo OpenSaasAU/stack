@@ -89,11 +89,17 @@ describe('feature set enforcement', () => {
       'javascript&colon;alert(1)',
       'javascript&#58;alert(1)',
       'javascript&#x3a;alert(1)',
-      '/a?b=1&c=2',
     ])('refuses %j under allowRelative', (href) => {
       const features = { ...defaultRichTextFeatures, link: { allowRelative: true } }
       expect(accepts(features, linked({ href }))).toBe(false)
     })
+    it.each(['/path', './a', '../a', '?q=1', '#a', '/search?q=a&page=2'])(
+      'accepts %j under allowRelative',
+      (href) => {
+        const features = { ...defaultRichTextFeatures, link: { allowRelative: true } }
+        expect(accepts(features, linked({ href }))).toBe(true)
+      },
+    )
     it('honours a custom protocol list', () => {
       const features = { link: { protocols: ['ftp'] } }
       expect(accepts(features, linked({ href: 'ftp://a.test' }))).toBe(true)

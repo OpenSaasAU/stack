@@ -62,7 +62,7 @@ export function isAllowedHref(href: string, link: LinkFeature): boolean {
   const scheme = /^([^/?#:]*):/.exec(compact)
   if (scheme === null) {
     if (link.allowRelative !== true) return false
-    return !/^(\/\/|\/\\|\\)/.test(compact) && !compact.includes('&')
+    return !/^(\/\/|\/\\|\\)/.test(compact) && !/&(#|[a-z0-9]+;)/i.test(compact)
   }
   const protocols = (link.protocols ?? DEFAULT_LINK_PROTOCOLS).map(normaliseProtocol)
   return protocols.includes(scheme[1].toLowerCase())
