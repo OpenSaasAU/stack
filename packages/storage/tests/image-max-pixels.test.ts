@@ -42,7 +42,7 @@ const config = {
 describe('uploadImage pixel cap', () => {
   it('refuses an oversized canvas before any transformation runs', async () => {
     const buffer = pngDeclaring(16000, 16000)
-    const file = new File([buffer], 'big.png', { type: 'image/png' })
+    const file = new File([new Uint8Array(buffer)], 'big.png', { type: 'image/png' })
     await expect(
       uploadImage(config, 'local', { file, buffer }, { transformations: { t: { width: 10 } } }),
     ).rejects.toThrow(/exceed the maximum of 50000000 pixels/)
@@ -50,7 +50,7 @@ describe('uploadImage pixel cap', () => {
 
   it('refuses an oversized canvas even with no transformations', async () => {
     const buffer = pngDeclaring(16000, 16000)
-    const file = new File([buffer], 'big.png', { type: 'image/png' })
+    const file = new File([new Uint8Array(buffer)], 'big.png', { type: 'image/png' })
     await expect(uploadImage(config, 'local', { file, buffer })).rejects.toThrow(
       /exceed the maximum/,
     )
@@ -58,7 +58,7 @@ describe('uploadImage pixel cap', () => {
 
   it('honours a custom maxPixels', async () => {
     const buffer = pngDeclaring(100, 100)
-    const file = new File([buffer], 'a.png', { type: 'image/png' })
+    const file = new File([new Uint8Array(buffer)], 'a.png', { type: 'image/png' })
     await expect(
       uploadImage(
         config,
