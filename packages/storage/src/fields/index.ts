@@ -28,6 +28,10 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 
+const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/)/i, {
+  message: 'url must be an http(s) URL or an absolute path',
+})
+
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
  *
@@ -546,7 +550,9 @@ export function file<
             )) as FileMetadata
 
             const previous = logicalValue(fieldConfig, fieldKey, item) as
-              FileMetadata | null | undefined
+              | FileMetadata
+              | null
+              | undefined
             pendingFileUploads.set(inputData, fieldKey, {
               uploaded: metadata,
               replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
@@ -570,7 +576,7 @@ export function file<
       const fileMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
-        url: z.string(), // Accept both absolute URLs and relative paths
+        url: storedUrlSchema,
         mimeType: z.string(),
         size: z.number(),
         uploadedAt: z.string(),
@@ -721,7 +727,9 @@ export function image<
             )) as ImageMetadata
 
             const previous = logicalValue(fieldConfig, fieldKey, item) as
-              ImageMetadata | null | undefined
+              | ImageMetadata
+              | null
+              | undefined
             pendingImageUploads.set(inputData, fieldKey, {
               uploaded: metadata,
               replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
@@ -745,7 +753,7 @@ export function image<
       const imageMetadataSchema = z.object({
         filename: z.string(),
         originalFilename: z.string(),
-        url: z.string(), // Accept both absolute URLs and relative paths
+        url: storedUrlSchema,
         mimeType: z.string(),
         size: z.number(),
         width: z.number(),
@@ -757,7 +765,7 @@ export function image<
           .record(
             z.string(),
             z.object({
-              url: z.string(), // Accept both absolute URLs and relative paths
+              url: storedUrlSchema,
               width: z.number(),
               height: z.number(),
               size: z.number(),
