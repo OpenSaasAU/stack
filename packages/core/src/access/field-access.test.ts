@@ -715,6 +715,68 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('userId', 'u1')
   })
 
+  it('refuses a stripped denied edge under both the relation and foreign-key spellings (#1975)', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+        Post: {
+          fields: {
+            title: text(),
+            author: relationship({ ref: 'User.posts', access: { update: () => false } }),
+          },
+        },
+      },
+    }
+    const spellings = [{ author: { connect: { id: 'u1' } } }, { authorId: 'u1' }]
+
+    for (const inputData of spellings) {
+      const messages: string[] = []
+      await filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+        session: null,
+        item: { id: 'post-1' },
+        context: nonSudoContext(),
+        inputData: { title: 'x', ...inputData },
+        listName: 'Post',
+        config,
+      }).catch((error: Error) => messages.push(error.message))
+      expect(messages).toEqual([
+        'Validation failed: Cannot update "author": field-level access denied.',
+      ])
+    }
+  })
+
+  it('ignores an undefined foreign key and lets sudo through (#1975)', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+        Post: {
+          fields: {
+            title: text(),
+            author: relationship({ ref: 'User.posts', access: { update: () => false } }),
+          },
+        },
+      },
+    }
+    const args = { session: null, item: { id: 'post-1' }, listName: 'Post', config }
+
+    await expect(
+      filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+        ...args,
+        context: nonSudoContext(),
+        inputData: { title: 'x', authorId: undefined },
+      }),
+    ).resolves.toEqual({ title: 'x' })
+    await expect(
+      filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+        ...args,
+        context: sudoContext(),
+        inputData: { title: 'x', authorId: 'u1' },
+      }),
+    ).resolves.toEqual({ title: 'x' })
+  })
+
   // ── #568: field-access-denied keys must THROW, not be silently stripped ──────
 
   it('throws when a declared field is denied by field-level access (non-sudo)', async () => {
