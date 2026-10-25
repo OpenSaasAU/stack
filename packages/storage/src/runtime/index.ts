@@ -13,6 +13,7 @@ import {
   resolveEffectiveMimeType,
   withEffectiveExtension,
   isFileValidationOptions,
+  DEFAULT_MAX_IMAGE_PIXELS,
   type FileValidationOptions,
 } from '../utils/upload.js'
 import { deleteQuietly, detectImage, processImageTransformations } from '../utils/image.js'
@@ -192,6 +193,13 @@ export async function uploadImage(
   const contentType = detected.mimeType
   const storedName = withEffectiveExtension(file.name, contentType)
 
+  const maxPixels = options?.validation?.maxPixels ?? DEFAULT_MAX_IMAGE_PIXELS
+  if (detected.width * detected.height > maxPixels) {
+    throw new Error(
+      `Image dimensions ${detected.width}x${detected.height} exceed the maximum of ${maxPixels} pixels`,
+    )
+  }
+
   const provider = createStorageProvider(config, storageProviderName)
 
   const result = await provider.upload(buffer, storedName, {
@@ -335,7 +343,7 @@ function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
   if (validation !== undefined) {
     if (!isFileValidationOptions(validation)) {
       throw new Error(
-        `uploadFile validation options must be { maxFileSize?: number, acceptedMimeTypes?: string[], acceptedExtensions?: string[] }, received ${describeMetadata(validation)}`,
+        `uploadFile validation options must be { maxFileSize?: number, maxPixels?: number, acceptedMimeTypes?: string[], acceptedExtensions?: string[] }, received ${describeMetadata(validation)}`,
       )
     }
     result.validation = validation

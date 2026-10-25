@@ -339,6 +339,7 @@ file({
   storage: 'documents',
   validation: {
     maxFileSize: 10 * 1024 * 1024, // 10MB in bytes
+    maxPixels: 50_000_000, // image() only: width × height cap (default 50 megapixels)
     acceptedMimeTypes: ['application/pdf', 'application/msword'],
     acceptedExtensions: ['.pdf', '.doc', '.docx'],
   },
