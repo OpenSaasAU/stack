@@ -701,7 +701,7 @@ async function handleCrudTool(
     ([candidate]) => pascalToCamel(candidate) === toolKey,
   )
   if (!listEntry) {
-    return createErrorResponse(`Unknown list for tool: ${toolKey}`, id)
+    return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
   }
   const [listKey, listConfig] = listEntry
 

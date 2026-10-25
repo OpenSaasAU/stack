@@ -1633,6 +1633,27 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'an unknown list is refused byte-identically to an unreachable one',
+      async () => {
+        const config = withOverrides()
+        for (const op of ['query', 'create', 'update', 'delete']) {
+          const args = { where: { id: 'x' }, data: {} }
+          const unreachable = await callTool(`list_draft_${op}`, args, config)
+          const unknown = await callTool(`list_nope_${op}`, args, config)
+          expect(unknown.body).toEqual({
+            ...(unreachable.body as Record<string, unknown>),
+            error: {
+              ...(unreachable.body?.error as Record<string, unknown>),
+              message: `Unknown tool: list_nope_${op}`,
+            },
+          })
+          expect(unknown.status).toBe(unreachable.status)
+        }
+      },
+      BOOT,
+    )
+
+    test(
       'a custom tool on a disabled or query-denied list is refused',
       async () => {
         const config = withOverrides()
