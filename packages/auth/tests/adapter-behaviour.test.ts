@@ -14,7 +14,7 @@ import type { DBAdapter } from 'better-auth/adapters'
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
 import { authPlugin } from '../src/config/plugin.js'
 import { getAuthListRegistry } from '../src/lists/index.js'
-import { opensaasAuthAdapter } from '../src/adapter/index.js'
+import { AuthWhereError, opensaasAuthAdapter } from '../src/adapter/index.js'
 import type { AuthConfig, NormalizedAuthConfig } from '../src/config/types.js'
 
 const BOOT = 120_000
@@ -560,4 +560,28 @@ describe('where lowering', () => {
     })
     expect(blocked).toBeNull()
   })
+})
+
+describe('one-row operations refuse an empty where', () => {
+  test.each(['findOne', 'delete', 'consumeOne'] as const)(
+    '%s throws AuthWhereError and changes nothing',
+    async (operation) => {
+      await plain.adapter.create({ model: 'user', data: { email: 'a@example.com', name: 'A' } })
+      await plain.adapter.create({ model: 'user', data: { email: 'b@example.com', name: 'B' } })
+
+      const attempt = (): Promise<unknown> => {
+        switch (operation) {
+          case 'findOne':
+            return plain.adapter.findOne({ model: 'user', where: [] })
+          case 'delete':
+            return plain.adapter.delete({ model: 'user', where: [] })
+          case 'consumeOne':
+            return plain.adapter.consumeOne({ model: 'user', where: [] })
+        }
+      }
+      await expect(attempt()).rejects.toThrow(AuthWhereError)
+
+      expect(await plain.adapter.count({ model: 'user' })).toBe(2)
+    },
+  )
 })
