@@ -18,7 +18,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.18",
-    "next": "^16.3.8",
+    "next": "^16.4.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
