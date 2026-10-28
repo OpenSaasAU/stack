@@ -15,14 +15,14 @@
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.101",
-    "@ai-sdk/react": "^4.0.154",
+    "@ai-sdk/openai": "^4.0.102",
+    "@ai-sdk/react": "^4.0.157",
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-rag": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.18",
     "@prisma/orm-postgres": "8.0.0-rc.18",
-    "ai": "^7.0.150",
+    "ai": "^7.0.153",
     "next": "^16.4.2",
     "openai": "^7.39.0",
     "react": "^19.3.0",
