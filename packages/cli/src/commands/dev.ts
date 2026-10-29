@@ -575,6 +575,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (
       database === undefined &&
       options.yes !== true &&
+      process.env.OPENSAAS_DEV_YES !== '1' &&
       !(await consentToStartupPlan(cwd, bootGeneration))
     ) {
       process.exitCode = 1

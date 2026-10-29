@@ -88,7 +88,7 @@ async function runDevLoop(
   flags: readonly string[] = [],
 ): Promise<DevRun> {
   const childEnv: typeof process.env = { ...process.env, ...env }
-  delete childEnv.OPENSAAS_DEV_YES
+  if (env.OPENSAAS_DEV_YES === undefined) delete childEnv.OPENSAAS_DEV_YES
   for (const name of CONNECTION_VARIABLES) {
     if (env[name] === undefined) delete childEnv[name]
   }
@@ -234,6 +234,23 @@ describe('opensaas dev', () => {
     const accepted = await runDevLoop(projectDir, { DATABASE_URL: escape.url }, ['--yes'])
     expect(accepted.output, accepted.output).toContain('APP_STARTED')
     expect(accepted.exitCode, accepted.output).toBe(0)
+  }, 300_000)
+
+  test('OPENSAAS_DEV_YES=1 accepts the startup plan like --yes', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-escape-envyes-'))
+    const escape = await startDevDatabase({
+      stateFile: path.join(stateDir, 'dev-db.json'),
+      extensions: ['vector'],
+    })
+    escapes.push(escape)
+
+    const projectDir = createProject('escape-env-yes', MARKER_PROBE)
+    const run = await runDevLoop(projectDir, {
+      DATABASE_URL: escape.url,
+      OPENSAAS_DEV_YES: '1',
+    })
+    expect(run.output, run.output).toContain('APP_STARTED')
+    expect(run.exitCode, run.output).toBe(0)
   }, 300_000)
 
   test('a database URL in the project .env is the escape as well', async () => {
