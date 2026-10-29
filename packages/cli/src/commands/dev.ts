@@ -70,6 +70,8 @@ export interface DevCommandOptions {
    * `opensaas dev --`.
    */
   appCommand?: readonly string[]
+  /** Apply the startup plan to a database named by the environment without stopping for consent. */
+  yes?: boolean
 }
 
 function declaredDevDatabaseExtensions(config: OpenSaasConfig): DevDatabaseExtension[] {
@@ -110,6 +112,34 @@ async function reconcile(cwd: string): Promise<boolean> {
     ),
   )
   console.error(chalk.gray('The app was not started; the database is unchanged.\n'))
+  return false
+}
+
+async function consentToStartupPlan(cwd: string, generation: GenerationResult): Promise<boolean> {
+  const refs = snapshotMigrationRefs(cwd)
+  const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
+  restoreMigrationRefs(cwd, refs)
+  if (!planned.ok) {
+    console.error(chalk.red('\nprisma db update could not plan against the database:'))
+    const output = planned.failure.output.trim()
+    if (output.length > 0) console.error(chalk.red(output))
+    console.error(chalk.gray('The app was not started; the database is unchanged.\n'))
+    return false
+  }
+  if (planned.plan.operations.length === 0) return true
+
+  console.log(
+    chalk.yellow(
+      '\nThe database came from the environment and would change, so nothing was applied:\n',
+    ),
+  )
+  for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
+  console.log(chalk.yellow(`\nPlan id: ${planId(planned.plan)}`))
+  console.log(
+    chalk.yellow(
+      '\nThe app was not started. Re-run `opensaas dev --yes` (or set OPENSAAS_DEV_YES=1) to apply this plan.\n',
+    ),
+  )
   return false
 }
 
@@ -541,6 +571,20 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // while it waits must not be mistaken for one already reconciled.
     watchedModules = bootGeneration.resolvedModules
     reconciledModules = snapshotModules(watchedModules)
+
+    if (
+      database === undefined &&
+      options.yes !== true &&
+      process.env.OPENSAAS_DEV_YES !== '1' &&
+      !(await consentToStartupPlan(cwd, bootGeneration))
+    ) {
+      process.exitCode = 1
+      return
+    }
+    if (interrupted) {
+      process.exitCode = 1
+      return
+    }
 
     if (!(await reconcile(cwd)) || interrupted) {
       process.exitCode = 1

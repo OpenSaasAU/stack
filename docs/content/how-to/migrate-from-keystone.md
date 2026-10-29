@@ -240,7 +240,7 @@ DATABASE_URL="$DATABASE_URL" npx prisma db update --dry-run
 
 `opensaas generate` writes the `prisma.config.ts` this command reads, so run it first; the plan prints without touching the database.
 
-For the day-to-day loop, `opensaas dev` does the same job with a shorter feedback cycle: it generates, plans the reconcile, and **stops** on a destructive plan — printing it and leaving both the generated bundle and the database at the previous schema. That printout is the parity check. Apply a plan you have read and accepted with `pnpm db:update --plan <id>`, using the plan id the loop printed, which requires the loop to be running.
+`opensaas dev` is not the parity check for a database you point `DATABASE_URL` at. With the URL in the environment it dry-runs the startup reconcile and **stops** on any planned change, printing the plan and its id and starting nothing; `opensaas dev --yes` (or `OPENSAAS_DEV_YES=1`, for CI) applies it. Read that printout, then re-run with `--yes` once you accept it. Do not point `dev` at a database Keystone is still serving: an accepted plan changes the live schema (including the `DROP DEFAULT` changes above) under it.
 
 There is no `extendPrismaSchema` escape hatch, at either config or field level. What used to need one is now a first-class option: column-level shape on the field's own `db` block (`map`, `isNullable`, `nativeType`), referential actions on a relationship's `db` (`onDelete`, `onUpdate`, `foreignKey`), model-level shape on the list's `db` (`map`, `schema`, `indexes`, `idField`), and extension packs on `db.extensions`. If a live schema needs something outside that set, the migration is the place to reshape the database rather than the generator.
 
@@ -636,7 +636,7 @@ Work through this in order. Each step links to the relevant section above.
 6. **[ ] Set generator parity** — `keystoneCompat`, `timestamps`, and `select` `db.isNullable` / `db.enumName` to match the live schema (§3).
 7. **[ ] (Optional) Relocate output** — set `output.contractModule` / `output.opensaasDir` for coexistence (§11).
 8. **[ ] Generate** — `pnpm opensaas generate`.
-9. **[ ] Verify the diff** — `prisma db update --dry-run`, or the plan `opensaas dev` prints, shows **no destructive changes** (§3).
+9. **[ ] Verify the diff** — `prisma db update --dry-run`, or the plan `opensaas dev` prints when it stops, shows **no destructive changes** (§3).
 10. **[ ] Migrate images/files** — set `db.columns: 'keystone'` on `image()` / `file()` (§8).
 11. **[ ] Adopt auth** — `authPlugin` + `adoptBetterAuthTables()` if Better Auth is already live (§9).
 12. **[ ] Replace data access** — run the `migrate-context-calls` skill to convert `context.graphql.run` / `context.query.*` to composed `context.db.*` reads (§5).

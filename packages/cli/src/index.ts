@@ -45,8 +45,12 @@ program
   .command('dev')
   .description('Start the dev database, generate, reconcile the schema and run the app')
   .argument('[command...]', 'App command to run instead of `next dev`, after `--`')
-  .action(async (command: string[]) => {
-    await devCommand({ appCommand: command })
+  .option(
+    '--yes',
+    'Apply the startup schema plan to a database named by DATABASE_URL without stopping',
+  )
+  .action(async (command: string[], options: { yes?: boolean }) => {
+    await devCommand({ appCommand: command, yes: options.yes })
   })
 
 program.addCommand(createDbCommand())
