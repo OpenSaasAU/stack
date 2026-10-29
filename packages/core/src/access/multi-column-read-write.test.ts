@@ -227,6 +227,33 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     expect(result).toEqual({ title: 'no media in payload' })
     expect('m_url' in result).toBe(false)
   })
+
+  it('treats an explicit undefined as omitted: no part column is written', async () => {
+    const inputData = { media: undefined, title: 't2' }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
+      { ...fields, title: { type: 'text' } as any },
+      'update',
+      makeContext(),
+    )
+    expect(result).toEqual({ title: 't2' })
+    expect('media' in result).toBe(false)
+    expect('m_url' in result).toBe(false)
+  })
+
+  it('treats an explicit undefined as omitted on create too', async () => {
+    const inputData = { media: undefined }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      fields,
+      'create',
+      makeContext(),
+    )
+    expect(result).toEqual({})
+  })
 })
 
 /**
