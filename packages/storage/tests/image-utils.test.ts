@@ -346,12 +346,12 @@ describe('Image Utilities', () => {
         upload: vi
           .fn()
           .mockResolvedValueOnce({
-            filename: 'photo.jpg-thumbnail.webp',
+            filename: 'photo-thumbnail.webp',
             url: 'https://example.com/photo-thumbnail.webp',
             size: 5000,
           })
           .mockResolvedValueOnce({
-            filename: 'photo.jpg-medium.jpeg',
+            filename: 'photo-medium.jpg',
             url: 'https://example.com/photo-medium.jpeg',
             size: 15000,
           }),
@@ -400,14 +400,14 @@ describe('Image Utilities', () => {
           width: 100,
           height: 100,
           size: 5000,
-          filename: 'photo.jpg-thumbnail.webp',
+          filename: 'photo-thumbnail.webp',
         },
         medium: {
           url: 'https://example.com/photo-medium.jpeg',
           width: 500,
           height: 500,
           size: 15000,
-          filename: 'photo.jpg-medium.jpeg',
+          filename: 'photo-medium.jpg',
         },
       })
 
@@ -415,13 +415,13 @@ describe('Image Utilities', () => {
       expect(mockProvider.upload).toHaveBeenNthCalledWith(
         1,
         expect.any(Buffer),
-        'photo.jpg-thumbnail.webp',
+        'photo-thumbnail.webp',
         { contentType: 'image/webp' },
       )
       expect(mockProvider.upload).toHaveBeenNthCalledWith(
         2,
         expect.any(Buffer),
-        'photo.jpg-medium.jpeg',
+        'photo-medium.jpg',
         { contentType: 'image/jpeg' },
       )
     })
@@ -435,7 +435,7 @@ describe('Image Utilities', () => {
 
       const mockProvider: StorageProvider = {
         upload: vi.fn().mockResolvedValue({
-          filename: 'photo.jpg-resized',
+          filename: 'photo-resized.jpg',
           url: 'https://example.com/photo-resized',
           size: 10000,
         }),
@@ -464,7 +464,7 @@ describe('Image Utilities', () => {
         'image/jpeg',
       )
 
-      expect(mockProvider.upload).toHaveBeenCalledWith(expect.any(Buffer), 'photo.jpg-resized', {
+      expect(mockProvider.upload).toHaveBeenCalledWith(expect.any(Buffer), 'photo-resized.jpg', {
         contentType: 'image/jpeg',
       })
       expect(results.resized.width).toBe(300)

@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { withEffectiveExtension } from './upload.js'
 import type {
   ImageTransformationConfig,
   ImageTransformationResult,
@@ -116,20 +117,12 @@ export async function processImageTransformations(
 
       const { width, height } = await getImageDimensions(transformedBuffer)
 
-      const ext = config.format ? `.${config.format}` : ''
-      const transformedFilename = `${originalFilename}-${name}${ext}`
+      const variantContentType = config.format ? `image/${config.format}` : contentType
+      const stem = originalFilename.replace(/\.[^.]*$/, '')
+      const transformedFilename = withEffectiveExtension(`${stem}-${name}`, variantContentType)
 
       const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
-        contentType:
-          config.format === 'jpeg'
-            ? 'image/jpeg'
-            : config.format === 'png'
-              ? 'image/png'
-              : config.format === 'webp'
-                ? 'image/webp'
-                : config.format === 'avif'
-                  ? 'image/avif'
-                  : contentType,
+        contentType: variantContentType,
       })
 
       uploadedFilenames.push(uploadResult.filename)
