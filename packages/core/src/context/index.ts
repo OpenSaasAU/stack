@@ -4,7 +4,6 @@ import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
-import { UniqueConstraintViolation } from '../lib/database-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
@@ -266,13 +265,6 @@ function assertIdentityWhere(
         `(\`where(…).first()\`) and write it by its \`id\`.`,
     ],
     {},
-  )
-}
-
-function isSingletonExistsError(error: unknown): boolean {
-  return (
-    error instanceof ValidationError &&
-    error.errors.some((m) => m.includes('singleton list with an existing record'))
   )
 }
 
@@ -1729,9 +1721,9 @@ function createGet(
     try {
       await createFn({ data: {} })
     } catch (error) {
-      if (!(error instanceof UniqueConstraintViolation) && !isSingletonExistsError(error)) {
-        throw error
-      }
+      const raced = await scoped.first().catch(() => null)
+      if (raced) return raced
+      throw error
     }
     return await scoped.first()
   }
