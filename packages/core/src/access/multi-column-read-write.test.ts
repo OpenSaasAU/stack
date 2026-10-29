@@ -242,6 +242,18 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     expect('media' in result).toBe(false)
     expect('m_url' in result).toBe(false)
   })
+
+  it('treats an explicit undefined as omitted on create too', async () => {
+    const inputData = { media: undefined }
+    const result = await splitMultiColumnFields(
+      inputData,
+      { ...inputData },
+      fields,
+      'create',
+      makeContext(),
+    )
+    expect(result).toEqual({})
+  })
 })
 
 /**

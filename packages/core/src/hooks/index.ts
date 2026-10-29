@@ -354,8 +354,7 @@ export async function executeFieldBeforeTransactionHooks(
  *    so hooks can compensate.
  */
 export type TransactionOutcome =
-  | { status: 'committed'; item: Record<string, unknown> }
-  | { status: 'rolled-back'; error: unknown }
+  { status: 'committed'; item: Record<string, unknown> } | { status: 'rolled-back'; error: unknown }
 
 /**
  * Execute field-level afterTransaction hooks (#590 / ADR-0010).
@@ -535,11 +534,6 @@ export async function splitMultiColumnFields(
     if (!(fieldKey in result)) continue
 
     const resolvedValue = result[fieldKey]
-    if (resolvedValue === undefined) {
-      const { [fieldKey]: _omitted, ...rest } = result
-      result = rest
-      continue
-    }
 
     const callerSupplied = inputData[fieldKey] !== undefined
     const canWrite =
@@ -559,6 +553,8 @@ export async function splitMultiColumnFields(
     const next = { ...result }
     delete next[fieldKey]
     result = next
+
+    if (resolvedValue === undefined) continue
 
     const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
     result = { ...result, ...columns }
