@@ -1,5 +1,4 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
-import { cloneDefault, isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
@@ -274,24 +273,6 @@ function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
   if (typeof listConfig.isSingleton === 'boolean') return true
   return listConfig.isSingleton.autoCreate !== false
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
-  const data: Record<string, unknown> = {}
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (fieldConfig.virtual) continue
-
-    if (fieldKey === 'id') continue
-
-    if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
-      if (isNowSentinel(fieldConfig.defaultValue)) continue
-      data[fieldKey] = cloneDefault(fieldConfig.defaultValue)
-    }
-  }
-
-  return data
 }
 
 /**
@@ -1737,7 +1718,13 @@ function createGet(
       if (readable !== true) return null
     }
 
-    await createFn({ data: getDefaultData(listConfig) })
+    try {
+      await createFn({ data: {} })
+    } catch (error) {
+      const raced = await scoped.first().catch(() => null)
+      if (raced) return raced
+      throw error
+    }
     return await scoped.first()
   }
 }
