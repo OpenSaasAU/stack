@@ -82,14 +82,18 @@ function createProject(name: string, probe: string): string {
  * Run `opensaas dev -- node probe.mjs` to completion. The loop stops when its
  * app child exits, so the probe is both the app and the end of the run.
  */
-async function runDevLoop(projectDir: string, env: typeof process.env = {}): Promise<DevRun> {
+async function runDevLoop(
+  projectDir: string,
+  env: typeof process.env = {},
+  flags: readonly string[] = [],
+): Promise<DevRun> {
   const childEnv: typeof process.env = { ...process.env, ...env }
   for (const name of CONNECTION_VARIABLES) {
     if (env[name] === undefined) delete childEnv[name]
   }
 
   return await new Promise<DevRun>((resolve, reject) => {
-    const child = spawn(process.execPath, [cliEntry, 'dev', '--', 'node', 'probe.mjs'], {
+    const child = spawn(process.execPath, [cliEntry, 'dev', ...flags, '--', 'node', 'probe.mjs'], {
       cwd: projectDir,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: childEnv,
@@ -198,7 +202,7 @@ describe('opensaas dev', () => {
     escapes.push(escape)
 
     const projectDir = createProject('escape', ROW_PROBE)
-    const run = await runDevLoop(projectDir, { DATABASE_URL: escape.url })
+    const run = await runDevLoop(projectDir, { DATABASE_URL: escape.url }, ['--yes'])
 
     expect(run.output, run.output).toContain('PROVENANCE env')
     expect(run.output, run.output).toContain(`INJECTED_DATABASE_URL ${escape.url}`)
@@ -207,6 +211,28 @@ describe('opensaas dev', () => {
 
     expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db'))).toBe(false)
     expect(fs.existsSync(path.join(projectDir, '.opensaas', 'dev-db.json'))).toBe(false)
+  }, 300_000)
+
+  test('a database URL in the environment with a pending change stops at the plan without applying it', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-escape-consent-'))
+    const escape = await startDevDatabase({
+      stateFile: path.join(stateDir, 'dev-db.json'),
+      extensions: ['vector'],
+    })
+    escapes.push(escape)
+
+    const projectDir = createProject('escape-consent', MARKER_PROBE)
+    const run = await runDevLoop(projectDir, { DATABASE_URL: escape.url })
+
+    expect(run.output, run.output).toContain('Plan id:')
+    expect(run.output, run.output).toContain('opensaas dev --yes')
+    expect(run.output, run.output).not.toContain('APP_STARTED')
+    expect(fs.existsSync(path.join(projectDir, 'app-started'))).toBe(false)
+    expect(run.exitCode, run.output).not.toBe(0)
+
+    const accepted = await runDevLoop(projectDir, { DATABASE_URL: escape.url }, ['--yes'])
+    expect(accepted.output, accepted.output).toContain('APP_STARTED')
+    expect(accepted.exitCode, accepted.output).toBe(0)
   }, 300_000)
 
   test('a database URL in the project .env is the escape as well', async () => {
@@ -220,7 +246,7 @@ describe('opensaas dev', () => {
     const projectDir = createProject('escape-dotenv', ROW_PROBE)
     fs.writeFileSync(path.join(projectDir, '.env'), `DATABASE_URL=${escape.url}\n`, 'utf-8')
 
-    const run = await runDevLoop(projectDir)
+    const run = await runDevLoop(projectDir, {}, ['--yes'])
 
     expect(run.output, run.output).toContain('PROVENANCE env')
     expect(run.output, run.output).toContain('ROWS 1: read by the app')
