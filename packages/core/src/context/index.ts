@@ -1,10 +1,10 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
-import { cloneDefault, isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import { UniqueConstraintViolation } from '../lib/database-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
@@ -269,29 +269,18 @@ function assertIdentityWhere(
   )
 }
 
+function isSingletonExistsError(error: unknown): boolean {
+  return (
+    error instanceof ValidationError &&
+    error.errors.some((m) => m.includes('singleton list with an existing record'))
+  )
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
   if (typeof listConfig.isSingleton === 'boolean') return true
   return listConfig.isSingleton.autoCreate !== false
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
-  const data: Record<string, unknown> = {}
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (fieldConfig.virtual) continue
-
-    if (fieldKey === 'id') continue
-
-    if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
-      if (isNowSentinel(fieldConfig.defaultValue)) continue
-      data[fieldKey] = cloneDefault(fieldConfig.defaultValue)
-    }
-  }
-
-  return data
 }
 
 /**
@@ -1737,7 +1726,13 @@ function createGet(
       if (readable !== true) return null
     }
 
-    await createFn({ data: getDefaultData(listConfig) })
+    try {
+      await createFn({ data: {} })
+    } catch (error) {
+      if (!(error instanceof UniqueConstraintViolation) && !isSingletonExistsError(error)) {
+        throw error
+      }
+    }
     return await scoped.first()
   }
 }

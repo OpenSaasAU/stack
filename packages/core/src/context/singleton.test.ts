@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { AccessControl } from '../access/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { integer, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import { getContext } from './index.js'
@@ -288,6 +288,88 @@ describe('a singleton list', () => {
 
         expect(await contextFor(excluding).db.Settings.get?.()).toBeNull()
         expect(await contextFor((): boolean => false).db.Settings.get?.()).toBeNull()
+      },
+      BOOT,
+    )
+  })
+
+  describe("get()'s auto-create against a defaulted field whose create is denied (#1868)", () => {
+    const deny = (): boolean => false
+
+    const defaultedConfig = (): OpenSaasConfig => ({
+      db: { provider: 'postgresql' },
+      lists: {
+        Settings: {
+          isSingleton: true,
+          fields: {
+            siteName: text(),
+            denied: integer({
+              defaultValue: 3,
+              access: { create: deny, allowCreateDefault: true },
+            }),
+            hooked: integer({ defaultValue: 4, access: { write: 'hooks' } }),
+          },
+          access: { operation: { query: () => true, create: () => true } },
+        },
+      },
+    })
+
+    let defaulted: TestContext
+
+    beforeAll(async () => {
+      defaulted = await createTestContext(defaultedConfig(), null)
+    }, BOOT)
+
+    afterAll(async () => {
+      await defaulted?.close()
+    })
+
+    beforeEach(async () => {
+      await defaulted.truncate()
+    })
+
+    test(
+      'an empty singleton auto-creates on get() for a non-sudo session',
+      async () => {
+        expect(await defaulted.context.db.Settings.get?.()).toMatchObject({
+          id: 1,
+          denied: 3,
+          hooked: 4,
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'an empty singleton auto-creates on get() under sudo()',
+      async () => {
+        expect(await defaulted.context.sudo().db.Settings.get?.()).toMatchObject({
+          id: 1,
+          denied: 3,
+          hooked: 4,
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'an explicit caller write of a denied field is still refused',
+      async () => {
+        await expect(
+          defaulted.context.db.Settings.create({ data: { siteName: 'x', denied: 5 } }),
+        ).rejects.toThrow(/field-level access denied/)
+      },
+      BOOT,
+    )
+
+    test(
+      'concurrent first get() calls all resolve to the one row',
+      async () => {
+        const answers = await Promise.all(
+          [1, 2, 3].map(() => defaulted.context.db.Settings.get?.()),
+        )
+
+        for (const answer of answers) expect(answer).toMatchObject({ id: 1 })
       },
       BOOT,
     )
