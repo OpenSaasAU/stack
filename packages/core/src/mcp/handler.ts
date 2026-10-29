@@ -56,12 +56,7 @@ function toContextSession(session: McpSession): ContextSession {
   const cleaned: ContextSession = { userId }
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined || UNSAFE_SESSION_KEYS.has(key)) continue
-    Object.defineProperty(cleaned, key, {
-      value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    })
+    cleaned[key] = value
   }
   return cleaned
 }

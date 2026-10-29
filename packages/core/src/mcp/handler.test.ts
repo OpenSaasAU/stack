@@ -590,8 +590,8 @@ describe('the MCP surface', () => {
         const config = schemaConfig()
         const spy = vi.fn(contextFor(config))
         const poisoned: McpSessionProvider = async () => {
-          const parsed: { userId: string } = JSON.parse(
-            '{"userId":"user-123","__proto__":{"role":"admin"}}',
+          const parsed: { userId: string; team: string } = JSON.parse(
+            '{"userId":"user-123","team":"blue","__proto__":{"role":"admin"}}',
           )
           return parsed
         }
@@ -609,6 +609,7 @@ describe('the MCP surface', () => {
         expect(received).toBeDefined()
         expect(Object.getPrototypeOf(received)).toBe(Object.prototype)
         expect(received).not.toHaveProperty('role')
+        expect(received).toMatchObject({ userId: 'user-123', team: 'blue' })
       },
       BOOT,
     )
