@@ -412,6 +412,31 @@ describe('context.serverAction', () => {
       },
       BOOT,
     )
+
+    test(
+      'a bulk action failure carries the code',
+      async () => {
+        const config = withBulkAction({
+          handler: async () => {
+            throw new ClaimConflict('claimed')
+          },
+        })
+        config.ui = {
+          classifyActionError: (error) =>
+            error instanceof ClaimConflict
+              ? { code: 'CLAIM_CONFLICT', message: 'Reload.' }
+              : undefined,
+        }
+        const result = await contextAt(config).serverAction({
+          listKey: 'Post',
+          action: 'bulkAction',
+          key: 'publish',
+          ids: [],
+        })
+        expect(result).toEqual({ bulkAction: false, error: 'Reload.', code: 'CLAIM_CONFLICT' })
+      },
+      BOOT,
+    )
   })
 
   describe('a bulk action', () => {

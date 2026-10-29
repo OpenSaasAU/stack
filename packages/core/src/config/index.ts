@@ -158,6 +158,7 @@ export type {
   ListIndexFieldRef,
   SessionConfig,
   UIConfig,
+  ActionErrorClassification,
   ListUIConfig,
   ListViewUIConfig,
   BulkAction,
