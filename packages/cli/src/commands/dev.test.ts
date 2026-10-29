@@ -249,7 +249,7 @@ describe('devCommand', () => {
     })
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
 
-    await startLoop({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'], yes: true })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(spawned[0]?.env.DATABASE_URL).toBe('postgres://someone@example.test:5432/inherited')
@@ -265,7 +265,7 @@ describe('devCommand', () => {
       return url === undefined || url.length === 0 ? undefined : { url, provenance: 'env' as const }
     })
 
-    await startLoop({ appCommand: ['node', 'server.mjs'] })
+    await startLoop({ appCommand: ['node', 'server.mjs'], yes: true })
 
     expect(startDevDatabase).not.toHaveBeenCalled()
     expect(stop).not.toHaveBeenCalled()
