@@ -119,7 +119,10 @@ export async function processImageTransformations(
 
       const variantContentType = config.format ? `image/${config.format}` : contentType
       const stem = originalFilename.replace(/\.[^.]*$/, '')
-      const transformedFilename = withEffectiveExtension(`${stem}-${name}`, variantContentType)
+      const transformedFilename = withEffectiveExtension(
+        `${stem}-${name}`.replaceAll('.', '_'),
+        variantContentType,
+      )
 
       const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
         contentType: variantContentType,

@@ -73,4 +73,9 @@ describe('uploadImage: variant file extensions', () => {
     await uploadWith({ thumb: { width: 1, height: 1, format: 'webp' } })
     expect(uploaded[1]).toMatch(/-thumb\.webp$/)
   })
+
+  it('keeps variants distinct when the variant name contains a dot', async () => {
+    await uploadWith({ thumb: { width: 2, height: 2 }, 'thumb.2x': { width: 1, height: 1 } })
+    expect(new Set(uploaded).size).toBe(3)
+  })
 })
