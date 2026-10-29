@@ -613,7 +613,16 @@ function clientFailure(
   listKey: string,
   action: string,
   options: { shownListKey?: string; genericMessage?: string } = {},
-): { error: string; fieldErrors?: Record<string, string> } {
+): { error: string; fieldErrors?: Record<string, string>; code?: string } {
+  const classifier = config.ui?.classifyActionError
+  if (classifier) {
+    try {
+      const classified = classifier(error)
+      if (classified) return { error: classified.message, code: classified.code }
+    } catch (classifierError) {
+      console.error('classifyActionError threw:', classifierError)
+    }
+  }
   const normalized = databaseErrorMessage(error, config)
   if (!isClientSafeError(normalized)) {
     console.error(`Action "${action}" on list "${listKey}" failed:`, error)
@@ -810,7 +819,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
-    | { success: false; error: string; fieldErrors?: Record<string, string> }
+    | { success: false; error: string; fieldErrors?: Record<string, string>; code?: string }
     // The distinct shapes below (never `success`) mirror the ServerActionProps
     // variants above — see their comments for the redirect-on-`success`
     // footgun each one avoids.

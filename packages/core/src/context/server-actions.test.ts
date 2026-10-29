@@ -327,6 +327,93 @@ describe('context.serverAction', () => {
     )
   })
 
+  describe('ui.classifyActionError', () => {
+    class ClaimConflict extends Error {}
+
+    function classified(
+      classify: NonNullable<NonNullable<OpenSaasConfig['ui']>['classifyActionError']>,
+      hook: () => never,
+    ): OpenSaasConfig {
+      const config = schemaConfig()
+      config.ui = { classifyActionError: classify }
+      config.lists.Post.hooks = { beforeOperation: hook }
+      return config
+    }
+
+    const create = { listKey: 'Post', action: 'create', data: { title: 'x' } } as const
+
+    test(
+      'a mapped hook error resolves with its code and message',
+      async () => {
+        const result = await contextAt(
+          classified(
+            (error) =>
+              error instanceof ClaimConflict
+                ? { code: 'CLAIM_CONFLICT', message: 'Reload and try again.' }
+                : undefined,
+            () => {
+              throw new ClaimConflict('claimed')
+            },
+          ),
+        ).serverAction(create)
+
+        expect(result).toEqual({
+          success: false,
+          error: 'Reload and try again.',
+          code: 'CLAIM_CONFLICT',
+        })
+      },
+      BOOT,
+    )
+
+    test(
+      'undefined falls through to the default mapping',
+      async () => {
+        const result = await contextAt(
+          classified(
+            () => undefined,
+            () => {
+              throw new ValidationError(['Title is bad'], { title: 'Title is bad' })
+            },
+          ),
+        ).serverAction(create)
+
+        expect(result).toMatchObject({ success: false, fieldErrors: { title: 'Title is bad' } })
+        expect(result).not.toHaveProperty('code')
+      },
+      BOOT,
+    )
+
+    test(
+      'a throwing classifier is logged and the default mapping applies',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const result = await contextAt(
+            classified(
+              () => {
+                throw new Error('classifier bug')
+              },
+              () => {
+                throw new Error('INTERNAL sk-live-123')
+              },
+            ),
+          ).serverAction(create)
+
+          expect(result).toMatchObject({
+            success: false,
+            error: 'Create on "Post" failed due to an internal error.',
+          })
+          expect(result).not.toHaveProperty('code')
+          expect(logged).toHaveBeenCalledWith('classifyActionError threw:', expect.any(Error))
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+  })
+
   describe('a bulk action', () => {
     async function seedPosts(): Promise<string[]> {
       const first = await harness.context.db.Post.create({ data: { title: 'a' } })

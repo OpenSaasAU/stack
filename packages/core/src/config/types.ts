@@ -3013,9 +3013,33 @@ export type ThemeConfig = {
   shadows?: ThemeShadows
 }
 
+export type ActionErrorClassification = { code: string; message: string }
+
 export type UIConfig = {
   basePath?: string
   theme?: ThemeConfig
+  /**
+   * Maps an error thrown during a server action to a typed failure, applied
+   * before the stack's default mapping. When it returns a value, the action
+   * resolves `{ success: false, error: message, code }`. Returning `undefined`,
+   * or throwing (the throw is logged, never surfaced), falls through to the
+   * default mapping.
+   *
+   * @example
+   * ```typescript
+   * config({
+   *   db: { provider: 'postgresql' },
+   *   lists: {},
+   *   ui: {
+   *     classifyActionError: (error) =>
+   *       error instanceof ClaimConflict
+   *         ? { code: 'CLAIM_CONFLICT', message: 'Reload and try again.' }
+   *         : undefined,
+   *   },
+   * })
+   * ```
+   */
+  classifyActionError?: (error: unknown) => ActionErrorClassification | undefined
 }
 
 /**
