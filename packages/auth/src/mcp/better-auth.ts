@@ -34,6 +34,8 @@ function verificationOptions(options: BetterAuthMcpOptions): McpProtectedRequest
 
 const REGISTERED_CLAIMS = ['iss', 'aud', 'nbf', 'iat', 'jti', 'azp', 'client_id', 'sid'] as const
 
+const UNSAFE_CLAIMS = ['__proto__', 'constructor', 'prototype'] as const
+
 function claimsToSession(
   claims: { sub?: string; scope?: unknown; exp?: number; [claim: string]: unknown },
   req: Request,
@@ -42,7 +44,9 @@ function claimsToSession(
   if (claims.sub === claims.client_id || claims.sub === claims.azp) return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
   for (const claim of REGISTERED_CLAIMS) delete customClaims[claim]
-  for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId']) delete customClaims[claim]
+  for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId', ...UNSAFE_CLAIMS]) {
+    delete customClaims[claim]
+  }
   const session: McpSession = { ...customClaims, userId: sub }
   if (typeof claims.scope === 'string') {
     session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')

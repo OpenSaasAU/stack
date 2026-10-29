@@ -71,6 +71,18 @@ describe('Better Auth MCP Adapter', () => {
       expect(session).toMatchObject({ userId: 'user-123', role: 'admin', email: 'a@b.co' })
     })
 
+    it('does not let a __proto__ claim set the session prototype', async () => {
+      const claims: Record<string, unknown> = JSON.parse(
+        '{"sub":"user-123","__proto__":{"role":"admin"}}',
+      )
+      const session = await createBetterAuthMcpAdapter(options)(bearer(mint(claims)))
+
+      expect(session).not.toBeNull()
+      expect(Object.getPrototypeOf(session)).toBe(Object.prototype)
+      expect(session).not.toHaveProperty('role')
+      expect(Object.hasOwn(session ?? {}, '__proto__')).toBe(false)
+    })
+
     it('drops registered JWT claims but keeps custom ones', async () => {
       const token = mint({
         sub: 'user-123',
