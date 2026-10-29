@@ -6,7 +6,12 @@ import {
   registerStorageProvider,
   resetStorageProviderRegistry,
 } from '../src/runtime/index.js'
-import type { StorageProvider, UploadResult, BaseStorageConfig } from '../src/config/types.js'
+import type {
+  StorageProvider,
+  UploadResult,
+  BaseStorageConfig,
+  ImageTransformationConfig,
+} from '../src/config/types.js'
 
 interface RecordingStorageConfig extends BaseStorageConfig {
   type: 'recording'
@@ -37,7 +42,7 @@ const config = {
   storage: { recording: { type: 'recording' } as RecordingStorageConfig },
 } as unknown as OpenSaasConfig
 
-async function uploadWith(transformations: Parameters<typeof uploadImage>[3]['transformations']) {
+async function uploadWith(transformations: Record<string, ImageTransformationConfig>) {
   const bytes = await sharp({
     create: { width: 4, height: 4, channels: 3, background: '#fff' },
   })
