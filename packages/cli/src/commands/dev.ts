@@ -136,7 +136,9 @@ async function consentToStartupPlan(cwd: string, generation: GenerationResult): 
   for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
   console.log(chalk.yellow(`\nPlan id: ${planId(planned.plan)}`))
   console.log(
-    chalk.yellow('\nThe app was not started. Re-run `opensaas dev --yes` to apply this plan.\n'),
+    chalk.yellow(
+      '\nThe app was not started. Re-run `opensaas dev --yes` (or set OPENSAAS_DEV_YES=1) to apply this plan.\n',
+    ),
   )
   return false
 }
@@ -575,6 +577,10 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       options.yes !== true &&
       !(await consentToStartupPlan(cwd, bootGeneration))
     ) {
+      process.exitCode = 1
+      return
+    }
+    if (interrupted) {
       process.exitCode = 1
       return
     }

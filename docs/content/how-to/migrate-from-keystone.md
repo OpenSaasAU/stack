@@ -240,7 +240,7 @@ DATABASE_URL="$DATABASE_URL" npx prisma db update --dry-run
 
 `opensaas generate` writes the `prisma.config.ts` this command reads, so run it first; the plan prints without touching the database.
 
-`opensaas dev` is not the parity check for a database you point `DATABASE_URL` at. With the URL in the environment it dry-runs the startup reconcile and **stops** on any planned change, printing the plan and its id and starting nothing; `opensaas dev --yes` applies it. Read that printout, then re-run with `--yes` once you accept it. Do not point `dev` at a database Keystone is still serving: an accepted plan changes the live schema (including the `DROP DEFAULT` changes above) under it.
+`opensaas dev` is not the parity check for a database you point `DATABASE_URL` at. With the URL in the environment it dry-runs the startup reconcile and **stops** on any planned change, printing the plan and its id and starting nothing; `opensaas dev --yes` (or `OPENSAAS_DEV_YES=1`, for CI) applies it. Read that printout, then re-run with `--yes` once you accept it. Do not point `dev` at a database Keystone is still serving: an accepted plan changes the live schema (including the `DROP DEFAULT` changes above) under it.
 
 There is no `extendPrismaSchema` escape hatch, at either config or field level. What used to need one is now a first-class option: column-level shape on the field's own `db` block (`map`, `isNullable`, `nativeType`), referential actions on a relationship's `db` (`onDelete`, `onUpdate`, `foreignKey`), model-level shape on the list's `db` (`map`, `schema`, `indexes`, `idField`), and extension packs on `db.extensions`. If a live schema needs something outside that set, the migration is the place to reshape the database rather than the generator.
 

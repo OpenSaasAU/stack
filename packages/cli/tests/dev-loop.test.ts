@@ -88,6 +88,7 @@ async function runDevLoop(
   flags: readonly string[] = [],
 ): Promise<DevRun> {
   const childEnv: typeof process.env = { ...process.env, ...env }
+  delete childEnv.OPENSAAS_DEV_YES
   for (const name of CONNECTION_VARIABLES) {
     if (env[name] === undefined) delete childEnv[name]
   }

@@ -18,6 +18,7 @@ jobs:
     # the cache is shared.
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     steps:
       - name: Checkout code
@@ -214,6 +215,7 @@ jobs:
 
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     steps:
       - name: Checkout code
@@ -247,6 +249,7 @@ jobs:
 
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     # Pinned by the same digest as the `unit-tests` job's; bump both together.
     services:
@@ -346,6 +349,7 @@ jobs:
     # `test:coverage` ran on the container beside it.
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     # The real Postgres the test harness runs against (ADR-0057's
     # `DATABASE_URL` escape, #1143). pgvector's image rather than the plain
@@ -438,6 +442,7 @@ jobs:
     # installs or pins it.
     env:
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     # Pinned by the same digest as the `unit-tests` job's; bump both together.
     services:
@@ -495,12 +500,14 @@ jobs:
         run: turbo run test --filter=./examples/blog
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/blog_example'
+          OPENSAAS_DEV_YES: '1'
 
       - name: Run the mcp-demo tool suite
         if: ${{ !cancelled() && steps.regenerate_mcp_demo.outcome == 'success' }}
         run: turbo run test --filter=./examples/mcp-demo
         env:
           DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/mcp_demo_example'
+          OPENSAAS_DEV_YES: '1'
           BETTER_AUTH_SECRET: 'secret-for-testing-in-github-actions-with-numbers1234'
           BETTER_AUTH_URL: 'http://localhost:3000'
           NEXT_PUBLIC_APP_URL: 'http://localhost:3000'
@@ -525,6 +532,7 @@ jobs:
       # password (actions/runner-images' Windows readme); nothing here
       # resets it, and the port is the standard 5432 regardless of version.
       DATABASE_URL: 'postgres://postgres:root@localhost:5432/postgres'
+      OPENSAAS_DEV_YES: '1'
 
     steps:
       - name: Checkout code
@@ -589,6 +597,7 @@ jobs:
       # The lookup treats an empty variable as absent, so the dev-database leg
       # still starts the sidecar.
       DATABASE_URL: ${{ matrix.database_url }}
+      OPENSAAS_DEV_YES: '1'
 
     # Pinned by the same digest as the `unit-tests` job's; bump both together.
     services:
@@ -713,6 +722,7 @@ jobs:
         run: pnpm --filter opensaas-rag-ollama-example test:e2e
         env:
           DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgres://postgres:postgres@localhost:5432/rag_ollama_example' || '' }}
+          OPENSAAS_DEV_YES: '1'
 
       - name: Run E2E tests
         run: pnpm test:e2e
