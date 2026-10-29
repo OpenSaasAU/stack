@@ -594,7 +594,21 @@ function clientFailure(
   listKey: string,
   action: string,
   options: { shownListKey?: string; genericMessage?: string } = {},
-): { error: string; fieldErrors?: Record<string, string> } {
+): { error: string; fieldErrors?: Record<string, string>; code?: string } {
+  const classifier = config.ui?.classifyActionError
+  if (classifier) {
+    try {
+      const classified = classifier(error)
+      if (
+        classified &&
+        typeof classified.message === 'string' &&
+        typeof classified.code === 'string'
+      )
+        return { error: classified.message, code: classified.code }
+    } catch (classifierError) {
+      console.error('classifyActionError threw:', classifierError)
+    }
+  }
   const normalized = databaseErrorMessage(error, config)
   if (!isClientSafeError(normalized)) {
     console.error(`Action "${action}" on list "${listKey}" failed:`, error)
@@ -791,18 +805,30 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
-    | { success: false; error: string; fieldErrors?: Record<string, string> }
+    | { success: false; error: string; fieldErrors?: Record<string, string>; code?: string }
     // The distinct shapes below (never `success`) mirror the ServerActionProps
     // variants above — see their comments for the redirect-on-`success`
     // footgun each one avoids.
     | { deleted: number; total: number }
-    | { removed: boolean; error?: string }
-    | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
+    | { removed: boolean; error?: string; code?: string }
+    | {
+        created: boolean
+        id?: string
+        error?: string
+        fieldErrors?: Record<string, string>
+        code?: string
+      }
     | { bulkAction: true; message?: string }
-    | { bulkAction: false; error: string }
-    | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
-    | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
-    | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { bulkAction: false; error: string; code?: string }
+    | { updated: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
+    | {
+        added: boolean
+        id?: string
+        error?: string
+        fieldErrors?: Record<string, string>
+        code?: string
+      }
+    | { linked: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
     | { options: RelationshipOption[] }
   > {
     if (!Object.hasOwn(config.lists, props.listKey)) {
@@ -889,7 +915,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         const failure = clientFailure(error, config, props.listKey, props.action, {
           genericMessage: 'Action failed',
         })
-        return { bulkAction: false, error: failure.error }
+        return { bulkAction: false, error: failure.error, code: failure.code }
       }
     }
 

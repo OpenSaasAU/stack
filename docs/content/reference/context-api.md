@@ -477,6 +477,25 @@ The direct mirror of `context.db.<List>.create/update/delete`, run against `list
 
 `id` arrives as a string over the wire and is parsed through the list's own id type ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)) before it reaches the ORM; an id the list's key type cannot hold denies the same way an access refusal does. A thrown `ValidationError` or `DatabaseError` is caught here and turned into `{ success: false, error, fieldErrors? }` rather than reaching the caller as a rejection, so a form can show a per-field message with no `try/catch` of its own.
 
+### Typed failures (`ui.classifyActionError`)
+
+A failure is mapped to a message by the stack. To return a typed refusal for an error class of your own (a domain error thrown from a hook, say), declare a classifier on `ui`:
+
+```typescript
+config({
+  db: { provider: 'postgresql' },
+  lists: {},
+  ui: {
+    classifyActionError: (error) =>
+      error instanceof ClaimConflict
+        ? { code: 'CLAIM_CONFLICT', message: 'Reload and try again.' }
+        : undefined,
+  },
+})
+```
+
+It runs before the default mapping. When it returns a value the action resolves `{ success: false, error: message, code }`. Returning `undefined`, or throwing (the throw is logged), leaves the default mapping unchanged. The `message` is sent to the client, so it must be safe to show.
+
 ### `bulkDelete`
 
 `{ listKey, action: 'bulkDelete', ids }` → `{ deleted: number, total: number }`, never `{ success }`.
