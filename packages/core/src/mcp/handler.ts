@@ -36,6 +36,8 @@ import {
  */
 type ContextSession = { userId: string; [key: string]: unknown }
 
+const UNSAFE_SESSION_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
+
 /**
  * Strips transport-level fields; userId and any custom session fields flow
  * through to access control. A custom field resolved to `undefined` is
@@ -53,7 +55,13 @@ function toContextSession(session: McpSession): ContextSession {
   } = session
   const cleaned: ContextSession = { userId }
   for (const [key, value] of Object.entries(rest)) {
-    if (value !== undefined) cleaned[key] = value
+    if (value === undefined || UNSAFE_SESSION_KEYS.has(key)) continue
+    Object.defineProperty(cleaned, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
   }
   return cleaned
 }
