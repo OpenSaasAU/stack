@@ -247,6 +247,24 @@ the one above is app-authored, so protect it with the field builder's own
 `fieldAccess` becomes the right tool once `role` is a field the `admin()`
 plugin derives, rather than one your own config adds.
 
+### Email is lowercased on write, not in a `where`
+
+The `email` field on the User list lowercases on every write through `context.db`
+(a field `resolveInput` hook). A `where` on the secured surface is not
+normalised — the Where vocabulary matches exactly — so look up with the
+lowercased email:
+
+```typescript
+await context.db.User.create({ data: { email: 'MiXed@X.com' } }) // stored 'mixed@x.com'
+
+await context.db.User.where({ email: { equals: 'MiXed@X.com' } }).first() // null
+await context.db.User.where({ email: { equals: 'mixed@x.com' } }).first() // the row
+```
+
+Lowercase the typed email (`email.toLowerCase()`) before a "find, else create"
+lookup, or the miss is followed by a unique-index violation. better-auth's own
+sign-in and sign-up flows already lowercase before they look up.
+
 ## Adopting an Existing better-auth Installation
 
 Migrating a project that **already runs better-auth**? The plugin can adopt your
