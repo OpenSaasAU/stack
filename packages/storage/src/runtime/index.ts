@@ -103,6 +103,11 @@ export async function uploadFile(
   // filename when none is declared — never the client's raw `type` alone.
   // This runs even with no `validation` config, so an active type is
   // refused for a `file()` field with no config at all (issue #1625).
+  const declaredSizeError = checkFileSize(file.size, options?.validation?.maxFileSize)
+  if (declaredSizeError) {
+    throw new Error(declaredSizeError.error)
+  }
+
   const validation = validateFile(
     { size: buffer.byteLength, name: file.name, type: file.type },
     options?.validation,
@@ -167,8 +172,9 @@ export async function uploadImage(
   // bound the cost of processing an upload at all, and a large or malicious
   // (e.g. deeply nested SVG) file that fails it shouldn't pay for decoding
   // first.
-  const actualSize = buffer.byteLength
-  const sizeError = checkFileSize(actualSize, options?.validation?.maxFileSize)
+  const sizeError =
+    checkFileSize(file.size, options?.validation?.maxFileSize) ??
+    checkFileSize(buffer.byteLength, options?.validation?.maxFileSize)
   if (sizeError) {
     throw new Error(sizeError.error)
   }
@@ -184,7 +190,7 @@ export async function uploadImage(
   }
 
   const validation = validateFile(
-    { size: actualSize, name: file.name, type: detected.mimeType },
+    { size: buffer.byteLength, name: file.name, type: detected.mimeType },
     options?.validation,
   )
   if (!validation.valid) {
