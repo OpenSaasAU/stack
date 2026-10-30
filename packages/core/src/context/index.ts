@@ -5,6 +5,7 @@ import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
+import { isUniqueConstraintViolation } from '../lib/database-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
@@ -180,7 +181,9 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 type BackReferenceClassification =
-  { kind: 'owning'; field: RelationshipField } | { kind: 'nonOwning' } | { kind: 'notRelationship' }
+  | { kind: 'owning'; field: RelationshipField }
+  | { kind: 'nonOwning' }
+  | { kind: 'notRelationship' }
 
 /**
  * Whether `fieldName` on `listKey` owns a foreign-key column — the property
@@ -1222,7 +1225,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     try {
       if (props.action === 'relationshipOptions') {
         const fieldConfig = listConfig.fields[props.field] as
-          { type?: string; ref?: string } | undefined
+          | { type?: string; ref?: string }
+          | undefined
         if (!fieldConfig || fieldConfig.type !== 'relationship' || !fieldConfig.ref) {
           return {
             success: false,
@@ -1737,7 +1741,11 @@ function createGet(
       if (readable !== true) return null
     }
 
-    await createFn({ data: getDefaultData(listConfig) })
+    try {
+      await createFn({ data: getDefaultData(listConfig) })
+    } catch (error) {
+      if (!isUniqueConstraintViolation(error)) throw error
+    }
     return await scoped.first()
   }
 }
