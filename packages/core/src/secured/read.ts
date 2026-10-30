@@ -1065,6 +1065,15 @@ async function narrowUnincludedForeignKeys(
           nestedFiltered.push(related)
           nestedRaw.push(original)
         }
+      } else if (plan.reduce !== undefined) {
+        const key = rowsKeyOf(plan)
+        for (const [related, original] of pairRelatedRows(
+          combinedRows(filteredValue, key),
+          combinedRows(rawValue, key),
+        )) {
+          nestedFiltered.push(related)
+          nestedRaw.push(original)
+        }
       } else if (isRow(filteredValue) && isRow(rawValue)) {
         nestedFiltered.push(filteredValue)
         nestedRaw.push(rawValue)
