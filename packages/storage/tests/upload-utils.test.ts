@@ -1,4 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import {
+  uploadFile,
+  uploadImage,
+  registerStorageProvider,
+  resetStorageProviderRegistry,
+} from '../src/runtime/index.js'
+import type { StorageProvider, BaseStorageConfig } from '../src/config/types.js'
 import {
   validateFile,
   formatFileSize,
@@ -584,5 +592,93 @@ describe('Upload Utilities', () => {
       expect(result).not.toBeNull()
       expect(result!.file.name).toBe('file1.txt')
     })
+  })
+})
+
+describe('maxFileSize is enforced against the bytes read, not the declared size', () => {
+  interface SinkConfig extends BaseStorageConfig {
+    type: 'sink'
+  }
+
+  const stored: number[] = []
+
+  class SinkProvider implements StorageProvider {
+    constructor(public readonly config: SinkConfig) {}
+    async upload(file: Buffer | Uint8Array, filename: string) {
+      stored.push(file.length)
+      return { filename, url: `/${filename}`, size: file.length, contentType: 'x' }
+    }
+    async download(): Promise<Buffer> {
+      return Buffer.alloc(0)
+    }
+    async delete(): Promise<void> {}
+    getUrl(filename: string): string {
+      return `/${filename}`
+    }
+  }
+
+  const config = {
+    db: { provider: 'postgresql' },
+    lists: {},
+    storage: { files: { type: 'sink' } },
+  } as unknown as OpenSaasConfig
+
+  afterEach(() => {
+    resetStorageProviderRegistry()
+    stored.length = 0
+  })
+
+  function liar(declaredSize: number, actualBytes: number): File {
+    return {
+      name: 'big.pdf',
+      type: 'application/pdf',
+      size: declaredSize,
+      arrayBuffer: async () => new Uint8Array(actualBytes).buffer,
+    } as unknown as File
+  }
+
+  it('uploadFile refuses bytes exceeding maxFileSize whatever size is declared', async () => {
+    registerStorageProvider<SinkConfig>('sink', (c) => new SinkProvider(c))
+    const buffer = Buffer.alloc(10_000)
+
+    await expect(
+      uploadFile(
+        config,
+        'files',
+        { file: liar(1, 10_000), buffer },
+        { validation: { maxFileSize: 100 } },
+      ),
+    ).rejects.toThrow(/exceeds maximum/i)
+    expect(stored).toEqual([])
+  })
+
+  it('uploadFile refuses oversized bytes when the declared size is NaN', async () => {
+    registerStorageProvider<SinkConfig>('sink', (c) => new SinkProvider(c))
+    const buffer = Buffer.alloc(10_000)
+
+    await expect(
+      uploadFile(
+        config,
+        'files',
+        { file: liar(Number.NaN, 10_000), buffer },
+        { validation: { maxFileSize: 100 } },
+      ),
+    ).rejects.toThrow(/exceeds maximum/i)
+    expect(stored).toEqual([])
+  })
+
+  it('uploadImage refuses bytes exceeding maxFileSize whatever size is declared', async () => {
+    registerStorageProvider<SinkConfig>('sink', (c) => new SinkProvider(c))
+    const buffer = Buffer.alloc(10_000)
+
+    await expect(
+      uploadImage(
+        config,
+        'files',
+        { file: liar(1, 10_000), buffer },
+        { validation: { maxFileSize: 100 } },
+      ),
+    ).rejects.toThrow(/exceeds maximum/i)
+    expect(stored).toEqual([])
   })
 })
