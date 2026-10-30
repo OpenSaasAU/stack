@@ -652,6 +652,21 @@ describe('maxFileSize is enforced against the bytes read, not the declared size'
     expect(stored).toEqual([])
   })
 
+  it('uploadFile refuses oversized bytes when the declared size is NaN', async () => {
+    registerStorageProvider<SinkConfig>('sink', (c) => new SinkProvider(c))
+    const buffer = Buffer.alloc(10_000)
+
+    await expect(
+      uploadFile(
+        config,
+        'files',
+        { file: liar(Number.NaN, 10_000), buffer },
+        { validation: { maxFileSize: 100 } },
+      ),
+    ).rejects.toThrow(/exceeds maximum/i)
+    expect(stored).toEqual([])
+  })
+
   it('uploadImage refuses bytes exceeding maxFileSize whatever size is declared', async () => {
     registerStorageProvider<SinkConfig>('sink', (c) => new SinkProvider(c))
     const buffer = Buffer.alloc(10_000)
