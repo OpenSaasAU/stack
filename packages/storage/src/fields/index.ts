@@ -27,6 +27,8 @@ import {
   type MultiColumnDescriptor,
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
+import { isAssetReferenced } from '../utils/asset-references.js'
+import { ValidationError, type AccessContext } from '@opensaas/stack-core'
 
 const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
   message: 'url must be an http(s) URL or an absolute path',
@@ -334,6 +336,24 @@ function staleAssets<TMetadata extends { filename: string }>(
   return stale.filter((asset): asset is TMetadata => Boolean(asset?.filename))
 }
 
+type ReferenceField = Parameters<typeof isAssetReferenced>[3]
+
+function claimStableKeyFor(
+  context: AccessContext,
+  listKey: string,
+  fieldKey: string,
+  field: ReferenceField,
+  item: Record<string, unknown> | null | undefined,
+): (key: string) => Promise<void> {
+  return async (key) => {
+    if (await isAssetReferenced(context, listKey, fieldKey, field, key, item?.id)) {
+      throw new ValidationError([
+        `${fieldKey}: a file with this name already belongs to another item`,
+      ])
+    }
+  }
+}
+
 function previousOnClear(
   fieldConfig: {
     cleanupOnReplace?: boolean
@@ -475,6 +495,7 @@ export function file<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
@@ -483,6 +504,8 @@ export function file<
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as FileMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
+          return
         await context.storage.deleteFile(fieldConfig.storage, deleted.filename)
       } catch (error) {
         console.error(`Failed to cleanup file on delete: ${deleted.filename}`, error)
@@ -493,6 +516,8 @@ export function file<
     if (!pending) return
     for (const stale of staleAssets(pending, status)) {
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
+          continue
         await context.storage.deleteFile(fieldConfig.storage, stale.filename)
       } catch (error) {
         console.error(`Failed to cleanup file: ${stale.filename}`, error)
@@ -512,7 +537,7 @@ export function file<
         // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
         resolveInput: async (args: any) => {
-          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const { resolvedData, inputData, fieldKey, listKey, context, item, operation } = args
           const inputValue = resolvedData?.[fieldKey]
 
           if (inputValue === null || inputValue === undefined) {
@@ -546,6 +571,7 @@ export function file<
               buffer,
               {
                 validation: fieldConfig.validation,
+                claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
               },
             )) as FileMetadata
 
@@ -649,6 +675,7 @@ export function image<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
@@ -657,6 +684,8 @@ export function image<
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as ImageMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
+          return
         await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
       } catch (error) {
         console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
@@ -667,6 +696,8 @@ export function image<
     if (!pending) return
     for (const stale of staleAssets(pending, status)) {
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
+          continue
         await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
       } catch (error) {
         console.error(`Failed to cleanup image: ${stale.filename}`, error)
@@ -686,7 +717,7 @@ export function image<
         // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
         resolveInput: async (args: any) => {
-          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const { resolvedData, inputData, fieldKey, listKey, context, item, operation } = args
           const inputValue = resolvedData?.[fieldKey]
 
           if (inputValue === null || inputValue === undefined) {
@@ -720,6 +751,7 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
+                claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
                 transformations: multiColumn ? undefined : fieldConfig.transformations,
               },
             )) as ImageMetadata
