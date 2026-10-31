@@ -460,6 +460,17 @@ The auth plugin automatically generates the following lists:
 - `updatedAt` (DateTime, auto)
 - Custom fields from `extendUserList`
 
+`email` is lowercased on every write through `context.db`, but a `where` on the secured surface is not normalised — the Where vocabulary matches exactly. Look up with the lowercased email:
+
+```typescript
+await context.db.User.create({ data: { email: 'MiXed@X.com' } }) // stored 'mixed@x.com'
+
+await context.db.User.where({ email: { equals: 'MiXed@X.com' } }).first() // null
+await context.db.User.where({ email: { equals: 'mixed@x.com' } }).first() // the row
+```
+
+better-auth's own sign-in and sign-up flows lowercase before they look up, so only application code querying the User list directly needs `email.toLowerCase()`.
+
 ### Session
 
 - `id` (String, auto-generated)

@@ -554,6 +554,8 @@ export async function splitMultiColumnFields(
     delete next[fieldKey]
     result = next
 
+    if (resolvedValue === undefined) continue
+
     const columns = fieldConfig.splitColumns(fieldKey, resolvedValue)
     result = { ...result, ...columns }
   }

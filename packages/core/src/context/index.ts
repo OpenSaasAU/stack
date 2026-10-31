@@ -1,14 +1,9 @@
 import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
-import { cloneDefault, isNowSentinel } from './apply-defaults.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
 import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
-import {
-  isUniqueConstraintViolation,
-  type UniqueConstraintViolation,
-} from '../lib/database-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
@@ -278,24 +273,6 @@ function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
   if (!listConfig.isSingleton) return false
   if (typeof listConfig.isSingleton === 'boolean') return true
   return listConfig.isSingleton.autoCreate !== false
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function getDefaultData(listConfig: ListConfig<any>): Record<string, unknown> {
-  const data: Record<string, unknown> = {}
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (fieldConfig.virtual) continue
-
-    if (fieldKey === 'id') continue
-
-    if ('defaultValue' in fieldConfig && fieldConfig.defaultValue !== undefined) {
-      if (isNowSentinel(fieldConfig.defaultValue)) continue
-      data[fieldKey] = cloneDefault(fieldConfig.defaultValue)
-    }
-  }
-
-  return data
 }
 
 /**
@@ -617,7 +594,21 @@ function clientFailure(
   listKey: string,
   action: string,
   options: { shownListKey?: string; genericMessage?: string } = {},
-): { error: string; fieldErrors?: Record<string, string> } {
+): { error: string; fieldErrors?: Record<string, string>; code?: string } {
+  const classifier = config.ui?.classifyActionError
+  if (classifier) {
+    try {
+      const classified = classifier(error)
+      if (
+        classified &&
+        typeof classified.message === 'string' &&
+        typeof classified.code === 'string'
+      )
+        return { error: classified.message, code: classified.code }
+    } catch (classifierError) {
+      console.error('classifyActionError threw:', classifierError)
+    }
+  }
   const normalized = databaseErrorMessage(error, config)
   if (!isClientSafeError(normalized)) {
     console.error(`Action "${action}" on list "${listKey}" failed:`, error)
@@ -814,18 +805,30 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // to work in Next.js production builds.
   async function serverAction(props: ServerActionProps): Promise<
     | { success: true; data: unknown }
-    | { success: false; error: string; fieldErrors?: Record<string, string> }
+    | { success: false; error: string; fieldErrors?: Record<string, string>; code?: string }
     // The distinct shapes below (never `success`) mirror the ServerActionProps
     // variants above — see their comments for the redirect-on-`success`
     // footgun each one avoids.
     | { deleted: number; total: number }
-    | { removed: boolean; error?: string }
-    | { created: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
+    | { removed: boolean; error?: string; code?: string }
+    | {
+        created: boolean
+        id?: string
+        error?: string
+        fieldErrors?: Record<string, string>
+        code?: string
+      }
     | { bulkAction: true; message?: string }
-    | { bulkAction: false; error: string }
-    | { updated: boolean; error?: string; fieldErrors?: Record<string, string> }
-    | { added: boolean; id?: string; error?: string; fieldErrors?: Record<string, string> }
-    | { linked: boolean; error?: string; fieldErrors?: Record<string, string> }
+    | { bulkAction: false; error: string; code?: string }
+    | { updated: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
+    | {
+        added: boolean
+        id?: string
+        error?: string
+        fieldErrors?: Record<string, string>
+        code?: string
+      }
+    | { linked: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
     | { options: RelationshipOption[] }
   > {
     if (!Object.hasOwn(config.lists, props.listKey)) {
@@ -912,7 +915,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         const failure = clientFailure(error, config, props.listKey, props.action, {
           genericMessage: 'Action failed',
         })
-        return { bulkAction: false, error: failure.error }
+        return { bulkAction: false, error: failure.error, code: failure.code }
       }
     }
 
@@ -1700,10 +1703,6 @@ function assertBooleanInclude(
  * so the create is refused and `get()` answers `null` — the same `null` a
  * denied or an absent row answers with.
  */
-function violatesPrimaryKey(error: UniqueConstraintViolation): boolean {
-  return error.fields.includes('id') || (error.constraintName?.endsWith('_pkey') ?? false)
-}
-
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1746,12 +1745,11 @@ function createGet(
     }
 
     try {
-      await createFn({ data: getDefaultData(listConfig) })
+      await createFn({ data: {} })
     } catch (error) {
-      if (!isUniqueConstraintViolation(error) || !violatesPrimaryKey(error)) throw error
-      const winner = await scoped.first()
-      if (winner === null) throw error
-      return winner
+      const raced = await scoped.first().catch(() => null)
+      if (raced) return raced
+      throw error
     }
     return await scoped.first()
   }

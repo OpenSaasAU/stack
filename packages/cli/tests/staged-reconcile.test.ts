@@ -406,7 +406,7 @@ describe('staged reconcile under opensaas dev', () => {
     escapes.push(escape)
 
     const projectDir = createProjectFrom(fixtureConfigNoPack, 'new-pack')
-    const loop = startLoop(projectDir, { DATABASE_URL: escape.url })
+    const loop = startLoop(projectDir, { DATABASE_URL: escape.url, OPENSAAS_DEV_YES: '1' })
     loops.push(loop)
 
     const booted = await waitForState(projectDir, loop, (state) => state.columns.length > 0, 'boot')

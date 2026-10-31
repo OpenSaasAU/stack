@@ -27,7 +27,13 @@
     "opensaas-mcp-example#test": {
       "dependsOn": ["build"],
       "cache": false,
-      "env": ["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "NEXT_PUBLIC_APP_URL"]
+      "env": [
+        "DATABASE_URL",
+        "OPENSAAS_DEV_YES",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_URL",
+        "NEXT_PUBLIC_APP_URL"
+      ]
     },
     "build": {
       "dependsOn": ["^build"],
@@ -40,13 +46,13 @@
     "test": {
       "dependsOn": ["build"],
       "cache": false,
-      "env": ["DATABASE_URL", "OPENAI_API_KEY"]
+      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY"]
     },
     "test:coverage": {
       "dependsOn": ["build"],
       "cache": false,
       "outputs": ["coverage/**"],
-      "env": ["DATABASE_URL", "OPENAI_API_KEY"]
+      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY"]
     },
     "dev": {
       "cache": false,

@@ -585,6 +585,36 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a __proto__ session key does not set the prototype of the session reaching getContext',
+      async () => {
+        const config = schemaConfig()
+        const spy = vi.fn(contextFor(config))
+        const poisoned: McpSessionProvider = async () => {
+          const parsed: { userId: string; team: string } = JSON.parse(
+            '{"userId":"user-123","team":"blue","__proto__":{"role":"admin"}}',
+          )
+          return parsed
+        }
+        const handlers = createMcpHandlers({ config, getSession: poisoned, getContext: spy })
+
+        await handlers.POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+          }),
+        )
+
+        const received = spy.mock.calls[0][0]
+        expect(received).toBeDefined()
+        expect(Object.getPrototypeOf(received)).toBe(Object.prototype)
+        expect(received).not.toHaveProperty('role')
+        expect(received).toMatchObject({ userId: 'user-123', team: 'blue' })
+      },
+      BOOT,
+    )
+
+    test(
       'a custom session field resolved to undefined does not reach getContext (#1397)',
       async () => {
         const withUndefinedField: McpSessionProvider = async () => ({
