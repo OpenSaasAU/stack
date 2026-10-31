@@ -5,6 +5,12 @@ export type ForcedIdStrategy = 'uuid7' | 'cuid2'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const CUID2 = /^[a-z][a-z0-9]{23}$/
+const IDENTITY_OPERATORS: ReadonlySet<CleanedWhere['operator']> = new Set([
+  'eq',
+  'ne',
+  'in',
+  'not_in',
+])
 const NAMESPACE = Buffer.from('6f1b6c52a3d44e0f9b7e2c58d4a1e390', 'hex')
 
 function uuidV5(name: string): string {
@@ -29,7 +35,7 @@ export function fitWhereIds(
   where: readonly CleanedWhere[],
 ): readonly CleanedWhere[] {
   return where.map((clause) => {
-    if (clause.field !== 'id') return clause
+    if (clause.field !== 'id' || !IDENTITY_OPERATORS.has(clause.operator)) return clause
     const { value } = clause
     if (typeof value === 'string') return { ...clause, value: fitIdToStrategy(strategy, value) }
     if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {

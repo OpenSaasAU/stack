@@ -198,6 +198,10 @@ function renameKeys(
  *   database stops two concurrent sign-ins through the same provider
  *   identity from creating two accounts; better-auth's own existence check is
  *   all that stands between them.
+ * - **Forced ids are mapped, not preserved.** A forced id that does not fit the
+ *   list's id strategy is stored as a deterministic UUIDv5 (or cuid-shaped hash)
+ *   of it, so the row's `id` differs from the one better-auth asked for, and
+ *   only an `id` clause is remapped, not a foreign key holding it.
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */
@@ -227,12 +231,8 @@ export function opensaasAuthAdapter(
       config: {
         adapterId: 'opensaas-stack',
         adapterName: 'OpenSaaS Stack',
-        // The database mints every id: the Auth lists' resolved `idField`
-        // strategy (`authPlugin`'s own pin, or the app's `db.idField`
-        // default — always `uuid7` or `cuid2`, never `int autoincrement`,
-        // since this adapter treats every id as a string) gives the column
-        // its own default, so better-auth must not send one of its own
-        // (ADR-0048, ADR-0060).
+        // The database mints every id (ADR-0048, ADR-0060), so better-auth sends
+        // none of its own; a forced id is kept only under `generateId: 'uuid'`.
         disableIdGeneration: !keepsForcedUuids,
         supportsUUIDs,
         supportsNumericIds,

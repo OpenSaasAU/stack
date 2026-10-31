@@ -26,6 +26,7 @@ describe('fitIdToStrategy', () => {
 describe('forced non-uuid ids on a uuid id column', () => {
   let database: TestDatabase
   let adapter: ReturnType<ReturnType<typeof opensaasAuthAdapter>>
+  let factory: ReturnType<typeof opensaasAuthAdapter>
 
   beforeAll(async () => {
     const built = await defineConfig({
@@ -36,12 +37,13 @@ describe('forced non-uuid ids on a uuid id column', () => {
     database = await createTestDatabase(built)
     const normalized = built._pluginData?.auth as NormalizedAuthConfig
     const context = database.context()
-    adapter = opensaasAuthAdapter({
+    factory = opensaasAuthAdapter({
       config: built,
       unsafe: context.unsafe,
       registry: getAuthListRegistry(normalized.models, normalized.betterAuthPlugins),
       transaction: (body) => context.transaction((tx) => body(tx.unsafe)),
-    })({})
+    })
+    adapter = factory({})
   })
 
   afterAll(async () => {
@@ -75,5 +77,37 @@ describe('forced non-uuid ids on a uuid id column', () => {
       where: [{ field: 'id', operator: 'in', value: [RESERVATION_ID] }],
     })
     expect(many).toHaveLength(1)
+  })
+
+  it('updates, consumes and deletes by the original forced id', async () => {
+    const id = `${RESERVATION_ID}-b`
+    await adapter.create({
+      model: 'verification',
+      data: { ...reservation(), id, identifier: 'other' },
+      forceAllowId: true,
+    })
+    const where = [{ field: 'id', value: id }]
+    const updated = await adapter.update({ model: 'verification', where, update: { value: 'w' } })
+    expect(updated).toMatchObject({ value: 'w' })
+    const consumed = await adapter.consumeOne({ model: 'verification', where })
+    expect(consumed).not.toBeNull()
+    expect(await adapter.findOne({ model: 'verification', where })).toBeNull()
+  })
+
+  it('keeps a database-minted uuid7 id for creates with no forced id under generateId: uuid', async () => {
+    const uuidAdapter = factory({ advanced: { database: { generateId: 'uuid' } } })
+    const { id: _forced, ...data } = reservation()
+    const created = await uuidAdapter.create({
+      model: 'verification',
+      data: { ...data, identifier: 'plain' },
+    })
+    expect(created).toMatchObject({ id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/) })
+
+    const forcedId = '3f6b1c52-a3d4-5e0f-9b7e-2c58d4a1e390'
+    const input = { ...reservation(), id: forcedId, identifier: 'forced-uuid-mode' }
+    await uuidAdapter.create({ model: 'verification', data: input, forceAllowId: true })
+    await expect(
+      uuidAdapter.create({ model: 'verification', data: input, forceAllowId: true }),
+    ).rejects.toThrow()
   })
 })
