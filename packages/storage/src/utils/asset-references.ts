@@ -39,7 +39,7 @@ export async function isAssetReferenced(
   const columns = field.getColumnNames ? field.getColumnNames(fieldKey) : [fieldKey]
   const rows = await withOrigin('engine', async () => collection.select('id', ...columns).all())
   return rows.some((row) => {
-    if (excludeId !== undefined && row.id === excludeId) return false
+    if (excludeId !== undefined && String(row.id) === String(excludeId)) return false
     const value = field.assembleColumns ? field.assembleColumns(fieldKey, row) : row[fieldKey]
     return filenameOf(value) === filename
   })
