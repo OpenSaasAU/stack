@@ -653,6 +653,11 @@ jobs:
         env:
           RUN_RATE_LIMIT_E2E: '1'
 
+      - name: Run magic-link reservation id e2e guard
+        run: pnpm --filter @opensaas/stack-auth test magic-link-reservation-e2e
+        env:
+          RUN_MAGIC_LINK_E2E: '1'
+
       # Live proof that deleting a user via better-auth's own /delete-user
       # cascades through the MCP plugin's OAuth tables (issue #992) instead of
       # orphaning them. Same offline toolchain/pattern as the guards above.

@@ -20,6 +20,7 @@ import {
   type AuthSqlFieldProxy,
   type AuthSqlFunctions,
 } from './surface.js'
+import { fitIdToStrategy, fitWhereIds, type ForcedIdStrategy } from './forced-id.js'
 import { applyOrmWhere, AuthWhereError, sqlWhere, type AuthFieldResolution } from './where.js'
 
 export { AuthModelUnreachableError } from './surface.js'
@@ -197,6 +198,10 @@ function renameKeys(
  *   database stops two concurrent sign-ins through the same provider
  *   identity from creating two accounts; better-auth's own existence check is
  *   all that stands between them.
+ * - **Forced ids are mapped, not preserved.** A forced id that does not fit the
+ *   list's id strategy is stored as a deterministic UUIDv5 (or cuid-shaped hash)
+ *   of it, so the row's `id` differs from the one better-auth asked for, and
+ *   only an `id` clause is remapped, not a foreign key holding it.
  * - Errors arrive as the driver's own: the Unsafe surface is excluded from the
  *   stack's error normalisation (ADR-0042).
  */
@@ -205,6 +210,7 @@ export function opensaasAuthAdapter(
 ): AdapterFactory<BetterAuthOptions> {
   const { config, unsafe, registry, transaction } = options
   const { supportsUUIDs, supportsNumericIds } = authIdCapabilities(config, registry)
+  const idStrategy: ForcedIdStrategy = supportsUUIDs ? 'uuid7' : 'cuid2'
 
   function coordinate(model: string, toModelKey: (model: string) => string): ModelCoordinate {
     const listKey = registry[toModelKey(model)]
@@ -216,6 +222,7 @@ export function opensaasAuthAdapter(
   }
 
   function factoryOn(
+    keepsForcedUuids: boolean,
     laneOf: () => UnsafeSurface,
     bracket: AuthTransactionBracket,
     factoryTransaction: AdapterFactoryConfig['transaction'],
@@ -224,13 +231,9 @@ export function opensaasAuthAdapter(
       config: {
         adapterId: 'opensaas-stack',
         adapterName: 'OpenSaaS Stack',
-        // The database mints every id: the Auth lists' resolved `idField`
-        // strategy (`authPlugin`'s own pin, or the app's `db.idField`
-        // default — always `uuid7` or `cuid2`, never `int autoincrement`,
-        // since this adapter treats every id as a string) gives the column
-        // its own default, so better-auth must not send one of its own
-        // (ADR-0048, ADR-0060).
-        disableIdGeneration: true,
+        // The database mints every id (ADR-0048, ADR-0060), so better-auth sends
+        // none of its own; a forced id is kept only under `generateId: 'uuid'`.
+        disableIdGeneration: !keepsForcedUuids,
         supportsUUIDs,
         supportsNumericIds,
         // Prisma's `timestamptz` codec decodes to a string at 8.0.0-rc.8, so the
@@ -303,7 +306,12 @@ export function opensaasAuthAdapter(
           model: string,
           where: readonly CleanedWhere[],
           lane: UnsafeSurface = laneOf(),
-        ): AuthCollection => applyOrmWhere(collectionFor(model, lane), where, resolveField(model))
+        ): AuthCollection =>
+          applyOrmWhere(
+            collectionFor(model, lane),
+            fitWhereIds(idStrategy, where),
+            resolveField(model),
+          )
 
         /**
          * The mirror of {@link inward}: only a column better-auth declares as
@@ -325,7 +333,12 @@ export function opensaasAuthAdapter(
           const widened: AuthRow = {}
           for (const [column, value] of Object.entries(data)) {
             const field = resolveField(model)(column)
-            widened[field.key] = field.isBigInt && typeof value === 'number' ? BigInt(value) : value
+            widened[field.key] =
+              column === 'id' && typeof value === 'string'
+                ? fitIdToStrategy(idStrategy, value)
+                : field.isBigInt && typeof value === 'number'
+                  ? BigInt(value)
+                  : value
           }
           return widened
         }
@@ -509,7 +522,9 @@ export function opensaasAuthAdapter(
                 }
                 return assignments
               })
-              .where((fields, fns) => sqlWhere(fields, fns, where, resolveField(model)))
+              .where((fields, fns) =>
+                sqlWhere(fields, fns, fitWhereIds(idStrategy, where), resolveField(model)),
+              )
               .returning(...columnsOf(model))
               .build()
 
@@ -537,15 +552,18 @@ export function opensaasAuthAdapter(
   // `consumeOne` on the lane it already holds: Postgres has no nested
   // transaction to open, and better-auth never calls `transaction` on the
   // adapter it hands a callback (`DBTransactionAdapter` omits it).
-  const bound = factoryOn(laneOf, (body) => body(laneOf()), false)
+  const bound = (keepsForcedUuids: boolean) =>
+    factoryOn(keepsForcedUuids, laneOf, (body) => body(laneOf()), false)
 
   return (betterAuthOptions) => {
-    const boundAdapter = bound(betterAuthOptions)
+    const keepsForcedUuids =
+      supportsUUIDs && betterAuthOptions.advanced?.database?.generateId === 'uuid'
+    const boundAdapter = bound(keepsForcedUuids)(betterAuthOptions)
     const rootBracket: AuthTransactionBracket = (body) => {
       const lane = boundLane.getStore()
       return lane === undefined ? transaction(body) : body(lane)
     }
-    return factoryOn(laneOf, rootBracket, (callback) =>
+    return factoryOn(keepsForcedUuids, laneOf, rootBracket, (callback) =>
       transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
     )(betterAuthOptions)
   }
