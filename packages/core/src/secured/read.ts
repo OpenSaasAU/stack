@@ -1217,10 +1217,9 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
       const kept = shown[plan.relation]
       if (reduces(plan.includes) && Array.isArray(kept)) {
         const rows = combinedRows(raw, key)
-        kept.forEach((related, index) => {
-          const original = rows[index]
-          if (isRow(related) && isRow(original)) restoreReductions(related, original, plan.includes)
-        })
+        for (const [related, original] of pairRelatedRows(kept, rows)) {
+          restoreReductions(related, original, plan.includes)
+        }
       }
       shown[plan.relation] = { ...raw, [key]: kept }
       continue
