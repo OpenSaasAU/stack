@@ -126,9 +126,16 @@ export async function checkAccess<T = Record<string, unknown>>(
     return false
   }
 
-  const result = await accessControl(args)
+  const result: boolean | PrismaFilter<T> | null | undefined = await accessControl(args)
 
-  return result
+  return result ?? false
+}
+
+async function evaluateRule<T>(
+  accessControl: AccessControl<T>,
+  args: { session: Session | null; item?: T; context: AccessContext },
+): Promise<unknown> {
+  return accessControl(args)
 }
 
 /**
@@ -153,7 +160,7 @@ export async function checkCreateAccess<T = Record<string, unknown>>(
     context: AccessContext
   },
 ): Promise<boolean> {
-  const result = await checkAccess(accessControl, args)
+  const result = accessControl ? await evaluateRule(accessControl, args) : false
 
   if (isBoolean(result)) {
     return result
