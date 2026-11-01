@@ -74,6 +74,7 @@ describe('an update whose resolved payload is empty', () => {
     })
 
     expect(row?.title).toBe('a')
+    expect(row?.updatedAt).toEqual(created?.updatedAt)
     expect(seen).toContainEqual({ hook: 'afterOperation', sameItem: true })
     expect(seen).toContainEqual({ hook: 'afterTransaction:committed', sameItem: true })
   })

@@ -351,7 +351,7 @@ still runs, and `afterTransaction` reports `committed`, with `item` equal to
 
 ```typescript
 afterOperation: async (args) => {
-  if (args.operation === 'update' && args.item.updatedAt === args.originalItem.updatedAt) return
+  if (args.operation === 'update' && args.item.title === args.originalItem.title) return
   await redis.del(`post:${args.item.id}`)
 }
 ```
