@@ -93,4 +93,48 @@ describe('RichTextContent', () => {
     const out = html(doc(p(t('<img src=x onerror=alert(1)>'))))
     expect(out).not.toContain('<img')
   })
+
+  it('refuses an obfuscated javascript: href', () => {
+    const out = html(doc(p(t('a', [{ type: 'link', attrs: { href: 'java\nscript:alert(1)' } }]))), {
+      link: {},
+    })
+    expect(out).not.toContain('<a')
+  })
+
+  it('discards a stored target and rel on a link', () => {
+    const out = html(
+      doc(
+        p(
+          t('a', [
+            {
+              type: 'link',
+              attrs: { href: 'https://x.dev', target: '_self', rel: 'opener' },
+            },
+          ]),
+        ),
+      ),
+      { link: {} },
+    )
+    expect(out).not.toContain('_self')
+    expect(out).not.toContain('rel="opener"')
+  })
+
+  it('drops a hostile code block language', () => {
+    const out = html(
+      doc({
+        type: 'codeBlock',
+        attrs: { language: '"><script>x</script>' },
+        content: [t('code')],
+      }),
+      { codeBlock: true },
+    )
+    expect(out).not.toContain('<script')
+    expect(out).toContain('code')
+  })
+
+  it('drops content nested beyond the depth limit', () => {
+    let node: JSONContent = p(t('deep'))
+    for (let i = 0; i < 150; i++) node = { type: 'blockquote', content: [node] }
+    expect(html(doc(node), { blockquote: true })).not.toContain('deep')
+  })
 })
