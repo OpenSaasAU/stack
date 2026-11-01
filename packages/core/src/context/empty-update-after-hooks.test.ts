@@ -32,9 +32,9 @@ const config: OpenSaasConfig = {
           }
         },
         afterTransaction: async (args) => {
-          if (args.operation === 'update') {
+          if (args.operation === 'update' && args.status === 'committed') {
             seen.push({
-              hook: `afterTransaction:${args.status}`,
+              hook: 'afterTransaction:committed',
               sameItem: JSON.stringify(args.item) === JSON.stringify(args.originalItem),
             })
           }
