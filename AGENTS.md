@@ -707,13 +707,14 @@ const result = await context.transaction(async (tx) => {
   ```typescript
   // lib/sync-client.ts
   import postgres from '@prisma/orm-postgres/runtime'
+  import { contractFromJson } from '@prisma/orm-postgres/static'
   import { Pool } from 'pg'
   import { originTripwire } from '@opensaas/stack-core/origin'
   import type { Contract } from '../prisma/contract.d.js'
   import contractJson from '../prisma/contract.json' with { type: 'json' }
 
-  export const syncClient = postgres<Contract>({
-    contractJson,
+  export const syncClient = postgres({
+    contract: contractFromJson<Contract>(contractJson),
     middleware: [originTripwire],
     pg: new Pool({ connectionString: process.env.DATABASE_URL }),
   })

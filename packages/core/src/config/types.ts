@@ -2,10 +2,7 @@ import type { AccessControlledDB, AccessControl, FieldAccess } from '../access/t
 import type { GeneratedTables } from '../contract/dependencies.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
-import type {
-  PostgresOptionsBase,
-  PostgresOptionsWithContractJson,
-} from '@prisma/orm-postgres/runtime'
+import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
@@ -2690,10 +2687,7 @@ export type ExtensionDescriptor = {
   from: string
 }
 
-// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
-// `PostgresBindingOptions` interface that carries `pg`, so `pg` is still read
-// off the contractJson options (the contract generic does not reach it).
-type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
+type PostgresBindingOptions = PostgresOptions<never>
 
 /**
  * Per-deployment pool binding for the generated runtime client (ADR-0049,
