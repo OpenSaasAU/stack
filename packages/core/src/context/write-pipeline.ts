@@ -564,8 +564,9 @@ async function runWriteInTransaction(
   // The scope matched nothing this time: the target was read under the same
   // predicate moments earlier in this transaction, so the row is gone —
   // dropped by a `beforeOperation` hook's own write, typically. `null` is
-  // denied-or-gone on every terminal, and no after-hook fires for a write
-  // that did not happen.
+  // denied-or-gone on every terminal. The hooks that already ran are rolled
+  // back with the write, and no after-hook fires for a write that did not
+  // happen.
   if (item === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
