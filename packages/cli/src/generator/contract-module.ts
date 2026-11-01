@@ -105,7 +105,7 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
   const { type } = column
   switch (type.type) {
     case 'text':
-      return { expression: 'field.text()', helpers: [] }
+      return { expression: 'field.column(type.String())', helpers: [] }
     case 'varchar': {
       const length = numberArg(type.args, 0)
       if (length === undefined) {
@@ -123,24 +123,25 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
       return { expression: `field.column(charColumn(${length}))`, helpers: ['charColumn'] }
     }
     case 'int':
-      return { expression: 'field.int()', helpers: [] }
+      return { expression: 'field.column(type.Int())', helpers: [] }
     case 'smallint':
       return { expression: 'field.column(int2Column)', helpers: ['int2Column'] }
     case 'bigint':
-      return { expression: 'field.bigint()', helpers: [] }
+      return { expression: 'field.column(type.BigInt())', helpers: [] }
     case 'decimal': {
       const precision = numberArg(type.args, 0)
-      if (precision === undefined) return { expression: 'field.decimal()', helpers: [] }
+      if (precision === undefined)
+        return { expression: 'field.column(type.Decimal())', helpers: [] }
       const scale = numberArg(type.args, 1)
       const args = scale === undefined ? `${precision}` : `${precision}, ${scale}`
       return { expression: `field.column(numericColumn(${args}))`, helpers: ['numericColumn'] }
     }
     case 'float':
-      return { expression: 'field.float()', helpers: [] }
+      return { expression: 'field.column(type.Float())', helpers: [] }
     case 'real':
       return { expression: 'field.column(float4Column)', helpers: ['float4Column'] }
     case 'boolean':
-      return { expression: 'field.boolean()', helpers: [] }
+      return { expression: 'field.column(type.Boolean())', helpers: [] }
     case 'dateTime':
     case 'timestamptz':
       return withPrecision('timestamptzStringColumn', numberArg(type.args, 0))
@@ -157,13 +158,13 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
     case 'date':
       return { expression: 'field.column(dateStringColumn)', helpers: ['dateStringColumn'] }
     case 'uuid':
-      return { expression: 'field.uuidNative()', helpers: [] }
+      return { expression: 'field.column(type.Uuid())', helpers: [] }
     case 'json':
       return { expression: 'field.column(jsonColumn)', helpers: ['jsonColumn'] }
     case 'jsonb':
-      return { expression: 'field.json()', helpers: [] }
+      return { expression: 'field.column(type.Jsonb())', helpers: [] }
     case 'bytes':
-      return { expression: 'field.bytes()', helpers: [] }
+      return { expression: 'field.column(type.Bytes())', helpers: [] }
     case 'enum': {
       const name = column.enum?.name
       if (name === undefined) {
@@ -223,13 +224,13 @@ function codecLiteral(column: ContractColumn, value: unknown): string {
 function idExpression(id: ContractIdColumn): string {
   switch (id.strategy) {
     case 'uuid7':
-      return 'field.id.uuidv7Native()'
+      return 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))'
     case 'cuid2':
-      return 'field.id.cuid2()'
+      return 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))'
     case 'int autoincrement':
-      return `field.int().defaultSql('autoincrement()').id()`
+      return `field.column(type.Int()).defaultSql('autoincrement()').id()`
     case 'singleton':
-      return 'field.int().default(1).id()'
+      return 'field.column(type.Int()).default(1).id()'
   }
 }
 
@@ -248,14 +249,16 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     for (const helper of rendered.helpers) helpers.add(helper)
     fields.push(`        ${key(column.name)}: ${rendered.expression},`)
   }
-  // Known limits: createdAt avoids field.temporal.createdAtString(), which drops the database
+  // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt) {
     helpers.add('timestamptzStringColumn')
     fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
   }
   if (model.timestamps.updatedAt) {
-    fields.push('        updatedAt: field.temporal.updatedAtString(),')
+    fields.push(
+      '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
+    )
   }
 
   const lines = [
@@ -434,23 +437,23 @@ export function renderContractModule(data: ContractData): string {
 
   const scaffold: string[] = []
   const packNames = data.extensions.map((extension) => extension.name)
-  scaffold.push(
-    packNames.length === 0 ? 'extensions: {}' : `extensions: { ${packNames.join(', ')} }`,
-  )
+  if (packNames.length > 0) scaffold.push(`extensions: { ${packNames.join(', ')} }`)
   if (data.namespaces.length > 0) {
     scaffold.push(`namespaces: [${data.namespaces.map((ns) => literal(ns)).join(', ')}]`)
   }
 
-  const usesTypeHelper = data.models.some((model) =>
-    model.columns.some((column) => column.type.pack !== 'pg'),
+  const usesGenHelper = data.models.some(
+    (model) =>
+      model.id.strategy === 'uuid7' || model.id.strategy === 'cuid2' || model.timestamps.updatedAt,
   )
   const usesRelHelper = data.models.some((model) => model.relations.length > 0)
   const callbackParams = ['field', 'model']
   if (usesRelHelper) callbackParams.push('rel')
-  if (usesTypeHelper) callbackParams.push('type')
+  callbackParams.push('type')
+  if (usesGenHelper) callbackParams.push('gen')
 
   lines.push('export const contract = defineContract(')
-  lines.push(`  { ${scaffold.join(', ')} },`)
+  lines.push(scaffold.length === 0 ? '  {},' : `  { ${scaffold.join(', ')} },`)
   lines.push(`  ({ ${callbackParams.join(', ')} }) => {`)
   lines.push('    const models: Record<string, ModelToken> = {}')
   lines.push('')

@@ -61,8 +61,8 @@ cd my-app
 #### 2. Install Stack
 
 ```bash
-pnpm add @opensaas/stack-core @opensaas/stack-ui @prisma/orm-postgres@8.0.0-rc.18
-pnpm add -D @opensaas/stack-cli prisma@8.0.0-rc.23
+pnpm add @opensaas/stack-core @opensaas/stack-ui @prisma/orm-postgres@8.0.0-rc.21
+pnpm add -D @opensaas/stack-cli prisma@8.0.0-rc.29
 ```
 
 #### 3. Create Your Config
