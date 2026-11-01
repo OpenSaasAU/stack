@@ -341,6 +341,21 @@ afterOperation: async (args) => {
 }
 ```
 
+### No-op updates
+
+An update whose resolved payload is empty (for example, a `resolveInput` hook
+stripped every key) writes nothing and does not move `updatedAt`, but it is
+still an update the caller asked for and was allowed to make. `afterOperation`
+still runs, and `afterTransaction` reports `committed`, with `item` equal to
+`originalItem`. A hook that must skip no-ops compares the two:
+
+```typescript
+afterOperation: async (args) => {
+  if (args.operation === 'update' && args.item.updatedAt === args.originalItem.updatedAt) return
+  await redis.del(`post:${args.item.id}`)
+}
+```
+
 ### Audit Logging
 
 A hook's `context.db` is bound to the write's own transaction, so the audit row

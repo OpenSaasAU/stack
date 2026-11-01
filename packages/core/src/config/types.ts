@@ -182,6 +182,8 @@ export type FieldBeforeTransactionHookArgs<
  *    transaction, and these hooks fire at per-(list, operation) granularity, not
  *    per record. For per-record nested compensation use the in-transaction
  *    `afterOperation` (which receives the correct nested `item`).
+ *  - An update whose resolved payload is empty still reports `committed`, with
+ *    `item` equal to `originalItem`; compare the two to skip a no-op.
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate for whatever
  *    `beforeTransaction` did externally.
@@ -1871,6 +1873,10 @@ export type BeforeOperationHookArgs<
  * - create: has item, inputData, and resolvedData, no originalItem
  * - update: has item, originalItem, inputData, and resolvedData
  * - delete: has originalItem only
+ *
+ * An update whose resolved payload is empty writes nothing (and does not move
+ * `updatedAt`) but still runs `afterOperation`, with `item` equal to
+ * `originalItem`. A hook that must skip no-ops compares the two.
  */
 export type AfterOperationHookArgs<
   TOutput = Record<string, unknown>,
