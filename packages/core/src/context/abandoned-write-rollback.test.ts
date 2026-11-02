@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import { relationship, text } from '../fields/index.js'
+import { relationship, select, text } from '../fields/index.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 import { TransactionRolledBackError } from './index.js'
 
 const BOOT = 120_000
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 const afterTransaction = vi.fn()
+const afterDocTransaction = vi.fn()
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -19,6 +20,32 @@ function schemaConfig(): OpenSaasConfig {
       Audit: {
         fields: { note: text() },
         access: { operation: OPEN },
+      },
+      Doc: {
+        fields: {
+          title: text(),
+          status: select({
+            options: [
+              { label: 'Draft', value: 'draft' },
+              { label: 'Archived', value: 'archived' },
+            ],
+            defaultValue: 'draft',
+          }),
+        },
+        access: {
+          operation: { ...OPEN, delete: () => ({ status: { equals: 'draft' } }) },
+        },
+        hooks: {
+          beforeOperation: async (args) => {
+            if (args.operation !== 'delete') return
+            await args.context.db.Audit.create({ data: { note: 'delete hook ran' } })
+            await args.context.db.Doc.update({
+              where: { id: String(args.item.id) },
+              data: { status: 'archived' },
+            })
+          },
+          afterTransaction: afterDocTransaction,
+        },
       },
       Post: {
         fields: { title: text(), secret: relationship({ ref: 'Secret' }) },
@@ -49,6 +76,7 @@ describe('a write that returns null after its hooks ran rolls the hooks back', (
   beforeEach(async () => {
     await harness.truncate()
     afterTransaction.mockReset()
+    afterDocTransaction.mockReset()
   })
 
   const auditCount = async (): Promise<number> =>
@@ -86,6 +114,52 @@ describe('a write that returns null after its hooks ran rolls the hooks back', (
       expect(inner).toBeNull()
       expect(rejection).toBeInstanceOf(TransactionRolledBackError)
       expect(await auditCount()).toBe(0)
+    },
+    BOOT,
+  )
+
+  async function draftDocId(): Promise<string> {
+    const doc = await harness.context.sudo().db.Doc.create({ data: { title: 'd' } })
+    if (doc === null || typeof doc.id !== 'string') throw new Error('seed failed')
+    return doc.id
+  }
+
+  const docStatus = async (id: string): Promise<unknown> =>
+    (
+      await harness.context
+        .sudo()
+        .db.Doc.where({ id: { equals: id } })
+        .first()
+    )?.status
+
+  test(
+    'an owned delete that returns null leaves no hook writes',
+    async () => {
+      const id = await draftDocId()
+      const result = await harness.context.db.Doc.delete({ where: { id } })
+      expect(result).toBeNull()
+      expect(await auditCount()).toBe(0)
+      expect(await docStatus(id)).toBe('draft')
+      const outcomes = afterDocTransaction.mock.calls.map((c) => `${c[0].operation}:${c[0].status}`)
+      expect(outcomes).toContain('delete:rolled-back')
+      expect(outcomes).not.toContain('update:committed')
+    },
+    BOOT,
+  )
+
+  test(
+    'a joined delete that returns null poisons the enclosing transaction',
+    async () => {
+      const id = await draftDocId()
+      let inner: unknown = 'unset'
+      const run = harness.context.transaction(async (tx) => {
+        inner = await tx.db.Doc.delete({ where: { id } })
+      })
+      const rejection = await run.catch((err: unknown) => err)
+      expect(inner).toBeNull()
+      expect(rejection).toBeInstanceOf(TransactionRolledBackError)
+      expect(await auditCount()).toBe(0)
+      expect(await docStatus(id)).toBe('draft')
     },
     BOOT,
   )
