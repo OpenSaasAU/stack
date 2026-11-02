@@ -36,7 +36,7 @@ import {
   type Where,
   type WherePlan,
 } from './vocabulary.js'
-import { resolveProjection, UNPROJECTED, type ProjectionPlan } from './select.js'
+import { readsTheRow, resolveProjection, UNPROJECTED, type ProjectionPlan } from './select.js'
 
 /**
  * A related read, composed the same way the top-level one is. Every method
@@ -602,6 +602,22 @@ async function isOmittedBeforeQuery(
   return !resolveDeclaredDependencies(ctx.config, ctx.listName).relations.has(name)
 }
 
+async function resolveProjectionForTarget(
+  shape: { fields?: readonly string[]; includes: readonly { name: string }[] },
+  target: IncludeTarget,
+  related: ResolveContext,
+  parent: ResolveContext,
+): Promise<ProjectionPlan> {
+  const projection = await resolveProjection(
+    shape.fields,
+    shape.includes.map((nested) => nested.name),
+    related,
+  )
+  if (target.fieldConfig !== undefined || projection.columns === undefined) return projection
+  if (!(await readsTheRow(target.readGate, parent))) return projection
+  return { columns: undefined, caller: projection.caller }
+}
+
 async function resolveInclude(
   request: IncludeRequest,
   ctx: ResolveContext,
@@ -632,11 +648,7 @@ async function resolveInclude(
   const shape = rowsBranchOf(request) ?? request
   const projection = declared
     ? UNPROJECTED
-    : await resolveProjection(
-        shape.fields,
-        shape.includes.map((nested) => nested.name),
-        related,
-      )
+    : await resolveProjectionForTarget(shape, target, related, ctx)
   const includes = declared
     ? []
     : await resolveIncludes(shape.includes, related, depth + 1, projection.caller)
