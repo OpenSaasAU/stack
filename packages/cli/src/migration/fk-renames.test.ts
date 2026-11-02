@@ -14,7 +14,7 @@ function model(name: string, overrides: Partial<ContractModel> = {}): ContractMo
     relations: [],
     timestamps: { createdAt: false, updatedAt: false },
     ...overrides,
-  } as ContractModel
+  }
 }
 
 const enrolment = model('Enrolment', {
@@ -147,5 +147,36 @@ describe('renderFkRenameSql', () => {
       'RENAME CONSTRAINT "Enrolment_lessonTerm_fkey" TO "Enrolment_lessonTermId_fkey"',
     )
     expect(sql).not.toMatch(/DROP/i)
+  })
+})
+
+describe('planFkRenames identifier handling', () => {
+  it('matches and renames constraint names Postgres truncated to 63 bytes', () => {
+    const longTable = 'T'.repeat(50)
+    const longModel = model(longTable, { ...enrolment, name: longTable })
+    const clip = (n: string) => n.slice(0, 63)
+    const plan = planFkRenames([longModel, lessonTerm], {
+      columns: [
+        { schema: 'public', table: 'LessonTerm', column: 'id', type: 'uuid' },
+        { schema: 'public', table: longTable, column: 'lessonTerm', type: 'uuid' },
+      ],
+      constraints: [
+        { schema: 'public', table: longTable, name: clip(`${longTable}_lessonTerm_fkey`) },
+      ],
+      indexes: [],
+    })
+    expect(plan[0].constraints).toEqual([
+      { from: clip(`${longTable}_lessonTerm_fkey`), to: clip(`${longTable}_lessonTermId_fkey`) },
+    ])
+  })
+
+  it('uses the supplied default schema for models without a namespace', () => {
+    const schema = live(['id', 'lessonTerm'])
+    const moved: LiveSchema = {
+      ...schema,
+      columns: schema.columns.map((c) => ({ ...c, schema: 'app' })),
+    }
+    expect(planFkRenames([enrolment, lessonTerm], moved)).toEqual([])
+    expect(planFkRenames([enrolment, lessonTerm], moved, 'app')).toHaveLength(1)
   })
 })

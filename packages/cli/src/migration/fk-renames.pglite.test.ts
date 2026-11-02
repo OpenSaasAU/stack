@@ -1,13 +1,21 @@
 import { describe, it, expect } from 'vitest'
+import type { ContractModel } from '@opensaas/stack-core'
 import { PGlite } from '@electric-sql/pglite'
 import { planFkRenames, renderFkRenameSql } from './fk-renames.js'
 import type { LiveSchema } from './fk-renames.js'
 
-const models = [
-  { name: 'LessonTerm', singleton: false, columns: [], relations: [], foreignKeys: [] },
+const id = { strategy: 'uuid7', type: { pack: 'pg', type: 'uuid' } } as const
+const base = {
+  singleton: false,
+  id,
+  indexes: [],
+  timestamps: { createdAt: false, updatedAt: false },
+}
+const models: ContractModel[] = [
+  { ...base, name: 'LessonTerm', columns: [], relations: [], foreignKeys: [] },
   {
+    ...base,
     name: 'Enrolment',
-    singleton: false,
     columns: [{ name: 'lessonTermId', type: { pack: 'pg', type: 'uuid' }, nullable: false }],
     foreignKeys: [],
     relations: [
@@ -21,7 +29,7 @@ const models = [
       },
     ],
   },
-] as never
+]
 
 async function introspect(db: PGlite): Promise<LiveSchema> {
   const columns = await db.query<LiveSchema['columns'][number]>(

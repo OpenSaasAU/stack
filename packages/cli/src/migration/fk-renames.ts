@@ -32,9 +32,22 @@ export class FkRenameConflictError extends Error {
   }
 }
 
-const DEFAULT_SCHEMA = 'public'
+const MAX_IDENTIFIER_BYTES = 63
 
-export function planFkRenames(models: ContractModel[], live: LiveSchema): FkRename[] {
+function clipIdentifier(name: string): string {
+  const bytes = Buffer.from(name, 'utf8')
+  if (bytes.length <= MAX_IDENTIFIER_BYTES) return name
+  return new TextDecoder('utf-8', { fatal: false })
+    .decode(bytes.subarray(0, MAX_IDENTIFIER_BYTES))
+    .replace(/\uFFFD+$/, '')
+}
+
+export function planFkRenames(
+  models: ContractModel[],
+  live: LiveSchema,
+  defaultSchema = 'public',
+): FkRename[] {
+  const DEFAULT_SCHEMA = defaultSchema
   const byName = new Map(models.map((model) => [model.name, model]))
   const findColumn = (schema: string, table: string, column: string) =>
     live.columns.find((c) => c.schema === schema && c.table === table && c.column === column)
@@ -83,8 +96,8 @@ export function planFkRenames(models: ContractModel[], live: LiveSchema): FkRena
 
 function renamed(name: string, table: string, from: string, to: string) {
   for (const suffix of ['fkey', 'key', 'idx']) {
-    if (name === `${table}_${from}_${suffix}`) {
-      return [{ from: name, to: `${table}_${to}_${suffix}` }]
+    if (name === clipIdentifier(`${table}_${from}_${suffix}`)) {
+      return [{ from: name, to: clipIdentifier(`${table}_${to}_${suffix}`) }]
     }
   }
   return []

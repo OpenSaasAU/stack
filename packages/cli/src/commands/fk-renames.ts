@@ -12,6 +12,10 @@ export interface FkRenamesOptions {
   out?: string
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 const SYSTEM_SCHEMAS = `('pg_catalog', 'information_schema')`
 
 async function introspect(client: pg.Client): Promise<LiveSchema> {
@@ -55,10 +59,23 @@ export async function fkRenamesCommand(options: FkRenamesOptions = {}): Promise<
   const { config } = await loadOpenSaasConfig(cwd, configPath)
   const { models } = deriveContract(config)
 
+  if (options.apply && options.out) {
+    console.error(chalk.red('--apply and --out cannot be combined'))
+    process.exitCode = 1
+    return
+  }
+
   const client = new pg.Client({ connectionString: resolveDatabaseUrl().url })
-  await client.connect()
   try {
-    const plan = planFkRenames(models, await introspect(client))
+    await client.connect()
+  } catch (error) {
+    console.error(chalk.red(`Could not connect to the database: ${errorMessage(error)}`))
+    process.exitCode = 1
+    return
+  }
+  try {
+    const current = await client.query<{ schema: string }>('SELECT current_schema() AS schema')
+    const plan = planFkRenames(models, await introspect(client), current.rows[0]?.schema)
     if (plan.length === 0) {
       console.log(chalk.green('No foreign-key columns need renaming.'))
       return
@@ -83,6 +100,9 @@ export async function fkRenamesCommand(options: FkRenamesOptions = {}): Promise<
       return
     }
     console.log(sql)
+  } catch (error) {
+    console.error(chalk.red(errorMessage(error)))
+    process.exitCode = 1
   } finally {
     await client.end()
   }
