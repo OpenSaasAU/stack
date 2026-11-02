@@ -1480,7 +1480,13 @@ which columns. `User.emailVerified` is already write-denied unconditionally
 (better-auth marks it `input: false`), and if you register the `admin()`
 plugin, so are `User.role`, `User.banned`, `User.banReason`, `User.banExpires`
 and `Session.impersonatedBy` — a signed-in user can't self-verify or
-self-promote through the rule above (ADR-0073). This matters if you add your
+self-promote through the rule above (ADR-0073). The identity fields better-auth
+guards with endpoint hooks rather than `input: false` are update-denied too:
+`User.email`, plus `User.phoneNumber` and `User.username` when the phoneNumber
+or username plugin is registered. Changing them directly would let a user
+squat another person's identifier and launder the verified flag, so they must
+change through better-auth's own flows; reopen one with `fieldAccess` only if
+you accept that. This matters if you add your
 own sensitive field via `extendUserList.fields` (see [Adding Custom
 Fields](#adding-custom-fields) below) — the whole-row rule permits writing it
 too, so protect it explicitly with `authPlugin({ fieldAccess })`, keyed by

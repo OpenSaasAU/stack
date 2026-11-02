@@ -152,6 +152,20 @@ const DENY_WRITE: Exclude<FieldAccess, { write: 'hooks' }> = {
   allowCreateDefault: true,
 }
 
+const DENY_UPDATE: Exclude<FieldAccess, { write: 'hooks' }> = { update: () => false }
+
+/**
+ * Identity fields better-auth refuses to update through `updateUser` with an endpoint
+ * hook rather than `input: false` (ADR-0073 amendment). Keyed by better-auth model key.
+ * - email: better-auth `api/routes/update-user` (EMAIL_CAN_NOT_BE_UPDATED)
+ * - phoneNumber: phoneNumber plugin before-hook ("Phone number cannot be updated")
+ * - username: username plugin validator and `immutableUsername` (refused upstream only under `immutableUsername`; denied here regardless. displayUsername is updatable upstream, so it is not listed)
+ * Update only: create stays open so an admin can still create a user.
+ */
+export const HOOK_GUARDED_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  user: ['email', 'phoneNumber', 'username'],
+}
+
 /** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
 type CredentialFieldRegistry = Record<string, ReadonlySet<string>>
 
@@ -283,7 +297,8 @@ function buildFieldAccessOverrideRegistry(
  * layers in order (each one only overriding the keys it actually sets):
  *
  * 1. The credential read-deny ({@link CredentialFieldRegistry}, ADR-0036).
- * 2. The seeded write-deny (ADR-0073): better-auth's own `input: false` on
+ * 2. The seeded write-deny (ADR-0073), plus an update-only deny on
+ *    {@link HOOK_GUARDED_IDENTITY_FIELDS}: better-auth's own `input: false` on
  *    the upstream field means a client cannot set it (`user.emailVerified`
  *    unconditionally; `user.role`/`banned`/`banReason`/`banExpires` and
  *    `session.impersonatedBy` once `admin()` is registered) — a signed-in
@@ -311,9 +326,10 @@ function withFieldAccess<T extends FieldConfig>(
 ): T {
   const isCredential = credentialRegistry[modelKey]?.has(fieldKey) ?? false
   const isWriteDenied = upstream.input === false
+  const isUpdateDenied = HOOK_GUARDED_IDENTITY_FIELDS[modelKey]?.includes(fieldKey) ?? false
   const override = overrideRegistry[modelKey]?.[fieldKey]
 
-  if (!isCredential && !isWriteDenied && !override) return field
+  if (!isCredential && !isWriteDenied && !isUpdateDenied && !override) return field
 
   // A plain object spread would let an override key EXPLICITLY set to
   // `undefined` (`{ read: undefined }`) clear a seeded rule — the key is
@@ -323,6 +339,7 @@ function withFieldAccess<T extends FieldConfig>(
   // deny can only be replaced, never silently unset.
   const access: Exclude<FieldAccess, { write: 'hooks' }> = {
     ...(isCredential ? DENY_READ : {}),
+    ...(isUpdateDenied ? DENY_UPDATE : {}),
     ...(isWriteDenied ? DENY_WRITE : {}),
   }
   if (override?.read !== undefined) access.read = override.read
