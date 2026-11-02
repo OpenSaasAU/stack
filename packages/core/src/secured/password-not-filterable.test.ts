@@ -81,4 +81,8 @@ describe('a password() column is outside the predicate, order and distinct vocab
     },
     BOOT,
   )
+
+  test('an option cannot make password() filterable again', () => {
+    expect(password({ isFilterable: true }).isFilterable).toBe(false)
+  })
 })

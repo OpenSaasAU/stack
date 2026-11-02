@@ -727,7 +727,7 @@ export async function resolveNearest(
   ctx: ResolveContext,
 ): Promise<NearestPlan> {
   const resolved = resolveQueryField(fieldKey, ctx.listConfig.fields)
-  if (!resolved) throw unqueryableKey(ctx.listName, fieldKey)
+  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, fieldKey)
 
   if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
     const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {

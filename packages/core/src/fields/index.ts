@@ -844,8 +844,8 @@ export function password<
   return {
     type: 'password',
     outputType: "import('@opensaas/stack-core/internal').HashedPassword",
-    isFilterable: false,
     ...options,
+    isFilterable: false,
     ui: {
       ...options?.ui,
       // Excluded from default admin table columns (issue #1018) — declared
