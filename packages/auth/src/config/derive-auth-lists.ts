@@ -159,7 +159,7 @@ const DENY_UPDATE: Exclude<FieldAccess, { write: 'hooks' }> = { update: () => fa
  * hook rather than `input: false` (ADR-0073 amendment). Keyed by better-auth model key.
  * - email: better-auth `api/routes/update-user` (EMAIL_CAN_NOT_BE_UPDATED)
  * - phoneNumber: phoneNumber plugin before-hook ("Phone number cannot be updated")
- * - username: username plugin validator and `immutableUsername` (displayUsername is updatable upstream, so it is not listed)
+ * - username: username plugin validator and `immutableUsername` (refused upstream only under `immutableUsername`; denied here regardless. displayUsername is updatable upstream, so it is not listed)
  * Update only: create stays open so an admin can still create a user.
  */
 export const HOOK_GUARDED_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
@@ -297,7 +297,8 @@ function buildFieldAccessOverrideRegistry(
  * layers in order (each one only overriding the keys it actually sets):
  *
  * 1. The credential read-deny ({@link CredentialFieldRegistry}, ADR-0036).
- * 2. The seeded write-deny (ADR-0073): better-auth's own `input: false` on
+ * 2. The seeded write-deny (ADR-0073), plus an update-only deny on
+ *    {@link HOOK_GUARDED_IDENTITY_FIELDS}: better-auth's own `input: false` on
  *    the upstream field means a client cannot set it (`user.emailVerified`
  *    unconditionally; `user.role`/`banned`/`banReason`/`banExpires` and
  *    `session.impersonatedBy` once `admin()` is registered) — a signed-in

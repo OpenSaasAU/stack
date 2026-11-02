@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import {
   admin,
   deviceAuthorization,
@@ -1217,11 +1218,12 @@ describe('deriveAuthLists - hook-guarded identity fields ship update-denied (iss
       displayUsername: 'NewName',
     }
     for (const field of HOOK_GUARDED_IDENTITY_FIELDS.user) {
-      const outcome = await auth.api.updateUser({ body: { [field]: values[field] }, headers }).then(
-        () => 'accepted',
-        () => 'refused',
+      const error = await auth.api.updateUser({ body: { [field]: values[field] }, headers }).then(
+        () => undefined,
+        (thrown: unknown) => thrown,
       )
-      expect([field, outcome]).toEqual([field, 'refused'])
+      expect(error, field).toBeInstanceOf(APIError)
+      expect((error as APIError).statusCode, field).toBe(400)
     }
     await expect(auth.api.updateUser({ body: { name: 'Renamed' }, headers })).resolves.toBeDefined()
   })
