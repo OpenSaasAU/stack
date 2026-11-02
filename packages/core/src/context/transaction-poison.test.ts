@@ -136,6 +136,31 @@ describe('a joined write that throws poisons its transaction owner', () => {
   )
 
   test(
+    'a caught nested-callback rejection poisons the owner and rolls the outer transaction back',
+    async () => {
+      const abort = new Error('abort inner')
+      const rejection = await harness.context
+        .transaction(async (tx) => {
+          try {
+            await tx.transaction(async (inner) => {
+              await inner.db.Bill.create({ data: { name: 'inner' } })
+              throw abort
+            })
+          } catch (err) {
+            expect(err).toBe(abort)
+          }
+          await tx.db.Bill.create({ data: { name: 'outer' } })
+        })
+        .catch((err: unknown) => err)
+
+      expect(rejection).toBeInstanceOf(TransactionRolledBackError)
+      expect((rejection as TransactionRolledBackError).cause).toBe(abort)
+      expect(await count('Bill')).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
     'a caught failure from a hook-issued write poisons the outer owner',
     async () => {
       bridge.mockImplementation(async (context: { db: TestContext['context']['db'] }) => {

@@ -560,9 +560,23 @@ async function settleTransactionOwner<T>(
  * the wrapped context's own `transaction` does inside an owned transaction
  * (ADR-0028); it is spelled here so the callback is handed this face.
  */
+async function joinNested<T>(
+  fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
+  face: StackTransactionContext<AccessControlledDB>,
+  owner: TransactionRegistry,
+): Promise<T> {
+  try {
+    return await fn(face)
+  } catch (err) {
+    owner.poison(err)
+    throw err
+  }
+}
+
 function transactionFace(
   base: StackContext<AccessControlledDB>,
   lock: RowLockLane | undefined,
+  owner: TransactionRegistry,
 ): StackTransactionContext<AccessControlledDB> {
   const face: StackTransactionContext<AccessControlledDB> = {
     ...base,
@@ -570,11 +584,11 @@ function transactionFace(
       if (lock === undefined) throw new RowLockUnavailableError('advisoryLock()')
       await lock.advisory(key)
     },
-    sudo: () => transactionFace(base.sudo(), lock),
-    withSession: (session) => transactionFace(base.withSession(session), lock),
+    sudo: () => transactionFace(base.sudo(), lock, owner),
+    withSession: (session) => transactionFace(base.withSession(session), lock, owner),
     transaction: <T>(
       fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
-    ): Promise<T> => fn(face),
+    ): Promise<T> => joinNested(fn, face, owner),
   }
   return face
 }
@@ -1334,7 +1348,11 @@ export function getContext<TConfig extends OpenSaasConfig>(
     fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
   ): Promise<T> {
     if (context._transactionOwner) {
-      return fn(transactionFace(returned, lock))
+      return joinNested(
+        fn,
+        transactionFace(returned, lock, context._transactionOwner),
+        context._transactionOwner,
+      )
     }
 
     const registry = new TransactionRegistry()
@@ -1372,6 +1390,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           context._baseContext ?? context,
         ),
         rowLockSeat(client, unsafeTransaction),
+        registry,
       )
 
     // Known limits: this branch hands `fn` a context whose `unsafe` is built
