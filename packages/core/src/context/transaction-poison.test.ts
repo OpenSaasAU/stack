@@ -154,7 +154,46 @@ describe('a joined write that throws poisons its transaction owner', () => {
         .catch((err: unknown) => err)
 
       expect(rejection).toBeInstanceOf(TransactionRolledBackError)
-      expect((rejection as TransactionRolledBackError).cause).toBe(abort)
+      if (rejection instanceof TransactionRolledBackError) expect(rejection.cause).toBe(abort)
+      expect(await count('Bill')).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught nested rejection poisons the owner through sudo and withSession faces',
+    async () => {
+      for (const face of ['sudo', 'withSession'] as const) {
+        await expect(
+          harness.context.transaction(async (tx) => {
+            const scoped = face === 'sudo' ? tx.sudo() : tx.withSession({ userId: 'u2' })
+            await scoped
+              .transaction(async (inner) => {
+                await inner.db.Bill.create({ data: { name: face } })
+                throw new Error('abort inner')
+              })
+              .catch(() => null)
+          }),
+        ).rejects.toBeInstanceOf(TransactionRolledBackError)
+        expect(await count('Bill')).toBe(0)
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'a caught nested rejection that wrote nothing still poisons the owner',
+    async () => {
+      await expect(
+        harness.context.transaction(async (tx) => {
+          await tx.db.Bill.create({ data: { name: 'outer' } })
+          await tx
+            .transaction(async () => {
+              throw new Error('guard')
+            })
+            .catch(() => null)
+        }),
+      ).rejects.toBeInstanceOf(TransactionRolledBackError)
       expect(await count('Bill')).toBe(0)
     },
     BOOT,

@@ -547,19 +547,6 @@ async function settleTransactionOwner<T>(
   return result
 }
 
-/**
- * The transaction-bound face of a context: everything it already carries, plus
- * `advisoryLock`, and with `sudo()`, `withSession()` and `transaction()`
- * answering in the same face rather than dropping back to the plain one
- * (ADR-0047).
- *
- * A wrapper rather than a second `getContext` branch, because the difference
- * between the two shapes is exactly these four members — `db` is the same
- * object, already built over the transaction's own collections and its lock
- * lane. The nested `transaction()` runs the callback directly, which is what
- * the wrapped context's own `transaction` does inside an owned transaction
- * (ADR-0028); it is spelled here so the callback is handed this face.
- */
 async function joinNested<T>(
   fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
   face: StackTransactionContext<AccessControlledDB>,
@@ -573,6 +560,19 @@ async function joinNested<T>(
   }
 }
 
+/**
+ * The transaction-bound face of a context: everything it already carries, plus
+ * `advisoryLock`, and with `sudo()`, `withSession()` and `transaction()`
+ * answering in the same face rather than dropping back to the plain one
+ * (ADR-0047).
+ *
+ * A wrapper rather than a second `getContext` branch, because the difference
+ * between the two shapes is exactly these four members — `db` is the same
+ * object, already built over the transaction's own collections and its lock
+ * lane. The nested `transaction()` joins the owner's transaction and poisons it
+ * if the callback rejects (ADR-0012); it is spelled here so the callback is
+ * handed this face.
+ */
 function transactionFace(
   base: StackContext<AccessControlledDB>,
   lock: RowLockLane | undefined,
