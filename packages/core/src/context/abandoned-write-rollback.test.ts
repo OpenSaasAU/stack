@@ -36,11 +36,11 @@ function schemaConfig(): OpenSaasConfig {
           operation: { ...OPEN, delete: () => ({ status: { equals: 'draft' } }) },
         },
         hooks: {
-          beforeOperation: async ({ operation, item, context }) => {
-            if (operation !== 'delete' || !item) return
-            await context.db.Audit.create({ data: { note: 'delete hook ran' } })
-            await context.db.Doc.update({
-              where: { id: String(item.id) },
+          beforeOperation: async (args) => {
+            if (args.operation !== 'delete') return
+            await args.context.db.Audit.create({ data: { note: 'delete hook ran' } })
+            await args.context.db.Doc.update({
+              where: { id: String(args.item.id) },
               data: { status: 'archived' },
             })
           },
