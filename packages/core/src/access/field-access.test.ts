@@ -158,7 +158,7 @@ describe('checkFieldAccess', () => {
     ).rejects.toThrow(InvalidFieldAccessResultError)
   })
 
-  it('throws for a non-boolean, non-filter result too (e.g. undefined)', async () => {
+  it('denies when the rule returns undefined', async () => {
     const fieldAccess = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       read: () => undefined as any,
@@ -170,10 +170,10 @@ describe('checkFieldAccess', () => {
         item: {},
         context: nonSudoContext(),
       }),
-    ).rejects.toThrow(InvalidFieldAccessResultError)
+    ).resolves.toBe(false)
   })
 
-  it('throws with a descriptive message for null, and for other primitive results', async () => {
+  it('denies on null, and throws a descriptive message for other primitive results', async () => {
     const nullAccess = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       read: () => null as any,
@@ -184,7 +184,7 @@ describe('checkFieldAccess', () => {
         item: {},
         context: nonSudoContext(),
       }),
-    ).rejects.toThrow(/returned null, not a boolean/)
+    ).resolves.toBe(false)
 
     const numberAccess = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
