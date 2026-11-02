@@ -954,7 +954,8 @@ export function deriveAuthLists(
 
   const derivedUserFields = assembleFields('user')
   for (const fieldKey of Object.keys(userConfig.fields ?? {})) {
-    const isBaseUserField = FIELD_ORDER.user?.includes(fieldKey) === true
+    const isBaseUserField =
+      FIELD_ORDER.user?.includes(fieldKey) === true && derivedUserFields[fieldKey] !== undefined
     if (isBaseUserField || derivedUserFields[fieldKey]?.access !== undefined) {
       throw new Error(
         `deriveAuthLists: extendUserList.fields declares "${fieldKey}", but better-auth already ` +
