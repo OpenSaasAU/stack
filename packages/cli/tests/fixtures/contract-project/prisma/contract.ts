@@ -17,18 +17,18 @@ const enum_PostStatus = nativeEnum('PostStatus', 'draft', 'published')
 
 export const contract = defineContract(
   { extensions: { pgvector }, namespaces: ['audit'] },
-  ({ field, model, rel }) => {
+  ({ field, model, rel, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_User = (models.User = model('User', {
       fields: {
-        id: field.id.uuidv7Native(),
-        email: field.text().unique(),
-        name: field.text().optional(),
-        active: field.boolean().default(true),
-        managerId: field.uuidNative().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        email: field.column(type.String()).unique(),
+        name: field.column(type.String()).optional(),
+        active: field.column(type.Boolean()).default(true),
+        managerId: field.column(type.Uuid()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         posts: rel.hasMany(() => models.Post, { by: 'authorId' }),
@@ -41,11 +41,11 @@ export const contract = defineContract(
 
     const model_Profile = (models.Profile = model('Profile', {
       fields: {
-        id: field.id.uuidv7Native(),
-        bio: field.text().optional(),
-        userId: field.uuidNative().optional().unique(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        bio: field.column(type.String()).optional(),
+        userId: field.column(type.Uuid()).optional().unique(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         user: rel.belongsTo(() => models.User, { from: 'userId', to: 'id' }),
@@ -54,17 +54,17 @@ export const contract = defineContract(
 
     const model_Post = (models.Post = model('Post', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
         status: field.column(pg.enum(enum_PostStatus)).default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        body: field.json().optional(),
-        hero: field.json().optional(),
-        attachment: field.json().optional(),
-        authorId: field.uuidNative().optional(),
-        categoryId: field.uuidNative().optional(),
+        body: field.column(type.Jsonb()).optional(),
+        hero: field.column(type.Jsonb()).optional(),
+        attachment: field.column(type.Jsonb()).optional(),
+        authorId: field.column(type.Uuid()).optional(),
+        categoryId: field.column(type.Uuid()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),
@@ -74,8 +74,8 @@ export const contract = defineContract(
 
     const model_Category = (models.Category = model('Category', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text().unique(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()).unique(),
       },
       relations: {
         from_Post_category: rel.hasMany(() => models.Post, { by: 'categoryId' }),
@@ -84,11 +84,11 @@ export const contract = defineContract(
 
     const model_AuditEntry = (models.AuditEntry = model('AuditEntry', {
       fields: {
-        id: field.id.uuidv7Native(),
-        action: field.text(),
-        actorId: field.uuidNative().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        action: field.column(type.String()),
+        actorId: field.column(type.Uuid()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         actor: rel.belongsTo(() => models.User, { from: 'actorId', to: 'id' }),
@@ -98,11 +98,11 @@ export const contract = defineContract(
 
     const model_Settings = (models.Settings = model('Settings', {
       fields: {
-        id: field.int().default(1).id(),
-        siteName: field.text().optional().default('Fixture'),
-        maintenanceMode: field.boolean().default(false),
+        id: field.column(type.Int()).default(1).id(),
+        siteName: field.column(type.String()).optional().default('Fixture'),
+        maintenanceMode: field.column(type.Boolean()).default(false),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {},
     }))

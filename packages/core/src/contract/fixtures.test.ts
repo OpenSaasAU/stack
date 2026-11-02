@@ -84,8 +84,8 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     expect(table(contract, 'User').columns.updatedAt).not.toHaveProperty('default')
     expect(contract.execution?.mutations.defaults).toContainEqual({
       ref: { namespace: 'public', entry: 'User', field: 'updatedAt' },
-      onCreate: { kind: 'generator', id: 'timestampNow' },
-      onUpdate: { kind: 'generator', id: 'timestampNow' },
+      onCreate: { kind: 'generator', id: 'timestamptzStringNow' },
+      onUpdate: { kind: 'generator', id: 'timestamptzStringNow' },
     })
 
     expect(model(data, 'Post').relations).toEqual([

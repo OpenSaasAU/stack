@@ -2,10 +2,7 @@ import type { AccessControlledDB, AccessControl, FieldAccess } from '../access/t
 import type { GeneratedTables } from '../contract/dependencies.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
-import type {
-  PostgresOptionsBase,
-  PostgresOptionsWithContractJson,
-} from '@prisma/orm-postgres/runtime'
+import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
   'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
@@ -185,6 +182,8 @@ export type FieldBeforeTransactionHookArgs<
  *    transaction, and these hooks fire at per-(list, operation) granularity, not
  *    per record. For per-record nested compensation use the in-transaction
  *    `afterOperation` (which receives the correct nested `item`).
+ *  - An update whose resolved payload is empty still reports `committed`, with
+ *    `item` equal to `originalItem`; compare the two to skip a no-op.
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate for whatever
  *    `beforeTransaction` did externally.
@@ -1874,6 +1873,10 @@ export type BeforeOperationHookArgs<
  * - create: has item, inputData, and resolvedData, no originalItem
  * - update: has item, originalItem, inputData, and resolvedData
  * - delete: has originalItem only
+ *
+ * An update whose resolved payload is empty writes nothing (and does not move
+ * `updatedAt`) but still runs `afterOperation`, with `item` equal to
+ * `originalItem`. A hook that must skip no-ops compares the two.
  */
 export type AfterOperationHookArgs<
   TOutput = Record<string, unknown>,
@@ -2690,10 +2693,7 @@ export type ExtensionDescriptor = {
   from: string
 }
 
-// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
-// `PostgresBindingOptions` interface that carries `pg`, so `pg` is still read
-// off the contractJson options (the contract generic does not reach it).
-type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
+type PostgresBindingOptions = PostgresOptions<never>
 
 /**
  * Per-deployment pool binding for the generated runtime client (ADR-0049,

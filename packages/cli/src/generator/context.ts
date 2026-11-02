@@ -155,6 +155,7 @@ import { originTripwire } from '@opensaas/stack-core/origin'
 import { processGlobal } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
+import { contractFromJson } from '@prisma/orm-postgres/static'
 ${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
 import contractJson from '${contractJsonImport}' with { type: 'json' }
 import type { Context } from './types.ts'
@@ -175,8 +176,8 @@ let resolvedConfig: OpenSaasConfig | null = null
  * load: nothing that only reads the config opens a connection.
  */
 function createClient(config: OpenSaasConfig) {
-  return postgres<Contract>({
-    contractJson,
+  return postgres({
+    contract: contractFromJson<Contract>(contractJson),
     extensions: [${runtimeExtensions}],
     middleware: [originTripwire],
     ...resolveRuntimeConnection(config.db.client),

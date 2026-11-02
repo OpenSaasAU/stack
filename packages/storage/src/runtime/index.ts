@@ -62,6 +62,11 @@ export interface UploadFileOptions {
   validation?: FileValidationOptions
   /** Custom metadata */
   metadata?: Record<string, string>
+  /**
+   * Called with the key a `generateUniqueFilenames: false` provider will write
+   * to, before anything is written. Throw to refuse the upload.
+   */
+  claimStableKey?: (key: string) => Promise<void>
 }
 
 /**
@@ -70,6 +75,18 @@ export interface UploadFileOptions {
 export interface UploadImageOptions extends UploadFileOptions {
   /** Image transformations to apply */
   transformations?: Record<string, ImageTransformationConfig>
+}
+
+async function claimStableKey(
+  config: OpenSaasConfig,
+  storageProviderName: string,
+  storedName: string,
+  options: UploadFileOptions | undefined,
+): Promise<void> {
+  if (!options?.claimStableKey) return
+  if (config.storage?.[storageProviderName]?.generateUniqueFilenames !== false) return
+  const key = storedName.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
+  await options.claimStableKey(key)
 }
 
 /**
@@ -118,6 +135,8 @@ export async function uploadFile(
 
   const contentType = resolveEffectiveMimeType(file)
   const storedName = withEffectiveExtension(file.name, contentType)
+
+  await claimStableKey(config, storageProviderName, storedName, options)
 
   const provider = createStorageProvider(config, storageProviderName)
 
@@ -206,6 +225,8 @@ export async function uploadImage(
       `Image dimensions ${detected.width}x${detected.height} exceed the maximum of ${maxPixels} pixels`,
     )
   }
+
+  await claimStableKey(config, storageProviderName, storedName, options)
 
   const provider = createStorageProvider(config, storageProviderName)
 
@@ -356,6 +377,12 @@ function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
     result.validation = validation
   }
   if (isRecord(metadata)) result.metadata = stringRecord(metadata)
+  const { claimStableKey: claim } = options
+  if (typeof claim === 'function') {
+    result.claimStableKey = async (key) => {
+      await claim(key)
+    }
+  }
   return result
 }
 
