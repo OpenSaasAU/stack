@@ -47,10 +47,10 @@ describe('cleanup keeps an asset another row still references', () => {
 
   async function sharedPair() {
     const a = await harness.context.db.Doc.create({ data: { attachment: pdf('a.pdf') } })
-    const b = await harness.context
-      .sudo()
-      .db.Doc.create({ data: { attachment: (a as { attachment: never }).attachment } })
-    return { a: a as { id: string }, b: b as { id: string } }
+    if (a === null) throw new Error('create denied')
+    const b = await harness.context.sudo().db.Doc.create({ data: { attachment: a.attachment } })
+    if (b === null) throw new Error('sudo create denied')
+    return { a, b }
   }
 
   it('keeps the file when one of two rows sharing it is deleted, then removes it with the last', async () => {

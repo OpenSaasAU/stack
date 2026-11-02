@@ -5,11 +5,11 @@ import type {
   FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
-import { isAssetReferenced } from '../utils/shared-asset.js'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
 import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
 import type { FileValidationOptions } from '../utils/upload.js'
+import { isAssetReferenced } from '../utils/shared-asset.js'
 import {
   assembleFileMetadata,
   assembleImageMetadata,
