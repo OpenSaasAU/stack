@@ -685,7 +685,7 @@ async function runDeletePath(args: {
 
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
-  if (deleted === null) return null
+  if (deleted === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation (delete) ─────────────────────────────
   await executeAfterOperation(listConfig.hooks, {
