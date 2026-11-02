@@ -107,7 +107,7 @@ function foreignKeyOwner(
  * carrying one is read at its full width, because a rule that reaches into
  * `item` cannot be answered against a row that was projected away.
  */
-async function readsTheRow(
+export async function readsTheRow(
   fieldConfig: FieldConfig | undefined,
   ctx: ResolveContext,
 ): Promise<boolean> {
