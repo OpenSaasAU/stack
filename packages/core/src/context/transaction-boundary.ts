@@ -396,7 +396,11 @@ export async function runWithTransactionBoundary(args: {
   try {
     if (ownedRegistry) {
       const settle: TransactionSettleOutcome =
-        txError !== undefined ? { status: 'rolled-back', error: txError } : { status: 'committed' }
+        txError !== undefined
+          ? { status: 'rolled-back', error: txError }
+          : ownedRegistry.isPoisoned
+            ? { status: 'rolled-back', error: ownedRegistry.poisonCause }
+            : { status: 'committed' }
       await ownedRegistry.drain(settle, afterErrors)
     }
   } finally {

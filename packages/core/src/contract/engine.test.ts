@@ -62,12 +62,14 @@ async function shutdownDatabase(db: Database | undefined): Promise<void> {
 /** Applies the contract with `dbInit` and checks a follow-up `dbUpdate` plan is empty. */
 async function applyContract(db: Database, contract: PrismaContract): Promise<void> {
   const contractJson = toEmittedContract(contract)
+  const invocation = { cwd: db.migrationsDir, configPath: undefined, dbGiven: true }
   const control = createPostgresControlClient({ connection: db.url })
   try {
     const init = await control.dbInit({
       contract: contractJson,
       mode: 'apply',
       migrationsDir: db.migrationsDir,
+      invocation,
     })
     expect(init.ok).toBe(true)
     const plan = await control.dbUpdate({
@@ -75,6 +77,7 @@ async function applyContract(db: Database, contract: PrismaContract): Promise<vo
       mode: 'plan',
       migrationsDir: db.migrationsDir,
       answerQuestions: async () => [],
+      invocation,
     })
     expect(plan.assertOk().plan.operations).toEqual([])
   } finally {

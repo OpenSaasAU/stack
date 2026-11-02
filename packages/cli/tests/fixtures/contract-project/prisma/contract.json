@@ -1105,7 +1105,7 @@
     "storageHash": "97744c4c7bc1ee621675106f4f78e809643a8adbde2cc2b0948505c8add00378"
   },
   "execution": {
-    "executionHash": "b226cb137b15acbabfef2bc5082eb506d9510c2d3cefd3c20c52ca4356e55772",
+    "executionHash": "a6b5c6958e22caeb09fcbb38d784bcb6e8e1a690aed3cb9b2df0ea24f480d7da",
     "mutations": {
       "defaults": [
         {
@@ -1121,11 +1121,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -1158,11 +1158,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -1173,11 +1173,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -1199,11 +1199,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -1225,11 +1225,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -1287,13 +1287,11 @@
             "named": "CodecTypes",
             "package": "@internal/extension-pgvector/codec-types"
           },
-          "typeImports": [
-            {
-              "alias": "Vector",
-              "named": "Vector",
-              "package": "@internal/extension-pgvector/codec-types"
-            }
-          ]
+          "parameterizedOutputTypes": {
+            "alias": "PgVectorParameterizedOutputTypes",
+            "named": "ParameterizedOutputTypesForTypeParams",
+            "package": "@internal/extension-pgvector/codec-types"
+          }
         },
         "operationTypes": {
           "import": {

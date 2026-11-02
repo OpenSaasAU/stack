@@ -148,7 +148,7 @@ export async function checkFieldAccess(
     operation,
   } as Parameters<typeof accessControl>[0])
 
-  if (result === false) {
+  if (result === false || result === null || result === undefined) {
     return false
   }
 

@@ -457,11 +457,15 @@ async function resolveRelation(
   return nodes.length === 1 ? nodes[0] : { kind: 'and', nodes }
 }
 
+function isUnfilterable(resolved: ResolvedQueryField): boolean {
+  return resolved.fieldConfig?.isFilterable === false
+}
+
 async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Promise<WherePlan> {
   if (value === undefined) throw undefinedCondition(ctx.listName, key)
 
   const resolved = resolveQueryField(key, ctx.listConfig.fields)
-  if (!resolved) throw unqueryableKey(ctx.listName, key)
+  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
 
   if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
     const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
@@ -578,7 +582,7 @@ export async function resolveOrderBy(
         throw malformedCondition(ctx.listName, key, 'takes the direction "asc" or "desc"')
       }
       const resolved = resolveQueryField(key, ctx.listConfig.fields)
-      if (!resolved) throw unqueryableKey(ctx.listName, key)
+      if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
       // The read gate runs before the relationship refusal, as `resolveKey`
       // does: a read-denied key must be indistinguishable from one the list
       // does not declare, and "orderBy takes scalar columns only" would
@@ -629,7 +633,7 @@ export async function resolveColumns(
   const plans: ColumnPlan[] = []
   for (const key of keys) {
     const resolved = resolveQueryField(key, ctx.listConfig.fields)
-    if (!resolved) throw unqueryableKey(ctx.listName, key)
+    if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
     if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
       const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
         session: ctx.session,
@@ -723,7 +727,7 @@ export async function resolveNearest(
   ctx: ResolveContext,
 ): Promise<NearestPlan> {
   const resolved = resolveQueryField(fieldKey, ctx.listConfig.fields)
-  if (!resolved) throw unqueryableKey(ctx.listName, fieldKey)
+  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, fieldKey)
 
   if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
     const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {

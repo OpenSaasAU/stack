@@ -8,7 +8,12 @@ import type { AnyExpression } from '@prisma/orm-postgres/relational-core'
 import type { OrmClient, OrmRow } from '../access/types.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
-import { lowerWhere, type PredicateAccessor, type WhereCombinators } from './lower.js'
+import {
+  lowerWhere,
+  toColumnValue,
+  type PredicateAccessor,
+  type WhereCombinators,
+} from './lower.js'
 import type { WherePlan } from './vocabulary.js'
 
 export { whereCombinators } from './lower.js'
@@ -35,7 +40,6 @@ interface AggregateReduction {
 export interface WriteCollection {
   where(predicate: (model: PredicateAccessor) => AnyExpression): WriteCollection
   first(): Promise<OrmRow | null>
-  all(): PromiseLike<OrmRow[]>
   aggregate(
     build: (aggregate: AggregateAccessor) => Record<string, AggregateReduction>,
   ): Promise<Record<string, unknown>>
@@ -137,11 +141,15 @@ export async function countRows(collection: WriteCollection, listName: string): 
   return rows
 }
 
+function toColumnValues(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toColumnValue(value)]))
+}
+
 export function insertRow(
   collection: WriteCollection,
   data: Record<string, unknown>,
 ): Promise<OrmRow> {
-  return withOrigin('engine', () => collection.create(data))
+  return withOrigin('engine', () => collection.create(toColumnValues(data)))
 }
 
 export function updateFirst(
@@ -150,7 +158,7 @@ export function updateFirst(
   ops: WhereCombinators,
   data: Record<string, unknown>,
 ): Promise<OrmRow | null> {
-  return withOrigin('engine', () => scoped(collection, scope, ops).update(data))
+  return withOrigin('engine', () => scoped(collection, scope, ops).update(toColumnValues(data)))
 }
 
 export function deleteFirst(

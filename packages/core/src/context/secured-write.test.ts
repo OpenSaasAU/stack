@@ -289,14 +289,14 @@ describe('the write terminals over a real collection', () => {
       ).toBeNull()
 
       // The owner's own bracket first (the update, which wrote nothing), then
-      // the joined delete's deferred one (ADR-0028), which did commit.
-      expect(settled).toEqual(['rolled-back', 'committed'])
+      // the joined delete's deferred one (ADR-0028), which rolled back with it.
+      expect(settled).toEqual(['rolled-back', 'rolled-back'])
       // The reason reaches the compensator as a named type off the package
       // root, so telling "matched nothing" from a real rollback does not mean
       // matching on `error.name`.
-      expect(reasons).toHaveLength(1)
+      expect(reasons).toHaveLength(2)
       expect(reasons[0]).toBeInstanceOf(WriteMatchedNothingError)
-      expect(await storedTitles(harness.url)).toEqual([])
+      expect(await storedTitles(harness.url)).toEqual(['before'])
     },
     BOOT,
   )
