@@ -844,6 +844,7 @@ export function password<
   return {
     type: 'password',
     outputType: "import('@opensaas/stack-core/internal').HashedPassword",
+    isFilterable: false,
     ...options,
     ui: {
       ...options?.ui,

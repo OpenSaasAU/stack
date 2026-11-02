@@ -726,6 +726,14 @@ export type BaseFieldConfig<
    */
   getVectorColumn?: (fieldName: string) => VectorColumnDescriptor
   /**
+   * Set to `false` to keep this field out of the predicate, order and distinct
+   * vocabulary: a `where`, `orderBy`, `distinct` or `distinctOn` naming it is
+   * refused exactly as an undeclared column is. The field is still readable
+   * and writable under its own access rules. `password()` sets this so a hash
+   * cannot be extracted byte-by-byte with `contains`/`startsWith`/`gt`.
+   */
+  isFilterable?: boolean
+  /**
    * The TypeScript type a read returns for this field, when it differs from
    * the column's codec type (ADR-0052). Required on a virtual field, where it
    * is the contract remainder's computed entry; on a stored field it is an
