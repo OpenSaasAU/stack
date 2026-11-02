@@ -2114,6 +2114,16 @@ export type ListIndex = {
    * The constraint/index's wire name, emitted as the contract's `name:`.
    */
   name?: string
+  /**
+   * A partial index's predicate: raw SQL, the body of a `WHERE` clause without
+   * the keyword. Written in database column names. A unique entry with `where`
+   * is a partial unique index rather than a unique constraint.
+   *
+   * Drift detection compares this text byte-for-byte with how PostgreSQL
+   * prints the predicate back, so write it in that form — copy it from the
+   * `WHERE` clause of `pg_indexes.indexdef` (`("twilioSid" <> ''::text)`).
+   */
+  where?: string
 }
 
 // Generic `any` default allows ListConfig to work with any list item type

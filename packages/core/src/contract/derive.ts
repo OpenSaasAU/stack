@@ -465,6 +465,7 @@ function deriveIndexes(
       columns,
       unique,
       ...(index.name !== undefined ? { name: index.name } : {}),
+      ...(index.where !== undefined ? { where: index.where } : {}),
     }
   })
 }

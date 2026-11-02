@@ -415,6 +415,18 @@ describe('deriveContract — db.indexes resolution', () => {
     ])
   })
 
+  test('carries a where predicate through to the derived index', () => {
+    const data = single({
+      A: {
+        fields: { name: text() },
+        db: { indexes: [{ fields: ['name'], unique: true, where: `"name" <> ''` }] },
+      },
+    })
+    expect(data.models[0].indexes).toEqual([
+      { columns: ['name'], unique: true, where: `"name" <> ''` },
+    ])
+  })
+
   test.each([
     [{ fields: [] }, /has an empty "fields" array/],
     [{ fields: ['missing'] }, /references unknown field "missing"/],

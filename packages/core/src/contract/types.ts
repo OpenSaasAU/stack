@@ -59,6 +59,7 @@ export type ContractIndex = {
   columns: string[]
   unique: boolean
   name?: string
+  where?: string
 }
 
 /**
