@@ -2117,7 +2117,7 @@ export type ListIndex = {
   /**
    * A partial index's predicate: raw SQL, the body of a `WHERE` clause without
    * the keyword. Written in database column names. A unique entry with `where`
-   * is a partial unique index rather than a unique constraint.
+   * is a partial unique index rather than a unique constraint. It must also carry a `name`, which is adopted as the index's exact name.
    *
    * Drift detection compares this text byte-for-byte with how PostgreSQL
    * prints the predicate back, so write it in that form — copy it from the

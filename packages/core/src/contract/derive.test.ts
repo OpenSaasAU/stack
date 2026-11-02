@@ -419,12 +419,34 @@ describe('deriveContract — db.indexes resolution', () => {
     const data = single({
       A: {
         fields: { name: text() },
-        db: { indexes: [{ fields: ['name'], unique: true, where: `"name" <> ''` }] },
+        db: {
+          indexes: [{ fields: ['name'], unique: true, name: 'A_name_idx', where: `"name" <> ''` }],
+        },
       },
     })
     expect(data.models[0].indexes).toEqual([
-      { columns: ['name'], unique: true, where: `"name" <> ''` },
+      { columns: ['name'], unique: true, name: 'A_name_idx', where: `"name" <> ''` },
     ])
+  })
+
+  test.each([
+    [{ fields: ['name'], where: '  ' }, /empty "where"/],
+    [{ fields: ['name'], where: 'x' }, /no "name"/],
+  ])('refuses a bad partial entry %#', (index, message) => {
+    expect(() => single({ A: { fields: { name: text() }, db: { indexes: [index] } } })).toThrow(
+      message,
+    )
+  })
+
+  test("a partial entry does not collide with the column's field-level isIndexed", () => {
+    const data = single({
+      A: {
+        fields: { name: text({ isIndexed: 'unique' }) },
+        db: { indexes: [{ fields: ['name'], unique: true, name: 'A_p', where: 'true' }] },
+      },
+    })
+    expect(data.models[0].indexes).toHaveLength(1)
+    expect(data.models[0].columns.find((c) => c.name === 'name')?.unique).toBe(true)
   })
 
   test.each([

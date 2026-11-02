@@ -457,7 +457,18 @@ function deriveIndexes(
       resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
     )
     const unique = index.unique === true
-    if (columns.length === 1) {
+    if (index.where !== undefined) {
+      if (typeof index.where !== 'string' || index.where.trim() === '') {
+        throw new Error(
+          `${entry} on list "${listKey}" has an empty "where" — a partial index needs a SQL predicate`,
+        )
+      }
+      if (index.name === undefined) {
+        throw new Error(
+          `${entry} on list "${listKey}" has a "where" but no "name" — a partial index must be named so the database object can be adopted and its violations mapped`,
+        )
+      }
+    } else if (columns.length === 1) {
       const collision = draft.fieldLevelIndexes.get(columns[0])
       if (collision) adoptFieldLevelIndex(listKey, draft, entry, columns[0], collision, unique)
     }

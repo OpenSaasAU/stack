@@ -671,7 +671,7 @@ export const TextMessage = list({
 })
 ```
 
-`where` is raw SQL authored by the application — the body of the `WHERE` clause, in database column names — and is emitted as a string literal, so quotes and backticks are safe. An entry with `where` is a partial index; with `unique: true` it is a partial unique index, not a unique constraint. Prisma compares the text byte-for-byte with how PostgreSQL prints the predicate back, so copy it from `pg_indexes.indexdef` (note the `::text` cast and the parentheses); text that differs plans a drop and recreate.
+`where` is raw SQL authored by the application — the body of the `WHERE` clause, in database column names — and is emitted as a string literal, so quotes and backticks are safe. An entry with `where` must also carry a `name`, and it never replaces or collides with a field-level `isIndexed` on the same column. It is a partial index; with `unique: true` it is a partial unique index, not a unique constraint. Prisma compares the text byte-for-byte with how PostgreSQL prints the predicate back, so copy it from `pg_indexes.indexdef` (note the `::text` cast and the parentheses); text that differs plans a drop and recreate.
 
 **Example — a composite index under an adopted name:**
 
