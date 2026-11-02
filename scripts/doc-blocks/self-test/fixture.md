@@ -563,6 +563,7 @@ export type EmbeddingField = {
     config: OpenSaasConfig,
   ) => ContractFieldDescriptor
   getVectorColumn?: (fieldName: string) => VectorColumnDescriptor
+  isFilterable?: boolean
   outputType?: TypeDescriptor
   inputType?: TypeDescriptor
   needs?: string[]
@@ -625,6 +626,7 @@ export type EmbeddingField = {
     config: OpenSaasConfig,
   ) => ContractFieldDescriptor
   getVectorColumn?: (fieldName: string) => VectorColumnDescriptor
+  isFilterable?: boolean
   outputType?: TypeDescriptor
   inputType?: TypeDescriptor
   needs?: string[]
