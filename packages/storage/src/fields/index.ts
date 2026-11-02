@@ -5,6 +5,7 @@ import type {
   FieldKeys,
   TypeInfo,
 } from '@opensaas/stack-core/extend'
+import { isAssetReferenced } from '../utils/shared-asset.js'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
 import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
@@ -475,14 +476,23 @@ export function file<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
+    const stillReferenced = (filename: string) =>
+      isAssetReferenced({
+        context,
+        listKey,
+        filename,
+        read: (row) => logicalValue(fieldConfig, fieldKey, row),
+      })
     if (operation === 'delete') {
       if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as FileMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
+        if (await stillReferenced(deleted.filename)) return
         await context.storage.deleteFile(fieldConfig.storage, deleted.filename)
       } catch (error) {
         console.error(`Failed to cleanup file on delete: ${deleted.filename}`, error)
@@ -493,6 +503,7 @@ export function file<
     if (!pending) return
     for (const stale of staleAssets(pending, status)) {
       try {
+        if (await stillReferenced(stale.filename)) continue
         await context.storage.deleteFile(fieldConfig.storage, stale.filename)
       } catch (error) {
         console.error(`Failed to cleanup file: ${stale.filename}`, error)
@@ -649,14 +660,23 @@ export function image<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
+    const stillReferenced = (filename: string) =>
+      isAssetReferenced({
+        context,
+        listKey,
+        filename,
+        read: (row) => logicalValue(fieldConfig, fieldKey, row),
+      })
     if (operation === 'delete') {
       if (status !== 'committed' || !fieldConfig.cleanupOnDelete) return
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as ImageMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
+        if (await stillReferenced(deleted.filename)) return
         await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
       } catch (error) {
         console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
@@ -667,6 +687,7 @@ export function image<
     if (!pending) return
     for (const stale of staleAssets(pending, status)) {
       try {
+        if (await stillReferenced(stale.filename)) continue
         await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
       } catch (error) {
         console.error(`Failed to cleanup image: ${stale.filename}`, error)

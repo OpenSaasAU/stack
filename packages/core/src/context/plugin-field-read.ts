@@ -1,4 +1,5 @@
 import type { AccessContext, OrmRow } from '../access/types.js'
+import { withOrigin } from '../origin.js'
 import {
   firstMatching,
   identityPredicate,
@@ -54,4 +55,21 @@ export async function readPluginOwnedRow(args: PluginOwnedRowRead): Promise<OrmR
   const ops = await whereCombinators()
   const collection = writeCollection(context.ormHandle, listName)
   return await firstMatching(collection, [identityPredicate(listName, id)], ops)
+}
+
+export interface PluginOwnedRowsRead {
+  context: AccessContext
+  listName: string
+}
+
+/** Every row of a list as persisted, past every access-control layer. */
+export async function readPluginOwnedRows(args: PluginOwnedRowsRead): Promise<OrmRow[]> {
+  const { context, listName } = args
+
+  if (context.ormHandle === undefined) {
+    throw new HandlelessPluginFieldReadError(listName)
+  }
+
+  const collection = writeCollection(context.ormHandle, listName)
+  return await withOrigin('engine', async () => await collection.all())
 }

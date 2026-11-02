@@ -26,8 +26,12 @@ export type { PluginOwnedFieldWrite } from './context/plugin-field-write.js'
 // The read-side twin of the above: a plugin's escalated read of a row it
 // needs to see as persisted, past every access-control layer including Field
 // Visibility (#1282).
-export { readPluginOwnedRow, HandlelessPluginFieldReadError } from './context/plugin-field-read.js'
-export type { PluginOwnedRowRead } from './context/plugin-field-read.js'
+export {
+  readPluginOwnedRow,
+  readPluginOwnedRows,
+  HandlelessPluginFieldReadError,
+} from './context/plugin-field-read.js'
+export type { PluginOwnedRowRead, PluginOwnedRowsRead } from './context/plugin-field-read.js'
 
 // Whether a field stores nothing — the `virtual` flag, the `'virtual'` type
 // discriminator, or a `{ kind: 'computed' }` contract descriptor, the one

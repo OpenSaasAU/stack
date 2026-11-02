@@ -35,6 +35,7 @@ interface AggregateReduction {
 export interface WriteCollection {
   where(predicate: (model: PredicateAccessor) => AnyExpression): WriteCollection
   first(): Promise<OrmRow | null>
+  all(): PromiseLike<OrmRow[]>
   aggregate(
     build: (aggregate: AggregateAccessor) => Record<string, AggregateReduction>,
   ): Promise<Record<string, unknown>>
