@@ -99,6 +99,9 @@ importers:
       prettier:
         specifier: ^3.9.9
         version: 3.9.9
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       turbo:
         specifier: ^2.11.5
         version: 2.11.5
