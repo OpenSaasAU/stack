@@ -1124,9 +1124,10 @@ describe('deriveAuthLists - extendUserList field collisions (issue #1917)', () =
     )
   })
 
-  it('still allows overriding a derived field that carries no deny', () => {
-    const { lists } = deriveAuthLists(defaultModels, { fields: { name: text() } })
-    expect(lists.User.fields).toHaveProperty('name')
+  it.each(['email', 'name', 'image'])('throws when extendUserList redeclares "%s"', (field) => {
+    expect(() => deriveAuthLists(defaultModels, { fields: { [field]: text() } })).toThrow(
+      new RegExp(`extendUserList.fields declares "${field}".*fieldAccess`, 's'),
+    )
   })
 
   it('does not treat a reverse-relation name as a deny collision', () => {
