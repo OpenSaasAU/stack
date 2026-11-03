@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { decimal, integer, json, relationship, select, text, timestamp } from '../fields/index.js'
+import {
+  decimal,
+  integer,
+  json,
+  relationship,
+  select,
+  text,
+  timestamp,
+  virtual,
+} from '../fields/index.js'
 import { deriveContract } from './derive.js'
 
 function single(lists: OpenSaasConfig['lists'], db: Partial<OpenSaasConfig['db']> = {}) {
@@ -609,5 +618,43 @@ describe('deriveContract — db.foreignKeys', () => {
     expect(() =>
       derive([{ fields: ['student'], references: { list: 'Nope', fields: ['id'] } }]),
     ).toThrow(/not in the config/)
+  })
+
+  test('refuses a virtual and a to-many field', () => {
+    const lists = {
+      Enrolment: parent,
+      Slot: {
+        fields: { v: virtual({ type: 'string', hooks: { resolveOutput: () => 'x' } }) },
+      },
+    } as OpenSaasConfig['lists']
+    expect(() =>
+      single({
+        ...lists,
+        Slot: {
+          ...lists.Slot,
+          db: {
+            foreignKeys: [{ fields: ['v'], references: { list: 'Enrolment', fields: ['id'] } }],
+          },
+        },
+      }),
+    ).toThrow(/virtual field "v"/)
+  })
+
+  test('accepts a reference to the target id', () => {
+    const data = derive([
+      { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] } },
+    ])
+    expect(data.models[1].compositeForeignKeys?.[0].references.columns).toEqual(['id'])
+  })
+
+  test('refuses a repeated field', () => {
+    expect(() =>
+      derive([
+        {
+          fields: ['student', 'student'],
+          references: { list: 'Enrolment', fields: ['id', 'student'] },
+        },
+      ]),
+    ).toThrow(/more than once/)
   })
 })

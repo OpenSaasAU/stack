@@ -506,6 +506,9 @@ function deriveCompositeForeignKeys(
         `${entry} on list "${listKey}" names ${fields.length} field(s) but references ${references.fields.length} field(s) on "${references.list}" — the two lists must have the same arity`,
       )
     }
+    if (new Set(fields.map((f) => (typeof f === 'string' ? f : f.field))).size !== fields.length) {
+      throw new Error(`${entry} on list "${listKey}" names the same field more than once`)
+    }
     const targetConfig = config.lists[references.list]
     const targetDraft = drafts.get(references.list)
     if (!targetConfig || !targetDraft) {
@@ -519,6 +522,14 @@ function deriveCompositeForeignKeys(
     const targetColumns = references.fields.map((fieldKey) =>
       resolveIndexColumn(references.list, targetConfig, targetDraft, entry, fieldKey),
     )
+    if (
+      columns.length === 1 &&
+      draft.model.foreignKeys.some((existing) => existing.column === columns[0])
+    ) {
+      throw new Error(
+        `${entry} on list "${listKey}" constrains "${columns[0]}", which a relationship field already references with its own foreign key — remove the entry`,
+      )
+    }
     if (!declaresUnique(targetDraft, targetColumns)) {
       throw new Error(
         `${entry} on list "${listKey}" references (${references.fields.join(', ')}) on "${references.list}", which is not a declared unique there. ` +
