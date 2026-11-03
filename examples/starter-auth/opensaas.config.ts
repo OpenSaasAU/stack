@@ -66,8 +66,13 @@ export default config({
         enabled: true,
         minPasswordLength: 8,
         requireConfirmation: true,
-        // Demo only: replace with a real email transport before deploying.
+        // Dev-only logger; replace with a real email transport before deploying.
         sendResetPassword: async ({ user, url }) => {
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error(
+              'emailAndPassword.sendResetPassword is not configured: supply an email transport before sending password resets in production.',
+            )
+          }
           console.log(`Password reset for ${user.email}: ${url}`)
         },
       },
