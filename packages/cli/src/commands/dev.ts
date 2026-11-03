@@ -524,11 +524,15 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       ) {
         console.log(
           chalk.yellow(
-            `⚠️  ${connectionVariable} from ${connectionFile}: using it — no dev database, schema changes apply to that database.\n`,
+            `⚠️  ${connectionVariable} from ${connectionFile}: using it — no dev database. Schema changes reach that database only with --yes; otherwise they are parked.\n`,
           ),
         )
       } else {
-        console.log(chalk.gray('DATABASE_URL is set: using it, and starting no dev database.\n'))
+        console.log(
+          chalk.gray(
+            'DATABASE_URL is set: using it, and starting no dev database. Schema changes reach it only with --yes; otherwise they are parked.\n',
+          ),
+        )
       }
     } else {
       const { config, aliasWarnings } = await loadOpenSaasConfig(cwd, configPath)
