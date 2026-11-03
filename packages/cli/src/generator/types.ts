@@ -8,7 +8,7 @@ import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
 import * as path from 'path'
-import { contractTypesImport } from './context.js'
+import { contractTypesImport, DEFAULT_CONTRACT_JSON_IMPORT } from './output-paths.js'
 import { assertFieldKeysAreIdentifiers, quote } from './source-text.js'
 
 /**
@@ -307,8 +307,6 @@ export interface Context<TSession extends ${session} = ${session}>
 export interface TransactionContext<TSession extends ${session} = ${session}>
   extends ${imported('StackTransactionContext')}<TxDB, TSession, ${services}, TxDB, ${client}> {}`
 }
-
-const DEFAULT_CONTRACT_JSON_IMPORT = '../prisma/contract.json'
 
 export function generateTypes(
   config: OpenSaasConfig,
