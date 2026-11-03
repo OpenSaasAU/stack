@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
+import { validateDefaultValues } from '../validation/default-value.js'
 import { deriveContract } from '../contract/derive.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 import { bigInt, calendarDay, checkbox, decimal, integer, select } from './index.js'
@@ -39,14 +40,6 @@ describe('defaultValue is checked against the field type', () => {
     ['integer', () => integer({ defaultValue: 1.5 })],
     ['bigInt', () => bigInt({ defaultValue: '1n; pwn' as never })],
     ['decimal', () => decimal({ defaultValue: 'abc' })],
-    [
-      'select',
-      () =>
-        select({
-          options: [{ label: 'A', value: 'a' }],
-          defaultValue: 'b',
-        }),
-    ],
     ['calendarDay', () => calendarDay({ defaultValue: '2025-13-01' })],
     ['calendarDay', () => calendarDay({ defaultValue: '2025-02-30' })],
   ])('%s rejects an invalid default with a named error', (_name, build) => {
@@ -76,6 +69,22 @@ describe('defaultValue is checked against the field type', () => {
       derive(select({ options: [{ label: 'A', value: 'a' }], defaultValue: 'a' })),
     ).not.toThrow()
     expect(() => derive(calendarDay({ defaultValue: '2024-02-29' }))).not.toThrow()
+  })
+})
+
+describe('select defaults', () => {
+  test('a default outside the options is refused by the default-value validator', () => {
+    const refusals = validateDefaultValues({
+      db: { provider: 'postgresql' },
+      lists: {
+        Thing: {
+          fields: { value: select({ options: [{ label: 'A', value: 'a' }], defaultValue: 'b' }) },
+          access: { operation: { query: () => true } },
+        },
+      },
+    })
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ listKey: 'Thing', entry: 'fields.value' })
   })
 })
 

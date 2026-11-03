@@ -1108,14 +1108,6 @@ export function select<
     },
     getContractField: (fieldName: string, listName: string) => {
       const hasDefault = options.defaultValue !== undefined
-      const optionValues = options.options.map((opt) => opt.value)
-      checkedDefault(
-        options.defaultValue,
-        listName,
-        fieldName,
-        `one of the declared options (${optionValues.join(', ')})`,
-        (value) => typeof value === 'string' && optionValues.includes(value),
-      )
       const nullable = options.db?.isNullable ?? (!options.validation?.isRequired && !hasDefault)
       if (!isNativeEnum) {
         return scalarColumn(fieldName, {
