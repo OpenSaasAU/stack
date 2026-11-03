@@ -28,6 +28,7 @@ import {
   resolveNearest,
   resolveOrderBy,
   resolveRelatedAccessPlan,
+  assertWhereWithinLimits,
   resolveWhere,
   unqueryableKey,
   type ColumnPlan,
@@ -501,6 +502,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
 
   const predicates: WherePlan[] = []
   for (const predicate of state.predicates) {
+    assertWhereWithinLimits(predicate)
     predicates.push(await resolveWhere(predicate, ctx))
   }
   const orders = await resolveOrderBy(state.orders, ctx)

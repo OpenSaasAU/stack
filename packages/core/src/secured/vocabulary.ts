@@ -19,6 +19,7 @@ import {
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
+import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
 import { likeContainsPattern } from '../where/like.js'
 import {
   VECTOR_DISTANCE_FUNCTIONS,
@@ -537,6 +538,45 @@ async function refuseUnlessForeignKeyVisible(
   ctx: ResolveContext,
 ): Promise<void> {
   if ((await foreignKeyScope(key, resolved, ctx)) !== null) throw unqueryableKey(ctx.listName, key)
+}
+
+/**
+ * Refuse a caller predicate nested deeper than `WHERE_RELATION_MAX_DEPTH`
+ * relation quantifiers, or holding more than `WHERE_MAX_NODES` entries.
+ * Runs before any access rule is consulted.
+ */
+export function assertWhereWithinLimits(where: Record<string, unknown>): void {
+  let nodes = 0
+  const count = (): void => {
+    nodes += 1
+    if (nodes > WHERE_MAX_NODES) {
+      throw new ValidationError([
+        `The where predicate has more than ${WHERE_MAX_NODES} entries, the most a query may carry.`,
+      ])
+    }
+  }
+  const walk = (predicate: Record<string, unknown>, depth: number): void => {
+    for (const [key, value] of Object.entries(predicate)) {
+      count()
+      if (LOGICAL_OPERATORS.has(key)) {
+        const branches = Array.isArray(value) ? value : [value]
+        for (const branch of branches) if (isPlainObject(branch)) walk(branch, depth)
+        continue
+      }
+      if (!isPlainObject(value)) continue
+      for (const [quantifier, nested] of Object.entries(value)) {
+        if (!RELATION_QUANTIFIER_SET.has(quantifier)) continue
+        count()
+        if (depth + 1 > WHERE_RELATION_MAX_DEPTH) {
+          throw new ValidationError([
+            `The where predicate nests relations more than ${WHERE_RELATION_MAX_DEPTH} levels deep, the most a query may carry.`,
+          ])
+        }
+        if (isPlainObject(nested)) walk(nested, depth + 1)
+      }
+    }
+  }
+  walk(where, 0)
 }
 
 /**
