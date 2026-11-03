@@ -15,6 +15,7 @@ import type {
 import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
 import type {
   ContractColumn,
+  ContractCompositeForeignKey,
   ContractData,
   ContractEnum,
   ContractIdColumn,
@@ -370,6 +371,7 @@ function resolveIndexColumn(
   const fieldKey = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
   const field = listConfig.fields[fieldKey]
   if (!field) {
+    if (fieldKey === 'id') return 'id'
     if (
       (fieldKey === 'createdAt' && draft.model.timestamps.createdAt) ||
       (fieldKey === 'updatedAt' && draft.model.timestamps.updatedAt)
@@ -479,6 +481,81 @@ function deriveIndexes(
       unique,
       ...(index.name !== undefined ? { name: index.name } : {}),
       ...(index.where !== undefined ? { where: index.where } : {}),
+    }
+  })
+}
+
+function sameColumnSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join('\0') === [...b].sort().join('\0')
+}
+
+function declaresUnique(draft: ModelDraft, columns: string[]): boolean {
+  if (columns.length === 1 && columns[0] === 'id') return true
+  if (draft.model.indexes.some((index) => index.unique && sameColumnSet(index.columns, columns))) {
+    return true
+  }
+  if (columns.length !== 1) return false
+  const column = draft.model.columns.find((candidate) => candidate.name === columns[0])
+  return column?.unique === true
+}
+
+function deriveCompositeForeignKeys(
+  listKey: string,
+  config: OpenSaasConfig,
+  drafts: Map<string, ModelDraft>,
+): ContractCompositeForeignKey[] {
+  const draft = drafts.get(listKey)
+  const listConfig = config.lists[listKey]
+  if (!draft || !listConfig) return []
+  return (listConfig.db?.foreignKeys ?? []).map((foreignKey, i) => {
+    const entry = `Foreign key db.foreignKeys[${i}]`
+    const { fields, references } = foreignKey
+    if (fields.length === 0) {
+      throw new Error(
+        `${entry} on list "${listKey}" has an empty "fields" array — a foreign key must name at least one field`,
+      )
+    }
+    if (fields.length !== references.fields.length) {
+      throw new Error(
+        `${entry} on list "${listKey}" names ${fields.length} field(s) but references ${references.fields.length} field(s) on "${references.list}" — the two lists must have the same arity`,
+      )
+    }
+    if (new Set(fields.map((f) => (typeof f === 'string' ? f : f.field))).size !== fields.length) {
+      throw new Error(`${entry} on list "${listKey}" names the same field more than once`)
+    }
+    const targetConfig = config.lists[references.list]
+    const targetDraft = drafts.get(references.list)
+    if (!targetConfig || !targetDraft) {
+      throw new Error(
+        `${entry} on list "${listKey}" references list "${references.list}", which is not in the config`,
+      )
+    }
+    const columns = fields.map((fieldRef) =>
+      resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
+    )
+    const targetColumns = references.fields.map((fieldKey) =>
+      resolveIndexColumn(references.list, targetConfig, targetDraft, entry, fieldKey),
+    )
+    if (
+      columns.length === 1 &&
+      draft.model.foreignKeys.some((existing) => existing.column === columns[0])
+    ) {
+      throw new Error(
+        `${entry} on list "${listKey}" constrains "${columns[0]}", which a relationship field already references with its own foreign key — remove the entry`,
+      )
+    }
+    if (!declaresUnique(targetDraft, targetColumns)) {
+      throw new Error(
+        `${entry} on list "${listKey}" references (${references.fields.join(', ')}) on "${references.list}", which is not a declared unique there. ` +
+          `Add db.indexes: [{ fields: [${references.fields.map((f) => `'${f}'`).join(', ')}], unique: true }] to "${references.list}", or reference its id`,
+      )
+    }
+    return {
+      columns,
+      references: { model: references.list, columns: targetColumns },
+      ...(foreignKey.onDelete !== undefined ? { onDelete: foreignKey.onDelete } : {}),
+      ...(foreignKey.onUpdate !== undefined ? { onUpdate: foreignKey.onUpdate } : {}),
+      ...(foreignKey.name !== undefined ? { name: foreignKey.name } : {}),
     }
   })
 }
@@ -736,6 +813,11 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   }
 
   for (const draft of drafts.values()) refuseColumnsAliasingRelations(draft.model)
+
+  for (const [listKey, draft] of drafts) {
+    const composite = deriveCompositeForeignKeys(listKey, config, drafts)
+    if (composite.length > 0) draft.model.compositeForeignKeys = composite
+  }
 
   const models = [...drafts.values()].map((draft) => draft.model)
   return {

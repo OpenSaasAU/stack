@@ -14,7 +14,7 @@ import {
   type PrismaContractPacks,
 } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
-import { bigInt } from '../../core/src/fields/index.js'
+import { bigInt, integer, text } from '../../core/src/fields/index.js'
 import {
   authConfig,
   blogConfig,
@@ -54,6 +54,30 @@ const bigIntDefaultConfig: OpenSaasConfig = {
   lists: { Counter: { fields: { total: bigInt({ defaultValue: 42n }) } } },
 }
 
+const compositeForeignKeyConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql', idField: 'int autoincrement' },
+  lists: {
+    Enrolment: {
+      fields: { student: text(), lessonTerm: text() },
+      db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+    },
+    Slot: {
+      fields: { enrolment: integer(), student: text(), lessonTerm: text() },
+      db: {
+        foreignKeys: [
+          {
+            fields: ['enrolment', 'student', 'lessonTerm'],
+            references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+            onDelete: 'restrict',
+            onUpdate: 'restrict',
+            name: 'Slot_enrolment_fkey',
+          },
+        ],
+      },
+    },
+  },
+}
+
 const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPacks }[] = [
   { name: 'blog', config: blogConfig },
   { name: 'auth', config: authConfig },
@@ -64,6 +88,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'hostile-names', config: hostileNamesConfig },
   { name: 'long-identifiers', config: longIdentifierConfig },
   { name: 'bigint-default', config: bigIntDefaultConfig },
+  { name: 'composite-foreign-key', config: compositeForeignKeyConfig },
   // `fieldPackageConfig` is typed against `@opensaas/stack-core`'s published
   // declarations (it mixes in `@opensaas/stack-storage`/`@opensaas/stack-tiptap`
   // fields, which are themselves built against that surface) while this file's

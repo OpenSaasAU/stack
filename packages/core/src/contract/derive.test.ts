@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { decimal, integer, json, relationship, select, text, timestamp } from '../fields/index.js'
+import {
+  decimal,
+  integer,
+  json,
+  relationship,
+  select,
+  text,
+  timestamp,
+  virtual,
+} from '../fields/index.js'
 import { deriveContract } from './derive.js'
 
 function single(lists: OpenSaasConfig['lists'], db: Partial<OpenSaasConfig['db']> = {}) {
@@ -667,5 +676,111 @@ describe('deriveContract — db.indexNaming', () => {
     expect(() =>
       single({ Thing: { fields: { a: text() } } }, { indexNaming: 'prisma6' as 'prisma7' }),
     ).toThrow(/indexNaming/)
+  })
+})
+
+describe('deriveContract — db.foreignKeys', () => {
+  const parent = {
+    fields: { student: text(), lessonTerm: text() },
+    db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+  }
+  const child = (foreignKeys: unknown) => ({
+    fields: { enrolment: text(), student: text(), lessonTerm: text() },
+    db: { foreignKeys },
+  })
+  const derive = (foreignKeys: unknown) =>
+    single({
+      Enrolment: parent,
+      Slot: child(foreignKeys),
+    } as OpenSaasConfig['lists'])
+
+  test('resolves a three-column foreign key onto the parent composite unique', () => {
+    const data = derive([
+      {
+        fields: ['enrolment', 'student', 'lessonTerm'],
+        references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+        onUpdate: 'restrict',
+        name: 'Slot_fkey',
+      },
+    ])
+    expect(data.models[1].compositeForeignKeys).toEqual([
+      {
+        columns: ['enrolment', 'student', 'lessonTerm'],
+        references: { model: 'Enrolment', columns: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+        onUpdate: 'restrict',
+        name: 'Slot_fkey',
+      },
+    ])
+  })
+
+  test('refuses mismatched arity', () => {
+    expect(() =>
+      derive([
+        { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id', 'student'] } },
+      ]),
+    ).toThrow(/same arity/)
+  })
+
+  test('refuses an unknown field', () => {
+    expect(() =>
+      derive([{ fields: ['nope'], references: { list: 'Enrolment', fields: ['id'] } }]),
+    ).toThrow(/unknown field "nope"/)
+  })
+
+  test('refuses a reference set that is not a declared unique', () => {
+    expect(() =>
+      derive([
+        {
+          fields: ['student', 'lessonTerm'],
+          references: { list: 'Enrolment', fields: ['student', 'lessonTerm'] },
+        },
+      ]),
+    ).toThrow(/not a declared unique/)
+  })
+
+  test('refuses an unknown target list', () => {
+    expect(() =>
+      derive([{ fields: ['student'], references: { list: 'Nope', fields: ['id'] } }]),
+    ).toThrow(/not in the config/)
+  })
+
+  test('refuses a virtual and a to-many field', () => {
+    const lists = {
+      Enrolment: parent,
+      Slot: {
+        fields: { v: virtual({ type: 'string', hooks: { resolveOutput: () => 'x' } }) },
+      },
+    } as OpenSaasConfig['lists']
+    expect(() =>
+      single({
+        ...lists,
+        Slot: {
+          ...lists.Slot,
+          db: {
+            foreignKeys: [{ fields: ['v'], references: { list: 'Enrolment', fields: ['id'] } }],
+          },
+        },
+      }),
+    ).toThrow(/virtual field "v"/)
+  })
+
+  test('accepts a reference to the target id', () => {
+    const data = derive([
+      { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] } },
+    ])
+    expect(data.models[1].compositeForeignKeys?.[0].references.columns).toEqual(['id'])
+  })
+
+  test('refuses a repeated field', () => {
+    expect(() =>
+      derive([
+        {
+          fields: ['student', 'student'],
+          references: { list: 'Enrolment', fields: ['id', 'student'] },
+        },
+      ]),
+    ).toThrow(/more than once/)
   })
 })

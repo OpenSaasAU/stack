@@ -46,6 +46,19 @@ export type ContractForeignKey = {
 }
 
 /**
+ * A table-level foreign key from `db.foreignKeys`, with every field resolved
+ * to its column. It carries no relation: nothing is included or connected
+ * through it.
+ */
+export type ContractCompositeForeignKey = {
+  columns: string[]
+  references: { model: string; columns: string[] }
+  onDelete?: ReferentialAction
+  onUpdate?: ReferentialAction
+  name?: string
+}
+
+/**
  * A model-level index or unique constraint from `db.indexes`, with every field
  * name resolved to its column (a scalar's own name, or a relationship's
  * `<field>Id`). `name` is the entry's declared name, adopted as the
@@ -120,6 +133,7 @@ export type ContractModel = {
   /** Stored columns in declaration order, excluding `id` and the auto-timestamps. */
   columns: ContractColumn[]
   foreignKeys: ContractForeignKey[]
+  compositeForeignKeys?: ContractCompositeForeignKey[]
   indexes: ContractIndex[]
   relations: ContractRelation[]
   timestamps: ContractTimestamps

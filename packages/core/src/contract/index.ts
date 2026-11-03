@@ -36,6 +36,7 @@ export type {
   ContractData,
   ContractEnum,
   ContractForeignKey,
+  ContractCompositeForeignKey,
   ContractIdColumn,
   ContractIdStrategy,
   ContractIndex,
