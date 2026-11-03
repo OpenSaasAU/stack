@@ -31,7 +31,7 @@ const DEFAULT_REFERENCES: ContextReferences = {
  * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
  * about value imports.
  */
-function contractTypesImport(contractJsonImport: string): string {
+export function contractTypesImport(contractJsonImport: string): string {
   return contractJsonImport.replace(/contract\.json$/, 'contract.d.js')
 }
 
