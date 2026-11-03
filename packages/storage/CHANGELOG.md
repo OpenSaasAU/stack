@@ -1,5 +1,11 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.2
+
+### Patch Changes
+
+- [#2123](https://github.com/OpenSaasAU/stack/pull/2123) [`e4aef82`](https://github.com/OpenSaasAU/stack/commit/e4aef824332f679a62d626d36f67290f2da30c10) Thanks [@borisno2](https://github.com/borisno2)! - `acceptedExtensions` is now checked against the extensions of the effective MIME type (what the file is stored under), not the client filename, so `[".pdf"]` no longer admits an executable declared as `cv.pdf`. Behaviour change: a file whose filename extension disagrees with its declared type is now judged by the type.
+
 ## 0.44.0-alpha.1
 
 ### Patch Changes

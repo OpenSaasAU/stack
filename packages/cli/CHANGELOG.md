@@ -1,5 +1,42 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.2
+
+### Minor Changes
+
+- [#2120](https://github.com/OpenSaasAU/stack/pull/2120) [`ccc2615`](https://github.com/OpenSaasAU/stack/commit/ccc2615a9c0cfdd5e94dcfd7af9e6eb1ab6b450e) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.defaults.timestamp.nativeType`, a config-wide native type for every `timestamp()` column (plugin lists and the auto `createdAt` included). A field's own `db.nativeType` wins. `updatedAt` is not affected.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql', defaults: { timestamp: { nativeType: 'Timestamp(3)' } } },
+    lists: {},
+  })
+  ```
+
+- [#2118](https://github.com/OpenSaasAU/stack/pull/2118) [`289ed00`](https://github.com/OpenSaasAU/stack/commit/289ed00fac642628d0b1d8db77a2eee0f3096101) Thanks [@borisno2](https://github.com/borisno2)! - Add list-level `db.foreignKeys` for composite (multi-column) foreign key constraints that reference a composite unique on the target. Constraint-only: no relationship or include semantics.
+
+  ```ts
+  db: {
+    foreignKeys: [
+      {
+        fields: ['enrolment', 'student', 'lessonTerm'],
+        references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+      },
+    ],
+  }
+  ```
+
+  `db.indexes` also accepts `'id'` so a composite unique can include the primary key.
+
+### Patch Changes
+
+- [#2117](https://github.com/OpenSaasAU/stack/pull/2117) [`c8ed18d`](https://github.com/OpenSaasAU/stack/commit/c8ed18d6aa4e99c86f8e5d7d9c96053f9927bd33) Thanks [@borisno2](https://github.com/borisno2)! - Fix generated `.opensaas/types.ts` importing `../prisma/contract.d.js` regardless of `output.contractModule`/`output.opensaasDir`.
+
+- [#2124](https://github.com/OpenSaasAU/stack/pull/2124) [`bcd16e1`](https://github.com/OpenSaasAU/stack/commit/bcd16e1e46f8ca9fecbb5431791dd4675c160b9e) Thanks [@borisno2](https://github.com/borisno2)! - Quote every import specifier the generator writes and refuse a `db.extensions[].from` that is not a package name.
+- Updated dependencies [[`ccc2615`](https://github.com/OpenSaasAU/stack/commit/ccc2615a9c0cfdd5e94dcfd7af9e6eb1ab6b450e), [`289ed00`](https://github.com/OpenSaasAU/stack/commit/289ed00fac642628d0b1d8db77a2eee0f3096101), [`bcd16e1`](https://github.com/OpenSaasAU/stack/commit/bcd16e1e46f8ca9fecbb5431791dd4675c160b9e)]:
+  - @opensaas/stack-core@0.44.0-alpha.2
+
 ## 0.44.0-alpha.1
 
 ### Minor Changes
