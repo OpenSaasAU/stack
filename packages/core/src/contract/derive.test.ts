@@ -622,4 +622,24 @@ describe('deriveContract — db.indexNaming', () => {
     expect(post?.foreignKeys[0]?.name).toBeUndefined()
     expect(post?.indexes.every((i) => i.name === undefined)).toBe(true)
   })
+
+  test('refuses names that collide after truncation', () => {
+    const a = 'a'.repeat(70)
+    expect(() =>
+      single(
+        {
+          Thing: {
+            fields: { [`${a}x`]: text({ isIndexed: true }), [`${a}y`]: text({ isIndexed: true }) },
+          },
+        },
+        { indexNaming: 'prisma7' },
+      ),
+    ).toThrow(/more than once/)
+  })
+
+  test('refuses an unknown value', () => {
+    expect(() =>
+      single({ Thing: { fields: { a: text() } } }, { indexNaming: 'prisma6' as 'prisma7' }),
+    ).toThrow(/indexNaming/)
+  })
 })

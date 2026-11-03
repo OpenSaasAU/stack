@@ -558,6 +558,22 @@ function applyPrisma7Names(model: ContractModel): void {
   for (const foreignKey of model.foreignKeys) {
     foreignKey.name = prisma7Name(table, [physical(foreignKey.column)], 'fkey')
   }
+
+  const seen = new Set<string>()
+  const names = [
+    ...model.indexes.flatMap((index) => (index.name !== undefined ? [index.name] : [])),
+    ...model.foreignKeys.flatMap((foreignKey) =>
+      foreignKey.name !== undefined ? [foreignKey.name] : [],
+    ),
+  ]
+  for (const name of names) {
+    if (seen.has(name)) {
+      throw new Error(
+        `List "${model.name}": db.indexNaming 'prisma7' derives the constraint name "${name}" more than once (a long name truncated to 63 bytes, or two constraints on the same columns). Give one of them an explicit db.indexes name.`,
+      )
+    }
+    seen.add(name)
+  }
 }
 
 function dedupeExtensions(extensions: ExtensionDescriptor[]): ExtensionDescriptor[] {
@@ -690,6 +706,11 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
     }
 
     draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
+    if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
+      throw new Error(
+        `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
+      )
+    }
     if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
     drafts.set(listKey, draft)
   }

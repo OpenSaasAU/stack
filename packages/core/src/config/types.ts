@@ -2856,7 +2856,9 @@ export type DatabaseConfig = {
   /**
    * Name every derived index, unique constraint and foreign key the way Prisma 7
    * did (`<Table>_<cols>_idx`, `_key`, `_fkey`, truncated to 63 bytes), so a plan
-   * against a database Prisma 7 created shows no renames. An explicit `name` on a
+   * against a database Prisma 7 created shows no renames. Turning this on for a database
+   * already migrated under Prisma 8's default names renames every index and foreign key.
+   * Primary-key names are not affected. An explicit `name` on a
    * `db.indexes` entry still wins. Unset, Prisma 8's own derived names apply.
    *
    * @example
