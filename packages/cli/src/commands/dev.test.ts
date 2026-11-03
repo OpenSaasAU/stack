@@ -599,6 +599,7 @@ describe('devCommand', () => {
 
     const runChange = async (yes: boolean): Promise<{ said: string; applies: number }> => {
       child.hold = true
+      vi.stubEnv('OPENSAAS_DEV_YES', '')
       vi.mocked(findDatabaseConnection).mockReturnValueOnce({
         url: 'postgres://someone@example.test:5432/inherited',
         provenance: 'env',
