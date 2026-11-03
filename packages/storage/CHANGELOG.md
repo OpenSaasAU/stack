@@ -1,5 +1,11 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.1
+
+### Patch Changes
+
+- [#2110](https://github.com/OpenSaasAU/stack/pull/2110) [`73c2474`](https://github.com/OpenSaasAU/stack/commit/73c24742119e111ea82863c8dc4ce5ea22ce3782) Thanks [@borisno2](https://github.com/borisno2)! - With `generateUniqueFilenames: false`, `image()` now claims every transformation variant key with the original and refuses a name another row's original or variant already owns; cleanup keeps variants another row still references.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

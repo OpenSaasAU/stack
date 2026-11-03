@@ -1,5 +1,9 @@
 # @opensaas/stack-rag
 
+## 0.44.0-alpha.1
+
+No changes in this release.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

@@ -1,5 +1,41 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2114](https://github.com/OpenSaasAU/stack/pull/2114) [`b0facf4`](https://github.com/OpenSaasAU/stack/commit/b0facf444455ec402ae3e8c5fe38b7b5e66b00e3) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas migrate junction-ids` to add and backfill the surrogate `id` on existing tables a list is mapped onto that have none, such as Prisma's implicit `_X_y(A, B)` many-to-many tables (ADR-0048).
+  It prints the SQL, writes it with `--out <file>`, or runs it in one transaction with `--apply`; it backfills `uuid7`, `cuid2`/`cuid` and `int autoincrement` ids, then sets the column `NOT NULL` and primary key, and is idempotent.
+
+- [#2101](https://github.com/OpenSaasAU/stack/pull/2101) [`0aac914`](https://github.com/OpenSaasAU/stack/commit/0aac914c03cb1ae9916e47ca990ac1045ed116ca) Thanks [@borisno2](https://github.com/borisno2)! - `db.indexes` entries accept `where`, a raw SQL predicate that makes the entry a partial index (or a partial unique index with `unique: true`), so partial unique invariants are declared rather than planned away.
+
+  ```typescript
+  db: {
+    indexes: [{ fields: ['twilioSid'], unique: true, where: `("twilioSid" <> ''::text)` }],
+  }
+  ```
+
+- [#2113](https://github.com/OpenSaasAU/stack/pull/2113) [`5154e86`](https://github.com/OpenSaasAU/stack/commit/5154e86742ffda5643e63b8ecf04fb43e2bdd0bd) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.indexNaming: 'prisma7'`, which names every derived index, unique constraint and foreign key `<Table>_<cols>_idx` / `_key` / `_fkey` (63-byte truncated), so adopting a Prisma 7 database plans no index renames.
+
+- [#2102](https://github.com/OpenSaasAU/stack/pull/2102) [`d246c15`](https://github.com/OpenSaasAU/stack/commit/d246c15ba54fa84a23cff7a4d6eca8405bf83174) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas migrate fk-renames` to emit the ADR-0069 `<field>` → `<field>Id` foreign-key column renames (plus default-named FK/unique/index constraints) against an existing database.
+  It prints the SQL, writes it with `--out <file>`, or runs it in one transaction with `--apply`; it never drops anything, is idempotent, and refuses when both `<field>` and `<field>Id` exist.
+
+- [#2103](https://github.com/OpenSaasAU/stack/pull/2103) [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912) Thanks [@borisno2](https://github.com/borisno2)! - Add a `db.idField: 'cuid'` strategy for adopting a live database whose ids are `text` holding cuid v1 values. The column stays `text`, new rows get cuid2 values, and the id boundary accepts both cuid shapes, so no id or foreign-key column is altered.
+
+  ```typescript
+  export default config({ db: { provider: 'postgresql', idField: 'cuid' }, lists: {} })
+  ```
+
+### Patch Changes
+
+- [#2092](https://github.com/OpenSaasAU/stack/pull/2092) [`c6f6a1b`](https://github.com/OpenSaasAU/stack/commit/c6f6a1b89f9c02dd85524a39ce37ff90694c938f) Thanks [@borisno2](https://github.com/borisno2)! - Bump `glob` to `^14.0.2` to pick up the GHSA-3g3m-2fjr-6pw4 fix.
+
+- [#2109](https://github.com/OpenSaasAU/stack/pull/2109) [`ced2623`](https://github.com/OpenSaasAU/stack/commit/ced262398a50b4bcab8b72d8bab16255ce125d8f) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` now passes `DATABASE_URL` and `DIRECT_DATABASE_URL` to the app child as empty strings instead of unsetting them, so `.env` cannot refill them and point the app at a database the loop did not reconcile. App code that tests these for `undefined` should test for an empty value.
+
+- [#2112](https://github.com/OpenSaasAU/stack/pull/2112) [`c0612b7`](https://github.com/OpenSaasAU/stack/commit/c0612b75bc5a484e431357ecd1255b054973ef58) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` against a `DATABASE_URL` database now parks every non-empty mid-session schema plan unless started with `--yes`; apply it with `pnpm db:update --plan <id>`.
+- Updated dependencies [[`cd5ea44`](https://github.com/OpenSaasAU/stack/commit/cd5ea4490f83e4a29e95de82243cd8bcd646ff13), [`856b1a4`](https://github.com/OpenSaasAU/stack/commit/856b1a4ba36b0105859c030457a654028d1baa57), [`0aac914`](https://github.com/OpenSaasAU/stack/commit/0aac914c03cb1ae9916e47ca990ac1045ed116ca), [`ffd993f`](https://github.com/OpenSaasAU/stack/commit/ffd993fc02941bbd3ba31957a6d0661975f198e9), [`5970719`](https://github.com/OpenSaasAU/stack/commit/5970719e647f8d33cdb22cac3943482c680b97c5), [`5154e86`](https://github.com/OpenSaasAU/stack/commit/5154e86742ffda5643e63b8ecf04fb43e2bdd0bd), [`aa5d187`](https://github.com/OpenSaasAU/stack/commit/aa5d1876c58806762446922b48b85dfac0491bf2), [`d4a5302`](https://github.com/OpenSaasAU/stack/commit/d4a5302ac09f66f4ca77eb537c2da5977059a14a), [`de62abd`](https://github.com/OpenSaasAU/stack/commit/de62abd46fdd9642d706df960e0ad71139f0b1a1), [`0930c89`](https://github.com/OpenSaasAU/stack/commit/0930c8902260453eb230de36fced121d620c1a91), [`841c88b`](https://github.com/OpenSaasAU/stack/commit/841c88be9bd758ef8ed8bcb07ee82d83a7d0ef4c), [`84e74e2`](https://github.com/OpenSaasAU/stack/commit/84e74e2ab9056f717b28d1a1a0259872a051a192), [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912), [`240fce6`](https://github.com/OpenSaasAU/stack/commit/240fce6a25f5d3fb9ddca8f37433624c5191dbd5), [`864da3a`](https://github.com/OpenSaasAU/stack/commit/864da3aba8fc322758be958a9785d19eef021714), [`e275bec`](https://github.com/OpenSaasAU/stack/commit/e275bec13258b15f9af54f3cddd874331d9bb8df)]:
+  - @opensaas/stack-core@0.44.0-alpha.1
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

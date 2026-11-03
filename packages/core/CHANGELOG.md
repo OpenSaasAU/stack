@@ -1,5 +1,53 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2101](https://github.com/OpenSaasAU/stack/pull/2101) [`0aac914`](https://github.com/OpenSaasAU/stack/commit/0aac914c03cb1ae9916e47ca990ac1045ed116ca) Thanks [@borisno2](https://github.com/borisno2)! - `db.indexes` entries accept `where`, a raw SQL predicate that makes the entry a partial index (or a partial unique index with `unique: true`), so partial unique invariants are declared rather than planned away.
+
+  ```typescript
+  db: {
+    indexes: [{ fields: ['twilioSid'], unique: true, where: `("twilioSid" <> ''::text)` }],
+  }
+  ```
+
+- [#2113](https://github.com/OpenSaasAU/stack/pull/2113) [`5154e86`](https://github.com/OpenSaasAU/stack/commit/5154e86742ffda5643e63b8ecf04fb43e2bdd0bd) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.indexNaming: 'prisma7'`, which names every derived index, unique constraint and foreign key `<Table>_<cols>_idx` / `_key` / `_fkey` (63-byte truncated), so adopting a Prisma 7 database plans no index renames.
+
+- [#2103](https://github.com/OpenSaasAU/stack/pull/2103) [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912) Thanks [@borisno2](https://github.com/borisno2)! - Add a `db.idField: 'cuid'` strategy for adopting a live database whose ids are `text` holding cuid v1 values. The column stays `text`, new rows get cuid2 values, and the id boundary accepts both cuid shapes, so no id or foreign-key column is altered.
+
+  ```typescript
+  export default config({ db: { provider: 'postgresql', idField: 'cuid' }, lists: {} })
+  ```
+
+### Patch Changes
+
+- [#2111](https://github.com/OpenSaasAU/stack/pull/2111) [`cd5ea44`](https://github.com/OpenSaasAU/stack/commit/cd5ea4490f83e4a29e95de82243cd8bcd646ff13) Thanks [@borisno2](https://github.com/borisno2)! - `afterTransaction`'s `item` is now the raw persisted row, matching `originalItem` and `afterOperation`, instead of the caller's Field Visibility projection. The caller's return value is still projected.
+
+- [#2107](https://github.com/OpenSaasAU/stack/pull/2107) [`856b1a4`](https://github.com/OpenSaasAU/stack/commit/856b1a4ba36b0105859c030457a654028d1baa57) Thanks [@borisno2](https://github.com/borisno2)! - Fix `combine()` rows branches bypassing the declared-dependency rule view, so `read` rules and `needs` hooks see unfiltered declared rows.
+
+- [#2087](https://github.com/OpenSaasAU/stack/pull/2087) [`ffd993f`](https://github.com/OpenSaasAU/stack/commit/ffd993fc02941bbd3ba31957a6d0661975f198e9) Thanks [@borisno2](https://github.com/borisno2)! - A `delete()` that returns `null` after its hooks ran now rolls back the hooks' writes, and poisons an enclosing transaction, matching create and update.
+
+- [#2115](https://github.com/OpenSaasAU/stack/pull/2115) [`5970719`](https://github.com/OpenSaasAU/stack/commit/5970719e647f8d33cdb22cac3943482c680b97c5) Thanks [@borisno2](https://github.com/borisno2)! - Fix `generate` failing with `CONTRACT.NAMESPACE_UNKNOWN` when a list declares `db.schema: 'public'`.
+
+- [#2062](https://github.com/OpenSaasAU/stack/pull/2062) [`aa5d187`](https://github.com/OpenSaasAU/stack/commit/aa5d1876c58806762446922b48b85dfac0491bf2) Thanks [@borisno2](https://github.com/borisno2)! - A caught nested `tx.transaction()` callback rejection now poisons the owning transaction, so the outer transaction rolls back instead of committing the inner unit's writes.
+
+- [#2058](https://github.com/OpenSaasAU/stack/pull/2058) [`d4a5302`](https://github.com/OpenSaasAU/stack/commit/d4a5302ac09f66f4ca77eb537c2da5977059a14a) Thanks [@borisno2](https://github.com/borisno2)! - A write that returns `null` after its hooks ran now rolls those hooks' writes back (and poisons an enclosing transaction), so `afterTransaction`'s `rolled-back` matches the database.
+
+- [#2061](https://github.com/OpenSaasAU/stack/pull/2061) [`de62abd`](https://github.com/OpenSaasAU/stack/commit/de62abd46fdd9642d706df960e0ad71139f0b1a1) Thanks [@borisno2](https://github.com/borisno2)! - A `password()` field is no longer accepted in `where`, `orderBy` or `distinct`, so an MCP client cannot extract a hash with `contains`; it is refused as an unknown column is.
+
+- [#2056](https://github.com/OpenSaasAU/stack/pull/2056) [`0930c89`](https://github.com/OpenSaasAU/stack/commit/0930c8902260453eb230de36fced121d620c1a91) Thanks [@borisno2](https://github.com/borisno2)! - Document and pin that an update with an empty resolved payload still runs `afterOperation`/`afterTransaction` (`committed`, `item === originalItem`).
+
+- [#2057](https://github.com/OpenSaasAU/stack/pull/2057) [`841c88b`](https://github.com/OpenSaasAU/stack/commit/841c88be9bd758ef8ed8bcb07ee82d83a7d0ef4c) Thanks [@borisno2](https://github.com/borisno2)! - An access rule returning `null` or `undefined` now denies instead of throwing a raw `TypeError`, so reads of unrelated lists no longer break.
+
+- [#2106](https://github.com/OpenSaasAU/stack/pull/2106) [`84e74e2`](https://github.com/OpenSaasAU/stack/commit/84e74e2ab9056f717b28d1a1a0259872a051a192) Thanks [@borisno2](https://github.com/borisno2)! - Refuse `limit`, `offset` and `orderBy` on a synthetic back-relation include whose source field has a row-dependent `read` rule, closing a paging existence oracle ([#1970](https://github.com/OpenSaasAU/stack/issues/1970)).
+
+- [#2088](https://github.com/OpenSaasAU/stack/pull/2088) [`240fce6`](https://github.com/OpenSaasAU/stack/commit/240fce6a25f5d3fb9ddca8f37433624c5191dbd5) Thanks [@borisno2](https://github.com/borisno2)! - Fix `select()` inside a synthetic back-relation include skipping the source field's row-dependent `read` rule, which leaked or hid rows depending on the projection.
+
+- [#2104](https://github.com/OpenSaasAU/stack/pull/2104) [`864da3a`](https://github.com/OpenSaasAU/stack/commit/864da3aba8fc322758be958a9785d19eef021714) Thanks [@borisno2](https://github.com/borisno2)! - Validate `decimal` precision/scale and the `defaultValue` of `checkbox`, `integer`, `bigInt`, `decimal`, `select` and `calendarDay` when the contract is derived, failing `opensaas generate` with an error naming the list, field and option.
+
+- [#2105](https://github.com/OpenSaasAU/stack/pull/2105) [`e275bec`](https://github.com/OpenSaasAU/stack/commit/e275bec13258b15f9af54f3cddd874331d9bb8df) Thanks [@borisno2](https://github.com/borisno2)! - Cap caller `where` predicates at 5 nested relation quantifiers and 256 entries; exceeding either throws a `ValidationError` before any access rule runs.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

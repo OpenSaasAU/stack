@@ -1,5 +1,19 @@
 # @opensaas/stack-tiptap
 
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2055](https://github.com/OpenSaasAU/stack/pull/2055) [`7b9e2e6`](https://github.com/OpenSaasAU/stack/commit/7b9e2e6966051376596fb64bc354bc10715a4d9c) Thanks [@borisno2](https://github.com/borisno2)! - Add `RichTextContent`, a server-side read-only renderer for `richText()` documents, from `@opensaas/stack-tiptap/render`.
+
+  ```tsx
+  import { RichTextContent } from '@opensaas/stack-tiptap/render'
+
+  ;<RichTextContent value={post.content} features={features} />
+  ```
+
+  It renders React elements (no `dangerouslySetInnerHTML`), drops nodes, marks and attributes outside the field's feature set instead of throwing, and re-applies the link protocol policy at render time.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes
