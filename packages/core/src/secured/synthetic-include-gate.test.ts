@@ -113,6 +113,33 @@ describe('synthetic back-relation include with a row-dependent source rule (#181
   )
 
   test(
+    'refuses limit, offset and orderBy over the row-dependent synthetic relation, identically for any session',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c4' } })
+      if (category === null) throw new Error('setup')
+      for (const title of ['hidden', 'b', 'a']) {
+        await db.Post.create({ data: { title, category: { connect: { id: category.id } } } })
+      }
+
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }).limit(1),
+        ).all(),
+      ).rejects.toThrow(/Cannot limit/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) => posts.offset(1)).all(),
+      ).rejects.toThrow(/Cannot offset/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }),
+        ).all(),
+      ).rejects.toThrow(/Cannot orderBy/)
+    },
+    BOOT,
+  )
+
+  test(
     'a sudo read still counts the link',
     async () => {
       const { db } = harness.context

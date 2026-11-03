@@ -184,6 +184,24 @@ export class RowDependentReductionError extends Error {
 }
 
 /**
+ * Thrown when a window or an order is asked through a synthetic back-relation
+ * whose source field's `read` rule depends on the row. The window is cut before
+ * the per-row rule strips rows, so a short page would reveal hidden links (#1970).
+ */
+export class RowDependentPagingError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly relation: string,
+    readonly member: string,
+  ) {
+    super(
+      `Cannot ${member} "${listName}.${relation}" for this session. ` + `Include the rows instead.`,
+    )
+    this.name = 'RowDependentPagingError'
+  }
+}
+
+/**
  * Thrown when a `combine` branch is not a reduction this engine handed out —
  * a branch that named rows rather than a count, or a nested `combine`.
  */
@@ -649,6 +667,15 @@ async function resolveInclude(
   )
   if (access.kind !== 'true') predicates.push(access)
 
+  const shapedMember = pagingMemberOf(request)
+  if (
+    shapedMember !== undefined &&
+    hasNoReduction(request) &&
+    (await isRowDependentSyntheticRead(target, ctx))
+  ) {
+    throw new RowDependentPagingError(ctx.listName, request.name, shapedMember)
+  }
+
   const reduce = request.reduce
     ? await resolveReduce(request, target, ctx, related, access)
     : undefined
@@ -711,6 +738,35 @@ async function resolveInclude(
 function rowsBranchOf(request: IncludeRequest): IncludeRequest | undefined {
   if (request.reduce?.kind !== 'combine') return undefined
   return request.reduce.branches.find((branch) => branch.kind === 'rows')?.request
+}
+
+function hasNoReduction(request: IncludeRequest): boolean {
+  return request.reduce === undefined
+}
+
+function pagingMemberOf(request: IncludeRequest): string | undefined {
+  if (request.limit !== undefined) return 'limit'
+  if (request.offset !== undefined) return 'offset'
+  if (request.orders.length > 0) return 'orderBy'
+  return undefined
+}
+
+async function isRowDependentSyntheticRead(
+  target: IncludeTarget,
+  ctx: ResolveContext,
+): Promise<boolean> {
+  if (
+    !ctx.checkFieldRead ||
+    target.fieldConfig !== undefined ||
+    target.readGate?.access === undefined
+  ) {
+    return false
+  }
+  const answer = await classifyRowIndependentRead(target.readGate.access, {
+    session: ctx.session,
+    context: ctx.context,
+  })
+  return answer === 'row-dependent'
 }
 
 /** Refuse what a count cannot honour, naming the member the caller wrote. */
