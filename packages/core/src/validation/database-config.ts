@@ -185,6 +185,26 @@ function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
   return refusals
 }
 
+const PACKAGE_SPECIFIER =
+  /^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*\/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/
+
+function refuseInvalidExtensionSources(config: OpenSaasConfig): ConfigRefusal[] {
+  const refusals: ConfigRefusal[] = []
+
+  ;(config.db?.extensions ?? []).forEach(({ from }, i) => {
+    if (typeof from === 'string' && PACKAGE_SPECIFIER.test(from)) return
+    refusals.push({
+      entry: `db.extensions[${i}]`,
+      reason: 'invalid-extension-source',
+      message:
+        `db.extensions[${i}] has from ${JSON.stringify(from)}, which is not a package name with an optional subpath. ` +
+        `It is written into generated import specifiers — use a name like "@prisma/orm-extension-pgvector".`,
+    })
+  })
+
+  return refusals
+}
+
 function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   const firstByName = new Map<string, { index: number; from: string }>()
@@ -228,6 +248,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
 export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = [
     ...refuseInvalidExtensionNames(config),
+    ...refuseInvalidExtensionSources(config),
     ...refuseDuplicateExtensionPacks(config),
     ...refuseUnknownIdField('db.idField', config.db?.idField),
   ]

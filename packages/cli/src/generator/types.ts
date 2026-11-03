@@ -348,7 +348,7 @@ export function generateTypes(
   // Unsafe surface to it (PostgresClient<Contract>) whether or not the config
   // declares any list.
   lines.push(
-    `import type { Contract as ${imported('Contract')} } from '${contractTypesImport(contractJsonImport)}'`,
+    `import type { Contract as ${imported('Contract')} } from ${quote(contractTypesImport(contractJsonImport))}`,
   )
   lines.push(
     `import type { PostgresClient as ${imported('PostgresClient')} } from '@prisma/orm-postgres/runtime'`,

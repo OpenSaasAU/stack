@@ -2,6 +2,7 @@ import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
+import { quote } from './source-text.js'
 import { contractTypesImport, DEFAULT_CONTRACT_JSON_IMPORT } from './output-paths.js'
 
 /**
@@ -123,7 +124,9 @@ export function generateContext(
   const contractTypesPath = contractTypesImport(contractJsonImport)
 
   const runtimeExtensionImports = data.extensions
-    .map((extension) => `import ${extension.name}Runtime from '${extension.from}/runtime'`)
+    .map(
+      (extension) => `import ${extension.name}Runtime from ${quote(`${extension.from}/runtime`)}`,
+    )
     .join('\n')
   const runtimeExtensions = data.extensions
     .map((extension) => `${extension.name}Runtime`)
@@ -142,11 +145,11 @@ import { processGlobal } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 import { contractFromJson } from '@prisma/orm-postgres/static'
-${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
-import contractJson from '${contractJsonImport}' with { type: 'json' }
+${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from ${quote(contractTypesPath)}
+import contractJson from ${quote(contractJsonImport)} with { type: 'json' }
 import type { Context } from './types.ts'
 import { constraintMap, dependencyTable } from './tables.ts'
-import configOrPromise from '${configImportPath}'
+import configOrPromise from ${quote(configImportPath)}
 
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)

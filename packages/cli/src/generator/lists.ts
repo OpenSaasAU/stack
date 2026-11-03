@@ -1,7 +1,7 @@
 import type { DependencyTable, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
-import { assertFieldKeysAreIdentifiers } from './source-text.js'
+import { assertFieldKeysAreIdentifiers, quote } from './source-text.js'
 import { needsEntries } from './types.js'
 
 function capitalize(value: string): string {
@@ -120,7 +120,7 @@ export function generateListsNamespace(
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
       const { module, typeName } = getFieldTypeImport(fieldConfig.type)
       lines.push(
-        `      ${fieldName}: import('${module}').${typeName}<Lists.${listName}.TypeInfo, '${fieldName}'>`,
+        `      ${fieldName}: import(${quote(module)}).${typeName}<Lists.${listName}.TypeInfo, '${fieldName}'>`,
       )
     }
     lines.push(`    }`)

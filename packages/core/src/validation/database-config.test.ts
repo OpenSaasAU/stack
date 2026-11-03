@@ -1,3 +1,4 @@
+import { typeDescriptorToTypeString } from '../fields/index.js'
 import { describe, it, expect } from 'vitest'
 import { validateDatabaseConfig } from './database-config.js'
 import { select, text, timestamp } from '../fields/index.js'
@@ -117,6 +118,22 @@ describe('validateDatabaseConfig', () => {
     })
   })
 
+  it.each([
+    "@prisma/orm-extension-pgvector/x'\nglobalThis.PWNED = true\nimport y from 'z/..",
+    "pack'; evil(); //",
+    '../escape',
+    '',
+  ])('refuses the extension source %j, naming the entry', (from) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', extensions: [{ name: 'pgvector', from }] },
+      lists: {},
+    }
+
+    expect(validateDatabaseConfig(config)).toMatchObject([
+      { entry: 'db.extensions[0]', reason: 'invalid-extension-source' },
+    ])
+  })
+
   it('refuses the same pack name declared from two packages, naming both entries', () => {
     const config: OpenSaasConfig = {
       db: {
@@ -212,5 +229,16 @@ describe('validateDatabaseConfig', () => {
     }
 
     expect(validateDatabaseConfig(config).map((r) => r.reason)).toContain('non-identifier-name')
+  })
+})
+
+describe('typeDescriptorToTypeString', () => {
+  it("keeps a hostile `from` inside the import('') literal", () => {
+    const out = typeDescriptorToTypeString({
+      value: class Decimal {},
+      from: "x')\nglobalThis.PWNED = true //",
+    })
+
+    expect(out).toBe("import('x\\')\\u000aglobalThis.PWNED = true //').Decimal")
   })
 })
