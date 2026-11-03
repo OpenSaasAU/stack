@@ -341,8 +341,8 @@ export type AuthConfig = {
   schema?: string
 
   /**
-   * The id strategy for the generated Auth lists — `'uuid7'` or `'cuid2'`
-   * only, never `'int autoincrement'`: the Auth adapter treats every id as a
+   * The id strategy for the generated Auth lists — `'uuid7'`, `'cuid2'` or
+   * `'cuid'` only, never `'int autoincrement'`: the Auth adapter treats every id as a
    * string (ADR-0048, ADR-0060), and better-auth's own `consumeOne` reads
    * the resolved row's `id` expecting exactly that.
    *

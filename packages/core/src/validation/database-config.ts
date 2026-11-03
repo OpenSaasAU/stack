@@ -213,7 +213,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
 /**
  * Refuse the database-level declarations the Prisma 8 contract cannot carry:
  * a `sort` direction on a `db.indexes` field reference (ADR-0040),
- * `db.idField` on a singleton list or outside the three id strategies (ADR-0048), the same extension pack
+ * `db.idField` on a singleton list or outside the id strategies (ADR-0048), the same extension pack
  * name declared from two packages, a field name the derivation reserves or
  * that collides with a derived column or relation ({@link validateFieldNames}),
  * a field that cannot describe its contract column, a field typed by a
