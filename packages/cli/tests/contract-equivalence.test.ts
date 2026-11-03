@@ -14,7 +14,7 @@ import {
   type PrismaContractPacks,
 } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
-import { bigInt } from '../../core/src/fields/index.js'
+import { bigInt, integer, text } from '../../core/src/fields/index.js'
 import {
   authConfig,
   blogConfig,
@@ -54,6 +54,30 @@ const bigIntDefaultConfig: OpenSaasConfig = {
   lists: { Counter: { fields: { total: bigInt({ defaultValue: 42n }) } } },
 }
 
+const compositeForeignKeyConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql', idField: 'int autoincrement' },
+  lists: {
+    Enrolment: {
+      fields: { student: text(), lessonTerm: text() },
+      db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+    },
+    Slot: {
+      fields: { enrolment: integer(), student: text(), lessonTerm: text() },
+      db: {
+        foreignKeys: [
+          {
+            fields: ['enrolment', 'student', 'lessonTerm'],
+            references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+            onDelete: 'restrict',
+            onUpdate: 'restrict',
+            name: 'Slot_enrolment_fkey',
+          },
+        ],
+      },
+    },
+  },
+}
+
 const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPacks }[] = [
   { name: 'blog', config: blogConfig },
   { name: 'auth', config: authConfig },
@@ -64,6 +88,7 @@ const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPa
   { name: 'hostile-names', config: hostileNamesConfig },
   { name: 'long-identifiers', config: longIdentifierConfig },
   { name: 'bigint-default', config: bigIntDefaultConfig },
+  { name: 'composite-foreign-key', config: compositeForeignKeyConfig },
   // `fieldPackageConfig` is typed against `@opensaas/stack-core`'s published
   // declarations (it mixes in `@opensaas/stack-storage`/`@opensaas/stack-tiptap`
   // fields, which are themselves built against that surface) while this file's
@@ -140,14 +165,18 @@ describe('renderContractModule — the lowering table', () => {
   const blog = renderContractModule(deriveContract(blogConfig))
 
   test('id strategies', () => {
-    expect(blog).toContain('id: field.id.uuidv7Native()')
-    expect(blog).toContain('id: field.int().default(1).id()')
-    expect(renderContractModule(deriveContract(oneToOneConfig))).toContain('id: field.id.cuid2()')
+    expect(blog).toContain('id: field.column(type.Uuid()).id().onCreate(gen.uuid(7))')
+    expect(blog).toContain('id: field.column(type.Int()).default(1).id()')
+    expect(renderContractModule(deriveContract(oneToOneConfig))).toContain(
+      'id: field.column(type.Cuid2()).id().onCreate(gen.cuid(2))',
+    )
   })
 
-  test('createdAt keeps a database now() default; updatedAt uses the string temporal preset', () => {
+  test('createdAt keeps a database now() default; updatedAt is a string column the now generator fills', () => {
     expect(blog).toContain("createdAt: field.column(timestamptzStringColumn).defaultSql('now()')")
-    expect(blog).toContain('updatedAt: field.temporal.updatedAtString()')
+    expect(blog).toContain(
+      'updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now())',
+    )
   })
 
   test('a named non-unique index goes through map, a unique through name', () => {
@@ -170,7 +199,7 @@ describe('renderContractModule — the lowering table', () => {
 
   test('a bigint literal default is a bigint, which the int8 codec requires', () => {
     expect(renderContractModule(deriveContract(bigIntDefaultConfig))).toContain(
-      'total: field.bigint().optional().default(42n)',
+      'total: field.column(type.BigInt()).optional().default(42n)',
     )
   })
 
@@ -265,7 +294,7 @@ describe('renderContractModule — names and values the renderer has to survive'
   })
 
   test('a non-identifier column name is quoted as a key and as a member', () => {
-    expect(source).toContain("'weird-key': field.text()")
+    expect(source).toContain("'weird-key': field.column(type.String())")
     expect(source).toContain("cols['weird-key']")
   })
 

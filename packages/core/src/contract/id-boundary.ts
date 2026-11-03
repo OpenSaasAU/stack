@@ -23,6 +23,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** cuid2 as the contract's `char(24)` column holds it. */
 const CUID2 = /^[a-z][a-z0-9]{23}$/i
 
+/** cuid v1 (25 characters, `c` prefix) or cuid2, as a `text` id column may hold either. */
+const CUID = /^(?:c[a-z0-9]{24}|[a-z][a-z0-9]{23})$/i
+
 const INTEGER = /^-?\d+$/
 
 /**
@@ -91,6 +94,6 @@ export function parseListId(config: OpenSaasConfig, listKey: string, raw: unknow
   }
 
   if (typeof raw !== 'string') return { ok: false }
-  const pattern = column.strategy === 'uuid7' ? UUID : CUID2
+  const pattern = column.strategy === 'uuid7' ? UUID : column.strategy === 'cuid' ? CUID : CUID2
   return pattern.test(raw) ? { ok: true, value: raw } : { ok: false }
 }

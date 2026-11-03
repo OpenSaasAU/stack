@@ -20,17 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Use Latest Corepack
-        run: |
-          echo "Before: corepack version => $(corepack --version || echo 'not installed')"
-          npm install -g corepack@latest
-          echo "After : corepack version => $(corepack --version)"
-          corepack enable
-          pnpm --version
+      - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@main
+      - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: pnpm
 

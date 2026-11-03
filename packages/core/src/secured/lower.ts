@@ -85,6 +85,12 @@ export const whereCombinators = lazyImport(async (): Promise<WhereCombinators> =
   return { and, or, all }
 })
 
+// Prisma's string timestamp codecs refuse a `Date` from 8.0.0-rc.21 on; every
+// stack date column is `timestamptz`, so UTC ISO text is the exact encoding.
+export function toColumnValue<T>(value: T): T | string {
+  return value instanceof Date ? value.toISOString() : value
+}
+
 function memberOf(accessor: PredicateAccessor, listName: string, name: string): AccessorMember {
   const member = accessor[name]
   if (member === undefined) throw unqueryableKey(listName, name)
@@ -102,18 +108,18 @@ function stepExpression(
   }
   switch (step.op) {
     case 'eq':
-      return member.eq?.(step.value) ?? refuse('equals')
+      return member.eq?.(toColumnValue(step.value)) ?? refuse('equals')
     case 'neq':
-      return member.neq?.(step.value) ?? refuse('not')
+      return member.neq?.(toColumnValue(step.value)) ?? refuse('not')
     case 'lt':
     case 'lte':
     case 'gt':
     case 'gte':
-      return member[step.op]?.(step.value) ?? refuse(step.op)
+      return member[step.op]?.(toColumnValue(step.value)) ?? refuse(step.op)
     case 'in':
-      return member.in?.(step.values) ?? refuse('in')
+      return member.in?.(step.values.map(toColumnValue)) ?? refuse('in')
     case 'notIn':
-      return member.notIn?.(step.values) ?? refuse('notIn')
+      return member.notIn?.(step.values.map(toColumnValue)) ?? refuse('notIn')
     case 'contains':
       return member.ilike?.(step.pattern) ?? refuse('contains')
     case 'isNull':

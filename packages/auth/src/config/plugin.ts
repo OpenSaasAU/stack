@@ -17,15 +17,15 @@ import { getAuthLists } from '../lists/index.js'
  */
 function resolveAuthIdField(
   idField: NormalizedAuthConfig['idField'],
-  appDefault: 'uuid7' | 'cuid2' | 'int autoincrement' | undefined,
-): 'uuid7' | 'cuid2' {
+  appDefault: 'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement' | undefined,
+): 'uuid7' | 'cuid2' | 'cuid' {
   const resolved = idField ?? appDefault ?? 'uuid7'
   if (resolved === 'int autoincrement') {
     throw new Error(
       "[@opensaas/stack-auth] the Auth lists cannot use `db.idField: 'int autoincrement'` — " +
         "better-auth's adapter treats every id as a string (ADR-0048, ADR-0060), and the app's " +
         `own \`db.idField\` default resolves to "int autoincrement". Pass ` +
-        "`authPlugin({ idField: 'uuid7' })` or `authPlugin({ idField: 'cuid2' })` to pick a " +
+        "`authPlugin({ idField: 'uuid7' })`, `'cuid2'` or `'cuid'` to pick a " +
         'string strategy for just the Auth lists.',
     )
   }
@@ -114,7 +114,7 @@ export function authPlugin(config: AuthConfig): Plugin {
                 `resolving to "${existingIdField}", but authPlugin's Auth lists resolve to ` +
                 `"${idField}". Both must mint ids the same way — set "${listName}"'s own ` +
                 `\`db.idField\` to "${idField}", or pass \`authPlugin({ idField: ` +
-                `'${existingIdField}' })\` if that is 'uuid7' or 'cuid2'.`,
+                `'${existingIdField}' })\` if that is 'uuid7', 'cuid2' or 'cuid'.`,
             )
           }
 

@@ -15,6 +15,7 @@ import type {
 import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
 import type {
   ContractColumn,
+  ContractCompositeForeignKey,
   ContractData,
   ContractEnum,
   ContractIdColumn,
@@ -37,6 +38,8 @@ export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
       return { strategy, type: pgType('uuid') }
     case 'cuid2':
       return { strategy, type: pgType('char', [24]) }
+    case 'cuid':
+      return { strategy, type: pgType('text') }
     case 'int autoincrement':
     case 'singleton':
       return { strategy, type: pgType('int') }
@@ -179,6 +182,27 @@ function toContractColumn(
 ): ContractColumn {
   const { nativeType, ...rest } = descriptor
   return { ...rest, type: foldNativeType(listKey, fieldKey, descriptor.type, nativeType) }
+}
+
+const TIMESTAMP_DEFAULT_TYPES = new Set(['timestamp', 'timestamptz'])
+
+function resolveTimestampDefault(config: OpenSaasConfig): ColumnTypeDescriptor | undefined {
+  const nativeType = config.db.defaults?.timestamp?.nativeType
+  if (nativeType === undefined) return undefined
+  let type: ColumnTypeDescriptor
+  try {
+    type = foldNativeType('', '', pgType('dateTime'), nativeType)
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message.replace(/^.*?sets db\.nativeType "[^"]*", /, '') : ''
+    throw new Error(`db.defaults.timestamp.nativeType "${nativeType}" is invalid: ${detail}`)
+  }
+  if (!TIMESTAMP_DEFAULT_TYPES.has(type.type)) {
+    throw new Error(
+      `db.defaults.timestamp.nativeType "${nativeType}" is not a timestamp type. Use Timestamp or Timestamptz, with an optional precision (Timestamp(3)).`,
+    )
+  }
+  return type
 }
 
 function foreignKeyColumnName(fieldKey: string): string {
@@ -368,6 +392,7 @@ function resolveIndexColumn(
   const fieldKey = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
   const field = listConfig.fields[fieldKey]
   if (!field) {
+    if (fieldKey === 'id') return 'id'
     if (
       (fieldKey === 'createdAt' && draft.model.timestamps.createdAt) ||
       (fieldKey === 'updatedAt' && draft.model.timestamps.updatedAt)
@@ -457,7 +482,18 @@ function deriveIndexes(
       resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
     )
     const unique = index.unique === true
-    if (columns.length === 1) {
+    if (index.where !== undefined) {
+      if (typeof index.where !== 'string' || index.where.trim() === '') {
+        throw new Error(
+          `${entry} on list "${listKey}" has an empty "where" — a partial index needs a SQL predicate`,
+        )
+      }
+      if (index.name === undefined) {
+        throw new Error(
+          `${entry} on list "${listKey}" has a "where" but no "name" — a partial index must be named so the database object can be adopted and its violations mapped`,
+        )
+      }
+    } else if (columns.length === 1) {
       const collision = draft.fieldLevelIndexes.get(columns[0])
       if (collision) adoptFieldLevelIndex(listKey, draft, entry, columns[0], collision, unique)
     }
@@ -465,6 +501,82 @@ function deriveIndexes(
       columns,
       unique,
       ...(index.name !== undefined ? { name: index.name } : {}),
+      ...(index.where !== undefined ? { where: index.where } : {}),
+    }
+  })
+}
+
+function sameColumnSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join('\0') === [...b].sort().join('\0')
+}
+
+function declaresUnique(draft: ModelDraft, columns: string[]): boolean {
+  if (columns.length === 1 && columns[0] === 'id') return true
+  if (draft.model.indexes.some((index) => index.unique && sameColumnSet(index.columns, columns))) {
+    return true
+  }
+  if (columns.length !== 1) return false
+  const column = draft.model.columns.find((candidate) => candidate.name === columns[0])
+  return column?.unique === true
+}
+
+function deriveCompositeForeignKeys(
+  listKey: string,
+  config: OpenSaasConfig,
+  drafts: Map<string, ModelDraft>,
+): ContractCompositeForeignKey[] {
+  const draft = drafts.get(listKey)
+  const listConfig = config.lists[listKey]
+  if (!draft || !listConfig) return []
+  return (listConfig.db?.foreignKeys ?? []).map((foreignKey, i) => {
+    const entry = `Foreign key db.foreignKeys[${i}]`
+    const { fields, references } = foreignKey
+    if (fields.length === 0) {
+      throw new Error(
+        `${entry} on list "${listKey}" has an empty "fields" array — a foreign key must name at least one field`,
+      )
+    }
+    if (fields.length !== references.fields.length) {
+      throw new Error(
+        `${entry} on list "${listKey}" names ${fields.length} field(s) but references ${references.fields.length} field(s) on "${references.list}" — the two lists must have the same arity`,
+      )
+    }
+    if (new Set(fields.map((f) => (typeof f === 'string' ? f : f.field))).size !== fields.length) {
+      throw new Error(`${entry} on list "${listKey}" names the same field more than once`)
+    }
+    const targetConfig = config.lists[references.list]
+    const targetDraft = drafts.get(references.list)
+    if (!targetConfig || !targetDraft) {
+      throw new Error(
+        `${entry} on list "${listKey}" references list "${references.list}", which is not in the config`,
+      )
+    }
+    const columns = fields.map((fieldRef) =>
+      resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
+    )
+    const targetColumns = references.fields.map((fieldKey) =>
+      resolveIndexColumn(references.list, targetConfig, targetDraft, entry, fieldKey),
+    )
+    if (
+      columns.length === 1 &&
+      draft.model.foreignKeys.some((existing) => existing.column === columns[0])
+    ) {
+      throw new Error(
+        `${entry} on list "${listKey}" constrains "${columns[0]}", which a relationship field already references with its own foreign key — remove the entry`,
+      )
+    }
+    if (!declaresUnique(targetDraft, targetColumns)) {
+      throw new Error(
+        `${entry} on list "${listKey}" references (${references.fields.join(', ')}) on "${references.list}", which is not a declared unique there. ` +
+          `Add db.indexes: [{ fields: [${references.fields.map((f) => `'${f}'`).join(', ')}], unique: true }] to "${references.list}", or reference its id`,
+      )
+    }
+    return {
+      columns,
+      references: { model: references.list, columns: targetColumns },
+      ...(foreignKey.onDelete !== undefined ? { onDelete: foreignKey.onDelete } : {}),
+      ...(foreignKey.onUpdate !== undefined ? { onUpdate: foreignKey.onUpdate } : {}),
+      ...(foreignKey.name !== undefined ? { name: foreignKey.name } : {}),
     }
   })
 }
@@ -491,6 +603,75 @@ function collectEnums(models: ContractModel[]): ContractEnum[] {
     }
   }
   return [...byName.values()]
+}
+
+const POSTGRES_IDENTIFIER_BYTES = 63
+
+function prisma7Name(table: string, columns: string[], suffix: 'idx' | 'key' | 'fkey'): string {
+  const base = `${table}_${columns.join('_')}`
+  const room = POSTGRES_IDENTIFIER_BYTES - suffix.length - 1
+  const bytes = Buffer.from(base, 'utf8')
+  let trimmed = bytes.length > room ? bytes.subarray(0, room).toString('utf8') : base
+  while (Buffer.byteLength(trimmed, 'utf8') > room) trimmed = trimmed.slice(0, -1)
+  return `${trimmed}_${suffix}`
+}
+
+function applyPrisma7Names(model: ContractModel): void {
+  const table = model.table ?? model.name
+  const physical = (column: string): string =>
+    model.columns.find((candidate) => candidate.name === column)?.map ?? column
+
+  const hoisted: ContractIndex[] = []
+  for (const column of model.columns) {
+    if (column.unique) {
+      delete column.unique
+      hoisted.push({
+        columns: [column.name],
+        unique: true,
+        name: prisma7Name(table, [physical(column.name)], 'key'),
+      })
+    }
+    if (column.index) {
+      delete column.index
+      hoisted.push({
+        columns: [column.name],
+        unique: false,
+        name: prisma7Name(table, [physical(column.name)], 'idx'),
+      })
+    }
+  }
+
+  model.indexes = [
+    ...model.indexes.map((index) =>
+      index.name !== undefined
+        ? index
+        : {
+            ...index,
+            name: prisma7Name(table, index.columns.map(physical), index.unique ? 'key' : 'idx'),
+          },
+    ),
+    ...hoisted,
+  ]
+
+  for (const foreignKey of model.foreignKeys) {
+    foreignKey.name = prisma7Name(table, [physical(foreignKey.column)], 'fkey')
+  }
+
+  const seen = new Set<string>()
+  const names = [
+    ...model.indexes.flatMap((index) => (index.name !== undefined ? [index.name] : [])),
+    ...model.foreignKeys.flatMap((foreignKey) =>
+      foreignKey.name !== undefined ? [foreignKey.name] : [],
+    ),
+  ]
+  for (const name of names) {
+    if (seen.has(name)) {
+      throw new Error(
+        `List "${model.name}": db.indexNaming 'prisma7' derives the constraint name "${name}" more than once (a long name truncated to 63 bytes, or two constraints on the same columns). Give one of them an explicit db.indexes name.`,
+      )
+    }
+    seen.add(name)
+  }
 }
 
 function dedupeExtensions(extensions: ExtensionDescriptor[]): ExtensionDescriptor[] {
@@ -548,6 +729,7 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
  */
 export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])
+  const timestampDefault = resolveTimestampDefault(config)
   const drafts = new Map<string, ModelDraft>()
   const syntheticByTarget = new Map<string, SyntheticRelation[]>()
 
@@ -557,7 +739,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       model: {
         name: listKey,
         ...(listConfig.db?.map !== undefined ? { table: listConfig.db.map } : {}),
-        ...(listConfig.db?.schema !== undefined ? { namespace: listConfig.db.schema } : {}),
+        ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
+          ? { namespace: listConfig.db.schema }
+          : {}),
         singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
         id: idColumn(resolveIdStrategy(listConfig, config)),
         columns: [],
@@ -565,6 +749,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         indexes: [],
         relations: [],
         timestamps,
+        ...(timestampDefault !== undefined && timestamps.createdAt
+          ? { timestampType: timestampDefault }
+          : {}),
       },
       fieldLevelIndexes: new Map(),
       ownedForeignKeys: new Map(),
@@ -588,7 +775,14 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         case 'column': {
           const { kind: _kind, ...column } = descriptor
           claimMember(listKey, draft, column.name, `fields.${fieldKey}`)
-          draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
+          const resolved = toContractColumn(listKey, fieldKey, column)
+          draft.model.columns.push(
+            timestampDefault !== undefined &&
+              field.type === 'timestamp' &&
+              column.nativeType === undefined
+              ? { ...resolved, type: timestampDefault }
+              : resolved,
+          )
           const isIndexed = readIsIndexed(field)
           if (isIndexed !== undefined) {
             draft.fieldLevelIndexes.set(column.name, { fieldKey, isIndexed, implicit: false })
@@ -623,6 +817,12 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
     }
 
     draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
+    if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
+      throw new Error(
+        `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
+      )
+    }
+    if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
     drafts.set(listKey, draft)
   }
 
@@ -645,6 +845,11 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   }
 
   for (const draft of drafts.values()) refuseColumnsAliasingRelations(draft.model)
+
+  for (const [listKey, draft] of drafts) {
+    const composite = deriveCompositeForeignKeys(listKey, config, drafts)
+    if (composite.length > 0) draft.model.compositeForeignKeys = composite
+  }
 
   const models = [...drafts.values()].map((draft) => draft.model)
   return {

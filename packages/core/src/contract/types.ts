@@ -39,8 +39,23 @@ export type ContractColumn = Omit<ContractColumnDescriptor, 'nativeType'>
 export type ContractForeignKey = {
   column: string
   references: { model: string; column: 'id' }
+  /** The constraint's exact physical name, set under `db.indexNaming`. */
+  name?: string
   onDelete?: ReferentialAction
   onUpdate?: ReferentialAction
+}
+
+/**
+ * A table-level foreign key from `db.foreignKeys`, with every field resolved
+ * to its column. It carries no relation: nothing is included or connected
+ * through it.
+ */
+export type ContractCompositeForeignKey = {
+  columns: string[]
+  references: { model: string; columns: string[] }
+  onDelete?: ReferentialAction
+  onUpdate?: ReferentialAction
+  name?: string
 }
 
 /**
@@ -59,6 +74,7 @@ export type ContractIndex = {
   columns: string[]
   unique: boolean
   name?: string
+  where?: string
 }
 
 /**
@@ -116,7 +132,10 @@ export type ContractModel = {
   id: ContractIdColumn
   /** Stored columns in declaration order, excluding `id` and the auto-timestamps. */
   columns: ContractColumn[]
+  /** The column type the auto-timestamps take, set only by `db.defaults.timestamp`. */
+  timestampType?: ColumnTypeDescriptor
   foreignKeys: ContractForeignKey[]
+  compositeForeignKeys?: ContractCompositeForeignKey[]
   indexes: ContractIndex[]
   relations: ContractRelation[]
   timestamps: ContractTimestamps

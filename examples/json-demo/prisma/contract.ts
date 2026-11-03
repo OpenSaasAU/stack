@@ -12,27 +12,27 @@ type ModelToken = {
 }
 
 export const contract = defineContract(
-  { extensions: {} },
-  ({ field, model }) => {
+  {},
+  ({ field, model, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_Product = (models.Product = model('Product', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text(),
-        metadata: field.json().optional(),
-        settings: field.json().optional(),
-        configuration: field.json(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()),
+        metadata: field.column(type.Jsonb()).optional(),
+        settings: field.column(type.Jsonb()).optional(),
+        configuration: field.column(type.Jsonb()),
       },
       relations: {},
     }))
 
     const model_Article = (models.Article = model('Article', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        content: field.json().optional(),
-        taxonomy: field.json().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        content: field.column(type.Jsonb()).optional(),
+        taxonomy: field.column(type.Jsonb()).optional(),
       },
       relations: {},
     }))

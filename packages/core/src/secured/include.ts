@@ -28,6 +28,7 @@ import { AccessScopeDepthExceededError } from '../access/errors.js'
 import {
   resolveOrderBy,
   resolveRelatedAccessPlan,
+  assertWhereWithinLimits,
   resolveWhere,
   unqueryableKey,
   type OrderBy,
@@ -36,7 +37,7 @@ import {
   type Where,
   type WherePlan,
 } from './vocabulary.js'
-import { resolveProjection, UNPROJECTED, type ProjectionPlan } from './select.js'
+import { readsTheRow, resolveProjection, UNPROJECTED, type ProjectionPlan } from './select.js'
 
 /**
  * A related read, composed the same way the top-level one is. Every method
@@ -180,6 +181,25 @@ export class RowDependentReductionError extends Error {
   ) {
     super(`Cannot count "${listName}.${relation}" for this session. ` + `Include the rows instead.`)
     this.name = 'RowDependentReductionError'
+  }
+}
+
+/**
+ * Thrown when a window or an order is asked through a synthetic back-relation
+ * whose source field's `read` rule depends on the row. The window is cut before
+ * the per-row rule strips rows, so a short page would reveal hidden links (#1970).
+ */
+export class RowDependentPagingError extends Error {
+  constructor(
+    readonly listName: string,
+    readonly relation: string,
+    readonly member: string,
+  ) {
+    super(
+      `Cannot ${member} "${listName}.${relation}" for this session: its source field's read rule ` +
+        `depends on the row. Drop the ${member} and page the returned rows instead.`,
+    )
+    this.name = 'RowDependentPagingError'
   }
 }
 
@@ -361,7 +381,7 @@ export interface IncludePlan {
   /**
    * Present only when this relation is both reduced ({@link reduce}) and a
    * live declared dependency of a computed field returned alongside it, and
-   * the reduce carries no rows branch of its own to satisfy it (#1357). The
+   * the caller composed a reduction over it (#1357). The
    * Access Filter predicates for an extra, caller-invisible rows fetch riding
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
    * stored width, one hop, exactly what an ordinary declared branch fetches,
@@ -602,6 +622,22 @@ async function isOmittedBeforeQuery(
   return !resolveDeclaredDependencies(ctx.config, ctx.listName).relations.has(name)
 }
 
+async function resolveProjectionForTarget(
+  shape: { fields?: readonly string[]; includes: readonly { name: string }[] },
+  target: IncludeTarget,
+  related: ResolveContext,
+  parent: ResolveContext,
+): Promise<ProjectionPlan> {
+  const projection = await resolveProjection(
+    shape.fields,
+    shape.includes.map((nested) => nested.name),
+    related,
+  )
+  if (target.fieldConfig !== undefined || projection.columns === undefined) return projection
+  if (!(await readsTheRow(target.readGate, parent))) return projection
+  return { columns: undefined, caller: projection.caller }
+}
+
 async function resolveInclude(
   request: IncludeRequest,
   ctx: ResolveContext,
@@ -622,6 +658,7 @@ async function resolveInclude(
   // the refusal itself say which relations are readable (ADR-0031).
   const predicates: WherePlan[] = []
   for (const predicate of request.predicates) {
+    assertWhereWithinLimits(predicate)
     predicates.push(await resolveWhere(predicate, related))
   }
   const orders = await resolveOrderBy(request.orders, related)
@@ -632,11 +669,7 @@ async function resolveInclude(
   const shape = rowsBranchOf(request) ?? request
   const projection = declared
     ? UNPROJECTED
-    : await resolveProjection(
-        shape.fields,
-        shape.includes.map((nested) => nested.name),
-        related,
-      )
+    : await resolveProjectionForTarget(shape, target, related, ctx)
   const includes = declared
     ? []
     : await resolveIncludes(shape.includes, related, depth + 1, projection.caller)
@@ -649,20 +682,25 @@ async function resolveInclude(
   )
   if (access.kind !== 'true') predicates.push(access)
 
+  const shapedMember = pagingMemberOf(request)
+  if (
+    shapedMember !== undefined &&
+    hasNoReduction(request) &&
+    (await isRowDependentSyntheticRead(target, ctx))
+  ) {
+    throw new RowDependentPagingError(ctx.listName, request.name, shapedMember)
+  }
+
   const reduce = request.reduce
     ? await resolveReduce(request, target, ctx, related, access)
     : undefined
 
   // A relation that is both reduced and a live declared dependency of a
   // sibling computed field must satisfy both: the reduction's own value for
-  // the caller, and real rows for the declaring hook's `needs` (#1357). If the
-  // reduce already carries a rows branch of its own (an explicit `combine`),
-  // those rows already satisfy the declaration and nothing more is needed.
+  // the caller, and real rows for the declaring hook's `needs` (#1357). A
+  // `combine` rows branch is the caller's own view, so it never stands in.
   const declaredRows =
-    !declared &&
-    liveDeclaredDependency &&
-    reduce !== undefined &&
-    rowsBranchKeyOf(reduce) === undefined
+    !declared && liveDeclaredDependency && reduce !== undefined
       ? access.kind !== 'true'
         ? [access]
         : []
@@ -711,6 +749,35 @@ async function resolveInclude(
 function rowsBranchOf(request: IncludeRequest): IncludeRequest | undefined {
   if (request.reduce?.kind !== 'combine') return undefined
   return request.reduce.branches.find((branch) => branch.kind === 'rows')?.request
+}
+
+function hasNoReduction(request: IncludeRequest): boolean {
+  return request.reduce === undefined
+}
+
+function pagingMemberOf(request: IncludeRequest): string | undefined {
+  if (request.limit !== undefined) return 'limit'
+  if (request.offset !== undefined) return 'offset'
+  if (request.orders.length > 0) return 'orderBy'
+  return undefined
+}
+
+async function isRowDependentSyntheticRead(
+  target: IncludeTarget,
+  ctx: ResolveContext,
+): Promise<boolean> {
+  if (
+    !ctx.checkFieldRead ||
+    target.fieldConfig !== undefined ||
+    target.readGate?.access === undefined
+  ) {
+    return false
+  }
+  const answer = await classifyRowIndependentRead(target.readGate.access, {
+    session: ctx.session,
+    context: ctx.context,
+  })
+  return answer === 'row-dependent'
 }
 
 /** Refuse what a count cannot honour, naming the member the caller wrote. */
@@ -769,6 +836,7 @@ async function resolveReduce(
     if (branch.kind === 'count') checkReducible(branch.request, ctx.listName)
     const predicates: WherePlan[] = []
     for (const predicate of branch.request.predicates) {
+      assertWhereWithinLimits(predicate)
       predicates.push(await resolveWhere(predicate, related))
     }
     if (access.kind !== 'true') predicates.push(access)

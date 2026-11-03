@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { mcp } from '@better-auth/mcp'
-import { admin, deviceAuthorization, jwt, twoFactor } from 'better-auth/plugins'
+import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
+import {
+  admin,
+  deviceAuthorization,
+  jwt,
+  phoneNumber,
+  twoFactor,
+  username,
+} from 'better-auth/plugins'
 import {
   deriveAuthLists as deriveAuthListsImpl,
   type DerivedAuthLists,
+  HOOK_GUARDED_IDENTITY_FIELDS,
 } from '../src/config/derive-auth-lists.js'
 import { checkbox, text } from '@opensaas/stack-core/fields'
 import type { NormalizedAuthModels } from '../src/config/types.js'
@@ -585,7 +595,6 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
       ['Account', 'scope'],
       ['Verification', 'expiresAt'],
       ['User', 'name'],
-      ['User', 'email'],
     ]
 
     for (const [listKey, fieldKey] of open) {
@@ -914,7 +923,6 @@ describe('deriveAuthLists - input:false fields ship write-denied (issue #1618)',
     const { lists } = deriveAuthLists(defaultModels, {}, {}, [admin()])
 
     expect(lists.User.fields.name.access).toBeUndefined()
-    expect(lists.User.fields.email.access).toBeUndefined()
     expect(lists.User.fields.image.access).toBeUndefined()
     expect(lists.Session.fields.ipAddress.access).toBeUndefined()
   })
@@ -1124,9 +1132,10 @@ describe('deriveAuthLists - extendUserList field collisions (issue #1917)', () =
     )
   })
 
-  it('still allows overriding a derived field that carries no deny', () => {
-    const { lists } = deriveAuthLists(defaultModels, { fields: { name: text() } })
-    expect(lists.User.fields).toHaveProperty('name')
+  it.each(['email', 'name', 'image'])('throws when extendUserList redeclares "%s"', (field) => {
+    expect(() => deriveAuthLists(defaultModels, { fields: { [field]: text() } })).toThrow(
+      new RegExp(`extendUserList.fields declares "${field}".*fieldAccess`, 's'),
+    )
   })
 
   it('does not treat a reverse-relation name as a deny collision', () => {
@@ -1137,5 +1146,86 @@ describe('deriveAuthLists - extendUserList field collisions (issue #1917)', () =
     expect(() =>
       deriveAuthLists({ ...defaultModels }, { fields: { company: text() } }, {}, [admin()]),
     ).not.toThrow()
+  })
+})
+
+describe('deriveAuthLists - hook-guarded identity fields ship update-denied (issue #2068)', () => {
+  it('denies update but not create on User.email', async () => {
+    const { lists } = deriveAuthLists(defaultModels)
+    const access = lists.User.fields.email.access
+    expect(await access!.update!({} as never)).toBe(false)
+    expect(access?.create).toBeUndefined()
+    expect(access?.read).toBeUndefined()
+  })
+
+  it('denies update on phoneNumber and username when their plugins are present', async () => {
+    const { lists } = deriveAuthLists(defaultModels, {}, {}, [
+      phoneNumber(),
+      username({ minUsernameLength: 3 }),
+    ])
+    for (const key of ['phoneNumber', 'username']) {
+      expect(await lists.User.fields[key].access!.update!({} as never)).toBe(false)
+    }
+  })
+
+  it('leaves a hook-guarded field unguarded when its plugin is absent', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+    expect(lists.User.fields.phoneNumber).toBeUndefined()
+  })
+
+  it('lets fieldAccess reopen the update deny', async () => {
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [],
+      {},
+      {
+        user: { email: { update: () => true } },
+      },
+    )
+    expect(await lists.User.fields.email.access!.update!({} as never)).toBe(true)
+  })
+
+  it('drift guard: better-auth still refuses updateUser for every listed field', async () => {
+    const auth = betterAuth({
+      baseURL: 'http://localhost:3000',
+      secret: 'drift-guard-secret-drift-guard-secret',
+      emailAndPassword: { enabled: true },
+      plugins: [
+        phoneNumber({ sendOTP: async () => {} }),
+        username({ minUsernameLength: 3, immutableUsername: true }),
+      ],
+    })
+    const signUp = await auth.api.signUpEmail({
+      body: {
+        email: 'me@example.com',
+        password: 'password-12345',
+        name: 'Me',
+        username: 'someone',
+      },
+      returnHeaders: true,
+    })
+    const cookie = signUp.headers
+      .getSetCookie()
+      .map((c) => c.split(';')[0])
+      .join('; ')
+    const headers = new Headers({ cookie })
+
+    const values: Record<string, string> = {
+      email: 'other@example.com',
+      phoneNumber: '+15550001111',
+      username: 'newname',
+      displayUsername: 'NewName',
+    }
+    for (const field of HOOK_GUARDED_IDENTITY_FIELDS.user) {
+      const error = await auth.api.updateUser({ body: { [field]: values[field] }, headers }).then(
+        () => undefined,
+        (thrown: unknown) => thrown,
+      )
+      expect(error, field).toBeInstanceOf(APIError)
+      expect((error as APIError).statusCode, field).toBe(400)
+    }
+    await expect(auth.api.updateUser({ body: { name: 'Renamed' }, headers })).resolves.toBeDefined()
   })
 })

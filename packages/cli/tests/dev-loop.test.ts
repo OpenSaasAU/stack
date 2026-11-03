@@ -33,7 +33,7 @@ import { resolveDatabaseUrl } from '@opensaas/stack-core'
 
 const { url, provenance } = resolveDatabaseUrl()
 console.log(\`PROVENANCE \${provenance}\`)
-console.log(\`INJECTED_DATABASE_URL \${process.env.DATABASE_URL ?? 'none'}\`)
+console.log(\`INJECTED_DATABASE_URL \${process.env.DATABASE_URL || 'none'}\`)
 
 const client = new pg.Client({ connectionString: url })
 await client.connect()

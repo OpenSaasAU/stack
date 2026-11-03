@@ -3,13 +3,17 @@
 // To regenerate, run: prisma contract emit
 import type {
   CodecTypes as PgVectorTypes,
-  Vector,
+  ParameterizedOutputTypesForTypeParams as PgVectorParameterizedOutputTypes,
 } from '@prisma/orm-extension-pgvector/codec-types';
 import type { QueryOperationTypes as PgVectorQueryOperationTypes } from '@prisma/orm-extension-pgvector/operation-types';
-import type { CodecTypes as PgTypes } from '@prisma/orm-postgres/target/codec-types';
+import type {
+  CodecTypes as PgTypes,
+  ParameterizedOutputTypesForTypeParams as PgParameterizedOutputTypes,
+} from '@prisma/orm-postgres/target/codec-types';
 import type { QueryOperationTypes as PgTargetQueryOps } from '@prisma/orm-postgres/target/operation-types';
 
 import type {
+  ColumnTypesFromStorage,
   ContractWithTypeMaps,
   RelationKeys,
   TypeMaps as TypeMapsType,
@@ -17,6 +21,7 @@ import type {
 import type {
   Contract as ContractType,
   ExecutionHashBase,
+  FieldTypesFromDomain,
   NamespaceId,
   ProfileHashBase,
   StorageHashBase,
@@ -44,6 +49,10 @@ export type AggregateTypes = {
       readonly 'pg/int4@1': { readonly output: 'pg/float8@1'; readonly nullable: true };
       readonly 'pg/int8@1': { readonly output: 'pg/float8@1'; readonly nullable: true };
       readonly 'pg/int8number@1': { readonly output: 'pg/float8@1'; readonly nullable: true };
+      readonly 'pg/interval-string@1': {
+        readonly output: 'pg/interval-string@1';
+        readonly nullable: true;
+      };
       readonly 'pg/interval@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
       readonly 'pg/numeric@1': { readonly output: 'pg/numeric@1'; readonly nullable: true };
       readonly 'pg/time-string@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
@@ -93,6 +102,10 @@ export type AggregateTypes = {
       readonly 'pg/int4@1': { readonly output: 'pg/int4@1'; readonly nullable: true };
       readonly 'pg/int8@1': { readonly output: 'pg/int8@1'; readonly nullable: true };
       readonly 'pg/int8number@1': { readonly output: 'pg/int8number@1'; readonly nullable: true };
+      readonly 'pg/interval-string@1': {
+        readonly output: 'pg/interval-string@1';
+        readonly nullable: true;
+      };
       readonly 'pg/interval@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
       readonly 'pg/numeric@1': { readonly output: 'pg/numeric@1'; readonly nullable: true };
       readonly 'pg/text-array@1': { readonly output: 'pg/text-array@1'; readonly nullable: true };
@@ -100,6 +113,14 @@ export type AggregateTypes = {
       readonly 'pg/time-string@1': { readonly output: 'pg/time-string@1'; readonly nullable: true };
       readonly 'pg/time-temporal@1': {
         readonly output: 'pg/time-temporal@1';
+        readonly nullable: true;
+      };
+      readonly 'pg/timestamp-date@1': {
+        readonly output: 'pg/timestamp-date@1';
+        readonly nullable: true;
+      };
+      readonly 'pg/timestamp-instant@1': {
+        readonly output: 'pg/timestamp-instant@1';
         readonly nullable: true;
       };
       readonly 'pg/timestamp-string@1': {
@@ -153,6 +174,10 @@ export type AggregateTypes = {
       readonly 'pg/int4@1': { readonly output: 'pg/int4@1'; readonly nullable: true };
       readonly 'pg/int8@1': { readonly output: 'pg/int8@1'; readonly nullable: true };
       readonly 'pg/int8number@1': { readonly output: 'pg/int8number@1'; readonly nullable: true };
+      readonly 'pg/interval-string@1': {
+        readonly output: 'pg/interval-string@1';
+        readonly nullable: true;
+      };
       readonly 'pg/interval@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
       readonly 'pg/numeric@1': { readonly output: 'pg/numeric@1'; readonly nullable: true };
       readonly 'pg/text-array@1': { readonly output: 'pg/text-array@1'; readonly nullable: true };
@@ -160,6 +185,14 @@ export type AggregateTypes = {
       readonly 'pg/time-string@1': { readonly output: 'pg/time-string@1'; readonly nullable: true };
       readonly 'pg/time-temporal@1': {
         readonly output: 'pg/time-temporal@1';
+        readonly nullable: true;
+      };
+      readonly 'pg/timestamp-date@1': {
+        readonly output: 'pg/timestamp-date@1';
+        readonly nullable: true;
+      };
+      readonly 'pg/timestamp-instant@1': {
+        readonly output: 'pg/timestamp-instant@1';
         readonly nullable: true;
       };
       readonly 'pg/timestamp-string@1': {
@@ -205,6 +238,10 @@ export type AggregateTypes = {
       readonly 'pg/int4@1': { readonly output: 'pg/int8number@1'; readonly nullable: true };
       readonly 'pg/int8@1': { readonly output: 'pg/int8number@1'; readonly nullable: true };
       readonly 'pg/int8number@1': { readonly output: 'pg/int8number@1'; readonly nullable: true };
+      readonly 'pg/interval-string@1': {
+        readonly output: 'pg/interval-string@1';
+        readonly nullable: true;
+      };
       readonly 'pg/interval@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
       readonly 'pg/numeric@1': { readonly output: 'pg/numeric@1'; readonly nullable: true };
       readonly 'pg/time-string@1': { readonly output: 'pg/interval@1'; readonly nullable: true };
@@ -237,115 +274,59 @@ type DefaultLiteralValue<CodecId extends string, Encoded> = CodecId extends keyo
     ? Encoded
     : CodecTypes[CodecId]['json']
   : Encoded;
+type ParameterizedOutputTypeFunctions =
+  PgParameterizedOutputTypes | PgVectorParameterizedOutputTypes;
 
-export type FieldOutputTypes = {
-  readonly public: {
-    readonly Article: {
-      readonly body: CodecTypes['pg/text@1']['output'];
-      readonly bodyEmbedding: Vector<768> | null;
-      readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-      readonly category: CodecTypes['pg/text@1']['output'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly published: CodecTypes['pg/bool@1']['output'];
-      readonly title: CodecTypes['pg/text@1']['output'];
-    };
-    readonly Document: {
-      readonly content: CodecTypes['pg/text@1']['output'];
-      readonly contentEmbedding: Vector<768> | null;
-      readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly published: CodecTypes['pg/bool@1']['output'];
-      readonly summary: CodecTypes['pg/text@1']['output'] | null;
-      readonly title: CodecTypes['pg/text@1']['output'];
-    };
-  };
-};
-export type FieldInputTypes = {
-  readonly public: {
-    readonly Article: {
-      readonly body: CodecTypes['pg/text@1']['input'];
-      readonly bodyEmbedding: CodecTypes['pg/vector@1']['input'] | null;
-      readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
-      readonly category: CodecTypes['pg/text@1']['input'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly published: CodecTypes['pg/bool@1']['input'];
-      readonly title: CodecTypes['pg/text@1']['input'];
-    };
-    readonly Document: {
-      readonly content: CodecTypes['pg/text@1']['input'];
-      readonly contentEmbedding: CodecTypes['pg/vector@1']['input'] | null;
-      readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly published: CodecTypes['pg/bool@1']['input'];
-      readonly summary: CodecTypes['pg/text@1']['input'] | null;
-      readonly title: CodecTypes['pg/text@1']['input'];
-    };
-  };
-};
-export type StorageColumnTypes = {
-  readonly public: {
-    readonly Article: {
-      readonly body: CodecTypes['pg/text@1']['output'];
-      readonly bodyEmbedding: Vector<768> | null;
-      readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-      readonly category: CodecTypes['pg/text@1']['output'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly published: CodecTypes['pg/bool@1']['output'];
-      readonly title: CodecTypes['pg/text@1']['output'];
-    };
-    readonly Document: {
-      readonly content: CodecTypes['pg/text@1']['output'];
-      readonly contentEmbedding: Vector<768> | null;
-      readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly published: CodecTypes['pg/bool@1']['output'];
-      readonly summary: CodecTypes['pg/text@1']['output'] | null;
-      readonly title: CodecTypes['pg/text@1']['output'];
-    };
-  };
-};
-export type StorageColumnInputTypes = {
-  readonly public: {
-    readonly Article: {
-      readonly body: CodecTypes['pg/text@1']['input'];
-      readonly bodyEmbedding: CodecTypes['pg/vector@1']['input'] | null;
-      readonly bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
-      readonly category: CodecTypes['pg/text@1']['input'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly published: CodecTypes['pg/bool@1']['input'];
-      readonly title: CodecTypes['pg/text@1']['input'];
-    };
-    readonly Document: {
-      readonly content: CodecTypes['pg/text@1']['input'];
-      readonly contentEmbedding: CodecTypes['pg/vector@1']['input'] | null;
-      readonly contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['input'] | null;
-      readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly published: CodecTypes['pg/bool@1']['input'];
-      readonly summary: CodecTypes['pg/text@1']['input'] | null;
-      readonly title: CodecTypes['pg/text@1']['input'];
-    };
-  };
-};
+type FieldTypeOverrides = {};
+export type FieldOutputTypes = FieldTypesFromDomain<
+  ContractBase['domain']['namespaces'],
+  CodecTypes,
+  ParameterizedOutputTypeFunctions,
+  FieldTypeOverrides,
+  'output'
+>;
+export type FieldInputTypes = FieldTypesFromDomain<
+  ContractBase['domain']['namespaces'],
+  CodecTypes,
+  ParameterizedOutputTypeFunctions,
+  FieldTypeOverrides,
+  'input'
+>;
+type ColumnTypeOverrides = {};
+export type StorageColumnTypes = ColumnTypesFromStorage<
+  ContractBase['storage'],
+  CodecTypes,
+  ParameterizedOutputTypeFunctions,
+  ColumnTypeOverrides,
+  'output'
+>;
+export type StorageColumnInputTypes = ColumnTypesFromStorage<
+  ContractBase['storage'],
+  CodecTypes,
+  ParameterizedOutputTypeFunctions,
+  ColumnTypeOverrides,
+  'input'
+>;
 
 export namespace Models {
   export type public_Article = {
-    body: CodecTypes['pg/text@1']['output'];
-    bodyEmbedding: Vector<768> | null;
-    bodyEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-    category: CodecTypes['pg/text@1']['output'] | null;
-    id: CodecTypes['pg/uuid@1']['output'];
-    published: CodecTypes['pg/bool@1']['output'];
-    title: CodecTypes['pg/text@1']['output'];
+    body: FieldOutputTypes['public']['Article']['body'];
+    bodyEmbedding: FieldOutputTypes['public']['Article']['bodyEmbedding'];
+    bodyEmbeddingMetadata: FieldOutputTypes['public']['Article']['bodyEmbeddingMetadata'];
+    category: FieldOutputTypes['public']['Article']['category'];
+    id: FieldOutputTypes['public']['Article']['id'];
+    published: FieldOutputTypes['public']['Article']['published'];
+    title: FieldOutputTypes['public']['Article']['title'];
     readonly [RelationKeys]?: never;
   };
   export type public_Document = {
-    content: CodecTypes['pg/text@1']['output'];
-    contentEmbedding: Vector<768> | null;
-    contentEmbeddingMetadata: CodecTypes['pg/jsonb@1']['output'] | null;
-    id: CodecTypes['pg/uuid@1']['output'];
-    published: CodecTypes['pg/bool@1']['output'];
-    summary: CodecTypes['pg/text@1']['output'] | null;
-    title: CodecTypes['pg/text@1']['output'];
+    content: FieldOutputTypes['public']['Document']['content'];
+    contentEmbedding: FieldOutputTypes['public']['Document']['contentEmbedding'];
+    contentEmbeddingMetadata: FieldOutputTypes['public']['Document']['contentEmbeddingMetadata'];
+    id: FieldOutputTypes['public']['Document']['id'];
+    published: FieldOutputTypes['public']['Document']['published'];
+    summary: FieldOutputTypes['public']['Document']['summary'];
+    title: FieldOutputTypes['public']['Document']['title'];
     readonly [RelationKeys]?: never;
   };
 }
@@ -649,13 +630,11 @@ type ContractBase = Omit<
             readonly named: 'CodecTypes';
             readonly package: '@internal/extension-pgvector/codec-types';
           };
-          readonly typeImports: readonly [
-            {
-              readonly alias: 'Vector';
-              readonly named: 'Vector';
-              readonly package: '@internal/extension-pgvector/codec-types';
-            },
-          ];
+          readonly parameterizedOutputTypes: {
+            readonly alias: 'PgVectorParameterizedOutputTypes';
+            readonly named: 'ParameterizedOutputTypesForTypeParams';
+            readonly package: '@internal/extension-pgvector/codec-types';
+          };
         };
         readonly operationTypes: {
           readonly import: {
