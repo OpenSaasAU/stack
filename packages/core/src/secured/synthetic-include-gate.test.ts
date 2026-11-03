@@ -113,6 +113,55 @@ describe('synthetic back-relation include with a row-dependent source rule (#181
   )
 
   test(
+    'refuses limit, offset and orderBy over the row-dependent synthetic relation',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c4' } })
+      if (category === null) throw new Error('setup')
+      for (const title of ['hidden', 'b', 'a']) {
+        await db.Post.create({ data: { title, category: { connect: { id: category.id } } } })
+      }
+
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }).limit(1),
+        ).all(),
+      ).rejects.toThrow(/Cannot limit/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) => posts.offset(1)).all(),
+      ).rejects.toThrow(/Cannot offset/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }),
+        ).all(),
+      ).rejects.toThrow(/Cannot orderBy/)
+    },
+    BOOT,
+  )
+
+  test(
+    'a sudo read still pages the link',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c5' } })
+      if (category === null) throw new Error('setup')
+      for (const title of ['hidden', 'b']) {
+        await db.Post.create({ data: { title, category: { connect: { id: category.id } } } })
+      }
+
+      const rows = await harness.context
+        .sudo()
+        .db.Category.where({ name: { equals: 'c5' } })
+        .include('from_Post_category', (posts) => posts.orderBy({ title: 'asc' }).limit(1))
+        .all()
+      const posts = rows[0].from_Post_category
+      if (!Array.isArray(posts)) throw new Error('expected a to-many')
+      expect(posts.map((post) => post.title)).toEqual(['b'])
+    },
+    BOOT,
+  )
+
+  test(
     'a sudo read still counts the link',
     async () => {
       const { db } = harness.context
