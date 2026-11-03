@@ -181,6 +181,20 @@ function toContractColumn(
   return { ...rest, type: foldNativeType(listKey, fieldKey, descriptor.type, nativeType) }
 }
 
+const TIMESTAMP_DEFAULT_TYPES = new Set(['timestamp', 'timestamptz'])
+
+function resolveTimestampDefault(config: OpenSaasConfig): ColumnTypeDescriptor | undefined {
+  const nativeType = config.db.defaults?.timestamp?.nativeType
+  if (nativeType === undefined) return undefined
+  const type = foldNativeType('db.defaults', 'timestamp', pgType('dateTime'), nativeType)
+  if (!TIMESTAMP_DEFAULT_TYPES.has(type.type)) {
+    throw new Error(
+      `db.defaults.timestamp.nativeType "${nativeType}" is not a timestamp type. Use Timestamp or Timestamptz, with an optional precision (Timestamp(3)).`,
+    )
+  }
+  return type
+}
+
 function foreignKeyColumnName(fieldKey: string): string {
   return `${fieldKey}Id`
 }
@@ -548,6 +562,7 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
  */
 export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])
+  const timestampDefault = resolveTimestampDefault(config)
   const drafts = new Map<string, ModelDraft>()
   const syntheticByTarget = new Map<string, SyntheticRelation[]>()
 
@@ -565,6 +580,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         indexes: [],
         relations: [],
         timestamps,
+        ...(timestampDefault !== undefined && (timestamps.createdAt || timestamps.updatedAt)
+          ? { timestampType: timestampDefault }
+          : {}),
       },
       fieldLevelIndexes: new Map(),
       ownedForeignKeys: new Map(),
@@ -588,7 +606,14 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         case 'column': {
           const { kind: _kind, ...column } = descriptor
           claimMember(listKey, draft, column.name, `fields.${fieldKey}`)
-          draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
+          const resolved = toContractColumn(listKey, fieldKey, column)
+          draft.model.columns.push(
+            timestampDefault !== undefined &&
+              field.type === 'timestamp' &&
+              column.nativeType === undefined
+              ? { ...resolved, type: timestampDefault }
+              : resolved,
+          )
           const isIndexed = readIsIndexed(field)
           if (isIndexed !== undefined) {
             draft.fieldLevelIndexes.set(column.name, { fieldKey, isIndexed, implicit: false })

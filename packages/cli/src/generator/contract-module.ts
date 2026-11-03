@@ -251,8 +251,13 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
   // Known limits: createdAt avoids field.temporal.createdAtString(), which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt) {
-    helpers.add('timestamptzStringColumn')
-    fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
+    const created = pgColumnExpression(model.name, {
+      name: 'createdAt',
+      nullable: false,
+      type: model.timestampType ?? { pack: 'pg', type: 'timestamptz' },
+    })
+    for (const helper of created.helpers) helpers.add(helper)
+    fields.push(`        createdAt: ${created.expression}.defaultSql('now()'),`)
   }
   if (model.timestamps.updatedAt) {
     fields.push('        updatedAt: field.temporal.updatedAtString(),')

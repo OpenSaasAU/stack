@@ -2753,6 +2753,22 @@ export type DatabaseConfig = {
    */
   idField?: IdFieldStrategy
   /**
+   * Column defaults applied to every field of a type, plugin lists and the
+   * auto `createdAt`/`updatedAt` included. A field's own `db.nativeType` wins.
+   *
+   * @example Keep `timestamp(3)` columns across every list, auth lists too
+   * ```typescript
+   * db: {
+   *   provider: 'postgresql',
+   *   defaults: { timestamp: { nativeType: 'Timestamp(3)' } },
+   * }
+   * ```
+   */
+  defaults?: {
+    /** Applied to every `timestamp()` field that sets no `db.nativeType`. Must be a `Timestamp` or `Timestamptz` type. */
+    timestamp?: { nativeType?: string }
+  }
+  /**
    * Extension packs the contract declares (ADR-0049). Each descriptor names a
    * package; one declaration drives the contract module, `prisma.config.ts`,
    * the runtime client and the pack's extension contract space under
