@@ -53,6 +53,19 @@ describe('defaultValue is checked against the field type', () => {
     expect(() => derive(build())).toThrow(/"Thing\.value" has an invalid defaultValue/)
   })
 
+  test.each([
+    ['integer', () => integer({ defaultValue: 3_000_000_000 })],
+    ['bigInt', () => bigInt({ defaultValue: 1e21 })],
+    ['decimal', () => decimal({ precision: 5, scale: 2, defaultValue: '12345.678' })],
+  ])('%s rejects an out-of-range default', (_name, build) => {
+    expect(() => derive(build())).toThrow(/has an invalid defaultValue/)
+  })
+
+  test('null and year-0099 defaults are accepted', () => {
+    expect(() => derive(integer({ defaultValue: null as never }))).not.toThrow()
+    expect(() => derive(calendarDay({ defaultValue: '0099-12-31' }))).not.toThrow()
+  })
+
   test('valid defaults still derive', () => {
     expect(() => derive(checkbox({ defaultValue: true }))).not.toThrow()
     expect(() => derive(integer({ defaultValue: 3 }))).not.toThrow()

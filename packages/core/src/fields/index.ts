@@ -130,7 +130,7 @@ function checkedDefault(
   expected: string,
   accepts: (value: unknown) => boolean,
 ): void {
-  if (value === undefined || accepts(value)) return
+  if (value === undefined || value === null || accepts(value)) return
   throw new Error(
     `"${listKey}.${fieldName}" has an invalid defaultValue: expected ${expected}, got ${
       typeof value === 'string' ? JSON.stringify(value) : describeDefault(value)
@@ -140,11 +140,19 @@ function checkedDefault(
 
 const DECIMAL_GRAMMAR = /^([+-])?(\d*)(?:\.(\d*))?$/
 
-function isDecimalDefault(value: unknown): boolean {
-  if (typeof value === 'number') return Number.isFinite(value)
-  if (typeof value !== 'string') return false
-  const parts = DECIMAL_GRAMMAR.exec(value.trim())
-  return parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '')
+function decimalParts(text: string): RegExpExecArray | null {
+  const parts = DECIMAL_GRAMMAR.exec(text)
+  return parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '') ? parts : null
+}
+
+function fitsDecimal(value: unknown, precision: number, scale: number): boolean {
+  if (typeof value === 'number' && !Number.isFinite(value)) return false
+  if (typeof value !== 'number' && typeof value !== 'string') return false
+  const text = typeof value === 'number' ? value.toFixed(20).replace(/\.?0+$/, '') : value.trim()
+  const parts = decimalParts(text)
+  if (parts === null) return false
+  const integerDigits = parts[2].replace(/^0+/, '').length
+  return integerDigits <= precision - scale
 }
 
 function isCalendarDate(value: unknown): boolean {
@@ -152,7 +160,8 @@ function isCalendarDate(value: unknown): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const date = new Date(Date.UTC(year, month - 1, day))
+  const date = new Date(0)
+  date.setUTCFullYear(year, month - 1, day)
   return (
     date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
   )
@@ -161,7 +170,7 @@ function isCalendarDate(value: unknown): boolean {
 function isBigIntDefault(value: unknown): boolean {
   return (
     typeof value === 'bigint' ||
-    (typeof value === 'number' && Number.isInteger(value)) ||
+    (typeof value === 'number' && Number.isSafeInteger(value)) ||
     (typeof value === 'string' && /^[+-]?\d+$/.test(value))
   )
 }
@@ -179,12 +188,12 @@ function checkedDecimalSize(
     precision > 1000
   ) {
     throw new Error(
-      `"${listKey}.${fieldName}" has an invalid precision: expected an integer from 1 to 1000, got ${JSON.stringify(String(precision))}.`,
+      `"${listKey}.${fieldName}" has an invalid precision: expected an integer from 1 to 1000, got ${typeof precision === 'string' ? JSON.stringify(precision) : String(precision)}.`,
     )
   }
   if (typeof scale !== 'number' || !Number.isInteger(scale) || scale < 0 || scale > precision) {
     throw new Error(
-      `"${listKey}.${fieldName}" has an invalid scale: expected an integer from 0 to precision (${precision}), got ${JSON.stringify(String(scale))}.`,
+      `"${listKey}.${fieldName}" has an invalid scale: expected an integer from 0 to precision (${precision}), got ${typeof scale === 'string' ? JSON.stringify(scale) : String(scale)}.`,
     )
   }
   return { precision, scale }
@@ -200,9 +209,9 @@ function decimalDefault(
   const literal = literalDefault(value, listKey, fieldName)
   if (literal === undefined || literal.kind !== 'literal') return literal
   const text = String(literal.value).trim()
-  const parts = /^([+-])?(\d*)(?:\.(\d*))?$/.exec(text)
+  const parts = decimalParts(text)
   let operand = `'${text.replace(/'/g, "''")}'`
-  if (parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '')) {
+  if (parts !== null) {
     const integer = parts[2].replace(/^0+(?=\d)/, '') || '0'
     const fraction = parts[3] ?? ''
     const magnitude = fraction === '' ? integer : `${integer}.${fraction}`
@@ -359,18 +368,27 @@ export function integer<
       if (isRequired && operation === 'update') return withMax.optional()
       return !isRequired ? withMax.optional().nullable() : withMax
     },
-    getContractField: (fieldName: string, listKey: string) =>
-      scalarColumn(fieldName, {
+    getContractField: (fieldName: string, listKey: string) => {
+      checkedDefault(
+        options?.defaultValue,
+        listKey,
+        fieldName,
+        'an integer within the 32-bit range',
+        (value) =>
+          typeof value === 'number' &&
+          Number.isInteger(value) &&
+          value >= -2147483648 &&
+          value <= 2147483647,
+      )
+      return scalarColumn(fieldName, {
         type: pgType('int'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: (() => {
-          checkedDefault(options?.defaultValue, listKey, fieldName, 'an integer', Number.isInteger)
-          return literalDefault(options?.defaultValue, listKey, fieldName)
-        })(),
-      }),
+        default: literalDefault(options?.defaultValue, listKey, fieldName),
+      })
+    },
     // A non-integer token can't be interpreted, so it degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
@@ -501,8 +519,8 @@ export function decimal<
         options?.defaultValue,
         listKey,
         fieldName,
-        'a finite number or a numeric string',
-        isDecimalDefault,
+        `a finite number or numeric string with at most ${size.precision - size.scale} integer digits`,
+        (value) => fitsDecimal(value, size.precision, size.scale),
       )
       return scalarColumn(fieldName, {
         type: pgType('decimal', [size.precision, size.scale]),
