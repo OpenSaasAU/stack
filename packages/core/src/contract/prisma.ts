@@ -1,4 +1,4 @@
-import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
+import { defineContract, nativeEnum, pg, sql } from '@prisma/orm-postgres/contract-builder'
 import type { NativeEnumHandle, ScalarFieldBuilder } from '@prisma/orm-postgres/contract-builder'
 import {
   charColumn,
@@ -273,11 +273,15 @@ function baseModel(
   })
 }
 
+function sqlExpression(text: string) {
+  return sql(Object.assign([text], { raw: [text] }))
+}
+
 type ModelToken = ReturnType<typeof baseModel>
 
 function finishModel(base: ModelToken, model: ContractModel, tokens: Record<string, ModelToken>) {
-  const uniqueIndexes = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniqueIndexes = model.indexes.filter((index) => index.unique && index.where === undefined)
+  const plainIndexes = model.indexes.filter((index) => !index.unique || index.where !== undefined)
   const indexedColumns = model.columns.filter((column) => column.index)
   return base
     .attributes(({ fields, constraints }) => ({
@@ -295,7 +299,11 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
         ...plainIndexes.map((index) =>
           constraints.index(
             index.columns.map((column) => cols[column]),
-            index.name !== undefined ? { map: index.name } : {},
+            {
+              ...(index.name !== undefined ? { map: index.name } : {}),
+              ...(index.unique ? { unique: true } : {}),
+              ...(index.where !== undefined ? { where: sqlExpression(index.where) } : {}),
+            },
           ),
         ),
       ],

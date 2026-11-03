@@ -14,6 +14,7 @@ import {
   type PrismaContract,
 } from './index.js'
 import { deriveConstraintMap } from './dependencies.js'
+import { text } from '../fields/index.js'
 import {
   authConfig,
   blogConfig,
@@ -261,4 +262,53 @@ describe('engine: the constraint map names the constraints PostgreSQL actually c
     },
     60_000,
   )
+})
+
+describe('engine: a partial unique index round-trips with no planned operations', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('applies, plans empty, and enforces uniqueness only where the predicate holds', async () => {
+    const data = deriveContract({
+      db: { provider: 'postgresql' },
+      lists: {
+        TextMessage: {
+          fields: { twilioSid: text(), note: text() },
+          db: {
+            indexes: [
+              {
+                fields: ['twilioSid'],
+                unique: true,
+                name: 'TextMessage_twilioSid_unique_idx',
+                where: `("twilioSid" <> ''::text)`,
+              },
+            ],
+          },
+        },
+      },
+    })
+    await applyContract(db, buildPrismaContract(data))
+
+    const def = await db.pglite.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where indexname = 'TextMessage_twilioSid_unique_idx'`,
+    )
+    expect(def.rows[0].indexdef).toMatch(/CREATE UNIQUE INDEX .* WHERE .*twilioSid.* <> ''/)
+
+    const insert = (sid: string) =>
+      db.pglite.query(
+        `insert into "TextMessage" (id, "twilioSid") values (gen_random_uuid(), $1)`,
+        [sid],
+      )
+    await insert('')
+    await insert('')
+    await insert('SM1')
+    await expect(insert('SM1')).rejects.toThrow()
+  })
 })

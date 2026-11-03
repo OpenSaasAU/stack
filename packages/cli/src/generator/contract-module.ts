@@ -287,8 +287,8 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
  * rendered module and `buildPrismaContract` reach the builder identically.
  */
 function renderModelAttributes(model: ContractModel): string {
-  const uniques = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniques = model.indexes.filter((index) => index.unique && index.where === undefined)
+  const plainIndexes = model.indexes.filter((index) => !index.unique || index.where !== undefined)
   const indexedColumns = model.columns.filter((column) => column.index)
 
   const uniqueEntries = uniques.map((index) => {
@@ -301,8 +301,14 @@ function renderModelAttributes(model: ContractModel): string {
     ...indexedColumns.map((column) => `constraints.index([${member('cols', column.name)}]),`),
     ...plainIndexes.map((index) => {
       const columns = index.columns.map((column) => member('cols', column)).join(', ')
-      const options = index.name !== undefined ? `, { map: ${literal(index.name)} }` : ''
-      return `constraints.index([${columns}]${options}),`
+      const options: string[] = []
+      if (index.name !== undefined) options.push(`map: ${literal(index.name)}`)
+      if (index.unique) options.push('unique: true')
+      if (index.where !== undefined)
+        options.push(
+          `where: sql(Object.assign([${literal(index.where)}], { raw: [${literal(index.where)}] }))`,
+        )
+      return `constraints.index([${columns}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''}),`
     }),
   ]
 
@@ -394,6 +400,8 @@ export function renderContractModule(data: ContractData): string {
 
   const usesEnums = data.enums.length > 0
   const builderImports = ['defineContract']
+  if (data.models.some((model) => model.indexes.some((index) => index.where !== undefined)))
+    builderImports.push('sql')
   if (usesEnums) builderImports.push('nativeEnum', 'pg')
 
   const lines: string[] = []
