@@ -152,11 +152,18 @@ export function validateFile(
   }
 
   if (options?.acceptedExtensions && options.acceptedExtensions.length > 0) {
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-    if (!options.acceptedExtensions.includes(ext)) {
+    const storedExtensions =
+      effectiveType === 'application/octet-stream'
+        ? []
+        : (mime.extensions[effectiveType] ?? []).map((e) => `.${e}`)
+    const accepted = options.acceptedExtensions.map((e) => {
+      const lower = e.toLowerCase()
+      return lower.startsWith('.') ? lower : `.${lower}`
+    })
+    if (!storedExtensions.some((e) => accepted.includes(e))) {
       return {
         valid: false,
-        error: `File extension '${ext}' is not allowed. Accepted extensions: ${options.acceptedExtensions.join(', ')}`,
+        error: `File extension '${storedExtensions[0] ?? '(none)'}' (stored for type '${effectiveType}') is not allowed. Accepted extensions: ${options.acceptedExtensions.join(', ')}`,
       }
     }
   }
