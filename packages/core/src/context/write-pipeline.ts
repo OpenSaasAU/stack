@@ -617,7 +617,7 @@ async function runWriteInTransaction(
     item,
     await writtenRowQueryable(binding, item.id),
   )
-  return visible === null ? null : { visible, raw: item }
+  return { visible, raw: item }
 }
 
 /**
@@ -718,7 +718,7 @@ async function runDeletePath(args: {
   )
 
   const visible = await visibleWrittenRow(binding, deleted, queryable)
-  return visible === null ? null : { visible, raw: deleted }
+  return { visible, raw: deleted }
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

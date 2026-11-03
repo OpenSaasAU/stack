@@ -5,7 +5,13 @@ import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
 const BOOT = 120_000
 
-const seen: Record<string, unknown>[] = []
+interface Seen {
+  item?: Record<string, unknown>
+  originalItem?: Record<string, unknown>
+  hidden?: Record<string, unknown>
+}
+
+const seen: Seen[] = []
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -34,7 +40,8 @@ const config: OpenSaasConfig = {
       },
       hooks: {
         afterTransaction: async (args) => {
-          if (args.status === 'committed') seen.push({ hidden: args.item })
+          if (args.status === 'committed' && args.operation !== 'delete')
+            seen.push({ hidden: args.item })
         },
       },
     },
@@ -67,13 +74,10 @@ describe('afterTransaction.item is the persisted row', () => {
       .context({ userId: 'u', role: 'user' })
       .db.Job.update({ where: { id: String(job?.id) }, data: { title: 't2' } })
 
-    const { item, originalItem } = seen[0] as {
-      item: Record<string, unknown>
-      originalItem: Record<string, unknown>
-    }
-    expect(item.webhookUrl).toBe(originalItem.webhookUrl)
-    expect(item.slug).toBe(originalItem.slug)
-    expect(item.title).toBe('t2')
+    const [{ item, originalItem }] = seen
+    expect(item?.webhookUrl).toBe(originalItem?.webhookUrl)
+    expect(item?.slug).toBe(originalItem?.slug)
+    expect(item?.title).toBe('t2')
     expect(result).not.toHaveProperty('webhookUrl')
     expect(result?.slug).toBe('/jobs/a')
   })
