@@ -312,3 +312,30 @@ describe('engine: a partial unique index round-trips with no planned operations'
     await expect(insert('SM1')).rejects.toThrow()
   })
 })
+
+describe('engine: db.indexNaming prisma7 applies the exact physical names', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('constraints and indexes carry the Prisma 7 names', async () => {
+    const contract = buildPrismaContract(
+      deriveContract({ ...oneToOneConfig, db: { ...oneToOneConfig.db, indexNaming: 'prisma7' } }),
+    )
+    await applyContract(db, contract)
+
+    const constraints = await db.pglite.query<{ conname: string }>(
+      `select conname from pg_constraint where conrelid = '"Profile"'::regclass and contype in ('u', 'f') order by 1`,
+    )
+    expect(constraints.rows.map((row) => row.conname)).toEqual([
+      'Profile_userId_fkey',
+      'Profile_userId_key',
+    ])
+  }, 60_000)
+})

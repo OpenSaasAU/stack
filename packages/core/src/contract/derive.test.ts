@@ -582,3 +582,64 @@ describe('deriveContract — db.indexes resolution', () => {
     ).toThrow(/field "user"'s isIndexed: 'unique' — both would emit an index on "userId"/)
   })
 })
+
+describe('deriveContract — db.indexNaming', () => {
+  const lists = (): OpenSaasConfig['lists'] => ({
+    Author: { fields: { name: text() } },
+    Post: {
+      fields: {
+        title: text({ isIndexed: true }),
+        slug: text({ isIndexed: 'unique' }),
+        author: relationship({ ref: 'Author' }),
+      },
+      db: { indexes: [{ fields: ['title', 'slug'] }] },
+    },
+  })
+
+  test('names every index, unique and foreign key the Prisma 7 way', () => {
+    const post = single(lists(), { indexNaming: 'prisma7' }).models.find((m) => m.name === 'Post')
+    expect(post?.columns.some((c) => c.unique || c.index)).toBe(false)
+    const names = post?.indexes.map((i) => i.name).sort()
+    expect(names).toEqual(
+      ['Post_title_slug_idx', 'Post_title_idx', 'Post_slug_key', 'Post_authorId_idx'].sort(),
+    )
+    expect(post?.foreignKeys[0]?.name).toBe('Post_authorId_fkey')
+  })
+
+  test('truncates to 63 bytes keeping the suffix', () => {
+    const long = 'a'.repeat(70)
+    const model = single(
+      { Thing: { fields: { [long]: text({ isIndexed: true }) } } },
+      { indexNaming: 'prisma7' },
+    ).models[0]
+    const name = model?.indexes[0]?.name ?? ''
+    expect(Buffer.byteLength(name)).toBe(63)
+    expect(name.endsWith('_idx')).toBe(true)
+  })
+
+  test('leaves names alone by default', () => {
+    const post = single(lists()).models.find((m) => m.name === 'Post')
+    expect(post?.foreignKeys[0]?.name).toBeUndefined()
+    expect(post?.indexes.every((i) => i.name === undefined)).toBe(true)
+  })
+
+  test('refuses names that collide after truncation', () => {
+    const a = 'a'.repeat(70)
+    expect(() =>
+      single(
+        {
+          Thing: {
+            fields: { [`${a}x`]: text({ isIndexed: true }), [`${a}y`]: text({ isIndexed: true }) },
+          },
+        },
+        { indexNaming: 'prisma7' },
+      ),
+    ).toThrow(/more than once/)
+  })
+
+  test('refuses an unknown value', () => {
+    expect(() =>
+      single({ Thing: { fields: { a: text() } } }, { indexNaming: 'prisma6' as 'prisma7' }),
+    ).toThrow(/indexNaming/)
+  })
+})

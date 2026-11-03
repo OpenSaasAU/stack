@@ -312,6 +312,7 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
       foreignKeys: model.foreignKeys.map((fk) =>
         constraints.foreignKey(cols[fk.column], tokens[fk.references.model].refs.id, {
           index: false,
+          ...(fk.name !== undefined ? { name: fk.name } : {}),
           ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
           ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
         }),
