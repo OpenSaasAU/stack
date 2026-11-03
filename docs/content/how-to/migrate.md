@@ -231,16 +231,42 @@ Production is a different command: deploys run `prisma db migrate` from the comm
 Prisma's implicit many-to-many tables (`_Lesson_teachers(A, B)`) have no `id`. Declare a junction list mapped onto the table:
 
 ```typescript
-LessonTeacher: list({
-  fields: {
-    lesson: relationship({ ref: 'Lesson.teachers', db: { foreignKey: { map: 'A' }, isNullable: false } }),
-    teacher: relationship({ ref: 'Teacher.lessons', db: { foreignKey: { map: 'B' }, isNullable: false } }),
+import { config, list } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
+
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {
+    Lesson: list({
+      fields: {
+        title: text(),
+        teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
+      },
+    }),
+    Teacher: list({
+      fields: {
+        name: text(),
+        lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
+      },
+    }),
+    LessonTeacher: list({
+      fields: {
+        lesson: relationship({
+          ref: 'Lesson.teachers',
+          db: { foreignKey: { map: 'A' }, isNullable: false },
+        }),
+        teacher: relationship({
+          ref: 'Teacher.lessons',
+          db: { foreignKey: { map: 'B' }, isNullable: false },
+        }),
+      },
+      db: {
+        map: '_Lesson_teachers',
+        indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
+      },
+    }),
   },
-  db: {
-    map: '_Lesson_teachers',
-    indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
-  },
-}),
+})
 ```
 
 `isNullable: false` keeps `A` and `B` `NOT NULL`. Then, before reconciling, add and backfill the surrogate `id` on every existing table that lacks one:
