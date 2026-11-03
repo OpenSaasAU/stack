@@ -1597,7 +1597,11 @@ export function typeDescriptorToTypeString(
 
   const typeName = descriptor.name || descriptor.value.name
 
-  return `import('${descriptor.from}').${typeName}`
+  const from = descriptor.from
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/[\n\r\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+  return `import('${from}').${typeName}`
 }
 
 /**

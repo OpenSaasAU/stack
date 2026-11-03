@@ -186,7 +186,7 @@ function refuseInvalidExtensionNames(config: OpenSaasConfig): ConfigRefusal[] {
 }
 
 const PACKAGE_SPECIFIER =
-  /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/
+  /^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*\/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/
 
 function refuseInvalidExtensionSources(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []

@@ -1,3 +1,4 @@
+import { typeDescriptorToTypeString } from '../fields/index.js'
 import { describe, it, expect } from 'vitest'
 import { validateDatabaseConfig } from './database-config.js'
 import { select, text, timestamp } from '../fields/index.js'
@@ -228,5 +229,16 @@ describe('validateDatabaseConfig', () => {
     }
 
     expect(validateDatabaseConfig(config).map((r) => r.reason)).toContain('non-identifier-name')
+  })
+})
+
+describe('typeDescriptorToTypeString', () => {
+  it("keeps a hostile `from` inside the import('') literal", () => {
+    const out = typeDescriptorToTypeString({
+      value: class Decimal {},
+      from: "x')\nglobalThis.PWNED = true //",
+    })
+
+    expect(out).toBe("import('x\\')\\u000aglobalThis.PWNED = true //').Decimal")
   })
 })
