@@ -16,7 +16,12 @@ import {
   DEFAULT_MAX_IMAGE_PIXELS,
   type FileValidationOptions,
 } from '../utils/upload.js'
-import { deleteQuietly, detectImage, processImageTransformations } from '../utils/image.js'
+import {
+  deleteQuietly,
+  detectImage,
+  processImageTransformations,
+  variantFilename,
+} from '../utils/image.js'
 import { getStorageProviderFactory } from './registry.js'
 
 /**
@@ -227,6 +232,14 @@ export async function uploadImage(
   }
 
   await claimStableKey(config, storageProviderName, storedName, options)
+  for (const [name, transformation] of Object.entries(options?.transformations ?? {})) {
+    await claimStableKey(
+      config,
+      storageProviderName,
+      variantFilename(storedName, name, transformation, contentType),
+      options,
+    )
+  }
 
   const provider = createStorageProvider(config, storageProviderName)
 
