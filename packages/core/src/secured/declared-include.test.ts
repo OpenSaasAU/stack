@@ -165,6 +165,66 @@ describe('a caller-shaped include on a declared dependency', () => {
     expect(docs[0]).toMatchObject({ blockedCount: 1, blocked: [] })
   })
 
+  test('a combine rows branch on the declared relation does not unlock the body', async () => {
+    const [doc] = await db
+      .context({ userId: blockedId })
+      .db.Doc.include('blocked', (blocked) =>
+        blocked.combine({
+          items: blocked.where({ id: { equals: aliceId } }),
+          n: blocked.count(),
+        }),
+      )
+      .all()
+    expect(doc).not.toHaveProperty('body')
+    expect(doc).toMatchObject({ blockedCount: 1, blocked: { items: [], n: 1 } })
+  })
+
+  test('a combine rows branch below another include does not unlock the body', async () => {
+    const [folder] = await db
+      .context({ userId: blockedId })
+      .db.Folder.include('docs', (docs) =>
+        docs.combine({
+          items: docs.include('blocked', (blocked) => blocked.where({ id: { equals: aliceId } })),
+          total: docs.count(),
+        }),
+      )
+      .all()
+    const docs: unknown = Reflect.get(folder, 'docs')
+    if (typeof docs !== 'object' || docs === null) throw new Error('docs not included')
+    const items: unknown = Reflect.get(docs, 'items')
+    if (!Array.isArray(items)) throw new Error('items not included')
+    expect(items[0]).not.toHaveProperty('body')
+    expect(items[0]).toMatchObject({ blockedCount: 1, blocked: [] })
+  })
+
+  test('a combine rows branch does not flip a computed field over a read-denied relation', async () => {
+    const hit = await db
+      .context({})
+      .db.Post.include('owner', (owner) => owner.where({ email: { equals: 'admin@x' } }))
+      .all()
+    const miss = await db
+      .context({})
+      .db.Owner.include('posts', (posts) =>
+        posts.combine({ items: posts.where({ title: { equals: 'nobody' } }), n: posts.count() }),
+      )
+      .all()
+    expect(hit[0]).toMatchObject({ ownerLabel: 'owned' })
+    expect(miss).toHaveLength(1)
+  })
+
+  test('an unblocked user reads the body under a combine rows branch', async () => {
+    const [doc] = await db
+      .context({ userId: aliceId })
+      .db.Doc.include('blocked', (blocked) =>
+        blocked.combine({
+          items: blocked.where({ id: { equals: aliceId } }),
+          n: blocked.count(),
+        }),
+      )
+      .all()
+    expect(doc).toMatchObject({ body: 'TOP SECRET', blocked: { items: [], n: 1 } })
+  })
+
   test('an unblocked user still reads the body under a shaped include', async () => {
     const [doc] = await db
       .context({ userId: aliceId })

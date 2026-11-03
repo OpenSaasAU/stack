@@ -19,7 +19,7 @@ import { classifyRowIndependentRead } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
 import { unqueryableKey, type ResolveContext } from './vocabulary.js'
-import type { IncludePlan } from './include.js'
+import { hasRowsBranch, type IncludePlan } from './include.js'
 
 /**
  * Thrown when `.select()` names a relationship field. The ORM's own
@@ -265,7 +265,7 @@ export function reducedDeclaredKeys(includes: readonly IncludePlan[]): ReducedDe
   const keys = new Set<string>()
   const nested: Record<string, ReducedDeclaredKeys> = {}
   for (const plan of includes) {
-    if (plan.declaredRows !== undefined) {
+    if (plan.declaredRows !== undefined && !hasRowsBranch(plan)) {
       // `plan.includes` is always empty here (a reduce refuses `include()`),
       // so there is nothing beneath this key to descend into.
       keys.add(plan.relation)

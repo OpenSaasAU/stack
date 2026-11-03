@@ -371,6 +371,29 @@ export interface IncludePlan {
   readonly declaredRows?: readonly WherePlan[]
 }
 
+function rowsBranchShaped(
+  reduce: ReducePlan,
+  shape: { fields?: readonly string[]; includes: readonly unknown[] },
+  access: WherePlan,
+): boolean {
+  if (reduce.kind !== 'combine') return false
+  const scope = access.kind !== 'true' ? 1 : 0
+  return reduce.branches.some(
+    (branch) =>
+      branch.kind === 'rows' &&
+      (branch.predicates.length > scope ||
+        branch.limit !== undefined ||
+        branch.offset !== undefined ||
+        branch.orders.length > 0 ||
+        shape.fields !== undefined ||
+        shape.includes.length > 0),
+  )
+}
+
+export function hasRowsBranch(plan: IncludePlan): boolean {
+  return plan.reduce !== undefined && rowsBranchKeyOf(plan.reduce) !== undefined
+}
+
 /** The key a resolved reduce's own rows branch sits under, if it composed one. */
 function rowsBranchKeyOf(reduce: ReducePlan): string | undefined {
   if (reduce.kind !== 'combine') return undefined
@@ -674,7 +697,7 @@ async function resolveInclude(
     !declared &&
     liveDeclaredDependency &&
     reduce !== undefined &&
-    rowsBranchKeyOf(reduce) === undefined
+    (rowsBranchKeyOf(reduce) === undefined || rowsBranchShaped(reduce, shape, access))
       ? access.kind !== 'true'
         ? [access]
         : []
