@@ -232,13 +232,13 @@ describe('devCommand', () => {
     expect(spawned[0]?.args).toEqual(['dev'])
   })
 
-  it('runs the command given after `--`, and hands the child no database URL', async () => {
+  it('runs the command given after `--`, and hands the child a blank database URL', async () => {
     process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
     await startLoop({ appCommand: ['node', 'server.mjs'] })
 
     expect(spawned[0]?.file).toBe('node')
     expect(spawned[0]?.args).toEqual(['server.mjs'])
-    expect(spawned[0]?.env.DATABASE_URL).toBeUndefined()
+    expect(spawned[0]?.env.DATABASE_URL).toBe('')
     expect(stop).toHaveBeenCalled()
   })
 
