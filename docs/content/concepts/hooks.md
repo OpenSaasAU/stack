@@ -341,6 +341,16 @@ afterOperation: async (args) => {
 }
 ```
 
+### What `afterTransaction` receives as `item`
+
+`afterTransaction`'s `item` is the **persisted row** — the same raw row
+`afterOperation` receives and the same shape as `originalItem`. It is not the
+session's Field Visibility projection: a field the session cannot read, or a
+list whose `query` access denies it, still arrives in full, and `resolveOutput`
+transforms are not applied. Only the value returned to the caller is projected.
+Hooks are trusted application code, so a post-commit sync (search index,
+webhook) sees the same values whoever wrote the row.
+
 ### No-op updates
 
 An update whose resolved payload is empty (for example, a `resolveInput` hook

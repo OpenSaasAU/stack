@@ -184,6 +184,9 @@ export type FieldBeforeTransactionHookArgs<
  *    `afterOperation` (which receives the correct nested `item`).
  *  - An update whose resolved payload is empty still reports `committed`, with
  *    `item` equal to `originalItem`; compare the two to skip a no-op.
+ *  - `item` is the raw persisted row, the same one `afterOperation` receives —
+ *    not the session's Field Visibility projection: columns the session cannot
+ *    read are present and `resolveOutput` transforms are not applied.
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate for whatever
  *    `beforeTransaction` did externally.
@@ -1966,6 +1969,9 @@ export type BeforeTransactionHookArgs<
  *    `afterOperation` (which receives the correct nested `item`);
  *    transaction-boundary hooks are for external-call compensation keyed off
  *    `status`/`inputData`.
+ *  - `item` is the raw persisted row, the same one `afterOperation` receives —
+ *    not the session's Field Visibility projection: columns the session cannot
+ *    read are present and `resolveOutput` transforms are not applied.
  *  - `rolled-back`: NO persisted `item`; the hook gets `inputData` and the
  *    `error` that caused the rollback so it can compensate.
  */
