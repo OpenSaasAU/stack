@@ -547,28 +547,32 @@ async function refuseUnlessForeignKeyVisible(
  */
 export function assertWhereWithinLimits(where: Record<string, unknown>): void {
   let nodes = 0
-  const walk = (value: unknown, depth: number): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, depth)
-      return
+  const count = (): void => {
+    nodes += 1
+    if (nodes > WHERE_MAX_NODES) {
+      throw new ValidationError([
+        `The where predicate has more than ${WHERE_MAX_NODES} entries, the most a query may carry.`,
+      ])
     }
-    if (!isPlainObject(value)) return
-    for (const [key, child] of Object.entries(value)) {
-      nodes += 1
-      if (nodes > WHERE_MAX_NODES) {
-        throw new ValidationError([
-          `The where predicate has more than ${WHERE_MAX_NODES} entries, the most a query may carry.`,
-        ])
+  }
+  const walk = (predicate: Record<string, unknown>, depth: number): void => {
+    for (const [key, value] of Object.entries(predicate)) {
+      count()
+      if (LOGICAL_OPERATORS.has(key)) {
+        const branches = Array.isArray(value) ? value : [value]
+        for (const branch of branches) if (isPlainObject(branch)) walk(branch, depth)
+        continue
       }
-      if (RELATION_QUANTIFIER_SET.has(key)) {
+      if (!isPlainObject(value)) continue
+      for (const [quantifier, nested] of Object.entries(value)) {
+        if (!RELATION_QUANTIFIER_SET.has(quantifier)) continue
+        count()
         if (depth + 1 > WHERE_RELATION_MAX_DEPTH) {
           throw new ValidationError([
             `The where predicate nests relations more than ${WHERE_RELATION_MAX_DEPTH} levels deep, the most a query may carry.`,
           ])
         }
-        walk(child, depth + 1)
-      } else {
-        walk(child, depth)
+        if (isPlainObject(nested)) walk(nested, depth + 1)
       }
     }
   }

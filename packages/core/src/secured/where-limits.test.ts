@@ -32,4 +32,16 @@ describe('assertWhereWithinLimits', () => {
     expect(() => assertWhereWithinLimits(entries(WHERE_MAX_NODES))).not.toThrow()
     expect(() => assertWhereWithinLimits(entries(WHERE_MAX_NODES + 1))).toThrow(ValidationError)
   })
+
+  test('does not descend into scalar operand values', () => {
+    let operand: Record<string, unknown> = { some: 1 }
+    for (let level = 0; level < 10; level++) operand = { some: operand }
+    expect(() => assertWhereWithinLimits({ data: { equals: operand } })).not.toThrow()
+  })
+
+  test('counts relation quantifiers inside logical branches', () => {
+    expect(() => assertWhereWithinLimits({ OR: [nested(WHERE_RELATION_MAX_DEPTH + 1)] })).toThrow(
+      ValidationError,
+    )
+  })
 })
