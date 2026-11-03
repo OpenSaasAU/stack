@@ -585,6 +585,73 @@ describe('devCommand', () => {
     await pendingLoop
   })
 
+  describe('an additive mid-session change against an environment database', () => {
+    const additivePlan = JSON.stringify({
+      kind: 'result',
+      envelope: {
+        result: { plan: { operations: [{ label: 'add Item.sku', operationClass: 'additive' }] } },
+      },
+    })
+    const emptyPlan = JSON.stringify({
+      kind: 'result',
+      envelope: { result: { plan: { operations: [] } } },
+    })
+
+    const runChange = async (yes: boolean): Promise<{ said: string; applies: number }> => {
+      child.hold = true
+      vi.mocked(findDatabaseConnection).mockReturnValueOnce({
+        url: 'postgres://someone@example.test:5432/inherited',
+        provenance: 'env',
+      })
+      process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
+      const said: string[] = []
+      vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        const paths = options.stagingDir === undefined ? live : staged
+        return { paths, livePaths: live, prismaConfig: paths.prismaConfig, resolvedModules: [] }
+      })
+      let startupPlanned = false
+      let applies = 0
+      vi.mocked(runPrismaCli).mockImplementation(async (_cwd, args) => {
+        const dry = args.includes('--dry-run')
+        if (!dry) applies += 1
+        const output = dry && !startupPlanned && !yes ? emptyPlan : additivePlan
+        if (dry) startupPlanned = true
+        return { exitCode: 0, signal: null, output, stdout: output }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'], yes })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+      const appliesAtBoot = applies
+      editConfig()
+      watcherHandlers.get('change')?.()
+      await until(() => /Database updated|db:update --plan/.test(said.join('\n')))
+      const result = { said: said.join('\n'), applies: applies - appliesAtBoot }
+      child.emit('exit', 0, null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      child.emit('exit', 0, null)
+      await pendingLoop
+      return result
+    }
+
+    it('parks the plan when the session was not started with --yes', async () => {
+      const { said, applies } = await runChange(false)
+      expect(said).toContain('db:update --plan')
+      expect(said).not.toContain('Database updated')
+      expect(applies).toBe(0)
+    })
+
+    it('applies the plan when the session was started with --yes', async () => {
+      const { said, applies } = await runChange(true)
+      expect(said).toContain('Database updated')
+      expect(applies).toBe(1)
+    })
+  })
+
   it('stages nothing for a save that reproduces the config it already reconciled', async () => {
     child.hold = true
     const said: string[] = []

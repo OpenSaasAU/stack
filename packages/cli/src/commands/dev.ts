@@ -70,7 +70,7 @@ export interface DevCommandOptions {
    * `opensaas dev --`.
    */
   appCommand?: readonly string[]
-  /** Apply the startup plan to a database named by the environment without stopping for consent. */
+  /** Consent, for the whole session, to schema changes applied to a database named by the environment. */
   yes?: boolean
 }
 
@@ -342,6 +342,8 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (trimmed.length > 0) say(trimmed)
   }
 
+  const sessionConsent = options.yes === true || process.env.OPENSAAS_DEV_YES === '1'
+
   const onConfigChange = async (): Promise<void> => {
     const say = (message: string): void => console.log(chalk.gray(message))
 
@@ -393,7 +395,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
-    if (planned.plan.destructive) {
+    const unconsentedEnvChange =
+      database === undefined && !sessionConsent && planned.plan.operations.length > 0
+    if (planned.plan.destructive || unconsentedEnvChange) {
       restoreMigrationRefs(cwd, refs)
       staged = generation
       const id = planId(planned.plan)
@@ -404,7 +408,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       // is at least parked.
       syncWatchedModules(generation.resolvedModules)
       reconciledModules = snapshotModules(watchedModules)
-      console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
+      console.log(
+        chalk.yellow(
+          planned.plan.destructive
+            ? '\nThis change would destroy data, so it was not applied:\n'
+            : '\nThe database came from the environment and would change, so nothing was applied:\n',
+        ),
+      )
       for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
       console.log(chalk.yellow(`\nPlan id: ${id}`))
       console.log(chalk.yellow(`\nThe app keeps serving the previous schema. ${parkedRoute(id)}`))
@@ -574,8 +584,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     if (
       database === undefined &&
-      options.yes !== true &&
-      process.env.OPENSAAS_DEV_YES !== '1' &&
+      !sessionConsent &&
       !(await consentToStartupPlan(cwd, bootGeneration))
     ) {
       process.exitCode = 1
