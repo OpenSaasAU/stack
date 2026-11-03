@@ -306,7 +306,12 @@ export async function generateCommand(
 
     const bundleSpinner = ora('Generating the bundle...').start()
     try {
-      writeTypes(config, paths.types, generatedTables.dependencies)
+      writeTypes(
+        config,
+        paths.types,
+        generatedTables.dependencies,
+        crossReferences.contractJsonImport,
+      )
       writeLists(config, paths.lists, generatedTables.dependencies)
       writeTables(generatedTables, paths.tables)
       writeContext(config, contractData, paths.context, {
