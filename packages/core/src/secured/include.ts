@@ -381,7 +381,7 @@ export interface IncludePlan {
   /**
    * Present only when this relation is both reduced ({@link reduce}) and a
    * live declared dependency of a computed field returned alongside it, and
-   * the reduce carries no rows branch of its own to satisfy it (#1357). The
+   * the caller composed a reduction over it (#1357). The
    * Access Filter predicates for an extra, caller-invisible rows fetch riding
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
    * stored width, one hop, exactly what an ordinary declared branch fetches,
@@ -697,14 +697,10 @@ async function resolveInclude(
 
   // A relation that is both reduced and a live declared dependency of a
   // sibling computed field must satisfy both: the reduction's own value for
-  // the caller, and real rows for the declaring hook's `needs` (#1357). If the
-  // reduce already carries a rows branch of its own (an explicit `combine`),
-  // those rows already satisfy the declaration and nothing more is needed.
+  // the caller, and real rows for the declaring hook's `needs` (#1357). A
+  // `combine` rows branch is the caller's own view, so it never stands in.
   const declaredRows =
-    !declared &&
-    liveDeclaredDependency &&
-    reduce !== undefined &&
-    rowsBranchKeyOf(reduce) === undefined
+    !declared && liveDeclaredDependency && reduce !== undefined
       ? access.kind !== 'true'
         ? [access]
         : []
