@@ -236,6 +236,26 @@ describe('deriveContract — columns', () => {
     )
     expect(data.namespaces).toEqual(['auth', 'billing'])
   })
+
+  test('a list naming db.schema "public" derives the same contract as one that omits it', () => {
+    const db = { schemas: ['public', 'auth'] }
+    const explicit = single(
+      {
+        A: { fields: { name: text() }, db: { schema: 'public' } },
+        B: { fields: { name: text() }, db: { schema: 'auth' } },
+      },
+      db,
+    )
+    const omitted = single(
+      {
+        A: { fields: { name: text() } },
+        B: { fields: { name: text() }, db: { schema: 'auth' } },
+      },
+      db,
+    )
+    expect(explicit.models[0].namespace).toBeUndefined()
+    expect(explicit).toEqual(omitted)
+  })
 })
 
 describe('deriveContract — relations', () => {
