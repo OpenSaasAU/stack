@@ -2854,6 +2854,18 @@ export type DatabaseConfig = {
    */
   timestamps?: boolean
   /**
+   * Name every derived index, unique constraint and foreign key the way Prisma 7
+   * did (`<Table>_<cols>_idx`, `_key`, `_fkey`, truncated to 63 bytes), so a plan
+   * against a database Prisma 7 created shows no renames. An explicit `name` on a
+   * `db.indexes` entry still wins. Unset, Prisma 8's own derived names apply.
+   *
+   * @example
+   * ```typescript
+   * db: { provider: 'postgresql', indexNaming: 'prisma7' }
+   * ```
+   */
+  indexNaming?: 'prisma7'
+  /**
    * Opt into Keystone-compat mode for generated schema defaults.
    *
    * Keystone 6 gives every non-null text column an implicit empty-string

@@ -316,6 +316,7 @@ function renderModelAttributes(model: ContractModel): string {
 
   const foreignKeyEntries = model.foreignKeys.map((fk) => {
     const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
     if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
     if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
     return `constraints.foreignKey(${member('cols', fk.column)}, ${modelBinding(fk.references.model)}.refs.id, { ${options.join(', ')} }),`
