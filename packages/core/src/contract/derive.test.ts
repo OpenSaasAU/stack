@@ -543,3 +543,71 @@ describe('deriveContract — db.indexes resolution', () => {
     ).toThrow(/field "user"'s isIndexed: 'unique' — both would emit an index on "userId"/)
   })
 })
+
+describe('deriveContract — db.foreignKeys', () => {
+  const parent = {
+    fields: { student: text(), lessonTerm: text() },
+    db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+  }
+  const child = (foreignKeys: unknown) => ({
+    fields: { enrolment: text(), student: text(), lessonTerm: text() },
+    db: { foreignKeys },
+  })
+  const derive = (foreignKeys: unknown) =>
+    single({
+      Enrolment: parent,
+      Slot: child(foreignKeys),
+    } as OpenSaasConfig['lists'])
+
+  test('resolves a three-column foreign key onto the parent composite unique', () => {
+    const data = derive([
+      {
+        fields: ['enrolment', 'student', 'lessonTerm'],
+        references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+        onUpdate: 'restrict',
+        name: 'Slot_fkey',
+      },
+    ])
+    expect(data.models[1].compositeForeignKeys).toEqual([
+      {
+        columns: ['enrolment', 'student', 'lessonTerm'],
+        references: { model: 'Enrolment', columns: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+        onUpdate: 'restrict',
+        name: 'Slot_fkey',
+      },
+    ])
+  })
+
+  test('refuses mismatched arity', () => {
+    expect(() =>
+      derive([
+        { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id', 'student'] } },
+      ]),
+    ).toThrow(/same arity/)
+  })
+
+  test('refuses an unknown field', () => {
+    expect(() =>
+      derive([{ fields: ['nope'], references: { list: 'Enrolment', fields: ['id'] } }]),
+    ).toThrow(/unknown field "nope"/)
+  })
+
+  test('refuses a reference set that is not a declared unique', () => {
+    expect(() =>
+      derive([
+        {
+          fields: ['student', 'lessonTerm'],
+          references: { list: 'Enrolment', fields: ['student', 'lessonTerm'] },
+        },
+      ]),
+    ).toThrow(/not a declared unique/)
+  })
+
+  test('refuses an unknown target list', () => {
+    expect(() =>
+      derive([{ fields: ['student'], references: { list: 'Nope', fields: ['id'] } }]),
+    ).toThrow(/not in the config/)
+  })
+})

@@ -13,6 +13,8 @@ import {
   toEmittedContract,
   type PrismaContract,
 } from './index.js'
+import type { OpenSaasConfig } from '../config/types.js'
+import { integer, text } from '../fields/index.js'
 import { deriveConstraintMap } from './dependencies.js'
 import {
   authConfig,
@@ -258,4 +260,48 @@ describe('engine: the constraint map names the constraints PostgreSQL actually c
     },
     60_000,
   )
+})
+
+describe('engine: a composite foreign key reaches the database', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('is created as a multi-column FOREIGN KEY on the parent unique', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', idField: 'int autoincrement' },
+      lists: {
+        Enrolment: {
+          fields: { student: text(), lessonTerm: text() },
+          db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+        },
+        Slot: {
+          fields: { enrolment: integer(), student: text(), lessonTerm: text() },
+          db: {
+            foreignKeys: [
+              {
+                fields: ['enrolment', 'student', 'lessonTerm'],
+                references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+                onDelete: 'restrict',
+                onUpdate: 'restrict',
+              },
+            ],
+          },
+        },
+      },
+    }
+    await applyContract(db, buildPrismaContract(deriveContract(config)))
+    const rows = await db.pglite.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = '"Slot"'::regclass and contype = 'f'`,
+    )
+    expect(rows.rows.map((row) => row.def)).toEqual([
+      'FOREIGN KEY (enrolment, student, "lessonTerm") REFERENCES "Enrolment"(id, student, "lessonTerm") ON UPDATE RESTRICT ON DELETE RESTRICT',
+    ])
+  }, 60_000)
 })

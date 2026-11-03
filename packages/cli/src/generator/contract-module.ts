@@ -310,6 +310,19 @@ function renderModelAttributes(model: ContractModel): string {
     return `constraints.foreignKey(${member('cols', fk.column)}, ${modelBinding(fk.references.model)}.refs.id, { ${options.join(', ')} }),`
   })
 
+  const compositeEntries = (model.compositeForeignKeys ?? []).map((fk) => {
+    const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
+    if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
+    if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
+    const columns = fk.columns.map((column) => member('cols', column)).join(', ')
+    const targets = fk.references.columns
+      .map((column) => `${modelBinding(fk.references.model)}.refs[${literal(column)}]`)
+      .join(', ')
+    return `constraints.foreignKey([${columns}], [${targets}], { ${options.join(', ')} }),`
+  })
+  foreignKeyEntries.push(...compositeEntries)
+
   /** `key: []`, or the entries one per line under it. */
   function block(name: string, entries: string[]): string[] {
     if (entries.length === 0) return [`          ${name}: [],`]

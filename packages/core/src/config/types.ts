@@ -2105,6 +2105,33 @@ export type ListIndex = {
   name?: string
 }
 
+/**
+ * A table-level foreign key constraint spanning one or more of a list's own
+ * fields. It declares a constraint only: it adds no relationship, include or
+ * `connect` semantics. See {@link ListConfig.db}'s `foreignKeys`.
+ */
+export type ListForeignKey = {
+  /**
+   * This list's own OpenSaaS field names, in constraint order. A to-one
+   * relationship that owns its foreign key resolves to its `<field>Id` column.
+   */
+  fields: ListIndexFieldRef[]
+  references: {
+    /** The referenced list's key. */
+    list: string
+    /**
+     * The referenced list's field names, positionally matching `fields`. Must
+     * equal a declared unique on that list (`db.indexes` with `unique: true`,
+     * or a single-field `isIndexed: 'unique'`), or be `['id']`.
+     */
+    fields: string[]
+  }
+  onDelete?: ReferentialAction
+  onUpdate?: ReferentialAction
+  /** The constraint's exact physical name, adopted verbatim. */
+  name?: string
+}
+
 // Generic `any` default allows ListConfig to work with any list item type
 // This is needed because the item type varies per list and is inferred from Prisma models
 /**
@@ -2293,6 +2320,34 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
      * ```
      */
     indexes?: ListIndex[]
+    /**
+     * Table-level foreign key constraints, including composite ones that
+     * reference a composite unique on the target. Constraint-only: no
+     * relationship, include or `connect` semantics come with it.
+     *
+     * `fields` resolve to columns the way `db.indexes` does. `references.fields`
+     * must equal a declared unique on the target or its id; generation refuses
+     * an unknown or virtual field, a to-many field, mismatched arity, and a
+     * reference set that is not a declared unique.
+     *
+     * @example
+     * ```typescript
+     * LessonSourceSlot: list({
+     *   fields: { enrolment: text(), student: text(), lessonTerm: text() },
+     *   db: {
+     *     foreignKeys: [
+     *       {
+     *         fields: ['enrolment', 'student', 'lessonTerm'],
+     *         references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+     *         onDelete: 'restrict',
+     *         onUpdate: 'restrict',
+     *       },
+     *     ],
+     *   },
+     * })
+     * ```
+     */
+    foreignKeys?: ListForeignKey[]
   }
   mcp?: ListMcpConfig
   /**

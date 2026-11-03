@@ -294,13 +294,27 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
           ),
         ),
       ],
-      foreignKeys: model.foreignKeys.map((fk) =>
-        constraints.foreignKey(cols[fk.column], tokens[fk.references.model].refs.id, {
-          index: false,
-          ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
-          ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
-        }),
-      ),
+      foreignKeys: [
+        ...model.foreignKeys.map((fk) =>
+          constraints.foreignKey(cols[fk.column], tokens[fk.references.model].refs.id, {
+            index: false,
+            ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
+            ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
+          }),
+        ),
+        ...(model.compositeForeignKeys ?? []).map((fk) =>
+          constraints.foreignKey(
+            fk.columns.map((column) => cols[column]),
+            fk.references.columns.map((column) => tokens[fk.references.model].refs[column]),
+            {
+              index: false,
+              ...(fk.name !== undefined ? { name: fk.name } : {}),
+              ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
+              ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
+            },
+          ),
+        ),
+      ],
     }))
 }
 
