@@ -47,7 +47,7 @@ program
   .argument('[command...]', 'App command to run instead of `next dev`, after `--`')
   .option(
     '--yes',
-    'Apply the startup schema plan to a database named by DATABASE_URL without stopping',
+    'Apply schema changes, at startup and on every config save, to a database named by DATABASE_URL without stopping',
   )
   .action(async (command: string[], options: { yes?: boolean }) => {
     await devCommand({ appCommand: command, yes: options.yes })
