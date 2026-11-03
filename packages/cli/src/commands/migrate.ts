@@ -7,6 +7,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import chalk from 'chalk'
 import ora from 'ora'
+import { fkRenamesCommand } from './fk-renames.js'
+import { junctionIdsCommand } from './junction-ids.js'
 import type { ProjectAnalysis, ProjectType } from '../migration/types.js'
 
 interface MigrateOptions {
@@ -360,6 +362,28 @@ export function createMigrateCommand(): Command {
         console.error(chalk.red('\n❌ Migration failed:'), error)
         process.exit(1)
       }
+    })
+
+  migrate
+    .command('fk-renames')
+    .description(
+      'Emit the ADR-0069 foreign-key column renames (<field> -> <field>Id) for an existing database',
+    )
+    .option('--apply', 'Run the renames in one transaction instead of printing them')
+    .option('--out <file>', 'Write the SQL to a file instead of printing it')
+    .action(async (options: { apply?: boolean; out?: string }) => {
+      await fkRenamesCommand(options)
+    })
+
+  migrate
+    .command('junction-ids')
+    .description(
+      'Add and backfill the surrogate id on existing tables a list is mapped onto that have none (ADR-0048 junction lists)',
+    )
+    .option('--apply', 'Run the changes in one transaction instead of printing them')
+    .option('--out <file>', 'Write the SQL to a file instead of printing it')
+    .action(async (options: { apply?: boolean; out?: string }) => {
+      await junctionIdsCommand(options)
     })
 
   return migrate

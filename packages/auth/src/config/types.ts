@@ -341,8 +341,8 @@ export type AuthConfig = {
   schema?: string
 
   /**
-   * The id strategy for the generated Auth lists — `'uuid7'` or `'cuid2'`
-   * only, never `'int autoincrement'`: the Auth adapter treats every id as a
+   * The id strategy for the generated Auth lists — `'uuid7'`, `'cuid2'` or
+   * `'cuid'` only, never `'int autoincrement'`: the Auth adapter treats every id as a
    * string (ADR-0048, ADR-0060), and better-auth's own `consumeOne` reads
    * the resolved row's `id` expecting exactly that.
    *
@@ -358,7 +358,7 @@ export type AuthConfig = {
    * authPlugin({ idField: 'cuid2', ...adoptBetterAuthTables() })
    * ```
    */
-  idField?: 'uuid7' | 'cuid2'
+  idField?: 'uuid7' | 'cuid2' | 'cuid'
 
   /**
    * Which fields to include in the session object passed to access control
@@ -684,7 +684,7 @@ export type NormalizedAuthConfig = Required<
    * the app's own `db.idField` default, which `authPlugin`'s `init` reads
    * from the config it receives there rather than here (ADR-0048/0060).
    */
-  idField?: 'uuid7' | 'cuid2'
+  idField?: 'uuid7' | 'cuid2' | 'cuid'
   betterAuthPlugins: BetterAuthPlugin[]
   rateLimit?: {
     enabled: boolean

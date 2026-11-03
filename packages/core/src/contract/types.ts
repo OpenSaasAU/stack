@@ -39,6 +39,8 @@ export type ContractColumn = Omit<ContractColumnDescriptor, 'nativeType'>
 export type ContractForeignKey = {
   column: string
   references: { model: string; column: 'id' }
+  /** The constraint's exact physical name, set under `db.indexNaming`. */
+  name?: string
   onDelete?: ReferentialAction
   onUpdate?: ReferentialAction
 }
@@ -72,6 +74,7 @@ export type ContractIndex = {
   columns: string[]
   unique: boolean
   name?: string
+  where?: string
 }
 
 /**

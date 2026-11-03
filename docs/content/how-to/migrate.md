@@ -107,7 +107,7 @@ This gives you a summary of your project without setting up AI tools.
 
 ```bash
 pnpm add @opensaas/stack-core @opensaas/stack-cli
-pnpm add -D prisma@8.0.0-rc.23 typescript tsx
+pnpm add -D prisma@8.0.0-rc.29 typescript tsx
 ```
 
 Add authentication if needed:
@@ -225,6 +225,59 @@ The plan id is the one the loop printed with the plan; if the plan has changed s
 `pnpm db:update` opens no connection of its own — it hands the request to the running `opensaas dev` loop, which owns the Dev database's data directory and the staged generation. With no loop listening it exits non-zero with a message saying so, rather than reaching the database a second way. And because a client cached inside the running app would go on querying a column that no longer exists, **a destructive mid-session change restarts the app** once the update is applied. Expect the app process to come back, and expect in-flight local state to be lost with it.
 
 Production is a different command: deploys run `prisma db migrate` from the committed `migrations/` directory. There is no `opensaas db migrate` — `opensaas db` carries only `update`, and `opensaas migrate` is the project-analysis assistant this page is about, not a schema command.
+
+#### Adopting an existing many-to-many table
+
+Prisma's implicit many-to-many tables (`_Lesson_teachers(A, B)`) have no `id`. Declare a junction list mapped onto the table:
+
+```typescript
+import { config, list } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
+
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {
+    Lesson: list({
+      fields: {
+        title: text(),
+        teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
+      },
+    }),
+    Teacher: list({
+      fields: {
+        name: text(),
+        lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
+      },
+    }),
+    LessonTeacher: list({
+      fields: {
+        lesson: relationship({
+          ref: 'Lesson.teachers',
+          db: { foreignKey: { map: 'A' }, isNullable: false },
+        }),
+        teacher: relationship({
+          ref: 'Teacher.lessons',
+          db: { foreignKey: { map: 'B' }, isNullable: false },
+        }),
+      },
+      db: {
+        map: '_Lesson_teachers',
+        indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
+      },
+    }),
+  },
+})
+```
+
+`isNullable: false` keeps `A` and `B` `NOT NULL`. Then, before reconciling, add and backfill the surrogate `id` on every existing table that lacks one:
+
+```bash
+opensaas migrate junction-ids            # print the SQL
+opensaas migrate junction-ids --out junction-ids.sql
+opensaas migrate junction-ids --apply    # run it in one transaction
+```
+
+It backfills `uuid7`, `cuid2`/`cuid` and `int autoincrement` ids with database expressions, sets the column `NOT NULL` and makes it the primary key. No rows are lost, and a table that already has an `id` is left alone. Composite primary keys stay refused (ADR-0048).
 
 ### 5. Update Application Code
 

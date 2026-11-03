@@ -8,6 +8,7 @@ import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
 import * as path from 'path'
+import { contractTypesImport, DEFAULT_CONTRACT_JSON_IMPORT } from './output-paths.js'
 import { assertFieldKeysAreIdentifiers, quote } from './source-text.js'
 
 /**
@@ -307,20 +308,11 @@ export interface TransactionContext<TSession extends ${session} = ${session}>
   extends ${imported('StackTransactionContext')}<TxDB, TSession, ${services}, TxDB, ${client}> {}`
 }
 
-/**
- * The relative specifier of the emitted `contract.d.ts` from `.opensaas/`.
- *
- * Spelled `.d.js`, not `.d.ts`: the Contract module (`prisma/contract.ts`)
- * sits in the same directory, and TypeScript resolves `./contract.d.ts` to
- * THAT file, so the import lands on the builder module and `Contract` is not
- * among its exports. `./contract.d.js` takes the standard `.js` -> `.d.ts`
- * mapping and reaches the emitted declarations. The import is type-only and
- * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
- * about value imports.
- */
-const CONTRACT_IMPORT = '../prisma/contract.d.js'
-
-export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTable): string {
+export function generateTypes(
+  config: OpenSaasConfig,
+  dependencies: DependencyTable,
+  contractJsonImport: string = DEFAULT_CONTRACT_JSON_IMPORT,
+): string {
   assertFieldKeysAreIdentifiers(config)
   const listNames = Object.keys(config.lists)
   const needsFields: Array<[string, string]> = Object.entries(config.lists).flatMap(
@@ -355,7 +347,9 @@ export function generateTypes(config: OpenSaasConfig, dependencies: DependencyTa
   // Named unconditionally: Context/BaseContext/TransactionContext key the
   // Unsafe surface to it (PostgresClient<Contract>) whether or not the config
   // declares any list.
-  lines.push(`import type { Contract as ${imported('Contract')} } from '${CONTRACT_IMPORT}'`)
+  lines.push(
+    `import type { Contract as ${imported('Contract')} } from '${contractTypesImport(contractJsonImport)}'`,
+  )
   lines.push(
     `import type { PostgresClient as ${imported('PostgresClient')} } from '@prisma/orm-postgres/runtime'`,
   )
@@ -430,8 +424,9 @@ export function writeTypes(
   config: OpenSaasConfig,
   outputPath: string,
   dependencies: DependencyTable,
+  contractJsonImport: string = DEFAULT_CONTRACT_JSON_IMPORT,
 ): void {
-  const types = generateTypes(config, dependencies)
+  const types = generateTypes(config, dependencies, contractJsonImport)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

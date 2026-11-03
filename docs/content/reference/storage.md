@@ -265,6 +265,13 @@ storage: {
 }
 ```
 
+With `generateUniqueFilenames: false` on any provider, stable names are per-key, not per-row. A
+`file()`/`image()` upload whose key another row of the same list already stores is refused with a
+`ValidationError` ("a file with this name already belongs to another item"), and cleanup (rollback,
+`cleanupOnReplace`, `cleanupOnDelete`) skips a file another row still references. A row replacing
+its own file is unaffected. The check covers one field of one list, and is not atomic against two
+concurrent uploads of the same new name.
+
 The Blob API rejects uploads to an existing pathname unless `allowOverwrite` is
 sent. With `generateUniqueFilenames: false` (stable filenames), `allowOverwrite`
 defaults to `true` since re-uploading to the same pathname is the expected

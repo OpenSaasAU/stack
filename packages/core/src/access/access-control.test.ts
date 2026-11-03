@@ -196,12 +196,12 @@ describe('Access Control', () => {
       }
     })
 
-    it('throws InvalidCreateAccessResultError when access control returns undefined', async () => {
+    it('denies when access control returns undefined', async () => {
       const accessControl = vi.fn(async () => undefined) as unknown as AccessControl
 
       await expect(
         checkCreateAccess('Post', accessControl, { session: null, context: mockContext }),
-      ).rejects.toThrow(InvalidCreateAccessResultError)
+      ).resolves.toBe(false)
     })
 
     it('throws InvalidCreateAccessResultError when access control returns a string', async () => {

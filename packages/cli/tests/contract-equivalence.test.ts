@@ -165,14 +165,18 @@ describe('renderContractModule — the lowering table', () => {
   const blog = renderContractModule(deriveContract(blogConfig))
 
   test('id strategies', () => {
-    expect(blog).toContain('id: field.id.uuidv7Native()')
-    expect(blog).toContain('id: field.int().default(1).id()')
-    expect(renderContractModule(deriveContract(oneToOneConfig))).toContain('id: field.id.cuid2()')
+    expect(blog).toContain('id: field.column(type.Uuid()).id().onCreate(gen.uuid(7))')
+    expect(blog).toContain('id: field.column(type.Int()).default(1).id()')
+    expect(renderContractModule(deriveContract(oneToOneConfig))).toContain(
+      'id: field.column(type.Cuid2()).id().onCreate(gen.cuid(2))',
+    )
   })
 
-  test('createdAt keeps a database now() default; updatedAt uses the string temporal preset', () => {
+  test('createdAt keeps a database now() default; updatedAt is a string column the now generator fills', () => {
     expect(blog).toContain("createdAt: field.column(timestamptzStringColumn).defaultSql('now()')")
-    expect(blog).toContain('updatedAt: field.temporal.updatedAtString()')
+    expect(blog).toContain(
+      'updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now())',
+    )
   })
 
   test('a named non-unique index goes through map, a unique through name', () => {
@@ -195,7 +199,7 @@ describe('renderContractModule — the lowering table', () => {
 
   test('a bigint literal default is a bigint, which the int8 codec requires', () => {
     expect(renderContractModule(deriveContract(bigIntDefaultConfig))).toContain(
-      'total: field.bigint().optional().default(42n)',
+      'total: field.column(type.BigInt()).optional().default(42n)',
     )
   })
 
@@ -290,7 +294,7 @@ describe('renderContractModule — names and values the renderer has to survive'
   })
 
   test('a non-identifier column name is quoted as a key and as a member', () => {
-    expect(source).toContain("'weird-key': field.text()")
+    expect(source).toContain("'weird-key': field.column(type.String())")
     expect(source).toContain("cols['weird-key']")
   })
 

@@ -404,7 +404,7 @@
     "storageHash": "52ab78ec0ee749b2f596052b43f378ce2579a34bb6935f58597e704e1295233a"
   },
   "execution": {
-    "executionHash": "5bec9a8ec01db2706acfca9e48644389358383fdf6ab7df08b9075905f4ea82a",
+    "executionHash": "c1f3f5ca26fb49ed6c9aae8da145b8d2f55ea2731a9182af87e7ae45be071646",
     "mutations": {
       "defaults": [
         {
@@ -420,11 +420,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {
@@ -446,11 +446,11 @@
         },
         {
           "onCreate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "onUpdate": {
-            "id": "timestampNow",
+            "id": "timestamptzStringNow",
             "kind": "generator"
           },
           "ref": {

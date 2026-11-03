@@ -17,6 +17,11 @@ function single(lists: OpenSaasConfig['lists'], db: Partial<OpenSaasConfig['db']
 }
 
 describe('deriveContract — ids', () => {
+  test('cuid keeps the column as text', () => {
+    const data = single({ A: { fields: { name: text() }, db: { idField: 'cuid' } } })
+    expect(data.models[0].id).toEqual({ strategy: 'cuid', type: { pack: 'pg', type: 'text' } })
+  })
+
   test('uuid7 is the default; the config default and the per-list override each win in turn', () => {
     const data = single(
       {
@@ -240,6 +245,32 @@ describe('deriveContract — columns', () => {
     )
     expect(data.namespaces).toEqual(['auth', 'billing'])
   })
+
+  test('a list naming db.schema "public" derives the same contract as one that omits it', () => {
+    const db = { schemas: ['public', 'auth'] }
+    const explicit = single(
+      {
+        A: { fields: { name: text() }, db: { schema: 'public' } },
+        B: { fields: { name: text() }, db: { schema: 'auth' } },
+      },
+      db,
+    )
+    const omitted = single(
+      {
+        A: { fields: { name: text() } },
+        B: { fields: { name: text() }, db: { schema: 'auth' } },
+      },
+      db,
+    )
+    expect(explicit.models[0].namespace).toBeUndefined()
+    expect(explicit).toEqual(omitted)
+  })
+
+  test('db.schema "public" with db.schemas unset derives no namespace', () => {
+    const data = single({ A: { fields: { name: text() }, db: { schema: 'public' } } })
+    expect(data.models[0].namespace).toBeUndefined()
+    expect(data.namespaces).toEqual([])
+  })
 })
 
 describe('deriveContract — relations', () => {
@@ -424,6 +455,40 @@ describe('deriveContract — db.indexes resolution', () => {
     ])
   })
 
+  test('carries a where predicate through to the derived index', () => {
+    const data = single({
+      A: {
+        fields: { name: text() },
+        db: {
+          indexes: [{ fields: ['name'], unique: true, name: 'A_name_idx', where: `"name" <> ''` }],
+        },
+      },
+    })
+    expect(data.models[0].indexes).toEqual([
+      { columns: ['name'], unique: true, name: 'A_name_idx', where: `"name" <> ''` },
+    ])
+  })
+
+  test.each([
+    [{ fields: ['name'], where: '  ' }, /empty "where"/],
+    [{ fields: ['name'], where: 'x' }, /no "name"/],
+  ])('refuses a bad partial entry %#', (index, message) => {
+    expect(() => single({ A: { fields: { name: text() }, db: { indexes: [index] } } })).toThrow(
+      message,
+    )
+  })
+
+  test("a partial entry does not collide with the column's field-level isIndexed", () => {
+    const data = single({
+      A: {
+        fields: { name: text({ isIndexed: 'unique' }) },
+        db: { indexes: [{ fields: ['name'], unique: true, name: 'A_p', where: 'true' }] },
+      },
+    })
+    expect(data.models[0].indexes).toHaveLength(1)
+    expect(data.models[0].columns.find((c) => c.name === 'name')?.unique).toBe(true)
+  })
+
   test.each([
     [{ fields: [] }, /has an empty "fields" array/],
     [{ fields: ['missing'] }, /references unknown field "missing"/],
@@ -550,6 +615,67 @@ describe('deriveContract — db.indexes resolution', () => {
         },
       }),
     ).toThrow(/field "user"'s isIndexed: 'unique' — both would emit an index on "userId"/)
+  })
+})
+
+describe('deriveContract — db.indexNaming', () => {
+  const lists = (): OpenSaasConfig['lists'] => ({
+    Author: { fields: { name: text() } },
+    Post: {
+      fields: {
+        title: text({ isIndexed: true }),
+        slug: text({ isIndexed: 'unique' }),
+        author: relationship({ ref: 'Author' }),
+      },
+      db: { indexes: [{ fields: ['title', 'slug'] }] },
+    },
+  })
+
+  test('names every index, unique and foreign key the Prisma 7 way', () => {
+    const post = single(lists(), { indexNaming: 'prisma7' }).models.find((m) => m.name === 'Post')
+    expect(post?.columns.some((c) => c.unique || c.index)).toBe(false)
+    const names = post?.indexes.map((i) => i.name).sort()
+    expect(names).toEqual(
+      ['Post_title_slug_idx', 'Post_title_idx', 'Post_slug_key', 'Post_authorId_idx'].sort(),
+    )
+    expect(post?.foreignKeys[0]?.name).toBe('Post_authorId_fkey')
+  })
+
+  test('truncates to 63 bytes keeping the suffix', () => {
+    const long = 'a'.repeat(70)
+    const model = single(
+      { Thing: { fields: { [long]: text({ isIndexed: true }) } } },
+      { indexNaming: 'prisma7' },
+    ).models[0]
+    const name = model?.indexes[0]?.name ?? ''
+    expect(Buffer.byteLength(name)).toBe(63)
+    expect(name.endsWith('_idx')).toBe(true)
+  })
+
+  test('leaves names alone by default', () => {
+    const post = single(lists()).models.find((m) => m.name === 'Post')
+    expect(post?.foreignKeys[0]?.name).toBeUndefined()
+    expect(post?.indexes.every((i) => i.name === undefined)).toBe(true)
+  })
+
+  test('refuses names that collide after truncation', () => {
+    const a = 'a'.repeat(70)
+    expect(() =>
+      single(
+        {
+          Thing: {
+            fields: { [`${a}x`]: text({ isIndexed: true }), [`${a}y`]: text({ isIndexed: true }) },
+          },
+        },
+        { indexNaming: 'prisma7' },
+      ),
+    ).toThrow(/more than once/)
+  })
+
+  test('refuses an unknown value', () => {
+    expect(() =>
+      single({ Thing: { fields: { a: text() } } }, { indexNaming: 'prisma6' as 'prisma7' }),
+    ).toThrow(/indexNaming/)
   })
 })
 

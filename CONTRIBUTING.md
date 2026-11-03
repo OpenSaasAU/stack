@@ -135,8 +135,8 @@ enforces this). Keep all types strongly typed — avoid `any` and type casting;
 
 ## Versioning
 
-`pnpm release` requires a successful live dependency advisory audit before it
-builds or publishes. See the [release security audit runbook](./specs/release-security-audit.md)
+`pnpm release` runs a live dependency advisory audit and blocks publication when
+a published package's declared range excludes every patched version of an advisory. See the [release security audit runbook](./specs/release-security-audit.md)
 for network requirements, exit statuses, retained reports and outage recovery.
 
 This monorepo uses two independent mechanisms:

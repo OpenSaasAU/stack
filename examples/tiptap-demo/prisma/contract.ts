@@ -13,15 +13,15 @@ type ModelToken = {
 }
 
 export const contract = defineContract(
-  { extensions: {} },
-  ({ field, model, rel }) => {
+  {},
+  ({ field, model, rel, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_User = (models.User = model('User', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text(),
-        email: field.text().unique(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()),
+        email: field.column(type.String()).unique(),
       },
       relations: {
         articles: rel.hasMany(() => models.Article, { by: 'authorId' }),
@@ -30,13 +30,13 @@ export const contract = defineContract(
 
     const model_Article = (models.Article = model('Article', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        slug: field.text().unique(),
-        content: field.json(),
-        excerpt: field.json().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        slug: field.column(type.String()).unique(),
+        content: field.column(type.Jsonb()),
+        excerpt: field.column(type.Jsonb()).optional(),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        authorId: field.uuidNative().optional(),
+        authorId: field.column(type.Uuid()).optional(),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),

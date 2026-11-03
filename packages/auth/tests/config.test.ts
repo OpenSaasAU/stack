@@ -329,6 +329,17 @@ describe('authPlugin', () => {
     expect(result.lists).toHaveProperty('Verification')
   })
 
+  it('keeps the Auth lists on text ids under a cuid app default', async () => {
+    const result = await config({
+      db: { provider: 'postgresql', idField: 'cuid' },
+      plugins: [authPlugin({})],
+      lists: {},
+    })
+    for (const listKey of ['User', 'Session', 'Account', 'Verification']) {
+      expect(result.lists[listKey]?.db?.idField).toBe('cuid')
+    }
+  })
+
   it('should preserve database config', async () => {
     const pg = () => {
       throw new Error('never opened by config resolution')

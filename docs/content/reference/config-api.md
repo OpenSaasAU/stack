@@ -246,7 +246,7 @@ A single literal, not a union. PostgreSQL is the only target: the secured surfac
 
 The id strategy every list gets unless it declares its own list-level `db.idField`.
 
-**Type:** `'uuid7' | 'cuid2' | 'int autoincrement'`
+**Type:** `'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement'`
 **Default:** `'uuid7'`
 
 ```typescript
@@ -255,6 +255,8 @@ db: {
   idField: 'int autoincrement',
 }
 ```
+
+`'cuid'` keeps the id a `text` column and mints cuid2 for new rows. Use it to adopt a database whose ids are cuid v1 values, which `'cuid2'` (`char(24)`) cannot hold.
 
 A [singleton list](#issingleton) derives its id from `isSingleton` and refuses this option.
 
@@ -605,6 +607,7 @@ type ListIndex = {
   fields: ListIndexFieldRef[]
   unique?: boolean // default: false
   name?: string // the constraint's own name
+  where?: string // a partial index's predicate, as raw SQL
 }
 ```
 
@@ -648,6 +651,29 @@ export const RateLimit = list({
 ```
 
 `key` carries no field-level `isIndexed` here: `db.indexes` owns that column instead, which is what lets the constraint keep the name a live database already gave it.
+
+**Example — a partial unique index:**
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+export const TextMessage = list({
+  fields: { twilioSid: text() },
+  db: {
+    indexes: [
+      {
+        fields: ['twilioSid'],
+        unique: true,
+        name: 'TextMessage_twilioSid_unique_idx',
+        where: `("twilioSid" <> ''::text)`,
+      },
+    ],
+  },
+})
+```
+
+`where` is raw SQL authored by the application — the body of the `WHERE` clause, in database column names — and is emitted as a string literal, so quotes and backticks are safe. An entry with `where` must also carry a `name`, and it never replaces or collides with a field-level `isIndexed` on the same column. It is a partial index; with `unique: true` it is a partial unique index, not a unique constraint. Prisma compares the text byte-for-byte with how PostgreSQL prints the predicate back, so copy it from `pg_indexes.indexdef` (note the `::text` cast and the parentheses); text that differs plans a drop and recreate.
 
 **Example — a composite index under an adopted name:**
 

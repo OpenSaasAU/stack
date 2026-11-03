@@ -38,6 +38,8 @@ export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
       return { strategy, type: pgType('uuid') }
     case 'cuid2':
       return { strategy, type: pgType('char', [24]) }
+    case 'cuid':
+      return { strategy, type: pgType('text') }
     case 'int autoincrement':
     case 'singleton':
       return { strategy, type: pgType('int') }
@@ -459,7 +461,18 @@ function deriveIndexes(
       resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
     )
     const unique = index.unique === true
-    if (columns.length === 1) {
+    if (index.where !== undefined) {
+      if (typeof index.where !== 'string' || index.where.trim() === '') {
+        throw new Error(
+          `${entry} on list "${listKey}" has an empty "where" — a partial index needs a SQL predicate`,
+        )
+      }
+      if (index.name === undefined) {
+        throw new Error(
+          `${entry} on list "${listKey}" has a "where" but no "name" — a partial index must be named so the database object can be adopted and its violations mapped`,
+        )
+      }
+    } else if (columns.length === 1) {
       const collision = draft.fieldLevelIndexes.get(columns[0])
       if (collision) adoptFieldLevelIndex(listKey, draft, entry, columns[0], collision, unique)
     }
@@ -467,6 +480,7 @@ function deriveIndexes(
       columns,
       unique,
       ...(index.name !== undefined ? { name: index.name } : {}),
+      ...(index.where !== undefined ? { where: index.where } : {}),
     }
   })
 }
@@ -570,6 +584,75 @@ function collectEnums(models: ContractModel[]): ContractEnum[] {
   return [...byName.values()]
 }
 
+const POSTGRES_IDENTIFIER_BYTES = 63
+
+function prisma7Name(table: string, columns: string[], suffix: 'idx' | 'key' | 'fkey'): string {
+  const base = `${table}_${columns.join('_')}`
+  const room = POSTGRES_IDENTIFIER_BYTES - suffix.length - 1
+  const bytes = Buffer.from(base, 'utf8')
+  let trimmed = bytes.length > room ? bytes.subarray(0, room).toString('utf8') : base
+  while (Buffer.byteLength(trimmed, 'utf8') > room) trimmed = trimmed.slice(0, -1)
+  return `${trimmed}_${suffix}`
+}
+
+function applyPrisma7Names(model: ContractModel): void {
+  const table = model.table ?? model.name
+  const physical = (column: string): string =>
+    model.columns.find((candidate) => candidate.name === column)?.map ?? column
+
+  const hoisted: ContractIndex[] = []
+  for (const column of model.columns) {
+    if (column.unique) {
+      delete column.unique
+      hoisted.push({
+        columns: [column.name],
+        unique: true,
+        name: prisma7Name(table, [physical(column.name)], 'key'),
+      })
+    }
+    if (column.index) {
+      delete column.index
+      hoisted.push({
+        columns: [column.name],
+        unique: false,
+        name: prisma7Name(table, [physical(column.name)], 'idx'),
+      })
+    }
+  }
+
+  model.indexes = [
+    ...model.indexes.map((index) =>
+      index.name !== undefined
+        ? index
+        : {
+            ...index,
+            name: prisma7Name(table, index.columns.map(physical), index.unique ? 'key' : 'idx'),
+          },
+    ),
+    ...hoisted,
+  ]
+
+  for (const foreignKey of model.foreignKeys) {
+    foreignKey.name = prisma7Name(table, [physical(foreignKey.column)], 'fkey')
+  }
+
+  const seen = new Set<string>()
+  const names = [
+    ...model.indexes.flatMap((index) => (index.name !== undefined ? [index.name] : [])),
+    ...model.foreignKeys.flatMap((foreignKey) =>
+      foreignKey.name !== undefined ? [foreignKey.name] : [],
+    ),
+  ]
+  for (const name of names) {
+    if (seen.has(name)) {
+      throw new Error(
+        `List "${model.name}": db.indexNaming 'prisma7' derives the constraint name "${name}" more than once (a long name truncated to 63 bytes, or two constraints on the same columns). Give one of them an explicit db.indexes name.`,
+      )
+    }
+    seen.add(name)
+  }
+}
+
 function dedupeExtensions(extensions: ExtensionDescriptor[]): ExtensionDescriptor[] {
   const seen = new Map<string, ExtensionDescriptor>()
   for (const extension of extensions) {
@@ -634,7 +717,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       model: {
         name: listKey,
         ...(listConfig.db?.map !== undefined ? { table: listConfig.db.map } : {}),
-        ...(listConfig.db?.schema !== undefined ? { namespace: listConfig.db.schema } : {}),
+        ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
+          ? { namespace: listConfig.db.schema }
+          : {}),
         singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
         id: idColumn(resolveIdStrategy(listConfig, config)),
         columns: [],
@@ -700,6 +785,12 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
     }
 
     draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
+    if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
+      throw new Error(
+        `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
+      )
+    }
+    if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
     drafts.set(listKey, draft)
   }
 
