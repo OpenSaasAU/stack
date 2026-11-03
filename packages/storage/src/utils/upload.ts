@@ -163,7 +163,7 @@ export function validateFile(
     if (!storedExtensions.some((e) => accepted.includes(e))) {
       return {
         valid: false,
-        error: `File type '${effectiveType}' is stored as '${storedExtensions[0] ?? '(no extension)'}', which is not in the accepted extensions: ${options.acceptedExtensions.join(', ')}`,
+        error: `File extension '${storedExtensions[0] ?? '(none)'}' (stored for type '${effectiveType}') is not allowed. Accepted extensions: ${options.acceptedExtensions.join(', ')}`,
       }
     }
   }

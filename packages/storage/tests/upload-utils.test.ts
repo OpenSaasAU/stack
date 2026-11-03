@@ -169,7 +169,7 @@ describe('Upload Utilities', () => {
 
       it('refuses a generic type under .exe / .bin', () => {
         const result = validateFile(
-          { size: 1000, name: 'a.exe', type: '' },
+          { size: 1000, name: 'a.exe', type: 'application/octet-stream' },
           { acceptedExtensions: ['.exe', '.bin'] },
         )
         expect(result.valid).toBe(false)
