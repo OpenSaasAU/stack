@@ -14,18 +14,18 @@ type ModelToken = {
 
 export const contract = defineContract(
   { extensions: { pgvector } },
-  ({ field, model, type }) => {
+  ({ field, model, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_KnowledgeBase = (models.KnowledgeBase = model('KnowledgeBase', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        content: field.text(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        content: field.column(type.String()),
         contentEmbedding: field.column(type.pgvector.Vector(1536)).optional(),
-        contentEmbeddingMetadata: field.json().optional(),
-        category: field.text(),
-        published: field.boolean().default(true),
+        contentEmbeddingMetadata: field.column(type.Jsonb()).optional(),
+        category: field.column(type.String()),
+        published: field.column(type.Boolean()).default(true),
       },
       relations: {},
     }))

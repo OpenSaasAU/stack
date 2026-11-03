@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { appendFileSync, writeFileSync } from 'node:fs'
 
 const registry = 'https://registry.npmjs.org'
+const reportOnly = process.argv.includes('--report-only')
 const result = spawnSync('pnpm', ['audit', '--json', `--registry=${registry}`], {
   encoding: 'utf8',
   timeout: 120_000,
@@ -34,7 +35,7 @@ const status = unavailable ? 'unavailable' : vulnerable ? 'vulnerable' : 'pass'
 const message = unavailable
   ? 'Security advisory audit: UNAVAILABLE — release blocked; see security-audit.json and specs/release-security-audit.md.'
   : vulnerable
-    ? `Security advisory audit: FAIL — ${Object.entries(counts)
+    ? `Security advisory audit: ${reportOnly ? 'REPORTED' : 'FAIL'} — ${Object.entries(counts)
         .map(([severity, count]) => `${count} ${severity}`)
         .join(', ')}. See security-audit.json.`
     : 'Security advisory audit: PASS — no known vulnerabilities.'
@@ -44,4 +45,4 @@ writeFileSync(
 )
 console.log(message)
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, message + '\n')
-process.exitCode = unavailable ? 2 : vulnerable ? 1 : 0
+process.exitCode = unavailable ? 2 : vulnerable && !reportOnly ? 1 : 0

@@ -193,7 +193,7 @@ type MutationDefaults<C> = C extends {
 
 /**
  * Whether the ORM fills this column on create from an application-side
- * generator (`uuidv7`, `timestampNow`) rather than the caller.
+ * generator (`uuidv7`, `timestamptzStringNow`) rather than the caller.
  */
 type HasCreateGenerator<C, K extends string, F> = [
   Extract<MutationDefaults<C>, { readonly ref: { readonly entry: K; readonly field: F } }>,

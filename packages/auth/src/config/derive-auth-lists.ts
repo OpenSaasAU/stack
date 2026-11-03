@@ -152,6 +152,20 @@ const DENY_WRITE: Exclude<FieldAccess, { write: 'hooks' }> = {
   allowCreateDefault: true,
 }
 
+const DENY_UPDATE: Exclude<FieldAccess, { write: 'hooks' }> = { update: () => false }
+
+/**
+ * Identity fields better-auth refuses to update through `updateUser` with an endpoint
+ * hook rather than `input: false` (ADR-0073 amendment). Keyed by better-auth model key.
+ * - email: better-auth `api/routes/update-user` (EMAIL_CAN_NOT_BE_UPDATED)
+ * - phoneNumber: phoneNumber plugin before-hook ("Phone number cannot be updated")
+ * - username: username plugin validator and `immutableUsername` (refused upstream only under `immutableUsername`; denied here regardless. displayUsername is updatable upstream, so it is not listed)
+ * Update only: create stays open so an admin can still create a user.
+ */
+export const HOOK_GUARDED_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  user: ['email', 'phoneNumber', 'username'],
+}
+
 /** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
 type CredentialFieldRegistry = Record<string, ReadonlySet<string>>
 
@@ -283,7 +297,8 @@ function buildFieldAccessOverrideRegistry(
  * layers in order (each one only overriding the keys it actually sets):
  *
  * 1. The credential read-deny ({@link CredentialFieldRegistry}, ADR-0036).
- * 2. The seeded write-deny (ADR-0073): better-auth's own `input: false` on
+ * 2. The seeded write-deny (ADR-0073), plus an update-only deny on
+ *    {@link HOOK_GUARDED_IDENTITY_FIELDS}: better-auth's own `input: false` on
  *    the upstream field means a client cannot set it (`user.emailVerified`
  *    unconditionally; `user.role`/`banned`/`banReason`/`banExpires` and
  *    `session.impersonatedBy` once `admin()` is registered) — a signed-in
@@ -311,9 +326,10 @@ function withFieldAccess<T extends FieldConfig>(
 ): T {
   const isCredential = credentialRegistry[modelKey]?.has(fieldKey) ?? false
   const isWriteDenied = upstream.input === false
+  const isUpdateDenied = HOOK_GUARDED_IDENTITY_FIELDS[modelKey]?.includes(fieldKey) ?? false
   const override = overrideRegistry[modelKey]?.[fieldKey]
 
-  if (!isCredential && !isWriteDenied && !override) return field
+  if (!isCredential && !isWriteDenied && !isUpdateDenied && !override) return field
 
   // A plain object spread would let an override key EXPLICITLY set to
   // `undefined` (`{ read: undefined }`) clear a seeded rule — the key is
@@ -323,6 +339,7 @@ function withFieldAccess<T extends FieldConfig>(
   // deny can only be replaced, never silently unset.
   const access: Exclude<FieldAccess, { write: 'hooks' }> = {
     ...(isCredential ? DENY_READ : {}),
+    ...(isUpdateDenied ? DENY_UPDATE : {}),
     ...(isWriteDenied ? DENY_WRITE : {}),
   }
   if (override?.read !== undefined) access.read = override.read
@@ -436,7 +453,7 @@ function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefine
 /**
  * The OpenSaaS field keys an app-supplied `db.indexes` entry (ADR-0035)
  * claims on this model — every field named in any entry's `fields` array,
- * regardless of that entry's own arity or uniqueness. A claimed column's
+ * regardless of that entry's own arity or uniqueness. A partial entry (`where`) claims nothing: it constrains a subset of rows, so the global constraint stays. A claimed column's
  * derived `isIndexed` (from better-auth's own `unique`/`index` flags) is
  * suppressed so only the app's entry is emitted; suppression is per-column,
  * so a composite entry claiming `identifier` leaves every other derived
@@ -445,6 +462,7 @@ function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefine
 function claimedIndexFields(indexes: ListIndex[]): Set<string> {
   const claimed = new Set<string>()
   for (const index of indexes) {
+    if (index.where !== undefined) continue
     for (const fieldRef of index.fields) {
       claimed.add(typeof fieldRef === 'string' ? fieldRef : fieldRef.field)
     }
@@ -954,12 +972,15 @@ export function deriveAuthLists(
 
   const derivedUserFields = assembleFields('user')
   for (const fieldKey of Object.keys(userConfig.fields ?? {})) {
-    if (derivedUserFields[fieldKey]?.access !== undefined) {
+    const isBaseUserField =
+      FIELD_ORDER.user?.includes(fieldKey) === true && derivedUserFields[fieldKey] !== undefined
+    if (isBaseUserField || derivedUserFields[fieldKey]?.access !== undefined) {
       throw new Error(
         `deriveAuthLists: extendUserList.fields declares "${fieldKey}", but better-auth already ` +
-          `derives a "${fieldKey}" field on the user list with a write/read deny, and redeclaring ` +
-          `it would discard that deny. Remove it from extendUserList, or adjust its access with ` +
-          `authPlugin({ fieldAccess: { user: { ${fieldKey}: ... } } }).`,
+          `derives a "${fieldKey}" field on the user list, and redeclaring it would discard its ` +
+          `column, index, validation and hooks. Remove it from extendUserList, or adjust its ` +
+          `access with authPlugin({ fieldAccess: { user: { ${fieldKey}: ... } } }) or add behaviour ` +
+          `through the user list's hooks.`,
       )
     }
   }

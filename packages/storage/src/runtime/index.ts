@@ -16,7 +16,12 @@ import {
   DEFAULT_MAX_IMAGE_PIXELS,
   type FileValidationOptions,
 } from '../utils/upload.js'
-import { deleteQuietly, detectImage, processImageTransformations } from '../utils/image.js'
+import {
+  deleteQuietly,
+  detectImage,
+  processImageTransformations,
+  variantFilename,
+} from '../utils/image.js'
 import { getStorageProviderFactory } from './registry.js'
 
 /**
@@ -62,6 +67,11 @@ export interface UploadFileOptions {
   validation?: FileValidationOptions
   /** Custom metadata */
   metadata?: Record<string, string>
+  /**
+   * Called with the key a `generateUniqueFilenames: false` provider will write
+   * to, before anything is written. Throw to refuse the upload.
+   */
+  claimStableKey?: (key: string) => Promise<void>
 }
 
 /**
@@ -70,6 +80,18 @@ export interface UploadFileOptions {
 export interface UploadImageOptions extends UploadFileOptions {
   /** Image transformations to apply */
   transformations?: Record<string, ImageTransformationConfig>
+}
+
+async function claimStableKey(
+  config: OpenSaasConfig,
+  storageProviderName: string,
+  storedName: string,
+  options: UploadFileOptions | undefined,
+): Promise<void> {
+  if (!options?.claimStableKey) return
+  if (config.storage?.[storageProviderName]?.generateUniqueFilenames !== false) return
+  const key = storedName.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
+  await options.claimStableKey(key)
 }
 
 /**
@@ -118,6 +140,8 @@ export async function uploadFile(
 
   const contentType = resolveEffectiveMimeType(file)
   const storedName = withEffectiveExtension(file.name, contentType)
+
+  await claimStableKey(config, storageProviderName, storedName, options)
 
   const provider = createStorageProvider(config, storageProviderName)
 
@@ -204,6 +228,16 @@ export async function uploadImage(
   if (detected.width * detected.height > maxPixels) {
     throw new Error(
       `Image dimensions ${detected.width}x${detected.height} exceed the maximum of ${maxPixels} pixels`,
+    )
+  }
+
+  await claimStableKey(config, storageProviderName, storedName, options)
+  for (const [name, transformation] of Object.entries(options?.transformations ?? {})) {
+    await claimStableKey(
+      config,
+      storageProviderName,
+      variantFilename(storedName, name, transformation, contentType),
+      options,
     )
   }
 
@@ -356,6 +390,12 @@ function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
     result.validation = validation
   }
   if (isRecord(metadata)) result.metadata = stringRecord(metadata)
+  const { claimStableKey: claim } = options
+  if (typeof claim === 'function') {
+    result.claimStableKey = async (key) => {
+      await claim(key)
+    }
+  }
   return result
 }
 

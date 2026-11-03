@@ -1,8 +1,5 @@
 import { Pool } from 'pg'
-import type {
-  PostgresOptionsBase,
-  PostgresOptionsWithContractJson,
-} from '@prisma/orm-postgres/runtime'
+import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
 import type { DatabaseClientConfig } from '../config/types.js'
 import { findDatabaseConnection, resolveDatabaseUrl, type DatabaseUrlLookupOptions } from './url.js'
 
@@ -14,9 +11,7 @@ import { findDatabaseConnection, resolveDatabaseUrl, type DatabaseUrlLookupOptio
  */
 const DEV_CONNECTION_TIMEOUT_MS = 20_000
 
-// rc.8's `./runtime` exports `PostgresOptionsBase` but not the
-// `PostgresBindingOptions` interface that carries `pg`.
-type PostgresBindingOptions = PostgresOptionsWithContractJson<never>
+type PostgresBindingOptions = PostgresOptions<never>
 
 /**
  * The connection half of the runtime client's construction options — what the

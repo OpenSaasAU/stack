@@ -47,7 +47,7 @@ function refuseIdFieldOnSingleton(
   ]
 }
 
-const ID_STRATEGIES = ['uuid7', 'cuid2', 'int autoincrement']
+const ID_STRATEGIES = ['uuid7', 'cuid2', 'cuid', 'int autoincrement']
 
 function describeIdField(value: unknown): string {
   return typeof value === 'string' ? `"${value}"` : JSON.stringify(value)
@@ -66,7 +66,7 @@ function refuseUnknownIdField(entry: string, value: unknown, listKey?: string): 
       entry,
       reason: 'unknown-id-field',
       message:
-        `${subject} is ${describeIdField(value)}, but it must be one of 'uuid7' | 'cuid2' | 'int autoincrement' ` +
+        `${subject} is ${describeIdField(value)}, but it must be one of 'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement' ` +
         `(ADR-0048).${composite}`,
     },
   ]
@@ -213,7 +213,7 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
 /**
  * Refuse the database-level declarations the Prisma 8 contract cannot carry:
  * a `sort` direction on a `db.indexes` field reference (ADR-0040),
- * `db.idField` on a singleton list or outside the three id strategies (ADR-0048), the same extension pack
+ * `db.idField` on a singleton list or outside the id strategies (ADR-0048), the same extension pack
  * name declared from two packages, a field name the derivation reserves or
  * that collides with a derived column or relation ({@link validateFieldNames}),
  * a field that cannot describe its contract column, a field typed by a

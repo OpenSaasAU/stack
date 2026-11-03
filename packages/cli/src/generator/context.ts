@@ -2,6 +2,7 @@ import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
 import * as fs from 'fs'
 import * as path from 'path'
 import { withTsExtension } from './extension.js'
+import { contractTypesImport, DEFAULT_CONTRACT_JSON_IMPORT } from './output-paths.js'
 
 /**
  * The relative specifiers the generated context embeds, resolved by
@@ -17,22 +18,7 @@ export interface ContextReferences {
 
 const DEFAULT_REFERENCES: ContextReferences = {
   configImport: '../opensaas.config',
-  contractJsonImport: '../prisma/contract.json',
-}
-
-/**
- * The `contract.d.ts` beside a `contract.json`, as a type-only specifier.
- *
- * Spelled `.d.js`, not `.d.ts`: the Contract module (`prisma/contract.ts`)
- * sits in the same directory, and TypeScript resolves `./contract.d.ts` to
- * THAT file, so the import lands on the builder module and `Contract` is not
- * among its exports. `./contract.d.js` takes the standard `.js` -> `.d.ts`
- * mapping and reaches the emitted declarations. The import is type-only and
- * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
- * about value imports.
- */
-function contractTypesImport(contractJsonImport: string): string {
-  return contractJsonImport.replace(/contract\.json$/, 'contract.d.js')
+  contractJsonImport: DEFAULT_CONTRACT_JSON_IMPORT,
 }
 
 function storageUtilities(config: OpenSaasConfig): string {
@@ -155,6 +141,7 @@ import { originTripwire } from '@opensaas/stack-core/origin'
 import { processGlobal } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
+import { contractFromJson } from '@prisma/orm-postgres/static'
 ${runtimeExtensionImports}${runtimeExtensionImports ? '\n' : ''}import type { Contract } from '${contractTypesPath}'
 import contractJson from '${contractJsonImport}' with { type: 'json' }
 import type { Context } from './types.ts'
@@ -175,8 +162,8 @@ let resolvedConfig: OpenSaasConfig | null = null
  * load: nothing that only reads the config opens a connection.
  */
 function createClient(config: OpenSaasConfig) {
-  return postgres<Contract>({
-    contractJson,
+  return postgres({
+    contract: contractFromJson<Contract>(contractJson),
     extensions: [${runtimeExtensions}],
     middleware: [originTripwire],
     ...resolveRuntimeConnection(config.db.client),

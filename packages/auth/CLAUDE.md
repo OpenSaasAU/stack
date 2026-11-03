@@ -385,7 +385,7 @@ A field that is both a credential (ADR-0036) and `input: false` (this
 decision) gets both denies — they compose rather than one overwriting the
 other.
 
-An `extendUserList` field that redeclares a field carrying a seeded deny (`role` with `admin()`, `emailVerified`) throws at config time, since the redeclaration would silently drop the deny — use `fieldAccess` instead.
+An `extendUserList` field that redeclares a base user field (`name`, `email`, `emailVerified`, `image`) or a field carrying a seeded deny (`role` with `admin()`) throws at config time, since the redeclaration would silently drop the column, index, validation, hooks or deny — use `fieldAccess` or list hooks instead.
 
 **Reopening a seeded deny — `authPlugin({ fieldAccess })`.** Keyed exactly
 like `credentialFields` (better-auth model key, then field key), each value a

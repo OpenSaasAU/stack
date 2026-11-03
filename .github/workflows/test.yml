@@ -33,6 +33,9 @@ jobs:
       - name: Test release security audit outcomes
         run: pnpm test:security-audit
 
+      - name: Check the scaffolder has a changeset when the stack ships
+        run: pnpm check:scaffolder-changeset
+
       # Runs against the PR's merge commit (actions/checkout's default ref for
       # pull_request events), which is the only place a two-branch numbering
       # collision becomes visible — each branch is self-consistent on its own.
@@ -652,6 +655,11 @@ jobs:
         run: pnpm --filter @opensaas/stack-auth test rate-limit-e2e
         env:
           RUN_RATE_LIMIT_E2E: '1'
+
+      - name: Run magic-link reservation id e2e guard
+        run: pnpm --filter @opensaas/stack-auth test magic-link-reservation-e2e
+        env:
+          RUN_MAGIC_LINK_E2E: '1'
 
       # Live proof that deleting a user via better-auth's own /delete-user
       # cascades through the MCP plugin's OAuth tables (issue #992) instead of

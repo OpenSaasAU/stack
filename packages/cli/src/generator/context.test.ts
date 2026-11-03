@@ -22,8 +22,8 @@ describe('generateContext', () => {
     // `.d.js`, not `.d.ts`: the Contract module sits in the same directory and
     // `./contract.d.ts` resolves to IT, not to the emitted declarations.
     expect(context).toContain("import type { Contract } from '../prisma/contract.d.js'")
-    expect(context).toContain('postgres<Contract>({')
-    expect(context).toContain('contractJson,')
+    expect(context).toContain("import { contractFromJson } from '@prisma/orm-postgres/static'")
+    expect(context).toContain('contract: contractFromJson<Contract>(contractJson),')
   })
 
   it('imports no generated Prisma client tree', () => {
