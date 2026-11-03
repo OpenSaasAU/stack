@@ -142,6 +142,40 @@ describe('Upload Utilities', () => {
       })
     })
 
+    describe('acceptedExtensions follows the stored extension (issue #2073)', () => {
+      const options: FileValidationOptions = {
+        acceptedExtensions: ['.pdf'],
+        acceptedMimeTypes: undefined,
+      }
+
+      it.each([
+        'application/x-msdownload',
+        'application/zip',
+        'application/x-sh',
+        'text/css',
+        'application/wasm',
+      ])('refuses cv.pdf declared as %s', (type) => {
+        const result = validateFile({ size: 1000, name: 'cv.pdf', type }, options)
+        expect(result.valid).toBe(false)
+      })
+
+      it('refuses a gif under a png-only list', () => {
+        const result = validateFile(
+          { size: 1000, name: 'a.png', type: 'image/gif' },
+          { acceptedExtensions: ['.png'] },
+        )
+        expect(result.valid).toBe(false)
+      })
+
+      it('still accepts a real pdf', () => {
+        const result = validateFile(
+          { size: 1000, name: 'cv.pdf', type: 'application/pdf' },
+          options,
+        )
+        expect(result.valid).toBe(true)
+      })
+    })
+
     describe('active content types (issue #1625)', () => {
       describe('+xml family (issue #1797)', () => {
         const xmlTypes = [
