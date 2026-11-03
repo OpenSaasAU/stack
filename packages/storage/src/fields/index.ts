@@ -7,7 +7,12 @@ import type {
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
-import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
+import type {
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationConfig,
+  ImageTransformationResult,
+} from '../config/types.js'
 import type { FileValidationOptions } from '../utils/upload.js'
 import {
   assembleFileMetadata,
@@ -354,6 +359,23 @@ function claimStableKeyFor(
   }
 }
 
+async function withoutSharedVariants<TMetadata extends ImageMetadata>(
+  context: AccessContext,
+  listKey: string,
+  fieldKey: string,
+  field: ReferenceField,
+  metadata: TMetadata,
+): Promise<TMetadata> {
+  if (!metadata.transformations) return metadata
+  const kept: Record<string, ImageTransformationResult> = {}
+  for (const [name, variant] of Object.entries(metadata.transformations)) {
+    const key = variant.filename ?? variant.url.split('/').pop()
+    if (key && (await isAssetReferenced(context, listKey, fieldKey, field, key))) continue
+    kept[name] = variant
+  }
+  return { ...metadata, transformations: kept }
+}
+
 function previousOnClear(
   fieldConfig: {
     cleanupOnReplace?: boolean
@@ -686,7 +708,10 @@ export function image<
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
           return
-        await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, deleted)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
       }
@@ -698,7 +723,10 @@ export function image<
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
           continue
-        await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, stale)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image: ${stale.filename}`, error)
       }
