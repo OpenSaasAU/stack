@@ -18,7 +18,7 @@ function errorMessage(error: unknown): string {
 
 const SYSTEM_SCHEMAS = `('pg_catalog', 'information_schema')`
 
-async function introspect(client: pg.Client): Promise<LiveSchema> {
+export async function introspect(client: pg.Client): Promise<LiveSchema> {
   const columns = await client.query<{
     schema: string
     table: string

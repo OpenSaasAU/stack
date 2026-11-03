@@ -226,6 +226,33 @@ The plan id is the one the loop printed with the plan; if the plan has changed s
 
 Production is a different command: deploys run `prisma db migrate` from the committed `migrations/` directory. There is no `opensaas db migrate` — `opensaas db` carries only `update`, and `opensaas migrate` is the project-analysis assistant this page is about, not a schema command.
 
+#### Adopting an existing many-to-many table
+
+Prisma's implicit many-to-many tables (`_Lesson_teachers(A, B)`) have no `id`. Declare a junction list mapped onto the table:
+
+```typescript
+LessonTeacher: list({
+  fields: {
+    lesson: relationship({ ref: 'Lesson.teachers', db: { foreignKey: { map: 'A' }, isNullable: false } }),
+    teacher: relationship({ ref: 'Teacher.lessons', db: { foreignKey: { map: 'B' }, isNullable: false } }),
+  },
+  db: {
+    map: '_Lesson_teachers',
+    indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
+  },
+}),
+```
+
+`isNullable: false` keeps `A` and `B` `NOT NULL`. Then, before reconciling, add and backfill the surrogate `id` on every existing table that lacks one:
+
+```bash
+opensaas migrate junction-ids            # print the SQL
+opensaas migrate junction-ids --out junction-ids.sql
+opensaas migrate junction-ids --apply    # run it in one transaction
+```
+
+It backfills `uuid7`, `cuid2`/`cuid` and `int autoincrement` ids with database expressions, sets the column `NOT NULL` and makes it the primary key. No rows are lost, and a table that already has an `id` is left alone. Composite primary keys stay refused (ADR-0048).
+
 ### 5. Update Application Code
 
 Replace direct Prisma calls with context. A read is composed on `context.db.<List>` — the list's own PascalCase key, not a camelCase one — and ends in a terminal that resolves access:
