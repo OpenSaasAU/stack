@@ -1,4 +1,4 @@
-import type { ContractModel } from '@opensaas/stack-core'
+import type { ContractLiteral, ContractModel } from '@opensaas/stack-core'
 import type { LiveSchema } from './fk-renames.js'
 
 export interface JunctionIdAddition {
@@ -6,6 +6,7 @@ export interface JunctionIdAddition {
   table: string
   strategy: ContractModel['id']['strategy']
   type: string
+  args?: ContractLiteral[]
 }
 
 const UUID7_EXPRESSION =
@@ -19,6 +20,7 @@ export function planJunctionIds(
   models: ContractModel[],
   live: LiveSchema,
   defaultSchema = 'public',
+  primaryKeys: Array<{ schema: string; table: string }> = [],
 ): JunctionIdAddition[] {
   const additions: JunctionIdAddition[] = []
   for (const model of models) {
@@ -27,7 +29,14 @@ export function planJunctionIds(
     const table = model.table ?? model.name
     const columns = live.columns.filter((c) => c.schema === schema && c.table === table)
     if (columns.length === 0 || columns.some((c) => c.column === 'id')) continue
-    additions.push({ schema, table, strategy: model.id.strategy, type: model.id.type.type })
+    if (primaryKeys.some((k) => k.schema === schema && k.table === table)) continue
+    additions.push({
+      schema,
+      table,
+      strategy: model.id.strategy,
+      type: model.id.type.type,
+      args: model.id.type.args,
+    })
   }
   return additions
 }
@@ -37,30 +46,31 @@ function backfill(addition: JunctionIdAddition): string[] {
   const add = (type: string) => `ALTER TABLE ${qualified} ADD COLUMN "id" ${type};`
   const fill = (expression: string) => `UPDATE ${qualified} SET "id" = ${expression};`
   const notNull = `ALTER TABLE ${qualified} ALTER COLUMN "id" SET NOT NULL;`
-  const primaryKey = `ALTER TABLE ${qualified} ADD CONSTRAINT ${quote(`${addition.table}_pkey`)} PRIMARY KEY ("id");`
+  const primaryKey = `ALTER TABLE ${qualified} ADD PRIMARY KEY ("id");`
+  const columnType = addition.args ? `${addition.type}(${addition.args.join(', ')})` : addition.type
 
   switch (addition.strategy) {
     case 'uuid7':
-      return [add('uuid'), fill(UUID7_EXPRESSION), notNull, primaryKey]
+      return [add(columnType), fill(UUID7_EXPRESSION), notNull, primaryKey]
     case 'cuid2':
       return [
-        add('char(24)'),
+        add(columnType),
         fill(`'c' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 23)`),
         notNull,
         primaryKey,
       ]
     case 'cuid':
       return [
-        add('text'),
+        add(columnType),
         fill(`'c' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 24)`),
         notNull,
         primaryKey,
       ]
     default:
-      return [add('serial'), primaryKey]
+      return [add(addition.type === 'bigint' ? 'bigserial' : 'serial'), primaryKey]
   }
 }
 
 export function renderJunctionIdSql(additions: JunctionIdAddition[]): string {
-  return additions.flatMap(backfill).join('\n')
+  return ['BEGIN;', ...additions.flatMap(backfill), 'COMMIT;'].join('\n')
 }

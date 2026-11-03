@@ -48,7 +48,19 @@ export async function junctionIdsCommand(options: JunctionIdsOptions = {}): Prom
   }
   try {
     const current = await client.query<{ schema: string }>('SELECT current_schema() AS schema')
-    const plan = planJunctionIds(models, await introspect(client), current.rows[0]?.schema)
+    const primaryKeys = await client.query<{ schema: string; table: string }>(
+      `SELECT n.nspname AS schema, t.relname AS "table"
+         FROM pg_constraint c
+         JOIN pg_class t ON t.oid = c.conrelid
+         JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.contype = 'p' AND n.nspname NOT IN ('pg_catalog', 'information_schema')`,
+    )
+    const plan = planJunctionIds(
+      models,
+      await introspect(client),
+      current.rows[0]?.schema,
+      primaryKeys.rows,
+    )
     if (plan.length === 0) {
       console.log(chalk.green('No tables need an id column.'))
       return
@@ -56,10 +68,8 @@ export async function junctionIdsCommand(options: JunctionIdsOptions = {}): Prom
     const sql = renderJunctionIdSql(plan)
 
     if (options.apply) {
-      await client.query('BEGIN')
       try {
         await client.query(sql)
-        await client.query('COMMIT')
       } catch (error) {
         await client.query('ROLLBACK')
         throw error

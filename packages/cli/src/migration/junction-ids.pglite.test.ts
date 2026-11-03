@@ -57,6 +57,16 @@ describe('junction id backfill against Postgres', () => {
     })
   }
 
+  it('skips tables that already have a primary key', async () => {
+    const db = new PGlite()
+    await db.exec(`CREATE TABLE "_Lesson_teachers" ("A" text, "B" text, PRIMARY KEY ("A", "B"));`)
+    const plan = planJunctionIds([junction(ids[0][1])], await columns(db), 'public', [
+      { schema: 'public', table: '_Lesson_teachers' },
+    ])
+    expect(plan).toEqual([])
+    await db.close()
+  })
+
   it('skips tables that do not exist or already have an id', async () => {
     const db = new PGlite()
     await db.exec(`CREATE TABLE "Other" (id uuid PRIMARY KEY);`)
