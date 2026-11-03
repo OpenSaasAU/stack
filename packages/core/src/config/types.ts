@@ -2754,7 +2754,7 @@ export type DatabaseConfig = {
   idField?: IdFieldStrategy
   /**
    * Column defaults applied to every field of a type, plugin lists and the
-   * auto `createdAt`/`updatedAt` included. A field's own `db.nativeType` wins.
+   * auto `createdAt` included (`updatedAt` is not affected). A field's own `db.nativeType` wins.
    *
    * @example Keep `timestamp(3)` columns across every list, auth lists too
    * ```typescript

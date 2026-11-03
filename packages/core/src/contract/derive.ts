@@ -186,7 +186,14 @@ const TIMESTAMP_DEFAULT_TYPES = new Set(['timestamp', 'timestamptz'])
 function resolveTimestampDefault(config: OpenSaasConfig): ColumnTypeDescriptor | undefined {
   const nativeType = config.db.defaults?.timestamp?.nativeType
   if (nativeType === undefined) return undefined
-  const type = foldNativeType('db.defaults', 'timestamp', pgType('dateTime'), nativeType)
+  let type: ColumnTypeDescriptor
+  try {
+    type = foldNativeType('', '', pgType('dateTime'), nativeType)
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message.replace(/^.*?sets db\.nativeType "[^"]*", /, '') : ''
+    throw new Error(`db.defaults.timestamp.nativeType "${nativeType}" is invalid: ${detail}`)
+  }
   if (!TIMESTAMP_DEFAULT_TYPES.has(type.type)) {
     throw new Error(
       `db.defaults.timestamp.nativeType "${nativeType}" is not a timestamp type. Use Timestamp or Timestamptz, with an optional precision (Timestamp(3)).`,
@@ -580,7 +587,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         indexes: [],
         relations: [],
         timestamps,
-        ...(timestampDefault !== undefined && (timestamps.createdAt || timestamps.updatedAt)
+        ...(timestampDefault !== undefined && timestamps.createdAt
           ? { timestampType: timestampDefault }
           : {}),
       },

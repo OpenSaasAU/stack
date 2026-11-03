@@ -575,6 +575,20 @@ describe('deriveContract — db.defaults.timestamp', () => {
     expect(data.models[0].columns[0].type).toEqual({ pack: 'pg', type: 'dateTime' })
   })
 
+  test('sets no timestampType when only updatedAt is auto', () => {
+    const data = single(
+      { A: { fields: { createdAt: timestamp() }, db: { timestamps: true } } },
+      defaults,
+    )
+    expect(data.models[0].timestampType).toBeUndefined()
+  })
+
+  test('refuses a malformed native type naming the config key', () => {
+    expect(() =>
+      single({ A: { fields: {} } }, { defaults: { timestamp: { nativeType: 'Nope(1)' } } }),
+    ).toThrow(/db\.defaults\.timestamp\.nativeType "Nope\(1\)" is invalid/)
+  })
+
   test('refuses a non-timestamp native type', () => {
     expect(() =>
       single(

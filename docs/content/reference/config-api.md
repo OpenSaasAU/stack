@@ -270,7 +270,7 @@ db: {
 }
 ```
 
-`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and the auto `createdAt`. A field's own `db.nativeType` wins. The auto `updatedAt` is not affected.
+`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and the auto `createdAt`. A field's own `db.nativeType` wins. The auto `updatedAt` is not affected, so with a `Timestamp` default `createdAt` and `updatedAt` can differ in type. `Timestamp` columns are timezone-naive.
 
 ##### `extensions`
 
