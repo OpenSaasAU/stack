@@ -67,6 +67,25 @@ describe('the dev loop app child', () => {
     expect(await run).toBe(0)
   })
 
+  it('blanks the database variables for the app child so .env cannot fill them back in', async () => {
+    children.length = 0
+    spawnCalls.length = 0
+    const { createAppRunner } = await import('./app-runner.js')
+    const app = createAppRunner({
+      cwd: process.cwd(),
+      command: ['node', 'app.mjs'],
+      devDatabase: true,
+    })
+
+    const run = app.run()
+    const env = spawnCalls[0]?.options?.env
+    expect(env?.DATABASE_URL).toBe('')
+    expect(env?.DIRECT_DATABASE_URL).toBe('')
+
+    children[0]?.emit('exit', 0, null)
+    await run
+  })
+
   it('shuts down rather than respawning when a signal lands inside the restart window', async () => {
     children.length = 0
     const { createAppRunner } = await import('./app-runner.js')
