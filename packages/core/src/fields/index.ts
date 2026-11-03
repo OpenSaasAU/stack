@@ -123,6 +123,73 @@ function literalDefault(
   return { kind: 'literal', value }
 }
 
+function checkedDefault(
+  value: unknown,
+  listKey: string,
+  fieldName: string,
+  expected: string,
+  accepts: (value: unknown) => boolean,
+): void {
+  if (value === undefined || accepts(value)) return
+  throw new Error(
+    `"${listKey}.${fieldName}" has an invalid defaultValue: expected ${expected}, got ${
+      typeof value === 'string' ? JSON.stringify(value) : describeDefault(value)
+    }.`,
+  )
+}
+
+const DECIMAL_GRAMMAR = /^([+-])?(\d*)(?:\.(\d*))?$/
+
+function isDecimalDefault(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value !== 'string') return false
+  const parts = DECIMAL_GRAMMAR.exec(value.trim())
+  return parts !== null && (parts[2] !== '' || (parts[3] ?? '') !== '')
+}
+
+function isCalendarDate(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  )
+}
+
+function isBigIntDefault(value: unknown): boolean {
+  return (
+    typeof value === 'bigint' ||
+    (typeof value === 'number' && Number.isInteger(value)) ||
+    (typeof value === 'string' && /^[+-]?\d+$/.test(value))
+  )
+}
+
+function checkedDecimalSize(
+  precision: unknown,
+  scale: unknown,
+  listKey: string,
+  fieldName: string,
+): { precision: number; scale: number } {
+  if (
+    typeof precision !== 'number' ||
+    !Number.isInteger(precision) ||
+    precision < 1 ||
+    precision > 1000
+  ) {
+    throw new Error(
+      `"${listKey}.${fieldName}" has an invalid precision: expected an integer from 1 to 1000, got ${JSON.stringify(String(precision))}.`,
+    )
+  }
+  if (typeof scale !== 'number' || !Number.isInteger(scale) || scale < 0 || scale > precision) {
+    throw new Error(
+      `"${listKey}.${fieldName}" has an invalid scale: expected an integer from 0 to precision (${precision}), got ${JSON.stringify(String(scale))}.`,
+    )
+  }
+  return { precision, scale }
+}
+
 function decimalDefault(
   value: unknown,
   listKey: string,
@@ -299,7 +366,10 @@ export function integer<
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: literalDefault(options?.defaultValue, listKey, fieldName),
+        default: (() => {
+          checkedDefault(options?.defaultValue, listKey, fieldName, 'an integer', Number.isInteger)
+          return literalDefault(options?.defaultValue, listKey, fieldName)
+        })(),
       }),
     // A non-integer token can't be interpreted, so it degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
@@ -420,15 +490,35 @@ export function decimal<
       if (isRequired && operation === 'update') return schema.optional()
       return !isRequired ? schema.optional().nullable() : schema
     },
-    getContractField: (fieldName: string, listKey: string) =>
-      scalarColumn(fieldName, {
-        type: pgType('decimal', [precision, scale]),
+    getContractField: (fieldName: string, listKey: string) => {
+      const size = checkedDecimalSize(
+        options?.precision ?? 18,
+        options?.scale ?? 4,
+        listKey,
+        fieldName,
+      )
+      checkedDefault(
+        options?.defaultValue,
+        listKey,
+        fieldName,
+        'a finite number or a numeric string',
+        isDecimalDefault,
+      )
+      return scalarColumn(fieldName, {
+        type: pgType('decimal', [size.precision, size.scale]),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
-        default: decimalDefault(options?.defaultValue, listKey, fieldName, precision, scale),
-      }),
+        default: decimalDefault(
+          options?.defaultValue,
+          listKey,
+          fieldName,
+          size.precision,
+          size.scale,
+        ),
+      })
+    },
     // Decimals compare like integers, but the value stays a string so full
     // precision survives the filter. A non-numeric value degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
@@ -519,6 +609,13 @@ export function bigInt<
     },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
+      checkedDefault(
+        defaultValue,
+        listKey,
+        fieldName,
+        'an integer number, a bigint, or a string of base-10 integer digits',
+        isBigIntDefault,
+      )
       return scalarColumn(fieldName, {
         type: pgType('bigint'),
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
@@ -562,13 +659,21 @@ export function checkbox<
     getZodSchema: () => {
       return z.boolean().optional().nullable()
     },
-    getContractField: (fieldName: string, listKey: string) =>
-      scalarColumn(fieldName, {
+    getContractField: (fieldName: string, listKey: string) => {
+      checkedDefault(
+        options?.defaultValue,
+        listKey,
+        fieldName,
+        'a boolean',
+        (value) => typeof value === 'boolean',
+      )
+      return scalarColumn(fieldName, {
         type: pgType('boolean'),
         nullable: options?.db?.isNullable === true,
         map: options?.db?.map,
         default: literalDefault(options?.defaultValue ?? false, listKey, fieldName),
-      }),
+      })
+    },
     // Anything other than true/false degrades to free text.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: ['eq'],
@@ -727,15 +832,23 @@ export function calendarDay<
         return dateSchema.optional().nullable()
       }
     },
-    getContractField: (fieldName: string, listKey: string) =>
-      scalarColumn(fieldName, {
+    getContractField: (fieldName: string, listKey: string) => {
+      checkedDefault(
+        options?.defaultValue,
+        listKey,
+        fieldName,
+        'a valid YYYY-MM-DD calendar date',
+        isCalendarDate,
+      )
+      return scalarColumn(fieldName, {
         type: pgType('dateTime'),
         nativeType: 'date',
         nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
         default: literalDefault(options?.defaultValue, listKey, fieldName),
-      }),
+      })
+    },
     // Calendar days compare on the `YYYY-MM-DD` value itself — the column's
     // string codec passes it straight to the driver, so a Date built here
     // would hit the same local-timezone drift the write path had (#1437). A
@@ -977,6 +1090,14 @@ export function select<
     },
     getContractField: (fieldName: string, listName: string) => {
       const hasDefault = options.defaultValue !== undefined
+      const optionValues = options.options.map((opt) => opt.value)
+      checkedDefault(
+        options.defaultValue,
+        listName,
+        fieldName,
+        `one of the declared options (${optionValues.join(', ')})`,
+        (value) => typeof value === 'string' && optionValues.includes(value),
+      )
       const nullable = options.db?.isNullable ?? (!options.validation?.isRequired && !hasDefault)
       if (!isNativeEnum) {
         return scalarColumn(fieldName, {
