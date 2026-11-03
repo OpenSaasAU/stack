@@ -298,7 +298,10 @@ export async function runWithTransactionBoundary(args: {
   joinedOwner?: TransactionRegistry
   /** Set when this write just opened the transaction joined writes below it share. */
   ownedRegistry?: TransactionRegistry
-  runTransaction: () => Promise<Record<string, unknown> | null>
+  runTransaction: () => Promise<{
+    visible: Record<string, unknown>
+    raw: Record<string, unknown>
+  } | null>
 }): Promise<Record<string, unknown> | null> {
   const {
     config,
@@ -351,21 +354,21 @@ export async function runWithTransactionBoundary(args: {
 
   // Open (or join) the transaction and capture this write's own settle outcome.
   let outcome: TransactionOutcome
-  let result: Record<string, unknown> | null = null
+  let written: Awaited<ReturnType<typeof runTransaction>> = null
   let txError: unknown
   try {
-    result = await runTransaction()
+    written = await runTransaction()
     // `null` is the write that did not happen — its predicate matched no row.
     // The transaction still commits (a joined write below it may well have
     // persisted), but this bracket must not tell its own list's compensator
     // that a write committed when none did.
     outcome =
-      result === null
+      written === null
         ? {
             status: 'rolled-back',
             error: new WriteMatchedNothingError(involvedLists.map((involved) => involved.listKey)),
           }
-        : { status: 'committed', item: result }
+        : { status: 'committed', item: written.raw }
   } catch (err) {
     txError = err
     outcome = { status: 'rolled-back', error: err }
@@ -382,7 +385,7 @@ export async function runWithTransactionBoundary(args: {
       }
     })
     if (txError !== undefined) throw txError
-    return result
+    return written?.visible ?? null
   }
 
   // All compensators run even if one throws.
@@ -409,5 +412,5 @@ export async function runWithTransactionBoundary(args: {
 
   if (txError !== undefined) throw txError
 
-  return result
+  return written?.visible ?? null
 }

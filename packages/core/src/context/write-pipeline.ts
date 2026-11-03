@@ -134,8 +134,8 @@ export interface WriteStrategy {
 async function runInTransaction(
   opener: TransactionOpener | undefined,
   ormHandle: OrmClient,
-  fn: (tx: OrmClient, rowLock: RowLockLane | undefined) => Promise<OrmRow | null>,
-): Promise<OrmRow | null> {
+  fn: (tx: OrmClient, rowLock: RowLockLane | undefined) => Promise<WrittenRow | null>,
+): Promise<WrittenRow | null> {
   if (opener === undefined) return fn(ormHandle, undefined)
   return opener((opened) => fn(opened.ormHandle, opened.rowLock))
 }
@@ -432,6 +432,11 @@ function resolveAfterTransactionContext(
   return afterTransactionContext
 }
 
+interface WrittenRow {
+  visible: OrmRow
+  raw: OrmRow
+}
+
 /**
  * The body of one secured write, executed against the transaction client `tx`
  * (passed in as `args.ormHandle`). Returns `null` for the silent-failure cases and
@@ -441,7 +446,7 @@ function resolveAfterTransactionContext(
 async function runWriteInTransaction(
   args: WritePipelineArgs,
   ops: WhereCombinators,
-): Promise<OrmRow | null> {
+): Promise<WrittenRow | null> {
   const { listName, listConfig, ormHandle: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
   const collection = writeCollection(tx, listName)
@@ -607,7 +612,12 @@ async function runWriteInTransaction(
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
   const binding = { listName, listConfig, ormHandle: tx, context, config }
-  return visibleWrittenRow(binding, item, await writtenRowQueryable(binding, item.id))
+  const visible = await visibleWrittenRow(
+    binding,
+    item,
+    await writtenRowQueryable(binding, item.id),
+  )
+  return visible === null ? null : { visible, raw: item }
 }
 
 /**
@@ -627,7 +637,7 @@ async function runDeletePath(args: {
   ops: WhereCombinators
   scope: WriteScope
   strategy: WriteStrategy
-}): Promise<OrmRow | null> {
+}): Promise<WrittenRow | null> {
   const {
     ormHandle,
     listName,
@@ -707,7 +717,8 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return visibleWrittenRow(binding, deleted, queryable)
+  const visible = await visibleWrittenRow(binding, deleted, queryable)
+  return visible === null ? null : { visible, raw: deleted }
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────
