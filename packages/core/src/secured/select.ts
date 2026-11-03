@@ -19,7 +19,7 @@ import { classifyRowIndependentRead } from '../access/field-access.js'
 import { resolveQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
 import { unqueryableKey, type ResolveContext } from './vocabulary.js'
-import { hasRowsBranch, type IncludePlan } from './include.js'
+import type { IncludePlan } from './include.js'
 
 /**
  * Thrown when `.select()` names a relationship field. The ORM's own
@@ -251,6 +251,10 @@ export function selectionScope(
   }
   if (projection.caller === undefined && Object.keys(nested).length === 0) return undefined
   return { fields: projection.caller, nested }
+}
+
+export function hasRowsBranch(plan: IncludePlan): boolean {
+  return plan.reduce?.kind === 'combine' && plan.reduce.branches.some((b) => b.kind === 'rows')
 }
 
 /**

@@ -44,7 +44,6 @@ import {
   DECLARED_COUNT_BRANCH_KEY,
   DECLARED_ROWS_BRANCH_KEY,
   foreignKeyOwningRelations,
-  hasRowsBranch,
   orderList,
   resolveIncludes,
   type CombineBranchPlan,
@@ -55,6 +54,7 @@ import {
 } from './include.js'
 import {
   dependencyAdditions,
+  hasRowsBranch,
   reducedDeclaredKeys,
   resolveProjection,
   selectionScope,
@@ -731,7 +731,7 @@ function declaredRowsBranch(
   for (const predicate of plan.declaredRows ?? []) {
     branched = branched.where((model) => lowerWhere(predicate, model, ops))
   }
-  return shape(branched, plan, { orders: [], limit: undefined, offset: undefined }, ops)
+  return branched
 }
 
 /** What a relation's rows look like: its projection, its sort and its page. */

@@ -197,19 +197,47 @@ describe('a caller-shaped include on a declared dependency', () => {
     expect(items[0]).toMatchObject({ blockedCount: 1, blocked: [] })
   })
 
-  test('a combine rows branch does not flip a computed field over a read-denied relation', async () => {
-    const hit = await db
-      .context({})
-      .db.Post.include('owner', (owner) => owner.where({ email: { equals: 'admin@x' } }))
-      .all()
-    const miss = await db
-      .context({})
-      .db.Owner.include('posts', (posts) =>
-        posts.combine({ items: posts.where({ title: { equals: 'nobody' } }), n: posts.count() }),
+  test('a request-level where on the combine does not unlock the body', async () => {
+    const [doc] = await db
+      .context({ userId: blockedId })
+      .db.Doc.include('blocked', (blocked) =>
+        blocked.where({ id: { equals: aliceId } }).combine({ items: blocked, n: blocked.count() }),
       )
       .all()
-    expect(hit[0]).toMatchObject({ ownerLabel: 'owned' })
-    expect(miss).toHaveLength(1)
+    expect(doc).not.toHaveProperty('body')
+    expect(doc).toMatchObject({ blockedCount: 1 })
+  })
+
+  test('a select on the combine rows branch does not narrow the declared rows', async () => {
+    const [doc] = await db
+      .context({ userId: blockedId })
+      .db.Doc.include('blocked', (blocked) =>
+        blocked.combine({ items: blocked.select('email'), n: blocked.count() }),
+      )
+      .all()
+    expect(doc).not.toHaveProperty('body')
+    expect(doc).toMatchObject({ blockedCount: 1 })
+  })
+
+  test('a combine rows branch does not change the hook item of a computed field', async () => {
+    const admin = db.context({}).sudo()
+    const writer = await admin.db.Writer.create({ data: { secret: 'TOPSECRET' } })
+    await admin.db.Article.create({
+      data: { title: 'a', writer: { connect: { id: writer!.id } } },
+    })
+    const [bare] = await db.context({}).db.Writer.all()
+    const [combined] = await db
+      .context({})
+      .db.Writer.include('articles', (articles) =>
+        articles.combine({
+          items: articles.where({ title: { equals: 'nobody' } }),
+          n: articles.count(),
+        }),
+      )
+      .all()
+    expect(combined.dump).toBe(bare.dump)
+    expect(combined.dump).not.toContain('TOPSECRET')
+    expect(Reflect.get(combined, 'articles')).toEqual({ items: [], n: 1 })
   })
 
   test('an unblocked user reads the body under a combine rows branch', async () => {
