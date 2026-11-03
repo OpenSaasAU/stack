@@ -117,6 +117,22 @@ describe('validateDatabaseConfig', () => {
     })
   })
 
+  it.each([
+    "@prisma/orm-extension-pgvector/x'\nglobalThis.PWNED = true\nimport y from 'z/..",
+    "pack'; evil(); //",
+    '../escape',
+    '',
+  ])('refuses the extension source %j, naming the entry', (from) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', extensions: [{ name: 'pgvector', from }] },
+      lists: {},
+    }
+
+    expect(validateDatabaseConfig(config)).toMatchObject([
+      { entry: 'db.extensions[0]', reason: 'invalid-extension-source' },
+    ])
+  })
+
   it('refuses the same pack name declared from two packages, naming both entries', () => {
     const config: OpenSaasConfig = {
       db: {
