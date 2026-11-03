@@ -86,6 +86,28 @@ describe('the dev loop app child', () => {
     await run
   })
 
+  it('leaves the database variables alone when no dev database is running', async () => {
+    children.length = 0
+    spawnCalls.length = 0
+    vi.stubEnv('DATABASE_URL', 'postgresql://localhost:5432/other')
+    vi.stubEnv('DIRECT_DATABASE_URL', 'postgresql://localhost:5432/direct')
+    const { createAppRunner } = await import('./app-runner.js')
+    const app = createAppRunner({
+      cwd: process.cwd(),
+      command: ['node', 'app.mjs'],
+      devDatabase: false,
+    })
+
+    const run = app.run()
+    const env = spawnCalls[0]?.options?.env
+    vi.unstubAllEnvs()
+    expect(env?.DATABASE_URL).toBe('postgresql://localhost:5432/other')
+    expect(env?.DIRECT_DATABASE_URL).toBe('postgresql://localhost:5432/direct')
+
+    children[0]?.emit('exit', 0, null)
+    await run
+  })
+
   it('shuts down rather than respawning when a signal lands inside the restart window', async () => {
     children.length = 0
     const { createAppRunner } = await import('./app-runner.js')
