@@ -195,7 +195,8 @@ export class RowDependentPagingError extends Error {
     readonly member: string,
   ) {
     super(
-      `Cannot ${member} "${listName}.${relation}" for this session. ` + `Include the rows instead.`,
+      `Cannot ${member} "${listName}.${relation}" for this session: its source field's read rule ` +
+        `depends on the row. Drop the ${member} and page the returned rows instead.`,
     )
     this.name = 'RowDependentPagingError'
   }
