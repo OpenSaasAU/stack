@@ -256,6 +256,12 @@ describe('deriveContract — columns', () => {
     expect(explicit.models[0].namespace).toBeUndefined()
     expect(explicit).toEqual(omitted)
   })
+
+  test('db.schema "public" with db.schemas unset derives no namespace', () => {
+    const data = single({ A: { fields: { name: text() }, db: { schema: 'public' } } })
+    expect(data.models[0].namespace).toBeUndefined()
+    expect(data.namespaces).toEqual([])
+  })
 })
 
 describe('deriveContract — relations', () => {
