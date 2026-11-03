@@ -207,6 +207,7 @@ Everything the stack needs to know about the database. There is **no connection 
 type DatabaseConfig = {
   provider: 'postgresql'
   idField?: IdFieldStrategy
+  defaults?: { timestamp?: { nativeType?: string } }
   extensions?: ExtensionDescriptor[]
   client?: DatabaseClientConfig
   schemas?: string[]
@@ -259,6 +260,19 @@ db: {
 `'cuid'` keeps the id a `text` column and mints cuid2 for new rows. Use it to adopt a database whose ids are cuid v1 values, which `'cuid2'` (`char(24)`) cannot hold.
 
 A [singleton list](#issingleton) derives its id from `isSingleton` and refuses this option.
+
+##### `defaults`
+
+A native type applied to every field of a kind, plugin lists included.
+
+```typescript
+db: {
+  provider: 'postgresql',
+  defaults: { timestamp: { nativeType: 'Timestamp(3)' } },
+}
+```
+
+`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and the auto `createdAt`. A field's own `db.nativeType` wins. The auto `updatedAt` is not affected, so with a `Timestamp` default `createdAt` and `updatedAt` can differ in type. `Timestamp` columns are timezone-naive.
 
 ##### `extensions`
 

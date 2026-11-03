@@ -240,8 +240,13 @@ function modelFields(
   }
   // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
-  if (model.timestamps.createdAt)
-    fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
+  if (model.timestamps.createdAt) {
+    const column =
+      model.timestampType?.type === 'timestamp'
+        ? withPrecision(timestampStringColumn, firstNumber(model.timestampType.args, 0))
+        : withPrecision(timestamptzStringColumn, firstNumber(model.timestampType?.args, 0))
+    fields.createdAt = helpers.field.column(column).defaultSql('now()')
+  }
   if (model.timestamps.updatedAt)
     fields.updatedAt = helpers.field
       .column(helpers.type.TimestamptzString())

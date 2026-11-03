@@ -618,6 +618,61 @@ describe('deriveContract — db.indexes resolution', () => {
   })
 })
 
+describe('deriveContract — db.defaults.timestamp', () => {
+  const defaults = { defaults: { timestamp: { nativeType: 'Timestamp(3)' } } }
+
+  test('applies to timestamp fields without their own nativeType and to auto createdAt', () => {
+    const data = single(
+      {
+        A: {
+          fields: {
+            seen: timestamp(),
+            own: timestamp({ db: { nativeType: 'Timestamptz(6)' } }),
+            name: text(),
+          },
+          db: { timestamps: true },
+        },
+      },
+      defaults,
+    )
+    const [model] = data.models
+    const type = (name: string) => model.columns.find((c) => c.name === name)?.type
+    expect(type('seen')).toEqual({ pack: 'pg', type: 'timestamp', args: [3] })
+    expect(type('own')).toEqual({ pack: 'pg', type: 'timestamptz', args: [6] })
+    expect(type('name')).toEqual({ pack: 'pg', type: 'text' })
+    expect(model.timestampType).toEqual({ pack: 'pg', type: 'timestamp', args: [3] })
+  })
+
+  test('leaves the contract unchanged when unset', () => {
+    const data = single({ A: { fields: { seen: timestamp() } } })
+    expect(data.models[0].timestampType).toBeUndefined()
+    expect(data.models[0].columns[0].type).toEqual({ pack: 'pg', type: 'dateTime' })
+  })
+
+  test('sets no timestampType when only updatedAt is auto', () => {
+    const data = single(
+      { A: { fields: { createdAt: timestamp() }, db: { timestamps: true } } },
+      defaults,
+    )
+    expect(data.models[0].timestampType).toBeUndefined()
+  })
+
+  test('refuses a malformed native type naming the config key', () => {
+    expect(() =>
+      single({ A: { fields: {} } }, { defaults: { timestamp: { nativeType: 'Nope(1)' } } }),
+    ).toThrow(/db\.defaults\.timestamp\.nativeType "Nope\(1\)" is invalid/)
+  })
+
+  test('refuses a non-timestamp native type', () => {
+    expect(() =>
+      single(
+        { A: { fields: { seen: timestamp() } } },
+        { defaults: { timestamp: { nativeType: 'Text' } } },
+      ),
+    ).toThrow(/not a timestamp type/)
+  })
+})
+
 describe('deriveContract — db.indexNaming', () => {
   const lists = (): OpenSaasConfig['lists'] => ({
     Author: { fields: { name: text() } },
