@@ -12,7 +12,7 @@ const clean = {
   metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0 } },
 }
 
-function runAudit(t, response, exitCode = 0, raw = false) {
+function runAudit(t, response, exitCode = 0, raw = false, args = []) {
   const directory = mkdtempSync(join(tmpdir(), 'security-audit-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   writeFileSync(
@@ -21,7 +21,7 @@ function runAudit(t, response, exitCode = 0, raw = false) {
     { mode: 0o755 },
   )
   const summary = join(directory, 'summary.md')
-  const result = spawnSync(process.execPath, [command], {
+  const result = spawnSync(process.execPath, [command, ...args], {
     cwd: directory,
     env: { ...process.env, PATH: directory, GITHUB_STEP_SUMMARY: summary },
     encoding: 'utf8',
@@ -53,6 +53,27 @@ test('known vulnerabilities block release and remain available for triage', (t) 
   assert.equal(result.report().status, 'vulnerable')
   assert.deepEqual(result.report().audit, vulnerable)
   assert.match(result.summary(), /Security advisory audit: FAIL/)
+})
+
+test('report-only mode records known vulnerabilities without failing', (t) => {
+  const vulnerable = {
+    advisories: { 123: { title: 'Fixture vulnerability', severity: 'high' } },
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 1, critical: 0 } },
+  }
+  const result = runAudit(t, vulnerable, 1, false, ['--report-only'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Security advisory audit: REPORTED.*1 high/)
+  assert.equal(result.report().status, 'vulnerable')
+  assert.deepEqual(result.report().audit, vulnerable)
+})
+
+test('report-only mode still treats an unreachable registry as unavailable', (t) => {
+  const response = {
+    error: { code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND registry.npmjs.org' },
+  }
+  const result = runAudit(t, response, 1, false, ['--report-only'])
+  assert.equal(result.status, 2)
+  assert.equal(result.report().status, 'unavailable')
 })
 
 test('an unreachable advisory registry blocks release with an explicit unavailable result', (t) => {

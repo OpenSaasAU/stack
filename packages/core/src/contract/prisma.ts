@@ -1,4 +1,4 @@
-import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
+import { defineContract, nativeEnum, pg, sql } from '@prisma/orm-postgres/contract-builder'
 import type { NativeEnumHandle, ScalarFieldBuilder } from '@prisma/orm-postgres/contract-builder'
 import {
   charColumn,
@@ -7,7 +7,6 @@ import {
   int2Column,
   jsonColumn,
   numericColumn,
-  textColumn,
   timeStringColumn,
   timestampStringColumn,
   timestamptzStringColumn,
@@ -47,7 +46,6 @@ type AuthoringHelpers = Parameters<
     typeof defineContract<Record<never, never>, Record<never, never>, PrismaContractPacks>
   >[1]
 >[0]
-type FieldHelpers = AuthoringHelpers['field']
 type Fields = Record<string, ScalarFieldBuilder>
 type RelationBuilder =
   | ReturnType<AuthoringHelpers['rel']['belongsTo']>
@@ -113,16 +111,17 @@ function extensionColumnType(
 }
 
 function pgColumn(
-  field: FieldHelpers,
+  helpers: AuthoringHelpers,
   model: string,
   columnName: string,
   type: ColumnTypeDescriptor,
   enums: Map<string, NativeEnumHandle>,
   enumName: string | undefined,
 ): ScalarFieldBuilder {
+  const { field, type: t } = helpers
   switch (type.type) {
     case 'text':
-      return field.text()
+      return field.column(t.String())
     case 'varchar': {
       const length = firstNumber(type.args, 0)
       if (length === undefined) {
@@ -138,23 +137,23 @@ function pgColumn(
       return field.column(charColumn(length))
     }
     case 'int':
-      return field.int()
+      return field.column(t.Int())
     case 'smallint':
       return field.column(int2Column)
     case 'bigint':
-      return field.bigint()
+      return field.column(t.BigInt())
     case 'decimal': {
       const precision = firstNumber(type.args, 0)
       return precision === undefined
-        ? field.decimal()
+        ? field.column(t.Decimal())
         : field.column(numericColumn(precision, firstNumber(type.args, 1)))
     }
     case 'float':
-      return field.float()
+      return field.column(t.Float())
     case 'real':
       return field.column(float4Column)
     case 'boolean':
-      return field.boolean()
+      return field.column(t.Boolean())
     case 'dateTime':
     case 'timestamptz':
       return field.column(withPrecision(timestamptzStringColumn, firstNumber(type.args, 0)))
@@ -165,13 +164,13 @@ function pgColumn(
     case 'date':
       return field.column(dateStringColumn)
     case 'uuid':
-      return field.uuidNative()
+      return field.column(t.Uuid())
     case 'json':
       return field.column(jsonColumn)
     case 'jsonb':
-      return field.json()
+      return field.column(t.Jsonb())
     case 'bytes':
-      return field.bytes()
+      return field.column(t.Bytes())
     case 'enum': {
       const handle = enumName === undefined ? undefined : enums.get(enumName)
       if (!handle) {
@@ -188,20 +187,19 @@ function pgColumn(
   }
 }
 
-function idField(field: FieldHelpers, id: ContractIdColumn): ScalarFieldBuilder {
+function idField(helpers: AuthoringHelpers, id: ContractIdColumn): ScalarFieldBuilder {
+  const { field, type, gen } = helpers
   switch (id.strategy) {
     case 'uuid7':
-      return field.id.uuidv7Native()
+      return field.column(type.Uuid()).id().onCreate(gen.uuid(7))
     case 'cuid2':
-      return field.id.cuid2()
+      return field.column(type.Cuid2()).id().onCreate(gen.cuid(2))
     case 'cuid':
-      return field
-        .generated({ type: textColumn, generated: { kind: 'generator', id: 'cuid2' } })
-        .id()
+      return field.column(type.String()).id().onCreate(gen.cuid(2))
     case 'int autoincrement':
-      return field.int().defaultSql('autoincrement()').id()
+      return field.column(type.Int()).defaultSql('autoincrement()').id()
     case 'singleton':
-      return field.int().default(1).id()
+      return field.column(type.Int()).default(1).id()
   }
 }
 
@@ -213,7 +211,7 @@ function scalarField(
 ): ScalarFieldBuilder {
   let builder =
     column.type.pack === 'pg'
-      ? pgColumn(helpers.field, model, column.name, column.type, enums, column.enum?.name)
+      ? pgColumn(helpers, model, column.name, column.type, enums, column.enum?.name)
       : helpers.field.column(extensionColumnType(helpers, model, column))
   if (column.nullable) builder = builder.optional()
   if (column.map !== undefined) builder = builder.column(column.map)
@@ -236,15 +234,19 @@ function modelFields(
   model: ContractModel,
   enums: Map<string, NativeEnumHandle>,
 ): Fields {
-  const fields: Fields = { id: idField(helpers.field, model.id) }
+  const fields: Fields = { id: idField(helpers, model.id) }
   for (const column of model.columns) {
     fields[column.name] = scalarField(helpers, model.name, column, enums)
   }
-  // Known limits: createdAt avoids field.temporal.createdAtString(), which drops the database
+  // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt)
     fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
-  if (model.timestamps.updatedAt) fields.updatedAt = helpers.field.temporal.updatedAtString()
+  if (model.timestamps.updatedAt)
+    fields.updatedAt = helpers.field
+      .column(helpers.type.TimestamptzString())
+      .onCreate(helpers.gen.now())
+      .onUpdate(helpers.gen.now())
   return fields
 }
 
@@ -273,11 +275,15 @@ function baseModel(
   })
 }
 
+function sqlExpression(text: string) {
+  return sql(Object.assign([text], { raw: [text] }))
+}
+
 type ModelToken = ReturnType<typeof baseModel>
 
 function finishModel(base: ModelToken, model: ContractModel, tokens: Record<string, ModelToken>) {
-  const uniqueIndexes = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniqueIndexes = model.indexes.filter((index) => index.unique && index.where === undefined)
+  const plainIndexes = model.indexes.filter((index) => !index.unique || index.where !== undefined)
   const indexedColumns = model.columns.filter((column) => column.index)
   return base
     .attributes(({ fields, constraints }) => ({
@@ -295,7 +301,11 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
         ...plainIndexes.map((index) =>
           constraints.index(
             index.columns.map((column) => cols[column]),
-            index.name !== undefined ? { map: index.name } : {},
+            {
+              ...(index.name !== undefined ? { map: index.name } : {}),
+              ...(index.unique ? { unique: true } : {}),
+              ...(index.where !== undefined ? { where: sqlExpression(index.where) } : {}),
+            },
           ),
         ),
       ],

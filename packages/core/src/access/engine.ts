@@ -101,7 +101,8 @@ export function resolveSyntheticReverseRelation(
  * Returns what the rule returned: `true` (allow every row), `false` (deny), or
  * a `PrismaFilter` scoping which rows the session may reach. An **absent** rule
  * denies — access is opt-in, so a list that declares nothing is closed rather
- * than open.
+ * than open. A rule that returns `null` or `undefined` (`session && {…}` for an
+ * anonymous session) denies the same way.
  *
  * A filter result is not a decision on its own: the read composes it into the
  * query as the engine-owned predicate. Only a boolean is a decision.
@@ -126,9 +127,9 @@ export async function checkAccess<T = Record<string, unknown>>(
     return false
   }
 
-  const result = await accessControl(args)
+  const result: boolean | PrismaFilter<T> | null | undefined = await accessControl(args)
 
-  return result
+  return result ?? false
 }
 
 /**

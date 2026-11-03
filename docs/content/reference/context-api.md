@@ -75,12 +75,13 @@ export default config({
 // lib/second-client.ts
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import postgres from '@prisma/orm-postgres/runtime'
+import { contractFromJson } from '@prisma/orm-postgres/static'
 import type { Contract } from '../prisma/contract.d.js'
 import contractJson from '../prisma/contract.json' with { type: 'json' }
 import { dbClient } from './db-client'
 
-export const secondClient = postgres<Contract>({
-  contractJson,
+export const secondClient = postgres({
+  contract: contractFromJson<Contract>(contractJson),
   ...resolveRuntimeConnection(dbClient),
 })
 ```

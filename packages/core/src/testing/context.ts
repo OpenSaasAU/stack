@@ -295,6 +295,7 @@ async function applySchema(
       mode: 'apply',
       migrationsDir,
       answerQuestions: refuseEveryQuestion,
+      invocation: { cwd: migrationsDir, configPath: undefined, dbGiven: true },
     })
     if (!result.ok) throw new SchemaApplyError(url, result.failure)
   } finally {

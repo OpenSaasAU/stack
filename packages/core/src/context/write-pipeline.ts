@@ -141,6 +141,18 @@ async function runInTransaction(
 }
 
 /**
+ * Thrown inside the write's transaction when the write ends as `null` after its
+ * hooks already ran, so their writes roll back with it. Caught at the
+ * transaction boundary and answered as `null`; never reaches the caller.
+ */
+class WriteAbandonedSignal extends Error {
+  constructor() {
+    super('The write produced no row after its hooks ran.')
+    this.name = 'WriteAbandonedSignal'
+  }
+}
+
+/**
  * Warn once per (list, operation) when a write has neither an opener of its
  * own nor an enclosing transaction to join — a context built without
  * `getContext`'s `client` argument (#1273). `context.transaction()` refuses
@@ -263,28 +275,35 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     afterTransactionContext: resolveAfterTransactionContext(context, config),
     joinedOwner: existingOwner,
     ownedRegistry,
-    runTransaction: () =>
-      runInTransaction(opener, ormHandle, async (tx, openedLock) => {
-        const written = await runWriteInTransaction(
-          {
-            ...args,
-            ormHandle: tx,
-            // Reuse the pre-transaction target resolution (#569 call-count semantics).
-            preResolvedTarget: gate,
-            onTargetLocked: (lockedItem) => {
-              for (const involved of involvedLists) involved.originalItem = lockedItem
+    runTransaction: async () => {
+      try {
+        return await runInTransaction(opener, ormHandle, async (tx, openedLock) => {
+          const written = await runWriteInTransaction(
+            {
+              ...args,
+              ormHandle: tx,
+              // Reuse the pre-transaction target resolution (#569 call-count semantics).
+              preResolvedTarget: gate,
+              onTargetLocked: (lockedItem) => {
+                for (const involved of involvedLists) involved.originalItem = lockedItem
+              },
+              // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
+              // transaction owner (ADR-0028) — see bindContextToTransaction below.
+              context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
             },
-            // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
-            // transaction owner (ADR-0028) — see bindContextToTransaction below.
-            context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
-          },
-          ops,
-        )
-        if (ownedRegistry?.isPoisoned) {
-          throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
-        }
-        return written
-      }),
+            ops,
+          )
+          if (ownedRegistry?.isPoisoned) {
+            throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
+          }
+          return written
+        })
+      } catch (error) {
+        if (!(error instanceof WriteAbandonedSignal)) throw error
+        ;(existingOwner ?? ownedRegistry)?.poison(error)
+        return null
+      }
+    },
   })
 }
 
@@ -505,7 +524,7 @@ async function runWriteInTransaction(
     data,
     inputData: callerInput,
   })
-  if (linked.status === 'unreachable') return null
+  if (linked.status === 'unreachable') throw new WriteAbandonedSignal()
   const writeData = linked.data
 
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
@@ -545,9 +564,10 @@ async function runWriteInTransaction(
   // The scope matched nothing this time: the target was read under the same
   // predicate moments earlier in this transaction, so the row is gone —
   // dropped by a `beforeOperation` hook's own write, typically. `null` is
-  // denied-or-gone on every terminal, and no after-hook fires for a write
-  // that did not happen.
-  if (item === null) return null
+  // denied-or-gone on every terminal. The hooks that already ran are rolled
+  // back with the write, and no after-hook fires for a write that did not
+  // happen.
+  if (item === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
   await executeAfterOperation(
@@ -665,7 +685,7 @@ async function runDeletePath(args: {
 
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
-  if (deleted === null) return null
+  if (deleted === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation (delete) ─────────────────────────────
   await executeAfterOperation(listConfig.hooks, {
