@@ -1676,6 +1676,19 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a where nested past the relation depth cap is refused',
+      async () => {
+        let where: Record<string, unknown> = { id: { equals: 'x' } }
+        for (let level = 0; level < 6; level++) where = { posts: { some: where } }
+        const { body } = await callTool('list_user_query', { where }, schemaConfig())
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('levels deep')
+      },
+      BOOT,
+    )
+
+    test(
       'an operation switched off is refused as an unknown tool',
       async () => {
         const config = withOverrides()

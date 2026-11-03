@@ -28,6 +28,7 @@ import { AccessScopeDepthExceededError } from '../access/errors.js'
 import {
   resolveOrderBy,
   resolveRelatedAccessPlan,
+  assertWhereWithinLimits,
   resolveWhere,
   unqueryableKey,
   type OrderBy,
@@ -638,6 +639,7 @@ async function resolveInclude(
   // the refusal itself say which relations are readable (ADR-0031).
   const predicates: WherePlan[] = []
   for (const predicate of request.predicates) {
+    assertWhereWithinLimits(predicate)
     predicates.push(await resolveWhere(predicate, related))
   }
   const orders = await resolveOrderBy(request.orders, related)
@@ -781,6 +783,7 @@ async function resolveReduce(
     if (branch.kind === 'count') checkReducible(branch.request, ctx.listName)
     const predicates: WherePlan[] = []
     for (const predicate of branch.request.predicates) {
+      assertWhereWithinLimits(predicate)
       predicates.push(await resolveWhere(predicate, related))
     }
     if (access.kind !== 'true') predicates.push(access)
