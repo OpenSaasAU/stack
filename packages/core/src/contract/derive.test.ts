@@ -8,6 +8,11 @@ function single(lists: OpenSaasConfig['lists'], db: Partial<OpenSaasConfig['db']
 }
 
 describe('deriveContract — ids', () => {
+  test('cuid keeps the column as text', () => {
+    const data = single({ A: { fields: { name: text() }, db: { idField: 'cuid' } } })
+    expect(data.models[0].id).toEqual({ strategy: 'cuid', type: { pack: 'pg', type: 'text' } })
+  })
+
   test('uuid7 is the default; the config default and the per-list override each win in turn', () => {
     const data = single(
       {

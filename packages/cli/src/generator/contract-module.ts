@@ -227,6 +227,8 @@ function idExpression(id: ContractIdColumn): string {
       return 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))'
     case 'cuid2':
       return 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))'
+    case 'cuid':
+      return 'field.column(type.String()).id().onCreate(gen.cuid(2))'
     case 'int autoincrement':
       return `field.column(type.Int()).defaultSql('autoincrement()').id()`
     case 'singleton':

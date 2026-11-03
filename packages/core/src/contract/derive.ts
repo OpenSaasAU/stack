@@ -37,6 +37,8 @@ export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
       return { strategy, type: pgType('uuid') }
     case 'cuid2':
       return { strategy, type: pgType('char', [24]) }
+    case 'cuid':
+      return { strategy, type: pgType('text') }
     case 'int autoincrement':
     case 'singleton':
       return { strategy, type: pgType('int') }

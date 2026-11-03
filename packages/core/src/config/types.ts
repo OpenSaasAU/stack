@@ -2684,11 +2684,13 @@ export type ListConfigInput<TTypeInfo extends TypeInfo> = Omit<ListConfig<TTypeI
  *
  * - `'uuid7'` — time-sortable UUID, minted by the ORM. The default.
  * - `'cuid2'` — CUID, minted by the ORM.
+ * - `'cuid'` — a `text` column minted as cuid2. Use it to adopt a database whose
+ *   ids are `text` holding cuid v1 values; existing values are left alone.
  * - `'int autoincrement'` — a serial integer key.
  *
  * A singleton list derives its id from `isSingleton` and refuses this option.
  */
-export type IdFieldStrategy = 'uuid7' | 'cuid2' | 'int autoincrement'
+export type IdFieldStrategy = 'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement'
 
 /**
  * A Prisma extension pack the contract declares (ADR-0049, ADR-0065). An

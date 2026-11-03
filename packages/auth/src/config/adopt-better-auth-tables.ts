@@ -116,7 +116,7 @@ export type AdoptBetterAuthTablesOptions = {
   rateLimit?: boolean
 
   /**
-   * The id strategy for the adopted Auth lists — `'uuid7'` or `'cuid2'` only
+   * The id strategy for the adopted Auth lists — `'uuid7'`, `'cuid2'` or `'cuid'` only
    * (see `authPlugin({ idField })`). Pass this when the live install's `id`
    * columns are not `uuid7` (a text/nanoid-shaped column adopted onto
    * `'cuid2'`, say), so the generated lists diff clean against them. Left
