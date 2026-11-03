@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SCAFFOLDER = 'create-opensaas-app'
@@ -15,8 +15,20 @@ function bumpedPackages(source) {
   return names
 }
 
+if (!existsSync(directory)) {
+  console.error(`No changeset directory at ${directory}`)
+  process.exit(1)
+}
+
+const preFile = join(directory, 'pre.json')
+const released = new Set(
+  existsSync(preFile) ? JSON.parse(readFileSync(preFile, 'utf8')).changesets : [],
+)
+
 const bumped = readdirSync(directory)
-  .filter((file) => file.endsWith('.md') && file !== 'README.md')
+  .filter(
+    (file) => file.endsWith('.md') && file !== 'README.md' && !released.has(file.slice(0, -3)),
+  )
   .flatMap((file) => bumpedPackages(readFileSync(join(directory, file), 'utf8')))
 
 const triggers = [

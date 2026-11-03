@@ -8,10 +8,14 @@ import { test } from 'node:test'
 
 const command = fileURLToPath(new URL('./check-scaffolder-changeset.mjs', import.meta.url))
 
-function run(t, changesets) {
+function run(t, changesets, released = []) {
   const directory = mkdtempSync(join(tmpdir(), 'scaffolder-changeset-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   writeFileSync(join(directory, 'README.md'), '# Changesets\n')
+  writeFileSync(
+    join(directory, 'pre.json'),
+    JSON.stringify({ mode: 'pre', tag: 'alpha', changesets: released }),
+  )
   for (const [name, packages] of Object.entries(changesets)) {
     const frontmatter = packages.map(([pkg, bump]) => `'${pkg}': ${bump}`).join('\n')
     writeFileSync(join(directory, name), `---\n${frontmatter}\n---\n\nChange.\n`)
@@ -40,4 +44,13 @@ test('passes once a create-opensaas-app changeset exists', (t) => {
 
 test('passes when no stack package is bumped', (t) => {
   assert.equal(run(t, {}).status, 0)
+})
+
+test('ignores changesets already released in pre mode', (t) => {
+  const result = run(
+    t,
+    { 'a.md': [['@opensaas/stack-core', 'patch']], 'b.md': [['create-opensaas-app', 'patch']] },
+    ['b'],
+  )
+  assert.equal(result.status, 1)
 })
