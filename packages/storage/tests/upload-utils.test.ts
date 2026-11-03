@@ -167,6 +167,22 @@ describe('Upload Utilities', () => {
         expect(result.valid).toBe(false)
       })
 
+      it('refuses a generic type under .exe / .bin', () => {
+        const result = validateFile(
+          { size: 1000, name: 'a.exe', type: '' },
+          { acceptedExtensions: ['.exe', '.bin'] },
+        )
+        expect(result.valid).toBe(false)
+      })
+
+      it('accepts dotless and uppercase entries', () => {
+        const result = validateFile(
+          { size: 1000, name: 'cv.pdf', type: 'application/pdf' },
+          { acceptedExtensions: ['PDF'] },
+        )
+        expect(result.valid).toBe(true)
+      })
+
       it('still accepts a real pdf', () => {
         const result = validateFile(
           { size: 1000, name: 'cv.pdf', type: 'application/pdf' },
