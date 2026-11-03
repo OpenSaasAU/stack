@@ -640,7 +640,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       model: {
         name: listKey,
         ...(listConfig.db?.map !== undefined ? { table: listConfig.db.map } : {}),
-        ...(listConfig.db?.schema !== undefined ? { namespace: listConfig.db.schema } : {}),
+        ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
+          ? { namespace: listConfig.db.schema }
+          : {}),
         singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
         id: idColumn(resolveIdStrategy(listConfig, config)),
         columns: [],
