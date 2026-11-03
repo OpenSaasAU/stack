@@ -155,7 +155,7 @@ describe('validateDatabaseConfig', () => {
       entry: 'db.idField',
       reason: 'unknown-id-field',
     })
-    expect(refusals[0].message).toContain("'uuid7' | 'cuid2' | 'int autoincrement'")
+    expect(refusals[0].message).toContain("'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement'")
   })
 
   it('refuses the composite id form with its own message, and an unknown config-level idField', () => {

@@ -21,6 +21,7 @@ const COLUMN_TYPE_HELPERS = [
   'int2Column',
   'jsonColumn',
   'numericColumn',
+  'textColumn',
   'timeStringColumn',
   'timestampStringColumn',
   'timestamptzStringColumn',
@@ -226,6 +227,8 @@ function idExpression(id: ContractIdColumn): string {
       return 'field.id.uuidv7Native()'
     case 'cuid2':
       return 'field.id.cuid2()'
+    case 'cuid':
+      return `field.generated({ type: textColumn, generated: { kind: 'generator', id: 'cuid2' } }).id()`
     case 'int autoincrement':
       return `field.int().defaultSql('autoincrement()').id()`
     case 'singleton':
@@ -243,6 +246,7 @@ function relationExpression(relation: ContractModel['relations'][number]): strin
 /** The `const <Model> = model(...)` declaration, relations included. */
 function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHelper>): string {
   const fields: string[] = [`        id: ${idExpression(model.id)},`]
+  if (model.id.strategy === 'cuid') helpers.add('textColumn')
   for (const column of model.columns) {
     const rendered = columnExpression(model.name, column)
     for (const helper of rendered.helpers) helpers.add(helper)

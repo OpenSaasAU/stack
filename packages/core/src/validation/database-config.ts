@@ -47,7 +47,7 @@ function refuseIdFieldOnSingleton(
   ]
 }
 
-const ID_STRATEGIES = ['uuid7', 'cuid2', 'int autoincrement']
+const ID_STRATEGIES = ['uuid7', 'cuid2', 'cuid', 'int autoincrement']
 
 function describeIdField(value: unknown): string {
   return typeof value === 'string' ? `"${value}"` : JSON.stringify(value)
@@ -66,7 +66,7 @@ function refuseUnknownIdField(entry: string, value: unknown, listKey?: string): 
       entry,
       reason: 'unknown-id-field',
       message:
-        `${subject} is ${describeIdField(value)}, but it must be one of 'uuid7' | 'cuid2' | 'int autoincrement' ` +
+        `${subject} is ${describeIdField(value)}, but it must be one of 'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement' ` +
         `(ADR-0048).${composite}`,
     },
   ]

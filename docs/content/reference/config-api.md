@@ -246,7 +246,7 @@ A single literal, not a union. PostgreSQL is the only target: the secured surfac
 
 The id strategy every list gets unless it declares its own list-level `db.idField`.
 
-**Type:** `'uuid7' | 'cuid2' | 'int autoincrement'`
+**Type:** `'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement'`
 **Default:** `'uuid7'`
 
 ```typescript
@@ -255,6 +255,8 @@ db: {
   idField: 'int autoincrement',
 }
 ```
+
+`'cuid'` keeps the id a `text` column and mints cuid2 for new rows. Use it to adopt a database whose ids are cuid v1 values, which `'cuid2'` (`char(24)`) cannot hold.
 
 A [singleton list](#issingleton) derives its id from `isSingleton` and refuses this option.
 

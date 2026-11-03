@@ -6,6 +6,7 @@ import {
   float4Column,
   int2Column,
   jsonColumn,
+  textColumn,
   numericColumn,
   timeStringColumn,
   timestampStringColumn,
@@ -193,6 +194,10 @@ function idField(field: FieldHelpers, id: ContractIdColumn): ScalarFieldBuilder 
       return field.id.uuidv7Native()
     case 'cuid2':
       return field.id.cuid2()
+    case 'cuid':
+      return field
+        .generated({ type: textColumn, generated: { kind: 'generator', id: 'cuid2' } })
+        .id()
     case 'int autoincrement':
       return field.int().defaultSql('autoincrement()').id()
     case 'singleton':

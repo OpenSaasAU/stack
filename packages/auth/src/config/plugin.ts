@@ -17,8 +17,8 @@ import { getAuthLists } from '../lists/index.js'
  */
 function resolveAuthIdField(
   idField: NormalizedAuthConfig['idField'],
-  appDefault: 'uuid7' | 'cuid2' | 'int autoincrement' | undefined,
-): 'uuid7' | 'cuid2' {
+  appDefault: 'uuid7' | 'cuid2' | 'cuid' | 'int autoincrement' | undefined,
+): 'uuid7' | 'cuid2' | 'cuid' {
   const resolved = idField ?? appDefault ?? 'uuid7'
   if (resolved === 'int autoincrement') {
     throw new Error(
