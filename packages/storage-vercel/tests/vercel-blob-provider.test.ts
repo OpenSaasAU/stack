@@ -17,6 +17,7 @@ const { BlobNotFoundError } = vi.hoisted(() => {
 vi.mock('@vercel/blob', () => ({
   put: vi.fn(),
   del: vi.fn(),
+  copy: vi.fn(),
   head: vi.fn(),
   get: vi.fn(),
   issueSignedToken: vi.fn(),
@@ -981,6 +982,26 @@ describe('VercelBlobStorageProvider', () => {
         storeId: 'store_abc123',
         oidcToken: 'oidc-token-789',
       })
+    })
+  })
+
+  describe('move', () => {
+    it('copies onto the destination pathname, overwriting, then deletes the source', async () => {
+      const { copy } = await import('@vercel/blob')
+      const provider = new VercelBlobStorageProvider({
+        type: 'vercel-blob',
+        token: 'tok',
+        pathPrefix: 'docs',
+      })
+
+      await provider.move('staging-x-a.pdf', 'a.pdf')
+
+      expect(copy).toHaveBeenCalledWith('docs/staging-x-a.pdf', 'docs/a.pdf', {
+        access: 'public',
+        allowOverwrite: true,
+        token: 'tok',
+      })
+      expect(del).toHaveBeenCalledWith('docs/staging-x-a.pdf', { token: 'tok' })
     })
   })
 })

@@ -33,6 +33,7 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 import { isAssetReferenced } from '../utils/asset-references.js'
+import { takeStaged } from '../utils/staged.js'
 import { ValidationError, type AccessContext } from '@opensaas/stack-core'
 
 const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
@@ -341,6 +342,21 @@ function staleAssets<TMetadata extends { filename: string }>(
   return stale.filter((asset): asset is TMetadata => Boolean(asset?.filename))
 }
 
+async function settleStaged<TMetadata extends { filename: string }>(
+  pending: PendingUpload<TMetadata>,
+  status: string,
+): Promise<TMetadata[]> {
+  const staged = pending.uploaded ? takeStaged(pending.uploaded) : undefined
+  if (!staged) return staleAssets(pending, status)
+  try {
+    if (status === 'committed' && !pending.discarded) await staged.promote()
+    else await staged.discard()
+  } catch (error) {
+    console.error(`Failed to settle staged upload: ${pending.uploaded?.filename}`, error)
+  }
+  return staleAssets(pending, status).filter((asset) => asset !== pending.uploaded)
+}
+
 type ReferenceField = Parameters<typeof isAssetReferenced>[3]
 
 function claimStableKeyFor(
@@ -536,7 +552,7 @@ export function file<
     }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
           continue
@@ -593,6 +609,7 @@ export function file<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
                 claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
               },
             )) as FileMetadata
@@ -719,7 +736,7 @@ export function image<
     }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
           continue
@@ -779,6 +796,7 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
                 claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
                 transformations: multiColumn ? undefined : fieldConfig.transformations,
               },
