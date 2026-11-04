@@ -3097,6 +3097,8 @@ describe('the MCP surface', () => {
         'unreadRef',
         { OR: [{ unreadRef: { some: { code: { contains: 'S' } } } }] },
       ],
+      ['a bare value, tools.read false', 'unreadRef', { unreadRef: null }],
+      ['denied query access', 'secretInfo', { secretInfo: { some: { value: { equals: 'x' } } } }],
       [
         'nested, tools.read false',
         'unreadRef',
@@ -3109,6 +3111,18 @@ describe('the MCP surface', () => {
         },
       ],
     ]
+
+    test(
+      'a relation into a reachable list still filters',
+      async () => {
+        const { body } = await callTool('list_post_query', {
+          where: { comments: { some: { body: { contains: 'x' } } } },
+        })
+        const result = body?.result as { isError?: boolean }
+        expect(result.isError).toBeFalsy()
+      },
+      BOOT,
+    )
 
     test.each(cases)(
       '%s is refused as an unknown key',

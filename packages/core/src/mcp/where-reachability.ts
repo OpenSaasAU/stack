@@ -63,10 +63,10 @@ export function assertWhereReachable(
       continue
     }
 
-    if (!isPlainObject(value)) continue
     const target = relationTarget(config, listKey, key)
     if (target === undefined) continue
     if (!reachable.has(target)) throw unqueryableKey(listKey, key)
+    if (!isPlainObject(value)) continue
 
     for (const quantifier of RELATION_QUANTIFIERS) {
       const nested = value[quantifier]
