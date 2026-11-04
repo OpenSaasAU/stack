@@ -180,3 +180,104 @@ describe('planFkRenames identifier handling', () => {
     expect(planFkRenames([enrolment, lessonTerm], moved, 'app')).toHaveLength(1)
   })
 })
+
+describe('planFkRenames composite indexes', () => {
+  const audition = model('Audition', {
+    columns: [
+      { name: 'studentId', type: { pack: 'pg', type: 'uuid' }, nullable: false },
+      { name: 'productionId', type: { pack: 'pg', type: 'uuid' }, nullable: false },
+    ],
+    relations: ['student', 'production'].map((name) => ({
+      name,
+      target: 'Person',
+      kind: 'belongsTo' as const,
+      column: `${name}Id`,
+      oneToOne: false,
+      synthetic: false,
+    })),
+  })
+  const person = model('Person')
+  const schema = (
+    name: string,
+    columns: string[],
+    extra: Partial<LiveSchema> = {},
+  ): LiveSchema => ({
+    columns: [
+      { schema: 'public', table: 'Person', column: 'id', type: 'uuid' },
+      ...['student', 'production'].map((column) => ({
+        schema: 'public',
+        table: 'Audition',
+        column,
+        type: 'uuid',
+      })),
+    ],
+    constraints: [],
+    indexes: [{ schema: 'public', name }],
+    compositeIndexes: [{ schema: 'public', table: 'Audition', name, columns }],
+    ...extra,
+  })
+
+  it('renames a composite unique once, however many columns were renamed', () => {
+    const name = 'Audition_student_production_key'
+    const plan = planFkRenames([audition, person], schema(name, ['student', 'production']))
+    const all = plan.flatMap((r) => [...r.constraints, ...r.indexes])
+    expect(all).toEqual([{ from: name, to: 'Audition_studentId_productionId_key' }])
+  })
+
+  it('renames a unique constraint as a constraint', () => {
+    const name = 'Audition_student_production_key'
+    const plan = planFkRenames(
+      [audition, person],
+      schema(name, ['student', 'production'], {
+        constraints: [{ schema: 'public', table: 'Audition', name }],
+      }),
+    )
+    expect(plan.flatMap((r) => r.constraints)).toHaveLength(1)
+    expect(plan.flatMap((r) => r.indexes)).toHaveLength(0)
+  })
+
+  it('renames an index mixing a renamed and an unrenamed column', () => {
+    const name = 'Audition_id_student_key'
+    const plan = planFkRenames([audition, person], schema(name, ['id', 'student']))
+    expect(plan.flatMap((r) => r.indexes)).toContainEqual({
+      from: name,
+      to: 'Audition_id_studentId_key',
+    })
+  })
+
+  it('leaves a name that is not the derived old name untouched', () => {
+    const plan = planFkRenames([audition, person], schema('custom_name', ['student', 'production']))
+    expect(plan.flatMap((r) => [...r.constraints, ...r.indexes])).toEqual([])
+  })
+
+  it('leaves an index pinned by an explicit db.indexes name untouched', () => {
+    const name = 'Audition_student_production_key'
+    const pinned = {
+      ...audition,
+      indexes: [{ columns: ['studentId', 'productionId'], unique: true, name }],
+    }
+    const plan = planFkRenames([pinned, person], schema(name, ['student', 'production']))
+    expect(plan.flatMap((r) => [...r.constraints, ...r.indexes])).toEqual([])
+  })
+
+  it('renames to exactly the contract-derived name past 63 bytes', () => {
+    const table = 'T'.repeat(40)
+    const long = { ...audition, name: table }
+    const oldCols = ['student', 'production']
+    const clip = (base: string) => `${base.slice(0, 59)}_key`
+    const name = clip(`${table}_${oldCols.join('_')}`)
+    const live2: LiveSchema = {
+      columns: [
+        { schema: 'public', table: 'Person', column: 'id', type: 'uuid' },
+        ...oldCols.map((column) => ({ schema: 'public', table, column, type: 'uuid' })),
+      ],
+      constraints: [],
+      indexes: [{ schema: 'public', name }],
+      compositeIndexes: [{ schema: 'public', table, name, columns: oldCols }],
+    }
+    const plan = planFkRenames([long, person], live2)
+    expect(plan.flatMap((r) => r.indexes)).toEqual([
+      { from: name, to: clip(`${table}_studentId_productionId`) },
+    ])
+  })
+})
