@@ -1,5 +1,13 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.3
+
+### Patch Changes
+
+- [#2132](https://github.com/OpenSaasAU/stack/pull/2132) [`d0a0bbf`](https://github.com/OpenSaasAU/stack/commit/d0a0bbf360512e8b4670eb51a0d95c5bdc378fe4) Thanks [@borisno2](https://github.com/borisno2)! - Under `db.indexNaming: 'prisma7'`, emit plain uniques as unique indexes so adopting a Prisma 7 database plans no unique drop-and-re-add and composite foreign keys apply.
+
+- [#2133](https://github.com/OpenSaasAU/stack/pull/2133) [`79c7d2b`](https://github.com/OpenSaasAU/stack/commit/79c7d2b4698d54bde92c69353da8d22f1678d8ee) Thanks [@borisno2](https://github.com/borisno2)! - Apply `db.defaults.timestamp` to the auto `updatedAt` as well as `createdAt`, so auth lists no longer plan a type change on `updatedAt`. Adopting a database drops the `updatedAt` database default; see the config reference.
+
 ## 0.44.0-alpha.2
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @opensaas/stack-rag
 
+## 0.44.0-alpha.3
+
+### Minor Changes
+
+- [#2122](https://github.com/OpenSaasAU/stack/pull/2122) [`0046efa`](https://github.com/OpenSaasAU/stack/commit/0046efa3b7c1245f3ec3a7553cb244f094c249fd) Thanks [@borisno2](https://github.com/borisno2)! - Remove the `buildTime` option from `ragPlugin()`. It was accepted but never implemented; embeddings are always generated at runtime.
+
+  Migration: delete the `buildTime` key from your `ragPlugin()` options.
+
 ## 0.44.0-alpha.2
 
 No changes in this release.

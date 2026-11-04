@@ -1,5 +1,9 @@
 # @opensaas/stack-tiptap
 
+## 0.44.0-alpha.3
+
+No changes in this release.
+
 ## 0.44.0-alpha.2
 
 No changes in this release.
