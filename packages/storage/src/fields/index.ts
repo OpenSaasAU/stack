@@ -28,9 +28,11 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 
+const isControlCode = (code: number): boolean => code <= 0x1f || code === 0x7f
+
 const storedUrlSchema = z
   .string()
-  .regex(/^[^\s\u0000-\u001f\u007f]*$/, {
+  .refine((url) => !/\s/.test(url) && ![...url].some((char) => isControlCode(char.charCodeAt(0))), {
     message: 'url must not contain whitespace or control characters',
   })
   .regex(/^(https?:\/\/|\/(?![/\\]))/i, {
