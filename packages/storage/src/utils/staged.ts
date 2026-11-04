@@ -24,7 +24,15 @@ export function registerStaged(
 ): void {
   staged.set(metadata, {
     promote: async () => {
-      for (const [from, to] of stagedToStable) await provider.move?.(from, to)
+      const failures: unknown[] = []
+      for (const [from, to] of stagedToStable) {
+        try {
+          await provider.move?.(from, to)
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      if (failures.length > 0) throw new AggregateError(failures, 'Failed to promote staged upload')
     },
     discard: async () => {
       for (const [from] of stagedToStable) await provider.delete(from)

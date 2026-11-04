@@ -53,7 +53,8 @@ describe('stable filenames stage uploads until the write commits', () => {
     const row = await harness.context.db.Doc.create({
       data: { title: 'ok', a: pdf('report.pdf', 'ORIGINAL') },
     })
-    const id = (row as { id: string }).id
+    if (row === null) throw new Error('create denied')
+    const { id } = row
 
     await expect(
       harness.context.db.Doc.update({
@@ -70,7 +71,8 @@ describe('stable filenames stage uploads until the write commits', () => {
     const row = await harness.context.db.Doc.create({
       data: { title: 'ok', a: pdf('report.pdf', 'ORIGINAL') },
     })
-    const id = (row as { id: string }).id
+    if (row === null) throw new Error('create denied')
+    const { id } = row
 
     const updated = await harness.context.db.Doc.update({
       where: { id },
