@@ -347,7 +347,9 @@ describe('reading a plan out of the CLI envelope', () => {
     expect(plan?.accessChanges).toEqual([])
   })
 
-  it('rejects a planning envelope that leaves accessChanges out', () => {
-    expect(readPlan(envelope({ dataLoss: [], plan: { operations: [] } }))).toBeUndefined()
+  it('rejects a dry-run envelope that leaves accessChanges out', () => {
+    expect(
+      readPlan(envelope({ mode: 'dry-run', dataLoss: [], plan: { operations: [] } })),
+    ).toBeUndefined()
   })
 })

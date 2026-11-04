@@ -60,8 +60,8 @@ const resultEnvelopeSchema = z.object({
           })
           .optional(),
       })
-      .refine((result) => result.mode === 'apply' || result.accessChanges !== undefined, {
-        message: 'a planning result must report accessChanges',
+      .refine((result) => result.mode !== 'dry-run' || result.accessChanges !== undefined, {
+        message: 'a dry-run result must report accessChanges',
       }),
   }),
 })
