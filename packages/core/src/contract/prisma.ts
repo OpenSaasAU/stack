@@ -287,8 +287,12 @@ function sqlExpression(text: string) {
 type ModelToken = ReturnType<typeof baseModel>
 
 function finishModel(base: ModelToken, model: ContractModel, tokens: Record<string, ModelToken>) {
-  const uniqueIndexes = model.indexes.filter((index) => index.unique && index.where === undefined)
-  const plainIndexes = model.indexes.filter((index) => !index.unique || index.where !== undefined)
+  const uniqueIndexes = model.indexes.filter(
+    (index) => index.unique && index.where === undefined && !index.asIndex,
+  )
+  const plainIndexes = model.indexes.filter(
+    (index) => !index.unique || index.where !== undefined || index.asIndex === true,
+  )
   const indexedColumns = model.columns.filter((column) => column.index)
   return base
     .attributes(({ fields, constraints }) => ({

@@ -628,6 +628,7 @@ function applyPrisma7Names(model: ContractModel): void {
       hoisted.push({
         columns: [column.name],
         unique: true,
+        asIndex: true,
         name: prisma7Name(table, [physical(column.name)], 'key'),
       })
     }
@@ -642,14 +643,15 @@ function applyPrisma7Names(model: ContractModel): void {
   }
 
   model.indexes = [
-    ...model.indexes.map((index) =>
-      index.name !== undefined
-        ? index
+    ...model.indexes.map((index) => {
+      const kinded = index.unique ? { ...index, asIndex: true } : index
+      return kinded.name !== undefined
+        ? kinded
         : {
-            ...index,
+            ...kinded,
             name: prisma7Name(table, index.columns.map(physical), index.unique ? 'key' : 'idx'),
-          },
-    ),
+          }
+    }),
     ...hoisted,
   ]
 

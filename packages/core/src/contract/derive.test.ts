@@ -694,6 +694,14 @@ describe('deriveContract — db.indexNaming', () => {
       ['Post_title_slug_idx', 'Post_title_idx', 'Post_slug_key', 'Post_authorId_idx'].sort(),
     )
     expect(post?.foreignKeys[0]?.name).toBe('Post_authorId_fkey')
+    const uniques = post?.indexes.filter((i) => i.unique) ?? []
+    expect(uniques.length).toBeGreaterThan(0)
+    expect(uniques.every((i) => i.asIndex === true)).toBe(true)
+  })
+
+  test('leaves uniques as constraints without indexNaming', () => {
+    const post = single(lists(), {}).models.find((m) => m.name === 'Post')
+    expect(post?.indexes.some((i) => i.asIndex)).toBe(false)
   })
 
   test('truncates to 63 bytes keeping the suffix', () => {
