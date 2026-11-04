@@ -592,4 +592,18 @@ describe('one-row operations refuse an empty where', () => {
       expect(await plain.adapter.count({ model: 'user' })).toBe(2)
     },
   )
+
+  test('update refuses an empty where inside a transaction', async () => {
+    await plain.adapter.create({ model: 'user', data: { email: 'a@example.com', name: 'A' } })
+    await expect(
+      plain.adapter.transaction((tx) =>
+        tx.update({ model: 'user', where: [], update: { name: 'PWNED' } }),
+      ),
+    ).rejects.toThrow(AuthWhereError)
+    const row = await plain.adapter.findOne<{ name: string }>({
+      model: 'user',
+      where: [{ field: 'email', value: 'a@example.com' }],
+    })
+    expect(row?.name).toBe('A')
+  })
 })
