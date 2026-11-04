@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { ContractModel } from '@opensaas/stack-core'
+import { deriveContract, list, type ContractModel } from '@opensaas/stack-core'
+import { relationship, text } from '@opensaas/stack-core/fields'
 import { PGlite } from '@electric-sql/pglite'
 import { planJunctionIds, renderJunctionIdSql, type PrimaryKey } from './junction-ids.js'
 import type { LiveSchema } from './fk-renames.js'
@@ -130,5 +131,80 @@ describe('junction id backfill against Postgres', () => {
     ]
     expect(planJunctionIds(models, await columns(db))).toEqual([])
     await db.close()
+  })
+
+  describe('a junction list declared with foreignKey.map', () => {
+    const recipe = () => {
+      const contract = deriveContract({
+        db: { provider: 'postgresql', idField: 'cuid2' },
+        lists: {
+          Lesson: list({
+            fields: {
+              title: text(),
+              teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
+            },
+          }),
+          Teacher: list({
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
+            },
+          }),
+          LessonTeacher: list({
+            fields: {
+              lesson: relationship({
+                ref: 'Lesson.teachers',
+                db: { foreignKey: { map: 'A' }, isNullable: false },
+              }),
+              teacher: relationship({
+                ref: 'Teacher.lessons',
+                db: { foreignKey: { map: 'B' }, isNullable: false },
+              }),
+            },
+            db: {
+              map: '_Lesson_teachers',
+              indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
+            },
+          }),
+        },
+      })
+      const model = contract.models.find((m) => m.name === 'LessonTeacher')
+      if (model === undefined) throw new Error('LessonTeacher missing')
+      return model
+    }
+
+    it('replaces the (A,B) key, names physical columns, and re-plans empty', async () => {
+      const db = new PGlite()
+      await db.exec(`
+        CREATE TABLE "_Lesson_teachers" ("A" text NOT NULL, "B" text NOT NULL, PRIMARY KEY ("A", "B"));
+        INSERT INTO "_Lesson_teachers" VALUES ('a1','b1'),('a1','b2'),('a2','b1');
+      `)
+      const model = recipe()
+      const plan = planJunctionIds([model], await columns(db), 'public', await keys(db))
+      expect(plan).toHaveLength(1)
+      expect(plan[0]?.pairUnique?.columns).toEqual(['A', 'B'])
+      const sql = renderJunctionIdSql(plan)
+      expect(sql).not.toContain('lessonId')
+      expect(sql).not.toContain('teacherId')
+      await db.exec(sql)
+
+      const rows = await db.query<{ id: string }>(`SELECT id FROM "_Lesson_teachers"`)
+      expect(new Set(rows.rows.map((r) => r.id)).size).toBe(3)
+      await expect(
+        db.exec(`INSERT INTO "_Lesson_teachers" ("A","B") VALUES ('a1','b1')`),
+      ).rejects.toThrow()
+      expect(planJunctionIds([model], await columns(db), 'public', await keys(db))).toEqual([])
+      await db.close()
+    })
+
+    it('still skips a table whose key is not the two physical columns', async () => {
+      const db = new PGlite()
+      await db.exec(
+        `CREATE TABLE "_Lesson_teachers" ("A" text, "B" text, "C" text, PRIMARY KEY ("A", "C"));`,
+      )
+      const plan = planJunctionIds([recipe()], await columns(db), 'public', await keys(db))
+      expect(plan).toEqual([])
+      await db.close()
+    })
   })
 })

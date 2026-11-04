@@ -53,15 +53,23 @@ export function planJunctionIds(
       additions.push(base)
       continue
     }
-    const pair = model.foreignKeys.map((fk) => fk.column)
+    const physical = (name: string) => model.columns.find((c) => c.name === name)?.map ?? name
+    const pair = model.foreignKeys.map((fk) => physical(fk.column))
     if (pair.length !== 2 || !sameColumns(key.columns, pair)) continue
-    const declared = model.indexes.find((i) => i.unique && sameColumns(i.columns, pair))
+    const declared = model.indexes.find(
+      (i) =>
+        i.unique &&
+        sameColumns(
+          i.columns.map((c) => physical(c)),
+          pair,
+        ),
+    )
     additions.push({
       ...base,
       replacesKey: { name: key.name, columns: key.columns },
       pairUnique: {
         name: declared?.name ?? `${table}_${pair.join('_')}_key`,
-        columns: declared?.columns ?? pair,
+        columns: declared?.columns.map(physical) ?? pair,
         asIndex: declared?.asIndex ?? false,
       },
     })
