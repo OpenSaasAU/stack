@@ -7,6 +7,15 @@ export interface JunctionIdAddition {
   strategy: ContractModel['id']['strategy']
   type: string
   args?: ContractLiteral[]
+  replacesKey?: { name: string; columns: string[] }
+  pairUnique?: { name: string; columns: string[]; asIndex: boolean }
+}
+
+export interface PrimaryKey {
+  schema: string
+  table: string
+  name: string
+  columns: string[]
 }
 
 const UUID7_EXPRESSION =
@@ -16,11 +25,14 @@ const UUID7_EXPRESSION =
 
 const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
 
+const sameColumns = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((c) => b.includes(c))
+
 export function planJunctionIds(
   models: ContractModel[],
   live: LiveSchema,
   defaultSchema = 'public',
-  primaryKeys: Array<{ schema: string; table: string }> = [],
+  primaryKeys: PrimaryKey[] = [],
 ): JunctionIdAddition[] {
   const additions: JunctionIdAddition[] = []
   for (const model of models) {
@@ -29,19 +41,47 @@ export function planJunctionIds(
     const table = model.table ?? model.name
     const columns = live.columns.filter((c) => c.schema === schema && c.table === table)
     if (columns.length === 0 || columns.some((c) => c.column === 'id')) continue
-    if (primaryKeys.some((k) => k.schema === schema && k.table === table)) continue
-    additions.push({
+    const key = primaryKeys.find((k) => k.schema === schema && k.table === table)
+    const base = {
       schema,
       table,
       strategy: model.id.strategy,
       type: model.id.type.type,
       args: model.id.type.args,
+    }
+    if (key === undefined) {
+      additions.push(base)
+      continue
+    }
+    const pair = model.foreignKeys.map((fk) => fk.column)
+    if (pair.length !== 2 || !sameColumns(key.columns, pair)) continue
+    const declared = model.indexes.find((i) => i.unique && sameColumns(i.columns, pair))
+    additions.push({
+      ...base,
+      replacesKey: { name: key.name, columns: key.columns },
+      pairUnique: {
+        name: declared?.name ?? `${table}_${pair.join('_')}_key`,
+        columns: declared?.columns ?? pair,
+        asIndex: declared?.asIndex ?? false,
+      },
     })
   }
   return additions
 }
 
 function backfill(addition: JunctionIdAddition): string[] {
+  const steps = backfillId(addition)
+  const qualified = `${quote(addition.schema)}.${quote(addition.table)}`
+  const { replacesKey, pairUnique } = addition
+  if (replacesKey === undefined || pairUnique === undefined) return steps
+  const columns = pairUnique.columns.map(quote).join(', ')
+  const unique = pairUnique.asIndex
+    ? `CREATE UNIQUE INDEX ${quote(pairUnique.name)} ON ${qualified} (${columns});`
+    : `ALTER TABLE ${qualified} ADD CONSTRAINT ${quote(pairUnique.name)} UNIQUE (${columns});`
+  return [`ALTER TABLE ${qualified} DROP CONSTRAINT ${quote(replacesKey.name)};`, ...steps, unique]
+}
+
+function backfillId(addition: JunctionIdAddition): string[] {
   const qualified = `${quote(addition.schema)}.${quote(addition.table)}`
   const add = (type: string) => `ALTER TABLE ${qualified} ADD COLUMN "id" ${type};`
   const fill = (expression: string) => `UPDATE ${qualified} SET "id" = ${expression};`
