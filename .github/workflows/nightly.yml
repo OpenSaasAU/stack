@@ -60,7 +60,7 @@ jobs:
           echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
           cd "$WORKDIR"
           # Real, networked install of the published package + its template deps.
-          npx --yes create-opensaas-app@latest myapp --no-auth --no-ai
+          npx --yes create-opensaas-app myapp --no-auth --no-ai
           if [ ! -d myapp ]; then
             echo '::error::create-opensaas-app exited without scaffolding myapp (an unanswered prompt exits 0 without a TTY)'
             exit 1

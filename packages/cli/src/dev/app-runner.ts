@@ -103,7 +103,10 @@ export function createAppRunner(options: AppRunnerOptions): AppRunner {
     const env: typeof process.env = { ...process.env }
     const pathExtension = extendPathEnv(options.cwd, env)
     env[pathExtension.key] = pathExtension.value
-    if (options.devDatabase) delete env.DATABASE_URL
+    if (options.devDatabase) {
+      env.DATABASE_URL = ''
+      env.DIRECT_DATABASE_URL = ''
+    }
     return spawn(file, args, { cwd: options.cwd, stdio: 'inherit', env, shell: usesShell })
   }
 

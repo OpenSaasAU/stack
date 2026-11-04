@@ -101,6 +101,17 @@ export async function deleteQuietly(storageProvider: StorageProvider, filename: 
   }
 }
 
+export function variantFilename(
+  originalFilename: string,
+  name: string,
+  config: ImageTransformationConfig,
+  contentType: string,
+): string {
+  const variantContentType = config.format ? `image/${config.format}` : contentType
+  const stem = originalFilename.replace(/\.[^.]*$/, '')
+  return withEffectiveExtension(`${stem}-${name}`.replaceAll('.', '_'), variantContentType)
+}
+
 export async function processImageTransformations(
   buffer: Buffer | Uint8Array,
   originalFilename: string,
@@ -118,11 +129,7 @@ export async function processImageTransformations(
       const { width, height } = await getImageDimensions(transformedBuffer)
 
       const variantContentType = config.format ? `image/${config.format}` : contentType
-      const stem = originalFilename.replace(/\.[^.]*$/, '')
-      const transformedFilename = withEffectiveExtension(
-        `${stem}-${name}`.replaceAll('.', '_'),
-        variantContentType,
-      )
+      const transformedFilename = variantFilename(originalFilename, name, config, contentType)
 
       const uploadResult = await storageProvider.upload(transformedBuffer, transformedFilename, {
         contentType: variantContentType,

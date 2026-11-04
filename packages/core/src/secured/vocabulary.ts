@@ -19,6 +19,7 @@ import {
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
 import { ValidationError } from '../hooks/index.js'
+import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
 import { likeContainsPattern } from '../where/like.js'
 import {
   VECTOR_DISTANCE_FUNCTIONS,
@@ -457,11 +458,15 @@ async function resolveRelation(
   return nodes.length === 1 ? nodes[0] : { kind: 'and', nodes }
 }
 
+function isUnfilterable(resolved: ResolvedQueryField): boolean {
+  return resolved.fieldConfig?.isFilterable === false
+}
+
 async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Promise<WherePlan> {
   if (value === undefined) throw undefinedCondition(ctx.listName, key)
 
   const resolved = resolveQueryField(key, ctx.listConfig.fields)
-  if (!resolved) throw unqueryableKey(ctx.listName, key)
+  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
 
   if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
     const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
@@ -536,6 +541,45 @@ async function refuseUnlessForeignKeyVisible(
 }
 
 /**
+ * Refuse a caller predicate nested deeper than `WHERE_RELATION_MAX_DEPTH`
+ * relation quantifiers, or holding more than `WHERE_MAX_NODES` entries.
+ * Runs before any access rule is consulted.
+ */
+export function assertWhereWithinLimits(where: Record<string, unknown>): void {
+  let nodes = 0
+  const count = (): void => {
+    nodes += 1
+    if (nodes > WHERE_MAX_NODES) {
+      throw new ValidationError([
+        `The where predicate has more than ${WHERE_MAX_NODES} entries, the most a query may carry.`,
+      ])
+    }
+  }
+  const walk = (predicate: Record<string, unknown>, depth: number): void => {
+    for (const [key, value] of Object.entries(predicate)) {
+      count()
+      if (LOGICAL_OPERATORS.has(key)) {
+        const branches = Array.isArray(value) ? value : [value]
+        for (const branch of branches) if (isPlainObject(branch)) walk(branch, depth)
+        continue
+      }
+      if (!isPlainObject(value)) continue
+      for (const [quantifier, nested] of Object.entries(value)) {
+        if (!RELATION_QUANTIFIER_SET.has(quantifier)) continue
+        count()
+        if (depth + 1 > WHERE_RELATION_MAX_DEPTH) {
+          throw new ValidationError([
+            `The where predicate nests relations more than ${WHERE_RELATION_MAX_DEPTH} levels deep, the most a query may carry.`,
+          ])
+        }
+        if (isPlainObject(nested)) walk(nested, depth + 1)
+      }
+    }
+  }
+  walk(where, 0)
+}
+
+/**
  * Resolve one predicate against a list: every key checked against the config
  * and the session, every operator checked against the vocabulary, every
  * relation's `query` access decided. Total or throwing — nothing is dropped,
@@ -578,7 +622,7 @@ export async function resolveOrderBy(
         throw malformedCondition(ctx.listName, key, 'takes the direction "asc" or "desc"')
       }
       const resolved = resolveQueryField(key, ctx.listConfig.fields)
-      if (!resolved) throw unqueryableKey(ctx.listName, key)
+      if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
       // The read gate runs before the relationship refusal, as `resolveKey`
       // does: a read-denied key must be indistinguishable from one the list
       // does not declare, and "orderBy takes scalar columns only" would
@@ -629,7 +673,7 @@ export async function resolveColumns(
   const plans: ColumnPlan[] = []
   for (const key of keys) {
     const resolved = resolveQueryField(key, ctx.listConfig.fields)
-    if (!resolved) throw unqueryableKey(ctx.listName, key)
+    if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
     if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
       const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
         session: ctx.session,
@@ -723,7 +767,7 @@ export async function resolveNearest(
   ctx: ResolveContext,
 ): Promise<NearestPlan> {
   const resolved = resolveQueryField(fieldKey, ctx.listConfig.fields)
-  if (!resolved) throw unqueryableKey(ctx.listName, fieldKey)
+  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, fieldKey)
 
   if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
     const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {

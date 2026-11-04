@@ -57,6 +57,24 @@ describe('system fields follow the contract, not the name', () => {
     expect(new Date(String(row?.updatedAt)).getTime()).toBe(date.getTime())
   })
 
+  test('a Date is accepted in a timestamp write and a where filter', async () => {
+    const date = new Date('2001-02-03T04:05:06.789Z')
+    const row = await harness.context.db.Declared.create({
+      data: { name: 'dated', updatedAt: date },
+    })
+    expect(new Date(String(row?.updatedAt)).getTime()).toBe(date.getTime())
+    const found = await harness.context.db.Declared.where({
+      updatedAt: { equals: date },
+      name: { equals: 'dated' },
+    }).all()
+    expect(found).toHaveLength(1)
+    const updated = await harness.context.db.Declared.update({
+      where: { id: String(row?.id) },
+      data: { updatedAt: new Date(0) },
+    })
+    expect(new Date(String(updated?.updatedAt)).getTime()).toBe(0)
+  })
+
   test('a declared createdAt with read denied is stripped and not queryable', async () => {
     await harness.context.sudo().db.Hidden.create({ data: { name: 'n', createdAt: 'SSN-1' } })
     const rows = await harness.context.db.Hidden.all()

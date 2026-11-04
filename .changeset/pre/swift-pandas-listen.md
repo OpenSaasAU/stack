@@ -89,9 +89,8 @@ Error`; a monitoring example read `.message` off `unknown`; a cost table was
   package declares `SearchResult<T = unknown>`, making the bare `SearchResult`
   the reference uses elsewhere an arity error the package does not have.
 
-Two types spell chunking options: `ChunkingOptions` (`chunkSize`/`chunkOverlap`)
-for `chunkText()` and `generateEmbedding()`; and `BuildTimeConfig`
-(`chunkSize`/`chunkOverlap` again, in characters).
+`ChunkingOptions` (`chunkSize`/`chunkOverlap`) spells the chunking options for
+`chunkText()` and `generateEmbedding()`.
 
 `ChunkingOptions`' unit depends on the strategy, so stating it flatly would be
 wrong. Under `recursive`, `sentence` and `sliding-window` its numbers are

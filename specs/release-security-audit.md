@@ -1,10 +1,30 @@
 # Release security advisory audit
 
-`pnpm release` runs `pnpm check:security-audit` before building or publishing.
-The release workflow installs the committed lockfile with `--frozen-lockfile`
-and uses the pnpm version pinned in `package.json`. The command audits the whole
-workspace lockfile, including development and optional dependencies, against
-the public npm registry. Any known vulnerability blocks publication.
+`pnpm release` runs two steps before building or publishing:
+
+1. **The advisory audit**, in report-only mode (`scripts/security-audit.mjs --report-only`).
+   It audits the whole workspace lockfile, including development and optional dependencies,
+   against the public npm registry and writes `security-audit.json`. Findings do not block
+   publication; an **unavailable** audit does.
+2. **The published range check** (`pnpm check:published-ranges`). It reads that report and
+   blocks publication when a published manifest declares a dependency range that intersects an
+   advisory's vulnerable versions but excludes every patched version.
+
+The release workflow installs the committed lockfile with `--frozen-lockfile` and uses the pnpm
+version pinned in `package.json`. ADR-0080 records why the gate checks published ranges rather
+than the lockfile: the packages ship no lockfile, so a consumer resolves its own tree, and only a
+range we declare can keep them off a fix.
+
+## What the range check covers
+
+- `dependencies`, `optionalDependencies` and `peerDependencies` of every non-private package
+  under `packages/`.
+- `examples/starter` and `examples/starter-auth`, whose ranges ship as the scaffolder's
+  templates.
+- Ranges that are not semver (`workspace:`, `npm:` aliases, git URLs) are skipped.
+- An advisory with no patched version is reported as a warning, not a failure.
+- `devDependencies` and transitive dependencies never block. They are Dependabot and triage
+  concerns.
 
 ## Environment dependency
 
@@ -37,11 +57,21 @@ Run from the repository root:
 pnpm check:security-audit
 ```
 
-| Exit | Output        | Meaning                                                       |
-| ---- | ------------- | ------------------------------------------------------------- |
-| 0    | `PASS`        | A complete advisory report contains no known vulnerabilities. |
-| 1    | `FAIL`        | Advisories were retrieved and vulnerabilities were found.     |
-| 2    | `UNAVAILABLE` | Coverage could not be established; release is blocked.        |
+```bash
+pnpm check:published-ranges
+```
+
+`pnpm check:security-audit` (without `--report-only`) still exits 1 on any finding, for anyone
+who wants the whole-lockfile view locally.
+
+| Command                  | Exit | Output        | Meaning                                                               |
+| ------------------------ | ---- | ------------- | --------------------------------------------------------------------- |
+| `check:security-audit`   | 0    | `PASS`        | A complete advisory report contains no known vulnerabilities.         |
+| `check:security-audit`   | 1    | `FAIL`        | Advisories were found (0 with `--report-only`).                       |
+| `check:security-audit`   | 2    | `UNAVAILABLE` | Coverage could not be established; release is blocked.                |
+| `check:published-ranges` | 0    | `PASS`        | Every published range admits a patched version of each advisory.      |
+| `check:published-ranges` | 1    | `FAIL`        | A published range excludes every patched version; release is blocked. |
+| `check:published-ranges` | 2    | `UNAVAILABLE` | No complete audit report to check against; release is blocked.        |
 
 Every completed command writes `security-audit.json`, containing the status,
 registry and full pnpm report (or diagnostic). It prints the result and writes it
@@ -49,11 +79,10 @@ to the GitHub Actions job summary. The release workflow retains the report as a
 commit-labelled artifact for 30 days even if publication fails. A changeset PR
 creation run does not publish and therefore produces no audit artifact.
 
-The initial connected investigation found existing vulnerabilities in the current
-lockfile. Restoring coverage does not remediate or suppress them: those findings
-must be triaged and fixed before release. Use the report's advisory URLs and
-dependency paths to identify updates, then rerun the audit. Counts change as the
-advisory database changes, even for an unchanged lockfile.
+A failing range check names the manifest, field, dependency, declared range and advisory. Fix it
+by widening or bumping that range (with a changeset), then rerun both commands. Lockfile-only
+findings in the report are triaged as ordinary issues. Counts change as the advisory database
+changes, even for an unchanged lockfile.
 
 ## Recovery and fallback
 

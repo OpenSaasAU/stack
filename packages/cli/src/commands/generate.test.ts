@@ -101,7 +101,7 @@ describe('Generate Command Integration', () => {
         outputDir: crossReferences.prismaConfigOutput,
       })
       const dependencies = deriveDependencyTable(forConfig)
-      writeTypes(forConfig, paths.types, dependencies)
+      writeTypes(forConfig, paths.types, dependencies, crossReferences.contractJsonImport)
       writeLists(forConfig, paths.lists, dependencies)
       writeContext(forConfig, data, paths.context, {
         configImport: crossReferences.configImport,
@@ -204,12 +204,31 @@ describe('Generate Command Integration', () => {
         contractModule: crossReferences.prismaConfigContract,
         outputDir: crossReferences.prismaConfigOutput,
       })
+      writeTypes(
+        forConfig,
+        paths.types,
+        deriveDependencyTable(forConfig),
+        crossReferences.contractJsonImport,
+      )
       writeContext(forConfig, data, paths.context, {
         configImport: crossReferences.configImport,
         contractJsonImport: crossReferences.contractJsonImport,
       })
       return { paths, crossReferences }
     }
+
+    it('types.ts and context.ts import the same relocated contract declarations', () => {
+      const { paths } = writeRelocated(tempDir)
+
+      const specifier = (file: string) =>
+        fs.readFileSync(file, 'utf-8').match(/from '(\.[^']*contract\.d\.js)'/)?.[1]
+      const typesSpecifier = specifier(paths.types)
+      expect(typesSpecifier).toBeDefined()
+      expect(typesSpecifier).toBe(specifier(paths.context))
+      expect(path.resolve(paths.opensaasDir, typesSpecifier!)).toBe(
+        path.join(tempDir, 'prisma-opensaas', 'contract.d.js'),
+      )
+    })
 
     it('writes the Contract module and bundle to the configured locations', () => {
       const { paths } = writeRelocated(tempDir)

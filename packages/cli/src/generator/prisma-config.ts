@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { ContractData } from '@opensaas/stack-core'
+import { quote } from './source-text.js'
 
 /**
  * The pack's `/control` subpath — the descriptor flavour `defineConfig` takes,
@@ -8,11 +9,6 @@ import type { ContractData } from '@opensaas/stack-core'
  */
 function controlSubpath(from: string): string {
   return `${from}/control`
-}
-
-/** A single-quoted TypeScript string literal — Windows path separators included. */
-function quote(value: string): string {
-  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`
 }
 
 /**

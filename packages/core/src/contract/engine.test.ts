@@ -14,6 +14,8 @@ import {
   type PrismaContract,
 } from './index.js'
 import { deriveConstraintMap } from './dependencies.js'
+import type { OpenSaasConfig } from '../config/types.js'
+import { integer, text } from '../fields/index.js'
 import {
   authConfig,
   blogConfig,
@@ -62,12 +64,14 @@ async function shutdownDatabase(db: Database | undefined): Promise<void> {
 /** Applies the contract with `dbInit` and checks a follow-up `dbUpdate` plan is empty. */
 async function applyContract(db: Database, contract: PrismaContract): Promise<void> {
   const contractJson = toEmittedContract(contract)
+  const invocation = { cwd: db.migrationsDir, configPath: undefined, dbGiven: true }
   const control = createPostgresControlClient({ connection: db.url })
   try {
     const init = await control.dbInit({
       contract: contractJson,
       mode: 'apply',
       migrationsDir: db.migrationsDir,
+      invocation,
     })
     expect(init.ok).toBe(true)
     const plan = await control.dbUpdate({
@@ -75,6 +79,7 @@ async function applyContract(db: Database, contract: PrismaContract): Promise<vo
       mode: 'plan',
       migrationsDir: db.migrationsDir,
       answerQuestions: async () => [],
+      invocation,
     })
     expect(plan.assertOk().plan.operations).toEqual([])
   } finally {
@@ -258,4 +263,126 @@ describe('engine: the constraint map names the constraints PostgreSQL actually c
     },
     60_000,
   )
+})
+
+describe('engine: a partial unique index round-trips with no planned operations', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('applies, plans empty, and enforces uniqueness only where the predicate holds', async () => {
+    const data = deriveContract({
+      db: { provider: 'postgresql' },
+      lists: {
+        TextMessage: {
+          fields: { twilioSid: text(), note: text() },
+          db: {
+            indexes: [
+              {
+                fields: ['twilioSid'],
+                unique: true,
+                name: 'TextMessage_twilioSid_unique_idx',
+                where: `("twilioSid" <> ''::text)`,
+              },
+            ],
+          },
+        },
+      },
+    })
+    await applyContract(db, buildPrismaContract(data))
+
+    const def = await db.pglite.query<{ indexdef: string }>(
+      `select indexdef from pg_indexes where indexname = 'TextMessage_twilioSid_unique_idx'`,
+    )
+    expect(def.rows[0].indexdef).toMatch(/CREATE UNIQUE INDEX .* WHERE .*twilioSid.* <> ''/)
+
+    const insert = (sid: string) =>
+      db.pglite.query(
+        `insert into "TextMessage" (id, "twilioSid") values (gen_random_uuid(), $1)`,
+        [sid],
+      )
+    await insert('')
+    await insert('')
+    await insert('SM1')
+    await expect(insert('SM1')).rejects.toThrow()
+  })
+})
+
+describe('engine: db.indexNaming prisma7 applies the exact physical names', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('constraints and indexes carry the Prisma 7 names', async () => {
+    const contract = buildPrismaContract(
+      deriveContract({ ...oneToOneConfig, db: { ...oneToOneConfig.db, indexNaming: 'prisma7' } }),
+    )
+    await applyContract(db, contract)
+
+    const constraints = await db.pglite.query<{ conname: string }>(
+      `select conname from pg_constraint where conrelid = '"Profile"'::regclass and contype in ('u', 'f') order by 1`,
+    )
+    expect(constraints.rows.map((row) => row.conname)).toEqual(['Profile_userId_fkey'])
+
+    const uniqueIndexes = await db.pglite.query<{ indexname: string }>(
+      `select indexname from pg_indexes where tablename = 'Profile' and indexdef like 'CREATE UNIQUE INDEX%' and indexname <> 'Profile_pkey'`,
+    )
+    expect(uniqueIndexes.rows.map((row) => row.indexname)).toEqual(['Profile_userId_key'])
+  }, 60_000)
+})
+
+describe('engine: a composite foreign key reaches the database', () => {
+  let db: Database
+
+  beforeAll(async () => {
+    db = await bootDatabase()
+  }, 60_000)
+
+  afterAll(async () => {
+    await shutdownDatabase(db)
+  })
+
+  test('is created as a multi-column FOREIGN KEY on the parent unique', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', idField: 'int autoincrement' },
+      lists: {
+        Enrolment: {
+          fields: { student: text(), lessonTerm: text() },
+          db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+        },
+        Slot: {
+          fields: { enrolment: integer(), student: text(), lessonTerm: text() },
+          db: {
+            foreignKeys: [
+              {
+                fields: ['enrolment', 'student', 'lessonTerm'],
+                references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+                onDelete: 'restrict',
+                onUpdate: 'restrict',
+              },
+            ],
+          },
+        },
+      },
+    }
+    await applyContract(db, buildPrismaContract(deriveContract(config)))
+    const rows = await db.pglite.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint where conrelid = '"Slot"'::regclass and contype = 'f'`,
+    )
+    expect(rows.rows.map((row) => row.def)).toEqual([
+      'FOREIGN KEY (enrolment, student, "lessonTerm") REFERENCES "Enrolment"(id, student, "lessonTerm") ON UPDATE RESTRICT ON DELETE RESTRICT',
+    ])
+  }, 60_000)
 })

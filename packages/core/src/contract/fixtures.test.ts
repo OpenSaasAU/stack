@@ -84,8 +84,8 @@ describe('deriveContract + buildPrismaContract — the fixtures yield a valid co
     expect(table(contract, 'User').columns.updatedAt).not.toHaveProperty('default')
     expect(contract.execution?.mutations.defaults).toContainEqual({
       ref: { namespace: 'public', entry: 'User', field: 'updatedAt' },
-      onCreate: { kind: 'generator', id: 'timestampNow' },
-      onUpdate: { kind: 'generator', id: 'timestampNow' },
+      onCreate: { kind: 'generator', id: 'timestamptzStringNow' },
+      onUpdate: { kind: 'generator', id: 'timestamptzStringNow' },
     })
 
     expect(model(data, 'Post').relations).toEqual([
@@ -381,6 +381,22 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
 
   test('the relation graph agrees with the emitted contract', () => {
     expect(() => assertRelationGraphAgrees(data, emitted)).not.toThrow()
+  })
+})
+
+describe('db.idField cuid — a text id column minted as cuid2', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: { Legacy: { fields: { name: text() }, db: { idField: 'cuid' } } },
+  }
+  const contract = buildPrismaContract(deriveContract(config))
+
+  test('the id is a text column with a cuid2 create default', () => {
+    expect(table(contract, 'Legacy').columns.id).toMatchObject({ codecId: 'pg/text@1' })
+    expect(contract.execution?.mutations.defaults).toContainEqual({
+      ref: { namespace: 'public', entry: 'Legacy', field: 'id' },
+      onCreate: { kind: 'generator', id: 'cuid2' },
+    })
   })
 })
 
