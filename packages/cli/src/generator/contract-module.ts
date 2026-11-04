@@ -294,8 +294,12 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
  * rendered module and `buildPrismaContract` reach the builder identically.
  */
 function renderModelAttributes(model: ContractModel): string {
-  const uniques = model.indexes.filter((index) => index.unique && index.where === undefined)
-  const plainIndexes = model.indexes.filter((index) => !index.unique || index.where !== undefined)
+  const uniques = model.indexes.filter(
+    (index) => index.unique && index.where === undefined && !index.asIndex,
+  )
+  const plainIndexes = model.indexes.filter(
+    (index) => !index.unique || index.where !== undefined || index.asIndex === true,
+  )
   const indexedColumns = model.columns.filter((column) => column.index)
 
   const uniqueEntries = uniques.map((index) => {

@@ -200,7 +200,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
-
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -224,7 +223,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
-
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -302,7 +300,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
-
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -429,7 +426,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
-
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -461,7 +457,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
-
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -525,7 +520,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   **Watch for this when you upgrade.** The seven components above previously read `context.db[listKey]` and `context.session` and worked with any object carrying them. They now narrow through `engineContextOf`, which accepts a context the engine built or a full `AccessContext` and throws otherwise. A hand-assembled stand-in — a component test's double, a Storybook story, a wrapper that rebuilds `{ db, session, … }` by hand instead of passing `getContext()`'s result through — now throws at render. Pass a context from `getContext()`, or from `createTestContext` in `@opensaas/stack-core/testing`.
 
   Two engine fixes the first Next app on Prisma 8 exposed:
-
   - The origin store the tripwire reads, and the key an app-facing context carries its engine face under, are one per process rather than one per module instance. Next.js compiles the page layer and the route-handler layer separately, each with its own copy of the module, while the generated context caches one client for both: a query marked through one layer's Unsafe surface was refused as unmarked by the other layer's tripwire (every `/api/auth/*` route answered 500), and a context built by one layer's `getContext()` could not be narrowed by the other layer's `engineContextOf`. Both now resolve through one helper over the symbol registry `globalThis` shares.
   - On the include path the ORM hands an included to-one back under its foreign-key key as well as its own, so a row-dependent field `read` rule comparing `item.authorId` saw the related row rather than its id and denied the author. A field `read` rule is now answered against the row's own stored foreign key whichever way the row was read, so the same rule gives the same answer with and without `.include()` — including where the related list's Access Filter scopes the relation away, which previously made `item.authorId` read as `null` and could open a field whose rule tests for an absent relation. Every terminal (`all()`, `first()`, the `forUpdate()` lane, `nearest()`) returns rows through one funnel that runs both foreign-key passes; a read whose to-one include is narrowed costs one extra query to read the column the include's alias overwrites ([#1236](https://github.com/OpenSaasAU/stack/issues/1236)).
 
@@ -788,14 +782,12 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   **Workspace-wide: pins `@better-auth/utils` to `0.5.0` via a root `pnpm.overrides`.** better-auth 1.7.1's own published packages disagree on this transitive dependency — `better-auth` pins it at exactly `0.4.2` while `better-call` (used by `@better-auth/core`, `@better-auth/oauth-provider`, and `@better-auth/mcp`) requires `^0.5.0` — so pnpm resolves two separate physical instances of `@better-auth/core` depending on which peer chain a given package sits in. That split is invisible at runtime but breaks TypeScript: `jwt()` (from `better-auth/plugins`) and `mcp()` (from `@better-auth/mcp`) end up typed against different `@better-auth/core` instances, so `betterAuthPlugins: [jwt(), mcp(...)]` fails to type-check with a `BetterAuthPlugin` structural-mismatch error even though both plugins are otherwise correctly configured. The override forces one instance workspace-wide. If you hit the same error in your own app, add the equivalent override to your own `package.json`.
 
   Also fixes two `deriveAuthLists` gaps surfaced by the MCP plugin's expanded schema:
-
   - the scalar-field builder now threads a static `defaultValue` through for `number`-typed fields (`integer()`/`bigInt()`), matching the existing `string`/`boolean` behavior (e.g. `oauthResource.policyVersion`, which defaults to `1`)
   - a plugin table that declares only one of `createdAt`/`updatedAt` upstream (several of the new OAuth tables declare `createdAt` alone) is no longer silently dropped — it derives as an ordinary required column instead. Previously any model with an asymmetric timestamp pair had the field skipped entirely with no replacement, which crashed the first real write that supplied it (better-auth's own OAuth Provider does this at `betterAuth()` init time, seeding an `oauthResource` row)
 
 - [#1019](https://github.com/OpenSaasAU/stack/pull/1019) [`77b7314`](https://github.com/OpenSaasAU/stack/commit/77b731452f24045995a1d3a2ffede0246d5743d3) Thanks [@borisno2](https://github.com/borisno2)! - Extend the ADR-0036 credential field read-deny from the four base Auth models to better-auth plugin tables, and add a `credentialFields` config option for plugins the stack doesn't seed a set for.
 
   The following fields now ship field-level `read`-denied, on top of the existing `Session.token`/`Verification.value`/`Account.password`/`accessToken`/`refreshToken`/`idToken`:
-
   - `oauthClient.clientSecret`, `oauthAccessToken.token`, `oauthRefreshToken.token` (the `mcp`/oauth-provider plugin)
   - `twoFactor.secret`, `twoFactor.backupCodes` (`twoFactor()`)
 
@@ -837,7 +829,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   No config changes are required — `authPlugin()`/`getAuthLists()` are unchanged. If your app already had an MCP-enabled config generated with an older version, regenerate and diff your schema: the OAuth tables' `userId` columns gain a foreign key, cascade and index they didn't have before.
 
 - [#1013](https://github.com/OpenSaasAU/stack/pull/1013) [`49687ea`](https://github.com/OpenSaasAU/stack/commit/49687eaf8ad80696d62e2616ba3dfef992985282) Thanks [@borisno2](https://github.com/borisno2)! - BREAKING (pre-1.0): The derived auth lists' credential-bearing fields now ship with a field-level `read` deny, so opening operation-level access to a list no longer exposes them:
-
   - `Session.token`
   - `Verification.value`
   - `Account.password`
@@ -984,7 +975,6 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   If not provided, reset/verification emails are logged to console instead of sent — apps relying on the previous no-op behavior (verification/reset emails silently not sending) will start sending real emails once `emailVerification`/`passwordReset` are enabled and these callbacks are configured.
 
   Two related fixes, both changing existing behavior:
-
   - `session.updateAge` is retyped from `boolean` to `number | false` — the number of seconds between session refreshes, passed straight through to better-auth's own `session.updateAge` instead of being computed as `expiresIn / 10`. The default changes from `true` to `86400` (1 day), matching better-auth's own default. Update any `updateAge: true` config to a duration in seconds (e.g. `86400`). `updateAge: false` now correctly maps to better-auth's `disableSessionRefresh: true` (previously it mapped to `updateAge: 0`, which better-auth treats as "refresh on every request" — the opposite of disabling refresh).
   - `getSessionFromAuth(auth, sessionFields, headers)` gains a required third `headers: Headers` parameter. Previously it always called `auth.api.getSession({ headers: new Headers() })`, an empty header set that could never resolve a session cookie, so the function always returned `null`. Callers must now pass the request's real headers (e.g. Next.js `await headers()`).
 

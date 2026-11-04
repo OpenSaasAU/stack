@@ -50,6 +50,17 @@ describe('renderContractModule partial indexes', () => {
     expect(out).toMatch(/uniques: \[\],/)
   })
 
+  it('emits a unique flagged asIndex as a unique index, not a constraint', () => {
+    const data = model(`"name" <> ''`)
+    const [first] = data.models
+    if (first === undefined) throw new Error('fixture has no model')
+    first.indexes = [{ columns: ['name'], unique: true, name: 'A_name_key', asIndex: true }]
+    const out = renderContractModule(data)
+    expect(out).toContain("map: 'A_name_key'")
+    expect(out).toContain('unique: true')
+    expect(out).toMatch(/uniques: \[\],/)
+  })
+
   it('keeps quotes, backticks and template syntax inside a string literal', () => {
     const where = "kind = 'X' AND note <> `a${b}\\`"
     const out = renderContractModule(model(where))

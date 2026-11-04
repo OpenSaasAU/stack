@@ -334,10 +334,12 @@ describe('engine: db.indexNaming prisma7 applies the exact physical names', () =
     const constraints = await db.pglite.query<{ conname: string }>(
       `select conname from pg_constraint where conrelid = '"Profile"'::regclass and contype in ('u', 'f') order by 1`,
     )
-    expect(constraints.rows.map((row) => row.conname)).toEqual([
-      'Profile_userId_fkey',
-      'Profile_userId_key',
-    ])
+    expect(constraints.rows.map((row) => row.conname)).toEqual(['Profile_userId_fkey'])
+
+    const uniqueIndexes = await db.pglite.query<{ indexname: string }>(
+      `select indexname from pg_indexes where tablename = 'Profile' and indexdef like 'CREATE UNIQUE INDEX%' and indexname <> 'Profile_pkey'`,
+    )
+    expect(uniqueIndexes.rows.map((row) => row.indexname)).toEqual(['Profile_userId_key'])
   }, 60_000)
 })
 

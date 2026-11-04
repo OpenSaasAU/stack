@@ -12,7 +12,6 @@ No changes in this release.
 
   ```tsx
   import { RichTextContent } from '@opensaas/stack-tiptap/render'
-
   ;<RichTextContent value={post.content} features={features} />
   ```
 
@@ -35,7 +34,6 @@ No changes in this release.
   ```
 
   The `db.map`, `db.isNullable` and `db.nativeType` overrides the single-column backing documents now reach the emitted column; previously they were declared but dropped. Two of them are a **schema change for a config that already sets them**:
-
   - **`db.isNullable: false` now emits a NOT NULL column**, and the field's TypeScript face and validation follow it: `outputType`/`inputType` lose their `| null`, `null` is rejected, and the key becomes required on create (still omittable on update). A config that set `isNullable: false` while relying on the previously-nullable column must drop the override, or backfill the column before migrating.
   - **`db.nativeType: 'Json'` now emits a `json` column, not `jsonb`.** The override was a no-op before, so the column was always `jsonb`; it is now honoured literally. `json` and `jsonb` differ in equality and indexing semantics, and the change generates a type-altering migration on an existing table. Set `nativeType: 'Jsonb'` (or drop the override) to keep the previous column type.
 
@@ -93,7 +91,6 @@ No changes in this release.
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
-
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -117,7 +114,6 @@ No changes in this release.
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
-
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -141,7 +137,6 @@ No changes in this release.
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
-
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -268,7 +263,6 @@ No changes in this release.
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
-
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -300,7 +294,6 @@ No changes in this release.
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
-
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -349,7 +342,6 @@ No changes in this release.
   `TiptapField` no longer resets the document while you type. Its `onChange` was typed as `UseEditorOptions['onUpdate']` and handed the whole editor-update payload straight to the field's `onChange`, rather than the JSON value the field stores; the props are now `value: JSONContent | null` and `onChange: (value: JSONContent) => void`, and the component calls `editor.getJSON()` itself. The accompanying `useEffect` compared `value` against `editor.getJSON()` by identity — `getJSON()` allocates a fresh object every call, so the check never matched and `setContent` re-ran on every keystroke, dropping the caret. It now short-circuits on the object it last emitted, and otherwise compares the serialised forms, so it fires only on a genuinely external change.
 
   **`TiptapField` also no longer reports an edit nobody made.** Two Tiptap calls emit an `update` by default, and this component forwarded both to `onChange`:
-
   - `setContent(content)` — `emitUpdate` defaults to `true`, so mounting with a `null` value pushed `{"type":"doc","content":[{"type":"paragraph"}]}` into form state;
   - `setEditable(editable)` — its second argument is `emitUpdate`, also defaulted to `true`, so merely becoming editable counted as a content change.
 

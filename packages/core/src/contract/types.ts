@@ -75,6 +75,8 @@ export type ContractIndex = {
   unique: boolean
   name?: string
   where?: string
+  /** A unique emitted as a unique index rather than a unique constraint, under `db.indexNaming`. */
+  asIndex?: boolean
 }
 
 /**
