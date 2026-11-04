@@ -36,9 +36,16 @@ import { isAssetReferenced } from '../utils/asset-references.js'
 import { takeStaged } from '../utils/staged.js'
 import { ValidationError, type AccessContext } from '@opensaas/stack-core'
 
-const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
-  message: 'url must be an http(s) URL or an absolute path',
-})
+const isControlCode = (code: number): boolean => code <= 0x1f || code === 0x7f
+
+const storedUrlSchema = z
+  .string()
+  .refine((url) => !/\s/.test(url) && ![...url].some((char) => isControlCode(char.charCodeAt(0))), {
+    message: 'url must not contain whitespace or control characters',
+  })
+  .regex(/^(https?:\/\/|\/(?![/\\]))/i, {
+    message: 'url must be an http(s) URL or an absolute path',
+  })
 
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
