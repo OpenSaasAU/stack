@@ -6,6 +6,7 @@ Add `RichTextContent`, a server-side read-only renderer for `richText()` documen
 
 ```tsx
 import { RichTextContent } from '@opensaas/stack-tiptap/render'
+
 ;<RichTextContent value={post.content} features={features} />
 ```
 

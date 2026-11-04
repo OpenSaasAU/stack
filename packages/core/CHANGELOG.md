@@ -104,6 +104,7 @@
   cannot become a probing oracle.
 
   Three refusals name what a payload may carry on a relationship key:
+
   - `NonOwningRelationInputError` — relation input on a field that owns no
     foreign key (an inverse to-many, the non-owning half of a one-to-one, a
     junction list's inverse, a synthetic back-relation). The generated input
@@ -121,6 +122,7 @@
   A relationship whose foreign key lives on the related row — a to-many, or the
   non-owning half of a one-to-one — is not writable through the surfaces that
   carry a payload for a single row, so neither surface offers it any more:
+
   - The admin item form renders it read-only, stating that the related record
     holds the link, instead of a picker whose selection had nowhere to go. An
     item form ignores a change for any field it rendered read-only, so a field
@@ -248,6 +250,7 @@
 - [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Move the toolchain to the Prisma 8 line and drop Prisma 7 and SQLite
 
   The Prisma 8 ORM family (`@prisma/orm-postgres` at `8.0.0-rc.8`) and the `prisma` CLI (`8.0.0-rc.12`) are now the single pinned toolchain. `@prisma/client`, `@prisma/adapter-better-sqlite3` and every other Prisma 7 package are gone from every manifest, and every package states a Node `>=22.18.0` floor.
+
   - `@opensaas/stack-core` peers on `@prisma/orm-postgres` instead of `@prisma/client`, and takes `@electric-sql/pglite`, `@electric-sql/pglite-socket` and `@electric-sql/pglite-pgvector` as optional peers for the in-process dev database.
   - `@opensaas/stack-cli` depends on `prisma`, `@prisma/orm-postgres` and the three PGlite packages directly. `opensaas generate` runs `prisma` from the app's own `node_modules/.bin`, so the app must still list `prisma@8.0.0-rc.12` as a devDependency and `@prisma/orm-postgres@8.0.0-rc.8` as a dependency itself.
 
@@ -311,6 +314,7 @@
   `sourceHash` on the stored metadata short-circuits.
 
   Everything written for the inert surface is gone with it:
+
   - `generation-failure.ts` no longer classifies "the secured write surface has not been
     ported" as a standing defect. The predicate matched
     `findUnique is not a function` / `Unknown column "data"`, neither of which the write
@@ -454,6 +458,7 @@
   `Post`, `PostCreateInput`, `PostUpdateInput`, `Context`, `BaseContext`,
   `TransactionContext` and `Lists.Post.TypeInfo` keep their names, so imports do
   not change. What changes is what they mean:
+
   - **An included to-one relation reads `| null`, a to-many `[]`** — by arity
     alone, whatever the foreign key's nullability. Access control can scope the
     related row away, so code that dereferenced a required relation without a
@@ -643,6 +648,7 @@
 - [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Delete the Node build; the Generated bundle loads under plain Node from the committed contract
 
   The `.opensaas/` bundle is erasable TypeScript by contract and loads natively under Node 22.18+, so the compiled twin that existed to serve bundler-less consumers is gone (ADR-0054, withdrawing ADR-0011). Removed:
+
   - `output.buildTarget` from the config surface. A config that sets it is now a compile error; delete the `output` block (or the key) — nothing replaces it, because `.opensaas/context.ts` is the one specifier both a bundler and plain Node load.
 
     ```typescript
@@ -1082,6 +1088,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
+
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -1105,6 +1112,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
+
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -1330,6 +1338,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
+
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -1456,6 +1465,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
+
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -1487,6 +1497,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
+
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -1553,6 +1564,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   relation dependency.
 
   Two behaviours change on every read path, per ADR-0051:
+
   - **A `resolveOutput` hook's `item` is exactly its own declared dependency set
     plus the list's system fields.** A hook that reads a key it did not declare in
     `needs` now finds nothing there. Migration: find `resolveOutput` hooks whose
@@ -1750,6 +1762,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   `TiptapField` no longer resets the document while you type. Its `onChange` was typed as `UseEditorOptions['onUpdate']` and handed the whole editor-update payload straight to the field's `onChange`, rather than the JSON value the field stores; the props are now `value: JSONContent | null` and `onChange: (value: JSONContent) => void`, and the component calls `editor.getJSON()` itself. The accompanying `useEffect` compared `value` against `editor.getJSON()` by identity — `getJSON()` allocates a fresh object every call, so the check never matched and `setContent` re-ran on every keystroke, dropping the caret. It now short-circuits on the object it last emitted, and otherwise compares the serialised forms, so it fires only on a genuinely external change.
 
   **`TiptapField` also no longer reports an edit nobody made.** Two Tiptap calls emit an `update` by default, and this component forwarded both to `onChange`:
+
   - `setContent(content)` — `emitUpdate` defaults to `true`, so mounting with a `null` value pushed `{"type":"doc","content":[{"type":"paragraph"}]}` into form state;
   - `setEditable(editable)` — its second argument is `emitUpdate`, also defaulted to `true`, so merely becoming editable counted as a content change.
 
@@ -1938,6 +1951,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   **Watch for this when you upgrade.** The seven components above previously read `context.db[listKey]` and `context.session` and worked with any object carrying them. They now narrow through `engineContextOf`, which accepts a context the engine built or a full `AccessContext` and throws otherwise. A hand-assembled stand-in — a component test's double, a Storybook story, a wrapper that rebuilds `{ db, session, … }` by hand instead of passing `getContext()`'s result through — now throws at render. Pass a context from `getContext()`, or from `createTestContext` in `@opensaas/stack-core/testing`.
 
   Two engine fixes the first Next app on Prisma 8 exposed:
+
   - The origin store the tripwire reads, and the key an app-facing context carries its engine face under, are one per process rather than one per module instance. Next.js compiles the page layer and the route-handler layer separately, each with its own copy of the module, while the generated context caches one client for both: a query marked through one layer's Unsafe surface was refused as unmarked by the other layer's tripwire (every `/api/auth/*` route answered 500), and a context built by one layer's `getContext()` could not be narrowed by the other layer's `engineContextOf`. Both now resolve through one helper over the symbol registry `globalThis` shares.
   - On the include path the ORM hands an included to-one back under its foreign-key key as well as its own, so a row-dependent field `read` rule comparing `item.authorId` saw the related row rather than its id and denied the author. A field `read` rule is now answered against the row's own stored foreign key whichever way the row was read, so the same rule gives the same answer with and without `.include()` — including where the related list's Access Filter scopes the relation away, which previously made `item.authorId` read as `null` and could open a field whose rule tests for an absent relation. Every terminal (`all()`, `first()`, the `forUpdate()` lane, `nearest()`) returns rows through one funnel that runs both foreign-key passes; a read whose to-one include is narrowed costs one extra query to read the column the include's alias overwrites ([#1236](https://github.com/OpenSaasAU/stack/issues/1236)).
 
@@ -2090,6 +2104,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   ```
 
   Three branches, in order:
+
   - `db.client.pg` — your own pool. The factory is called here and nowhere else, once, after the
     config promise resolves, so loading the config (the CLI's `generate`, tooling, a type check)
     never opens a connection.
@@ -2296,6 +2311,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   Omitting the option is unchanged: a config with no storage still throws on a storage-backed write, exactly as an application with none does.
 
   Two type predicates now check every member their consumers read, rather than a subset the compiler then takes on trust:
+
   - `isImageMetadata` checked 2 of `ImageMetadata`'s 9 required members and omitted `storageProvider`, which `deleteImage` dereferences first — a bogus value surfaced as `Storage provider 'undefined' not found in config` from inside the provider registry. It now checks all nine, plus the shape of the optional `metadata` and `transformations`.
   - `isFileLike` narrows to `File` but checked only `arrayBuffer`, while the upload path also reads `name`, `type` and `size` — so a value carrying only `arrayBuffer` was stored with an `originalFilename` of `undefined`. It now checks all four.
 
@@ -3154,6 +3170,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 - [#890](https://github.com/OpenSaasAU/stack/pull/890) [`17eb72f`](https://github.com/OpenSaasAU/stack/commit/17eb72f0a9a4b7508e3f318da66bb8d4c6cbd705) Thanks [@list({](https://github.com/list({)! - A computed field — any field carrying a `resolveOutput` hook, virtual or not — is now computed if and only if a read is actually going to return it. A fragment `query` that selects three fields no longer runs every `resolveOutput` on the list and discards the rest: an unselected field's field-level read access is never evaluated and its hook never runs. Its declared relations (`needs`, ADR-0025) are fetched under exactly the same condition, folded recursively at every nesting level — a nested fragment selecting a subset computes only that subset, while a nested `include` still computes every computed field at that level, matching bare and `include`-based reads, which are unaffected: they still compute every computed field on the list, exactly as before. See ADR-0027.
 
   **This is a silent break — detect it before you upgrade, the same way ADR-0024's and ADR-0026's were.** Two independent behaviors changed with no thrown error:
+
   1. **A hook's `item` never carries another computed field's resolved output, on any read path.** Previously a virtual field received the already-assembled, already-resolved object, so a virtual field could read an _earlier-declared_ virtual (or any field carrying its own `resolveOutput`, e.g. a `password()`'s wrapper or a formatted display field) and see its resolved value — working only by declaration order, with reordering two fields silently changing the result. Now every computed field's hook sees only the row's stored columns and its own declared dependencies; reaching for a sibling that is itself computed finds nothing there (or its raw stored form, never the wrapped/resolved value), the same as reaching for a field that was never declared. **Grep your config for a `resolveOutput` whose `item` reads a field that is itself computed** — virtual fields reading other virtual fields, or a hook reading a stored field that carries its own `resolveOutput` (a password wrapper, a formatted date) — and recompute from the shared stored columns instead of relying on another field's hook having already run.
   2. **A field's hook no longer runs just because it's on the list — only because a read selects it.** If you relied on a `resolveOutput` hook running for a side effect (logging, cache warming) on every read regardless of a fragment's own field selection, that side effect now only fires when the fragment actually names the field. **Grep for a fragment `query` that intentionally omits a field whose hook you were relying on for a side effect**, and select that field explicitly (or move the side effect to a hook that isn't projection-gated, e.g. `afterOperation`).
 
@@ -3287,6 +3304,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 - [#853](https://github.com/OpenSaasAU/stack/pull/853) [`d0c94a9`](https://github.com/OpenSaasAU/stack/commit/d0c94a994e8be67742c97b6757ca4dd4e454f682) Thanks [@borisno2](https://github.com/borisno2)! - **This break is silent.** A `context.db` read with no `include` (and no fragment `query`) used to auto-include every readable relationship of the list, recursing up to 5 levels deep. It now returns the row's own columns plus its virtual fields only — matching Prisma's own semantics for a bare read — and relations arrive only when you name them. A read that used to return `post.author` now returns no `author` key at all: no error, no warning, just less data (ADR-0024). This applies uniformly to `findUnique`, `findMany`, and a singleton's `get()`, under sudo and under a session alike. Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`.
 
   **Detect call sites that need updating:**
+
   - Grep for bare reads: `context.db.*.find*` calls (or a singleton's `.get()`) with no `include` and no `query` argument, whose result is later used to access a relationship field.
   - Grep for `resolveOutput` hooks on `virtual` fields that read a relation off `item` (e.g. `item.author`, `item.posts`) — these silently degrade the same way, since a hook's own `context.db` read is subject to the same rule.
 
@@ -3372,11 +3390,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   try {
     await context.db.post.findMany({
-      include: {
-        author: {
-          include: {/* … nested past the depth cap */},
-        },
-      },
+      include: { author: { include: {/* … nested past the depth cap */} } },
     })
   } catch (err) {
     if (err instanceof AccessScopeDepthExceededError) {
@@ -3457,6 +3471,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   ```
 
   New exports:
+
   - `@opensaas/stack-core`: `resolveNavCounts`, `isListQueryStaticallyDenied`
   - `@opensaas/stack-ui`: `Avatar` primitive, `AvatarLabelCell`, and the
     `getInitials`, `getAvatarTone`, `AVATAR_TONES` helpers. New Slots:
@@ -3468,12 +3483,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   ```typescript
   Post: list({
-    fields: {
-      title: text(),
-      status: select({
-        options: [/* ... */],
-      }),
-    },
+    fields: { title: text(), status: select({ options: [/* ... */] }) },
     ui: {
       listView: {
         bulkActions: [
@@ -3583,6 +3593,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   (filter-scoped) denials surface at commit as a revert. Non-editable cells keep
   click-to-navigate; main list tables are unchanged (this is Relationship-table
   only).
+
   - `@opensaas/stack-core`: the generic server action gains a distinct
     `updateRelated` result shape (`{ updated, error?, fieldErrors? }`), and
     `checkFieldAccess` is exposed on `@opensaas/stack-core/internal` so the UI can
@@ -3750,6 +3761,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   The read-only Relationship tables on a record's edit page (issue [#734](https://github.com/OpenSaasAU/stack/issues/734)) previously
   fetched every related row unbounded. They now fetch a bounded page of related rows
   and surface the full access-scoped total in the footer.
+
   - **Bounded fetch:** each to-many Relationship table fetches at most a default cap
     of related rows (`DEFAULT_ITEM_VIEW_TAKE`, 10), overridable per relationship via
     `ui.itemView.take`. Rows are still fetched through the secured context, so only
@@ -3812,6 +3824,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 ### Minor Changes
 
 - [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - MCP runtime: serve plugin-registered tools, support Zod input schemas, and pass custom session fields through to access control
+
   - Tools registered by plugins via `registerMcpTool` (e.g. the RAG plugin's `semantic_search_*` tools) are now listed by `tools/list` and callable via `tools/call` — previously they were stored but never served.
   - Custom tool `inputSchema` may now be a Zod schema or a plain JSON Schema object. Zod schemas are converted to JSON Schema for `tools/list` and validated on `tools/call` (invalid input returns a JSON-RPC `-32602` error):
 

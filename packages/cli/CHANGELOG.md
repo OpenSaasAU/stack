@@ -151,6 +151,7 @@
 - [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Move the toolchain to the Prisma 8 line and drop Prisma 7 and SQLite
 
   The Prisma 8 ORM family (`@prisma/orm-postgres` at `8.0.0-rc.8`) and the `prisma` CLI (`8.0.0-rc.12`) are now the single pinned toolchain. `@prisma/client`, `@prisma/adapter-better-sqlite3` and every other Prisma 7 package are gone from every manifest, and every package states a Node `>=22.18.0` floor.
+
   - `@opensaas/stack-core` peers on `@prisma/orm-postgres` instead of `@prisma/client`, and takes `@electric-sql/pglite`, `@electric-sql/pglite-socket` and `@electric-sql/pglite-pgvector` as optional peers for the in-process dev database.
   - `@opensaas/stack-cli` depends on `prisma`, `@prisma/orm-postgres` and the three PGlite packages directly. `opensaas generate` runs `prisma` from the app's own `node_modules/.bin`, so the app must still list `prisma@8.0.0-rc.12` as a devDependency and `@prisma/orm-postgres@8.0.0-rc.8` as a dependency itself.
 
@@ -265,6 +266,7 @@
   `Post`, `PostCreateInput`, `PostUpdateInput`, `Context`, `BaseContext`,
   `TransactionContext` and `Lists.Post.TypeInfo` keep their names, so imports do
   not change. What changes is what they mean:
+
   - **An included to-one relation reads `| null`, a to-many `[]`** — by arity
     alone, whatever the foreign key's nullability. Access control can scope the
     related row away, so code that dereferenced a required relation without a
@@ -417,6 +419,7 @@
 - [#1420](https://github.com/OpenSaasAU/stack/pull/1420) [`7ebd6ee`](https://github.com/OpenSaasAU/stack/commit/7ebd6ee5f78f5773b566dc6cac66d73b640c3c03) Thanks [@borisno2](https://github.com/borisno2)! - Delete the Node build; the Generated bundle loads under plain Node from the committed contract
 
   The `.opensaas/` bundle is erasable TypeScript by contract and loads natively under Node 22.18+, so the compiled twin that existed to serve bundler-less consumers is gone (ADR-0054, withdrawing ADR-0011). Removed:
+
   - `output.buildTarget` from the config surface. A config that sets it is now a compile error; delete the `output` block (or the key) — nothing replaces it, because `.opensaas/context.ts` is the one specifier both a bundler and plain Node load.
 
     ```typescript
@@ -594,6 +597,7 @@
 
   **Further known limits on generation ([#1271](https://github.com/OpenSaasAU/stack/issues/1271)).** Embeddings are generated in an
   `afterTransaction` hook, after the row commits, which bounds what it can do:
+
   - A provider failure is logged, not thrown. The caller's write did succeed, and reporting
     it as a failure would invite a retry that duplicates the row. The row keeps a null
     embedding, and there is no regeneration path yet.
@@ -852,6 +856,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
+
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -875,6 +880,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
+
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -987,6 +993,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
+
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -1113,6 +1120,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
+
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -1144,6 +1152,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
+
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -1249,6 +1258,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   `packages/rag/CLAUDE.md` described the world before `embedding()` became a
   pgvector column. Two sections were wrong in ways that produced code that throws:
+
   - Automatic generation was documented as a field-level `afterOperation` hook
     writing the embedding through `context.db.Article.update(...)`. That write is
     exactly what the field's write denial now refuses. The section describes the
@@ -1316,6 +1326,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   ```
 
   Three branches, in order:
+
   - `db.client.pg` — your own pool. The factory is called here and nowhere else, once, after the
     config promise resolves, so loading the config (the CLI's `generate`, tooling, a type check)
     never opens a connection.
@@ -1940,6 +1951,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 - [#853](https://github.com/OpenSaasAU/stack/pull/853) [`d0c94a9`](https://github.com/OpenSaasAU/stack/commit/d0c94a994e8be67742c97b6757ca4dd4e454f682) Thanks [@borisno2](https://github.com/borisno2)! - **This break is silent.** A `context.db` read with no `include` (and no fragment `query`) used to auto-include every readable relationship of the list, recursing up to 5 levels deep. It now returns the row's own columns plus its virtual fields only — matching Prisma's own semantics for a bare read — and relations arrive only when you name them. A read that used to return `post.author` now returns no `author` key at all: no error, no warning, just less data (ADR-0024). This applies uniformly to `findUnique`, `findMany`, and a singleton's `get()`, under sudo and under a session alike. Foreign-key columns (e.g. `authorId`) are unaffected and always returned, so a relation stays reachable by id without an `include`.
 
   **Detect call sites that need updating:**
+
   - Grep for bare reads: `context.db.*.find*` calls (or a singleton's `.get()`) with no `include` and no `query` argument, whose result is later used to access a relationship field.
   - Grep for `resolveOutput` hooks on `virtual` fields that read a relation off `item` (e.g. `item.author`, `item.posts`) — these silently degrade the same way, since a hook's own `context.db` read is subject to the same rule.
 
@@ -2074,6 +2086,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 ### Minor Changes
 
 - [#744](https://github.com/OpenSaasAU/stack/pull/744) [`5e135ef`](https://github.com/OpenSaasAU/stack/commit/5e135ef635dd7cd97ab106f46fbf808250aa079e) Thanks [@borisno2](https://github.com/borisno2)! - MCP feature wizards now generate current-API code for all five features
+
   - `comments`, `file-upload`, and `semantic-search` wizards previously returned "coming soon" stubs — they now generate real config (Comment list with moderation/threading, storage config with local/S3/R2/Vercel Blob providers, ragPlugin with OpenAI or Ollama embeddings and `searchable()` fields).
   - The `authentication` wizard output was rewritten to the current API: `authPlugin` with `socialProviders`/`extendUserList`/`access` (ADR-0013), the required `prismaClientConstructor`, `SignInForm`/`SignUpForm` with the `authClient` prop, and `lib/auth.ts` wiring via `createAuth(config, rawOpensaasContext)`.
   - The `blog` wizard now emits valid `select()` options, wires Category/Tag relationships on both sides, and uses filter-based query access.

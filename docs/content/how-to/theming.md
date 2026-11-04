@@ -370,6 +370,7 @@ so you can target internal parts without forking:
 
 ```tsx
 import { ListTable } from '@opensaas/stack-ui/standalone'
+
 ;<ListTable
   listKey="Post"
   context={context}

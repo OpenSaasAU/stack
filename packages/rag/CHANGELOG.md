@@ -26,6 +26,7 @@ No changes in this release.
   `sourceHash` on the stored metadata short-circuits.
 
   Everything written for the inert surface is gone with it:
+
   - `generation-failure.ts` no longer classifies "the secured write surface has not been
     ported" as a standing defect. The predicate matched
     `findUnique is not a function` / `Unknown column "data"`, neither of which the write
@@ -279,6 +280,7 @@ No changes in this release.
 
   **Further known limits on generation ([#1271](https://github.com/OpenSaasAU/stack/issues/1271)).** Embeddings are generated in an
   `afterTransaction` hook, after the row commits, which bounds what it can do:
+
   - A provider failure is logged, not thrown. The caller's write did succeed, and reporting
     it as a failure would invite a retry that duplicates the row. The row keeps a null
     embedding, and there is no regeneration path yet.
@@ -483,6 +485,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
+
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -506,6 +509,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
+
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -603,6 +607,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
+
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -729,6 +734,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
+
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -760,6 +766,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
+
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -774,6 +781,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   `packages/rag/CLAUDE.md` described the world before `embedding()` became a
   pgvector column. Two sections were wrong in ways that produced code that throws:
+
   - Automatic generation was documented as a field-level `afterOperation` hook
     writing the embedding through `context.db.Article.update(...)`. That write is
     exactly what the field's write denial now refuses. The section describes the
@@ -831,7 +839,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   field-level `ChunkingConfig` names, not `ChunkingOptions`. It also fed the
   returned `TextChunk[]` straight to `embedBatch(string[])`. Both now compile:
 
-    <!-- doc-check: excuses="provider" reason="a bare name the prose supplies" -->
+  <!-- doc-check: excuses="provider" reason="a bare name the prose supplies" -->
 
   ```typescript
   const chunks = chunkText(longDocument, {
@@ -885,6 +893,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   as optional when it is required — a block declaring its own copy of a type
   compiles against that copy, so nothing else would have. Also corrected across
   the guidance:
+
   - The Cohere and HuggingFace factory registrations passed the config union
     straight into constructors typed `CohereConfig` / `HuggingFaceConfig`; both
     now narrow with the same `in` guard.

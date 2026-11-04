@@ -52,6 +52,7 @@
   ```
 
   The `db.map`, `db.isNullable` and `db.nativeType` overrides the single-column backing documents now reach the emitted column; previously they were declared but dropped. Two of them are a **schema change for a config that already sets them**:
+
   - **`db.isNullable: false` now emits a NOT NULL column**, and the field's TypeScript face and validation follow it: `outputType`/`inputType` lose their `| null`, `null` is rejected, and the key becomes required on create (still omittable on update). A config that set `isNullable: false` while relying on the previously-nullable column must drop the override, or backfill the column before migrating.
   - **`db.nativeType: 'Json'` now emits a `json` column, not `jsonb`.** The override was a no-op before, so the column was always `jsonb`; it is now honoured literally. `json` and `jsonb` differ in equality and indexing semantics, and the change generates a type-altering migration on an existing table. Set `nativeType: 'Jsonb'` (or drop the override) to keep the previous column type.
 
@@ -109,6 +110,7 @@
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
+
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -132,6 +134,7 @@
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
+
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -155,6 +158,7 @@
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
+
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -281,6 +285,7 @@
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
+
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -312,6 +317,7 @@
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
+
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -372,6 +378,7 @@
   Omitting the option is unchanged: a config with no storage still throws on a storage-backed write, exactly as an application with none does.
 
   Two type predicates now check every member their consumers read, rather than a subset the compiler then takes on trust:
+
   - `isImageMetadata` checked 2 of `ImageMetadata`'s 9 required members and omitted `storageProvider`, which `deleteImage` dereferences first — a bogus value surfaced as `Storage provider 'undefined' not found in config` from inside the provider registry. It now checks all nine, plus the shape of the optional `metadata` and `transformations`.
   - `isFileLike` narrows to `File` but checked only `arrayBuffer`, while the upload path also reads `name`, `type` and `size` — so a value carrying only `arrayBuffer` was stored with an `originalFilename` of `undefined`. It now checks all four.
 
