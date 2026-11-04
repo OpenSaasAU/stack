@@ -9,6 +9,8 @@ import {
 } from '../generator/output-paths.js'
 import {
   PartialPromotionError,
+  planId,
+  readPlan,
   promoteStagedGeneration,
   restoreMigrationRefs,
   restoreRefsAfterReconcile,
@@ -314,5 +316,33 @@ describe('refs after an applied reconcile', () => {
     restoreRefsAfterReconcile(cwd, snapshot)
 
     expect(hashOf()).toBe('after')
+  })
+})
+
+describe('reading a plan out of the CLI envelope', () => {
+  const envelope = (result: object): string =>
+    JSON.stringify({ kind: 'result', envelope: { result } })
+
+  it('counts an access change as destructive and carries its --allow text', () => {
+    const plan = readPlan(
+      envelope({
+        dataLoss: [],
+        accessChanges: [{ text: 'Post', answered: false }],
+        plan: { operations: [{ label: 'open Post', operationClass: 'additive' }] },
+      }),
+    )
+    expect(plan?.accessChanges).toEqual(['Post'])
+    expect(plan?.destructive).toBe(true)
+  })
+
+  it('changes the plan id when an access change is added', () => {
+    const base = { dataLoss: [], plan: { operations: [] } }
+    const without = readPlan(envelope({ ...base, accessChanges: [] }))
+    const withChange = readPlan(envelope({ ...base, accessChanges: [{ text: 'Post' }] }))
+    expect(planId(withChange!)).not.toBe(planId(without!))
+  })
+
+  it('rejects an envelope that leaves accessChanges out', () => {
+    expect(readPlan(envelope({ dataLoss: [], plan: { operations: [] } }))).toBeUndefined()
   })
 })
