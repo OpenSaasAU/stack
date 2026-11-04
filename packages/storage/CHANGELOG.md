@@ -1,5 +1,11 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+
 ## 0.44.0-alpha.4
 
 ### Patch Changes

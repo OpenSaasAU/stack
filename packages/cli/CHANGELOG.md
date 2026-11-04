@@ -1,5 +1,15 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2139](https://github.com/OpenSaasAU/stack/pull/2139) [`e165820`](https://github.com/OpenSaasAU/stack/commit/e165820f6e3cd01bd7fd23aba046b7bf8321bd0c) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas migrate junction-ids` skipping junction lists declared with `foreignKey.map`; the planner now compares and emits physical column names.
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+- Updated dependencies [[`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2)]:
+  - @opensaas/stack-core@0.44.0-alpha.5
+
 ## 0.44.0-alpha.4
 
 ### Patch Changes

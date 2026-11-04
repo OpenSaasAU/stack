@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-core",
-  "version": "0.44.0-alpha.4",
+  "version": "0.44.0-alpha.5",
   "description": "Core stack for OpenSaas - schema definition, access control, and runtime utilities",
   "type": "module",
   "sideEffects": false,
