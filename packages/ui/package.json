@@ -116,7 +116,7 @@
     "@vitest/browser": "5.0.5",
     "@vitest/browser-playwright": "5.0.5",
     "@vitest/coverage-v8": "5.0.5",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "next": "^16.4.2",
     "pg": "^8.23.1",
     "playwright": "^1.61.1",
