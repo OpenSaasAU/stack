@@ -4,6 +4,7 @@ export type ConfigRefusalReason =
   | 'unknown-id-field'
   | 'duplicate-extension-pack'
   | 'invalid-extension-name'
+  | 'invalid-extension-source'
   | 'undeclared-extension-pack'
   | 'many-to-many'
   | 'foreign-key-on-both-sides'

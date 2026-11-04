@@ -14,31 +14,31 @@ type ModelToken = {
 
 export const contract = defineContract(
   { extensions: { pgvector } },
-  ({ field, model, type }) => {
+  ({ field, model, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_Document = (models.Document = model('Document', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        content: field.text(),
-        summary: field.text().optional(),
-        published: field.boolean().default(false),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        content: field.column(type.String()),
+        summary: field.column(type.String()).optional(),
+        published: field.column(type.Boolean()).default(false),
         contentEmbedding: field.column(type.pgvector.Vector(768)).optional(),
-        contentEmbeddingMetadata: field.json().optional(),
+        contentEmbeddingMetadata: field.column(type.Jsonb()).optional(),
       },
       relations: {},
     }))
 
     const model_Article = (models.Article = model('Article', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        body: field.text(),
-        category: field.text().optional(),
-        published: field.boolean().default(false),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        body: field.column(type.String()),
+        category: field.column(type.String()).optional(),
+        published: field.column(type.Boolean()).default(false),
         bodyEmbedding: field.column(type.pgvector.Vector(768)).optional(),
-        bodyEmbeddingMetadata: field.json().optional(),
+        bodyEmbeddingMetadata: field.column(type.Jsonb()).optional(),
       },
       relations: {},
     }))

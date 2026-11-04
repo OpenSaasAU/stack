@@ -34,7 +34,17 @@ export type EmittedContract = {
   storage: {
     namespaces: Record<
       string,
-      { entries: { table: Record<string, { uniques: { columns: string[]; name?: string }[] }> } }
+      {
+        entries: {
+          table: Record<
+            string,
+            {
+              uniques: { columns: string[]; name?: string }[]
+              indexes?: { columns: string[]; unique?: boolean; where?: unknown }[]
+            }
+          >
+        }
+      }
     >
   }
 }
@@ -90,7 +100,14 @@ function hasUniqueOn(emitted: EmittedContract, model: EmittedModel, field: strin
   if (column === undefined) return false
   const table =
     emitted.storage.namespaces[model.storage.namespaceId]?.entries.table[model.storage.table]
-  return table?.uniques.some((unique) => sameList(unique.columns, [column])) ?? false
+  if (table === undefined) return false
+  return (
+    table.uniques.some((unique) => sameList(unique.columns, [column])) ||
+    (table.indexes ?? []).some(
+      (index) =>
+        index.unique === true && index.where === undefined && sameList(index.columns, [column]),
+    )
+  )
 }
 
 function assertRelation(

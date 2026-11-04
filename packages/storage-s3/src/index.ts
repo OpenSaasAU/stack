@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { randomBytes } from 'node:crypto'
@@ -154,6 +155,19 @@ export class S3StorageProvider implements StorageProvider {
     })
 
     await this.client.send(command)
+  }
+
+  async move(from: string, to: string): Promise<void> {
+    const fromKey = this.getFullKey(from)
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.config.bucket,
+        Key: this.getFullKey(to),
+        CopySource: `${this.config.bucket}/${encodeURIComponent(fromKey).replace(/%2F/g, '/')}`,
+        ACL: this.config.acl || 'private',
+      }),
+    )
+    await this.delete(from)
   }
 
   getUrl(filename: string): string {

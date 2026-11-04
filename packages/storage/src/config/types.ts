@@ -23,6 +23,14 @@ export interface StorageProvider {
 
   getUrl(filename: string): string
 
+  /**
+   * Moves `from` onto `to`, replacing whatever `to` held. Both are filenames
+   * this provider returned or would accept from `upload`. Optional: with
+   * `generateUniqueFilenames: false`, a provider without it writes straight
+   * onto the stable key, so a rejected write can replace the stored bytes.
+   */
+  move?(from: string, to: string): Promise<void>
+
   /** Gets a signed URL for private files. */
   getSignedUrl?(filename: string, expiresIn?: number): Promise<string>
 }

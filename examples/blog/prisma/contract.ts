@@ -13,30 +13,30 @@ type ModelToken = {
 }
 
 export const contract = defineContract(
-  { extensions: {} },
-  ({ field, model, rel }) => {
+  {},
+  ({ field, model, rel, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_Settings = (models.Settings = model('Settings', {
       fields: {
-        id: field.int().default(1).id(),
-        siteName: field.text().default('My Blog'),
-        maintenanceMode: field.boolean().default(false),
-        maxUploadSize: field.int().optional().default(10),
+        id: field.column(type.Int()).default(1).id(),
+        siteName: field.column(type.String()).default('My Blog'),
+        maintenanceMode: field.column(type.Boolean()).default(false),
+        maxUploadSize: field.column(type.Int()).optional().default(10),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {},
     }))
 
     const model_User = (models.User = model('User', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text(),
-        email: field.text().unique(),
-        password: field.text(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()),
+        email: field.column(type.String()).unique(),
+        password: field.column(type.String()),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         posts: rel.hasMany(() => models.Post, { by: 'authorId' }),
@@ -45,17 +45,17 @@ export const contract = defineContract(
 
     const model_Post = (models.Post = model('Post', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        slug: field.text().unique(),
-        content: field.text().optional(),
-        internalNotes: field.text().optional(),
-        status: field.text().default('draft'),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        slug: field.column(type.String()).unique(),
+        content: field.column(type.String()).optional(),
+        internalNotes: field.column(type.String()).optional(),
+        status: field.column(type.String()).default('draft'),
         publishDate: field.column(dateStringColumn).optional().column('publish_date'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        authorId: field.uuidNative().optional(),
+        authorId: field.column(type.Uuid()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),
@@ -65,10 +65,10 @@ export const contract = defineContract(
 
     const model_Tag = (models.Tag = model('Tag', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text().unique(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()).unique(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         posts: rel.hasMany(() => models.PostTag, { by: 'tagId' }),
@@ -77,11 +77,11 @@ export const contract = defineContract(
 
     const model_PostTag = (models.PostTag = model('PostTag', {
       fields: {
-        id: field.id.uuidv7Native(),
-        postId: field.uuidNative().optional(),
-        tagId: field.uuidNative().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        postId: field.column(type.Uuid()).optional(),
+        tagId: field.column(type.Uuid()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         post: rel.belongsTo(() => models.Post, { from: 'postId', to: 'id' }),

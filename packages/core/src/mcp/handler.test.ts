@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import * as z from 'zod'
 import type { AccessContext, Session } from '../access/types.js'
 import type { McpCustomTool, OpenSaasConfig } from '../config/types.js'
-import { checkbox, relationship, text, virtual } from '../fields/index.js'
+import { checkbox, password, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
 import type { McpSessionProvider } from './types.js'
@@ -1635,6 +1635,58 @@ describe('the MCP surface', () => {
         },
       }
     }
+
+    test(
+      'a password() field is refused in where and orderBy as an unknown field is',
+      async () => {
+        const base = schemaConfig()
+        const config: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            User: {
+              ...base.lists.User,
+              fields: { ...base.lists.User.fields, secret: password() },
+            },
+          },
+        }
+        const toolText = (body: Record<string, unknown> | null) => {
+          const result = body?.result as {
+            isError?: boolean
+            content: Array<{ text: string }>
+          }
+          expect(result.isError).toBe(true)
+          return result.content[0].text
+        }
+        const unknown = await callTool(
+          'list_user_query',
+          { where: { nope: { contains: '$' } } },
+          config,
+        )
+        const expected = toolText(unknown.body).replace('nope', 'secret')
+        for (const args of [
+          { where: { secret: { contains: '$2' } } },
+          { orderBy: { secret: 'asc' } },
+        ]) {
+          const { body } = await callTool('list_user_query', args, config)
+          expect(toolText(body)).toBe(expected)
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a where nested past the relation depth cap is refused',
+      async () => {
+        let where: Record<string, unknown> = { id: { equals: 'x' } }
+        for (let level = 0; level < 6; level++) where = { posts: { some: where } }
+        const { body } = await callTool('list_user_query', { where }, schemaConfig())
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('levels deep')
+      },
+      BOOT,
+    )
 
     test(
       'an operation switched off is refused as an unknown tool',

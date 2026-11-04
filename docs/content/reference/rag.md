@@ -399,14 +399,13 @@ its contents, so a session that cannot read the column is refused.
 
 ### RAG Plugin Configuration
 
-| Option           | Type                         | Default | Description                                                      |
-| ---------------- | ---------------------------- | ------- | ---------------------------------------------------------------- |
-| `provider`       | `EmbeddingProviderConfig`    | —       | The single default provider                                      |
-| `providers`      | `Record<string, …Config>`    | `{}`    | Named providers, when fields choose between them                 |
-| `enableMcpTools` | `boolean`                    | `true`  | Register a `semantic_search_<list>` MCP tool per searchable list |
-| `batchSize`      | `number`                     | `10`    | Texts per provider call during batch generation                  |
-| `rateLimit`      | `number`                     | `100`   | Provider requests per minute                                     |
-| `buildTime`      | `{ enabled, outputPath, … }` | off     | Build-step embedding generation into a JSON index                |
+| Option           | Type                      | Default | Description                                                      |
+| ---------------- | ------------------------- | ------- | ---------------------------------------------------------------- |
+| `provider`       | `EmbeddingProviderConfig` | —       | The single default provider                                      |
+| `providers`      | `Record<string, …Config>` | `{}`    | Named providers, when fields choose between them                 |
+| `enableMcpTools` | `boolean`                 | `true`  | Register a `semantic_search_<list>` MCP tool per searchable list |
+| `batchSize`      | `number`                  | `10`    | Texts per provider call during batch generation                  |
+| `rateLimit`      | `number`                  | `100`   | Provider requests per minute                                     |
 
 Name either `provider` or `providers`; with `providers`, a field selects one by
 key.

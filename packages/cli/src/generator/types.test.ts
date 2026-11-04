@@ -456,3 +456,15 @@ describe('what the generated types refuse to emit', () => {
     )
   })
 })
+
+describe('contract import', () => {
+  it('defaults to the prisma directory', () => {
+    expect(render(config)).toContain("from '../prisma/contract.d.js'")
+  })
+
+  it('follows the contract.json specifier it is given', () => {
+    const types = generateTypes(config, deriveDependencyTable(config), '../db/contract.json')
+    expect(types).toContain("from '../db/contract.d.js'")
+    expect(types).not.toContain('../prisma/contract.d.js')
+  })
+})

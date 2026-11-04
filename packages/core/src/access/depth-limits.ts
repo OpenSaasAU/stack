@@ -25,3 +25,9 @@ export const READ_INCLUDE_MAX_DEPTH = 5
  * regardless of this cap. See ADR-0023.
  */
 export const RESOLVE_CHAIN_MAX_LENGTH = 5
+
+/** Maximum relation-quantifier nesting depth of a caller `where`. */
+export const WHERE_RELATION_MAX_DEPTH = READ_INCLUDE_MAX_DEPTH
+
+/** Maximum number of predicate entries in one caller `where`. */
+export const WHERE_MAX_NODES = 256

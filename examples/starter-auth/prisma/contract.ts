@@ -13,21 +13,21 @@ type ModelToken = {
 }
 
 export const contract = defineContract(
-  { extensions: {} },
-  ({ field, model, rel }) => {
+  {},
+  ({ field, model, rel, type, gen }) => {
     const models: Record<string, ModelToken> = {}
 
     const model_Post = (models.Post = model('Post', {
       fields: {
-        id: field.id.uuidv7Native(),
-        title: field.text(),
-        slug: field.text().unique(),
-        content: field.text().optional(),
-        internalNotes: field.text().optional(),
-        status: field.text().default('draft'),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        title: field.column(type.String()),
+        slug: field.column(type.String()).unique(),
+        content: field.column(type.String()).optional(),
+        internalNotes: field.column(type.String()).optional(),
+        status: field.column(type.String()).default('draft'),
         publishedAt: field.column(timestamptzStringColumn).optional(),
-        viewCount: field.int().optional().default(0),
-        authorId: field.uuidNative().optional(),
+        viewCount: field.column(type.Int()).optional().default(0),
+        authorId: field.column(type.Uuid()).optional(),
       },
       relations: {
         author: rel.belongsTo(() => models.User, { from: 'authorId', to: 'id' }),
@@ -36,9 +36,9 @@ export const contract = defineContract(
 
     const model_Note = (models.Note = model('Note', {
       fields: {
-        id: field.id.uuidv7Native(),
-        body: field.text(),
-        ownerId: field.uuidNative().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        body: field.column(type.String()),
+        ownerId: field.column(type.Uuid()).optional(),
       },
       relations: {
         owner: rel.belongsTo(() => models.User, { from: 'ownerId', to: 'id' }),
@@ -47,13 +47,13 @@ export const contract = defineContract(
 
     const model_User = (models.User = model('User', {
       fields: {
-        id: field.id.uuidv7Native(),
-        name: field.text(),
-        email: field.text().unique(),
-        emailVerified: field.boolean().default(false),
-        image: field.text().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        name: field.column(type.String()),
+        email: field.column(type.String()).unique(),
+        emailVerified: field.column(type.Boolean()).default(false),
+        image: field.column(type.String()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         sessions: rel.hasMany(() => models.Session, { by: 'userId' }),
@@ -65,14 +65,14 @@ export const contract = defineContract(
 
     const model_Session = (models.Session = model('Session', {
       fields: {
-        id: field.id.uuidv7Native(),
-        token: field.text().unique(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        token: field.column(type.String()).unique(),
         expiresAt: field.column(timestamptzStringColumn),
-        ipAddress: field.text().optional(),
-        userAgent: field.text().optional(),
-        userId: field.uuidNative(),
+        ipAddress: field.column(type.String()).optional(),
+        userAgent: field.column(type.String()).optional(),
+        userId: field.column(type.Uuid()),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         user: rel.belongsTo(() => models.User, { from: 'userId', to: 'id' }),
@@ -81,19 +81,19 @@ export const contract = defineContract(
 
     const model_Account = (models.Account = model('Account', {
       fields: {
-        id: field.id.uuidv7Native(),
-        accountId: field.text(),
-        providerId: field.text(),
-        userId: field.uuidNative(),
-        accessToken: field.text().optional(),
-        refreshToken: field.text().optional(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        accountId: field.column(type.String()),
+        providerId: field.column(type.String()),
+        userId: field.column(type.Uuid()),
+        accessToken: field.column(type.String()).optional(),
+        refreshToken: field.column(type.String()).optional(),
         accessTokenExpiresAt: field.column(timestamptzStringColumn).optional(),
         refreshTokenExpiresAt: field.column(timestamptzStringColumn).optional(),
-        scope: field.text().optional(),
-        idToken: field.text().optional(),
-        password: field.text().optional(),
+        scope: field.column(type.String()).optional(),
+        idToken: field.column(type.String()).optional(),
+        password: field.column(type.String()).optional(),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {
         user: rel.belongsTo(() => models.User, { from: 'userId', to: 'id' }),
@@ -102,12 +102,12 @@ export const contract = defineContract(
 
     const model_Verification = (models.Verification = model('Verification', {
       fields: {
-        id: field.id.uuidv7Native(),
-        identifier: field.text(),
-        value: field.text(),
+        id: field.column(type.Uuid()).id().onCreate(gen.uuid(7)),
+        identifier: field.column(type.String()),
+        value: field.column(type.String()),
         expiresAt: field.column(timestamptzStringColumn),
         createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),
-        updatedAt: field.temporal.updatedAtString(),
+        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),
       },
       relations: {},
     }))
