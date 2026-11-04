@@ -39,7 +39,31 @@ export async function introspect(client: pg.Client): Promise<LiveSchema> {
     `SELECT schemaname AS schema, indexname AS name FROM pg_indexes
       WHERE schemaname NOT IN ${SYSTEM_SCHEMAS}`,
   )
-  return { columns: columns.rows, constraints: constraints.rows, indexes: indexes.rows }
+  const compositeIndexes = await client.query<{
+    schema: string
+    table: string
+    name: string
+    columns: string[]
+  }>(
+    `SELECT n.nspname AS schema, t.relname AS "table", i.relname AS name,
+            array_agg(a.attname::text ORDER BY k.ord) AS columns
+       FROM pg_index x
+       JOIN pg_class i ON i.oid = x.indexrelid
+       JOIN pg_class t ON t.oid = x.indrelid
+       JOIN pg_namespace n ON n.oid = t.relnamespace
+       CROSS JOIN LATERAL unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+       JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+      WHERE x.indnkeyatts > 1 AND k.ord <= x.indnkeyatts AND x.indexprs IS NULL
+        AND n.nspname NOT IN ${SYSTEM_SCHEMAS}
+      GROUP BY n.nspname, t.relname, i.relname
+     HAVING count(*) = max(x.indnkeyatts)`,
+  )
+  return {
+    columns: columns.rows,
+    constraints: constraints.rows,
+    indexes: indexes.rows,
+    compositeIndexes: compositeIndexes.rows,
+  }
 }
 
 /**

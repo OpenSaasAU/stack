@@ -11,6 +11,7 @@ export interface LiveSchema {
   columns: LiveColumn[]
   constraints: Array<{ schema: string; table: string; name: string }>
   indexes: Array<{ schema: string; name: string }>
+  compositeIndexes?: Array<{ schema: string; table: string; name: string; columns: string[] }>
 }
 
 export interface FkRename {
@@ -34,11 +35,11 @@ export class FkRenameConflictError extends Error {
 
 const MAX_IDENTIFIER_BYTES = 63
 
-function clipIdentifier(name: string): string {
+function clipIdentifier(name: string, limit = MAX_IDENTIFIER_BYTES): string {
   const bytes = Buffer.from(name, 'utf8')
-  if (bytes.length <= MAX_IDENTIFIER_BYTES) return name
+  if (bytes.length <= limit) return name
   return new TextDecoder('utf-8', { fatal: false })
-    .decode(bytes.subarray(0, MAX_IDENTIFIER_BYTES))
+    .decode(bytes.subarray(0, limit))
     .replace(/\uFFFD+$/, '')
 }
 
@@ -91,7 +92,40 @@ export function planFkRenames(
       renames.push({ schema, table, from, to, constraints, indexes })
     }
   }
+
+  for (const model of models) {
+    const schema = model.namespace ?? DEFAULT_SCHEMA
+    const table = model.table ?? model.name
+    const tableRenames = renames.filter((r) => r.schema === schema && r.table === table)
+    if (tableRenames.length === 0) continue
+    const columnMap = new Map(tableRenames.map((r) => [r.from, r.to]))
+    const pinned = new Set(model.indexes.flatMap((index) => (index.name ? [index.name] : [])))
+
+    for (const index of live.compositeIndexes ?? []) {
+      if (index.schema !== schema || index.table !== table) continue
+      if (!index.columns.some((column) => columnMap.has(column))) continue
+      if (pinned.has(index.name)) continue
+      const suffix = (['key', 'idx'] as const).find(
+        (candidate) => index.name === prisma7Name(table, index.columns, candidate),
+      )
+      if (suffix === undefined) continue
+      const to = prisma7Name(
+        table,
+        index.columns.map((column) => columnMap.get(column) ?? column),
+        suffix,
+      )
+      const isConstraint = live.constraints.some(
+        (c) => c.schema === schema && c.table === table && c.name === index.name,
+      )
+      tableRenames[0][isConstraint ? 'constraints' : 'indexes'].push({ from: index.name, to })
+    }
+  }
   return renames
+}
+
+function prisma7Name(table: string, columns: string[], suffix: 'idx' | 'key'): string {
+  const room = MAX_IDENTIFIER_BYTES - suffix.length - 1
+  return `${clipIdentifier(`${table}_${columns.join('_')}`, room)}_${suffix}`
 }
 
 function renamed(name: string, table: string, from: string, to: string) {
