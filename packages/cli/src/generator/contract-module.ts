@@ -263,9 +263,21 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     fields.push(`        createdAt: ${created.expression}.defaultSql('now()'),`)
   }
   if (model.timestamps.updatedAt) {
-    fields.push(
-      '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
-    )
+    if (model.timestampType === undefined) {
+      fields.push(
+        '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
+      )
+    } else {
+      const updated = pgColumnExpression(model.name, {
+        name: 'updatedAt',
+        nullable: false,
+        type: model.timestampType,
+      })
+      for (const helper of updated.helpers) helpers.add(helper)
+      fields.push(
+        `        updatedAt: ${updated.expression}.onCreate(gen.now()).onUpdate(gen.now()),`,
+      )
+    }
   }
 
   const lines = [

@@ -247,11 +247,18 @@ function modelFields(
         : withPrecision(timestamptzStringColumn, firstNumber(model.timestampType?.args, 0))
     fields.createdAt = helpers.field.column(column).defaultSql('now()')
   }
-  if (model.timestamps.updatedAt)
+  if (model.timestamps.updatedAt) {
+    const updatedColumn =
+      model.timestampType === undefined
+        ? helpers.type.TimestamptzString()
+        : model.timestampType.type === 'timestamp'
+          ? withPrecision(timestampStringColumn, firstNumber(model.timestampType.args, 0))
+          : withPrecision(timestamptzStringColumn, firstNumber(model.timestampType.args, 0))
     fields.updatedAt = helpers.field
-      .column(helpers.type.TimestamptzString())
+      .column(updatedColumn)
       .onCreate(helpers.gen.now())
       .onUpdate(helpers.gen.now())
+  }
   return fields
 }
 

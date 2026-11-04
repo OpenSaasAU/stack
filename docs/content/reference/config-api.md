@@ -272,7 +272,9 @@ db: {
 }
 ```
 
-`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and the auto `createdAt`. A field's own `db.nativeType` wins. The auto `updatedAt` is not affected, so with a `Timestamp` default `createdAt` and `updatedAt` can differ in type. `Timestamp` columns are timezone-naive.
+`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and both auto-timestamps, `createdAt` and `updatedAt`. A field's own `db.nativeType` wins. `Timestamp` columns are timezone-naive.
+
+Adopting a database whose `updatedAt` columns carry a `now()` default drops that default, because `updatedAt` is application-side ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)). A raw `INSERT` that omits the `NOT NULL` column then fails instead of taking `now()`. On a `Timestamp` column the ORM writes `updatedAt` in UTC while `createdAt`'s `now()` default uses the session's timezone, so the two differ on a non-UTC session.
 
 ##### `extensions`
 
@@ -514,8 +516,7 @@ async function teacherNames(context: Context, lessonId: string) {
 }
 ```
 
-Each to-one hop off an included row is a null check — see [arity decides nullability](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
----
+## Each to-one hop off an included row is a null check — see [arity decides nullability](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 
 ### `ListConfig`
 

@@ -132,7 +132,7 @@ export type ContractModel = {
   id: ContractIdColumn
   /** Stored columns in declaration order, excluding `id` and the auto-timestamps. */
   columns: ContractColumn[]
-  /** The column type the auto-timestamps take, set only by `db.defaults.timestamp`. */
+  /** The column type both auto-timestamps take, set only by `db.defaults.timestamp`. */
   timestampType?: ColumnTypeDescriptor
   foreignKeys: ContractForeignKey[]
   compositeForeignKeys?: ContractCompositeForeignKey[]

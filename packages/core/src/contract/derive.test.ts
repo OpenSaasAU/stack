@@ -649,11 +649,17 @@ describe('deriveContract — db.defaults.timestamp', () => {
     expect(data.models[0].columns[0].type).toEqual({ pack: 'pg', type: 'dateTime' })
   })
 
-  test('sets no timestampType when only updatedAt is auto', () => {
+  test('sets timestampType when only updatedAt is auto', () => {
     const data = single(
       { A: { fields: { createdAt: timestamp() }, db: { timestamps: true } } },
       defaults,
     )
+    expect(data.models[0].timestamps).toEqual({ createdAt: false, updatedAt: true })
+    expect(data.models[0].timestampType).toEqual({ pack: 'pg', type: 'timestamp', args: [3] })
+  })
+
+  test('sets no timestampType when neither timestamp is auto', () => {
+    const data = single({ A: { fields: { seen: timestamp() } } }, defaults)
     expect(data.models[0].timestampType).toBeUndefined()
   })
 
