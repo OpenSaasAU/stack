@@ -318,6 +318,13 @@ describe('stored metadata url scheme', () => {
     'JaVaScRiPt:x',
     '//evil.example/x',
     '/\\evil.example',
+    '/\t/evil.example/x',
+    '/\n/evil.example/x',
+    '/\r/evil.example/x',
+    '/\t\t/evil.example/x',
+    'ht\ttps://evil.example/x',
+    'https://evil.example/\nx',
+    ' /uploads/a.pdf',
   ])('refuses %s', (url) => {
     expect(schemaFor().safeParse(withUrl(url)).success).toBe(false)
   })
@@ -328,6 +335,18 @@ describe('stored metadata url scheme', () => {
       expect(schemaFor().safeParse(withUrl(url)).success).toBe(true)
     },
   )
+
+  it('refuses a control-character image transformation url', () => {
+    const result = objectFor(image({ storage: 'images' }), 'photo', 'create').safeParse({
+      photo: {
+        ...validImageMetadata,
+        transformations: {
+          thumb: { url: '/\t/evil.example/x', width: 1, height: 1, size: 1 },
+        },
+      },
+    })
+    expect(result.success).toBe(false)
+  })
 
   it('refuses a javascript: image transformation url', () => {
     const result = objectFor(image({ storage: 'images' }), 'photo', 'create').safeParse({

@@ -28,9 +28,14 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 
-const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
-  message: 'url must be an http(s) URL or an absolute path',
-})
+const storedUrlSchema = z
+  .string()
+  .regex(/^[^\s\u0000-\u001f\u007f]*$/, {
+    message: 'url must not contain whitespace or control characters',
+  })
+  .regex(/^(https?:\/\/|\/(?![/\\]))/i, {
+    message: 'url must be an http(s) URL or an absolute path',
+  })
 
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
