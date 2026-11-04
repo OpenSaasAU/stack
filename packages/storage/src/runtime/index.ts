@@ -22,6 +22,8 @@ import {
   processImageTransformations,
   variantFilename,
 } from '../utils/image.js'
+import { randomBytes } from 'node:crypto'
+import { registerStaged, stableNameOf, stagingName } from '../utils/staged.js'
 import { getStorageProviderFactory } from './registry.js'
 
 /**
@@ -72,6 +74,12 @@ export interface UploadFileOptions {
    * to, before anything is written. Throw to refuse the upload.
    */
   claimStableKey?: (key: string) => Promise<void>
+  /**
+   * With `generateUniqueFilenames: false`, write under a staging key and
+   * leave the stable key untouched until the caller settles the upload through
+   * the field's `afterTransaction`. Ignored by a provider without `move`.
+   */
+  stageStable?: boolean
 }
 
 /**
@@ -92,6 +100,23 @@ async function claimStableKey(
   if (config.storage?.[storageProviderName]?.generateUniqueFilenames !== false) return
   const key = storedName.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
   await options.claimStableKey(key)
+}
+
+function stagingFor(
+  config: OpenSaasConfig,
+  storageProviderName: string,
+  provider: StorageProvider,
+  options: UploadFileOptions | undefined,
+): boolean {
+  return (
+    options?.stageStable === true &&
+    provider.move !== undefined &&
+    config.storage?.[storageProviderName]?.generateUniqueFilenames === false
+  )
+}
+
+function basenameOf(name: string): string {
+  return name.replace(/\0/g, '').split(/[/\\]/).pop() ?? ''
 }
 
 /**
@@ -144,22 +169,30 @@ export async function uploadFile(
   await claimStableKey(config, storageProviderName, storedName, options)
 
   const provider = createStorageProvider(config, storageProviderName)
+  const staging = stagingFor(config, storageProviderName, provider, options)
+  const stableName = basenameOf(storedName)
 
-  const result = await provider.upload(buffer, storedName, {
-    contentType,
-    metadata: options?.metadata,
-  })
+  const result = await provider.upload(
+    buffer,
+    staging ? stagingName(randomBytes(16).toString('hex'), stableName) : storedName,
+    {
+      contentType,
+      metadata: options?.metadata,
+    },
+  )
 
-  return {
-    filename: result.filename,
+  const metadata: FileMetadata = {
+    filename: staging ? stableNameOf(result.filename) : result.filename,
     originalFilename: file.name,
-    url: result.url,
+    url: staging ? provider.getUrl(stableNameOf(result.filename)) : result.url,
     mimeType: contentType,
     size: result.size,
     uploadedAt: new Date().toISOString(),
     storageProvider: storageProviderName,
     metadata: result.metadata,
   }
+  if (staging) registerStaged(metadata, provider, [[result.filename, metadata.filename]])
+  return metadata
 }
 
 /**
@@ -242,8 +275,12 @@ export async function uploadImage(
   }
 
   const provider = createStorageProvider(config, storageProviderName)
+  const staging = stagingFor(config, storageProviderName, provider, options)
+  const uploadName = staging
+    ? stagingName(randomBytes(16).toString('hex'), basenameOf(storedName))
+    : storedName
 
-  const result = await provider.upload(buffer, storedName, {
+  const result = await provider.upload(buffer, uploadName, {
     contentType,
     metadata: options?.metadata,
   })
@@ -253,7 +290,7 @@ export async function uploadImage(
     try {
       transformations = await processImageTransformations(
         buffer,
-        storedName,
+        uploadName,
         options.transformations,
         provider,
         contentType,
@@ -264,10 +301,10 @@ export async function uploadImage(
     }
   }
 
-  return {
-    filename: result.filename,
+  const metadata: ImageMetadata = {
+    filename: staging ? stableNameOf(result.filename) : result.filename,
     originalFilename: file.name,
-    url: result.url,
+    url: staging ? provider.getUrl(stableNameOf(result.filename)) : result.url,
     mimeType: contentType,
     size: result.size,
     width: detected.width,
@@ -275,8 +312,27 @@ export async function uploadImage(
     uploadedAt: new Date().toISOString(),
     storageProvider: storageProviderName,
     metadata: result.metadata,
-    transformations,
+    transformations: staging
+      ? Object.fromEntries(
+          Object.entries(transformations ?? {}).map(([name, variant]) => [
+            name,
+            {
+              ...variant,
+              filename: variant.filename && stableNameOf(variant.filename),
+              url: variant.filename ? provider.getUrl(stableNameOf(variant.filename)) : variant.url,
+            },
+          ]),
+        )
+      : transformations,
   }
+  if (staging) {
+    const pairs: Array<[string, string]> = [[result.filename, metadata.filename]]
+    for (const variant of Object.values(transformations ?? {})) {
+      if (variant.filename) pairs.push([variant.filename, stableNameOf(variant.filename)])
+    }
+    registerStaged(metadata, provider, pairs)
+  }
+  return metadata
 }
 
 export async function deleteFile(
@@ -390,6 +446,7 @@ function uploadFileOptions(options: unknown): UploadFileOptions | undefined {
     result.validation = validation
   }
   if (isRecord(metadata)) result.metadata = stringRecord(metadata)
+  if (options.stageStable === true) result.stageStable = true
   const { claimStableKey: claim } = options
   if (typeof claim === 'function') {
     result.claimStableKey = async (key) => {

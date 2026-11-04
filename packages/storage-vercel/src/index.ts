@@ -1,4 +1,4 @@
-import { put, del, get, issueSignedToken, presignUrl, BlobNotFoundError } from '@vercel/blob'
+import { put, del, copy, get, issueSignedToken, presignUrl, BlobNotFoundError } from '@vercel/blob'
 import type { PutCommandOptions } from '@vercel/blob'
 import { randomBytes } from 'node:crypto'
 import path from 'node:path'
@@ -247,6 +247,15 @@ export class VercelBlobStorageProvider implements StorageProvider {
         throw error
       }
     }
+  }
+
+  async move(from: string, to: string): Promise<void> {
+    await copy(this.getFullPath(from), this.getFullPath(to), {
+      access: this.getAccess(),
+      allowOverwrite: true,
+      ...this.authOptions(),
+    })
+    await this.delete(from)
   }
 
   getUrl(filename: string): string {
