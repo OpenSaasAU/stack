@@ -1,5 +1,9 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.4
+
+No changes in this release.
+
 ## 0.44.0-alpha.3
 
 ### Patch Changes
