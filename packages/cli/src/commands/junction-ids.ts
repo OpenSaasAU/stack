@@ -4,7 +4,7 @@ import chalk from 'chalk'
 import pg from 'pg'
 import { deriveContract, resolveDatabaseUrl } from '@opensaas/stack-core'
 import { loadOpenSaasConfig, loadProjectEnvFile } from '../generator/index.js'
-import { planJunctionIds, renderJunctionIdSql } from '../migration/junction-ids.js'
+import { planJunctionIds, renderJunctionIdSql, type PrimaryKey } from '../migration/junction-ids.js'
 import { introspect } from './fk-renames.js'
 
 export interface JunctionIdsOptions {
@@ -48,8 +48,10 @@ export async function junctionIdsCommand(options: JunctionIdsOptions = {}): Prom
   }
   try {
     const current = await client.query<{ schema: string }>('SELECT current_schema() AS schema')
-    const primaryKeys = await client.query<{ schema: string; table: string }>(
-      `SELECT n.nspname AS schema, t.relname AS "table"
+    const primaryKeys = await client.query<PrimaryKey>(
+      `SELECT n.nspname AS schema, t.relname AS "table", c.conname AS name,
+              ARRAY(SELECT a.attname::text FROM unnest(c.conkey) AS k(num)
+                      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.num) AS columns
          FROM pg_constraint c
          JOIN pg_class t ON t.oid = c.conrelid
          JOIN pg_namespace n ON n.oid = t.relnamespace
