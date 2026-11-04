@@ -1,5 +1,9 @@
 # @opensaas/stack-auth
 
+## 0.44.0-alpha.4
+
+No changes in this release.
+
 ## 0.44.0-alpha.3
 
 No changes in this release.
