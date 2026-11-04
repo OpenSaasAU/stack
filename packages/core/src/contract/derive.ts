@@ -751,7 +751,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         indexes: [],
         relations: [],
         timestamps,
-        ...(timestampDefault !== undefined && timestamps.createdAt
+        ...(timestampDefault !== undefined && (timestamps.createdAt || timestamps.updatedAt)
           ? { timestampType: timestampDefault }
           : {}),
       },
