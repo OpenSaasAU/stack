@@ -81,8 +81,7 @@ describe('stable filenames stage uploads until the write commits', () => {
 
     expect(await readdir(uploadDir)).toEqual(['report.pdf'])
     expect(await readFile(join(uploadDir, 'report.pdf'), 'utf8')).toBe('%PDF-REPLACEMENT')
-    expect(updated?.a?.filename).toBe('report.pdf')
-    expect(updated?.a?.url).toBe('/uploads/report.pdf')
+    expect(updated).toMatchObject({ a: { filename: 'report.pdf', url: '/uploads/report.pdf' } })
   })
 })
 
