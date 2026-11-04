@@ -21,7 +21,7 @@ export interface ReconcilePlan {
   readonly statements: readonly string[]
   /** The subjects whose data the plan would lose, as `--delete` names them. */
   readonly dataLoss: readonly string[]
-  /** The models whose rows the plan would open to more readers or writers, as `--allow` names them. */
+  /** The models whose access the plan would change, as `--allow` names them. */
   readonly accessChanges: readonly string[]
   readonly destructive: boolean
 }
@@ -83,7 +83,7 @@ export function readPlan(stdout: string): ReconcilePlan | undefined {
     const { result } = envelope.data.envelope
     const operations = result.plan?.operations ?? []
     const dataLoss = (result.dataLoss ?? []).map((subject) => subject.text)
-    const accessChanges = (result.accessChanges ?? []).map((subject) => subject.text)
+    const accessChanges = result.accessChanges.map((subject) => subject.text)
     plan = {
       operations,
       statements: (result.plan?.preview?.statements ?? []).map((statement) => statement.text),
