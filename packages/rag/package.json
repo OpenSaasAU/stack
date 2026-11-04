@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-rag",
-  "version": "0.44.0-alpha.2",
+  "version": "0.44.0-alpha.3",
   "description": "RAG and AI embeddings integration for OpenSaas Stack",
   "type": "module",
   "engines": {
