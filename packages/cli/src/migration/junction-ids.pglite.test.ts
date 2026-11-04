@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { config, deriveContract, list, type ContractModel } from '@opensaas/stack-core'
+import { deriveContract, list, type ContractModel } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { PGlite } from '@electric-sql/pglite'
 import { planJunctionIds, renderJunctionIdSql, type PrimaryKey } from './junction-ids.js'
@@ -135,41 +135,39 @@ describe('junction id backfill against Postgres', () => {
 
   describe('a junction list declared with foreignKey.map', () => {
     const recipe = () => {
-      const contract = deriveContract(
-        config({
-          db: { provider: 'postgresql', idField: 'cuid2' },
-          lists: {
-            Lesson: list({
-              fields: {
-                title: text(),
-                teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
-              },
-            }),
-            Teacher: list({
-              fields: {
-                name: text(),
-                lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
-              },
-            }),
-            LessonTeacher: list({
-              fields: {
-                lesson: relationship({
-                  ref: 'Lesson.teachers',
-                  db: { foreignKey: { map: 'A' }, isNullable: false },
-                }),
-                teacher: relationship({
-                  ref: 'Teacher.lessons',
-                  db: { foreignKey: { map: 'B' }, isNullable: false },
-                }),
-              },
-              db: {
-                map: '_Lesson_teachers',
-                indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
-              },
-            }),
-          },
-        }),
-      )
+      const contract = deriveContract({
+        db: { provider: 'postgresql', idField: 'cuid2' },
+        lists: {
+          Lesson: list({
+            fields: {
+              title: text(),
+              teachers: relationship({ ref: 'LessonTeacher.lesson', many: true }),
+            },
+          }),
+          Teacher: list({
+            fields: {
+              name: text(),
+              lessons: relationship({ ref: 'LessonTeacher.teacher', many: true }),
+            },
+          }),
+          LessonTeacher: list({
+            fields: {
+              lesson: relationship({
+                ref: 'Lesson.teachers',
+                db: { foreignKey: { map: 'A' }, isNullable: false },
+              }),
+              teacher: relationship({
+                ref: 'Teacher.lessons',
+                db: { foreignKey: { map: 'B' }, isNullable: false },
+              }),
+            },
+            db: {
+              map: '_Lesson_teachers',
+              indexes: [{ fields: ['lesson', 'teacher'], unique: true }, { fields: ['teacher'] }],
+            },
+          }),
+        },
+      })
       const model = contract.models.find((m) => m.name === 'LessonTeacher')
       if (model === undefined) throw new Error('LessonTeacher missing')
       return model
