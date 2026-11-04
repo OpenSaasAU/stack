@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-storage-s3",
-  "version": "0.44.0-alpha.4",
+  "version": "0.44.0-alpha.5",
   "description": "AWS S3 storage provider for OpenSaas Stack file uploads",
   "type": "module",
   "engines": {

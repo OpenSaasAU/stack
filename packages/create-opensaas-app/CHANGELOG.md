@@ -1,5 +1,13 @@
 # create-opensaas-app
 
+## 0.4.0-alpha.3
+
+### Patch Changes
+
+- [#2139](https://github.com/OpenSaasAU/stack/pull/2139) [`e165820`](https://github.com/OpenSaasAU/stack/commit/e165820f6e3cd01bd7fd23aba046b7bf8321bd0c) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
 ## 0.4.0-alpha.2
 
 ### Patch Changes
