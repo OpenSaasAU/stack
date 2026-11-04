@@ -342,7 +342,12 @@ describe('reading a plan out of the CLI envelope', () => {
     expect(planId(withChange!)).not.toBe(planId(without!))
   })
 
-  it('rejects an envelope that leaves accessChanges out', () => {
+  it('reads an apply result, which carries no accessChanges', () => {
+    const plan = readPlan(envelope({ mode: 'apply', plan: { operations: [] } }))
+    expect(plan?.accessChanges).toEqual([])
+  })
+
+  it('rejects a planning envelope that leaves accessChanges out', () => {
     expect(readPlan(envelope({ dataLoss: [], plan: { operations: [] } }))).toBeUndefined()
   })
 })

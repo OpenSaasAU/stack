@@ -46,18 +46,23 @@ const askedSubjectSchema = z.object({ text: z.string() })
 const resultEnvelopeSchema = z.object({
   kind: z.literal('result'),
   envelope: z.object({
-    result: z.object({
-      dataLoss: z.array(askedSubjectSchema).optional(),
-      accessChanges: z.array(askedSubjectSchema),
-      plan: z
-        .object({
-          operations: z.array(operationSchema).optional(),
-          preview: z
-            .object({ statements: z.array(z.object({ text: z.string() })).optional() })
-            .optional(),
-        })
-        .optional(),
-    }),
+    result: z
+      .object({
+        mode: z.string().optional(),
+        dataLoss: z.array(askedSubjectSchema).optional(),
+        accessChanges: z.array(askedSubjectSchema).optional(),
+        plan: z
+          .object({
+            operations: z.array(operationSchema).optional(),
+            preview: z
+              .object({ statements: z.array(z.object({ text: z.string() })).optional() })
+              .optional(),
+          })
+          .optional(),
+      })
+      .refine((result) => result.mode === 'apply' || result.accessChanges !== undefined, {
+        message: 'a planning result must report accessChanges',
+      }),
   }),
 })
 
@@ -83,7 +88,7 @@ export function readPlan(stdout: string): ReconcilePlan | undefined {
     const { result } = envelope.data.envelope
     const operations = result.plan?.operations ?? []
     const dataLoss = (result.dataLoss ?? []).map((subject) => subject.text)
-    const accessChanges = result.accessChanges.map((subject) => subject.text)
+    const accessChanges = (result.accessChanges ?? []).map((subject) => subject.text)
     plan = {
       operations,
       statements: (result.plan?.preview?.statements ?? []).map((statement) => statement.text),
