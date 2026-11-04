@@ -325,6 +325,10 @@ describe('stored metadata url scheme', () => {
     'ht\ttps://evil.example/x',
     'https://evil.example/\nx',
     ' /uploads/a.pdf',
+    '/\u0000/evil.example/x',
+    '/\u0001/evil.example/x',
+    '/\u001f/evil.example/x',
+    '/\u007f/evil.example/x',
   ])('refuses %s', (url) => {
     expect(schemaFor().safeParse(withUrl(url)).success).toBe(false)
   })
