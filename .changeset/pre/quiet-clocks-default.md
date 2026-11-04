@@ -3,7 +3,7 @@
 '@opensaas/stack-cli': minor
 ---
 
-Add `db.defaults.timestamp.nativeType`, a config-wide native type for every `timestamp()` column (plugin lists and the auto `createdAt` included). A field's own `db.nativeType` wins. `updatedAt` is not affected.
+Add `db.defaults.timestamp.nativeType`, a config-wide native type for every `timestamp()` column (plugin lists and both auto-timestamps included). A field's own `db.nativeType` wins.
 
 ```typescript
 export default config({
