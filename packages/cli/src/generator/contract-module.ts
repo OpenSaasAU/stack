@@ -105,7 +105,7 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
   const { type } = column
   switch (type.type) {
     case 'text':
-      return { expression: 'field.text()', helpers: [] }
+      return { expression: 'field.column(type.String())', helpers: [] }
     case 'varchar': {
       const length = numberArg(type.args, 0)
       if (length === undefined) {
@@ -123,24 +123,25 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
       return { expression: `field.column(charColumn(${length}))`, helpers: ['charColumn'] }
     }
     case 'int':
-      return { expression: 'field.int()', helpers: [] }
+      return { expression: 'field.column(type.Int())', helpers: [] }
     case 'smallint':
       return { expression: 'field.column(int2Column)', helpers: ['int2Column'] }
     case 'bigint':
-      return { expression: 'field.bigint()', helpers: [] }
+      return { expression: 'field.column(type.BigInt())', helpers: [] }
     case 'decimal': {
       const precision = numberArg(type.args, 0)
-      if (precision === undefined) return { expression: 'field.decimal()', helpers: [] }
+      if (precision === undefined)
+        return { expression: 'field.column(type.Decimal())', helpers: [] }
       const scale = numberArg(type.args, 1)
       const args = scale === undefined ? `${precision}` : `${precision}, ${scale}`
       return { expression: `field.column(numericColumn(${args}))`, helpers: ['numericColumn'] }
     }
     case 'float':
-      return { expression: 'field.float()', helpers: [] }
+      return { expression: 'field.column(type.Float())', helpers: [] }
     case 'real':
       return { expression: 'field.column(float4Column)', helpers: ['float4Column'] }
     case 'boolean':
-      return { expression: 'field.boolean()', helpers: [] }
+      return { expression: 'field.column(type.Boolean())', helpers: [] }
     case 'dateTime':
     case 'timestamptz':
       return withPrecision('timestamptzStringColumn', numberArg(type.args, 0))
@@ -157,13 +158,13 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
     case 'date':
       return { expression: 'field.column(dateStringColumn)', helpers: ['dateStringColumn'] }
     case 'uuid':
-      return { expression: 'field.uuidNative()', helpers: [] }
+      return { expression: 'field.column(type.Uuid())', helpers: [] }
     case 'json':
       return { expression: 'field.column(jsonColumn)', helpers: ['jsonColumn'] }
     case 'jsonb':
-      return { expression: 'field.json()', helpers: [] }
+      return { expression: 'field.column(type.Jsonb())', helpers: [] }
     case 'bytes':
-      return { expression: 'field.bytes()', helpers: [] }
+      return { expression: 'field.column(type.Bytes())', helpers: [] }
     case 'enum': {
       const name = column.enum?.name
       if (name === undefined) {
@@ -223,13 +224,15 @@ function codecLiteral(column: ContractColumn, value: unknown): string {
 function idExpression(id: ContractIdColumn): string {
   switch (id.strategy) {
     case 'uuid7':
-      return 'field.id.uuidv7Native()'
+      return 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))'
     case 'cuid2':
-      return 'field.id.cuid2()'
+      return 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))'
+    case 'cuid':
+      return 'field.column(type.String()).id().onCreate(gen.cuid(2))'
     case 'int autoincrement':
-      return `field.int().defaultSql('autoincrement()').id()`
+      return `field.column(type.Int()).defaultSql('autoincrement()').id()`
     case 'singleton':
-      return 'field.int().default(1).id()'
+      return 'field.column(type.Int()).default(1).id()'
   }
 }
 
@@ -248,14 +251,33 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     for (const helper of rendered.helpers) helpers.add(helper)
     fields.push(`        ${key(column.name)}: ${rendered.expression},`)
   }
-  // Known limits: createdAt avoids field.temporal.createdAtString(), which drops the database
+  // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt) {
-    helpers.add('timestamptzStringColumn')
-    fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
+    const created = pgColumnExpression(model.name, {
+      name: 'createdAt',
+      nullable: false,
+      type: model.timestampType ?? { pack: 'pg', type: 'timestamptz' },
+    })
+    for (const helper of created.helpers) helpers.add(helper)
+    fields.push(`        createdAt: ${created.expression}.defaultSql('now()'),`)
   }
   if (model.timestamps.updatedAt) {
-    fields.push('        updatedAt: field.temporal.updatedAtString(),')
+    if (model.timestampType === undefined) {
+      fields.push(
+        '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
+      )
+    } else {
+      const updated = pgColumnExpression(model.name, {
+        name: 'updatedAt',
+        nullable: false,
+        type: model.timestampType,
+      })
+      for (const helper of updated.helpers) helpers.add(helper)
+      fields.push(
+        `        updatedAt: ${updated.expression}.onCreate(gen.now()).onUpdate(gen.now()),`,
+      )
+    }
   }
 
   const lines = [
@@ -284,8 +306,12 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
  * rendered module and `buildPrismaContract` reach the builder identically.
  */
 function renderModelAttributes(model: ContractModel): string {
-  const uniques = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniques = model.indexes.filter(
+    (index) => index.unique && index.where === undefined && !index.asIndex,
+  )
+  const plainIndexes = model.indexes.filter(
+    (index) => !index.unique || index.where !== undefined || index.asIndex === true,
+  )
   const indexedColumns = model.columns.filter((column) => column.index)
 
   const uniqueEntries = uniques.map((index) => {
@@ -298,17 +324,37 @@ function renderModelAttributes(model: ContractModel): string {
     ...indexedColumns.map((column) => `constraints.index([${member('cols', column.name)}]),`),
     ...plainIndexes.map((index) => {
       const columns = index.columns.map((column) => member('cols', column)).join(', ')
-      const options = index.name !== undefined ? `, { map: ${literal(index.name)} }` : ''
-      return `constraints.index([${columns}]${options}),`
+      const options: string[] = []
+      if (index.name !== undefined) options.push(`map: ${literal(index.name)}`)
+      if (index.unique) options.push('unique: true')
+      if (index.where !== undefined)
+        options.push(
+          `where: sql(Object.assign([${literal(index.where)}], { raw: [${literal(index.where)}] }))`,
+        )
+      return `constraints.index([${columns}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''}),`
     }),
   ]
 
   const foreignKeyEntries = model.foreignKeys.map((fk) => {
     const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
     if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
     if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
     return `constraints.foreignKey(${member('cols', fk.column)}, ${modelBinding(fk.references.model)}.refs.id, { ${options.join(', ')} }),`
   })
+
+  const compositeEntries = (model.compositeForeignKeys ?? []).map((fk) => {
+    const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
+    if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
+    if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
+    const columns = fk.columns.map((column) => member('cols', column)).join(', ')
+    const targets = fk.references.columns
+      .map((column) => `${modelBinding(fk.references.model)}.refs[${literal(column)}]`)
+      .join(', ')
+    return `constraints.foreignKey([${columns}], [${targets}], { ${options.join(', ')} }),`
+  })
+  foreignKeyEntries.push(...compositeEntries)
 
   /** `key: []`, or the entries one per line under it. */
   function block(name: string, entries: string[]): string[] {
@@ -391,6 +437,8 @@ export function renderContractModule(data: ContractData): string {
 
   const usesEnums = data.enums.length > 0
   const builderImports = ['defineContract']
+  if (data.models.some((model) => model.indexes.some((index) => index.where !== undefined)))
+    builderImports.push('sql')
   if (usesEnums) builderImports.push('nativeEnum', 'pg')
 
   const lines: string[] = []
@@ -434,23 +482,23 @@ export function renderContractModule(data: ContractData): string {
 
   const scaffold: string[] = []
   const packNames = data.extensions.map((extension) => extension.name)
-  scaffold.push(
-    packNames.length === 0 ? 'extensions: {}' : `extensions: { ${packNames.join(', ')} }`,
-  )
+  if (packNames.length > 0) scaffold.push(`extensions: { ${packNames.join(', ')} }`)
   if (data.namespaces.length > 0) {
     scaffold.push(`namespaces: [${data.namespaces.map((ns) => literal(ns)).join(', ')}]`)
   }
 
-  const usesTypeHelper = data.models.some((model) =>
-    model.columns.some((column) => column.type.pack !== 'pg'),
+  const usesGenHelper = data.models.some(
+    (model) =>
+      model.id.strategy === 'uuid7' || model.id.strategy === 'cuid2' || model.timestamps.updatedAt,
   )
   const usesRelHelper = data.models.some((model) => model.relations.length > 0)
   const callbackParams = ['field', 'model']
   if (usesRelHelper) callbackParams.push('rel')
-  if (usesTypeHelper) callbackParams.push('type')
+  callbackParams.push('type')
+  if (usesGenHelper) callbackParams.push('gen')
 
   lines.push('export const contract = defineContract(')
-  lines.push(`  { ${scaffold.join(', ')} },`)
+  lines.push(scaffold.length === 0 ? '  {},' : `  { ${scaffold.join(', ')} },`)
   lines.push(`  ({ ${callbackParams.join(', ')} }) => {`)
   lines.push('    const models: Record<string, ModelToken> = {}')
   lines.push('')

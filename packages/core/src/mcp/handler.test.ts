@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import * as z from 'zod'
 import type { AccessContext, Session } from '../access/types.js'
 import type { McpCustomTool, OpenSaasConfig } from '../config/types.js'
-import { checkbox, relationship, text, virtual } from '../fields/index.js'
+import { checkbox, password, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
 import type { McpSessionProvider } from './types.js'
@@ -94,6 +94,7 @@ function schemaConfig(): OpenSaasConfig {
           }),
           secretInfo: relationship({ ref: 'Secret' }),
           draftRef: relationship({ ref: 'Draft' }),
+          unreadRef: relationship({ ref: 'Unread' }),
         },
         access: {
           operation: {
@@ -115,6 +116,12 @@ function schemaConfig(): OpenSaasConfig {
         fields: { title: text() },
         access: { operation: { query: () => true } },
         mcp: { enabled: false },
+      },
+      // Query tool switched off: unreachable over MCP like Draft.
+      Unread: {
+        fields: { code: text() },
+        access: { operation: { query: () => true } },
+        mcp: { tools: { read: false } },
       },
       // The field-grain fixture (ADR-0053): a constant rule beside an
       // `isAuthor` one, and a rule keyed off the session alone.
@@ -1637,6 +1644,58 @@ describe('the MCP surface', () => {
     }
 
     test(
+      'a password() field is refused in where and orderBy as an unknown field is',
+      async () => {
+        const base = schemaConfig()
+        const config: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            User: {
+              ...base.lists.User,
+              fields: { ...base.lists.User.fields, secret: password() },
+            },
+          },
+        }
+        const toolText = (body: Record<string, unknown> | null) => {
+          const result = body?.result as {
+            isError?: boolean
+            content: Array<{ text: string }>
+          }
+          expect(result.isError).toBe(true)
+          return result.content[0].text
+        }
+        const unknown = await callTool(
+          'list_user_query',
+          { where: { nope: { contains: '$' } } },
+          config,
+        )
+        const expected = toolText(unknown.body).replace('nope', 'secret')
+        for (const args of [
+          { where: { secret: { contains: '$2' } } },
+          { orderBy: { secret: 'asc' } },
+        ]) {
+          const { body } = await callTool('list_user_query', args, config)
+          expect(toolText(body)).toBe(expected)
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a where nested past the relation depth cap is refused',
+      async () => {
+        let where: Record<string, unknown> = { id: { equals: 'x' } }
+        for (let level = 0; level < 6; level++) where = { posts: { some: where } }
+        const { body } = await callTool('list_user_query', { where }, schemaConfig())
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('levels deep')
+      },
+      BOOT,
+    )
+
+    test(
       'an operation switched off is refused as an unknown tool',
       async () => {
         const config = withOverrides()
@@ -3051,4 +3110,79 @@ describe('the MCP surface', () => {
     },
     BOOT,
   )
+
+  describe('a where relation predicate into a list MCP does not expose', () => {
+    async function refusedText(where: Record<string, unknown>): Promise<string> {
+      const { body } = await callTool('list_post_query', { where })
+      const result = body?.result as { isError?: boolean; content: { text: string }[] }
+      expect(result.isError).toBe(true)
+      return result.content[0].text
+    }
+
+    const cases: Array<[string, string, Record<string, unknown>]> = [
+      [
+        'direct, mcp.enabled false',
+        'draftRef',
+        { draftRef: { some: { title: { contains: 'x' } } } },
+      ],
+      [
+        'OR-wrapped, mcp.enabled false',
+        'draftRef',
+        { OR: [{ title: { equals: 'a' } }, { draftRef: { none: { title: { equals: 'x' } } } }] },
+      ],
+      [
+        'nested through a reachable list, mcp.enabled false',
+        'draftRef',
+        {
+          comments: {
+            some: { post: { some: { draftRef: { some: { title: { equals: 'x' } } } } } },
+          },
+        },
+      ],
+      [
+        'direct, tools.read false',
+        'unreadRef',
+        { unreadRef: { some: { code: { contains: 'S' } } } },
+      ],
+      [
+        'OR-wrapped, tools.read false',
+        'unreadRef',
+        { OR: [{ unreadRef: { some: { code: { contains: 'S' } } } }] },
+      ],
+      ['a bare value, tools.read false', 'unreadRef', { unreadRef: null }],
+      ['denied query access', 'secretInfo', { secretInfo: { some: { value: { equals: 'x' } } } }],
+      [
+        'nested, tools.read false',
+        'unreadRef',
+        {
+          NOT: {
+            comments: {
+              some: { post: { some: { unreadRef: { some: { code: { contains: 'S' } } } } } },
+            },
+          },
+        },
+      ],
+    ]
+
+    test(
+      'a relation into a reachable list still filters',
+      async () => {
+        const { body } = await callTool('list_post_query', {
+          where: { comments: { some: { body: { contains: 'x' } } } },
+        })
+        const result = body?.result as { isError?: boolean }
+        expect(result.isError).toBeFalsy()
+      },
+      BOOT,
+    )
+
+    test.each(cases)(
+      '%s is refused as an unknown key',
+      async (_label, key, where) => {
+        const text = await refusedText(where)
+        expect(text).toContain(`"${key}" is not a queryable field of this list`)
+      },
+      BOOT,
+    )
+  })
 })

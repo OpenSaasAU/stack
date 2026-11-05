@@ -7,7 +7,12 @@ import type {
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
-import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
+import type {
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationConfig,
+  ImageTransformationResult,
+} from '../config/types.js'
 import type { FileValidationOptions } from '../utils/upload.js'
 import {
   assembleFileMetadata,
@@ -27,10 +32,20 @@ import {
   type MultiColumnDescriptor,
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
+import { isAssetReferenced } from '../utils/asset-references.js'
+import { takeStaged } from '../utils/staged.js'
+import { ValidationError, type AccessContext } from '@opensaas/stack-core'
 
-const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
-  message: 'url must be an http(s) URL or an absolute path',
-})
+const isControlCode = (code: number): boolean => code <= 0x1f || code === 0x7f
+
+const storedUrlSchema = z
+  .string()
+  .refine((url) => !/\s/.test(url) && ![...url].some((char) => isControlCode(char.charCodeAt(0))), {
+    message: 'url must not contain whitespace or control characters',
+  })
+  .regex(/^(https?:\/\/|\/(?![/\\]))/i, {
+    message: 'url must be an http(s) URL or an absolute path',
+  })
 
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
@@ -334,6 +349,56 @@ function staleAssets<TMetadata extends { filename: string }>(
   return stale.filter((asset): asset is TMetadata => Boolean(asset?.filename))
 }
 
+async function settleStaged<TMetadata extends { filename: string }>(
+  pending: PendingUpload<TMetadata>,
+  status: string,
+): Promise<TMetadata[]> {
+  const staged = pending.uploaded ? takeStaged(pending.uploaded) : undefined
+  if (!staged) return staleAssets(pending, status)
+  try {
+    if (status === 'committed' && !pending.discarded) await staged.promote()
+    else await staged.discard()
+  } catch (error) {
+    console.error(`Failed to settle staged upload: ${pending.uploaded?.filename}`, error)
+  }
+  return staleAssets(pending, status).filter((asset) => asset !== pending.uploaded)
+}
+
+type ReferenceField = Parameters<typeof isAssetReferenced>[3]
+
+function claimStableKeyFor(
+  context: AccessContext,
+  listKey: string,
+  fieldKey: string,
+  field: ReferenceField,
+  item: Record<string, unknown> | null | undefined,
+): (key: string) => Promise<void> {
+  return async (key) => {
+    if (await isAssetReferenced(context, listKey, fieldKey, field, key, item?.id)) {
+      throw new ValidationError([
+        `${fieldKey}: a file with this name already belongs to another item`,
+      ])
+    }
+  }
+}
+
+async function withoutSharedVariants<TMetadata extends ImageMetadata>(
+  context: AccessContext,
+  listKey: string,
+  fieldKey: string,
+  field: ReferenceField,
+  metadata: TMetadata,
+): Promise<TMetadata> {
+  if (!metadata.transformations) return metadata
+  const kept: Record<string, ImageTransformationResult> = {}
+  for (const [name, variant] of Object.entries(metadata.transformations)) {
+    const key = variant.filename ?? variant.url.split('/').pop()
+    if (key && (await isAssetReferenced(context, listKey, fieldKey, field, key))) continue
+    kept[name] = variant
+  }
+  return { ...metadata, transformations: kept }
+}
+
 function previousOnClear(
   fieldConfig: {
     cleanupOnReplace?: boolean
@@ -475,6 +540,7 @@ export function file<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
@@ -483,6 +549,8 @@ export function file<
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as FileMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
+          return
         await context.storage.deleteFile(fieldConfig.storage, deleted.filename)
       } catch (error) {
         console.error(`Failed to cleanup file on delete: ${deleted.filename}`, error)
@@ -491,8 +559,10 @@ export function file<
     }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
+          continue
         await context.storage.deleteFile(fieldConfig.storage, stale.filename)
       } catch (error) {
         console.error(`Failed to cleanup file: ${stale.filename}`, error)
@@ -512,7 +582,7 @@ export function file<
         // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
         resolveInput: async (args: any) => {
-          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const { resolvedData, inputData, fieldKey, listKey, context, item, operation } = args
           const inputValue = resolvedData?.[fieldKey]
 
           if (inputValue === null || inputValue === undefined) {
@@ -546,6 +616,8 @@ export function file<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
+                claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
               },
             )) as FileMetadata
 
@@ -649,6 +721,7 @@ export function image<
     inputData,
     originalItem,
     fieldKey,
+    listKey,
     context,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
   }: any) => {
@@ -657,7 +730,12 @@ export function image<
       const deleted = logicalValue(fieldConfig, fieldKey, originalItem) as ImageMetadata | null
       if (!deleted || typeof deleted !== 'object' || !deleted.filename) return
       try {
-        await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
+          return
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, deleted)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
       }
@@ -665,9 +743,14 @@ export function image<
     }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
-        await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+        if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
+          continue
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, stale)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image: ${stale.filename}`, error)
       }
@@ -686,7 +769,7 @@ export function image<
         // `resolvedData[fieldKey]`. See FieldResolveInputHookArgs in core.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field builder hooks are generic and resolved at runtime
         resolveInput: async (args: any) => {
-          const { resolvedData, inputData, fieldKey, context, item, operation } = args
+          const { resolvedData, inputData, fieldKey, listKey, context, item, operation } = args
           const inputValue = resolvedData?.[fieldKey]
 
           if (inputValue === null || inputValue === undefined) {
@@ -720,6 +803,8 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
+                claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
                 transformations: multiColumn ? undefined : fieldConfig.transformations,
               },
             )) as ImageMetadata

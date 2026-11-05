@@ -397,3 +397,13 @@ Contributions are welcome! This package is part of the OpenSaas Stack monorepo.
 ## License
 
 MIT
+
+## Read-only rendering
+
+`RichTextContent` renders a stored document on the server without mounting the editor. It honours the field's `features`, drops anything outside them, and re-checks link hrefs:
+
+```tsx
+import { RichTextContent } from '@opensaas/stack-tiptap/render'
+
+;<RichTextContent value={post.content} features={features} />
+```

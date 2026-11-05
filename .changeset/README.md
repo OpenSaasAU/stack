@@ -6,3 +6,7 @@ find the full documentation for it [in our repository](https://github.com/change
 
 We have a quick list of common questions to get you started engaging with this project in
 [our documentation](https://github.com/changesets/changesets/blob/main/docs/common-questions.md)
+
+## The scaffolder
+
+`create-opensaas-app` keeps its own version line outside the `fixed` group. When any pending changeset bumps an `@opensaas/stack-*` package, add a patch changeset for `create-opensaas-app` too; `pnpm check:scaffolder-changeset` fails CI otherwise.

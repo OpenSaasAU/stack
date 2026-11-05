@@ -107,7 +107,7 @@ function foreignKeyOwner(
  * carrying one is read at its full width, because a rule that reaches into
  * `item` cannot be answered against a row that was projected away.
  */
-async function readsTheRow(
+export async function readsTheRow(
   fieldConfig: FieldConfig | undefined,
   ctx: ResolveContext,
 ): Promise<boolean> {
@@ -253,6 +253,10 @@ export function selectionScope(
   return { fields: projection.caller, nested }
 }
 
+export function hasRowsBranch(plan: IncludePlan): boolean {
+  return plan.reduce?.kind === 'combine' && plan.reduce.branches.some((b) => b.kind === 'rows')
+}
+
 /**
  * The relation keys, level by level, whose fetched value is a declared-
  * dependency rows stand-in rather than what the caller will see —
@@ -265,7 +269,7 @@ export function reducedDeclaredKeys(includes: readonly IncludePlan[]): ReducedDe
   const keys = new Set<string>()
   const nested: Record<string, ReducedDeclaredKeys> = {}
   for (const plan of includes) {
-    if (plan.declaredRows !== undefined) {
+    if (plan.declaredRows !== undefined && !hasRowsBranch(plan)) {
       // `plan.includes` is always empty here (a reduce refuses `include()`),
       // so there is nothing beneath this key to descend into.
       keys.add(plan.relation)

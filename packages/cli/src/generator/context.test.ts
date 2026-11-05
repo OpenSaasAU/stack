@@ -12,6 +12,18 @@ const config: OpenSaasConfig = {
 const data: ContractData = deriveContract(config)
 
 describe('generateContext', () => {
+  it('quotes an extension specifier so it cannot break out of the import', () => {
+    const hostile: ContractData = {
+      ...data,
+      extensions: [{ name: 'pgvector', from: "pack/x'\nglobalThis.PWNED = true\n//" }],
+    }
+
+    const context = generateContext(config, hostile)
+
+    expect(context).toContain("from 'pack/x\\'\\nglobalThis.PWNED = true\\n///runtime'")
+    expect(context).not.toMatch(/^globalThis\.PWNED/m)
+  })
+
   it('constructs the client from the committed contract artifact', () => {
     const context = generateContext(config, data)
 
@@ -22,8 +34,8 @@ describe('generateContext', () => {
     // `.d.js`, not `.d.ts`: the Contract module sits in the same directory and
     // `./contract.d.ts` resolves to IT, not to the emitted declarations.
     expect(context).toContain("import type { Contract } from '../prisma/contract.d.js'")
-    expect(context).toContain('postgres<Contract>({')
-    expect(context).toContain('contractJson,')
+    expect(context).toContain("import { contractFromJson } from '@prisma/orm-postgres/static'")
+    expect(context).toContain('contract: contractFromJson<Contract>(contractJson),')
   })
 
   it('imports no generated Prisma client tree', () => {

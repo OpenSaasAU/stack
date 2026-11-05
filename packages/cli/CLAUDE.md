@@ -196,12 +196,13 @@ import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import { originTripwire } from '@opensaas/stack-core/origin'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
+import { contractFromJson } from '@prisma/orm-postgres/static'
 import type { Contract } from '../prisma/contract.d.js'
 import contractJson from '../prisma/contract.json' with { type: 'json' }
 
 function createClient(config: OpenSaasConfig) {
-  return postgres<Contract>({
-    contractJson,
+  return postgres({
+    contract: contractFromJson<Contract>(contractJson),
     extensions: [],
     middleware: [originTripwire],
     ...resolveRuntimeConnection(config.db.client),

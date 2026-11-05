@@ -134,10 +134,22 @@ export interface WriteStrategy {
 async function runInTransaction(
   opener: TransactionOpener | undefined,
   ormHandle: OrmClient,
-  fn: (tx: OrmClient, rowLock: RowLockLane | undefined) => Promise<OrmRow | null>,
-): Promise<OrmRow | null> {
+  fn: (tx: OrmClient, rowLock: RowLockLane | undefined) => Promise<WrittenRow | null>,
+): Promise<WrittenRow | null> {
   if (opener === undefined) return fn(ormHandle, undefined)
   return opener((opened) => fn(opened.ormHandle, opened.rowLock))
+}
+
+/**
+ * Thrown inside the write's transaction when the write ends as `null` after its
+ * hooks already ran, so their writes roll back with it. Caught at the
+ * transaction boundary and answered as `null`; never reaches the caller.
+ */
+class WriteAbandonedSignal extends Error {
+  constructor() {
+    super('The write produced no row after its hooks ran.')
+    this.name = 'WriteAbandonedSignal'
+  }
 }
 
 /**
@@ -263,28 +275,35 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     afterTransactionContext: resolveAfterTransactionContext(context, config),
     joinedOwner: existingOwner,
     ownedRegistry,
-    runTransaction: () =>
-      runInTransaction(opener, ormHandle, async (tx, openedLock) => {
-        const written = await runWriteInTransaction(
-          {
-            ...args,
-            ormHandle: tx,
-            // Reuse the pre-transaction target resolution (#569 call-count semantics).
-            preResolvedTarget: gate,
-            onTargetLocked: (lockedItem) => {
-              for (const involved of involvedLists) involved.originalItem = lockedItem
+    runTransaction: async () => {
+      try {
+        return await runInTransaction(opener, ormHandle, async (tx, openedLock) => {
+          const written = await runWriteInTransaction(
+            {
+              ...args,
+              ormHandle: tx,
+              // Reuse the pre-transaction target resolution (#569 call-count semantics).
+              preResolvedTarget: gate,
+              onTargetLocked: (lockedItem) => {
+                for (const involved of involvedLists) involved.originalItem = lockedItem
+              },
+              // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
+              // transaction owner (ADR-0028) — see bindContextToTransaction below.
+              context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
             },
-            // Rebind context.db/ormHandle to `tx` (ADR-0010 atomicity) and carry the
-            // transaction owner (ADR-0028) — see bindContextToTransaction below.
-            context: bindContextToTransaction(args, tx, transactionOwnerForBody, openedLock),
-          },
-          ops,
-        )
-        if (ownedRegistry?.isPoisoned) {
-          throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
-        }
-        return written
-      }),
+            ops,
+          )
+          if (ownedRegistry?.isPoisoned) {
+            throw new TransactionRolledBackError({ cause: ownedRegistry.poisonCause })
+          }
+          return written
+        })
+      } catch (error) {
+        if (!(error instanceof WriteAbandonedSignal)) throw error
+        ;(existingOwner ?? ownedRegistry)?.poison(error)
+        return null
+      }
+    },
   })
 }
 
@@ -317,7 +336,9 @@ async function lockTarget(
   }
   const key = originalItem[identity.column]
   if (typeof key !== 'string' && typeof key !== 'number') return gated
-  const held = await lane.lock(args.listName, identity, [key])
+  // `forUpdate` on an update deadlocks against a child INSERT's foreign-key lock (ADR-0078).
+  const strength = args.strategy.operation === 'update' ? 'forNoKeyUpdate' : 'forUpdate'
+  const held = await lane.lock(args.listName, identity, [key], strength)
   if (held.length === 0) return { status: 'denied' }
   return args.strategy.resolveTarget(collection, ops, args.context)
 }
@@ -413,6 +434,11 @@ function resolveAfterTransactionContext(
   return afterTransactionContext
 }
 
+interface WrittenRow {
+  visible: OrmRow
+  raw: OrmRow
+}
+
 /**
  * The body of one secured write, executed against the transaction client `tx`
  * (passed in as `args.ormHandle`). Returns `null` for the silent-failure cases and
@@ -422,7 +448,7 @@ function resolveAfterTransactionContext(
 async function runWriteInTransaction(
   args: WritePipelineArgs,
   ops: WhereCombinators,
-): Promise<OrmRow | null> {
+): Promise<WrittenRow | null> {
   const { listName, listConfig, ormHandle: tx, context, config, inputData, strategy } = args
   const { operation } = strategy
   const collection = writeCollection(tx, listName)
@@ -505,7 +531,7 @@ async function runWriteInTransaction(
     data,
     inputData: callerInput,
   })
-  if (linked.status === 'unreachable') return null
+  if (linked.status === 'unreachable') throw new WriteAbandonedSignal()
   const writeData = linked.data
 
   // ── Phase 6: field-level beforeOperation (side effects only) ────────────────
@@ -545,9 +571,10 @@ async function runWriteInTransaction(
   // The scope matched nothing this time: the target was read under the same
   // predicate moments earlier in this transaction, so the row is gone —
   // dropped by a `beforeOperation` hook's own write, typically. `null` is
-  // denied-or-gone on every terminal, and no after-hook fires for a write
-  // that did not happen.
-  if (item === null) return null
+  // denied-or-gone on every terminal. The hooks that already ran are rolled
+  // back with the write, and no after-hook fires for a write that did not
+  // happen.
+  if (item === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
   await executeAfterOperation(
@@ -587,7 +614,12 @@ async function runWriteInTransaction(
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
   const binding = { listName, listConfig, ormHandle: tx, context, config }
-  return visibleWrittenRow(binding, item, await writtenRowQueryable(binding, item.id))
+  const visible = await visibleWrittenRow(
+    binding,
+    item,
+    await writtenRowQueryable(binding, item.id),
+  )
+  return { visible, raw: item }
 }
 
 /**
@@ -607,7 +639,7 @@ async function runDeletePath(args: {
   ops: WhereCombinators
   scope: WriteScope
   strategy: WriteStrategy
-}): Promise<OrmRow | null> {
+}): Promise<WrittenRow | null> {
   const {
     ormHandle,
     listName,
@@ -665,7 +697,7 @@ async function runDeletePath(args: {
 
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
-  if (deleted === null) return null
+  if (deleted === null) throw new WriteAbandonedSignal()
 
   // ── Phase 9: list-level afterOperation (delete) ─────────────────────────────
   await executeAfterOperation(listConfig.hooks, {
@@ -687,7 +719,8 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  return visibleWrittenRow(binding, deleted, queryable)
+  const visible = await visibleWrittenRow(binding, deleted, queryable)
+  return { visible, raw: deleted }
 }
 
 // ── Per-operation strategies ──────────────────────────────────────────────────

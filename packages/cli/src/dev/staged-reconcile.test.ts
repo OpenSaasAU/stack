@@ -9,7 +9,9 @@ import {
 } from '../generator/output-paths.js'
 import {
   PartialPromotionError,
+  planId,
   promoteStagedGeneration,
+  readPlan,
   restoreMigrationRefs,
   restoreRefsAfterReconcile,
   snapshotMigrationRefs,
@@ -314,5 +316,40 @@ describe('refs after an applied reconcile', () => {
     restoreRefsAfterReconcile(cwd, snapshot)
 
     expect(hashOf()).toBe('after')
+  })
+})
+
+describe('reading a plan out of the CLI envelope', () => {
+  const envelope = (result: object): string =>
+    JSON.stringify({ kind: 'result', envelope: { result } })
+
+  it('counts an access change as destructive and carries its --allow text', () => {
+    const plan = readPlan(
+      envelope({
+        dataLoss: [],
+        accessChanges: [{ text: 'Post', answered: false }],
+        plan: { operations: [{ label: 'open Post', operationClass: 'additive' }] },
+      }),
+    )
+    expect(plan?.accessChanges).toEqual(['Post'])
+    expect(plan?.destructive).toBe(true)
+  })
+
+  it('changes the plan id when an access change is added', () => {
+    const base = { dataLoss: [], plan: { operations: [] } }
+    const without = readPlan(envelope({ ...base, accessChanges: [] }))
+    const withChange = readPlan(envelope({ ...base, accessChanges: [{ text: 'Post' }] }))
+    expect(planId(withChange!)).not.toBe(planId(without!))
+  })
+
+  it('reads an apply result, which carries no accessChanges', () => {
+    const plan = readPlan(envelope({ mode: 'apply', plan: { operations: [] } }))
+    expect(plan?.accessChanges).toEqual([])
+  })
+
+  it('rejects a dry-run envelope that leaves accessChanges out', () => {
+    expect(
+      readPlan(envelope({ mode: 'dry-run', dataLoss: [], plan: { operations: [] } })),
+    ).toBeUndefined()
   })
 })

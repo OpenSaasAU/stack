@@ -113,6 +113,55 @@ describe('synthetic back-relation include with a row-dependent source rule (#181
   )
 
   test(
+    'refuses limit, offset and orderBy over the row-dependent synthetic relation',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c4' } })
+      if (category === null) throw new Error('setup')
+      for (const title of ['hidden', 'b', 'a']) {
+        await db.Post.create({ data: { title, category: { connect: { id: category.id } } } })
+      }
+
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }).limit(1),
+        ).all(),
+      ).rejects.toThrow(/Cannot limit/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) => posts.offset(1)).all(),
+      ).rejects.toThrow(/Cannot offset/)
+      await expect(
+        db.Category.include('from_Post_category', (posts) =>
+          posts.orderBy({ title: 'desc' }),
+        ).all(),
+      ).rejects.toThrow(/Cannot orderBy/)
+    },
+    BOOT,
+  )
+
+  test(
+    'a sudo read still pages the link',
+    async () => {
+      const { db } = harness.context
+      const category = await db.Category.create({ data: { name: 'c5' } })
+      if (category === null) throw new Error('setup')
+      for (const title of ['hidden', 'b']) {
+        await db.Post.create({ data: { title, category: { connect: { id: category.id } } } })
+      }
+
+      const rows = await harness.context
+        .sudo()
+        .db.Category.where({ name: { equals: 'c5' } })
+        .include('from_Post_category', (posts) => posts.orderBy({ title: 'asc' }).limit(1))
+        .all()
+      const posts = rows[0].from_Post_category
+      if (!Array.isArray(posts)) throw new Error('expected a to-many')
+      expect(posts.map((post) => post.title)).toEqual(['b'])
+    },
+    BOOT,
+  )
+
+  test(
     'a sudo read still counts the link',
     async () => {
       const { db } = harness.context
@@ -160,4 +209,146 @@ describe('synthetic back-relation count with a row-independent allow rule (#1910
     },
     BOOT,
   )
+})
+
+describe('synthetic back-relation include answers the same rule with and without select() (#2066)', () => {
+  function projectionConfig(
+    read: (args: {
+      item?: Record<string, unknown>
+      session?: { userId?: string } | null
+    }) => boolean,
+  ): OpenSaasConfig {
+    const allow = { operation: { query: () => true, create: () => true } }
+    return {
+      db: { provider: 'postgresql' },
+      lists: {
+        Region: {
+          fields: {
+            name: text(),
+            categories: relationship({ ref: 'Category.region', many: true }),
+          },
+          access: allow,
+        },
+        Category: {
+          fields: { name: text(), region: relationship({ ref: 'Region.categories' }) },
+          access: allow,
+        },
+        Post: {
+          fields: {
+            title: text(),
+            visibility: text(),
+            owner: text(),
+            category: relationship({ ref: 'Category', access: { read } }),
+          },
+          access: allow,
+        },
+      },
+    }
+  }
+
+  async function seed(harness: TestContext) {
+    const { db } = harness.context
+    const region = await db.Region.create({ data: { name: 'r' } })
+    if (region === null) throw new Error('setup')
+    const category = await db.Category.create({
+      data: { name: 'c', region: { connect: { id: region.id } } },
+    })
+    if (category === null) throw new Error('setup')
+    const link = { category: { connect: { id: category.id } } }
+    await db.Post.create({
+      data: { title: 'public post', visibility: 'public', owner: 'me', ...link },
+    })
+    await db.Post.create({
+      data: { title: 'PRIVATE post', visibility: 'private', owner: 'other', ...link },
+    })
+  }
+
+  const titles = (rows: readonly { title: string }[] | unknown): string[] => {
+    if (!Array.isArray(rows)) throw new Error('expected a to-many')
+    return rows.map((row: { title: string }) => row.title)
+  }
+
+  describe('fail-open rule', () => {
+    let harness: TestContext
+    beforeAll(async () => {
+      harness = await createTestContext(
+        projectionConfig(({ item }) => item?.visibility !== 'private'),
+        null,
+      )
+      await seed(harness)
+    }, BOOT)
+    afterAll(async () => {
+      await harness?.close()
+    })
+
+    test(
+      'select() does not leak the hidden row',
+      async () => {
+        const { db } = harness.context
+        const plain = await db.Category.include('from_Post_category').all()
+        const projected = await db.Category.include('from_Post_category', (p) =>
+          p.select('title'),
+        ).all()
+        expect(titles(plain[0].from_Post_category)).toEqual(['public post'])
+        expect(titles(projected[0].from_Post_category)).toEqual(['public post'])
+      },
+      BOOT,
+    )
+
+    test(
+      'holds when nested under another include',
+      async () => {
+        const { db } = harness.context
+        const rows = await db.Region.include('categories', (c) =>
+          c.include('from_Post_category', (p) => p.select('title')),
+        ).all()
+        const categories = rows[0].categories
+        if (!Array.isArray(categories)) throw new Error('expected a to-many')
+        expect(titles(categories[0].from_Post_category)).toEqual(['public post'])
+      },
+      BOOT,
+    )
+  })
+
+  describe('fail-closed rule', () => {
+    let harness: TestContext
+    beforeAll(async () => {
+      harness = await createTestContext(
+        projectionConfig(({ item }) => item?.owner === 'me'),
+        null,
+      )
+      await seed(harness)
+    }, BOOT)
+    afterAll(async () => {
+      await harness?.close()
+    })
+
+    test(
+      'select() does not hide the readable row',
+      async () => {
+        const { db } = harness.context
+        const plain = await db.Category.include('from_Post_category').all()
+        const projected = await db.Category.include('from_Post_category', (p) =>
+          p.select('title'),
+        ).all()
+        expect(titles(plain[0].from_Post_category)).toEqual(['public post'])
+        expect(titles(projected[0].from_Post_category)).toEqual(['public post'])
+      },
+      BOOT,
+    )
+
+    test(
+      'holds when nested under another include',
+      async () => {
+        const { db } = harness.context
+        const rows = await db.Region.include('categories', (c) =>
+          c.include('from_Post_category', (p) => p.select('title')),
+        ).all()
+        const categories = rows[0].categories
+        if (!Array.isArray(categories)) throw new Error('expected a to-many')
+        expect(titles(categories[0].from_Post_category)).toEqual(['public post'])
+      },
+      BOOT,
+    )
+  })
 })

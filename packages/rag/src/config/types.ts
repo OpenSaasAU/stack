@@ -72,34 +72,6 @@ export type CustomEmbeddingConfig = {
 export type EmbeddingProviderConfig =
   OpenAIEmbeddingConfig | OllamaEmbeddingConfig | CustomEmbeddingConfig
 
-export type BuildTimeConfig = {
-  enabled: boolean
-
-  /**
-   * Relative to project root.
-   * @default '.embeddings/embeddings.json'
-   */
-  outputPath?: string
-
-  /**
-   * In characters.
-   * @default 500
-   */
-  chunkSize?: number
-
-  /**
-   * In characters.
-   * @default 50
-   */
-  chunkOverlap?: number
-
-  /**
-   * Only regenerate embeddings for changed content.
-   * @default true
-   */
-  differential?: boolean
-}
-
 export type RAGConfig = {
   /** Can be overridden per field via `providers`. */
   provider?: EmbeddingProviderConfig
@@ -117,12 +89,6 @@ export type RAGConfig = {
    * ```
    */
   providers?: Record<string, EmbeddingProviderConfig>
-
-  /**
-   * When enabled, embeddings are generated at build time and stored in a
-   * JSON file instead of being generated at runtime via hooks.
-   */
-  buildTime?: BuildTimeConfig
 
   /**
    * Requires MCP to be enabled in the main config.
@@ -143,7 +109,6 @@ export type RAGConfig = {
 export type NormalizedRAGConfig = {
   provider: EmbeddingProviderConfig | null
   providers: Record<string, EmbeddingProviderConfig>
-  buildTime: Required<BuildTimeConfig> | null
   enableMcpTools: boolean
   batchSize: number
   rateLimit: number

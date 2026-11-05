@@ -154,6 +154,7 @@ export type {
   ExtensionDescriptor,
   IdFieldStrategy,
   ReferentialAction,
+  ListForeignKey,
   ListIndex,
   ListIndexFieldRef,
   SessionConfig,

@@ -388,6 +388,9 @@ export async function seedExtensionContractSpaces(
  *
  * @throws {OrphanExtensionSpaceError} naming every orphaned directory.
  */
+// Not exported by @prisma/orm-target-postgres; only named in marker remediations.
+const POSTGRES_MARKER_TABLE = 'prisma_contract.marker'
+
 async function refuseOrphanedExtensionSpaces(
   migrationsDir: string,
   loadedSpaces: ReadonlySet<string>,
@@ -398,6 +401,7 @@ async function refuseOrphanedExtensionSpaces(
     spaceDirsOnDisk,
     headRefsBySpace: new Map(),
     markerRowsBySpace: new Map(),
+    markerLocation: POSTGRES_MARKER_TABLE,
   })
   if (result.ok) return
 

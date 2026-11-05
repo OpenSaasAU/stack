@@ -75,12 +75,13 @@ export default config({
 // lib/second-client.ts
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import postgres from '@prisma/orm-postgres/runtime'
+import { contractFromJson } from '@prisma/orm-postgres/static'
 import type { Contract } from '../prisma/contract.d.js'
 import contractJson from '../prisma/contract.json' with { type: 'json' }
 import { dbClient } from './db-client'
 
-export const secondClient = postgres<Contract>({
-  contractJson,
+export const secondClient = postgres({
+  contract: contractFromJson<Contract>(contractJson),
   ...resolveRuntimeConnection(dbClient),
 })
 ```
@@ -394,6 +395,12 @@ async function book(context: Context, slotId: string) {
 ```
 
 `first()` returning `null` under `forUpdate()` means denied-or-vanished, extending the conflation silent failure already makes deliberately.
+
+Take the lock **before** inserting a child of the locked row. The insert's foreign-key check holds a lock on the parent that `forUpdate()` conflicts with, so two racers that insert first and lock second deadlock, and one fails with a `DatabaseError`.
+
+For the same reason, take `forUpdate()` **before** a root `update` of the row rather than after it, and not inside that row's own update hook. A root `update` holds a weaker lock that lets a racer's foreign-key check through, so strengthening it afterwards can deadlock with a racer that inserted or repointed a child of the row and then waits on your transaction.
+
+An update that changes a column in a unique index, or a `connect` that changes a one-to-one owner's foreign key, needs no `forUpdate()` from anyone to hit this, because PostgreSQL strengthens that `UPDATE` itself. Where such a racer is possible, take `forUpdate()` on the row first, inside `context.transaction`.
 
 `advisoryLock(key)` takes PostgreSQL's transaction-scoped advisory lock, waiting until it is free and releasing when the transaction ends however it ends. It locks a number rather than rows, which is why it sits on the transaction context and not on `db`.
 

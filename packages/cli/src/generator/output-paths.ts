@@ -204,3 +204,20 @@ export function stageWritePaths(paths: ResolvedWritePaths, stagingDir: string): 
     tables: path.join(bundleDir, OPENSAAS_FILES.tables),
   }
 }
+
+export const DEFAULT_CONTRACT_JSON_IMPORT = '../prisma/contract.json'
+
+/**
+ * The `contract.d.ts` beside a `contract.json`, as a type-only specifier.
+ *
+ * Spelled `.d.js`, not `.d.ts`: the Contract module (`prisma/contract.ts`)
+ * sits in the same directory, and TypeScript resolves `./contract.d.ts` to
+ * THAT file, so the import lands on the builder module and `Contract` is not
+ * among its exports. `./contract.d.js` takes the standard `.js` -> `.d.ts`
+ * mapping and reaches the emitted declarations. The import is type-only and
+ * erased, so no loader ever sees the specifier — ADR-0054's `.ts` rule is
+ * about value imports.
+ */
+export function contractTypesImport(contractJsonImport: string): string {
+  return contractJsonImport.replace(/contract\.json$/, 'contract.d.js')
+}

@@ -13,6 +13,7 @@ function config(): OpenSaasConfig {
       Post: { fields: { title: text() }, db: { idField: 'int autoincrement' } },
       User: { fields: { name: text() } },
       Tag: { fields: { name: text() }, db: { idField: 'cuid2' } },
+      Legacy: { fields: { name: text() }, db: { idField: 'cuid' } },
       Settings: { fields: { name: text() }, isSingleton: true },
     },
   }
@@ -65,6 +66,15 @@ describe('the contract-driven id boundary (ADR-0048)', () => {
     expect(parseListId(config(), 'Tag', CUID)).toEqual({ ok: true, value: CUID })
     expect(parseListId(config(), 'Tag', CUID.slice(0, 23))).toEqual({ ok: false })
     expect(parseListId(config(), 'Tag', UUID)).toEqual({ ok: false })
+  })
+
+  test('a cuid-keyed list accepts both cuid v1 and cuid2 values and refuses the rest', () => {
+    const v1 = 'ckx1a2b3c4d5e6f7g8h9i0j1k'
+    expect(listIdColumn(config(), 'Legacy')?.strategy).toBe('cuid')
+    expect(parseListId(config(), 'Legacy', v1)).toEqual({ ok: true, value: v1 })
+    expect(parseListId(config(), 'Legacy', CUID)).toEqual({ ok: true, value: CUID })
+    expect(parseListId(config(), 'Legacy', UUID)).toEqual({ ok: false })
+    expect(parseListId(config(), 'Legacy', v1 + 'x')).toEqual({ ok: false })
   })
 
   test('an id for a list the config does not declare is refused', () => {

@@ -28,6 +28,7 @@ import {
   resolveNearest,
   resolveOrderBy,
   resolveRelatedAccessPlan,
+  assertWhereWithinLimits,
   resolveWhere,
   unqueryableKey,
   type ColumnPlan,
@@ -54,6 +55,7 @@ import {
 } from './include.js'
 import {
   dependencyAdditions,
+  hasRowsBranch,
   reducedDeclaredKeys,
   resolveProjection,
   selectionScope,
@@ -501,6 +503,7 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
 
   const predicates: WherePlan[] = []
   for (const predicate of state.predicates) {
+    assertWhereWithinLimits(predicate)
     predicates.push(await resolveWhere(predicate, ctx))
   }
   const orders = await resolveOrderBy(state.orders, ctx)
@@ -730,7 +733,7 @@ function declaredRowsBranch(
   for (const predicate of plan.declaredRows ?? []) {
     branched = branched.where((model) => lowerWhere(predicate, model, ops))
   }
-  return shape(branched, plan, { orders: [], limit: undefined, offset: undefined }, ops)
+  return branched
 }
 
 /** What a relation's rows look like: its projection, its sort and its page. */
@@ -1142,7 +1145,7 @@ function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   for (const plan of plans) {
     if (plan.reduce !== undefined) {
       const rows =
-        plan.declaredRows !== undefined
+        plan.declaredRows !== undefined && !hasRowsBranch(plan)
           ? declaredRowsOf(row[plan.relation])
           : combinedRows(row[plan.relation], rowsKeyOf(plan))
       masked[plan.relation] = reduces(plan.includes)
@@ -1205,7 +1208,7 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
     if (plan.reduce !== undefined) {
       if (!(plan.relation in shown)) continue
       const raw = source[plan.relation]
-      if (plan.declaredRows !== undefined) {
+      if (plan.declaredRows !== undefined && !hasRowsBranch(plan)) {
         shown[plan.relation] = publicReductionValue(raw, plan.reduce)
         continue
       }
@@ -1217,12 +1220,12 @@ function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly Includ
       const kept = shown[plan.relation]
       if (reduces(plan.includes) && Array.isArray(kept)) {
         const rows = combinedRows(raw, key)
-        kept.forEach((related, index) => {
-          const original = rows[index]
-          if (isRow(related) && isRow(original)) restoreReductions(related, original, plan.includes)
-        })
+        for (const [related, original] of pairRelatedRows(kept, rows)) {
+          restoreReductions(related, original, plan.includes)
+        }
       }
-      shown[plan.relation] = { ...raw, [key]: kept }
+      const base = publicReductionValue(raw, plan.reduce)
+      shown[plan.relation] = { ...(isRow(base) ? base : raw), [key]: kept }
       continue
     }
     if (!reduces(plan.includes)) continue
@@ -1262,6 +1265,14 @@ async function unshapedDeclaredRows(
   plans: readonly IncludePlan[],
 ): Promise<Map<string, Map<string, unknown>>> {
   const byRelation = new Map<string, Map<string, unknown>>()
+  for (const plan of plans) {
+    if (plan.reduce === undefined || plan.declaredRows === undefined || !hasRowsBranch(plan)) {
+      continue
+    }
+    const values = new Map<string, unknown>()
+    for (const row of rows) values.set(String(row['id']), declaredRowsOf(row[plan.relation]))
+    byRelation.set(plan.relation, values)
+  }
   const fetched = plans.filter((plan) => plan.declaredFetch !== undefined)
   const ids = rows
     .map((row) => row['id'])
@@ -1298,11 +1309,14 @@ async function ruleViewTreeFor(
   const unshaped = await unshapedDeclaredRows(binding, listName, rows, plans)
   const nested: Record<string, RuleViewTree> = {}
   for (const plan of plans) {
-    if (plan.declared || plan.reduce !== undefined || plan.includes.length === 0) continue
+    if (plan.declared || plan.includes.length === 0) continue
+    const rowsKey = rowsKeyOf(plan)
+    if (plan.reduce !== undefined && rowsKey === undefined) continue
     const children: OrmRow[] = []
     for (const row of rows) {
       const value = row[plan.relation]
-      if (Array.isArray(value)) children.push(...value.filter(isRow))
+      if (plan.reduce !== undefined) children.push(...combinedRows(value, rowsKey))
+      else if (Array.isArray(value)) children.push(...value.filter(isRow))
       else if (isRow(value)) children.push(value)
     }
     if (children.length === 0) continue
@@ -1324,7 +1338,15 @@ function ruleViewFor(
   const removed = new Set<string>()
   const declared: Record<string, unknown> = {}
   for (const plan of plans) {
-    if (plan.declared || !plan.callerShaped || plan.reduce !== undefined) continue
+    if (plan.declared) continue
+    if (plan.reduce !== undefined) {
+      const stored = unshaped.get(plan.relation)
+      if (plan.declaredRows !== undefined && hasRowsBranch(plan) && stored !== undefined) {
+        declared[plan.relation] = stored.get(String(row['id']))
+      }
+      continue
+    }
+    if (!plan.callerShaped) continue
     const values = unshaped.get(plan.relation)
     if (plan.declaredFetch === undefined || values === undefined) {
       removed.add(plan.relation)
@@ -1527,7 +1549,9 @@ async function locked(
     keys.push(value)
   }
   if (keys.length === 0) return []
-  const held = await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys))
+  const held = await engineRead(binding, () =>
+    taken.lane.lock(listName, taken.identity, keys, 'forUpdate'),
+  )
   if (held.length === 0) return []
   const refreshed = scope(
     binding,

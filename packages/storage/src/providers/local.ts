@@ -129,6 +129,10 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
+  async move(from: string, to: string): Promise<void> {
+    await fs.rename(this.containedPath(from, 'move'), this.containedPath(to, 'move'))
+  }
+
   getUrl(filename: string): string {
     if (!isPlainFilename(filename)) {
       throw new Error(

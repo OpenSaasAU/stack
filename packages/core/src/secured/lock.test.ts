@@ -62,6 +62,17 @@ const config: OpenSaasConfig = {
       fields: { label: text() },
       access: { operation: { query: () => true, create: () => true } },
     },
+    Seat: {
+      fields: { label: text() },
+      access: {
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
+      },
+    },
     // A write whose hook reaches for a row lock. The Write Pipeline rebuilds
     // the `db` a hook is handed, so this is what proves the rebuilt delegate
     // keeps the lane its context had (ADR-0047).
@@ -200,6 +211,32 @@ describe('forUpdate()', () => {
       expect(rawStatements()[0].params).toEqual([locked[0].id, locked[1].id, 2])
     })
 
+    test('a root update locks its target FOR NO KEY UPDATE', async () => {
+      const context = database.context(anonymous)
+      const seat = await context.db.Seat.create({ data: { label: 'a' } })
+      recorder.statements.length = 0
+
+      await context.db.Seat.update({ where: { id: String(seat?.id) }, data: { label: 'b' } })
+
+      expect(rawStatements().map((statement) => statement.sql)).toContainEqual(
+        'SELECT "id" FROM "public"."Seat" WHERE "id" IN ($1::uuid) ORDER BY "id" LIMIT $2 ' +
+          'FOR NO KEY UPDATE',
+      )
+    })
+
+    test('a root delete locks its target FOR UPDATE', async () => {
+      const context = database.context(anonymous)
+      const seat = await context.db.Seat.create({ data: { label: 'a' } })
+      recorder.statements.length = 0
+
+      await context.db.Seat.delete({ where: { id: String(seat?.id) } })
+
+      expect(rawStatements().map((statement) => statement.sql)).toContainEqual(
+        'SELECT "id" FROM "public"."Seat" WHERE "id" IN ($1::uuid) ORDER BY "id" LIMIT $2 ' +
+          'FOR UPDATE',
+      )
+    })
+
     test('the statement is planned as a lock', async () => {
       const context = database.context(anonymous)
       await context.db.Slot.create({ data: { name: 'a', capacity: 1 } })
@@ -284,7 +321,12 @@ describe('forUpdate()', () => {
         expect(lane).toBeDefined()
         if (lane === undefined) throw new Error('unreachable')
         const identity = lane.identity('Slot')
-        return await lane.lock('Slot', identity, [String(a?.id), goneId, String(b?.id)])
+        return await lane.lock(
+          'Slot',
+          identity,
+          [String(a?.id), goneId, String(b?.id)],
+          'forUpdate',
+        )
       })
 
       expect([...locked].sort()).toEqual([String(a?.id), String(b?.id)].sort())
@@ -315,7 +357,7 @@ describe('forUpdate()', () => {
         const identity = lane.identity('Slot')
         const keys = Array.from({ length: ROW_LOCK_MAX_KEYS + 1 }, (_, index) => `k${index}`)
         recorder.statements.length = 0
-        return await lane.lock('Slot', identity, keys)
+        return await lane.lock('Slot', identity, keys, 'forUpdate')
       })
 
       await expect(locked).rejects.toBeInstanceOf(RowLockKeyLimitExceededError)
@@ -352,7 +394,7 @@ describe('forUpdate()', () => {
         if (lane === undefined) throw new Error('unreachable')
         const identity = lane.identity('Slot')
         recorder.statements.length = 0
-        return await lane.lock('Slot', identity, [])
+        return await lane.lock('Slot', identity, [], 'forUpdate')
       })
 
       expect(locked).toEqual([])
