@@ -24,11 +24,7 @@ export type SerializableFieldConfig = {
   options?: Array<SelectOption>
   many?: boolean
   ref?: string
-  /**
-   * Whether the field is a virtual (computed, non-DB) field. Serialised so the
-   * client can omit sort affordances for virtual columns (issue #732) — virtual
-   * fields have no column to order by.
-   */
+  /** Whether the field is a virtual (computed, non-DB) field, which a form shows read-only. */
   virtual?: boolean
   /**
    * Set when an item form must not offer this field as an editable control,

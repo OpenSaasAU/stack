@@ -91,10 +91,22 @@ export function toColumnValue<T>(value: T): T | string {
   return value instanceof Date ? value.toISOString() : value
 }
 
+function isUnknownFieldError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ORM.FIELD_UNKNOWN'
+}
+
 function memberOf(accessor: PredicateAccessor, listName: string, name: string): AccessorMember {
-  const member = accessor[name]
-  if (member === undefined) throw unqueryableKey(listName, name)
-  return member
+  try {
+    const member = accessor[name]
+    if (member === undefined) throw unqueryableKey(listName, name)
+    return member
+  } catch (error) {
+    // The accessor is a Proxy that throws for a name the model has no field for,
+    // which `resolveQueryField` admits for `createdAt` on a list without
+    // timestamps and for `<field>Id` on the inverse side of a one-to-one.
+    if (isUnknownFieldError(error)) throw unqueryableKey(listName, name)
+    throw error
+  }
 }
 
 function stepExpression(

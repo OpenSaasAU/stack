@@ -1,14 +1,27 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { AccessContext, OpenSaasConfig, Session } from '@opensaas/stack-core'
-import { checkbox, relationship, text, timestamp, virtual } from '@opensaas/stack-core/fields'
+import {
+  checkbox,
+  json,
+  password,
+  relationship,
+  text,
+  timestamp,
+  virtual,
+} from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
-vi.mock('next/navigation.js', () => ({
+vi.mock('next/navigation.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation.js')>()),
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => '/admin/fragile',
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 vi.mock('next/link.js', () => ({
@@ -18,6 +31,9 @@ vi.mock('next/link.js', () => ({
 }))
 
 const BOOT = 120_000
+const INTERNAL_FAILURE = 'relation "internal_table" does not exist'
+let readsFail = false
+let controlFlow: () => void = () => undefined
 
 function titlesOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -96,6 +112,53 @@ const config: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.vault', many: true }),
       },
     },
+    Gadget: {
+      fields: {
+        name: text({ validation: { isRequired: true } }),
+        active: checkbox({ defaultValue: false }),
+        meta: json(),
+        secret: password(),
+      },
+      db: { timestamps: false },
+      access: { operation: { query: () => true } },
+    },
+    Gated: {
+      fields: {
+        title: text({
+          access: {
+            read: ({ session }) => {
+              if (session === null) throw new TypeError('no session to read')
+              return true
+            },
+          },
+        }),
+      },
+      access: { operation: { query: ({ session }) => session !== null } },
+    },
+    Controlled: {
+      fields: { title: text() },
+      access: {
+        operation: {
+          query: () => {
+            controlFlow()
+            return true
+          },
+        },
+      },
+    },
+    Fragile: {
+      fields: {
+        name: text({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              if (readsFail) throw new Error(INTERNAL_FAILURE)
+              return value
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
   },
 }
 
@@ -170,6 +233,13 @@ beforeEach(async () => {
   await create('Post', { title: 'Unfinished', published: false })
   await create('Draft', { title: 'Notes', owner: { connect: { id: author.id } } })
   await create('Draft', { title: 'Sketches', owner: { connect: { id: author.id } } })
+  await create('Gadget', { name: 'Anvil', active: true, meta: { a: 1 }, secret: 'hunter2hunter2' })
+  await create('Gadget', {
+    name: 'Bellows',
+    active: false,
+    meta: { a: 2 },
+    secret: 'hunter3hunter3',
+  })
 })
 
 describe('ListView relationship label resolution (shared label seam)', () => {
@@ -460,6 +530,221 @@ describe('ListView default-column curation (issue #1018)', () => {
         }),
       )
       expect(props.fields?.createdAt?.ui?.listView?.defaultColumn).toBeUndefined()
+    },
+    BOOT,
+  )
+})
+
+describe('ListView sorts only by what the read can order by (#2180)', () => {
+  it.each([
+    ['a boolean column', 'active'],
+    ['a json column', 'meta'],
+    ['a password', 'secret'],
+    ['an unknown field', 'nope'],
+    ['an inherited object member', 'constructor'],
+    ['the prototype accessor', '__proto__'],
+  ])(
+    'ignores a ?sort= naming %s and still lists the rows',
+    async (_label, field) => {
+      const props = await render(ada, { listKey: 'Gadget', sort: { field, direction: 'asc' } })
+      expect(props.items.map((item) => item.name).sort()).toEqual(['Anvil', 'Bellows'])
+      expect(props.total).toBe(2)
+      expect(props.initialSort).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it.each(['createdAt', 'updatedAt'])(
+    'ignores %s on a list without timestamps, wherever it is named',
+    async (field) => {
+      const sort = { field, direction: 'desc' } as const
+      const fromUrl = await render(ada, { listKey: 'Gadget', sort })
+      expect(fromUrl.items).toHaveLength(2)
+      expect(fromUrl.initialSort).toBeUndefined()
+
+      const fromConfig = await render(ada, { listKey: 'Gadget', initialSort: sort })
+      expect(fromConfig.items).toHaveLength(2)
+
+      const asColumn = await render(ada, { listKey: 'Gadget', columns: ['name', field] })
+      expect(asColumn.items).toHaveLength(2)
+      expect(asColumn.sortableFields).toEqual({ name: true, [field]: false })
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to initialSort, and past one that cannot be ordered either',
+    async () => {
+      const sort = { field: 'active', direction: 'asc' } as const
+      const fallback = await render(ada, {
+        listKey: 'Gadget',
+        sort,
+        initialSort: { field: 'name', direction: 'desc' },
+      })
+      expect(fallback.items.map((item) => item.name)).toEqual(['Bellows', 'Anvil'])
+      expect(fallback.initialSort).toEqual({ field: 'name', direction: 'desc' })
+
+      const neither = await render(ada, { listKey: 'Gadget', sort, initialSort: sort })
+      expect(neither.items).toHaveLength(2)
+      expect(neither.initialSort).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'tells the client which displayed columns sort, one boolean each',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Gadget',
+        columns: ['name', 'active', 'meta', 'secret'],
+      })
+      expect(props.sortableFields).toEqual({
+        name: true,
+        active: false,
+        meta: false,
+        secret: false,
+      })
+    },
+    BOOT,
+  )
+
+  it(
+    'offers no sort on a to-one, a to-many, a virtual or a read-denied column',
+    async () => {
+      const user = await render(ada, { listKey: 'User' })
+      expect(user.sortableFields).toMatchObject({
+        name: true,
+        billingAddress: false,
+        posts: false,
+        fullName: false,
+      })
+      const post = await render(ada, { listKey: 'Post' })
+      expect(post.sortableFields).toMatchObject({ title: true, author: false })
+    },
+    BOOT,
+  )
+
+  it(
+    'answers a read-denied field exactly as it answers one the list does not have',
+    async () => {
+      const denied = await render(ada, {
+        listKey: 'User',
+        columns: ['name', 'billingAddress'],
+        sort: { field: 'billingAddress', direction: 'desc' },
+        initialSort: { field: 'name', direction: 'asc' },
+      })
+      const absent = await render(ada, {
+        listKey: 'User',
+        columns: ['name', 'nope'],
+        sort: { field: 'nope', direction: 'desc' },
+        initialSort: { field: 'name', direction: 'asc' },
+      })
+      expect(denied.items).toEqual(absent.items)
+      expect(denied.initialSort).toEqual(absent.initialSort)
+      expect(denied.sortableFields?.billingAddress).toBe(absent.sortableFields?.nope)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView when the read fails (#2180)', () => {
+  async function renderFailedRead(): Promise<string> {
+    await create('Fragile', { name: 'Breaks on read' })
+    readsFail = true
+    try {
+      const tree = await ListView({
+        context: contextAt(ada),
+        config,
+        basePath: '/admin',
+        listKey: 'Fragile',
+      })
+      return renderToStaticMarkup(tree)
+    } finally {
+      readsFail = false
+    }
+  }
+
+  it(
+    'shows an error state in place of the first-run empty state',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const html = await renderFailedRead()
+      log.mockRestore()
+
+      expect(html).toContain('role="alert"')
+      expect(html).toContain('This list could not be loaded')
+      expect(html).toContain('href="/admin/fragile"')
+      expect(html).not.toContain('No items yet')
+      expect(html).not.toContain('0 items')
+      expect(html).not.toContain('Create')
+    },
+    BOOT,
+  )
+
+  it(
+    'keeps the cause in the server log and out of the page',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const html = await renderFailedRead()
+      const logged = log.mock.calls.flat().map(String).join(' ')
+      log.mockRestore()
+
+      expect(logged).toContain(INTERNAL_FAILURE)
+      expect(html).not.toContain('internal_table')
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a session denied query empty even when a read rule would throw on it',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const plain = await render(null, { listKey: 'Gated' })
+      const searched = await render(null, { listKey: 'Gated', search: 'title:x' })
+      const logged = log.mock.calls.length
+      log.mockRestore()
+
+      expect(plain.items).toEqual([])
+      expect(plain.total).toBe(0)
+      expect(plain.filterSuggestions).toEqual([])
+      expect(searched.items).toEqual([])
+      expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['redirect()', () => redirect('/sign-in'), 'NEXT_REDIRECT'],
+    ['notFound()', () => notFound(), 'NEXT_HTTP_ERROR_FALLBACK;404'],
+  ])(
+    'lets %s from an access rule through to Next',
+    async (_label, thrower, digest) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      controlFlow = thrower
+      try {
+        await expect(
+          ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Controlled' }),
+        ).rejects.toMatchObject({ digest: expect.stringContaining(digest) })
+        expect(log).not.toHaveBeenCalled()
+      } finally {
+        controlFlow = () => undefined
+        log.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a session denied query on the empty value, which is not a failure',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const props = await render(ada, { listKey: 'Vault' })
+      const logged = log.mock.calls.length
+      log.mockRestore()
+
+      expect(props.items).toEqual([])
+      expect(props.total).toBe(0)
+      expect(logged).toBe(0)
     },
     BOOT,
   )

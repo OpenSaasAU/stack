@@ -1,5 +1,6 @@
 import Link from 'next/link.js'
-import { Plus } from 'lucide-react'
+import { unstable_rethrow } from 'next/navigation.js'
+import { AlertTriangle, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
@@ -8,6 +9,7 @@ import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/de
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
+import { EmptyState } from './EmptyState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -25,8 +27,7 @@ import {
   isToManyRelationshipField,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
-import type { FieldConfig, SecuredQuery } from '@opensaas/stack-core'
-import { isFieldReadableForPredicate } from '@opensaas/stack-core/internal'
+import type { SecuredQuery } from '@opensaas/stack-core'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -94,26 +95,6 @@ function toRelationshipLabel(
   const row = value as Record<string, unknown>
   if (!('id' in row)) return null
   return { id: String(row.id), label: getItemLabel(relatedListConfig, row) }
-}
-
-/**
- * Whether a field can seed an `orderBy` for the list table.
- *
- * `orderBy` takes the list's own scalar columns, so a relationship of either
- * cardinality is excluded — the engine refuses one rather than ignoring it,
- * and a to-many count is not a column it can sort by at all (ADR-0055). A
- * field the session cannot READ is excluded too (#915), evaluated the same
- * predicate-time way the secured read enforces it, so a bookmarked `?sort=`
- * naming either is ignored here rather than throwing downstream.
- */
-async function isSortableField(
-  field: FieldConfig | undefined,
-  args: { session: AccessContext['session']; context: AccessContext },
-): Promise<boolean> {
-  if (!field) return false
-  if (field.virtual === true) return false
-  if (field.type === 'relationship') return false
-  return isFieldReadableForPredicate(field.access, args)
 }
 
 /**
@@ -191,18 +172,6 @@ export async function ListView({
     )
   }
 
-  // URL sort takes precedence over config initialSort, but only for a
-  // sortable field — see `isSortableField`.
-  const sortable = async (candidate: ListViewSort | undefined) =>
-    candidate &&
-    (await isSortableField(listConfig.fields[candidate.field], {
-      session: context.session,
-      context,
-    }))
-      ? candidate
-      : undefined
-  const activeSort = (await sortable(sort)) ?? (await sortable(initialSort))
-
   // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
   // crossing the server/client boundary, so `ListViewClient`'s fallback (used
   // when no explicit `columns` is configured) curates off the same declared
@@ -230,12 +199,26 @@ export async function ListView({
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
+  let activeSort: ListViewSort | undefined
+  let sortableFields: Record<string, boolean> = {}
 
   try {
     const dbContext = context.db
     if (!dbContext || !dbContext[key]) {
       throw new Error(`Context for ${listKey} not found`)
     }
+
+    const orderable =
+      (await context._orderableKeys?.(listKey, [
+        ...displayedColumns,
+        ...[sort, initialSort].flatMap((candidate) => (candidate ? [candidate.field] : [])),
+      ])) ?? new Set<string>()
+    activeSort = [sort, initialSort].find(
+      (candidate) => candidate && orderable.has(candidate.field),
+    )
+    sortableFields = Object.fromEntries(
+      [...displayedColumns].map((column) => [column, orderable.has(column)]),
+    )
 
     // Parse the URL filter query into a server-side `where` fragment via the
     // filter engine (ADR-0017). Field-scoped tokens, comparisons, quoted values
@@ -278,7 +261,25 @@ export async function ListView({
     items = rows
     total = totals.total
   } catch (error) {
+    unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
+    return (
+      <div className="p-8">
+        <PageHeader title={formatListName(listKey)} />
+        <div role="alert" data-slot="list-view-error">
+          <EmptyState
+            icon={<AlertTriangle className="h-6 w-6" />}
+            title="This list could not be loaded"
+            description="Something went wrong while reading it, so its records are not shown here. Nothing has been changed."
+            actions={
+              <Button asChild size="sm" variant="outline">
+                <Link href={`${basePath}/${urlKey}`}>Reload list</Link>
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    )
   }
 
   const relationshipRefs: Record<string, string> = {}
@@ -373,6 +374,7 @@ export async function ListView({
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
         columns={columns}
+        sortableFields={sortableFields}
         initialSort={activeSort}
         listKey={listKey}
         urlKey={urlKey}
