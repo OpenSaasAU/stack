@@ -290,12 +290,14 @@ export function text<
     return !isRequired ? withMax.optional().nullable() : withMax
   }
 
+  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
+
   return {
     type: 'text',
     ...options,
+    nullable,
     getZodSchema: zodSchema,
     getContractField: (fieldName: string, listKey: string, config: OpenSaasConfig) => {
-      const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
       // Keystone 6 gives every non-null text column an implicit empty-string
       // default; `db.keystoneCompat` mirrors that so a migrating project
       // reaches parity without hand-setting `defaultValue: ''`.
@@ -1087,12 +1089,16 @@ export function select<
   }
 
   const unionType = options.options.map((opt) => quoteStringLiteral(opt.value)).join(' | ')
+  const nullable =
+    options.db?.isNullable ??
+    (!options.validation?.isRequired && options.defaultValue === undefined)
 
   return {
     type: 'select',
     outputType: unionType,
     inputType: unionType,
     ...options,
+    nullable,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const values = options.options.map((opt) => opt.value)
       let schema: z.ZodTypeAny = z.enum(values as [string, ...string[]], {
@@ -1108,8 +1114,6 @@ export function select<
       return schema
     },
     getContractField: (fieldName: string, listName: string) => {
-      const hasDefault = options.defaultValue !== undefined
-      const nullable = options.db?.isNullable ?? (!options.validation?.isRequired && !hasDefault)
       if (!isNativeEnum) {
         return scalarColumn(fieldName, {
           type: pgType('text'),
@@ -1535,9 +1539,12 @@ export function json<
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
 >(options?: Omit<JsonField<TTypeInfo, TKey>, 'type'>): JsonField<TTypeInfo, TKey> {
+  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
+
   return {
     type: 'json',
     ...options,
+    nullable,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
       const validation = options?.validation
       const isRequired = validation?.isRequired
@@ -1555,12 +1562,13 @@ export function json<
         return baseSchema.refine((value) => value !== undefined && value !== null, {
           message: `${formatFieldName(fieldName)} is required`,
         })
-      } else if (isRequired && operation === 'update') {
-        // Required in update mode: omitted keys still pass (issue #570 — partial
-        // updates may leave the field untouched), but a present null is rejected
-        // (issue #604 — required json means non-null). The `.refine()` runs
-        // before `.optional()` short-circuits on undefined: absent/undefined
-        // passes, a present null is rejected, and other present values pass.
+      } else if (isRequired || !nullable) {
+        // Omitted keys still pass (issue #570 — partial updates may leave the
+        // field untouched, and a NOT NULL column may carry a default), but a
+        // present null is rejected (issue #604 — required json means non-null).
+        // The `.refine()` runs before `.optional()` short-circuits on undefined:
+        // absent/undefined passes, a present null is rejected, and other present
+        // values pass.
         return baseSchema
           .refine((value) => value !== null, {
             message: `${formatFieldName(fieldName)} is required`,
@@ -1573,7 +1581,7 @@ export function json<
     getContractField: (fieldName: string, listKey: string) =>
       scalarColumn(fieldName, {
         type: pgType('jsonb'),
-        nullable: options?.db?.isNullable ?? !options?.validation?.isRequired,
+        nullable,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         default: literalDefault(options?.defaultValue, listKey, fieldName),

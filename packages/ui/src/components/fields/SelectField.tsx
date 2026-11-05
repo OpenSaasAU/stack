@@ -4,11 +4,14 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '../../primitives/select.js'
 import { cn } from '../../lib/utils.js'
 import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+
+const CLEAR_SELECTION = '__opensaas_clear_selection__'
 
 export interface SelectFieldProps {
   name: string
@@ -19,6 +22,8 @@ export interface SelectFieldProps {
   error?: string
   disabled?: boolean
   required?: boolean
+  /** The column accepts `NULL`, so an optional field offers "Clear selection". */
+  nullable?: boolean
   mode?: 'read' | 'edit'
   helpText?: string
 }
@@ -32,6 +37,7 @@ export function SelectField({
   error,
   disabled,
   required,
+  nullable,
   mode = 'edit',
   helpText,
 }: SelectFieldProps) {
@@ -50,9 +56,10 @@ export function SelectField({
       <FieldLabel htmlFor={name} required={required}>
         {label}
       </FieldLabel>
+      {/* Radix treats `undefined` as uncontrolled and would show the value last picked from empty. */}
       <Select
-        value={value || undefined}
-        onValueChange={(val) => onChange(val || null)}
+        value={value ?? ''}
+        onValueChange={(val) => onChange(val === CLEAR_SELECTION ? null : val || null)}
         disabled={disabled}
         required={required}
       >
@@ -60,6 +67,14 @@ export function SelectField({
           <SelectValue placeholder="Select an option..." />
         </SelectTrigger>
         <SelectContent>
+          {nullable && !required && value && (
+            <>
+              <SelectItem value={CLEAR_SELECTION}>
+                <span className="text-muted-foreground italic">Clear selection</span>
+              </SelectItem>
+              <SelectSeparator />
+            </>
+          )}
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}

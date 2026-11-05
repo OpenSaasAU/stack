@@ -8,7 +8,7 @@ Reads in the examples below use the composed read described in [Queries](/docs/c
 
 ### `text()`
 
-String field with validation and indexing options.
+String field with validation and indexing options. Emptying an optional field in the admin stores `null` when the column is nullable, so several rows can leave a unique field empty. A `NOT NULL` column (`db: { isNullable: false }`) stores `''`.
 
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
@@ -965,7 +965,7 @@ class HashedPassword extends String {
 
 ### `select()`
 
-Enum-like field with predefined options.
+Enum-like field with predefined options. On a nullable column an optional select offers **Clear selection** in the admin, which stores `null`, even when the field has a `defaultValue`. A `defaultValue` makes the column `NOT NULL` unless `db.isNullable` is `true`, and that select offers no clear.
 
 ```typescript
 import { select } from '@opensaas/stack-core/fields'
@@ -1378,7 +1378,7 @@ await context.db.Post.update({
 
 ### `json()`
 
-Field for storing arbitrary JSON data.
+Field for storing arbitrary JSON data. Emptying the admin's box and typing the literal `null` both store a database `NULL`. A required field or a `NOT NULL` column refuses it with an error on the field.
 
 ```typescript
 import { json } from '@opensaas/stack-core/fields'

@@ -5,10 +5,9 @@ import { Textarea } from '../../primitives/textarea.js'
 import { cn } from '../../lib/utils.js'
 import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
-export interface TextFieldProps {
+interface TextFieldBaseProps {
   name: string
-  value: string
-  onChange: (value: string) => void
+  value: string | null
   label: string
   placeholder?: string
   error?: string
@@ -19,6 +18,16 @@ export interface TextFieldProps {
   helpText?: string
 }
 
+export type TextFieldProps = TextFieldBaseProps &
+  (
+    | { nullable?: false; onChange: (value: string) => void }
+    | {
+        /** The column accepts `NULL`: an emptied optional field stores `null`, not `''`. */
+        nullable: true
+        onChange: (value: string | null) => void
+      }
+  )
+
 export function TextField({
   name,
   value,
@@ -28,6 +37,7 @@ export function TextField({
   error,
   disabled,
   required,
+  nullable,
   mode = 'edit',
   displayMode = 'input',
   helpText,
@@ -43,6 +53,13 @@ export function TextField({
 
   const InputComponent = displayMode === 'textarea' ? Textarea : Input
 
+  const handleChange = (next: string) => {
+    // A required field keeps `''`: that is the value `text()`'s validation
+    // answers with "is required", where a null is only "must be text".
+    if (nullable && !required && next === '') onChange(null)
+    else onChange(next)
+  }
+
   return (
     <FieldRoot>
       <FieldLabel htmlFor={name} required={required}>
@@ -53,7 +70,7 @@ export function TextField({
         name={name}
         type={displayMode === 'input' ? 'text' : undefined}
         value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
         required={required}

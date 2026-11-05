@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { json, text } from '@opensaas/stack-core/fields'
 import {
   FIELD_HOOK_ONLY_REASON,
   JUNCTION_EDGE_RELATIONSHIP_REASON,
@@ -40,6 +41,26 @@ function makeConfig(): OpenSaasConfig {
  * than through a caller that runs `markUnwritableRelationships` over the
  * result and would keep passing without it.
  */
+describe('serializeFieldConfig nullability', () => {
+  it('carries a nullable column and omits the key otherwise', () => {
+    const { optional, required, notNull } = serializeFieldConfigs({
+      optional: text(),
+      required: text({ validation: { isRequired: true } }),
+      notNull: json({ db: { isNullable: false } }),
+    })
+
+    expect(optional.nullable).toBe(true)
+    expect(required).not.toHaveProperty('nullable')
+    expect(notNull).not.toHaveProperty('nullable')
+  })
+
+  it('survives a second pass, the standalone forms re-serialising a serialised config', () => {
+    const once = serializeFieldConfigs({ slug: text() })
+
+    expect(serializeFieldConfigs(once).slug.nullable).toBe(true)
+  })
+})
+
 describe('serializeFieldConfig relationship writability', () => {
   it('marks a to-many read-only', () => {
     const { tags } = serializeFieldConfigs(

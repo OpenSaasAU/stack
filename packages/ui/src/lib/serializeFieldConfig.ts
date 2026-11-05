@@ -24,6 +24,8 @@ export type SerializableFieldConfig = {
   options?: Array<SelectOption>
   many?: boolean
   ref?: string
+  /** Set when the field's column accepts `NULL`, so an emptied control can store it. */
+  nullable?: boolean
   /** Whether the field is a virtual (computed, non-DB) field, which a form shows read-only. */
   virtual?: boolean
   /**
@@ -141,6 +143,10 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
 
   if ('ref' in fieldConfig && fieldConfig.ref !== undefined) {
     config.ref = fieldConfig.ref as string
+  }
+
+  if (fieldConfig.nullable === true) {
+    config.nullable = true
   }
 
   if ('virtual' in fieldConfig && fieldConfig.virtual === true) {
