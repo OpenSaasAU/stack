@@ -847,6 +847,10 @@ those actions satisfy; your app owns the implementations, conventionally in
 the form renders the `error` message. Email actions resolve to that result and let
 the form handle `redirectTo`; `signInSocialAction` has to leave the app, so it
 performs a server-side `redirect()` to the provider and resolves to `void`.
+`signOutAction` is not a form action: it is `AdminUI`'s `onSignOut`, and its
+`redirect()` keeps Next's `basePath`. It only rejects on what better-auth lets
+through: a failed delete of the session row is logged and swallowed, so the action
+still succeeds and the cookie is still cleared while the row stays valid.
 
 ```typescript
 // lib/actions/auth.ts
@@ -877,6 +881,11 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {

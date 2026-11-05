@@ -1,6 +1,7 @@
 'use server'
 
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
@@ -25,4 +26,9 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }

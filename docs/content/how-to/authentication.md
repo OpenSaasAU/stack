@@ -254,7 +254,7 @@ bare `/sign-in` or `/sign-up`:
 The pre-built forms never call the auth API from the browser. Each one takes an
 **auth action** — a `'use server'` function in your own app that calls
 `auth.api.*` on the instance from `lib/auth.ts` — as a prop, one prop per concern.
-The package ships the forms and the contract types; you own the four functions,
+The package ships the forms and the contract types; you own the functions,
 conventionally in `lib/actions/auth.ts`.
 
 An email action resolves to `AuthActionResult` (`{ success: true }` or
@@ -293,6 +293,11 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
@@ -443,6 +448,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 
@@ -477,10 +483,31 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={await searchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
 ```
+
+`onSignOut` is what ends the session. The admin's Sign Out control renders only
+when it has a handler, and it must be a server action: a plain function cannot
+cross to the client component that holds the button. `signOutAction` takes no
+identity argument, because better-auth reads the session from the request's own
+cookie, deletes its row and clears the cookie.
+
+The action's `redirect()` is what sends the user to the sign-in page, and it keeps
+Next's `basePath`. An action that returns without redirecting reloads the current
+page instead. If the action rejects, the admin stays where it is and warns that
+sign-out may not have completed.
+
+Two limits come from better-auth:
+
+- A failed delete of the session row is logged and swallowed: better-auth still
+  clears the cookie and reports success. The user lands on the sign-in page, and
+  the row stays valid until it expires for anyone holding a copy of the cookie.
+- With `session.cookieCache` enabled, sign-out clears the cached session in the
+  browser that signed out, but a copy of both `session_token` and `session_data`
+  held anywhere else keeps validating until the cache's `maxAge` runs out.
 
 ### Protecting Server Actions
 
@@ -1948,13 +1975,14 @@ export const GET = auth.handler
 export const POST = auth.handler
 ```
 
-<!-- doc-check: excuses="TS2307 'next/headers', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
+<!-- doc-check: excuses="TS2307 'next/headers', TS2307 'next/navigation', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
 
 ```typescript
 // lib/actions/auth.ts
 'use server'
 
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
@@ -1969,6 +1997,11 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
     const message = err instanceof Error && err.message ? err.message : 'Sign in failed'
     return { success: false, error: message }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 ```
 
@@ -1993,6 +2026,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 
@@ -2027,6 +2061,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={await searchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }

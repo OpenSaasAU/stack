@@ -31,6 +31,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 import '@opensaas/stack-ui/styles'
@@ -66,6 +67,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={resolvedSearchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
@@ -116,6 +118,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
@@ -131,6 +134,7 @@ export default async function AdminPage() {
       context={await getContext(session ?? undefined)}
       config={await config}
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
@@ -141,6 +145,7 @@ export default async function AdminPage() {
 - `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
 - `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
+- `onSignOut?` - Ends the session and should `redirect()` to the sign-in page, which keeps Next's `basePath`; one that returns without redirecting reloads the page. It must be a server action, because it crosses to a client component; see [Auth actions](/docs/reference/auth#auth-actions) for `signOutAction`. Without it no Sign Out control renders, and it is ignored when `navigation` is supplied: that chrome renders its own `UserMenu` and passes the action there
 - `navigation?` - Replaces the built-in sidebar wholesale (see [Admin chrome slot](#admin-chrome-slot-and-navitems) below)
 - `navItems?` - Adds host-supplied links to the built-in sidebar (see below); ignored when `navigation` is also supplied
 

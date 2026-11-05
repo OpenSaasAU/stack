@@ -278,7 +278,8 @@ export async function resetPasswordAction(input: ResetPasswordInput): Promise<Au
       content: `'use server'
 
 import { headers } from 'next/headers'
-${hasOAuth ? "import { redirect } from 'next/navigation'\n" : ''}import { auth } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
 import type {
   ${authActionTypeImports.join(',\n  ')},
 } from '@opensaas/stack-auth/ui'
@@ -297,6 +298,11 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }${passwordActionSnippets}${socialActionSnippet}
 `,
     })
@@ -458,6 +464,7 @@ export const ownRecordsOnly: AccessControl = ({ session }) =>
       'Install dependencies: `pnpm add @opensaas/stack-auth`',
       'Merge the config updates into your `opensaas.config.ts`',
       'Create the files shown above in your project',
+      'Pass `onSignOut={signOutAction}` (from `@/lib/actions/auth`) to `<AdminUI>`; the Sign Out control only renders when it has a handler',
       'Add environment variables to your `.env` file',
       hasOAuth ? 'Set up OAuth applications in Google/GitHub developer consoles' : null,
       ...DB_STEPS,
