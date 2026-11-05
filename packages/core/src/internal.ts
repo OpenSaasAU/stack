@@ -44,6 +44,10 @@ export { checkFieldAccess } from './access/index.js'
 // field the session cannot read cannot seed an `orderBy` either.
 export { isFieldReadableForPredicate } from './access/index.js'
 
+// Whether a read may order by a key, reused by @opensaas/stack-ui so the admin
+// list's sort affordance and its `?sort=` handling ask `orderBy` itself.
+export { canOrderBy } from './secured/read.js'
+
 // Config-shape sub-types consumed by sibling packages (not part of the consumer surface)
 export type {
   DatabaseConfig,

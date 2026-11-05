@@ -18,6 +18,7 @@ import {
 } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
+import { readContractDescriptorKind } from '../config/field-kind.js'
 import { ValidationError } from '../hooks/index.js'
 import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
 import { likeContainsPattern } from '../where/like.js'
@@ -606,6 +607,13 @@ export async function resolveWhere(
   return { kind: 'and', nodes }
 }
 
+/** Whether `key` names a declared field with no one column to order by. */
+function hasNoSingleColumn(key: string, ctx: ResolveContext): boolean {
+  if (!Object.hasOwn(ctx.listConfig.fields, key)) return false
+  const kind = readContractDescriptorKind(ctx.listConfig.fields[key], key, ctx.listName, ctx.config)
+  return kind === 'computed' || kind === 'columns'
+}
+
 /**
  * Resolve `orderBy`. Scalar-only: Prisma 8's `orderBy` takes columns, so a
  * relation — and the to-many count that used to be sortable — is refused
@@ -639,6 +647,7 @@ export async function resolveOrderBy(
           `Cannot order "${ctx.listName}" by "${key}" — orderBy takes scalar columns only.`,
         ])
       }
+      if (hasNoSingleColumn(key, ctx)) throw unqueryableKey(ctx.listName, key)
       await refuseUnlessForeignKeyVisible(key, resolved, ctx)
       plans.push({ listName: ctx.listName, column: key, direction })
     }

@@ -1858,6 +1858,43 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery<VisibleRow
 }
 
 /**
+ * Whether a read of `listKey` may order by `key`: the answer `orderBy` itself
+ * gives this session, read off the same resolution and lowering with nothing
+ * executed. Every refusal is one `false`, so a field the session cannot read,
+ * a field with no column and a column whose codec has no `order` trait are
+ * indistinguishable to a caller (ADR-0031, ADR-0055).
+ */
+export async function canOrderBy(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+  key: string,
+): Promise<boolean> {
+  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
+  if (listConfig === undefined) return false
+  const binding: ReadBinding = {
+    listName: listKey,
+    listConfig,
+    ormHandle: context.ormHandle,
+    context,
+    config,
+  }
+  try {
+    const orders = await resolveOrderBy(
+      [{ [key]: 'asc' }],
+      resolveContext(binding, context._isSudo !== true),
+    )
+    collectionFor(binding.ormHandle, listKey).orderBy(
+      orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+    )
+    return true
+  } catch (error) {
+    if (error instanceof ValidationError) return false
+    throw error
+  }
+}
+
+/**
  * The read members of one list's secured surface, bound to `ormHandle` and
  * `context`. The collection is held by the closure and never handed out: no
  * `Collection` and no `CollectionState` is reachable from the returned value

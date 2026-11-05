@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
 
@@ -25,6 +25,7 @@ describe('ListViewClient', () => {
       views: 'integer',
     },
     relationshipRefs: {},
+    sortableFields: { title: true, status: false, views: true },
     listKey: 'Post',
     urlKey: 'post',
     basePath: '/admin',
@@ -118,6 +119,43 @@ describe('ListViewClient', () => {
       expect(headers[2]).toHaveTextContent('Actions')
       // Unlisted column is excluded.
       expect(screen.queryByText('Status')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('sort affordance', () => {
+    const header = (name: string) => screen.getByRole('columnheader', { name })
+
+    it('sorts a sortable column on click, and marks it clickable', () => {
+      render(<ListViewClient {...defaultProps} />)
+
+      expect(header('Title')).toHaveClass('cursor-pointer')
+      fireEvent.click(header('Title'))
+      expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Aasc&page=1')
+    })
+
+    it('offers nothing on a column the server says cannot sort', () => {
+      render(<ListViewClient {...defaultProps} />)
+
+      expect(header('Status')).not.toHaveClass('cursor-pointer')
+      fireEvent.click(header('Status'))
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
+    it('offers nothing on a column the server said nothing about', () => {
+      render(<ListViewClient {...defaultProps} sortableFields={{}} />)
+
+      expect(header('Title')).not.toHaveClass('cursor-pointer')
+      fireEvent.click(header('Title'))
+      expect(mockPush).not.toHaveBeenCalled()
+    })
+
+    it('shows no sort state on a column that cannot sort', () => {
+      render(
+        <ListViewClient {...defaultProps} initialSort={{ field: 'status', direction: 'asc' }} />,
+      )
+
+      expect(header('Status')).not.toHaveAttribute('aria-sort')
+      expect(screen.queryByText('↑')).not.toBeInTheDocument()
     })
   })
 
