@@ -388,9 +388,7 @@ describe('changedSince', () => {
   })
 
   it('is true for a stamp equal to the moment, which a save in the same tick reads as', () => {
-    const { mtimeMs, ctimeMs } = fs.statSync(file)
-
-    expect(changedSince([file], Math.max(mtimeMs, ctimeMs))).toBe(true)
+    expect(changedSince([file], fs.statSync(file).ctimeMs)).toBe(true)
   })
 
   it('sees a write that kept its old modification time, through the change time', async () => {
@@ -402,6 +400,13 @@ describe('changedSince', () => {
 
     expect(fs.statSync(file).mtimeMs).toBeLessThan(since)
     expect(changedSince([file], since)).toBe(true)
+  })
+
+  it('is false for a file dated in the future that has not changed since the moment', async () => {
+    fs.utimesSync(file, new Date('2030-01-01'), new Date('2030-01-01'))
+    await tick()
+
+    expect(changedSince([file], filesystemNow(tempDir))).toBe(false)
   })
 
   it('is true for a file that can no longer be read', () => {

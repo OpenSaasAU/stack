@@ -343,12 +343,15 @@ export function filesystemNow(cwd: string): number {
   return mtimeMs
 }
 
-/** Whether any path was written at or after `since`, or can no longer be read. */
+/**
+ * Whether any file changed at or after `since`, or can no longer be read. Reads
+ * the change time only: a file can carry any modification time, and one dated in
+ * the future would read as changed on every request.
+ */
 export function changedSince(paths: readonly string[], since: number): boolean {
   return paths.some((file) => {
     try {
-      const { mtimeMs, ctimeMs } = fs.statSync(file)
-      return mtimeMs >= since || ctimeMs >= since
+      return fs.statSync(file).ctimeMs >= since
     } catch {
       return true
     }
