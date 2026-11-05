@@ -108,6 +108,11 @@ test.describe('Relationship-table row removal', () => {
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: 'Delete' }).click()
 
+    // The open modal hides the page from the accessibility tree, so until it
+    // closes `tableByHeading`'s role lookup matches nothing and the count below
+    // passes vacuously, navigating away ahead of the delete.
+    await expect(dialog).toBeHidden({ timeout: 10000 })
+
     // The note leaves the table after the refresh…
     await expect(
       notes.locator('[data-slot="relationship-table-row"]', { hasText: noteBody }),
