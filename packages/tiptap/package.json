@@ -72,7 +72,7 @@
     "@tiptap/extension-placeholder": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
-    "@tiptap/starter-kit": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.2",
     "@tiptap/static-renderer": "^3.32.2",
     "zod": "^4.6.6"
   },
