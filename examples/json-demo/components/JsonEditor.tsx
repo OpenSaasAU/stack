@@ -39,7 +39,6 @@ export function JsonEditor({
   const [parseError, setParseError] = useState<string | undefined>()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Refuse the form's submit while the text doesn't parse, and focus the editor
   useFieldValidity(name, mode === 'edit' && parseError !== undefined, textareaRef)
 
   // Compute the display value - either what's being edited or the prop value
@@ -152,7 +151,7 @@ export function JsonEditor({
               (error || parseError) && 'border-destructive',
             )}
           />
-          {parseError && <p className="text-xs text-amber-600 dark:text-amber-500">{parseError}</p>}
+          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 

@@ -7,7 +7,10 @@ import { ItemFormClient, type ItemFormClientProps } from '../../src/components/I
 import { RelationshipCreateDrawer } from '../../src/components/RelationshipCreateDrawer.js'
 import { ItemCreateForm } from '../../src/components/standalone/ItemCreateForm.js'
 import { ItemEditForm } from '../../src/components/standalone/ItemEditForm.js'
+import { BigIntField } from '../../src/components/fields/BigIntField.js'
+import { DecimalField } from '../../src/components/fields/DecimalField.js'
 import { JsonField } from '../../src/components/fields/JsonField.js'
+import { PasswordField } from '../../src/components/fields/PasswordField.js'
 import { useFieldValidity } from '../../src/components/fields/index.js'
 import { FieldValidityContext } from '../../src/lib/fieldValidity.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
@@ -84,7 +87,7 @@ describe('a parsing field holding input it cannot commit', () => {
     await user.click(save())
 
     expectNothingWritten()
-    expect(screen.getByText(message)).toBeInTheDocument()
+    expect(screen.getByText(message)).toHaveAttribute('data-slot', 'field-error')
     expect(input).toHaveValue(bad)
     expect(input).toHaveFocus()
   })
@@ -139,7 +142,7 @@ describe('a parsing field holding input it cannot commit', () => {
     const markInvalid = vi.fn(() => clearMark)
     const user = userEvent.setup()
     const field = (value: unknown) => (
-      <FieldValidityContext value={{ markInvalid, submitRefused: false }}>
+      <FieldValidityContext value={{ markInvalid }}>
         <JsonField name="meta" label="Meta" value={value} onChange={() => {}} />
       </FieldValidityContext>
     )
@@ -154,6 +157,37 @@ describe('a parsing field holding input it cannot commit', () => {
     expect(clearMark).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/Invalid JSON/)).not.toBeInTheDocument()
     expect(screen.getByLabelText(/^Meta/)).toHaveValue(JSON.stringify({ a: 2 }, null, 2))
+  })
+})
+
+describe('a parsing field outside an item form', () => {
+  it.each([
+    [
+      'JSON',
+      <JsonField key="f" name="f" label="F" value={{ keep: true }} onChange={() => {}} />,
+      JSON.stringify({ keep: true }, null, 2),
+    ],
+    [
+      'decimal',
+      <DecimalField key="f" name="f" label="F" value="1.50" onChange={() => {}} />,
+      '1.50',
+    ],
+    ['bigInt', <BigIntField key="f" name="f" label="F" value="7" onChange={() => {}} />, '7'],
+  ])('%s reverts on blur, so the screen matches the value', async (_, field, shown) => {
+    const user = userEvent.setup()
+    render(
+      <form>
+        {field}
+        <button type="button">Elsewhere</button>
+      </form>,
+    )
+
+    const input = await replaceText(user, /^F/, 'oops')
+    expect(input).toHaveValue('oops')
+    await user.click(screen.getByRole('button', { name: 'Elsewhere' }))
+
+    expect(input).toHaveValue(shown)
+    expect(document.querySelector('[data-slot="field-error"]')).toBeNull()
   })
 })
 
@@ -235,6 +269,113 @@ describe('a password that is not confirmed', () => {
 
     expect(serverAction).not.toHaveBeenCalled()
     expect(mockPush).toHaveBeenCalledWith('/admin/post')
+  })
+
+  it('is not told about a refusal another field caused', async () => {
+    const user = userEvent.setup()
+    render(<ItemFormClient {...editProps()} />)
+
+    await replaceText(user, /^Price/, '9.9x')
+    await user.click(save())
+    expectNothingWritten()
+    await replaceText(user, /^Price/, '9.9')
+
+    await startChange(user)
+    await user.type(screen.getByLabelText(/^Secret/), 'P')
+
+    expect(screen.queryByText('Re-enter secret to confirm')).not.toBeInTheDocument()
+  })
+
+  it('forgets a refusal once confirmed, so retyping is not flagged mid-word', async () => {
+    const user = userEvent.setup()
+    render(<ItemFormClient {...editProps()} />)
+
+    await startChange(user)
+    await user.type(screen.getByLabelText(/^Secret/), 'abc')
+    await user.click(save())
+    expect(screen.getByText('Re-enter secret to confirm')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(/^Confirm Secret/), 'abc')
+    await user.clear(screen.getByLabelText(/^Confirm Secret/))
+    await user.clear(screen.getByLabelText(/^Secret/))
+    await user.type(screen.getByLabelText(/^Secret/), 'x')
+
+    expect(screen.queryByText('Re-enter secret to confirm')).not.toBeInTheDocument()
+  })
+
+  it('never puts an unconfirmed password in the data the form would send', async () => {
+    function Toggled(props: React.ComponentProps<typeof PasswordField>) {
+      const [shown, setShown] = React.useState(true)
+      return (
+        <>
+          {shown && <PasswordField {...props} />}
+          <button type="button" onClick={() => setShown(false)}>
+            Hide
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    render(
+      <ItemFormClient
+        {...editProps({
+          fields: {
+            title: { type: 'text' },
+            secret: { type: 'password', ui: { component: Toggled } },
+          },
+        })}
+      />,
+    )
+
+    await startChange(user)
+    await user.type(screen.getByLabelText(/^Secret/), 'UnconfirmedPw1')
+    await user.type(screen.getByLabelText(/^Confirm Secret/), 'Different999')
+    await user.click(screen.getByRole('button', { name: 'Hide' }))
+    await replaceText(user, /^Title/, 'Changed')
+    await user.click(save())
+
+    expect(serverAction).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { title: 'Changed' } }),
+    )
+  })
+
+  it('commits only a matching pair, whichever box is typed last', async () => {
+    const onChange = vi.fn()
+    const sentinel = { isSet: true }
+    const user = userEvent.setup()
+    render(<PasswordField name="secret" label="Secret" value={sentinel} onChange={onChange} />)
+
+    await startChange(user)
+    await user.type(screen.getByLabelText(/^Confirm Secret/), 'ab')
+    await user.type(screen.getByLabelText(/^Secret/), 'ab')
+    expect(onChange.mock.calls.map(([value]) => value)).toEqual([
+      sentinel,
+      sentinel,
+      sentinel,
+      'ab',
+    ])
+
+    await user.type(screen.getByLabelText(/^Secret/), 'c')
+    expect(onChange).toHaveBeenLastCalledWith(sentinel)
+  })
+
+  it('commits on every keystroke when there is no confirm box', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <PasswordField
+        name="secret"
+        label="Secret"
+        value=""
+        onChange={onChange}
+        showConfirm={false}
+      />,
+    )
+
+    await user.type(screen.getByLabelText(/^Secret/), 'ab')
+
+    expect(onChange).toHaveBeenLastCalledWith('ab')
   })
 
   it('does not ask an untouched change to be confirmed', async () => {
@@ -417,6 +558,55 @@ describe('a third-party field', () => {
 
     expect(mockPush).not.toHaveBeenCalled()
     expect(rating).toHaveFocus()
+  })
+
+  it('stays refused while either of two inputs under one name is invalid', async () => {
+    function Range({ name, label }: { name: string; label: string }) {
+      const fromRef = React.useRef<HTMLInputElement>(null)
+      const toRef = React.useRef<HTMLInputElement>(null)
+      const [from, setFrom] = React.useState('')
+      const [to, setTo] = React.useState('')
+      useFieldValidity(name, Number.isNaN(Number(from)), fromRef)
+      useFieldValidity(name, Number.isNaN(Number(to)), toRef)
+      return (
+        <>
+          <input
+            ref={fromRef}
+            aria-label={`${label} from`}
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          />
+          <input
+            ref={toRef}
+            aria-label={`${label} to`}
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          />
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    render(
+      <ItemFormClient
+        {...editProps({ fields: { span: { type: 'text', ui: { component: Range } } } })}
+      />,
+    )
+
+    const from = screen.getByLabelText('Span from')
+    const to = screen.getByLabelText('Span to')
+    await user.type(from, 'a')
+    await user.type(to, 'b')
+    await user.clear(to)
+    await user.click(save())
+
+    expect(mockPush).not.toHaveBeenCalled()
+    expect(from).toHaveFocus()
+
+    await user.clear(from)
+    await user.click(save())
+
+    expect(mockPush).toHaveBeenCalledWith('/admin/post')
   })
 
   it('keeps working unchanged when it never reports', async () => {

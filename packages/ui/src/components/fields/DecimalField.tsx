@@ -3,14 +3,7 @@
 import { useRef } from 'react'
 import { Input } from '../../primitives/input.js'
 import { cn } from '../../lib/utils.js'
-import {
-  FieldRoot,
-  FieldLabel,
-  FieldHelp,
-  FieldError,
-  FieldWarning,
-  FieldReadValue,
-} from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 import { useFieldDraft } from './useFieldDraft.js'
 
 export interface DecimalFieldProps {
@@ -99,7 +92,7 @@ export function DecimalField({
         className={cn('tabular-nums', (error || parseError) && 'border-destructive')}
       />
       {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {parseError && <FieldWarning>{parseError}</FieldWarning>}
+      {parseError && <FieldError>{parseError}</FieldError>}
       {error && <FieldError>{error}</FieldError>}
     </FieldRoot>
   )

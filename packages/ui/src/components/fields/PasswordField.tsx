@@ -93,9 +93,19 @@ export function PasswordField({
     }
   }
 
+  const commit = (password: string, confirm: string) => {
+    const isConfirmed = password !== '' && (!showConfirm || password === confirm)
+    onChange(isConfirmed ? password : (sentinel ?? undefined))
+  }
+
   const handlePasswordChange = (newValue: string) => {
     setPasswordValue(newValue)
-    onChange(newValue || undefined)
+    commit(newValue, confirmValue)
+  }
+
+  const handleConfirmChange = (newValue: string) => {
+    setConfirmValue(newValue)
+    commit(passwordValue, newValue)
   }
 
   return (
@@ -139,7 +149,7 @@ export function PasswordField({
             name={`${name}-confirm`}
             type={showPassword ? 'text' : 'password'}
             value={confirmValue}
-            onChange={(e) => setConfirmValue(e.target.value)}
+            onChange={(e) => handleConfirmChange(e.target.value)}
             placeholder={`Confirm ${placeholder || label.toLowerCase()}`}
             disabled={disabled}
             required={required && !isPasswordSet}

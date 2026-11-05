@@ -75,7 +75,7 @@ export function FieldError({ className, ...props }: React.HTMLAttributes<HTMLPar
   )
 }
 
-/** Non-blocking warning message (e.g. an in-progress invalid JSON edit). */
+/** Non-blocking warning message. */
 export function FieldWarning({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p data-slot="field-warning" className={cn('text-sm text-warning', className)} {...props} />

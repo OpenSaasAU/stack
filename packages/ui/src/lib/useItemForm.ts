@@ -1,10 +1,16 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type ItemFormAction = 'create' | 'update'
+
+interface InvalidMark {
+  fieldName: string
+  focusTarget: FieldFocusTarget
+  onRefused: () => void
+}
 
 const SYSTEM_FIELDS = ['id']
 
@@ -364,18 +370,20 @@ export function useItemForm({
   // the edges that are still outstanding rather than the ones already stored.
   const edgeBaseline = useRef<Record<string, unknown>>(initialData)
   const scalarBaseline = useRef<Record<string, unknown> | null>(null)
-  const invalidFields = useRef(new Map<string, FieldFocusTarget>())
-  const [submitRefused, setSubmitRefused] = useState(false)
+  const invalidMarks = useRef(new Set<InvalidMark>())
 
-  const markInvalid = useCallback((fieldName: string, focusTarget: FieldFocusTarget) => {
-    invalidFields.current.set(fieldName, focusTarget)
-    return () => {
-      if (invalidFields.current.get(fieldName) === focusTarget) {
-        invalidFields.current.delete(fieldName)
-      }
-    }
-  }, [])
-  const validity = useMemo(() => ({ markInvalid, submitRefused }), [markInvalid, submitRefused])
+  const validity = useMemo<FieldValidityChannel>(
+    () => ({
+      markInvalid: (fieldName, focusTarget, onRefused) => {
+        const mark = { fieldName, focusTarget, onRefused }
+        invalidMarks.current.add(mark)
+        return () => {
+          invalidMarks.current.delete(mark)
+        }
+      },
+    }),
+    [],
+  )
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     // A field the form rendered read-only has no input to accept: its control
@@ -400,17 +408,16 @@ export function useItemForm({
   const handleSubmit = (e: { preventDefault: () => void }) => {
     e.preventDefault()
 
-    const invalid = invalidFields.current
-    if (invalid.size > 0) {
-      const firstDeclared = Object.keys(fields).find((name) => invalid.has(name))
-      const [firstMarked] = invalid.values()
-      const target = firstDeclared === undefined ? firstMarked : invalid.get(firstDeclared)
-      setSubmitRefused(true)
-      target?.current?.focus()
+    const marks = [...invalidMarks.current]
+    if (marks.length > 0) {
+      const [firstDeclared = marks[0]] = Object.keys(fields).flatMap((name) =>
+        marks.filter((mark) => mark.fieldName === name),
+      )
+      for (const mark of marks) mark.onRefused()
+      firstDeclared.focusTarget.current?.focus()
       return
     }
 
-    setSubmitRefused(false)
     setErrors({})
     setGeneralError(null)
 

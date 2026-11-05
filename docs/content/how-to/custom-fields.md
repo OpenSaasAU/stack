@@ -367,15 +367,15 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 type HexColorFieldProps = {
   name: string
-  value: string
-  onChange: (value: string) => void
+  value?: string | null
+  onChange: (value: string | null) => void
   mode?: 'read' | 'edit'
 }
 
 export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColorFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [text, setText] = useState(value)
-  const isInvalid = !HEX_COLOR.test(text)
+  const [text, setText] = useState(value ?? '')
+  const isInvalid = text !== '' && !HEX_COLOR.test(text)
 
   useFieldValidity(name, mode === 'edit' && isInvalid, inputRef)
 
@@ -386,8 +386,10 @@ export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColor
         id={name}
         value={text}
         onChange={(e) => {
-          setText(e.target.value)
-          if (HEX_COLOR.test(e.target.value)) onChange(e.target.value)
+          const next = e.target.value
+          setText(next)
+          if (next === '') onChange(null)
+          else if (HEX_COLOR.test(next)) onChange(next)
         }}
       />
       {isInvalid && <FieldError>Enter a hex color</FieldError>}
@@ -396,9 +398,13 @@ export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColor
 }
 ```
 
-While the second argument is `true`, every item form (admin create, edit and singleton, the relationship drawer, and the standalone forms) refuses to submit and writes nothing. The form focuses the third argument's target on the first invalid field, in declaration order. That target is a ref to anything with a `focus()` method. The field shows its own error, and the mark clears when the field reports `false` or unmounts. The hook returns `true` once a submit has been refused, for an error that should wait until then.
+While the second argument is `true`, every item form (admin create, edit and singleton, the relationship drawer, and the standalone forms) refuses to submit and writes nothing. The form focuses the third argument's target on the first invalid field, in declaration order. That target is a ref to anything with a `focus()` method. The field shows its own error, and the mark clears when the field reports `false` or unmounts. The hook returns `true` once a submit has been refused while this field was invalid, for an error that should wait until then.
 
-A field that doesn't need this leaves it out and works as it always has. The hook does nothing outside an item form.
+Report only text that has no value. An empty box is a value (`null`), so an optional field stays valid when it's empty, and it can be cleared.
+
+A field that doesn't need this leaves it out and works as it always has.
+
+Outside an item form the hook does nothing, because nothing there can refuse a submit. The built-in JSON, decimal and bigInt fields revert unparseable text on blur in that case, so what's on screen matches the value a host form would send.
 
 ## Advanced Example: Slug Field with Auto-Generation
 

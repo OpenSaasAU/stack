@@ -3,7 +3,7 @@
 import { useMemo, useRef } from 'react'
 import { Textarea } from '../../primitives/textarea.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldWarning } from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
 import { useFieldDraft } from './useFieldDraft.js'
 
 export interface JsonFieldProps {
@@ -104,7 +104,7 @@ export function JsonField({
         className={cn('font-mono text-sm', (error || parseError) && 'border-destructive')}
       />
       {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {parseError && <FieldWarning>{parseError}</FieldWarning>}
+      {parseError && <FieldError>{parseError}</FieldError>}
       {error && <FieldError>{error}</FieldError>}
     </FieldRoot>
   )
