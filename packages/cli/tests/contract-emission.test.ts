@@ -115,12 +115,20 @@ describe('prisma contract emit — every list cuid, no timestamps', () => {
   }, 180_000)
 
   test('emits a text id minted by the cuid2 generator on every model', () => {
-    const { table } = emitted.storage.namespaces.public.entries
-    expect(Object.keys(table).sort()).toEqual(['Author', 'Post'])
-    for (const entry of Object.values(table)) {
-      const { columns } = entry as unknown as { columns: Record<string, { dataType: string }> }
-      expect(columns.id.dataType).toBe('pg/text')
-    }
+    const textId = { columns: { id: { dataType: 'pg/text' } } }
+    const cuid2Id = (entry: string) => ({
+      ref: { namespace: 'public', entry, field: 'id' },
+      onCreate: { kind: 'generator', id: 'cuid2' },
+    })
+
+    expect(emitted).toMatchObject({
+      storage: {
+        namespaces: { public: { entries: { table: { Author: textId, Post: textId } } } },
+      },
+      execution: {
+        mutations: { defaults: expect.arrayContaining([cuid2Id('Author'), cuid2Id('Post')]) },
+      },
+    })
   })
 })
 

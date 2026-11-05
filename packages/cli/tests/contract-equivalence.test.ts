@@ -215,88 +215,76 @@ describe('renderContractModule — the lowering table', () => {
 describe('renderContractModule — the callback binds `gen` exactly when the module uses it', () => {
   const callback = (source: string) => /\(\{ (.*) \}\) => \{\n {4}const models/.exec(source)?.[1]
 
-  const strategies: {
-    idField: NonNullable<OpenSaasConfig['db']['idField']>
-    binds: boolean
-  }[] = [
-    { idField: 'uuid7', binds: true },
-    { idField: 'cuid2', binds: true },
-    { idField: 'cuid', binds: true },
-    { idField: 'int autoincrement', binds: false },
+  const fields = { title: text() }
+  const onEveryList = (idField: NonNullable<OpenSaasConfig['db']['idField']>): OpenSaasConfig => ({
+    db: { provider: 'postgresql', idField },
+    lists: { Post: { fields } },
+  })
+
+  const cases: { name: string; config: OpenSaasConfig; binds: boolean }[] = [
+    { name: 'uuid7 alone', config: onEveryList('uuid7'), binds: true },
+    { name: 'cuid2 alone', config: onEveryList('cuid2'), binds: true },
+    { name: 'cuid alone', config: onEveryList('cuid'), binds: true },
+    { name: 'int autoincrement alone', config: onEveryList('int autoincrement'), binds: false },
+    {
+      name: 'singleton alone',
+      config: { db: { provider: 'postgresql' }, lists: { Site: { fields, isSingleton: true } } },
+      binds: false,
+    },
+    {
+      name: 'cuid with a singleton',
+      config: {
+        db: { provider: 'postgresql', idField: 'cuid' },
+        lists: { Post: { fields }, Site: { fields, isSingleton: true } },
+      },
+      binds: true,
+    },
+    {
+      name: 'cuid with a per-list int autoincrement',
+      config: {
+        db: { provider: 'postgresql', idField: 'cuid' },
+        lists: { Post: { fields }, Tag: { fields, db: { idField: 'int autoincrement' } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'int autoincrement with a per-list cuid',
+      config: {
+        db: { provider: 'postgresql', idField: 'int autoincrement' },
+        lists: { Post: { fields }, Tag: { fields, db: { idField: 'cuid' } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'updatedAt on a list with no generated id',
+      config: {
+        db: { provider: 'postgresql', idField: 'int autoincrement' },
+        lists: { Post: { fields, db: { timestamps: true } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'updatedAt with a default timestamp type',
+      config: {
+        db: {
+          provider: 'postgresql',
+          idField: 'int autoincrement',
+          defaults: { timestamp: { nativeType: 'Timestamp(3)' } },
+        },
+        lists: { Post: { fields, db: { timestamps: true } } },
+      },
+      binds: true,
+    },
   ]
 
-  for (const { idField, binds } of strategies) {
-    test(`${idField} on every list, no timestamps`, async () => {
-      const source = renderContractModule(
-        deriveContract({
-          db: { provider: 'postgresql', idField },
-          lists: { Post: { fields: { title: text() } } },
-        }),
-      )
+  for (const { name, config, binds } of cases) {
+    test(name, async () => {
+      const source = renderContractModule(deriveContract(config))
 
-      expect(callback(source)?.split(', ').includes('gen')).toBe(binds)
-      await expect(evaluateRendered(`gen-${idField}`, source)).resolves.toBeDefined()
+      expect(callback(source)).toBe(binds ? 'field, model, type, gen' : 'field, model, type')
+      await expect(evaluateRendered(`gen-${name}`, source)).resolves.toBeDefined()
     })
   }
-
-  test('updatedAt alone reaches the helper on a list with no generated id', () => {
-    const source = renderContractModule(
-      deriveContract({
-        db: { provider: 'postgresql', idField: 'int autoincrement' },
-        lists: { Post: { fields: { title: text() }, db: { timestamps: true } } },
-      }),
-    )
-
-    expect(callback(source)).toBe('field, model, type, gen')
-  })
-
-  test('a config value spelling `gen.` is not a use of the helper', () => {
-    const source = renderContractModule(
-      deriveContract({
-        db: { provider: 'postgresql', idField: 'int autoincrement' },
-        lists: {
-          Post: {
-            fields: {
-              title: text({ defaultValue: "it's gen.now()", db: { map: 'gen.title' } }),
-            },
-          },
-        },
-      }),
-    )
-
-    expect(source).toContain("gen.now()'")
-    expect(callback(source)).toBe('field, model, type')
-  })
-
-  test('a list, or an extension pack, named `gen` is not a use of the helper', () => {
-    const emptyModel = deriveContract({
-      db: { provider: 'postgresql', idField: 'int autoincrement' },
-      lists: { gen: { fields: { title: text() } } },
-    })
-    const [model] = emptyModel.models
-
-    const source = renderContractModule({
-      ...emptyModel,
-      extensions: [{ name: 'gen', from: '@acme/gen' }],
-      models: [
-        {
-          ...model,
-          columns: [
-            {
-              name: 'vector',
-              type: { pack: 'gen', type: 'Vector', args: [3] },
-              nullable: false,
-              unique: false,
-              index: false,
-            },
-          ],
-        },
-      ],
-    })
-
-    expect(source).toContain('field.column(type.gen.Vector(3))')
-    expect(callback(source)).toBe('field, model, type')
-  })
 })
 
 describe('renderContractModule — the rendered module is valid TypeScript for the CLI to emit', () => {

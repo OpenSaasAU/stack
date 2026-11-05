@@ -221,26 +221,30 @@ function codecLiteral(column: ContractColumn, value: unknown): string {
     : literal(value)
 }
 
-const QUOTED_STRING = /'(?:[^'\\]|\\.)*'/g
-const GEN_HELPER_CALL = /(?<![\w$.])gen\./
-
-/** Whether rendered source calls the `gen` helper, as opposed to a config value spelling it. */
-function referencesGenHelper(source: string): boolean {
-  return GEN_HELPER_CALL.test(source.replace(QUOTED_STRING, "''"))
-}
-
-function idExpression(id: ContractIdColumn): string {
+function idExpression(id: ContractIdColumn): { expression: string; usesGen: boolean } {
   switch (id.strategy) {
     case 'uuid7':
-      return 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))'
+      return {
+        expression: 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))',
+        usesGen: true,
+      }
     case 'cuid2':
-      return 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))'
+      return {
+        expression: 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))',
+        usesGen: true,
+      }
     case 'cuid':
-      return 'field.column(type.String()).id().onCreate(gen.cuid(2))'
+      return {
+        expression: 'field.column(type.String()).id().onCreate(gen.cuid(2))',
+        usesGen: true,
+      }
     case 'int autoincrement':
-      return `field.column(type.Int()).defaultSql('autoincrement()').id()`
+      return {
+        expression: `field.column(type.Int()).defaultSql('autoincrement()').id()`,
+        usesGen: false,
+      }
     case 'singleton':
-      return 'field.column(type.Int()).default(1).id()'
+      return { expression: 'field.column(type.Int()).default(1).id()', usesGen: false }
   }
 }
 
@@ -252,8 +256,12 @@ function relationExpression(relation: ContractModel['relations'][number]): strin
 }
 
 /** The `const <Model> = model(...)` declaration, relations included. */
-function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHelper>): string {
-  const fields: string[] = [`        id: ${idExpression(model.id)},`]
+function renderModelDeclaration(
+  model: ContractModel,
+  helpers: Set<ColumnTypeHelper>,
+): { source: string; usesGen: boolean } {
+  const id = idExpression(model.id)
+  const fields: string[] = [`        id: ${id.expression},`]
   for (const column of model.columns) {
     const rendered = columnExpression(model.name, column)
     for (const helper of rendered.helpers) helpers.add(helper)
@@ -305,7 +313,7 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
     lines.push(`      namespace: ${literal(model.namespace)},`)
   }
   lines.push('    }))')
-  return lines.join('\n')
+  return { source: lines.join('\n'), usesGen: id.usesGen || model.timestamps.updatedAt }
 }
 
 /**
@@ -495,7 +503,7 @@ export function renderContractModule(data: ContractData): string {
     scaffold.push(`namespaces: [${data.namespaces.map((ns) => literal(ns)).join(', ')}]`)
   }
 
-  const usesGenHelper = referencesGenHelper([...declarations, ...attributes].join('\n'))
+  const usesGenHelper = declarations.some((declaration) => declaration.usesGen)
   const usesRelHelper = data.models.some((model) => model.relations.length > 0)
   const callbackParams = ['field', 'model']
   if (usesRelHelper) callbackParams.push('rel')
@@ -508,7 +516,7 @@ export function renderContractModule(data: ContractData): string {
   lines.push('    const models: Record<string, ModelToken> = {}')
   lines.push('')
   for (const declaration of declarations) {
-    lines.push(declaration, '')
+    lines.push(declaration.source, '')
   }
   lines.push('    return {')
   lines.push('      models: {')
