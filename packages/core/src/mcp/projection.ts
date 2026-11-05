@@ -306,11 +306,11 @@ export interface ResolvedFieldsProjection {
   apply(query: SecuredQuery): SecuredQuery
   /**
    * The rows the engine returned, at the shape the tool advertises. A
-   * count-only relation is read as its rows beside the count — Field
-   * Visibility decides a relation's fate against the value it was given, and a
-   * `[]` stand-in fails open for a rule of the `item.comments.length === 0`
-   * shape (`maskReductions` in `secured/read.ts`). Those rows are the engine's
-   * business, not the caller's, so this drops them once it has decided.
+   * count-only relation is read as rows beside the count, because a bare
+   * `count()`'s `[]` stand-in fails open for a rule of the
+   * `item.comments.length === 0` shape (`maskReductions` in
+   * `secured/read.ts`). Those rows are the engine's business, not the
+   * caller's, so this drops them once it has decided.
    */
   toWire(rows: readonly OrmRow[]): OrmRow[]
 }
@@ -335,14 +335,18 @@ function nestedPage(entry: Record<string, unknown>): { limit: number; offset?: n
  * counts the relation rather than the page.
  *
  * A count asked for without `fields` takes that same shape rather than a bare
- * `count()`: the rows are what Field Visibility has to decide the relation's
- * fate against, and `ResolvedFieldsProjection.toWire` drops them afterwards.
+ * `count()`, and `ResolvedFieldsProjection.toWire` drops the rows afterwards.
+ * Where the relation's own `read` rule reads the row (`ruleReadsRows`) its
+ * rows branch is unpaged and unprojected, since the engine withholds a shaped
+ * branch from the rule: the rule then decides against what a plain include
+ * would give it, at a plain include's cost.
  */
 function relationRefinement(
   entry: Record<string, unknown>,
   selection: readonly string[],
   many: boolean,
   path: string,
+  ruleReadsRows: boolean,
 ): Refinement {
   const scope = (rows: SecuredRefinement): SecuredRefinement =>
     entry.where === undefined ? rows : rows.where(whereArgument(entry.where, `${path}.where`))
@@ -360,7 +364,11 @@ function relationRefinement(
   }
 
   if (entry.count !== true) return items
-  return (rows) => rows.combine({ items: items(rows), count: scope(rows).count() })
+  return (rows) =>
+    rows.combine({
+      items: ruleReadsRows ? scope(rows) : items(rows),
+      count: scope(rows).count(),
+    })
 }
 
 /**
@@ -564,11 +572,22 @@ export async function resolveFieldsProjection(
       }
     }
 
+    const isCountOnly = nestedFieldsArg === undefined && wantsCount
+    const ruleReadsRows =
+      isCountOnly &&
+      (await classifyRowIndependentRead(related.fieldConfig.access, { session, context })) ===
+        'row-dependent'
     relations.push({
       name: fieldName,
-      refine: relationRefinement(entry, [...nestedSelection], many, `${listKey}.${fieldName}`),
+      refine: relationRefinement(
+        entry,
+        [...nestedSelection],
+        many,
+        `${listKey}.${fieldName}`,
+        ruleReadsRows,
+      ),
     })
-    if (nestedFieldsArg === undefined && wantsCount) countOnly.push(fieldName)
+    if (isCountOnly) countOnly.push(fieldName)
   }
 
   return {
