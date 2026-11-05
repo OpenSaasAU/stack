@@ -306,11 +306,10 @@ export interface ResolvedFieldsProjection {
   apply(query: SecuredQuery): SecuredQuery
   /**
    * The rows the engine returned, at the shape the tool advertises. A
-   * count-only relation is read as its rows beside the count — Field
-   * Visibility decides a relation's fate against the value it was given, and a
-   * `[]` stand-in fails open for a rule of the `item.comments.length === 0`
-   * shape (`maskReductions` in `secured/read.ts`). Those rows are the engine's
-   * business, not the caller's, so this drops them once it has decided.
+   * count-only relation is read as a paged rows branch beside the count, never
+   * as a bare `count()`, whose `[]` stand-in opens a rule of the
+   * `item.comments.length === 0` shape (`maskReductions` in
+   * `secured/read.ts`). This drops those rows.
    */
   toWire(rows: readonly OrmRow[]): OrmRow[]
 }
@@ -335,8 +334,7 @@ function nestedPage(entry: Record<string, unknown>): { limit: number; offset?: n
  * counts the relation rather than the page.
  *
  * A count asked for without `fields` takes that same shape rather than a bare
- * `count()`: the rows are what Field Visibility has to decide the relation's
- * fate against, and `ResolvedFieldsProjection.toWire` drops them afterwards.
+ * `count()`, and `ResolvedFieldsProjection.toWire` drops the rows afterwards.
  */
 function relationRefinement(
   entry: Record<string, unknown>,

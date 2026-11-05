@@ -349,7 +349,10 @@ export interface IncludePlan {
   readonly predicates: readonly WherePlan[]
   /** Whether the caller's own refinement composed a predicate on this relation. */
   readonly callerRefined: boolean
-  /** Whether the caller's own refinement bounded or narrowed what this relation returns. */
+  /**
+   * Whether the caller's own refinement bounded or narrowed what this relation
+   * returns: on the relation itself, or on the rows branch of its `combine`.
+   */
   readonly callerShaped: boolean
   /**
    * Present when the caller shaped a relation that is also a live declared
@@ -706,13 +709,7 @@ async function resolveInclude(
         : []
       : undefined
 
-  const callerShaped =
-    request.predicates.length > 0 ||
-    request.limit !== undefined ||
-    request.offset !== undefined ||
-    shape.fields !== undefined ||
-    shape.includes.length > 0 ||
-    orders.length > 0
+  const callerShaped = composesShape(request) || composesShape(shape)
   const declaredFetch =
     !declared && liveDeclaredDependency && callerShaped && reduce === undefined
       ? access.kind !== 'true'
@@ -749,6 +746,17 @@ async function resolveInclude(
 function rowsBranchOf(request: IncludeRequest): IncludeRequest | undefined {
   if (request.reduce?.kind !== 'combine') return undefined
   return request.reduce.branches.find((branch) => branch.kind === 'rows')?.request
+}
+
+function composesShape(request: IncludeRequest): boolean {
+  return (
+    request.predicates.length > 0 ||
+    request.orders.length > 0 ||
+    request.limit !== undefined ||
+    request.offset !== undefined ||
+    request.fields !== undefined ||
+    request.includes.length > 0
+  )
 }
 
 function hasNoReduction(request: IncludeRequest): boolean {
