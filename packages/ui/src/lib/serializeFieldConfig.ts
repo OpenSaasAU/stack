@@ -28,8 +28,9 @@ export type SerializableFieldConfig = {
   nullable?: boolean
   /**
    * Set when the field's column is `NOT NULL` and has a default: a create form
-   * sends nothing for an emptied control, so it takes the default exactly as an
-   * untouched one does.
+   * omits a `null` for it, so the default applies as it does to an untouched
+   * control. It changes nothing for a control that never sends `null` there,
+   * which among the built-ins is all but JSON.
    */
   emptyTakesDefaultOnCreate?: boolean
   /** Whether the field is a virtual (computed, non-DB) field, which a form shows read-only. */

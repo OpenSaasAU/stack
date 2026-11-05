@@ -1378,7 +1378,7 @@ await context.db.Post.update({
 
 ### `json()`
 
-Field for storing arbitrary JSON data. Emptying the admin's box and typing the literal `null` both store a database `NULL`. A required field or a `NOT NULL` column refuses it with an error on the field. On a create form, an emptied box on a `NOT NULL` field with a `defaultValue` takes the default, as an untouched box does. On a nullable field with a `defaultValue` it stores `NULL`.
+Field for storing arbitrary JSON data. Emptying the admin's box and typing the literal `null` both store a database `NULL`. A required field or a `NOT NULL` column refuses it with an error on the field. On a create form, an emptied box or a typed literal `null` on a `NOT NULL` field with a `defaultValue` takes the default, as an untouched box does. On a nullable field with a `defaultValue` both store `NULL`.
 
 ```typescript
 import { json } from '@opensaas/stack-core/fields'
@@ -1856,7 +1856,8 @@ slug: text({
     resolveInput: ({ resolvedData, fieldKey }) => {
       const value = resolvedData[fieldKey]
       if (value) return value
-      return resolvedData.title?.toLowerCase().replace(/\s+/g, '-')
+      const title = resolvedData.title
+      return typeof title === 'string' ? title.toLowerCase().replace(/\s+/g, '-') : value
     },
   },
 })
@@ -2416,7 +2417,10 @@ slug: text({
 // ✅ Good: normalise in a field hook, where every write path goes through it
 email: text({
   hooks: {
-    resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey]?.toLowerCase().trim(),
+    resolveInput: ({ resolvedData, fieldKey }) => {
+      const value = resolvedData[fieldKey]
+      return typeof value === 'string' ? value.toLowerCase().trim() : value
+    },
   },
 })
 
