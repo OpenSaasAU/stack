@@ -34,7 +34,7 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
-import { visibleWrittenRow, writtenRowQueryable } from '../secured/read.js'
+import { readWrittenRow, visibleWrittenRow, writeReturnReadsRelations } from '../secured/read.js'
 import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import {
@@ -614,11 +614,7 @@ async function runWriteInTransaction(
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
   const binding = { listName, listConfig, ormHandle: tx, context, config }
-  const visible = await visibleWrittenRow(
-    binding,
-    item,
-    await writtenRowQueryable(binding, item.id),
-  )
+  const visible = await visibleWrittenRow(binding, item, await readWrittenRow(binding, item.id))
   return { visible, raw: item }
 }
 
@@ -653,6 +649,13 @@ async function runDeletePath(args: {
     strategy,
   } = args
   const item = originalItem as Record<string, unknown>
+  const binding = { listName, listConfig, ormHandle, context, config }
+
+  // Before any hook: a `beforeOperation` clearing the row's children must not
+  // change what the return computes over (ADR-0081).
+  const lockedRead = writeReturnReadsRelations(binding)
+    ? await readWrittenRow(binding, item.id)
+    : undefined
 
   // ── Phase 3: list-level validate (delete) ──────────────────────────────────
   await executeValidate(listConfig.hooks, {
@@ -692,8 +695,7 @@ async function runDeletePath(args: {
     context,
   })
 
-  const binding = { listName, listConfig, ormHandle, context, config }
-  const queryable = await writtenRowQueryable(binding, item.id)
+  const read = lockedRead ?? (await readWrittenRow(binding, item.id))
 
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
@@ -719,7 +721,7 @@ async function runDeletePath(args: {
     item, // original row before deletion
   )
 
-  const visible = await visibleWrittenRow(binding, deleted, queryable)
+  const visible = await visibleWrittenRow(binding, deleted, read)
   return { visible, raw: deleted }
 }
 
