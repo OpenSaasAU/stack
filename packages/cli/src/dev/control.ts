@@ -69,6 +69,18 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+/** Whether an `opensaas dev` loop currently owns generation for the project at `cwd`. */
+export function hasLiveDevLoop(cwd: string): boolean {
+  try {
+    const published = controlFileSchema.parse(
+      JSON.parse(fs.readFileSync(controlFilePath(cwd), 'utf-8')),
+    )
+    return isProcessAlive(published.pid)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Opens the loop's control channel on a free loopback port and publishes it.
  *

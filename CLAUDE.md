@@ -89,7 +89,8 @@ cd examples/blog
 # This is the whole loop — there is no separate database step to run first.
 pnpm dev
 
-# Regenerate the contract and the .opensaas bundle without running the app
+# Regenerate the contract and the .opensaas bundle without running the app.
+# Refused while `pnpm dev` is running: the loop owns generation, so save the config instead.
 pnpm generate
 
 # Apply a schema change the running loop staged but did not promote

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -635,6 +636,62 @@ describe('Generate Command Integration', () => {
       expect(fs.existsSync(path.join(tempDir, 'migrations'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'staged'))).toBe(false)
       expect(fs.existsSync(path.join(tempDir, 'prisma'))).toBe(false)
+    })
+  })
+
+  describe('generateCommand against a live dev loop (#2084)', () => {
+    let originalCwd: string
+
+    const writeControlFile = (pid: number): void => {
+      fs.mkdirSync(path.join(tempDir, '.opensaas'), { recursive: true })
+      fs.writeFileSync(
+        path.join(tempDir, '.opensaas', 'dev-loop.json'),
+        JSON.stringify({ pid, port: 1, token: 'secret' }),
+      )
+    }
+
+    const reachesCheckConfig = {
+      checkConfig: () => {
+        throw new Error('past the guard')
+      },
+    }
+
+    beforeEach(() => {
+      originalCwd = process.cwd()
+      fs.writeFileSync(
+        path.join(tempDir, 'opensaas.config.ts'),
+        "export default { db: { provider: 'postgresql' }, lists: {} }\n",
+      )
+      process.chdir(tempDir)
+    })
+
+    afterEach(() => {
+      process.chdir(originalCwd)
+    })
+
+    it('refuses and writes nothing while the loop’s pid is alive', async () => {
+      writeControlFile(process.pid)
+
+      await expect(generateCommand(reachesCheckConfig)).rejects.toThrow(
+        '`opensaas dev` is running for this project',
+      )
+      expect(fs.existsSync(path.join(tempDir, 'prisma'))).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, 'migrations'))).toBe(false)
+    })
+
+    it('proceeds when the control file is stale', async () => {
+      const exited = spawnSync(process.execPath, ['-e', '0'])
+      writeControlFile(exited.pid)
+
+      await expect(generateCommand(reachesCheckConfig)).rejects.toThrow('past the guard')
+    })
+
+    it('proceeds for the loop’s own staged generation', async () => {
+      writeControlFile(process.pid)
+
+      await expect(
+        generateCommand({ ...reachesCheckConfig, stagingDir: path.join(tempDir, 'staged') }),
+      ).rejects.toThrow('past the guard')
     })
   })
 
