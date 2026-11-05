@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { unstable_rethrow } from 'next/navigation.js'
 import { Button } from '../primitives/button.js'
 import { ThemeToggle } from './ThemeToggle.js'
@@ -9,9 +9,10 @@ export interface UserMenuProps {
   userName?: string
   userEmail?: string
   /**
-   * Ends the session, then the menu navigates to `/sign-in`. Without it no Sign
-   * Out control renders. On a rejection the menu stays put and says the user is
-   * still signed in; a `redirect()` from the action is followed as usual.
+   * Ends the session, and should `redirect()` to the app's sign-in page, which
+   * is what keeps Next's `basePath`. If it returns without redirecting the page
+   * reloads, so the app's own guard decides what to show. On a rejection the menu
+   * stays put and warns the user. Without it no Sign Out control renders.
    */
   onSignOut?: () => Promise<void>
 }
@@ -19,6 +20,16 @@ export interface UserMenuProps {
 export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
   const [isSigningOut, startSignOut] = useTransition()
   const [signOutFailed, setSignOutFailed] = useState(false)
+
+  // A document the browser froze in its back-forward cache still shows this user
+  // after they sign out, so a restored page has to ask the server again.
+  useEffect(() => {
+    const reloadIfRestored = (event: PageTransitionEvent) => {
+      if (event.persisted) window.location.reload()
+    }
+    window.addEventListener('pageshow', reloadIfRestored)
+    return () => window.removeEventListener('pageshow', reloadIfRestored)
+  }, [])
 
   return (
     <div className="border-t border-border p-4">
@@ -49,9 +60,9 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
                   setSignOutFailed(true)
                   return
                 }
-                // A document navigation, not router.push: Next's client cache would
-                // otherwise hand the signed-in admin back on Back.
-                window.location.assign('/sign-in')
+                // Not router.push: Next's client cache would hand the signed-in admin
+                // back on Back. Not a path either: it would skip Next's basePath.
+                window.location.reload()
               })
             }
             disabled={isSigningOut}
@@ -65,7 +76,7 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
       </div>
       {signOutFailed && (
         <p role="alert" className="mt-2 text-xs text-destructive">
-          Sign out failed. You are still signed in.
+          Sign out may not have completed.
         </p>
       )}
     </div>

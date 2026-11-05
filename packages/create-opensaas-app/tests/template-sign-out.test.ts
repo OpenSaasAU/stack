@@ -25,12 +25,14 @@ describe('sign-out wiring', () => {
   describe.each(authExamples)('%s', (example) => {
     const root = path.join(examplesDir, example)
 
-    it('owns a server action that calls auth.api.signOut', () => {
+    it('owns a server action that calls auth.api.signOut, then redirects', () => {
       const actions = fs.readFileSync(path.join(root, 'lib/actions/auth.ts'), 'utf-8')
 
       expect(actions.startsWith("'use server'")).toBe(true)
       expect(actions).toContain('export async function signOutAction(): Promise<void>')
-      expect(actions).toContain('auth.api.signOut({ headers: await headers() })')
+      expect(actions).toContain(
+        "auth.api.signOut({ headers: await headers() })\n  redirect('/sign-in')",
+      )
     })
 
     it('passes it to AdminUI', () => {

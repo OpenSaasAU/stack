@@ -297,6 +297,7 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 
 export async function signOutAction(): Promise<void> {
   await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
@@ -492,12 +493,21 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 when it has a handler, and it must be a server action: a plain function cannot
 cross to the client component that holds the button. `signOutAction` takes no
 identity argument, because better-auth reads the session from the request's own
-cookie, deletes its row and clears the cookie. If the action rejects, the admin
-stays on the current page and tells the user they are still signed in.
+cookie, deletes its row and clears the cookie.
 
-With `session.cookieCache` enabled, sign-out clears the cached session in the
-browser that signed out, but a copy of that cookie held anywhere else keeps
-validating until the cache's `maxAge` runs out.
+The action's `redirect()` is what sends the user to the sign-in page, and it keeps
+Next's `basePath`. An action that returns without redirecting reloads the current
+page instead. If the action rejects, the admin stays where it is and warns that
+sign-out may not have completed.
+
+Two limits come from better-auth:
+
+- A failed delete of the session row is logged and swallowed: better-auth still
+  clears the cookie and reports success. The user lands on the sign-in page, and
+  the row stays valid until it expires for anyone holding a copy of the cookie.
+- With `session.cookieCache` enabled, sign-out clears the cached session in the
+  browser that signed out, but a copy of both `session_token` and `session_data`
+  held anywhere else keeps validating until the cache's `maxAge` runs out.
 
 ### Protecting Server Actions
 
@@ -1965,13 +1975,14 @@ export const GET = auth.handler
 export const POST = auth.handler
 ```
 
-<!-- doc-check: excuses="TS2307 'next/headers', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
+<!-- doc-check: excuses="TS2307 'next/headers', TS2307 'next/navigation', TS2307 '@/lib/auth'" reason="Next.js and the reader's own file, neither present in this repo" -->
 
 ```typescript
 // lib/actions/auth.ts
 'use server'
 
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
@@ -1990,6 +2001,7 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 
 export async function signOutAction(): Promise<void> {
   await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 ```
 

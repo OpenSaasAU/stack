@@ -366,7 +366,10 @@ describe('the code the feature wizard emits', () => {
       const actions = implementation.files.find((file) => file.path === 'lib/actions/auth.ts')
 
       expect(actions?.content).toContain('export async function signOutAction(): Promise<void>')
-      expect(actions?.content).toContain('auth.api.signOut({ headers: await headers() })')
+      expect(actions?.content).toContain(
+        "auth.api.signOut({ headers: await headers() })\n  redirect('/sign-in')",
+      )
+      expect(actions?.content).toContain("import { redirect } from 'next/navigation'")
       expect(implementation.nextSteps.join('\n')).toContain('onSignOut={signOutAction}')
     },
   )

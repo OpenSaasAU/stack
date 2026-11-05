@@ -141,13 +141,22 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 
 Replace `{SEGMENT_NAME}` with the last segment of the admin path (e.g. `admin`) and `{ADMIN_PATH}` with the full path (e.g. `/admin`).
 
-`onSignOut` is what ends the session, and the Sign Out control only renders when it is passed. If `lib/actions/auth.ts` has no `signOutAction`, add it to that `'use server'` file:
+`onSignOut` is what ends the session, and the Sign Out control only renders when it is passed. The template imports `signOutAction` from `@/lib/actions/auth`, so that file has to provide it. Create the file if the project has none. If it already exists, add the function and any import it lacks, keeping the `'use server'` line at the top:
 
 ```typescript
+'use server'
+
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+
 export async function signOutAction(): Promise<void> {
   await auth.api.signOut({ headers: await headers() })
+  redirect('/sign-in')
 }
 ```
+
+Point `redirect()` at the project's own sign-in page. If `auth` is not exported from `@/lib/auth`, import it from where the project's better-auth instance lives.
 
 **Important**: If `getSession` is not at `@/lib/auth`, check for it at its actual location (e.g. `@/lib/auth/index`, `@/app/lib/auth`) and use the correct import path.
 

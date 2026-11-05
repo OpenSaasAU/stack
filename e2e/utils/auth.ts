@@ -117,14 +117,7 @@ export async function signOut(page: Page) {
   if (sessionCookie === undefined) throw new Error('signOut() needs a signed-in page.')
   expect(await sessionRowCount(sessionCookie)).toBe(1)
 
-  // A document request, not a client-side transition: Next's client cache would
-  // otherwise restore the signed-in admin on Back when `session.cookieCache` is on.
-  const documentRequest = page.waitForRequest(
-    (request) => request.isNavigationRequest() && new URL(request.url()).pathname === '/sign-in',
-    { timeout: 10000 },
-  )
   await page.getByRole('button', { name: 'Sign Out' }).click()
-  await documentRequest
   await page.waitForURL('/sign-in', { timeout: 10000 })
 
   expect(await sessionRowCount(sessionCookie)).toBe(0)

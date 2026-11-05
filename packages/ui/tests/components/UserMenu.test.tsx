@@ -7,7 +7,7 @@ import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { Navigation } from '../../src/components/Navigation.js'
 import { UserMenu } from '../../src/components/UserMenu.js'
 
-const assign = vi.fn()
+const reload = vi.fn()
 
 vi.mock('next/link.js', () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -17,8 +17,8 @@ vi.mock('next/link.js', () => ({
 
 describe('UserMenu sign out', () => {
   beforeEach(() => {
-    assign.mockClear()
-    vi.stubGlobal('location', { ...window.location, assign })
+    reload.mockClear()
+    vi.stubGlobal('location', { ...window.location, reload })
   })
 
   afterEach(() => {
@@ -33,7 +33,7 @@ describe('UserMenu sign out', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 
-  it('leaves the document for /sign-in only after the handler has resolved', async () => {
+  it('reloads the document only after a handler that did not redirect has resolved', async () => {
     let finishSignOut = () => {}
     const onSignOut = vi.fn(
       () =>
@@ -46,11 +46,11 @@ describe('UserMenu sign out', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign Out' }))
 
     expect(onSignOut).toHaveBeenCalledTimes(1)
-    expect(assign).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
 
     finishSignOut()
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('/sign-in'))
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
   })
 
   it('cannot be clicked twice while signing out', async () => {
@@ -71,10 +71,8 @@ describe('UserMenu sign out', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Sign Out' }))
 
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Sign out failed. You are still signed in.',
-    )
-    expect(assign).not.toHaveBeenCalled()
+    expect((await screen.findByRole('alert')).textContent).toBe('Sign out may not have completed.')
+    expect(reload).not.toHaveBeenCalled()
   })
 
   it('does not report a redirect from the handler as a failure', async () => {
@@ -85,13 +83,34 @@ describe('UserMenu sign out', () => {
     await new Promise((resolve) => setTimeout(resolve))
 
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(assign).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('UserMenu back-forward cache', () => {
+  beforeEach(() => {
+    reload.mockClear()
+    vi.stubGlobal('location', { ...window.location, reload })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reloads a page restored from the cache, and no other', () => {
+    render(<UserMenu userName="Ada" />)
+
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }))
+    expect(reload).not.toHaveBeenCalled()
+
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    expect(reload).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('Navigation sign out', () => {
   beforeEach(() => {
-    vi.stubGlobal('location', { ...window.location, assign })
+    vi.stubGlobal('location', { ...window.location, reload })
   })
 
   afterEach(() => {
