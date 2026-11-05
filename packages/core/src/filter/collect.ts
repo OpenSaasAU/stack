@@ -1,5 +1,6 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { Session, AccessContext } from '../access/types.js'
+import { checkAccess } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
@@ -29,6 +30,9 @@ export type FilterAccessArgs = {
  * naming that field degrades to free text (`buildFilterWhere`'s existing
  * "unknown field" path) rather than reaching `context.db` at all.
  *
+ * A session denied the list's `query` has nothing to filter, so it gets no specs
+ * and no field `read` rule is asked, exactly as a read short-circuits.
+ *
  * @param listConfig The list whose fields to inspect.
  * @param listKey    The list's key (passed through to each field's spec).
  * @param config     The full config (relationship specs resolve their target
@@ -44,6 +48,10 @@ export async function collectFilterSpecs(
   args: FilterAccessArgs,
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
+  if (args.context._isSudo !== true) {
+    const access = await checkAccess(listConfig.access?.operation?.query, args)
+    if (access === false) return specs
+  }
   const filterableFields = Object.entries(listConfig.fields).filter(
     ([, field]) => typeof field.getFilterSpec === 'function',
   )

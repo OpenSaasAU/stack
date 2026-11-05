@@ -46,17 +46,3 @@ export function isToManyRelationshipColumn(field: SerializableFieldConfig | unde
 export function isCountAlignedColumn(field: SerializableFieldConfig | undefined): boolean {
   return isNumericField(field?.type) || isToManyRelationshipColumn(field)
 }
-
-/**
- * Whether a column exposes a sort affordance.
- *
- * `orderBy` takes the list's own scalar columns, so a relationship of either
- * cardinality is excluded, a to-many count included (ADR-0055). This mirrors
- * `ListView`'s server-side `isSortableField`: a header the server would refuse
- * to order by must not be presented as clickable.
- */
-export function isSortableColumn(field: SerializableFieldConfig | undefined): boolean {
-  if (!field) return true
-  if (field.virtual === true) return false
-  return field.type !== 'relationship'
-}

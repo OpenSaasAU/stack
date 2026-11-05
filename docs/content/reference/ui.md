@@ -247,6 +247,13 @@ The list view displays items in a table with search, sorting, and actions.
   ever equal the number of rows the session may page through.
 - Responsive table layout
 
+A column offers a sort only when this session's read can order by it, and a
+`?sort=` naming anything else is ignored. `ListView` works that out on the
+server and hands `ListViewClient` one boolean per column as `sortableFields`.
+If you render the exported `ListViewClient` directly, pass `sortableFields`
+yourself: a column it does not mark `true` has no sort affordance, so omitting
+the prop leaves the table unsortable.
+
 ### Filtering and sorting
 
 The list view's Filter builder and the `?search=` query it serialises are one
@@ -570,6 +577,8 @@ narrows them differently — a `TextField` takes a `string`, an `IntegerField` a
 `number`. A concrete component declares its own narrowed props and receives any
 extra keys the field's `ui` options carry. `FieldComponentProps` is exported
 from `@opensaas/stack-ui`.
+
+A field holding input it can't commit calls `useFieldValidity(name, invalid, focusTarget)`, exported from `@opensaas/stack-ui` and `@opensaas/stack-ui/fields`, and the item forms refuse to submit until it clears. See the custom fields how-to.
 
 ### Example Usage
 

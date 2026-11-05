@@ -205,6 +205,28 @@ export const ragConfig: OpenSaasConfig = {
 }
 
 /**
+ * Every list on the text-id strategy with no timestamps: the id is the only
+ * expression in the module that reaches the `gen` helper.
+ */
+export const allCuidConfig: OpenSaasConfig = {
+  db: { provider: 'postgresql', idField: 'cuid' },
+  lists: {
+    Author: {
+      fields: {
+        name: text(),
+        posts: relationship({ ref: 'Post.author', many: true }),
+      },
+    },
+    Post: {
+      fields: {
+        title: text(),
+        author: relationship({ ref: 'Author.posts' }),
+      },
+    },
+  },
+}
+
+/**
  * Every ownership case ADR-0064 names: explicit `db.foreignKey: true`
  * (`Profile.user`), the alphabetical default (`Passport` sorts before
  * `Person`, so `Passport.holder` owns), and a self-referential pair on one
