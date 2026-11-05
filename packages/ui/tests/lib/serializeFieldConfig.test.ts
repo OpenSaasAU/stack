@@ -32,15 +32,6 @@ function makeConfig(): OpenSaasConfig {
   } as unknown as OpenSaasConfig
 }
 
-/**
- * The read-only marking `serializeFieldConfig` makes from the field alone.
- *
- * This is the only thing standing behind the STANDALONE forms when they are
- * given no config: they serialize their own field configs and never reach
- * `prepareItemForm`. So it is asserted here, against this function, rather
- * than through a caller that runs `markUnwritableRelationships` over the
- * result and would keep passing without it.
- */
 describe('serializeFieldConfig nullability', () => {
   it('carries a nullable column and omits the key otherwise', () => {
     const { optional, required, notNull } = serializeFieldConfigs({
@@ -59,8 +50,29 @@ describe('serializeFieldConfig nullability', () => {
 
     expect(serializeFieldConfigs(once).slug.nullable).toBe(true)
   })
+
+  it('marks a NOT NULL default for a create to fall back to, through a second pass', () => {
+    const once = serializeFieldConfigs({
+      fallsBack: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
+      nullableDefault: json({ defaultValue: { a: 1 } }),
+      noDefault: json({ db: { isNullable: false } }),
+    })
+
+    expect(serializeFieldConfigs(once).fallsBack.emptyTakesDefaultOnCreate).toBe(true)
+    expect(once.nullableDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
+    expect(once.noDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
+  })
 })
 
+/**
+ * The read-only marking `serializeFieldConfig` makes from the field alone.
+ *
+ * This is the only thing standing behind the STANDALONE forms when they are
+ * given no config: they serialize their own field configs and never reach
+ * `prepareItemForm`. So it is asserted here, against this function, rather
+ * than through a caller that runs `markUnwritableRelationships` over the
+ * result and would keep passing without it.
+ */
 describe('serializeFieldConfig relationship writability', () => {
   it('marks a to-many read-only', () => {
     const { tags } = serializeFieldConfigs(

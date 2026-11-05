@@ -485,8 +485,8 @@ export type BaseFieldConfig<
    * {@link getContractField} descriptor gives, readable without a list key or
    * config. The admin reads it to decide whether an emptied control can store
    * `null`, so a field builder that leaves it out keeps the control's non-null
-   * behaviour. Set by the field builder, not by an application: `text()`,
-   * `select()` and `json()` overwrite anything passed here.
+   * behaviour. Set by the field builder, not by an application: core's
+   * builders take no such option.
    */
   nullable?: boolean
   hooks?: FieldHooks<TTypeInfo, TKey>

@@ -1104,6 +1104,7 @@ packages/my-field/
      error?: string
      disabled?: boolean
      required?: boolean
+     nullable?: boolean // the column accepts NULL; mapping an emptied control to null is this component's job
      mode?: 'read' | 'edit'
      // Plus your own UI options, passed through from fieldConfig.ui
    }

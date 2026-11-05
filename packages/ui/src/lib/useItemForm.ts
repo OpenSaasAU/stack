@@ -156,6 +156,18 @@ export function pickDirtyFields(
   return dirty
 }
 
+/** Drop each emptied value a create should leave to the field's own default. */
+function omitEmptiedDefaults(
+  fields: Record<string, SerializableFieldConfig>,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([fieldName, value]) => value !== null || !fields[fieldName]?.emptyTakesDefaultOnCreate,
+    ),
+  )
+}
+
 /**
  * The ids a to-many control holds, as the strings the server action's id
  * boundary parses back to the list's own key type. A custom control registered
@@ -468,6 +480,8 @@ export function useItemForm({
             onUnchanged?.()
             return
           }
+        } else {
+          data = omitEmptiedDefaults(fields, full)
         }
         const result = await onSubmit(data, mode)
         // void result → adapter handles its own success/navigation.

@@ -238,16 +238,45 @@ describe('emptying JSON', () => {
 })
 
 describe('clearing a select', () => {
+  const clear = (name: string) => screen.getByRole('button', { name: `Clear ${name}` })
+
   it('stores null and shows the placeholder', async () => {
     const user = userEvent.setup()
     renderEdit()
 
-    const trigger = await openSelect(user, 'Tier')
-    await user.click(await screen.findByRole('option', { name: 'Clear selection' }))
+    expect(clear('Tier')).toHaveAttribute('type', 'button')
+    await user.click(clear('Tier'))
 
-    expect(trigger).toHaveTextContent('Select an option...')
+    expect(screen.getByLabelText('Tier', { selector: 'button' })).toHaveTextContent(
+      'Select an option...',
+    )
     await user.click(save())
     expectWrote({ tier: null })
+  })
+
+  it('clears from the keyboard and leaves focus on the control', async () => {
+    const user = userEvent.setup()
+    renderEdit()
+
+    clear('Tier').focus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByLabelText('Tier', { selector: 'button' })).toHaveFocus()
+    await user.click(save())
+    expectWrote({ tier: null })
+  })
+
+  it('does not clear on a letter typed at the closed control', async () => {
+    const user = userEvent.setup()
+    renderEdit()
+
+    const trigger = screen.getByLabelText('Tier', { selector: 'button' })
+    trigger.focus()
+    await user.keyboard('c')
+
+    expect(trigger).toHaveTextContent('Gold')
+    await user.click(save())
+    expect(serverAction).not.toHaveBeenCalled()
   })
 
   it('shows the placeholder when a value picked from empty is cleared again', async () => {
@@ -258,8 +287,7 @@ describe('clearing a select', () => {
     await user.click(await screen.findByRole('option', { name: 'Gold' }))
     expect(trigger).toHaveTextContent('Gold')
 
-    await openSelect(user, 'Tier')
-    await user.click(await screen.findByRole('option', { name: 'Clear selection' }))
+    await user.click(clear('Tier'))
 
     expect(trigger).toHaveTextContent('Select an option...')
   })
@@ -268,28 +296,19 @@ describe('clearing a select', () => {
     const user = userEvent.setup()
     renderEdit()
 
-    await openSelect(user, 'Grade')
-    await user.click(await screen.findByRole('option', { name: 'Clear selection' }))
+    await user.click(clear('Grade'))
     await user.click(save())
 
     expectWrote({ grade: null })
   })
 
-  it.each([
-    ['a default on a NOT NULL column', 'Rank'],
-    ['a required field on a nullable column', /^Level/],
-  ])('offers no clear with %s', async (_, name) => {
-    const user = userEvent.setup()
+  it.each(['Rank', 'Level'])('offers no clear on %s', (name) => {
     renderEdit()
 
-    await openSelect(user, name)
-
-    expect(await screen.findByRole('option', { name: 'Silver' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Clear selection' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: `Clear ${name}` })).not.toBeInTheDocument()
   })
 
-  it('offers no clear with nothing selected', async () => {
-    const user = userEvent.setup()
+  it('offers no clear with nothing selected', () => {
     render(
       <SelectField
         name="tier"
@@ -301,10 +320,83 @@ describe('clearing a select', () => {
       />,
     )
 
-    await openSelect(user, 'Tier')
+    expect(screen.queryByRole('button', { name: 'Clear Tier' })).not.toBeInTheDocument()
+  })
+})
 
-    expect(await screen.findByRole('option', { name: 'Gold' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Clear selection' })).not.toBeInTheDocument()
+describe('emptying a field with a default on create', () => {
+  const touchAndEmpty = async (user: ReturnType<typeof userEvent.setup>, label: RegExp) => {
+    const box = screen.getByLabelText(label)
+    await user.click(box)
+    await user.paste('{}')
+    await user.clear(box)
+  }
+
+  const renderCreate = (fields: Record<string, FieldConfig>) =>
+    render(
+      <ItemFormClient
+        listKey="Post"
+        urlKey="post"
+        mode="create"
+        fields={serializeFieldConfigs(fields)}
+        basePath="/admin"
+        serverAction={serverAction}
+      />,
+    )
+
+  it('sends nothing for a NOT NULL column, leaving it to the default', async () => {
+    const user = userEvent.setup()
+    renderCreate({
+      title: text(),
+      meta: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
+    })
+
+    await touchAndEmpty(user, /^Meta/)
+    await user.type(screen.getByLabelText('Title'), 'x')
+    await user.click(screen.getByRole('button', { name: /create/i }))
+
+    expect(serverAction).toHaveBeenCalledWith({
+      listKey: 'Post',
+      action: 'create',
+      data: { title: 'x' },
+    })
+  })
+
+  it('sends null for a nullable column, which can hold it', async () => {
+    const user = userEvent.setup()
+    renderCreate({ meta: json({ defaultValue: { a: 1 } }) })
+
+    await touchAndEmpty(user, /^Meta/)
+    await user.click(screen.getByRole('button', { name: /create/i }))
+
+    expect(serverAction).toHaveBeenCalledWith({
+      listKey: 'Post',
+      action: 'create',
+      data: { meta: null },
+    })
+  })
+
+  it('still sends null on an update, for the server to refuse', async () => {
+    const user = userEvent.setup()
+    render(
+      <ItemFormClient
+        listKey="Post"
+        urlKey="post"
+        mode="edit"
+        fields={serializeFieldConfigs({
+          meta: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
+        })}
+        initialData={{ meta: { b: 2 } }}
+        itemId="p1"
+        basePath="/admin"
+        serverAction={serverAction}
+      />,
+    )
+
+    await user.clear(screen.getByLabelText(/^Meta/))
+    await user.click(save())
+
+    expectWrote({ meta: null })
   })
 })
 

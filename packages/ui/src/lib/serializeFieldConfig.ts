@@ -26,6 +26,12 @@ export type SerializableFieldConfig = {
   ref?: string
   /** Set when the field's column accepts `NULL`, so an emptied control can store it. */
   nullable?: boolean
+  /**
+   * Set when the field's column is `NOT NULL` and has a default: a create form
+   * sends nothing for an emptied control, so it takes the default exactly as an
+   * untouched one does.
+   */
+  emptyTakesDefaultOnCreate?: boolean
   /** Whether the field is a virtual (computed, non-DB) field, which a form shows read-only. */
   virtual?: boolean
   /**
@@ -147,6 +153,12 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
 
   if (fieldConfig.nullable === true) {
     config.nullable = true
+  }
+
+  const alreadyMarked =
+    'emptyTakesDefaultOnCreate' in fieldConfig && fieldConfig.emptyTakesDefaultOnCreate === true
+  if (alreadyMarked || (fieldConfig.nullable === false && fieldConfig.defaultValue !== undefined)) {
+    config.emptyTakesDefaultOnCreate = true
   }
 
   if ('virtual' in fieldConfig && fieldConfig.virtual === true) {

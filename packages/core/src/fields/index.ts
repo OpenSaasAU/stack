@@ -254,7 +254,7 @@ export function text<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<TextField<TTypeInfo, TKey>, 'type'>): TextField<TTypeInfo, TKey> {
+>(options?: Omit<TextField<TTypeInfo, TKey>, 'type' | 'nullable'>): TextField<TTypeInfo, TKey> {
   const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
     const validation = options?.validation
     const isRequired = validation?.isRequired
@@ -343,7 +343,9 @@ export function integer<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<IntegerField<TTypeInfo, TKey>, 'type'>): IntegerField<TTypeInfo, TKey> {
+>(
+  options?: Omit<IntegerField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): IntegerField<TTypeInfo, TKey> {
   return {
     type: 'integer',
     ...options,
@@ -454,7 +456,9 @@ export function decimal<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<DecimalField<TTypeInfo, TKey>, 'type'>): DecimalField<TTypeInfo, TKey> {
+>(
+  options?: Omit<DecimalField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): DecimalField<TTypeInfo, TKey> {
   const precision = options?.precision ?? 18
   const scale = options?.scale ?? 4
 
@@ -571,7 +575,7 @@ export function bigInt<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<BigIntField<TTypeInfo, TKey>, 'type'>): BigIntField<TTypeInfo, TKey> {
+>(options?: Omit<BigIntField<TTypeInfo, TKey>, 'type' | 'nullable'>): BigIntField<TTypeInfo, TKey> {
   return {
     type: 'bigInt',
     ...options,
@@ -671,7 +675,9 @@ export function checkbox<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<CheckboxField<TTypeInfo, TKey>, 'type'>): CheckboxField<TTypeInfo, TKey> {
+>(
+  options?: Omit<CheckboxField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): CheckboxField<TTypeInfo, TKey> {
   return {
     type: 'checkbox',
     ...options,
@@ -724,7 +730,9 @@ export function timestamp<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<TimestampField<TTypeInfo, TKey>, 'type'>): TimestampField<TTypeInfo, TKey> {
+>(
+  options?: Omit<TimestampField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): TimestampField<TTypeInfo, TKey> {
   return {
     type: 'timestamp',
     ...options,
@@ -820,7 +828,9 @@ export function calendarDay<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<CalendarDayField<TTypeInfo, TKey>, 'type'>): CalendarDayField<TTypeInfo, TKey> {
+>(
+  options?: Omit<CalendarDayField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): CalendarDayField<TTypeInfo, TKey> {
   return {
     type: 'calendarDay',
     outputType: 'string',
@@ -973,7 +983,9 @@ export function password<
   TTypeInfo extends import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<PasswordField<TTypeInfo, TKey>, 'type'>): PasswordField<TTypeInfo, TKey> {
+>(
+  options?: Omit<PasswordField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): PasswordField<TTypeInfo, TKey> {
   return {
     type: 'password',
     outputType: "import('@opensaas/stack-core/internal').HashedPassword",
@@ -1069,7 +1081,7 @@ export function select<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options: Omit<SelectField<TTypeInfo, TKey>, 'type'>): SelectField<TTypeInfo, TKey> {
+>(options: Omit<SelectField<TTypeInfo, TKey>, 'type' | 'nullable'>): SelectField<TTypeInfo, TKey> {
   if (!options.options || options.options.length === 0) {
     throw new Error('Select field must have at least one option')
   }
@@ -1390,7 +1402,9 @@ export function relationship<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options: Omit<RelationshipField<TTypeInfo, TKey>, 'type'>): RelationshipField<TTypeInfo, TKey> {
+>(
+  options: Omit<RelationshipField<TTypeInfo, TKey>, 'type' | 'nullable'>,
+): RelationshipField<TTypeInfo, TKey> {
   if (!options.ref) {
     throw new Error('Relationship field must have a ref')
   }
@@ -1538,7 +1552,7 @@ export function json<
   TTypeInfo extends import('../config/types.js').TypeInfo = import('../config/types.js').TypeInfo,
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
->(options?: Omit<JsonField<TTypeInfo, TKey>, 'type'>): JsonField<TTypeInfo, TKey> {
+>(options?: Omit<JsonField<TTypeInfo, TKey>, 'type' | 'nullable'>): JsonField<TTypeInfo, TKey> {
   const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
 
   return {

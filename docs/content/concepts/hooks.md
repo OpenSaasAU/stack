@@ -472,7 +472,7 @@ Avoid side effects in `resolveInput` and `resolveOutput`. Use `beforeOperation` 
 ```typescript
 // ✅ Good: Pure transformation
 resolveInput: ({ resolvedData }) => {
-  resolvedData.title = resolvedData.title.trim()
+  resolvedData.title = resolvedData.title?.trim()
   return resolvedData
 }
 
