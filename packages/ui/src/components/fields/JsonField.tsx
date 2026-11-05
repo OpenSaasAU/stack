@@ -57,7 +57,7 @@ export function JsonField({
   const handleChange = (text: string) => {
     if (text.trim() === '') {
       setDraftText(text)
-      onChange(undefined)
+      onChange(null)
       return
     }
 

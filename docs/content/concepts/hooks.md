@@ -472,7 +472,8 @@ Avoid side effects in `resolveInput` and `resolveOutput`. Use `beforeOperation` 
 ```typescript
 // ✅ Good: Pure transformation
 resolveInput: ({ resolvedData }) => {
-  resolvedData.title = resolvedData.title.trim()
+  // Not `?.`: a cleared `null` would become `undefined`, which drops the write.
+  if (typeof resolvedData.title === 'string') resolvedData.title = resolvedData.title.trim()
   return resolvedData
 }
 

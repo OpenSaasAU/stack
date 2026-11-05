@@ -337,11 +337,14 @@ type FieldComponentProps = {
   error?: string
   disabled?: boolean
   required?: boolean
+  nullable?: boolean
   mode?: 'read' | 'edit'
 }
 ```
 
 `value` and `onChange` are `unknown` because the registry holds components for every field type at once. Narrow them in your own props type rather than casting at each use — a `ColorPickerField` declares `value: string` and `onChange: (value: string) => void` and is still registrable, because `FieldComponent` widens to accept any component satisfying the base shape plus extra props.
+
+`nullable` is `true` when the field's column accepts `NULL`. Mapping an emptied control to `null` is each component's own job, and only the built-in `TextField` does it for `''`. A custom component on an optional `text()` field that hands back `''` stores `''`, so on a unique column two rows emptying it still collide. Follow the same rule: call `onChange(null)` when the control is empty, `nullable` is `true` and `required` is not.
 
 Anything else in a field's `ui` config is passed through to the component as an additional prop, so declare the options your component reads alongside these.
 

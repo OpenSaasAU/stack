@@ -568,6 +568,7 @@ type FieldComponentProps = {
   error?: string
   disabled?: boolean
   required?: boolean
+  nullable?: boolean
   mode?: 'read' | 'edit'
 }
 ```

@@ -22,6 +22,8 @@ export type FieldComponentProps = {
   error?: string
   disabled?: boolean
   required?: boolean
+  /** The field's column accepts `NULL`, so an emptied control can store `null`. */
+  nullable?: boolean
   mode?: 'read' | 'edit'
 }
 

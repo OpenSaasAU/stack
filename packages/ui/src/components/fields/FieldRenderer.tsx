@@ -112,6 +112,10 @@ function buildFallbackUIProps(
     props.options = fieldConfig.options
   }
 
+  if (fieldConfig.nullable) {
+    props.nullable = true
+  }
+
   if (fieldConfig.ref) {
     const [relatedListName] = fieldConfig.ref.split('.')
     props.relatedListKey = getUrlKey(relatedListName ?? '')

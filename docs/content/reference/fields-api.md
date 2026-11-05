@@ -8,7 +8,7 @@ Reads in the examples below use the composed read described in [Queries](/docs/c
 
 ### `text()`
 
-String field with validation and indexing options.
+String field with validation and indexing options. Emptying an optional field in the admin stores `null` when the column is nullable, so several rows can leave a unique field empty, and a hook on the field receives `null`, not `''`. A `NOT NULL` column (`db: { isNullable: false }`) stores `''`. The mapping belongs to the built-in `TextField`: a custom component stores whatever it hands back. See [custom fields](/docs/how-to/custom-fields).
 
 ```typescript
 import { text } from '@opensaas/stack-core/fields'
@@ -965,7 +965,7 @@ class HashedPassword extends String {
 
 ### `select()`
 
-Enum-like field with predefined options.
+Enum-like field with predefined options. On a nullable column an optional select with a value shows a **Clear** button in the admin, which stores `null`, even when the field has a `defaultValue`. A `defaultValue` makes the column `NOT NULL` unless `db.isNullable` is `true`, and that select offers no clear.
 
 ```typescript
 import { select } from '@opensaas/stack-core/fields'
@@ -1378,7 +1378,7 @@ await context.db.Post.update({
 
 ### `json()`
 
-Field for storing arbitrary JSON data.
+Field for storing arbitrary JSON data. Emptying the admin's box and typing the literal `null` both store a database `NULL`. A required field or a `NOT NULL` column refuses it with an error on the field. On a create form, an emptied box or a typed literal `null` on a `NOT NULL` field with a `defaultValue` takes the default, as an untouched box does. On a nullable field with a `defaultValue` both store `NULL`.
 
 ```typescript
 import { json } from '@opensaas/stack-core/fields'
@@ -1856,7 +1856,8 @@ slug: text({
     resolveInput: ({ resolvedData, fieldKey }) => {
       const value = resolvedData[fieldKey]
       if (value) return value
-      return resolvedData.title?.toLowerCase().replace(/\s+/g, '-')
+      const title = resolvedData.title
+      return typeof title === 'string' ? title.toLowerCase().replace(/\s+/g, '-') : value
     },
   },
 })
@@ -2417,7 +2418,10 @@ slug: text({
 // ✅ Good: normalise in a field hook, where every write path goes through it
 email: text({
   hooks: {
-    resolveInput: ({ resolvedData, fieldKey }) => resolvedData[fieldKey]?.toLowerCase().trim(),
+    resolveInput: ({ resolvedData, fieldKey }) => {
+      const value = resolvedData[fieldKey]
+      return typeof value === 'string' ? value.toLowerCase().trim() : value
+    },
   },
 })
 

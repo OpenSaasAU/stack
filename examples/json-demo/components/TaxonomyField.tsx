@@ -84,7 +84,7 @@ export function TaxonomyField({
 
   const handleRemove = (index: number) => {
     const updatedItems = items.filter((_, i) => i !== index)
-    onChange(updatedItems.length > 0 ? updatedItems : undefined)
+    onChange(updatedItems.length > 0 ? updatedItems : null)
   }
 
   if (mode === 'read') {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { json, text } from '@opensaas/stack-core/fields'
 import {
   FIELD_HOOK_ONLY_REASON,
   JUNCTION_EDGE_RELATIONSHIP_REASON,
@@ -30,6 +31,38 @@ function makeConfig(): OpenSaasConfig {
     },
   } as unknown as OpenSaasConfig
 }
+
+describe('serializeFieldConfig nullability', () => {
+  it('carries a nullable column and omits the key otherwise', () => {
+    const { optional, required, notNull } = serializeFieldConfigs({
+      optional: text(),
+      required: text({ validation: { isRequired: true } }),
+      notNull: json({ db: { isNullable: false } }),
+    })
+
+    expect(optional.nullable).toBe(true)
+    expect(required).not.toHaveProperty('nullable')
+    expect(notNull).not.toHaveProperty('nullable')
+  })
+
+  it('survives a second pass, the standalone forms re-serialising a serialised config', () => {
+    const once = serializeFieldConfigs({ slug: text() })
+
+    expect(serializeFieldConfigs(once).slug.nullable).toBe(true)
+  })
+
+  it('marks a NOT NULL default for a create to fall back to, through a second pass', () => {
+    const once = serializeFieldConfigs({
+      fallsBack: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
+      nullableDefault: json({ defaultValue: { a: 1 } }),
+      noDefault: json({ db: { isNullable: false } }),
+    })
+
+    expect(serializeFieldConfigs(once).fallsBack.emptyTakesDefaultOnCreate).toBe(true)
+    expect(once.nullableDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
+    expect(once.noDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
+  })
+})
 
 /**
  * The read-only marking `serializeFieldConfig` makes from the field alone.

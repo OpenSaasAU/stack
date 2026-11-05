@@ -58,7 +58,7 @@ export function JsonEditor({
 
     // Try to parse and update value
     if (text.trim() === '') {
-      onChange(undefined)
+      onChange(null)
       setParseError(undefined)
       return
     }

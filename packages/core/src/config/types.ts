@@ -480,6 +480,15 @@ export type BaseFieldConfig<
     TTypeInfo['inputs']['update']
   >
   defaultValue?: unknown
+  /**
+   * Whether this field's column accepts `NULL` — the same answer its
+   * {@link getContractField} descriptor gives, readable without a list key or
+   * config. The admin reads it to decide whether an emptied control can store
+   * `null`, so a field builder that leaves it out keeps the control's non-null
+   * behaviour. Set by the field builder, not by an application: core's
+   * builders take no such option.
+   */
+  nullable?: boolean
   hooks?: FieldHooks<TTypeInfo, TKey>
   /**
    * Marks this field as virtual — not stored in database, computed via

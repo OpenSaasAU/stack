@@ -794,8 +794,10 @@ text({
 text({
   hooks: {
     resolveInput: async ({ resolvedData, fieldKey }) => {
-      // Transform input data
-      return resolvedData[fieldKey]?.toLowerCase()
+      // Transform input data. Not `?.`: a cleared `null` would become `undefined`,
+      // which drops the write.
+      const value = resolvedData[fieldKey]
+      return typeof value === 'string' ? value.toLowerCase() : value
     },
     // `resolveOutput` names the field `fieldName`; every other field hook
     // names it `fieldKey`.

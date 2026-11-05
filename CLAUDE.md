@@ -484,6 +484,8 @@ Each field builder function returns an object declaring:
 2. **`getContractField(fieldName, listKey, config)`** - what the field contributes to the contract: `{ kind: 'column' }` (inline column descriptor), `{ kind: 'columns' }`, `{ kind: 'relation' }`, or `{ kind: 'computed' }` for a virtual field
 3. **`outputType`** / **`inputType`** - the TypeScript read and write faces, when they differ from the column's codec type. `outputType` is **required** on a virtual field and on a `kind: 'columns'` field, neither of which has a single column to be typed from. `inputType` is never required by the generator — on a single-column field its absence means the column's own input type, and a `kind: 'columns'` field, which has no single column for that to name, should declare it alongside `outputType`
 
+A single-column field also sets **`nullable`** to what its descriptor reports, when an emptied admin control should be able to store `null`: the admin reads it where it has no list key or config to call `getContractField` with, and leaving it out keeps the non-null behaviour.
+
 `opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member.
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
@@ -1102,6 +1104,7 @@ packages/my-field/
      error?: string
      disabled?: boolean
      required?: boolean
+     nullable?: boolean // the column accepts NULL; mapping an emptied control to null is this component's job
      mode?: 'read' | 'edit'
      // Plus your own UI options, passed through from fieldConfig.ui
    }
