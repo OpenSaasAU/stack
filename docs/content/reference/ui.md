@@ -31,6 +31,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 import '@opensaas/stack-ui/styles'
@@ -66,6 +67,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={resolvedSearchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
@@ -116,6 +118,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
@@ -131,6 +134,7 @@ export default async function AdminPage() {
       context={await getContext(session ?? undefined)}
       config={await config}
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
@@ -141,6 +145,7 @@ export default async function AdminPage() {
 - `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
 - `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
+- `onSignOut?` - Ends the session and should `redirect()` to the sign-in page, which keeps Next's `basePath`; one that returns without redirecting reloads the page. It must be a server action, because it crosses to a client component; see [Auth actions](/docs/reference/auth#auth-actions) for `signOutAction`. Without it no Sign Out control renders, and it is ignored when `navigation` is supplied: that chrome renders its own `UserMenu` and passes the action there
 - `navigation?` - Replaces the built-in sidebar wholesale (see [Admin chrome slot](#admin-chrome-slot-and-navitems) below)
 - `navItems?` - Adds host-supplied links to the built-in sidebar (see below); ignored when `navigation` is also supplied
 
@@ -241,6 +246,13 @@ The list view displays items in a table with search, sorting, and actions.
   total is the same access-scoped read counted in the database, so it can only
   ever equal the number of rows the session may page through.
 - Responsive table layout
+
+A column offers a sort only when this session's read can order by it, and a
+`?sort=` naming anything else is ignored. `ListView` works that out on the
+server and hands `ListViewClient` one boolean per column as `sortableFields`.
+If you render the exported `ListViewClient` directly, pass `sortableFields`
+yourself: a column it does not mark `true` has no sort affordance, so omitting
+the prop leaves the table unsortable.
 
 ### Filtering and sorting
 
@@ -565,6 +577,8 @@ narrows them differently — a `TextField` takes a `string`, an `IntegerField` a
 `number`. A concrete component declares its own narrowed props and receives any
 extra keys the field's `ui` options carry. `FieldComponentProps` is exported
 from `@opensaas/stack-ui`.
+
+A field holding input it can't commit calls `useFieldValidity(name, invalid, focusTarget)`, exported from `@opensaas/stack-ui` and `@opensaas/stack-ui/fields`, and the item forms refuse to submit until it clears. See the custom fields how-to.
 
 ### Example Usage
 

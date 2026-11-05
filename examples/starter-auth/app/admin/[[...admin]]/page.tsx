@@ -2,6 +2,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 
@@ -52,6 +53,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={resolvedSearchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }

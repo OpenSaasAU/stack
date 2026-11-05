@@ -1,4 +1,7 @@
-import { Page } from '@playwright/test'
+import * as path from 'node:path'
+import { expect, request, type Cookie, type Page } from '@playwright/test'
+import { findDatabaseConnection } from '@opensaas/stack-core/internal'
+import pg from 'pg'
 
 /**
  * Test user credentials for E2E tests
@@ -82,13 +85,58 @@ export async function signIn(
   await page.waitForURL(redirectTo, { timeout: 10000 })
 }
 
+async function sessionRowCount(sessionCookie: Cookie): Promise<number> {
+  const connection = findDatabaseConnection({
+    cwd: path.join(process.cwd(), 'examples', 'starter-auth'),
+  })
+  if (connection === undefined) throw new Error('No database found for examples/starter-auth.')
+
+  // The cookie's value is `<token>.<signature>`, URL-encoded.
+  const [token] = decodeURIComponent(sessionCookie.value).split('.')
+  const client = new pg.Client({ connectionString: connection.url })
+  await client.connect()
+  try {
+    const { rows } = await client.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM "Session" WHERE token = $1',
+      [token],
+    )
+    return rows[0]?.count ?? 0
+  } finally {
+    await client.end()
+  }
+}
+
 /**
- * Sign out the current user
+ * Sign out through the admin's Sign Out control, and prove the session ended:
+ * its row is gone, the browser holds no session cookie, and replaying the
+ * cookie it held is refused.
  */
 export async function signOut(page: Page) {
-  // Look for sign out button/link - adjust selector based on your UI
-  await page.click('text=/sign out/i')
-  await page.waitForURL('/sign-in', { timeout: 5000 })
+  const held = await page.context().cookies()
+  const sessionCookie = held.find((cookie) => cookie.name.endsWith('session_token'))
+  if (sessionCookie === undefined) throw new Error('signOut() needs a signed-in page.')
+  expect(await sessionRowCount(sessionCookie)).toBe(1)
+
+  await page.getByRole('button', { name: 'Sign Out' }).click()
+  await page.waitForURL('/sign-in', { timeout: 10000 })
+
+  expect(await sessionRowCount(sessionCookie)).toBe(0)
+
+  const remaining = await page.context().cookies()
+  expect(remaining.filter((cookie) => cookie.name.includes('session_'))).toEqual([])
+
+  const replay = await request.newContext({
+    baseURL: new URL(page.url()).origin,
+    extraHTTPHeaders: { cookie: `${sessionCookie.name}=${sessionCookie.value}` },
+  })
+  try {
+    const session = await replay.get('/api/auth/get-session')
+    expect(await session.json()).toBeNull()
+    const admin = await replay.get('/admin')
+    expect(await admin.text()).toContain('Access Denied')
+  } finally {
+    await replay.dispose()
+  }
 }
 
 /**

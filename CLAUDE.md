@@ -1107,6 +1107,8 @@ packages/my-field/
    }
    ```
 
+   A component that can hold input it has no value for (half-typed JSON) reports it with `useFieldValidity(name, invalid, focusRef)` from `@opensaas/stack-ui/fields`: the form refuses to submit and focuses the first invalid field. It is optional, and clears itself when the field unmounts.
+
 3. **Client-Side Registration** - Due to Next.js server/client boundaries:
 
    ```typescript

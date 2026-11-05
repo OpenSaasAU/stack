@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
-import { cn, formatFieldName, isCountAlignedColumn, isSortableColumn } from '../lib/utils.js'
+import { cn, formatFieldName, isCountAlignedColumn } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -83,6 +83,12 @@ export interface ListViewClientProps {
   relationshipRefs: Record<string, string>
   columns?: string[]
   /**
+   * Which columns offer a sort affordance, keyed by column name. `ListView`
+   * resolves this on the server by asking whether this session's read can order
+   * by each column; a column absent here is not sortable.
+   */
+  sortableFields?: Record<string, boolean>
+  /**
    * Default sort for the table (from the list's `ui.listView.initialSort`).
    * Seeds the initial sort column/direction. When omitted, the table starts
    * unsorted (current default behaviour).
@@ -140,6 +146,7 @@ export function ListViewClient({
   fields,
   relationshipRefs,
   columns,
+  sortableFields = {},
   initialSort,
   listKey,
   urlKey,
@@ -394,7 +401,7 @@ export function ListViewClient({
               {displayColumns.map((column) => {
                 const field = columnField(column)
                 const numeric = isCountAlignedColumn(field)
-                const sortable = isSortableColumn(field)
+                const sortable = sortableFields[column] === true
                 return (
                   <TableHead
                     key={column}

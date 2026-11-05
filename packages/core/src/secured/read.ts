@@ -926,10 +926,11 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
 }
 
 function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
-  const refined = plans.filter((plan) => plan.callerRefined)
-  if (refined.length === 0) return row
-  const copy: OrmRow = { ...row }
-  for (const plan of refined) delete copy[plan.relation]
+  const masked = maskReductions(row, plans)
+  const withheld = plans.filter((plan) => narrowsWhatARuleSees(plan) || isRowlessReduction(plan))
+  if (withheld.length === 0) return masked
+  const copy: OrmRow = { ...masked }
+  for (const plan of withheld) delete copy[plan.relation]
   return copy
 }
 
@@ -1000,7 +1001,15 @@ async function narrowUnincludedForeignKeys(
       .map((plan) => plan.relation),
   )
 
-  for (const owner of foreignKeyOwningRelations(ctx)) {
+  const owners = foreignKeyOwningRelations(ctx)
+  const ruleItems =
+    owners.length === 0
+      ? []
+      : rawRows.map((row) =>
+          assembleColumnFields(callerIndependent(row, resolvedIncludes), listConfig.fields),
+        )
+
+  for (const owner of owners) {
     if (alreadyIncluded.has(owner.relation)) continue
     if (!rawRows.some((row) => owner.foreignKey in row)) continue
 
@@ -1018,7 +1027,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: assembleColumnFields(callerIndependent(raw, resolvedIncludes), listConfig.fields),
+        item: ruleItems[i],
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }
@@ -1113,9 +1122,8 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * relation would otherwise have had.
  *
  * A `combine` that named the relation's rows under one key stands in that
- * array instead of `[]`, so those rows reach Field Visibility exactly as an
- * unreduced relation's do and {@link restoreReductions} writes them back
- * beside the counts.
+ * array instead of `[]`, and {@link restoreReductions} writes it back beside
+ * the counts. What a `read` rule or a hook sees of it is {@link ruleViewFor}'s.
  *
  * A relation that is both reduced and a live declared dependency of a
  * computed field returned alongside it (#1357) is the third case: its
@@ -1133,11 +1141,20 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * Known limits: a relation reduced with NEITHER a rows branch of its own NOR
  * a live declared dependency still stands in `[]`, so a relationship `read`
  * rule inspecting `item.<reducedRelation>` without declaring it via `needs`
- * decides on an empty array rather than on what the count counted — the
- * common `item.posts.length > 0` shape fails closed there, and an inverted
- * `item.posts.length === 0` fails open. A rule that reaches into a relation
- * must declare it, the same requirement `needs` already states for a computed
- * field's `resolveOutput`.
+ * decides on an empty array rather than on what the count counted. Only a
+ * rule that needs a row to exist fails closed there (`item.posts.length > 0`).
+ * `item.posts.every(…)` and `item.posts.length === 0` fail open, so a `count()`
+ * or a `combine` of counts reaches the caller of a relation the plain include
+ * strips, and a `contains` count answers questions about the stripped rows'
+ * text. A `read` rule on a scalar field that inspects the relation opens the
+ * same way, on the same stand-in. A rule that reaches into a relation must
+ * declare it, the same requirement `needs` already states for a computed
+ * field's `resolveOutput`. Closing this is tracked in #2210.
+ *
+ * A caller-shaped rows branch with no live declared dependency leaves such a
+ * rule looking at nothing, as a shaped plain include does: an `Array.isArray`
+ * guard fails closed, and a rule that reads absence as permission
+ * (`!item.posts?.some(…)`) fails open on both paths alike.
  */
 function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   if (!reduces(plans)) return row
@@ -1330,6 +1347,15 @@ async function ruleViewTreeFor(
   return { viewFor: (row) => ruleViewFor(row, plans, unshaped), nested }
 }
 
+function narrowsWhatARuleSees(plan: IncludePlan): boolean {
+  if (plan.declared || !plan.callerShaped) return false
+  return plan.reduce === undefined || hasRowsBranch(plan)
+}
+
+function isRowlessReduction(plan: IncludePlan): boolean {
+  return plan.reduce !== undefined && !hasRowsBranch(plan) && plan.declaredRows === undefined
+}
+
 function ruleViewFor(
   row: OrmRow,
   plans: readonly IncludePlan[],
@@ -1338,21 +1364,9 @@ function ruleViewFor(
   const removed = new Set<string>()
   const declared: Record<string, unknown> = {}
   for (const plan of plans) {
-    if (plan.declared) continue
-    if (plan.reduce !== undefined) {
-      const stored = unshaped.get(plan.relation)
-      if (plan.declaredRows !== undefined && hasRowsBranch(plan) && stored !== undefined) {
-        declared[plan.relation] = stored.get(String(row['id']))
-      }
-      continue
-    }
-    if (!plan.callerShaped) continue
     const values = unshaped.get(plan.relation)
-    if (plan.declaredFetch === undefined || values === undefined) {
-      removed.add(plan.relation)
-      continue
-    }
-    declared[plan.relation] = values.get(String(row['id']))
+    if (values !== undefined) declared[plan.relation] = values.get(String(row['id']))
+    else if (narrowsWhatARuleSees(plan)) removed.add(plan.relation)
   }
   return { removed, declared }
 }
@@ -1855,6 +1869,63 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery<VisibleRow
       runNearest(binding, state, field, vector, options),
     aggregate: (build: AggregateBuild) => runAggregate(binding, state, build),
   }
+}
+
+async function canOrderBy(
+  binding: ReadBinding,
+  ctx: ResolveContext,
+  key: string,
+): Promise<boolean> {
+  try {
+    const orders = await resolveOrderBy([{ [key]: 'asc' }], ctx)
+    collectionFor(binding.ormHandle, binding.listName).orderBy(
+      orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Which of `keys` a read of `listKey` may order by: the answer `orderBy` gives
+ * this session, read off the same access check, resolution and lowering with
+ * nothing executed. It never throws. A key it cannot answer for is left out, so
+ * a read-denied key, an absent one and a column with no `order` trait are
+ * indistinguishable to a caller (ADR-0031, ADR-0055), and a real fault is left
+ * for the read itself to report.
+ */
+export async function orderableKeys(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+  keys: readonly string[],
+): Promise<ReadonlySet<string>> {
+  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
+  if (listConfig === undefined) return new Set()
+  const binding: ReadBinding = {
+    listName: listKey,
+    listConfig,
+    ormHandle: context.ormHandle,
+    context,
+    config,
+  }
+  const secured = context._isSudo !== true
+  try {
+    const access = secured
+      ? await checkAccess(listConfig.access?.operation?.query, {
+          session: context.session,
+          context,
+        })
+      : true
+    if (access === false) return new Set()
+  } catch {
+    return new Set()
+  }
+  const ctx = resolveContext(binding, secured)
+  const unique = [...new Set(keys)]
+  const answers = await Promise.all(unique.map((key) => canOrderBy(binding, ctx, key)))
+  return new Set(unique.filter((_key, index) => answers[index]))
 }
 
 /**

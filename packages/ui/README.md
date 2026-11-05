@@ -235,7 +235,8 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 
 > With `@opensaas/stack-auth`, resolve the session first and pass it to
 > `getContext(session)` (in both the page and the `serverAction` wrapper) so
-> access control runs as the signed-in user. See `examples/starter-auth` and
+> access control runs as the signed-in user, and pass a server action as
+> `onSignOut`: the Sign Out control only renders with a handler. See `examples/starter-auth` and
 > `examples/auth-demo`.
 
 ## Component Registry

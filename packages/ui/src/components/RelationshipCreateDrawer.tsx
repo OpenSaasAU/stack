@@ -14,6 +14,7 @@ import { LoadingSpinner } from './LoadingSpinner.js'
 import { FieldRenderer } from './fields/FieldRenderer.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { FieldValidityContext } from '../lib/fieldValidity.js'
 import type { ServerActionInput } from '../server/types.js'
 
 export interface RelationshipCreateDrawerProps {
@@ -129,6 +130,7 @@ function RelationshipCreateForm({
     editableFields,
     handleFieldChange,
     handleSubmit,
+    validity,
   } = useItemForm({
     fields,
     mode: 'create',
@@ -166,23 +168,25 @@ function RelationshipCreateForm({
       )}
 
       <div data-slot="relationship-create-fields" className="space-y-6">
-        {editableFields.map(([fieldName, fieldConfig]) => (
-          <FieldRenderer
-            key={fieldName}
-            fieldName={fieldName}
-            fieldConfig={fieldConfig}
-            value={formData[fieldName]}
-            onChange={(value) => handleFieldChange(fieldName, value)}
-            error={errors[fieldName]}
-            disabled={isPending}
-            mode="edit"
-            relationshipItems={relationshipData?.[fieldName] || []}
-            relationshipLoading={false}
-            basePath={basePath}
-            listKey={relatedListKey}
-            serverAction={serverAction}
-          />
-        ))}
+        <FieldValidityContext value={validity}>
+          {editableFields.map(([fieldName, fieldConfig]) => (
+            <FieldRenderer
+              key={fieldName}
+              fieldName={fieldName}
+              fieldConfig={fieldConfig}
+              value={formData[fieldName]}
+              onChange={(value) => handleFieldChange(fieldName, value)}
+              error={errors[fieldName]}
+              disabled={isPending}
+              mode="edit"
+              relationshipItems={relationshipData?.[fieldName] || []}
+              relationshipLoading={false}
+              basePath={basePath}
+              listKey={relatedListKey}
+              serverAction={serverAction}
+            />
+          ))}
+        </FieldValidityContext>
       </div>
 
       <div

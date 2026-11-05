@@ -11,6 +11,7 @@ import {
   serializeFieldConfigs,
 } from '../../lib/serializeFieldConfig.js'
 import { useItemForm, transformInitialData } from '../../lib/useItemForm.js'
+import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
@@ -91,6 +92,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
     editableFields,
     handleFieldChange,
     handleSubmit,
+    validity,
   } = useItemForm({
     fields: serializedFields,
     initialData: transformedInitialData,
@@ -124,21 +126,23 @@ export function ItemEditForm<TData = Record<string, unknown>>({
       )}
 
       <div data-slot="form-fields" className={cn('space-y-6', classNames?.fields)}>
-        {editableFields.map(([fieldName, fieldConfig]) => (
-          <FieldRenderer
-            key={fieldName}
-            fieldName={fieldName}
-            fieldConfig={fieldConfig}
-            value={(formData as Record<string, unknown>)[fieldName]}
-            onChange={(value) => handleFieldChange(fieldName, value)}
-            error={errors[fieldName]}
-            disabled={isPending}
-            mode="edit"
-            relationshipItems={relationshipData[fieldName] || []}
-            relationshipLoading={false}
-            basePath={basePath}
-          />
-        ))}
+        <FieldValidityContext value={validity}>
+          {editableFields.map(([fieldName, fieldConfig]) => (
+            <FieldRenderer
+              key={fieldName}
+              fieldName={fieldName}
+              fieldConfig={fieldConfig}
+              value={(formData as Record<string, unknown>)[fieldName]}
+              onChange={(value) => handleFieldChange(fieldName, value)}
+              error={errors[fieldName]}
+              disabled={isPending}
+              mode="edit"
+              relationshipItems={relationshipData[fieldName] || []}
+              relationshipLoading={false}
+              basePath={basePath}
+            />
+          ))}
+        </FieldValidityContext>
       </div>
 
       <div

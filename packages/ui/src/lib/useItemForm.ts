@@ -1,9 +1,16 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
+import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type ItemFormAction = 'create' | 'update'
+
+interface InvalidMark {
+  fieldName: string
+  focusTarget: FieldFocusTarget
+  onRefused: () => void
+}
 
 const SYSTEM_FIELDS = ['id']
 
@@ -332,6 +339,8 @@ export interface UseItemFormResult {
   handleFieldChange: (fieldName: string, value: unknown) => void
   handleSubmit: (e: { preventDefault: () => void }) => void
   setGeneralError: (message: string | null) => void
+  /** Provide through `FieldValidityContext` around the rendered fields. */
+  validity: FieldValidityChannel
 }
 
 /**
@@ -361,6 +370,20 @@ export function useItemForm({
   // the edges that are still outstanding rather than the ones already stored.
   const edgeBaseline = useRef<Record<string, unknown>>(initialData)
   const scalarBaseline = useRef<Record<string, unknown> | null>(null)
+  const invalidMarks = useRef(new Set<InvalidMark>())
+
+  const validity = useMemo<FieldValidityChannel>(
+    () => ({
+      markInvalid: (fieldName, focusTarget, onRefused) => {
+        const mark = { fieldName, focusTarget, onRefused }
+        invalidMarks.current.add(mark)
+        return () => {
+          invalidMarks.current.delete(mark)
+        }
+      },
+    }),
+    [],
+  )
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     // A field the form rendered read-only has no input to accept: its control
@@ -384,6 +407,17 @@ export function useItemForm({
 
   const handleSubmit = (e: { preventDefault: () => void }) => {
     e.preventDefault()
+
+    const marks = [...invalidMarks.current]
+    if (marks.length > 0) {
+      const [firstDeclared = marks[0]] = Object.keys(fields).flatMap((name) =>
+        marks.filter((mark) => mark.fieldName === name),
+      )
+      for (const mark of marks) mark.onRefused()
+      firstDeclared.focusTarget.current?.focus()
+      return
+    }
+
     setErrors({})
     setGeneralError(null)
 
@@ -458,5 +492,6 @@ export function useItemForm({
     handleFieldChange,
     handleSubmit,
     setGeneralError,
+    validity,
   }
 }

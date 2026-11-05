@@ -238,8 +238,8 @@ export class PartialPromotionError extends Error {
     super(
       `The database was updated, but promoting the staged generation stopped at ${failedOn}. ` +
         `${promoted.length} file(s) already carry the new contract, so the project is split ` +
-        'across two contracts. Re-run `opensaas generate` to rewrite the whole bundle from ' +
-        `the current config. Underlying failure: ${cause instanceof Error ? cause.message : String(cause)}`,
+        'across two contracts. Run `pnpm db:update` (`opensaas db update`) to promote the ' +
+        `whole bundle from the current config. Underlying failure: ${cause instanceof Error ? cause.message : String(cause)}`,
     )
     this.name = 'PartialPromotionError'
     this.promoted = promoted
@@ -328,6 +328,34 @@ export function promoteStagedGeneration(
   }
 
   fs.rmSync(stagingDir, { recursive: true, force: true })
+}
+
+/**
+ * The current moment on the filesystem's own clock. A stamp taken this way has
+ * the granularity of the files it is compared with, however coarse: a later
+ * save cannot read as earlier, and one in the same tick compares equal.
+ */
+export function filesystemNow(cwd: string): number {
+  const marker = path.join(cwd, '.opensaas', 'request-started')
+  fs.writeFileSync(marker, '')
+  const { mtimeMs } = fs.statSync(marker)
+  fs.rmSync(marker)
+  return mtimeMs
+}
+
+/**
+ * Whether any file changed at or after `since`, or can no longer be read. Reads
+ * the change time only: a file can carry any modification time, and one dated in
+ * the future would read as changed on every request.
+ */
+export function changedSince(paths: readonly string[], since: number): boolean {
+  return paths.some((file) => {
+    try {
+      return fs.statSync(file).ctimeMs >= since
+    } catch {
+      return true
+    }
+  })
 }
 
 /** Formats a plan the way the loop reports one that it is not applying. */

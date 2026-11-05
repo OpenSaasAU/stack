@@ -16,6 +16,7 @@ import {
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
 import { bigInt, integer, text } from '../../core/src/fields/index.js'
 import {
+  allCuidConfig,
   authConfig,
   blogConfig,
   longIdentifierConfig,
@@ -80,6 +81,7 @@ const compositeForeignKeyConfig: OpenSaasConfig = {
 
 const fixtures: { name: string; config: OpenSaasConfig; packs?: PrismaContractPacks }[] = [
   { name: 'blog', config: blogConfig },
+  { name: 'all-cuid', config: allCuidConfig },
   { name: 'auth', config: authConfig },
   { name: 'rag', config: ragConfig, packs: { pgvector } },
   { name: 'one-to-one', config: oneToOneConfig },
@@ -208,6 +210,81 @@ describe('renderContractModule — the lowering table', () => {
       'field.column(type.pgvector.Vector(3))',
     )
   })
+})
+
+describe('renderContractModule — the callback binds `gen` exactly when the module uses it', () => {
+  const callback = (source: string) => /\(\{ (.*) \}\) => \{\n {4}const models/.exec(source)?.[1]
+
+  const fields = { title: text() }
+  const onEveryList = (idField: NonNullable<OpenSaasConfig['db']['idField']>): OpenSaasConfig => ({
+    db: { provider: 'postgresql', idField },
+    lists: { Post: { fields } },
+  })
+
+  const cases: { name: string; config: OpenSaasConfig; binds: boolean }[] = [
+    { name: 'uuid7 alone', config: onEveryList('uuid7'), binds: true },
+    { name: 'cuid2 alone', config: onEveryList('cuid2'), binds: true },
+    { name: 'cuid alone', config: onEveryList('cuid'), binds: true },
+    { name: 'int autoincrement alone', config: onEveryList('int autoincrement'), binds: false },
+    {
+      name: 'singleton alone',
+      config: { db: { provider: 'postgresql' }, lists: { Site: { fields, isSingleton: true } } },
+      binds: false,
+    },
+    {
+      name: 'cuid with a singleton',
+      config: {
+        db: { provider: 'postgresql', idField: 'cuid' },
+        lists: { Post: { fields }, Site: { fields, isSingleton: true } },
+      },
+      binds: true,
+    },
+    {
+      name: 'cuid with a per-list int autoincrement',
+      config: {
+        db: { provider: 'postgresql', idField: 'cuid' },
+        lists: { Post: { fields }, Tag: { fields, db: { idField: 'int autoincrement' } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'int autoincrement with a per-list cuid',
+      config: {
+        db: { provider: 'postgresql', idField: 'int autoincrement' },
+        lists: { Post: { fields }, Tag: { fields, db: { idField: 'cuid' } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'updatedAt on a list with no generated id',
+      config: {
+        db: { provider: 'postgresql', idField: 'int autoincrement' },
+        lists: { Post: { fields, db: { timestamps: true } } },
+      },
+      binds: true,
+    },
+    {
+      name: 'updatedAt with a default timestamp type',
+      config: {
+        db: {
+          provider: 'postgresql',
+          idField: 'int autoincrement',
+          defaults: { timestamp: { nativeType: 'Timestamp(3)' } },
+        },
+        lists: { Post: { fields, db: { timestamps: true } } },
+      },
+      binds: true,
+    },
+  ]
+
+  for (const { name, config, binds } of cases) {
+    test(name, async () => {
+      const source = renderContractModule(deriveContract(config))
+
+      expect(callback(source)).toBe(binds ? 'field, model, type, gen' : 'field, model, type')
+      await expect(evaluateRendered(`gen-${name}`, source)).resolves.toBeDefined()
+    })
+  }
 })
 
 describe('renderContractModule — the rendered module is valid TypeScript for the CLI to emit', () => {

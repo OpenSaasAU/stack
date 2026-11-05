@@ -28,6 +28,10 @@ export {
 } from './field-shell.js'
 export type { FieldRootProps, FieldLabelProps } from './field-shell.js'
 
+// How a field tells the form it holds input it cannot commit
+export { useFieldValidity } from '../../lib/fieldValidity.js'
+export type { FieldFocusTarget } from '../../lib/fieldValidity.js'
+
 // Registry for custom field types
 export { fieldComponentRegistry, registerFieldComponent, getFieldComponent } from './registry.js'
 

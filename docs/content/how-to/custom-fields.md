@@ -353,6 +353,59 @@ Anything else in a field's `ui` config is passed through to the component as an 
 4. **Show required indicator** - Mark required fields visually
 5. **Accept custom options** - Support additional UI options from config
 
+### Refusing a Submit While the Input Can't Be Committed
+
+A field that parses what the user types can hold text it has no value for: half-typed JSON, say. `onChange` has nothing to send, so without more the form would save the old value and report success. Call `useFieldValidity` from `@opensaas/stack-ui/fields` to stop the submit:
+
+```typescript
+'use client'
+
+import { useRef, useState } from 'react'
+import { FieldError, useFieldValidity } from '@opensaas/stack-ui/fields'
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+type HexColorFieldProps = {
+  name: string
+  value?: string | null
+  onChange: (value: string | null) => void
+  mode?: 'read' | 'edit'
+}
+
+export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColorFieldProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [text, setText] = useState(value ?? '')
+  const isInvalid = text !== '' && !HEX_COLOR.test(text)
+
+  useFieldValidity(name, mode === 'edit' && isInvalid, inputRef)
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        id={name}
+        value={text}
+        onChange={(e) => {
+          const next = e.target.value
+          setText(next)
+          if (next === '') onChange(null)
+          else if (HEX_COLOR.test(next)) onChange(next)
+        }}
+      />
+      {isInvalid && <FieldError>Enter a hex color</FieldError>}
+    </>
+  )
+}
+```
+
+While the second argument is `true`, every item form (admin create, edit and singleton, the relationship drawer, and the standalone forms) refuses to submit and writes nothing. The form focuses the third argument's target on the first invalid field, in declaration order. That target is a ref to anything with a `focus()` method. The field shows its own error, and the mark clears when the field reports `false` or unmounts. The hook returns `true` once a submit has been refused while this field was invalid, for an error that should wait until then.
+
+Report only text that has no value. An empty box is a value (`null`), so an optional field stays valid when it's empty, and it can be cleared.
+
+A field that doesn't need this leaves it out and works as it always has.
+
+Outside an item form the hook does nothing, because nothing there can refuse a submit. The built-in JSON, decimal and bigInt fields revert unparseable text on blur in that case, so what's on screen matches the value a host form would send.
+
 ## Advanced Example: Slug Field with Auto-Generation
 
 Here's a more complex example showing hooks integration:

@@ -12,6 +12,12 @@ export interface NavigationProps {
   config: OpenSaasConfig
   basePath?: string
   currentPath?: string
+  /**
+   * Ends the session: an app-owned server action calling `auth.api.signOut`, then
+   * `redirect()` to the sign-in page. It crosses to a client component, so it must
+   * be a server action rather than a plain function. Without it no Sign Out control
+   * renders.
+   */
   onSignOut?: () => Promise<void>
   /**
    * Access-scoped record counts to show next to opted-in list nav items (issue

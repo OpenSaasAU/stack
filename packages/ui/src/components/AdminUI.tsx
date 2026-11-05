@@ -31,6 +31,13 @@ export interface AdminUIProps {
   basePath?: string
   // Server action can return any shape depending on the list item type
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * Ends the session: an app-owned server action calling `auth.api.signOut`, then
+   * `redirect()` to the sign-in page. It crosses to a client component, so it must
+   * be a server action rather than a plain function. Without it no Sign Out control
+   * renders. Ignored when `navigation` is supplied: that chrome renders its own
+   * `UserMenu` and passes the action there.
+   */
   onSignOut?: () => Promise<void>
   /**
    * Replaces the built-in sidebar wholesale (ADR-0021, the "chrome slot").

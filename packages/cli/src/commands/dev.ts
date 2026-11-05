@@ -15,7 +15,9 @@ import { loadOpenSaasConfig, loadProjectEnvFile, runPrismaCli } from '../generat
 import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
 import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
 import {
+  changedSince,
   describePlan,
+  filesystemNow,
   planId,
   planDatabaseUpdate,
   promoteStagedGeneration,
@@ -190,10 +192,10 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   let interrupted = false
   let loadedExtensions: readonly DevDatabaseExtension[] = []
 
-  /** A staged generation the database does not carry yet. */
-  let staged: GenerationResult | undefined
-  /** The id of the destructive plan printed when `staged` was parked. */
+  /** The id of the plan the watcher printed and parked, for the no-change message to repeat. */
   let parkedPlanId: string | undefined
+  /** The plan a `db update` applied but could not promote: the database is ahead of the bundle. */
+  let unpromotedPlanId: string | undefined
   /** One reconcile at a time: a burst of writes must not race itself. */
   let queue = Promise.resolve()
   /**
@@ -224,12 +226,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   let watchedModules: string[] = []
 
   /**
-   * The bytes of every module in {@link watchedModules}, as of the same
-   * generation {@link reconciledSource} was read for — `null` for one that
-   * could not be read (deleted mid-session). Paired with `reconciledSource`
-   * to decide whether a watcher event has anything new to reconcile: a save
-   * that reproduces both is the race #1260 closed, still closed here because
-   * the two are compared as bytes, never as generated output.
+   * The bytes of every module in {@link watchedModules} as the watcher last read
+   * them around a generation — `null` for one that could not be read (deleted
+   * mid-session). Paired with `reconciledSource` to decide whether a watcher
+   * event has anything new to reconcile: a save that reproduces both is the race
+   * #1260 closed, still closed here because the two are compared as bytes, never
+   * as generated output. Only that skip reads it: it is not a record of what a
+   * generation read, and `db update` never consults it.
    */
   let reconciledModules: Map<string, string | null> = new Map()
 
@@ -242,6 +245,27 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       } catch {
         snapshot.set(modulePath, null)
       }
+    }
+    return snapshot
+  }
+
+  /**
+   * The bytes the watcher's skip compares a later save with: `before`, read ahead
+   * of a generation, for every module already in the graph, so an edit landing
+   * while it generates or plans still reads as unreconciled. A module the
+   * generation newly reached had no earlier read, so its bytes are read here,
+   * which may be after generation read it.
+   */
+  const modulesGeneratedFrom = (
+    generation: GenerationResult,
+    before: ReadonlyMap<string, string | null>,
+  ): Map<string, string | null> => {
+    const snapshot = snapshotModules(
+      generation.resolvedModules.filter((modulePath) => !before.has(modulePath)),
+    )
+    for (const modulePath of generation.resolvedModules) {
+      const bytes = before.get(modulePath)
+      if (bytes !== undefined) snapshot.set(modulePath, bytes)
     }
     return snapshot
   }
@@ -313,10 +337,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
    * this refuses — a half-saved config must not take the loop down with it.
    */
   const stage = async (say: (message: string) => void): Promise<GenerationResult | undefined> => {
-    // `staged` only ever names files inside `stagingDir`, so it has to be
-    // dropped with them — a pointer left behind names the bytes of whatever
-    // generation runs next, including one this loop refused.
-    staged = undefined
     parkedPlanId = undefined
     fs.rmSync(stagingDir, { recursive: true, force: true })
     try {
@@ -330,10 +350,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     }
   }
 
-  const promote = (generation: GenerationResult): void => {
+  /** Returns whether this finished a promote that failed after its apply landed. */
+  const promote = (generation: GenerationResult): boolean => {
     promoteStagedGeneration(generation.paths, generation.livePaths, stagingDir)
-    staged = undefined
     parkedPlanId = undefined
+    const completedFailedPromote = unpromotedPlanId !== undefined
+    unpromotedPlanId = undefined
+    return completedFailedPromote
+  }
+
+  const restartApp = (say: (message: string) => void): void => {
+    say('Restarting the app: a client cached across a reload would query the dropped column.')
+    app?.restart()
   }
 
   const reportFailure = (say: (message: string) => void, output: string): void => {
@@ -364,7 +392,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       console.log(chalk.gray('\nConfig saved with no change: nothing to reconcile.'))
       console.log(
         chalk.gray(
-          staged === undefined || parkedPlanId === undefined
+          parkedPlanId === undefined
             ? NOTHING_TO_RECONCILE_ROUTE
             : `The change staged earlier is still parked. ${parkedRoute(parkedPlanId)}`,
         ),
@@ -386,6 +414,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
     reconciledSource = source
+    const generatedModules = modulesGeneratedFrom(generation, currentModules)
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -399,7 +428,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       database === undefined && !sessionConsent && planned.plan.operations.length > 0
     if (planned.plan.destructive || unconsentedEnvChange) {
       restoreMigrationRefs(cwd, refs)
-      staged = generation
       const id = planId(planned.plan)
       parkedPlanId = id
       // Only now, not right after staging: a rejected generation must never
@@ -407,7 +435,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       // and the database are still the previous generation's until this one
       // is at least parked.
       syncWatchedModules(generation.resolvedModules)
-      reconciledModules = snapshotModules(watchedModules)
+      reconciledModules = generatedModules
       console.log(
         chalk.yellow(
           planned.plan.destructive
@@ -430,10 +458,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     }
 
     restoreRefsAfterReconcile(cwd, refs)
-    promote(generation)
+    const completedFailedPromote = promote(generation)
     syncWatchedModules(generation.resolvedModules)
-    reconciledModules = snapshotModules(watchedModules)
+    reconciledModules = generatedModules
     console.log(chalk.green('\nDatabase updated and the new contract promoted.\n'))
+    if (completedFailedPromote) restartApp(say)
   }
 
   const onDatabaseUpdateRequest = async (
@@ -445,9 +474,15 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       reply.log(message)
     }
 
+    const startedAt = filesystemNow(cwd)
     const refs = snapshotMigrationRefs(cwd)
 
-    const generation = staged ?? (await stage(say))
+    // Always from disk, so a plan id is only ever compared with what the config
+    // wants now. What the watcher last saw says nothing about this generation,
+    // so its next event reconciles rather than skips.
+    reconciledSource = undefined
+
+    const generation = await stage(say)
     if (generation === undefined) {
       restoreMigrationRefs(cwd, refs)
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
@@ -462,23 +497,58 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
-    if (planned.plan.destructive) {
-      const id = planId(planned.plan)
-      if (requestedPlanId !== id) {
-        restoreMigrationRefs(cwd, refs)
-        staged = generation
-        parkedPlanId = id
-        say('This change would destroy data, so it was not applied:')
-        for (const line of describePlan(planned.plan)) say(line)
-        say(`Plan id: ${id}`)
-        reply.finish(
-          false,
-          requestedPlanId === undefined
-            ? `Destructive changes need the plan's id. ${parkedRoute(id).trim()}`
-            : `Plan ${requestedPlanId} is not the current plan. ${parkedRoute(id).trim()}`,
+    const id = planId(planned.plan)
+
+    const refuse = (message: string): void => {
+      restoreMigrationRefs(cwd, refs)
+      fs.rmSync(stagingDir, { recursive: true, force: true })
+      syncWatchedModules(generation.resolvedModules)
+      reply.finish(false, message)
+    }
+
+    if (planned.plan.destructive && requestedPlanId !== id) {
+      say('This change would destroy data, so it was not applied:')
+      for (const line of describePlan(planned.plan)) say(line)
+      say(`Plan id: ${id}`)
+      refuse(
+        requestedPlanId === undefined
+          ? `Destructive changes need the plan's id. ${parkedRoute(id).trim()}`
+          : `Plan ${requestedPlanId} is not the current plan. ${parkedRoute(id).trim()}`,
+      )
+      return
+    }
+
+    // The apply already landed, so the plan is empty and its id can no longer
+    // match; what is left to do is the promote that failed.
+    const retryingPromote =
+      planned.plan.operations.length === 0 && requestedPlanId === unpromotedPlanId
+
+    if (requestedPlanId !== undefined && requestedPlanId !== id && !retryingPromote) {
+      if (planned.plan.operations.length > 0) {
+        refuse(
+          `Plan ${requestedPlanId} is not the current plan, so nothing was applied. To apply the config as it stands, run \`pnpm db:update\`.`,
         )
-        return
+      } else if (unpromotedPlanId === undefined) {
+        refuse(
+          `Plan ${requestedPlanId} is no longer current: the database already matches the config, so nothing was applied.`,
+        )
+      } else {
+        refuse(
+          `Plan ${requestedPlanId} is not the plan whose promote failed, so nothing was applied. The generated files are still behind the database: run \`pnpm db:update\` to finish promoting them.`,
+        )
       }
+      return
+    }
+
+    // Only ever refuses: the id check above is what makes a plan valid. This
+    // catches a save between the start of the request and here, whatever
+    // generation happened to read. `resolvedModules` comes from this request's
+    // own load, so it includes a module only this request reached.
+    if (changedSince([configPath, ...generation.resolvedModules], startedAt)) {
+      refuse(
+        'The config changed while this request was planning, so nothing was applied. Run the command again to plan from the config as it stands.',
+      )
+      return
     }
 
     const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, {
@@ -492,25 +562,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     }
 
     restoreRefsAfterReconcile(cwd, refs)
-    promote(generation)
-    syncWatchedModules(generation.resolvedModules)
-    reconciledModules = snapshotModules(watchedModules)
-    // Best-effort: this request did not read the config itself, so this is
-    // the freshest bytes available for what the loop just generated from. A
-    // config deleted out from under a running loop is caught the same way
-    // the watcher's own read of it already is — by leaving nothing reconciled.
+    let completedFailedPromote: boolean
     try {
-      reconciledSource = fs.readFileSync(configPath, 'utf-8')
-    } catch {
-      reconciledSource = undefined
+      completedFailedPromote = promote(generation)
+    } catch (error) {
+      unpromotedPlanId ??= id
+      throw error
     }
+    syncWatchedModules(generation.resolvedModules)
 
     for (const line of describePlan(applied.plan)) say(line)
 
-    if (applied.plan.destructive) {
-      say('Restarting the app: a client cached across a reload would query the dropped column.')
-      app?.restart()
-    }
+    if (applied.plan.destructive || completedFailedPromote) restartApp(say)
 
     reply.finish(true, 'Applied, promoted.')
   }

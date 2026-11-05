@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, signIn, generateTestUser } from '../utils/auth.js'
+import { signUp, signIn, signOut, generateTestUser } from '../utils/auth.js'
 
 test.describe('Posts CRUD and Access Control', () => {
   test.describe('Unauthenticated Access', () => {
@@ -269,11 +269,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.close()
 
       // Sign out current user
-      await page.goto('/')
-      const signOutButton = page.locator('text=/sign out/i')
-      if (await signOutButton.isVisible()) {
-        await signOutButton.click()
-      }
+      await page.goto('/admin')
+      await signOut(page)
 
       // Sign in as user 2
       await signIn(page, secondUser)
@@ -379,11 +376,8 @@ test.describe('Posts CRUD and Access Control', () => {
       await setupPage.close()
 
       // Sign out and sign in as user 2
-      await page.goto('/')
-      const signOutButton = page.locator('text=/sign out/i')
-      if (await signOutButton.isVisible()) {
-        await signOutButton.click()
-      }
+      await page.goto('/admin')
+      await signOut(page)
 
       await signIn(page, secondUser)
 

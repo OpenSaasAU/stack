@@ -52,6 +52,7 @@ export {
   PasswordField,
   RelationshipField,
   FieldRenderer,
+  useFieldValidity,
   fieldComponentRegistry,
   registerFieldComponent,
   getFieldComponent,

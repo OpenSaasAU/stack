@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { signUp, generateTestUser } from '../utils/auth.js'
+import { signUp, signIn, signOut, generateTestUser } from '../utils/auth.js'
 
 test.describe('Authentication', () => {
   test.describe('Sign Up', () => {
@@ -185,6 +185,36 @@ test.describe('Authentication', () => {
       await expect(
         page.locator('text=/email sent|check your email|reset link|password reset/i').first(),
       ).toBeVisible({ timeout: 5000 })
+    })
+  })
+
+  test.describe('Sign Out', () => {
+    test('ends the session, so neither Back nor a reload gets the admin back', async ({ page }) => {
+      await signUp(page, generateTestUser())
+      await page.goto('/admin/post')
+      await expect(page.getByRole('button', { name: 'Sign Out' })).toBeVisible()
+
+      await signOut(page)
+
+      await page.goBack()
+      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+      await expect(page.getByRole('button', { name: 'Sign Out' })).toBeHidden()
+
+      await page.reload()
+      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+
+      await page.goto('/admin')
+      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+    })
+
+    test('leaves the user able to sign back in', async ({ page }) => {
+      const user = generateTestUser()
+      await signUp(page, user)
+
+      await signOut(page)
+      await signIn(page, user)
+
+      await expect(page.getByRole('button', { name: 'Sign Out' })).toBeVisible()
     })
   })
 

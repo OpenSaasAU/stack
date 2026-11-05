@@ -257,7 +257,8 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 ```
 
 With auth, resolve the session and pass it to `getContext(session)` (in both the
-page and the wrapper). See `examples/starter`, `examples/starter-auth`, and
+page and the wrapper), and pass an app-owned server action as `onSignOut`: the Sign
+Out control only renders with a handler. See `examples/starter`, `examples/starter-auth`, and
 `examples/auth-demo`.
 
 ### Custom Field Component (Global Registration)
