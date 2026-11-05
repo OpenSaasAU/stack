@@ -1,16 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useRef } from 'react'
 import { Input } from '../../primitives/input.js'
 import { cn } from '../../lib/utils.js'
-import {
-  FieldRoot,
-  FieldLabel,
-  FieldHelp,
-  FieldError,
-  FieldWarning,
-  FieldReadValue,
-} from './field-shell.js'
+import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import { useFieldDraft } from './useFieldDraft.js'
 
 export interface DecimalFieldProps {
   name: string
@@ -50,13 +44,13 @@ export function DecimalField({
   mode = 'edit',
   helpText,
 }: DecimalFieldProps) {
-  const [editingValue, setEditingValue] = useState<string | null>(null)
-  const [parseError, setParseError] = useState<string | undefined>()
-
-  const displayValue = useMemo(() => {
-    if (editingValue !== null) return editingValue
-    return value ?? ''
-  }, [value, editingValue])
+  const inputRef = useRef<HTMLInputElement>(null)
+  const {
+    text: displayValue,
+    parseError,
+    setDraftText,
+    endEditing,
+  } = useFieldDraft({ name, mode, committedText: value ?? '', focusTarget: inputRef })
 
   if (mode === 'read') {
     return (
@@ -68,26 +62,14 @@ export function DecimalField({
   }
 
   const handleChange = (text: string) => {
-    setEditingValue(text)
-
     const trimmed = text.trim()
-    if (trimmed === '') {
-      onChange(null)
-      setParseError(undefined)
+    if (trimmed !== '' && !DECIMAL_PATTERN.test(trimmed)) {
+      setDraftText(text, `${label} must be a decimal value`)
       return
     }
 
-    if (!DECIMAL_PATTERN.test(trimmed)) {
-      setParseError(`${label} must be a decimal value`)
-      return
-    }
-
-    onChange(trimmed)
-    setParseError(undefined)
-  }
-
-  const handleBlur = () => {
-    setEditingValue(null)
+    setDraftText(text)
+    onChange(trimmed === '' ? null : trimmed)
   }
 
   return (
@@ -96,20 +78,21 @@ export function DecimalField({
         {label}
       </FieldLabel>
       <Input
+        ref={inputRef}
         id={name}
         name={name}
         type="text"
         inputMode="decimal"
         value={displayValue}
         onChange={(e) => handleChange(e.target.value)}
-        onBlur={handleBlur}
+        onBlur={endEditing}
         placeholder={placeholder}
         disabled={disabled}
         required={required}
         className={cn('tabular-nums', (error || parseError) && 'border-destructive')}
       />
       {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {parseError && <FieldWarning>{parseError}</FieldWarning>}
+      {parseError && <FieldError>{parseError}</FieldError>}
       {error && <FieldError>{error}</FieldError>}
     </FieldRoot>
   )

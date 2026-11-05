@@ -578,6 +578,8 @@ narrows them differently — a `TextField` takes a `string`, an `IntegerField` a
 extra keys the field's `ui` options carry. `FieldComponentProps` is exported
 from `@opensaas/stack-ui`.
 
+A field holding input it can't commit calls `useFieldValidity(name, invalid, focusTarget)`, exported from `@opensaas/stack-ui` and `@opensaas/stack-ui/fields`, and the item forms refuse to submit until it clears. See the custom fields how-to.
+
 ### Example Usage
 
 A `SelectField` clears to `null` rather than to an empty string, so its state has

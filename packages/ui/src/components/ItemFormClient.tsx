@@ -9,6 +9,7 @@ import { LoadingSpinner } from './LoadingSpinner.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
 
@@ -87,6 +88,7 @@ export function ItemFormClient({
     handleFieldChange,
     handleSubmit,
     setGeneralError,
+    validity,
   } = useItemForm({
     fields,
     initialData,
@@ -144,23 +146,25 @@ export function ItemFormClient({
       )}
 
       <div className="space-y-6">
-        {editableFields.map(([fieldName, fieldConfig]) => (
-          <FieldRenderer
-            key={fieldName}
-            fieldName={fieldName}
-            fieldConfig={fieldConfig}
-            value={formData[fieldName]}
-            onChange={(value) => handleFieldChange(fieldName, value)}
-            error={errors[fieldName]}
-            disabled={busy}
-            mode={readOnly ? 'read' : 'edit'}
-            relationshipItems={relationshipData[fieldName] || []}
-            relationshipLoading={false}
-            basePath={basePath}
-            listKey={listKey}
-            serverAction={serverAction}
-          />
-        ))}
+        <FieldValidityContext value={validity}>
+          {editableFields.map(([fieldName, fieldConfig]) => (
+            <FieldRenderer
+              key={fieldName}
+              fieldName={fieldName}
+              fieldConfig={fieldConfig}
+              value={formData[fieldName]}
+              onChange={(value) => handleFieldChange(fieldName, value)}
+              error={errors[fieldName]}
+              disabled={busy}
+              mode={readOnly ? 'read' : 'edit'}
+              relationshipItems={relationshipData[fieldName] || []}
+              relationshipLoading={false}
+              basePath={basePath}
+              listKey={listKey}
+              serverAction={serverAction}
+            />
+          ))}
+        </FieldValidityContext>
       </div>
 
       <div className="flex items-center justify-between pt-6 border-t border-border">
