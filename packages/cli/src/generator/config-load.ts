@@ -46,6 +46,13 @@ export interface LoadedOpenSaasConfig {
  * must: through jiti, under the project's own tsconfig path aliases, awaiting
  * a default export that is a `Promise` whenever the config declares plugins.
  *
+ * Each load evaluates the config file, and every module it reaches that an
+ * earlier load of this function cached, from their current bytes, including
+ * after a load that threw. Two cases are outside that: a module some other
+ * loader left in the process-wide cache keeps that loader's copy, and a module
+ * first imported once the load has settled (from a plugin hook, or after a
+ * rejected default export) stays cached.
+ *
  * @example
  * ```typescript
  * const { config, aliasWarnings, resolvedModules } = await loadOpenSaasConfig(cwd, configPath)
@@ -57,36 +64,36 @@ export async function loadOpenSaasConfig(
 ): Promise<LoadedOpenSaasConfig> {
   const { alias, warnings } = resolveTsconfigAlias(cwd)
 
-  // Module caching is enabled only long enough to read back the resolved
-  // import graph off jiti's own cache (the `NodeRequire.cache` shape its
-  // public API already documents), then cleared below — so a second load of
-  // this exact path in the same process still sees fresh bytes. That cache is
-  // Node's own process-wide `require.cache`, not an object private to this
-  // jiti instance, which is why only the entries this load actually added are
-  // deleted, never the ones already there before it ran.
+  // Module caching is on only long enough to read the resolved import graph back
+  // off jiti's cache, which is Node's process-wide `require.cache`: that is why
+  // this deletes the config path and the entries this load added, and nothing
+  // else. jiti does not clean up after an async evaluation that rejects, so the
+  // eviction has to run on the failure path too.
   const jiti = createJiti(cwd, { interopDefault: true, alias, moduleCache: true })
+  delete jiti.cache[configPath]
   const cachedBeforeLoad = new Set(Object.keys(jiti.cache))
 
-  // jiti's `interopDefault` doesn't unwrap an async `default` export, so the
-  // module's own default is awaited here.
-  const module = await jiti.import<{ default: OpenSaasConfig | Promise<OpenSaasConfig> }>(
-    configPath,
-  )
+  let config: OpenSaasConfig
+  let newlyCached: string[]
+  try {
+    // jiti's `interopDefault` doesn't unwrap an async `default` export, so the
+    // module's own default is awaited here.
+    const module = await jiti.import<{ default: OpenSaasConfig | Promise<OpenSaasConfig> }>(
+      configPath,
+    )
+    config = await module.default
+  } finally {
+    // Cleared wherever it resolved to: a `node_modules` package still on its
+    // source form (a workspace link, a git dependency) goes through the same
+    // transform and caches exactly like a project file.
+    newlyCached = Object.keys(jiti.cache).filter((modulePath) => !cachedBeforeLoad.has(modulePath))
+    for (const modulePath of newlyCached) delete jiti.cache[modulePath]
+  }
 
-  // Every entry this load newly added, freshness demands cleared regardless of
-  // where it resolved to — a `node_modules` package still on its source form
-  // (a workspace link, a git dependency) goes through the same transform and
-  // caches exactly like a project file, and staleness in that cache is the
-  // bug `moduleCache: false` used to prevent outright. `resolvedModules`,
-  // reported for the caller to watch, is the stricter, project-local subset.
-  const newlyCached = Object.keys(jiti.cache).filter(
-    (modulePath) => !cachedBeforeLoad.has(modulePath),
-  )
   const resolvedModules = newlyCached.filter(
     (modulePath) =>
       modulePath !== configPath && !modulePath.split(path.sep).includes('node_modules'),
   )
-  for (const modulePath of newlyCached) delete jiti.cache[modulePath]
 
-  return { config: await module.default, aliasWarnings: warnings, resolvedModules }
+  return { config, aliasWarnings: warnings, resolvedModules }
 }

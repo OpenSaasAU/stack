@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DevDatabaseInUseError, startDevDatabase } from '@opensaas/stack-core/dev-database'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import { CONTROL_FILE, requestDatabaseUpdate } from '../dev/control.js'
+import { loadOpenSaasConfig as loadConfigFromDisk } from '../generator/config-load.js'
 import { runPrismaCli } from '../generator/index.js'
 import { resolveOutputPaths, stageWritePaths } from '../generator/output-paths.js'
 import { devCommand } from './dev.js'
@@ -119,6 +120,12 @@ vi.mock('chokidar', () => ({
     }),
   },
 }))
+
+/**
+ * A file written in the same filesystem clock tick as a request reads as written
+ * during it, and refuses. A test whose write is meant to come first waits here.
+ */
+const pastClockTick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
 
 /** Waits for the loop's queued work to reach a state the test can assert on. */
 async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> {
@@ -576,6 +583,7 @@ describe('devCommand', () => {
     expect(applyCalls()).toHaveLength(0)
     expect(fs.existsSync(live.contractModule)).toBe(false)
 
+    await pastClockTick()
     expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
     const applied = applyCalls()
     expect(applied).toHaveLength(1)
@@ -585,6 +593,682 @@ describe('devCommand', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     child.emit('exit', 0, null)
     await pendingLoop
+  })
+
+  /**
+   * The loop over the real config loader: a staged generation is whatever the
+   * config on disk evaluates to, and the plan is a drop whenever that lost
+   * `title` — so a stale load is visible as a stale contract (#2169).
+   */
+  describe('generating from what is on disk', () => {
+    const planFor = (operations: { label: string; operationClass: string }[]): string =>
+      JSON.stringify({
+        kind: 'result',
+        envelope: {
+          result: {
+            accessChanges: [],
+            dataLoss: operations
+              .filter((operation) => operation.operationClass === 'destructive')
+              .map((operation) => ({ text: operation.label })),
+            plan: { operations },
+          },
+        },
+      })
+
+    let said: string[]
+    let live: ReturnType<typeof resolveOutputPaths>['paths']
+    let staged: ReturnType<typeof stageWritePaths>
+    let stagedGenerations: number
+    let dropped: boolean
+    let beforeLoad: (() => void) | undefined
+    let duringGeneration: (() => void) | undefined
+    let duringDryRun: (() => void) | undefined
+    let duringApply: (() => void) | undefined
+
+    const configFile = (): string => path.join(tempDir, 'opensaas.config.ts')
+
+    const saveFields = (fields: readonly string[]): void => {
+      fs.writeFileSync(configFile(), `export default { fields: ${JSON.stringify(fields)} }\n`)
+    }
+
+    const listsFile = (): string => path.join(tempDir, 'lists.ts')
+
+    const saveLists = (fields: readonly string[]): void => {
+      fs.writeFileSync(listsFile(), `export const fields = ${JSON.stringify(fields)}\n`)
+    }
+
+    const splitConfigSource = "import { fields } from './lists.js'\nexport default { fields }\n"
+
+    /** Moves the config onto `lists.ts` through a watched save, so the module is in the graph. */
+    const splitTheConfig = async (): Promise<void> => {
+      saveLists(['title'])
+      await save(() => fs.writeFileSync(configFile(), splitConfigSource))
+    }
+
+    /** Fires a save and waits for the reconcile it started to settle. */
+    const save = async (write: () => void): Promise<void> => {
+      const before = said.length
+      write()
+      watcherHandlers.get('change')?.()
+      await until(() =>
+        said
+          .slice(before)
+          .some((line) => /promoted|Plan id:|keeps serving the contract/.test(line)),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
+    const destructiveApplies = (): string[][] =>
+      vi
+        .mocked(runPrismaCli)
+        .mock.calls.map(([, args]) => [...args])
+        .filter((args) => args.includes('--delete'))
+
+    const parkedId = (): string | undefined => /Plan id: ([0-9a-f]+)/.exec(said.join('\n'))?.[1]
+
+    beforeEach(async () => {
+      child.hold = true
+      said = []
+      stagedGenerations = 0
+      dropped = false
+      beforeLoad = undefined
+      duringGeneration = undefined
+      duringDryRun = undefined
+      duringApply = undefined
+      vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+
+      live = resolveOutputPaths(tempDir).paths
+      staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [],
+          }
+        }
+        const load = beforeLoad
+        beforeLoad = undefined
+        load?.()
+        const { config, resolvedModules } = await loadConfigFromDisk(tempDir, configFile())
+        stagedGenerations += 1
+        const hook = duringGeneration
+        duringGeneration = undefined
+        hook?.()
+        fs.mkdirSync(path.dirname(staged.contractModule), { recursive: true })
+        fs.writeFileSync(staged.contractModule, JSON.stringify(config), 'utf-8')
+        fs.mkdirSync(path.dirname(staged.contractJson), { recursive: true })
+        fs.writeFileSync(staged.contractJson, JSON.stringify(config), 'utf-8')
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules,
+        }
+      })
+
+      vi.mocked(runPrismaCli).mockImplementation(async (_cwd, args) => {
+        const contract = fs.existsSync(staged.contractModule)
+          ? fs.readFileSync(staged.contractModule, 'utf-8')
+          : 'title'
+        const stdout = planFor(
+          contract.includes('title') || dropped
+            ? []
+            : [
+                { label: 'drop Post.title', operationClass: 'destructive' },
+                ...(contract.includes('wider')
+                  ? [{ label: 'drop Post.wider', operationClass: 'destructive' }]
+                  : []),
+              ],
+        )
+        if (args.includes('--dry-run')) {
+          const hook = duringDryRun
+          duringDryRun = undefined
+          hook?.()
+        } else if (args.includes('--no-interactive')) {
+          const hook = duringApply
+          duringApply = undefined
+          hook?.()
+          if (args.includes('--delete')) dropped = true
+        }
+        return { exitCode: 0, signal: null, output: stdout, stdout }
+      })
+
+      saveFields(['title'])
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+    })
+
+    it('keeps following the config after a save that failed to load', async () => {
+      const contract = (): string => fs.readFileSync(live.contractModule, 'utf-8')
+
+      await save(() => fs.writeFileSync(configFile(), 'export default {{{\n'))
+      expect(said.join('\n')).toContain('Generation failed')
+
+      await save(() => saveFields(['title', 'c']))
+      expect(contract()).toContain('"c"')
+
+      await save(() => saveFields(['title', 'c', 'd']))
+      expect(contract()).toContain('"d"')
+
+      await save(() => saveFields(['title', 'c', 'd', 'e']))
+      expect(contract()).toContain('"e"')
+    })
+
+    it('cancels a parked drop when the config is reverted', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+
+      await save(() => fs.writeFileSync(configFile(), "throw new Error('boom')\n"))
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      said.length = 0
+      await save(() => fs.writeFileSync(configFile(), original))
+      expect(said.join('\n')).not.toContain('Plan id:')
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('title')
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (message) => replied.push(message))).toBe(
+        false,
+      )
+      expect(replied.join('\n')).toContain('no longer current')
+      expect(destructiveApplies()).toHaveLength(0)
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('title')
+    })
+
+    it('refuses a parked plan whose revert the watcher has not reported yet', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      fs.writeFileSync(configFile(), original)
+
+      const generationsBefore = stagedGenerations
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(stagedGenerations).toBe(generationsBefore + 1)
+      expect(destructiveApplies()).toHaveLength(0)
+      expect(fs.existsSync(live.contractModule)).toBe(false)
+    })
+
+    it('refuses a parked plan whose revert inside a split config the watcher has not reported yet', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      saveLists(['title'])
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('does not take a module revert during the dry run for reconciled, when the watcher parks', async () => {
+      await splitTheConfig()
+      said.length = 0
+      duringDryRun = () => saveLists(['title'])
+      await save(() => saveLists(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      said.length = 0
+      await save(() => {})
+      expect(said.join('\n')).toContain('promoted')
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('does not take a module revert during generation for reconciled', async () => {
+      await splitTheConfig()
+      said.length = 0
+      duringGeneration = () => saveLists(['title'])
+      await save(() => saveLists(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('does not take a module revert during the dry run for reconciled, when a request parks', async () => {
+      await splitTheConfig()
+      saveLists(['body'])
+      duringDryRun = () => saveLists(['title'])
+
+      const parking: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, undefined, (m) => parking.push(m))).toBe(false)
+      const id = /Plan id: ([0-9a-f]+)/.exec(parking.join('\n'))?.[1]
+      expect(id).toBeDefined()
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it.each([
+      ['the watcher', true],
+      ['a request', false],
+    ])(
+      'refuses a drop parked by %s from a new module reverted once it was read',
+      async (_, watched) => {
+        const v2 = path.join(tempDir, 'lists-v2.ts')
+        const writeV2 = (fields: readonly string[]): void => {
+          fs.writeFileSync(v2, `export const fields = ${JSON.stringify(fields)}\n`)
+        }
+        const importV2 = (): void => {
+          fs.writeFileSync(
+            configFile(),
+            "import { fields } from './lists-v2.js'\nexport default { fields }\n",
+          )
+        }
+        writeV2(['body'])
+        duringGeneration = () => writeV2(['title'])
+
+        let id: string | undefined
+        if (watched) {
+          await save(importV2)
+          id = parkedId()
+        } else {
+          importV2()
+          const parking: string[] = []
+          expect(await requestDatabaseUpdate(tempDir, undefined, (m) => parking.push(m))).toBe(
+            false,
+          )
+          id = /Plan id: ([0-9a-f]+)/.exec(parking.join('\n'))?.[1]
+        }
+        expect(id).toBeDefined()
+
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+        expect(destructiveApplies()).toHaveLength(0)
+      },
+    )
+
+    it.each([
+      ['the config', async (): Promise<(fields: readonly string[]) => void> => saveFields],
+      [
+        'a module',
+        async (): Promise<(fields: readonly string[]) => void> => {
+          await splitTheConfig()
+          return saveLists
+        },
+      ],
+    ])(
+      'refuses a drop generation read from %s between two saves of one staging',
+      async (_, prepare) => {
+        const write = await prepare()
+        write(['title', 'x'])
+        beforeLoad = () => write(['body'])
+        duringGeneration = () => write(['title', 'x'])
+
+        said.length = 0
+        watcherHandlers.get('change')?.()
+        await until(() => said.join('\n').includes('Plan id:'))
+        const id = parkedId()
+
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+        expect(destructiveApplies()).toHaveLength(0)
+      },
+    )
+
+    it('refuses to apply when a module is reverted during the dry run', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+      const id = parkedId()
+      duringDryRun = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('refuses to apply when the config is reverted during the dry run', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      duringDryRun = () => fs.writeFileSync(configFile(), original)
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('refuses to apply when a module this request first reached is reverted during the dry run', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      saveLists(['body'])
+      fs.writeFileSync(configFile(), splitConfigSource)
+      duringDryRun = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('refuses when a module only this request reached is restored after the load read it', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      saveLists(['body'])
+      fs.writeFileSync(configFile(), splitConfigSource)
+      duringGeneration = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it.each([
+      ['the config', async (): Promise<(fields: readonly string[]) => void> => saveFields],
+      [
+        'a module',
+        async (): Promise<(fields: readonly string[]) => void> => {
+          await splitTheConfig()
+          return saveLists
+        },
+      ],
+    ])(
+      'refuses two saves of %s that leave its bytes where the request found them',
+      async (_, prepare) => {
+        const write = await prepare()
+        await save(() => write(['body']))
+        const id = parkedId()
+        await save(() => write(['title']))
+
+        beforeLoad = () => write(['body'])
+        duringGeneration = () => write(['title'])
+
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+        expect(replied.join('\n')).toContain('config changed')
+        expect(destructiveApplies()).toHaveLength(0)
+      },
+    )
+
+    it('refuses when a module the load reported is gone by the apply', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+      duringDryRun = () => fs.rmSync(listsFile())
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, parkedId(), (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('puts the migration refs back when it refuses', async () => {
+      const ref = path.join(tempDir, 'migrations', 'app', 'refs', 'db.json')
+      fs.mkdirSync(path.dirname(ref), { recursive: true })
+      fs.writeFileSync(ref, 'the loop found this')
+      duringDryRun = () => fs.writeFileSync(ref, 'the dry run moved this')
+
+      expect(await requestDatabaseUpdate(tempDir, 'deadbeef', () => {})).toBe(false)
+
+      expect(fs.readFileSync(ref, 'utf-8')).toBe('the loop found this')
+    })
+
+    it('does not refuse a request whose inputs did not move', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, parkedId(), (m) => replied.push(m))).toBe(true)
+      expect(replied.join('\n')).not.toContain('config changed')
+
+      child.emit('exit', 0, null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('watches a module first reached by a generation a request parked', async () => {
+      saveLists(['body'])
+      fs.writeFileSync(configFile(), splitConfigSource)
+      const parking: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, undefined, (m) => parking.push(m))).toBe(false)
+      const id = /Plan id: ([0-9a-f]+)/.exec(parking.join('\n'))?.[1]
+      expect(watcherApi.add).toHaveBeenCalledWith([listsFile()])
+
+      saveLists(['title'])
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it.each([
+      ['the config', () => saveFields(['title', 'late'])],
+      ['a module', () => saveLists(['title', 'late'])],
+    ])('reconciles a save to %s that lands during a request apply', async (_, write) => {
+      await splitTheConfig()
+      saveLists(['title', 'first'])
+      duringApply = write
+
+      await pastClockTick()
+      expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
+
+      said.length = 0
+      await save(() => {})
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('late')
+    })
+
+    it('reconciles a module save that lands during a watched generation', async () => {
+      await splitTheConfig()
+      duringGeneration = () => saveLists(['title', 'late'])
+      await save(() => saveLists(['title', 'first']))
+
+      said.length = 0
+      await save(() => {})
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('late')
+    })
+
+    it('reconciles a module save that lands during a watched apply', async () => {
+      await splitTheConfig()
+      duringApply = () => saveLists(['title', 'late'])
+      await save(() => saveLists(['title', 'first']))
+
+      said.length = 0
+      await save(() => {})
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('late')
+    })
+
+    describe('after an apply that could not promote', () => {
+      const blockPromotion = (): void => {
+        fs.mkdirSync(live.contractJson, { recursive: true })
+      }
+      const unblockPromotion = (): void => {
+        fs.rmSync(live.contractJson, { recursive: true, force: true })
+      }
+
+      const failedApply = async (): Promise<{ id: string | undefined; replied: string }> => {
+        await save(() => saveFields(['body']))
+        const id = parkedId()
+        blockPromotion()
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+        expect(destructiveApplies()).toHaveLength(1)
+        expect(dropped).toBe(true)
+        return { id, replied: replied.join('\n') }
+      }
+
+      const expectRecovered = async (): Promise<void> => {
+        expect(fs.readFileSync(live.contractJson, 'utf-8')).toContain('body')
+        expect(fs.existsSync(path.join(tempDir, '.opensaas', 'staged'))).toBe(false)
+
+        const spawnedBefore = spawned.length
+        child.emit('exit', 0, null)
+        await until(() => spawned.length === spawnedBefore + 1)
+        child.emit('exit', 0, null)
+        await pendingLoop
+      }
+
+      it('names the route that recovers, and that route works', async () => {
+        const { replied } = await failedApply()
+        expect(replied).toContain('pnpm db:update')
+        expect(replied).not.toContain('opensaas generate')
+
+        unblockPromotion()
+        expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
+        await expectRecovered()
+      })
+
+      it('recovers when the same --plan is retried', async () => {
+        const { id } = await failedApply()
+
+        unblockPromotion()
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(true)
+        expect(replied.join('\n')).toContain('Applied, promoted')
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+
+        const afterwards: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, undefined, (m) => afterwards.push(m))).toBe(
+          true,
+        )
+        expect(afterwards.join('\n')).not.toContain('Restarting the app')
+        await expectRecovered()
+      })
+
+      it('still recovers through the same --plan after a second failure', async () => {
+        const { id } = await failedApply()
+
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+
+        unblockPromotion()
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
+        await expectRecovered()
+      })
+
+      it('restarts the app when a watched save finishes the promote', async () => {
+        await failedApply()
+
+        unblockPromotion()
+        said.length = 0
+        await save(() => saveFields(['body', 'next']))
+        expect(said.join('\n')).toContain('Restarting the app')
+        expect(fs.readFileSync(live.contractJson, 'utf-8')).toContain('next')
+
+        const spawnedBefore = spawned.length
+        child.emit('exit', 0, null)
+        await until(() => spawned.length === spawnedBefore + 1)
+        child.emit('exit', 0, null)
+        await pendingLoop
+      })
+
+      it('refuses the old id once the config wants something else', async () => {
+        const { id } = await failedApply()
+
+        unblockPromotion()
+        const additive = planFor([{ label: 'add Post.sku', operationClass: 'additive' }])
+        vi.mocked(runPrismaCli).mockImplementation(async () => ({
+          exitCode: 0,
+          signal: null,
+          output: additive,
+          stdout: additive,
+        }))
+        vi.mocked(runPrismaCli).mockClear()
+
+        expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+        expect(
+          vi.mocked(runPrismaCli).mock.calls.filter(([, args]) => !args.includes('--dry-run')),
+        ).toHaveLength(0)
+      })
+
+      it('still refuses any other id, and says the promote is unfinished', async () => {
+        await failedApply()
+
+        unblockPromotion()
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, 'deadbeef', (m) => replied.push(m))).toBe(false)
+        expect(replied.join('\n')).toContain('finish promoting')
+        expect(replied.join('\n')).not.toContain('already matches')
+        expect(fs.statSync(live.contractModule).isFile()).toBe(true)
+        expect(fs.existsSync(live.contractJson)).toBe(false)
+      })
+    })
+
+    it('stops advertising a parked id once the plan has moved', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      dropped = true
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+
+      expect(fs.existsSync(path.join(tempDir, '.opensaas', 'staged'))).toBe(false)
+
+      said.length = 0
+      await save(() => {})
+      expect(said.join('\n')).not.toContain('--plan')
+    })
+
+    it('refuses a parked id when the config now wants a different drop, and names the new one', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      saveFields(['body', 'wider'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (message) => replied.push(message))).toBe(
+        false,
+      )
+      expect(destructiveApplies()).toHaveLength(0)
+      const current = /--plan ([0-9a-f]+)/.exec(replied.join('\n'))?.[1]
+      expect(current).toBeDefined()
+      expect(current).not.toBe(id)
+    })
+
+    it('applies a parked plan when the config still wants it', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
+      expect(destructiveApplies()).toHaveLength(1)
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('body')
+
+      child.emit('exit', 0, null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('refuses an id that is not the current plan even when the plan is additive', async () => {
+      const additive = planFor([{ label: 'add Post.body', operationClass: 'additive' }])
+      vi.mocked(runPrismaCli).mockImplementation(async () => ({
+        exitCode: 0,
+        signal: null,
+        output: additive,
+        stdout: additive,
+      }))
+      vi.mocked(runPrismaCli).mockClear()
+
+      const replied: string[] = []
+      expect(
+        await requestDatabaseUpdate(tempDir, 'deadbeef', (message) => replied.push(message)),
+      ).toBe(false)
+
+      expect(replied.join('\n')).toContain('not the current plan')
+      expect(
+        vi.mocked(runPrismaCli).mock.calls.filter(([, args]) => !args.includes('--dry-run')),
+      ).toHaveLength(0)
+      expect(fs.existsSync(path.join(tempDir, '.opensaas', 'staged'))).toBe(false)
+      await pastClockTick()
+      expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
+    })
   })
 
   describe('an additive mid-session change against an environment database', () => {
@@ -640,6 +1324,53 @@ describe('devCommand', () => {
       await pendingLoop
       return result
     }
+
+    it('applies a parked plan through the route the loop printed', async () => {
+      child.hold = true
+      vi.stubEnv('OPENSAAS_DEV_YES', '')
+      vi.mocked(findDatabaseConnection).mockReturnValueOnce({
+        url: 'postgres://someone@example.test:5432/inherited',
+        provenance: 'env',
+      })
+      process.env.DATABASE_URL = 'postgres://someone@example.test:5432/inherited'
+      const said: string[] = []
+      vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+      const { paths: live } = resolveOutputPaths(tempDir)
+      const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        const paths = options.stagingDir === undefined ? live : staged
+        return { paths, livePaths: live, prismaConfig: paths.prismaConfig, resolvedModules: [] }
+      })
+      let startupPlanned = false
+      let applies = 0
+      vi.mocked(runPrismaCli).mockImplementation(async (_cwd, args) => {
+        const dry = args.includes('--dry-run')
+        if (args.includes('--no-interactive') && !dry) applies += 1
+        const output = dry && !startupPlanned ? emptyPlan : additivePlan
+        if (dry) startupPlanned = true
+        return { exitCode: 0, signal: null, output, stdout: output }
+      })
+
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+      editConfig()
+      watcherHandlers.get('change')?.()
+      await until(() => said.join('\n').includes('db:update --plan'))
+      const id = /db:update --plan ([0-9a-f]+)/.exec(said.join('\n'))?.[1]
+      expect(applies).toBe(0)
+
+      expect(await requestDatabaseUpdate(tempDir, 'deadbeef', () => {})).toBe(false)
+      expect(applies).toBe(0)
+
+      await pastClockTick()
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
+      expect(applies).toBe(1)
+
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
 
     it('parks the plan when the session was not started with --yes', async () => {
       const { said, applies } = await runChange(false)
@@ -1134,6 +1865,7 @@ describe('devCommand', () => {
       const moduleA = path.join(tempDir, 'a.ts')
       const moduleB = path.join(tempDir, 'b.ts')
       fs.writeFileSync(moduleA, 'export const a = 1\n')
+      fs.writeFileSync(moduleB, 'export const b = 1\n')
 
       const { paths: live } = resolveOutputPaths(tempDir)
       const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
@@ -1147,7 +1879,6 @@ describe('devCommand', () => {
             resolvedModules: [moduleA],
           }
         }
-        fs.writeFileSync(moduleB, 'export const b = 1\n')
         return {
           paths: staged,
           livePaths: live,
@@ -1166,9 +1897,8 @@ describe('devCommand', () => {
       startLoop({ appCommand: ['node', 'server.mjs'] })
       await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
-      // No prior config edit — `staged` is undefined, so this drives its own
-      // fresh stage rather than reusing a parked one.
-      const ok = await requestDatabaseUpdate(tempDir, 'abc', () => {})
+      await pastClockTick()
+      const ok = await requestDatabaseUpdate(tempDir, undefined, () => {})
       expect(ok).toBe(true)
 
       expect(watcherApi.add).toHaveBeenCalledWith([moduleB])
