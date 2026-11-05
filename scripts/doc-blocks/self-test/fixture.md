@@ -534,6 +534,7 @@ export type EmbeddingField = {
   type: 'embedding'
   access?: FieldAccess<TypeInfo['item'], TypeInfo['inputs']['create'], TypeInfo['inputs']['update']>
   defaultValue?: unknown
+  nullable?: boolean
   hooks?: BaseFieldConfig<TypeInfo>['hooks']
   virtual?: boolean
   db?: { map?: string; isNullable?: boolean; nativeType?: string; bogus?: number }
@@ -597,6 +598,7 @@ export type EmbeddingField = {
   type: 'embedding'
   access?: FieldAccess<TypeInfo['item'], TypeInfo['inputs']['create'], TypeInfo['inputs']['update']>
   defaultValue?: unknown
+  nullable?: boolean
   hooks?: BaseFieldConfig<TypeInfo>['hooks']
   virtual?: boolean
   db?: { map?: string; isNullable?: boolean; nativeType?: string }
