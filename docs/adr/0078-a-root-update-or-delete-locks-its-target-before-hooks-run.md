@@ -14,9 +14,23 @@ Inside the write's transaction, before any hook runs, a root `update`/`delete` t
 
 The pre-transaction gate stays, so a denied write still fires no `beforeTransaction`/`afterTransaction`.
 
+### Lock strength
+
+A root `update` takes `FOR NO KEY UPDATE`; a root `delete` takes `FOR UPDATE`. The public `.forUpdate()` stays `FOR UPDATE` (ADR-0047).
+
+The first version of this decision took `FOR UPDATE` for both, and that deadlocked a common shape (#2157). A child `INSERT` takes `FOR KEY SHARE` on its parent through the foreign-key check, and `FOR UPDATE` conflicts with `FOR KEY SHARE`, so transactions that had each inserted a child and then updated the parent each waited on the others. `FOR NO KEY UPDATE` is the lock a plain `UPDATE` takes anyway and is compatible with `FOR KEY SHARE`.
+
+The mutex this record depends on still holds, because `FOR NO KEY UPDATE` conflicts with itself and with `FOR UPDATE`: two root updates serialise, and a root update excludes a root delete and a `.forUpdate()`. `FOR KEY SHARE` changes nothing on the row, so `originalItem` stays current while the lock is held. A root delete keeps the stronger lock because the `DELETE` takes it regardless, and taking a weaker one first would only add an upgrade.
+
+Strength is a closed set the engine picks at each call site. It travels as a required argument through the lock lane, selects from a fixed table of clause text, and no surface accepts it as input.
+
 ## Consequences
 
 - One extra round trip for the lock and a second target resolution on every root update and delete.
 - The lock is taken on the target's identity; scope is checked by the re-resolution, so a write waiting on a row that moved out of scope returns `null` once the lock is granted.
 - Isolation levels are unchanged (ADR-0042). Locking rows touched by `connect` reachability checks is out of scope.
 - A list with no single-column primary key, and a context whose client cannot compose the lock statement, write without the lock rather than refusing writes that worked before.
+- A root update no longer holds off a concurrent child `INSERT`. A rule that depends on a parent's children not changing during an update takes `.forUpdate()` on the parent, on every path that inserts a child as well.
+- Inserting a child and then taking `.forUpdate()` on its parent has the same deadlock this record fixed for root updates, and stays. Take the lock before the insert, which is the order the capacity gate already uses. Whether `.forUpdate()` should weaken is a separate question.
+- An update that changes a column with a unique index usable by a foreign key still deadlocks in the #2157 shape. Postgres itself escalates that `UPDATE` to `FOR UPDATE`, so it would without any engine lock, and the engine cannot choose a stronger lock up front because the target is locked before hooks settle the payload.
+- A `first()` in a hook followed by an `update` computed from it is an application-level lost update: the read is not under the lock. `item` in `resolveInput` is read under it.

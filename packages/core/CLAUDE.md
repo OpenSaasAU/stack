@@ -306,6 +306,10 @@ const result = await context.transaction(async (tx) => {
   (`RowLockIdentityError`), and one terminal binds at most `ROW_LOCK_MAX_KEYS`
   keys — a cost limit, `RowLockKeyLimitExceededError`, not an inability to
   scope.
+- **Lock the parent before inserting a child.** A child `INSERT` holds
+  `FOR KEY SHARE` on its parent, which `FOR UPDATE` conflicts with, so racers
+  that insert first and lock second deadlock. A root `update`'s own lock is
+  `FOR NO KEY UPDATE` and does not have this problem (ADR-0078).
 - **`tx.advisoryLock(key)`** takes PostgreSQL's transaction-scoped advisory lock
   for an invariant that is not a row. It sits on the transaction context rather
   than on `db`, because it locks a number and belongs to no list. The key is

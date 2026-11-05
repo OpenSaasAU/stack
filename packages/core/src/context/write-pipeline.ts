@@ -336,7 +336,9 @@ async function lockTarget(
   }
   const key = originalItem[identity.column]
   if (typeof key !== 'string' && typeof key !== 'number') return gated
-  const held = await lane.lock(args.listName, identity, [key])
+  // `forUpdate` on an update deadlocks against a child INSERT's foreign-key lock (ADR-0078).
+  const strength = args.strategy.operation === 'update' ? 'forNoKeyUpdate' : 'forUpdate'
+  const held = await lane.lock(args.listName, identity, [key], strength)
   if (held.length === 0) return { status: 'denied' }
   return args.strategy.resolveTarget(collection, ops, args.context)
 }

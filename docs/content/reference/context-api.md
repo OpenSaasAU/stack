@@ -396,6 +396,8 @@ async function book(context: Context, slotId: string) {
 
 `first()` returning `null` under `forUpdate()` means denied-or-vanished, extending the conflation silent failure already makes deliberately.
 
+Take the lock **before** inserting a child of the locked row. The insert's foreign-key check holds a lock on the parent that `forUpdate()` conflicts with, so two racers that insert first and lock second deadlock, and one fails with a `DatabaseError`.
+
 `advisoryLock(key)` takes PostgreSQL's transaction-scoped advisory lock, waiting until it is free and releasing when the transaction ends however it ends. It locks a number rather than rows, which is why it sits on the transaction context and not on `db`.
 
 #### Cost: a row lock is two round trips

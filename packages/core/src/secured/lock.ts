@@ -1,6 +1,5 @@
-// The row lock's second statement: the engine-composed `SELECT … FOR UPDATE`
-// over the primary keys a scoped read returned, and the advisory lock beside
-// it. Prisma owns quoting, placeholders, codecs and the executor; the stack
+// The row lock's second statement: the engine-composed locking `SELECT` over
+// the primary keys a scoped read returned, and the advisory lock beside it. Prisma owns quoting, placeholders, codecs and the executor; the stack
 // owns the clause text. See ADR-0047 and ADR-0062.
 
 import type { ParamRef, RuntimeScope, SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
@@ -29,6 +28,17 @@ export const ROW_LOCK_MAX_KEYS = 1000
 
 /** A primary-key value the lock statement binds. */
 export type RowLockKey = string | number
+
+const ROW_LOCK_CLAUSES = {
+  forUpdate: ' FOR UPDATE',
+  forNoKeyUpdate: ' FOR NO KEY UPDATE',
+} as const
+
+/**
+ * The locking clause the lock statement ends in. The engine picks it per call
+ * site, and no surface takes it as an argument (ADR-0078).
+ */
+export type RowLockStrength = keyof typeof ROW_LOCK_CLAUSES
 
 /**
  * Where one list's rows are locked: the qualified table, its single
@@ -157,11 +167,12 @@ type RowLockRawTag = (
 export interface RowLockLane {
   /** Where `listName`'s rows live, or a throw naming why they cannot be locked. */
   identity(listName: string): RowLockIdentity
-  /** Lock exactly `keys`, and answer with the ones that were still there. */
+  /** Lock exactly `keys` at `strength`, and answer with the ones that were still there. */
   lock(
     listName: string,
     identity: RowLockIdentity,
     keys: readonly RowLockKey[],
+    strength: RowLockStrength,
   ): Promise<RowLockKey[]>
   /** Take the transaction-scoped advisory lock on `key`. */
   advisory(key: string): Promise<void>
@@ -245,7 +256,7 @@ function soleKeyColumn(storage: SqlStorage, namespace: string, table: string): s
 
 /**
  * The statement, assembled: `SELECT <pk> FROM <table> WHERE <pk> IN ($1…$n)
- * ORDER BY <pk> LIMIT $n+1 FOR UPDATE`.
+ * ORDER BY <pk> LIMIT $n+1 <clause>`, the clause being `strength`'s.
  *
  * The engine writes the clause text and nothing else. Identifiers are quoted
  * by the target package's own helper, each key is bound with the identity
@@ -262,6 +273,7 @@ function soleKeyColumn(storage: SqlStorage, namespace: string, table: string): s
 function lockStatement(
   identity: RowLockIdentity,
   keys: readonly RowLockKey[],
+  strength: RowLockStrength,
 ): { strings: TemplateStringsArray; values: (ParamRef | number)[] } {
   const column = quoteIdentifier(identity.column)
   const table = `${quoteIdentifier(identity.namespace)}.${quoteIdentifier(identity.table)}`
@@ -269,7 +281,7 @@ function lockStatement(
     `SELECT ${column} FROM ${table} WHERE ${column} IN (`,
     ...keys.slice(1).map(() => ', '),
     `) ORDER BY ${column} LIMIT `,
-    ' FOR UPDATE',
+    ROW_LOCK_CLAUSES[strength],
   ]
   return {
     strings: Object.assign(parts, { raw: parts }),
@@ -355,16 +367,17 @@ export function createRowLockLane(
       listName: string,
       identity: RowLockIdentity,
       keys: readonly RowLockKey[],
+      strength: RowLockStrength,
     ): Promise<RowLockKey[]> {
       // No keys, no statement. `lockStatement` has one fragment per key, so at
       // arity 0 the tag never consumes its trailing fragment and the statement
-      // arrives without `FOR UPDATE` and with a dangling `LIMIT` — a Postgres
+      // arrives without its locking clause and with a dangling `LIMIT` — a Postgres
       // syntax error rather than an empty result (ADR-0062).
       if (keys.length === 0) return []
       if (keys.length > ROW_LOCK_MAX_KEYS) {
         throw new RowLockKeyLimitExceededError(listName, keys.length)
       }
-      const { strings, values } = lockStatement(identity, keys)
+      const { strings, values } = lockStatement(identity, keys, strength)
       const plan = tag(strings, ...values)
         .returnsRow({ [identity.column]: identity.codecId })
         .build()
