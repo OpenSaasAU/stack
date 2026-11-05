@@ -221,6 +221,14 @@ function codecLiteral(column: ContractColumn, value: unknown): string {
     : literal(value)
 }
 
+const QUOTED_STRING = /'(?:[^'\\]|\\.)*'/g
+const GEN_HELPER_CALL = /(?<![\w$.])gen\./
+
+/** Whether rendered source calls the `gen` helper, as opposed to a config value spelling it. */
+function referencesGenHelper(source: string): boolean {
+  return GEN_HELPER_CALL.test(source.replace(QUOTED_STRING, "''"))
+}
+
 function idExpression(id: ContractIdColumn): string {
   switch (id.strategy) {
     case 'uuid7':
@@ -487,10 +495,7 @@ export function renderContractModule(data: ContractData): string {
     scaffold.push(`namespaces: [${data.namespaces.map((ns) => literal(ns)).join(', ')}]`)
   }
 
-  const usesGenHelper = data.models.some(
-    (model) =>
-      model.id.strategy === 'uuid7' || model.id.strategy === 'cuid2' || model.timestamps.updatedAt,
-  )
+  const usesGenHelper = referencesGenHelper([...declarations, ...attributes].join('\n'))
   const usesRelHelper = data.models.some((model) => model.relations.length > 0)
   const callbackParams = ['field', 'model']
   if (usesRelHelper) callbackParams.push('rel')

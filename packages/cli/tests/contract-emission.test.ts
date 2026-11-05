@@ -5,7 +5,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { deriveContract } from '../../core/src/contract/index.js'
 import type { EmittedContract } from '../../core/src/contract/index.js'
 import type { OpenSaasConfig } from '../../core/src/config/types.js'
-import { blogConfig, ragConfig } from '../../core/src/contract/fixtures/contract-configs.js'
+import {
+  allCuidConfig,
+  blogConfig,
+  ragConfig,
+} from '../../core/src/contract/fixtures/contract-configs.js'
 import { writeContractModule } from '../src/generator/contract-module.js'
 import { emitContract } from '../src/generator/contract-emit.js'
 import { writePrismaConfig } from '../src/generator/prisma-config.js'
@@ -100,6 +104,23 @@ describe('prisma contract emit — the blog fixture', () => {
     expect((emitted as unknown as { extensions?: unknown }).extensions).toEqual(expect.anything())
     const extensions = (emitted as unknown as { extensions: Record<string, unknown> }).extensions
     expect(Object.keys(extensions)).toEqual([])
+  })
+})
+
+describe('prisma contract emit — every list cuid, no timestamps', () => {
+  let emitted: EmittedContract
+
+  beforeAll(async () => {
+    emitted = await emit('all-cuid', allCuidConfig)
+  }, 180_000)
+
+  test('emits a text id minted by the cuid2 generator on every model', () => {
+    const { table } = emitted.storage.namespaces.public.entries
+    expect(Object.keys(table).sort()).toEqual(['Author', 'Post'])
+    for (const entry of Object.values(table)) {
+      const { columns } = entry as unknown as { columns: Record<string, { dataType: string }> }
+      expect(columns.id.dataType).toBe('pg/text')
+    }
   })
 })
 
