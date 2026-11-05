@@ -155,15 +155,15 @@ export async function uploadFile(
     throw new Error(declaredSizeError.error)
   }
 
+  const contentType = resolveEffectiveMimeType(file)
   const validation = validateFile(
-    { size: buffer.byteLength, name: file.name, type: file.type },
+    { size: buffer.byteLength, name: file.name, type: contentType },
     options?.validation,
   )
   if (!validation.valid) {
     throw new Error(validation.error)
   }
 
-  const contentType = resolveEffectiveMimeType(file)
   const storedName = withEffectiveExtension(file.name, contentType)
 
   await claimStableKey(config, storageProviderName, storedName, options)

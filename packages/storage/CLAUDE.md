@@ -58,9 +58,9 @@ packages/storage-vercel/  # Separate Vercel Blob provider package
 ### Utils (`src/utils/`)
 
 - `validateFile(file, options)` - Validate size, and the EFFECTIVE MIME type against `acceptedMimeTypes` (refusing active content types by default; see Security)
-- `resolveEffectiveMimeType(file)` - The declared type, or the type looked up from the filename when none is declared
+- `resolveEffectiveMimeType(file)` - The bare essence of the declared type, `application/octet-stream` when that is not a usable essence, or the type looked up from the filename when none is declared
 - `extensionForMimeType(mimeType)` / `withEffectiveExtension(name, mimeType)` - Derive the stored extension from a MIME type, never from the client's own filename
-- `ACTIVE_MIME_TYPES` - The set of MIME types refused unless a field's `acceptedMimeTypes` names them explicitly. `isActiveMimeType()` extends it to any `+xml` essence
+- `ACTIVE_MIME_TYPES` - The set of MIME types refused unless a field's `acceptedMimeTypes` names them explicitly. `isActiveMimeType()` extends it to any `+xml` essence and to any non-empty type that is not a usable essence; an empty type is not active, because the pipeline looks it up from the filename
 - `formatFileSize(bytes)` - Human-readable file sizes
 - `getMimeType(filename)` - Get MIME type from filename
 - `parseFileFromFormData(formData, fieldName)` - Extract file from FormData
@@ -566,14 +566,16 @@ What this package actually enforces, and what it leaves to you (issues #1625, #1
   `application/xhtml+xml`, `text/xml`, `application/xml` and the JavaScript
   MIME types are refused unless a field's own `acceptedMimeTypes` names the
   exact type — including a `file()`/`image()` with no `validation` config at
-  all. So are `text/xsl`, every `+xml` essence, and the essences that make a
-  browser sniff the bytes (`unknown/unknown`, `application/unknown`, `*/*`).
+  all. So are `text/xsl` and every `+xml` essence.
 - **One parser reads a declared type.** The active-content check, the
   accept-list, the stored extension and the provider `contentType` all take
   the strict `token/token` essence. A declared type that does not parse
-  (`text/html x`, `text/html,x`) is stored as `application/octet-stream` under
-  `.bin`, and an `acceptedMimeTypes` entry is compared against that normalised
-  type, never the raw string.
+  (`text/html x`, `text/html,x`), or that makes a browser sniff the bytes
+  (`unknown/unknown`, `application/unknown`, `*/*`), is stored as
+  `application/octet-stream` under `.bin`. An `acceptedMimeTypes` entry is
+  compared against that normalised type, never the raw string, so no field can
+  opt in to a sniffed type. `acceptedExtensions` never admits
+  `application/octet-stream`, even when it names `.bin` (issue #2073).
 - **No byte-sniffing for `file()`.** It trusts the declared type once the two
   rules above hold: a false declaration then produces a correctly-typed,
   inert file rather than one served same-origin as active content. `image()`

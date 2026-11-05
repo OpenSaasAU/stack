@@ -2,11 +2,9 @@ import mime from 'mime-types'
 
 /**
  * MIME types that browsers or servers can execute as script or render as
- * active markup, plus the essences that make a browser sniff the bytes
- * instead (https://mimesniff.spec.whatwg.org/#mime-type-sniffing-algorithm).
- * Refused by default (issue #1625) unless a field's own `acceptedMimeTypes`
- * names the exact type — an `.html` upload declared as `application/pdf` must
- * not be stored as `text/html` and served same-origin.
+ * active markup. Refused by default (issue #1625) unless a field's own
+ * `acceptedMimeTypes` names the exact type — an `.html` upload declared as
+ * `application/pdf` must not be stored as `text/html` and served same-origin.
  */
 export const ACTIVE_MIME_TYPES: ReadonlySet<string> = new Set([
   'text/html',
@@ -31,13 +29,15 @@ export const ACTIVE_MIME_TYPES: ReadonlySet<string> = new Set([
   'text/livescript',
   'text/x-ecmascript',
   'text/x-javascript',
-  'unknown/unknown',
-  'application/unknown',
-  '*/*',
 ])
 
-/** A type that does not parse as a strict essence counts as active. */
+/**
+ * An empty type declares nothing, so it is not active; the pipeline looks it up
+ * from the filename. Any other type that is not a usable essence counts as
+ * active, and the pipeline stores it as `application/octet-stream` instead.
+ */
 export function isActiveMimeType(type: string): boolean {
+  if (type === '') return false
   const essence = mimeEssence(type)
   return essence === null || ACTIVE_MIME_TYPES.has(essence) || essence.endsWith('+xml')
 }
@@ -103,26 +103,33 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 const HTTP_TOKEN = "[A-Za-z0-9!#$%&'*+.^_`|~-]+"
-const STRICT_ESSENCE = new RegExp(`^${HTTP_TOKEN}/${HTTP_TOKEN}$`)
-const SURROUNDING_HTTP_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g
+// Keep this anchored at `^`: the input is an attacker-controlled part header,
+// and an unanchored whitespace run goes quadratic on it (PR #2198).
+const STRICT_ESSENCE = new RegExp(`^[\\t\\n\\r ]*(${HTTP_TOKEN}/${HTTP_TOKEN})[\\t\\n\\r ]*(?:;|$)`)
+
+// A browser treats these as no type at all and sniffs the bytes, so no opt-in
+// can make them safe: https://mimesniff.spec.whatwg.org/#mime-type-sniffing-algorithm
+const SNIFFED_ESSENCES: ReadonlySet<string> = new Set([
+  'unknown/unknown',
+  'application/unknown',
+  '*/*',
+])
 
 /**
  * The lowercased `token/token` essence of a MIME type, or `null` for anything
- * else. Every reader of a type goes through this: `mime.extension` cuts at
- * whitespace and `;` and would call `text/html x` html, while a browser reads
- * `text/html,x` as html too.
+ * else, including an essence a browser would sniff past. Every reader of a type
+ * goes through this: `mime.extension` cuts at whitespace and `;` and would call
+ * `text/html x` html, while a browser reads `text/html,x` as html too.
  */
 function mimeEssence(type: string): string | null {
-  const semicolon = type.indexOf(';')
-  const bare = semicolon === -1 ? type : type.slice(0, semicolon)
-  const essence = bare.replace(SURROUNDING_HTTP_WHITESPACE, '')
-  return STRICT_ESSENCE.test(essence) ? essence.toLowerCase() : null
+  const essence = STRICT_ESSENCE.exec(type)?.[1]?.toLowerCase()
+  return essence === undefined || SNIFFED_ESSENCES.has(essence) ? null : essence
 }
 
 /**
  * The MIME type an upload is validated and stored under: the bare essence of
- * the client's declared `type`, `application/octet-stream` when that does not
- * parse, or the type looked up from the filename when none is declared. Never
+ * the client's declared `type`, `application/octet-stream` when that is not a
+ * usable essence, or the type looked up from the filename when none is declared. Never
  * the sniffed bytes — that is `image()`'s own job, since only an image has
  * bytes sharp can read back a format from.
  */
@@ -174,10 +181,13 @@ export function validateFile(
   }
 
   if (options?.acceptedExtensions && options.acceptedExtensions.length > 0) {
-    const storedExtensions =
-      effectiveType === 'application/octet-stream'
-        ? []
-        : (mime.extensions[effectiveType] ?? []).map((e) => `.${e}`)
+    if (effectiveType === 'application/octet-stream') {
+      return {
+        valid: false,
+        error: `File type 'application/octet-stream' is generic and is not allowed under acceptedExtensions, even one naming '.bin'. Accepted extensions: ${options.acceptedExtensions.join(', ')}`,
+      }
+    }
+    const storedExtensions = (mime.extensions[effectiveType] ?? []).map((e) => `.${e}`)
     const accepted = options.acceptedExtensions.map((e) => {
       const lower = e.toLowerCase()
       return lower.startsWith('.') ? lower : `.${lower}`

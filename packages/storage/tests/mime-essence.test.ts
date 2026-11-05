@@ -64,6 +64,14 @@ async function multipart(
   return parsed
 }
 
+const SNIFFED = [
+  'unknown/unknown',
+  'UNKNOWN/UNKNOWN',
+  'application/unknown',
+  'application/unknown; charset=utf-8',
+  '*/*',
+]
+
 const MALFORMED = [
   'text/html x',
   'text/html,x',
@@ -82,6 +90,7 @@ const MALFORMED = [
   '/html',
   'html',
   '/',
+  ...SNIFFED,
 ]
 
 const JAVASCRIPT_ESSENCES = [
@@ -115,9 +124,6 @@ const REFUSED = [
   'application/vnd.example+xml',
   'APPLICATION/VND.EXAMPLE+XML',
   'text/xsl',
-  'unknown/unknown',
-  'application/unknown',
-  '*/*',
   ...JAVASCRIPT_ESSENCES,
 ]
 
@@ -234,6 +240,12 @@ describe('declared MIME types through Request.formData() (issue #2148)', () => {
       ).rejects.toThrow(/not allowed/)
     })
 
+    it.each(SNIFFED)('no field can opt in to %j, which a browser would sniff', async (declared) => {
+      await expect(upload(declared, 'x.pdf', { acceptedMimeTypes: [declared] })).rejects.toThrow(
+        /not allowed/,
+      )
+    })
+
     it('stays an explicit opt-in for each newly active essence', async () => {
       const metadata = await upload('application/ecmascript', 'x.es', {
         acceptedMimeTypes: ['application/ecmascript'],
@@ -250,10 +262,37 @@ describe('declared MIME types through Request.formData() (issue #2148)', () => {
     })
   })
 
-  it('acceptedExtensions refuses a malformed type, which has no stored extension to accept', async () => {
-    await expect(
-      upload('text/html x', 'x.html', { acceptedExtensions: ['.html'] }),
-    ).rejects.toThrow(/not allowed/)
+  it.each([[['.html']], [['.bin']]])(
+    'acceptedExtensions %j refuses a malformed type, which normalises to generic octet-stream',
+    async (acceptedExtensions) => {
+      const refusal = upload('text/html x', 'x.html', { acceptedExtensions })
+      await expect(refusal).rejects.toThrow(/application\/octet-stream' is generic/)
+      await expect(refusal).rejects.not.toThrow(/\(none\)/)
+    },
+  )
+
+  describe('a hostile part header cannot block the event loop', () => {
+    const run = ' '.repeat(200_000)
+
+    it.each([
+      ['a type with no slash', `a${run}x`],
+      ['an essence followed by a token', `a/b${run}x`],
+      ['surrounding whitespace', `${run}a/b${run}x`],
+    ])(
+      'parses %s in linear time',
+      async (_, declared) => {
+        const parsed = await multipart(declared)
+        expect(parsed.file.type.length).toBeGreaterThan(200_000)
+
+        const start = performance.now()
+        const metadata = await uploadFile(config, 'files', parsed)
+        const elapsed = performance.now() - start
+
+        expect(metadata.mimeType).toBe(OCTET_STREAM)
+        expect(elapsed).toBeLessThan(2_000)
+      },
+      BOOT,
+    )
   })
 
   describe('image() still reads the bytes', () => {
@@ -310,13 +349,12 @@ describe('the issue #2148 repro against a real file() field', () => {
     'writes %j to disk under a non-active name',
     async (declared) => {
       const { file } = await multipart(declared)
+      const before = new Set(await readdir(uploadDir))
 
       await harness.context.db.Doc.create({ data: { attachment: file } })
 
-      const stored = await readdir(uploadDir)
-      expect(stored.length).toBeGreaterThan(0)
-      expect(stored.filter((name) => ACTIVE_EXTENSION.test(name))).toEqual([])
-      expect(stored.filter((name) => !name.endsWith('.bin'))).toEqual([])
+      const added = (await readdir(uploadDir)).filter((name) => !before.has(name))
+      expect(added).toEqual([expect.stringMatching(/\.bin$/)])
     },
   )
 })
@@ -369,6 +407,11 @@ describe('one parser for every reader of the type', () => {
   it('still looks an undeclared type up from the name', () => {
     expect(resolveEffectiveMimeType({ name: 'x.pdf', type: '' })).toBe('application/pdf')
     expect(resolveEffectiveMimeType({ name: 'noext', type: '' })).toBe(OCTET_STREAM)
+  })
+
+  it('an empty type is not active, as the pipeline accepts it by filename', () => {
+    expect(isActiveMimeType('')).toBe(false)
+    expect(validateFile({ size: 1, name: 'report.pdf', type: '' }).valid).toBe(true)
   })
 
   it.each(['application/pdf', 'image/png', 'application/json', 'text/plain', 'text/css'])(
