@@ -1549,7 +1549,9 @@ async function locked(
     keys.push(value)
   }
   if (keys.length === 0) return []
-  const held = await engineRead(binding, () => taken.lane.lock(listName, taken.identity, keys))
+  const held = await engineRead(binding, () =>
+    taken.lane.lock(listName, taken.identity, keys, 'forUpdate'),
+  )
   if (held.length === 0) return []
   const refreshed = scope(
     binding,
