@@ -121,6 +121,12 @@ vi.mock('chokidar', () => ({
   },
 }))
 
+/**
+ * A file written in the same filesystem clock tick as a request reads as written
+ * during it, and refuses. A test whose write is meant to come first waits here.
+ */
+const pastClockTick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+
 /** Waits for the loop's queued work to reach a state the test can assert on. */
 async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -577,6 +583,7 @@ describe('devCommand', () => {
     expect(applyCalls()).toHaveLength(0)
     expect(fs.existsSync(live.contractModule)).toBe(false)
 
+    await pastClockTick()
     expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
     const applied = applyCalls()
     expect(applied).toHaveLength(1)
@@ -950,6 +957,72 @@ describe('devCommand', () => {
       expect(destructiveApplies()).toHaveLength(0)
     })
 
+    it('refuses when a module only this request reached is restored after the load read it', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      saveLists(['body'])
+      fs.writeFileSync(configFile(), splitConfigSource)
+      duringGeneration = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it.each([
+      ['the config', async (): Promise<(fields: readonly string[]) => void> => saveFields],
+      [
+        'a module',
+        async (): Promise<(fields: readonly string[]) => void> => {
+          await splitTheConfig()
+          return saveLists
+        },
+      ],
+    ])(
+      'refuses two saves of %s that leave its bytes where the request found them',
+      async (_, prepare) => {
+        const write = await prepare()
+        await save(() => write(['body']))
+        const id = parkedId()
+        await save(() => write(['title']))
+
+        beforeLoad = () => write(['body'])
+        duringGeneration = () => write(['title'])
+
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+        expect(replied.join('\n')).toContain('config changed')
+        expect(destructiveApplies()).toHaveLength(0)
+      },
+    )
+
+    it('refuses when a module the load reported is gone by the apply', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+      duringDryRun = () => fs.rmSync(listsFile())
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, parkedId(), (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('puts the migration refs back when it refuses', async () => {
+      const ref = path.join(tempDir, 'migrations', 'app', 'refs', 'db.json')
+      fs.mkdirSync(path.dirname(ref), { recursive: true })
+      fs.writeFileSync(ref, 'the loop found this')
+      duringDryRun = () => fs.writeFileSync(ref, 'the dry run moved this')
+
+      expect(await requestDatabaseUpdate(tempDir, 'deadbeef', () => {})).toBe(false)
+
+      expect(fs.readFileSync(ref, 'utf-8')).toBe('the loop found this')
+    })
+
     it('does not refuse a request whose inputs did not move', async () => {
       await splitTheConfig()
       await save(() => saveLists(['body']))
@@ -986,6 +1059,7 @@ describe('devCommand', () => {
       saveLists(['title', 'first'])
       duringApply = write
 
+      await pastClockTick()
       expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
 
       said.length = 0
@@ -1115,11 +1189,14 @@ describe('devCommand', () => {
         ).toHaveLength(0)
       })
 
-      it('still refuses any other id', async () => {
+      it('still refuses any other id, and says the promote is unfinished', async () => {
         await failedApply()
 
         unblockPromotion()
-        expect(await requestDatabaseUpdate(tempDir, 'deadbeef', () => {})).toBe(false)
+        const replied: string[] = []
+        expect(await requestDatabaseUpdate(tempDir, 'deadbeef', (m) => replied.push(m))).toBe(false)
+        expect(replied.join('\n')).toContain('finish promoting')
+        expect(replied.join('\n')).not.toContain('already matches')
         expect(fs.statSync(live.contractModule).isFile()).toBe(true)
         expect(fs.existsSync(live.contractJson)).toBe(false)
       })
@@ -1189,6 +1266,7 @@ describe('devCommand', () => {
         vi.mocked(runPrismaCli).mock.calls.filter(([, args]) => !args.includes('--dry-run')),
       ).toHaveLength(0)
       expect(fs.existsSync(path.join(tempDir, '.opensaas', 'staged'))).toBe(false)
+      await pastClockTick()
       expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
     })
   })
@@ -1286,6 +1364,7 @@ describe('devCommand', () => {
       expect(await requestDatabaseUpdate(tempDir, 'deadbeef', () => {})).toBe(false)
       expect(applies).toBe(0)
 
+      await pastClockTick()
       expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
       expect(applies).toBe(1)
 
@@ -1786,6 +1865,7 @@ describe('devCommand', () => {
       const moduleA = path.join(tempDir, 'a.ts')
       const moduleB = path.join(tempDir, 'b.ts')
       fs.writeFileSync(moduleA, 'export const a = 1\n')
+      fs.writeFileSync(moduleB, 'export const b = 1\n')
 
       const { paths: live } = resolveOutputPaths(tempDir)
       const staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
@@ -1799,7 +1879,6 @@ describe('devCommand', () => {
             resolvedModules: [moduleA],
           }
         }
-        fs.writeFileSync(moduleB, 'export const b = 1\n')
         return {
           paths: staged,
           livePaths: live,
@@ -1818,8 +1897,7 @@ describe('devCommand', () => {
       startLoop({ appCommand: ['node', 'server.mjs'] })
       await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
 
-      // No prior config edit — `staged` is undefined, so this drives its own
-      // fresh stage rather than reusing a parked one.
+      await pastClockTick()
       const ok = await requestDatabaseUpdate(tempDir, undefined, () => {})
       expect(ok).toBe(true)
 

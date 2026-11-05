@@ -8,6 +8,8 @@ import {
   STAGED_ROOT_PRISMA_CONFIG,
 } from '../generator/output-paths.js'
 import {
+  changedSince,
+  filesystemNow,
   PartialPromotionError,
   planId,
   promoteStagedGeneration,
@@ -351,5 +353,64 @@ describe('reading a plan out of the CLI envelope', () => {
     expect(
       readPlan(envelope({ mode: 'dry-run', dataLoss: [], plan: { operations: [] } })),
     ).toBeUndefined()
+  })
+})
+
+describe('changedSince', () => {
+  let tempDir: string
+  let file: string
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'changed-since-'))
+    fs.mkdirSync(path.join(tempDir, '.opensaas'))
+    file = path.join(tempDir, 'lists.ts')
+    fs.writeFileSync(file, 'export const lists = {}\n')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30))
+
+  it('is false for a file last written before the moment', async () => {
+    await tick()
+    expect(changedSince([file], filesystemNow(tempDir))).toBe(false)
+  })
+
+  it('is true for a file written after the moment', async () => {
+    await tick()
+    const since = filesystemNow(tempDir)
+    await tick()
+    fs.writeFileSync(file, 'export const lists = { changed: true }\n')
+
+    expect(changedSince([file], since)).toBe(true)
+  })
+
+  it('is true for a stamp equal to the moment, which a save in the same tick reads as', () => {
+    const { mtimeMs, ctimeMs } = fs.statSync(file)
+
+    expect(changedSince([file], Math.max(mtimeMs, ctimeMs))).toBe(true)
+  })
+
+  it('sees a write that kept its old modification time, through the change time', async () => {
+    const { mtime } = fs.statSync(file)
+    await tick()
+    const since = filesystemNow(tempDir)
+    await tick()
+    fs.utimesSync(file, mtime, mtime)
+
+    expect(fs.statSync(file).mtimeMs).toBeLessThan(since)
+    expect(changedSince([file], since)).toBe(true)
+  })
+
+  it('is true for a file that can no longer be read', () => {
+    expect(changedSince([path.join(tempDir, 'gone.ts')], 0)).toBe(true)
+  })
+
+  it('leaves no marker behind', () => {
+    filesystemNow(tempDir)
+
+    expect(fs.readdirSync(path.join(tempDir, '.opensaas'))).toEqual([])
   })
 })

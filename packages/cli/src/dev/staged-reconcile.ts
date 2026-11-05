@@ -330,6 +330,31 @@ export function promoteStagedGeneration(
   fs.rmSync(stagingDir, { recursive: true, force: true })
 }
 
+/**
+ * The current moment on the filesystem's own clock. A stamp taken this way has
+ * the granularity of the files it is compared with, however coarse: a later
+ * save cannot read as earlier, and one in the same tick compares equal.
+ */
+export function filesystemNow(cwd: string): number {
+  const marker = path.join(cwd, '.opensaas', 'request-started')
+  fs.writeFileSync(marker, '')
+  const { mtimeMs } = fs.statSync(marker)
+  fs.rmSync(marker)
+  return mtimeMs
+}
+
+/** Whether any path was written at or after `since`, or can no longer be read. */
+export function changedSince(paths: readonly string[], since: number): boolean {
+  return paths.some((file) => {
+    try {
+      const { mtimeMs, ctimeMs } = fs.statSync(file)
+      return mtimeMs >= since || ctimeMs >= since
+    } catch {
+      return true
+    }
+  })
+}
+
 /** Formats a plan the way the loop reports one that it is not applying. */
 export function describePlan(plan: ReconcilePlan): string[] {
   const lines = plan.operations.map(

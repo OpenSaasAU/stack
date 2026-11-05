@@ -15,7 +15,9 @@ import { loadOpenSaasConfig, loadProjectEnvFile, runPrismaCli } from '../generat
 import { createAppRunner, type AppRunner } from '../dev/app-runner.js'
 import { startControlChannel, type ControlChannel, type ControlReply } from '../dev/control.js'
 import {
+  changedSince,
   describePlan,
+  filesystemNow,
   planId,
   planDatabaseUpdate,
   promoteStagedGeneration,
@@ -248,10 +250,11 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
   }
 
   /**
-   * What a generation was made from: `before`, read ahead of it, for every
-   * module already in the graph, so an edit landing while it generates or plans
-   * still reads as unreconciled. A module the generation newly reached had no
-   * earlier read, so this has to run as soon as generation returns.
+   * The bytes the watcher's skip compares a later save with: `before`, read ahead
+   * of a generation, for every module already in the graph, so an edit landing
+   * while it generates or plans still reads as unreconciled. A module the
+   * generation newly reached had no earlier read, so its bytes are read here,
+   * which may be after generation read it.
    */
   const modulesGeneratedFrom = (
     generation: GenerationResult,
@@ -367,14 +370,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (trimmed.length > 0) say(trimmed)
   }
 
-  const readConfigSource = (): string | undefined => {
-    try {
-      return fs.readFileSync(configPath, 'utf-8')
-    } catch {
-      return undefined
-    }
-  }
-
   const sessionConsent = options.yes === true || process.env.OPENSAAS_DEV_YES === '1'
 
   const onConfigChange = async (): Promise<void> => {
@@ -479,16 +474,13 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       reply.log(message)
     }
 
+    const startedAt = filesystemNow(cwd)
     const refs = snapshotMigrationRefs(cwd)
 
     // Always from disk, so a plan id is only ever compared with what the config
     // wants now. What the watcher last saw says nothing about this generation,
     // so its next event reconciles rather than skips.
     reconciledSource = undefined
-    reconciledModules = new Map()
-
-    const source = readConfigSource()
-    const modulesAtRequest = snapshotModules(watchedModules)
 
     const generation = await stage(say)
     if (generation === undefined) {
@@ -496,7 +488,6 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
       return
     }
-    const generatedModules = modulesGeneratedFrom(generation, modulesAtRequest)
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -533,20 +524,27 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       planned.plan.operations.length === 0 && requestedPlanId === unpromotedPlanId
 
     if (requestedPlanId !== undefined && requestedPlanId !== id && !retryingPromote) {
-      refuse(
-        planned.plan.operations.length === 0
-          ? `Plan ${requestedPlanId} is no longer current: the database already matches the config, so nothing was applied.`
-          : `Plan ${requestedPlanId} is not the current plan, so nothing was applied. To apply the config as it stands, run \`pnpm db:update\`.`,
-      )
+      if (planned.plan.operations.length > 0) {
+        refuse(
+          `Plan ${requestedPlanId} is not the current plan, so nothing was applied. To apply the config as it stands, run \`pnpm db:update\`.`,
+        )
+      } else if (unpromotedPlanId === undefined) {
+        refuse(
+          `Plan ${requestedPlanId} is no longer current: the database already matches the config, so nothing was applied.`,
+        )
+      } else {
+        refuse(
+          `Plan ${requestedPlanId} is not the plan whose promote failed, so nothing was applied. The generated files are still behind the database: run \`pnpm db:update\` to finish promoting them.`,
+        )
+      }
       return
     }
 
-    // Only ever refuses: the id check above is what makes a plan valid, and this
-    // narrows the time a save can land between that plan and the apply.
-    if (
-      readConfigSource() !== source ||
-      !moduleSnapshotsEqual(snapshotModules([...generatedModules.keys()]), generatedModules)
-    ) {
+    // Only ever refuses: the id check above is what makes a plan valid. This
+    // catches a save between the start of the request and here, whatever
+    // generation happened to read. `resolvedModules` comes from this request's
+    // own load, so it includes a module only this request reached.
+    if (changedSince([configPath, ...generation.resolvedModules], startedAt)) {
       refuse(
         'The config changed while this request was planning, so nothing was applied. Run the command again to plan from the config as it stands.',
       )
