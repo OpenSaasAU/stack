@@ -1,6 +1,7 @@
 // The row lock's second statement: the engine-composed locking `SELECT` over
-// the primary keys a scoped read returned, and the advisory lock beside it. Prisma owns quoting, placeholders, codecs and the executor; the stack
-// owns the clause text. See ADR-0047 and ADR-0062.
+// the primary keys a scoped read returned, and the advisory lock beside it.
+// Prisma owns quoting, placeholders, codecs and the executor; the stack owns
+// the clause text. See ADR-0047, ADR-0062 and ADR-0078.
 
 import type { ParamRef, RuntimeScope, SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
 import { param } from '@prisma/orm-postgres/relational-core'
@@ -34,10 +35,6 @@ const ROW_LOCK_CLAUSES = {
   forNoKeyUpdate: ' FOR NO KEY UPDATE',
 } as const
 
-/**
- * The locking clause the lock statement ends in. The engine picks it per call
- * site, and no surface takes it as an argument (ADR-0078).
- */
 export type RowLockStrength = keyof typeof ROW_LOCK_CLAUSES
 
 /**

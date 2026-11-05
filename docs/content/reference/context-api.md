@@ -398,6 +398,8 @@ async function book(context: Context, slotId: string) {
 
 Take the lock **before** inserting a child of the locked row. The insert's foreign-key check holds a lock on the parent that `forUpdate()` conflicts with, so two racers that insert first and lock second deadlock, and one fails with a `DatabaseError`.
 
+For the same reason, take `forUpdate()` **before** a root `update` of the row rather than after it, and not inside that row's own update hook. A root `update` holds a weaker lock that lets a racer's child insert through, so strengthening it afterwards can deadlock with that racer.
+
 `advisoryLock(key)` takes PostgreSQL's transaction-scoped advisory lock, waiting until it is free and releasing when the transaction ends however it ends. It locks a number rather than rows, which is why it sits on the transaction context and not on `db`.
 
 #### Cost: a row lock is two round trips

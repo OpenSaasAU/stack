@@ -27,6 +27,7 @@ const OPEN = {
 }
 
 let afterChildInsert: () => Promise<void> = async () => {}
+let beforeThreadWrite: () => Promise<void> = async () => {}
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -44,6 +45,9 @@ const config: OpenSaasConfig = {
           operation === 'update'
             ? { ...resolvedData, updates: Number(item?.updates) + 1 }
             : resolvedData,
+        beforeOperation: async () => {
+          await beforeThreadWrite()
+        },
       },
     },
     Reply: {
@@ -151,7 +155,11 @@ describe.skipIf(escape.kind !== 'postgres')(
       return 'finished'
     }
 
-    /** Open a transaction on its own connection and sit on what `take` locked. */
+    /**
+     * Sit on the lock `take` acquires, on a connection of its own. A root write
+     * parks in its own hook, before its statement runs, so all it holds is the
+     * engine's lock.
+     */
     async function hold(
       take: (tx: Transaction) => Promise<unknown>,
     ): Promise<{ release(): Promise<void> }> {
@@ -163,8 +171,14 @@ describe.skipIf(escape.kind !== 'postgres')(
       const taken = new Promise<void>((resolve) => {
         acquired = resolve
       })
+      beforeThreadWrite = async () => {
+        beforeThreadWrite = async () => {}
+        acquired()
+        await released
+      }
       const done = racer().transaction(async (tx) => {
         await take(tx)
+        beforeThreadWrite = async () => {}
         acquired()
         await released
       })
@@ -199,6 +213,7 @@ describe.skipIf(escape.kind !== 'postgres')(
     beforeEach(async () => {
       await database.truncate()
       afterChildInsert = async () => {}
+      beforeThreadWrite = async () => {}
       const row = await database.context(null).db.Thread.create({ data: { name: 't' } })
       threadId = String(row?.id)
     })
@@ -359,10 +374,14 @@ describe.skipIf(escape.kind !== 'postgres')(
       'a root update that waited on a root delete finds no row',
       async () => {
         const holder = await hold(rootDelete)
-        const contending = rootUpdate(racer())
+        let contending: Promise<unknown> = Promise.resolve()
+        try {
+          contending = rootUpdate(racer())
 
-        expect(await outcome(contending)).toMatch(NO_KEY_LOCK)
-        await holder.release()
+          expect(await outcome(contending)).toMatch(NO_KEY_LOCK)
+        } finally {
+          await holder.release()
+        }
         expect(await contending).toBeNull()
       },
       CONTENTION,

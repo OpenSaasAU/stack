@@ -266,7 +266,7 @@ Stated so the build's documentation says them rather than a user discovering the
 - Every to-one read off an included row is a null-check, `NOT NULL` column or not. (ADR-0058)
 - A secured read holds its whole result; a large read is bounded by the caller. (ADR-0046)
 - A row lock is two round trips; `forUpdate().all()` is bounded; `hashtext` collisions on `advisoryLock` cost spurious serialisation, never a missed lock. (ADR-0047, 0062)
-- A root update locks `FOR NO KEY UPDATE`, so it no longer holds off a child insert; a child insert followed by `.forUpdate()` on the parent, or by a root update changing a unique column, can still deadlock. (ADR-0078)
+- A root update locks `FOR NO KEY UPDATE`, so it no longer holds off a child insert. That fixed child-insert-then-parent-update and regressed rarer shapes that did not deadlock on `FOR UPDATE`: update then `.forUpdate()`, update then delete, `.forUpdate()` in the row's own update hook (no fix on its own side; child-insert paths must lock the parent first), and an update changing a unique column or a one-to-one owner's foreign key, each against a racer that inserts a child and then updates the parent. Insert child then `.forUpdate()` on the parent also deadlocks. The loser rolls back whole and can retry; #2158 makes that classifiable. (ADR-0078)
 - A required-foreign-key cycle is unwritable through the secured surface. (ADR-0050)
 - `contains` and text `eq` in filter URLs become case-insensitive; a to-many count filter other than presence degrades to free text; sorting by a to-many count is gone. (ADR-0055)
 - An approximate HNSW scan under a selective access filter can return fewer than `limit` rows; exactness holds under an exact scan and is bounded by the iterative-scan budget otherwise. (ADR-0045)
