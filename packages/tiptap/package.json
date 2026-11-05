@@ -68,7 +68,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@tiptap/core": "^3.32.0",
+    "@tiptap/core": "^3.32.2",
     "@tiptap/extension-placeholder": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
