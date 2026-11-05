@@ -26,9 +26,9 @@ Strength is a closed set the engine picks at each call site. It travels as a req
 
 ### What the weaker lock costs
 
-`FOR NO KEY UPDATE` is a trade, not a pure fix. It lets a racer's child `INSERT` through while a root update holds its target, and that racer then holds `FOR KEY SHARE` on the row. A transaction that holds the root update's lock and goes on to need `FOR UPDATE` on the same row now deadlocks against a racer that inserts a child and then updates the parent. **This did not happen when a root update took `FOR UPDATE`**, because the racer parked at its `INSERT`. It is a regression, accepted because the shape #2157 fixes is common and these are rarer, and because the failure is a clean rollback rather than bad data.
+`FOR NO KEY UPDATE` is a trade, not a pure fix. It lets a foreign-key check through while a root update holds its target, so a racer inserting a child, or repointing an existing child to the row with `connect`, ends up holding `FOR KEY SHARE` on the row. A transaction that holds the root update's lock and goes on to need `FOR UPDATE` on the same row now deadlocks against a racer that holds that `FOR KEY SHARE` and then waits on anything the transaction holds. **This did not happen when a root update took `FOR UPDATE`**, because the racer parked at its foreign-key check. It is a regression, accepted because the shape #2157 fixes is common and these are rarer, and because the failure is a clean rollback rather than bad data.
 
-Measured through the engine on Postgres 14. T1 is the transaction below, and T2 inserts a child and then updates the parent, arriving once T1 holds its lock:
+Measured through the engine on Postgres 14. T1 is the transaction below, and T2 is the plainest such racer: it inserts a child and then updates the parent, arriving once T1 holds its lock:
 
 | T1                                                                                         | `FOR NO KEY UPDATE` (this decision) | `FOR UPDATE` (the first version)  | Update's engine lock removed |
 | ------------------------------------------------------------------------------------------ | ----------------------------------- | --------------------------------- | ---------------------------- |
@@ -39,12 +39,15 @@ Measured through the engine on Postgres 14. T1 is the transaction below, and T2 
 | `connect` changing a one-to-one owner's unique foreign key, T2 arriving in the hook window | `deadlock detected`                 | OK                                | OK                           |
 | Control: update changing neither, T2 arriving in the hook window                           | OK                                  | OK                                | OK                           |
 
-The two unique-column rows need no `.forUpdate()` from anyone. Postgres escalates an `UPDATE` of a column with a unique index to `FOR UPDATE` by itself, so the write upgrades its own lock when its statement runs. The exposure is the whole hook window, from the engine lock to that statement: on the first version a racer arriving there parked at its `INSERT`, and with no engine lock at all it would have finished first. The engine cannot pick a stronger lock for these writes, because it locks before hooks have settled the payload.
+The racer need not insert, and what it waits on need not be the row. Two further shapes, measured the same way, deadlock under this decision and pass on `FOR UPDATE`: T2 repoints an existing child to the row with `connect` and then updates the row, against T1's `.forUpdate()` in its own update hook; and T1 updates row B and then changes a unique column on row A, while T2 inserts a child of A and then updates B, never touching A.
+
+The two unique-column rows need no `.forUpdate()` from anyone. Postgres escalates an `UPDATE` of a column in a unique index to `FOR UPDATE` by itself, so the write upgrades its own lock when its statement runs. Changing one member of a composite unique index deadlocks in the hook window too. The exposure is the whole hook window, from the engine lock to that statement: on the first version a racer arriving there parked at its `INSERT`, and with no engine lock at all it would have finished first. The engine cannot pick a stronger lock for these writes, because it locks before hooks have settled the payload.
 
 What each side can do:
 
-- **Update then `.forUpdate()` or delete, and the unique-column updates:** take `.forUpdate()` on the row before the update, in a `context.transaction`. That holds whether or not the racer has already inserted.
-- **`.forUpdate()` inside the row's own update hook has no fix on its own side**, because the engine lock is taken before any hook runs. The only fix is on the racer's side: every path that inserts a child takes `.forUpdate()` on the parent first.
+- **The update's caller** takes `.forUpdate()` on the row before the update, in a `context.transaction`. That covers every row of the table above, `.forUpdate()` in the row's own update hook included, because the hook then re-takes a lock the transaction already holds and nothing upgrades. It holds whether or not the racer has already inserted.
+- **The racer's side:** every path that inserts or repoints a child takes `.forUpdate()` on the parent first.
+- **A hook cannot fix its own case alone.** The engine lock is taken before any hook runs, and a hook cannot make every caller lock first: the admin UI and MCP call `update` directly. One of the two fixes above has to hold on every path.
 - **Either way, a caller can retry.** The loser rolls back whole. Until #2158 lands it reaches the caller as a generic `DatabaseError` with `deadlock detected` on `cause`, so `isSerializationFailure` does not match it and a retry loop has to inspect the `cause`; #2158 is what gives it a retryable classification.
 
 ## Consequences
@@ -53,7 +56,7 @@ What each side can do:
 - The lock is taken on the target's identity; scope is checked by the re-resolution, so a write waiting on a row that moved out of scope returns `null` once the lock is granted.
 - Isolation levels are unchanged (ADR-0042). Locking rows touched by `connect` reachability checks is out of scope.
 - A list with no single-column primary key, and a context whose client cannot compose the lock statement, write without the lock rather than refusing writes that worked before.
-- A root update no longer holds off a concurrent child `INSERT`. A rule that depends on a parent's children not changing during an update takes `.forUpdate()` on the parent before the update and on every path that inserts a child. Taking it inside the row's own update hook is the case above with no fix on its own side.
+- A root update no longer holds off a concurrent child `INSERT`. A rule that depends on a parent's children not changing during an update takes `.forUpdate()` on the parent before the update and on every path that inserts or repoints a child. Taking it only inside the row's own update hook is the deadlock above.
 - Inserting a child and then taking `.forUpdate()` on its parent has the same deadlock this record fixed for root updates, and stays. Take the lock before the insert, which is the order the capacity gate already uses. Whether `.forUpdate()` should weaken is a separate question.
 - The #2157 shape itself still deadlocks when the racers change a unique column, since each `UPDATE` escalates against the other's `FOR KEY SHARE`.
 - A `first()` in a hook followed by an `update` computed from it is an application-level lost update: the read is not under the lock. `item` in `resolveInput` is read under it.

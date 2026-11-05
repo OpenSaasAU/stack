@@ -312,8 +312,8 @@ const result = await context.transaction(async (tx) => {
   `FOR NO KEY UPDATE`, so a plain insert-then-update does not have this problem,
   but a transaction that holds it and then needs `FOR UPDATE` on the same row
   does: update then `forUpdate()`, update then delete, `forUpdate()` in the
-  row's own update hook, or an update changing a unique column. See root
-  `CLAUDE.md`'s costs and ADR-0078.
+  row's own update hook, or an update changing a column in a unique index. See
+  root `CLAUDE.md`'s costs and ADR-0078.
 - **`tx.advisoryLock(key)`** takes PostgreSQL's transaction-scoped advisory lock
   for an invariant that is not a row. It sits on the transaction context rather
   than on `db`, because it locks a number and belongs to no list. The key is
@@ -344,8 +344,10 @@ the write and rolls back with it. It also carries a row-lock lane bound to
 that same transaction (ADR-0047), so an in-transaction hook can take
 `forUpdate()` on a root write; the lock is held through persistence. Aim it at
 another row, such as a parent: on the row the update itself targets it upgrades
-the root update's lock, which deadlocks against a racer that inserted a child
-and then updates that row, and the hook has no way to avoid that (ADR-0078). The
+the root update's lock, which deadlocks against a racer that holds that row's
+foreign-key lock, from inserting or repointing a child, and then waits on this
+transaction. The hook has no way to avoid that alone, because it cannot make
+every caller lock first (ADR-0078). The
 boundary hooks run outside the transaction and still refuse it. It carries the
 write's transaction owner (ADR-0028) and the hook's own resolve chain (ADR-0023), and does NOT re-execute
 plugin runtimes.
