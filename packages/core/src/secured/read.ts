@@ -1146,9 +1146,10 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * `item.posts.every(…)` and `item.posts.length === 0` fail open, so a `count()`
  * or a `combine` of counts reaches the caller of a relation the plain include
  * strips, and a `contains` count answers questions about the stripped rows'
- * text. A rule that reaches into a relation must declare it, the same
- * requirement `needs` already states for a computed field's `resolveOutput`.
- * Closing this is tracked in a follow-up.
+ * text. A `read` rule on a scalar field that inspects the relation opens the
+ * same way, on the same stand-in. A rule that reaches into a relation must
+ * declare it, the same requirement `needs` already states for a computed
+ * field's `resolveOutput`. Closing this is tracked in #2210.
  *
  * A caller-shaped rows branch with no live declared dependency leaves such a
  * rule looking at nothing, as a shaped plain include does: an `Array.isArray`

@@ -4,7 +4,9 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { getContext } from '../context/index.js'
 import { checkbox, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
+import { createPlanRecorder } from '../testing/plans.js'
 import { createMcpHandlers } from './handler.js'
+import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 
 const BOOT = 120_000
 
@@ -12,6 +14,13 @@ function noPrivateRows(value: unknown): boolean {
   return (
     Array.isArray(value) &&
     value.every((row) => typeof row === 'object' && row !== null && row.public !== false)
+  )
+}
+
+function limitsBelow(node: unknown): number[] {
+  if (typeof node !== 'object' || node === null) return []
+  return Object.entries(node).flatMap(([key, value]) =>
+    key === 'limit' && typeof value === 'number' ? [value] : limitsBelow(value),
   )
 }
 
@@ -72,6 +81,7 @@ const config: OpenSaasConfig = {
 
 describe('a read rule on a relation counted over MCP', () => {
   let database: TestDatabase
+  const recorder = createPlanRecorder()
 
   function contextFor(): (session?: Session) => Promise<AccessContext> {
     const orm = ormClientFor(database.data, database.client.orm)
@@ -89,6 +99,14 @@ describe('a read rule on a relation counted over MCP', () => {
       ormHandle: orm,
       _resolveOutputChain: [],
     })
+  }
+
+  function nestedLimits(): number[] {
+    return recorder.plans.flatMap((plan) =>
+      Object.entries(plan.ast).flatMap(([key, value]) =>
+        key === 'limit' ? [] : limitsBelow(value),
+      ),
+    )
   }
 
   async function query(fields: Record<string, unknown>): Promise<Record<string, unknown>[]> {
@@ -118,7 +136,7 @@ describe('a read rule on a relation counted over MCP', () => {
   }
 
   beforeAll(async () => {
-    database = await createTestDatabase(config)
+    database = await createTestDatabase(config, { middleware: [recorder.middleware] })
   }, BOOT)
 
   afterAll(async () => {
@@ -203,6 +221,27 @@ describe('a read rule on a relation counted over MCP', () => {
       await expect(query({ notes: { count: true, orderBy: { nope: 'asc' } } })).rejects.toThrow(
         /nope/,
       )
+    },
+    BOOT,
+  )
+
+  test.each([
+    ['a rule that reads its rows', 'notes'],
+    ['a rule that never reads the relation', 'logs'],
+  ])(
+    'a count-only read under %s is bounded per parent',
+    async (_, relation) => {
+      recorder.clear()
+      await query({ [relation]: { count: true } })
+      expect(nestedLimits()).toEqual([MCP_NESTED_TAKE_DEFAULT])
+
+      recorder.clear()
+      await query({ [relation]: { count: true, take: 3 } })
+      expect(nestedLimits()).toEqual([3])
+
+      recorder.clear()
+      await query({ [relation]: { count: true, take: MCP_NESTED_TAKE_MAX + 1 } })
+      expect(nestedLimits()).toEqual([MCP_NESTED_TAKE_MAX])
     },
     BOOT,
   )
