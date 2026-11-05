@@ -141,6 +141,7 @@ export default async function AdminPage() {
 - `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
 - `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
+- `onSignOut?` - Ends the session, then the admin navigates to `/sign-in`. It must be a server action, because it crosses to a client component; see [Auth actions](/docs/reference/auth#auth-actions) for `signOutAction`. Without it no Sign Out control renders
 - `navigation?` - Replaces the built-in sidebar wholesale (see [Admin chrome slot](#admin-chrome-slot-and-navitems) below)
 - `navItems?` - Adds host-supplied links to the built-in sidebar (see below); ignored when `navigation` is also supplied
 

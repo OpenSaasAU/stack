@@ -254,7 +254,7 @@ bare `/sign-in` or `/sign-up`:
 The pre-built forms never call the auth API from the browser. Each one takes an
 **auth action** — a `'use server'` function in your own app that calls
 `auth.api.*` on the instance from `lib/auth.ts` — as a prop, one prop per concern.
-The package ships the forms and the contract types; you own the four functions,
+The package ships the forms and the contract types; you own the functions,
 conventionally in `lib/actions/auth.ts`.
 
 An email action resolves to `AuthActionResult` (`{ success: true }` or
@@ -293,6 +293,10 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
@@ -443,6 +447,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 
@@ -477,10 +482,22 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={await searchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
 ```
+
+`onSignOut` is what ends the session. The admin's Sign Out control renders only
+when it has a handler, and it must be a server action: a plain function cannot
+cross to the client component that holds the button. `signOutAction` takes no
+identity argument, because better-auth reads the session from the request's own
+cookie, deletes its row and clears the cookie. If the action rejects, the admin
+stays on the current page and tells the user they are still signed in.
+
+With `session.cookieCache` enabled, sign-out clears the cached session in the
+browser that signed out, but a copy of that cookie held anywhere else keeps
+validating until the cache's `maxAge` runs out.
 
 ### Protecting Server Actions
 
@@ -1970,6 +1987,10 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
     return { success: false, error: message }
   }
 }
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+}
 ```
 
 ```tsx
@@ -1993,6 +2014,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
 import { getUrlKey } from '@opensaas/stack-core'
 
@@ -2027,6 +2049,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={await searchParams}
       basePath="/admin"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }

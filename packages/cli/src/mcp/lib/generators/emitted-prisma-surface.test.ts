@@ -360,6 +360,17 @@ describe('the code the feature wizard emits', () => {
     expect(sources.flatMap((source, index) => parseErrors(`${name}-${index}`, source))).toEqual([])
   })
 
+  it.each(CASES.filter(({ name }) => name.startsWith('authentication')))(
+    'emits a real sign-out and tells the reader to wire it for $name',
+    ({ implementation }) => {
+      const actions = implementation.files.find((file) => file.path === 'lib/actions/auth.ts')
+
+      expect(actions?.content).toContain('export async function signOutAction(): Promise<void>')
+      expect(actions?.content).toContain('auth.api.signOut({ headers: await headers() })')
+      expect(implementation.nextSteps.join('\n')).toContain('onSignOut={signOutAction}')
+    },
+  )
+
   it.each(CASES)('names no dead config key or command for $name', ({ implementation }) => {
     const offenders = emittedStrings(implementation).flatMap((emitted) =>
       DEAD_SURFACE.flatMap(({ pattern, fix }) =>

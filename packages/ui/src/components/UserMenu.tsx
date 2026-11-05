@@ -1,24 +1,25 @@
 'use client'
 
-import { useRouter } from 'next/navigation.js'
+import { useState, useTransition } from 'react'
+import { unstable_rethrow } from 'next/navigation.js'
 import { Button } from '../primitives/button.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
 export interface UserMenuProps {
   userName?: string
   userEmail?: string
+  /**
+   * Ends the session, then the menu navigates to `/sign-in`. Without it no Sign
+   * Out control renders. On a rejection the menu stays put and says the user is
+   * still signed in; a `redirect()` from the action is followed as usual.
+   */
   onSignOut?: () => Promise<void>
 }
 
 export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
-  const router = useRouter()
+  const [isSigningOut, startSignOut] = useTransition()
+  const [signOutFailed, setSignOutFailed] = useState(false)
 
-  const handleSignOut = async () => {
-    if (onSignOut) {
-      await onSignOut()
-    }
-    router.push('/sign-in')
-  }
   return (
     <div className="border-t border-border p-4">
       <div className="mb-3 flex items-center space-x-3">
@@ -36,10 +37,37 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
       </div>
       <div className="flex items-center gap-2">
         <ThemeToggle className="flex-1 justify-start" />
-        <Button onClick={handleSignOut} variant="outline" size="sm" className="flex-1 text-sm">
-          Sign Out
-        </Button>
+        {onSignOut && (
+          <Button
+            onClick={() =>
+              startSignOut(async () => {
+                setSignOutFailed(false)
+                try {
+                  await onSignOut()
+                } catch (error) {
+                  unstable_rethrow(error)
+                  setSignOutFailed(true)
+                  return
+                }
+                // A document navigation, not router.push: Next's client cache would
+                // otherwise hand the signed-in admin back on Back.
+                window.location.assign('/sign-in')
+              })
+            }
+            disabled={isSigningOut}
+            variant="outline"
+            size="sm"
+            className="flex-1 text-sm"
+          >
+            Sign Out
+          </Button>
+        )}
       </div>
+      {signOutFailed && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          Sign out failed. You are still signed in.
+        </p>
+      )}
     </div>
   )
 }

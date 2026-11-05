@@ -97,6 +97,7 @@ import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/lib/actions/auth'
 
 async function serverAction(props: ServerActionInput) {
   'use server'
@@ -132,12 +133,21 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
       searchParams={resolvedSearchParams}
       basePath="{ADMIN_PATH}"
       serverAction={serverAction}
+      onSignOut={signOutAction}
     />
   )
 }
 ```
 
 Replace `{SEGMENT_NAME}` with the last segment of the admin path (e.g. `admin`) and `{ADMIN_PATH}` with the full path (e.g. `/admin`).
+
+`onSignOut` is what ends the session, and the Sign Out control only renders when it is passed. If `lib/actions/auth.ts` has no `signOutAction`, add it to that `'use server'` file:
+
+```typescript
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+}
+```
 
 **Important**: If `getSession` is not at `@/lib/auth`, check for it at its actual location (e.g. `@/lib/auth/index`, `@/app/lib/auth`) and use the correct import path.
 

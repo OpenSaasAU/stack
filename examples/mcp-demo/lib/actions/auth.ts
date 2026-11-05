@@ -26,3 +26,7 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
     return { success: false, error: errorMessage(err, 'Sign in failed') }
   }
 }
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+}

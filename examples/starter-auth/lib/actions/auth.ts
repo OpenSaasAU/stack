@@ -70,3 +70,7 @@ export async function resetPasswordAction(input: ResetPasswordInput): Promise<Au
     return { success: false, error: errorMessage(err, 'Failed to reset password') }
   }
 }
+
+export async function signOutAction(): Promise<void> {
+  await auth.api.signOut({ headers: await headers() })
+}
