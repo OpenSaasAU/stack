@@ -2151,6 +2151,7 @@ Entries are **column keys** on the same list: stored columns and immediate relat
 - **One hop, non-transitive.** A declared relation is fetched; what that relation's own computed fields need is that relation's business.
 - **Private plumbing, not an implicit include.** Each dependency is fetched wherever the field is computed — at the root of a read and at every nested level alike — and then stripped from the result unless the caller named it too. Adding or removing one changes the field's implementation, never the shape of every read of the list.
 - **Scoped like any other read.** A relation dependency goes through the Access Filter exactly as a caller-named include does. A session that cannot query it does not get it fetched, and the hook sees nothing in its place.
+- **A write returns what a read would.** `create` and `update` compute the field over the row as `first()` reads it inside the write's transaction, and `delete` over the row as it stood when the delete locked it, before any hook. A list declaring a relation pays one more read per write, and that read fetches every visible child on every write, while the row lock is held: `update` took 4 ms at 1k children, 33 ms at 20k and 150 ms at 100k, against 1 ms for a list with no relation in `needs`.
 
 The generated `Lists.<List>.TypeInfo` narrows the `item` a `resolveOutput` receives to exactly the declared set plus the list's system fields, so reading an undeclared column is a compile error in a config annotated with it.
 

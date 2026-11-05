@@ -917,7 +917,10 @@ export async function resolveIncludes(
  * naming nothing is `validateNeedsDeclarations`' refusal rather than an
  * include this engine invents.
  */
-function declaredRelations(ctx: ResolveContext, selected?: ReadonlySet<string>): string[] {
+export function declaredRelations(
+  ctx: Pick<ResolveContext, 'config' | 'listName' | 'listConfig'>,
+  selected?: ReadonlySet<string>,
+): string[] {
   return [...resolveDeclaredDependencies(ctx.config, ctx.listName, selected).relations].filter(
     (name) => {
       const fieldConfig = Object.hasOwn(ctx.listConfig.fields, name)

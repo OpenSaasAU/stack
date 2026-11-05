@@ -44,6 +44,7 @@ import {
   buildIncludeRequest,
   DECLARED_COUNT_BRANCH_KEY,
   DECLARED_ROWS_BRANCH_KEY,
+  declaredRelations,
   foreignKeyOwningRelations,
   orderList,
   resolveIncludes,
@@ -1417,7 +1418,7 @@ async function visibleRows(
  * this id, resolved as a read would: a filter rule is run as a scoped read of
  * the row's identity on the binding's own handle.
  */
-export async function writtenRowQueryable(
+async function writtenRowQueryable(
   binding: Omit<ReadBinding, 'lock'>,
   id: unknown,
 ): Promise<boolean> {
@@ -1445,6 +1446,49 @@ export async function writtenRowQueryable(
 }
 
 /**
+ * What decides a write's return: `hidden` when the session cannot `query` the
+ * row, `written` when the row the write produced is the whole answer, and
+ * `read` when a computed field on the list declares a relation, so the answer
+ * is the row as `first()` reads it (ADR-0081).
+ */
+export type WrittenRowRead =
+  | { readonly kind: 'hidden' }
+  | { readonly kind: 'written' }
+  | { readonly kind: 'read'; readonly row: OrmRow; readonly plan: ReadPlan }
+
+/** Whether a computed field on this list declares a relation a write's return must fetch. */
+export function writeReturnReadsRelations(binding: Omit<ReadBinding, 'lock'>): boolean {
+  return declaredRelations(binding).length > 0
+}
+
+/** Runs on the binding's own handle: the write's transaction, never a second connection. */
+export async function readWrittenRow(
+  binding: Omit<ReadBinding, 'lock'>,
+  id: unknown,
+): Promise<WrittenRowRead> {
+  if ((typeof id !== 'string' && typeof id !== 'number') || !writeReturnReadsRelations(binding)) {
+    return (await writtenRowQueryable(binding, id)) ? { kind: 'written' } : { kind: 'hidden' }
+  }
+  const plan = await resolvePlan(binding, {
+    predicates: [{ id: { equals: id } }],
+    orders: [],
+    includes: [],
+    distincts: [],
+    lock: false,
+  })
+  if (plan === null) return { kind: 'hidden' }
+  const collection = scope(
+    binding,
+    plan,
+    await whereCombinators(),
+    FIRST_DISPOSITIONS,
+    unreachableRefusal,
+  )
+  const row = await engineRead(binding, () => collection.first())
+  return row === null ? { kind: 'hidden' } : { kind: 'read', row, plan }
+}
+
+/**
  * What a write hands back: the row Field Visibility leaves, then the
  * foreign-key pass a read of the same row would give it, so `create()` and
  * `update()` never return an id `first()` hides. A row the session cannot
@@ -1453,10 +1497,11 @@ export async function writtenRowQueryable(
 export async function visibleWrittenRow(
   binding: Omit<ReadBinding, 'lock'>,
   row: OrmRow,
-  queryable: boolean,
+  read: WrittenRowRead,
 ): Promise<OrmRow> {
   const { listConfig, context, config, listName } = binding
-  if (!queryable) {
+  if (read.kind === 'read') return (await visibleRows(binding, [read.row], read.plan))[0]
+  if (read.kind === 'hidden') {
     const kept: OrmRow = {}
     for (const key of getListDependencies(config, listName).systemFields) {
       if (key in row) kept[key] = row[key]
