@@ -3,7 +3,8 @@
 import { Input } from '../../primitives/input.js'
 import { Button } from '../../primitives/button.js'
 import { cn } from '../../lib/utils.js'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useFieldValidity } from '../../lib/fieldValidity.js'
 import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
 
 export interface PasswordFieldProps {
@@ -34,12 +35,20 @@ export function PasswordField({
   helpText,
 }: PasswordFieldProps) {
   const isSetObject = typeof value === 'object' && value !== null && 'isSet' in value
-  const isPasswordSet = isSetObject ? value.isSet : false
+  // `value` stops being the sentinel at the first keystroke, and Cancel has to restore it.
+  const [loadedSentinel] = useState(isSetObject ? value : null)
+  const sentinel = isSetObject ? value : loadedSentinel
+  const isPasswordSet = sentinel?.isSet ?? false
 
   const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [passwordValue, setPasswordValue] = useState('')
   const [confirmValue, setConfirmValue] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const confirmRef = useRef<HTMLInputElement>(null)
+
+  const isEditing = mode === 'edit' && (isChangingPassword || sentinel === null)
+  const isUnconfirmed = isEditing && showConfirm && passwordValue !== confirmValue
+  const submitRefused = useFieldValidity(name, isUnconfirmed, confirmRef)
 
   if (mode === 'read') {
     return (
@@ -50,7 +59,7 @@ export function PasswordField({
     )
   }
 
-  if (!isChangingPassword && isSetObject) {
+  if (!isEditing) {
     return (
       <FieldRoot>
         <FieldLabel>{label}</FieldLabel>
@@ -69,18 +78,18 @@ export function PasswordField({
     )
   }
 
-  const confirmError =
-    showConfirm && passwordValue !== confirmValue && confirmValue !== ''
-      ? 'Passwords do not match'
-      : undefined
+  let confirmError: string | undefined
+  if (isUnconfirmed && confirmValue !== '') confirmError = 'Passwords do not match'
+  else if (isUnconfirmed && submitRefused)
+    confirmError = `Re-enter ${label.toLowerCase()} to confirm`
 
   const handleCancel = () => {
     setIsChangingPassword(false)
     setPasswordValue('')
     setConfirmValue('')
     setShowPassword(false)
-    if (isSetObject) {
-      onChange(value)
+    if (sentinel !== null) {
+      onChange(sentinel)
     }
   }
 
@@ -125,6 +134,7 @@ export function PasswordField({
             Confirm {label}
           </FieldLabel>
           <Input
+            ref={confirmRef}
             id={`${name}-confirm`}
             name={`${name}-confirm`}
             type={showPassword ? 'text' : 'password'}
@@ -139,7 +149,7 @@ export function PasswordField({
         </FieldRoot>
       )}
 
-      {isSetObject && (
+      {sentinel !== null && (
         <div>
           <Button
             type="button"

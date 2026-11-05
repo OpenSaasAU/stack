@@ -473,3 +473,104 @@ describe('useItemForm update sends only changed fields', () => {
     )
   })
 })
+
+describe('useItemForm with an invalid field', () => {
+  const submit = { preventDefault: () => {} }
+  const focusTarget = () => ({ current: { focus: vi.fn() } })
+
+  it('writes neither edges nor the record, and leaves server errors standing', async () => {
+    const onSubmit = vi.fn(async () => ({
+      success: false as const,
+      error: 'Taken',
+      fieldErrors: { title: 'Taken' },
+    }))
+    const onEdgeWrites = vi.fn(async () => ({ persisted: { posts: [] }, errors: [] }))
+    const onUnchanged = vi.fn()
+    const { result } = renderHook(() =>
+      useItemForm({
+        fields: {
+          title: text(),
+          posts: {
+            ...manyRel(),
+            edgeWrite: { relatedListKey: 'Post', backReferenceField: 'author' },
+          },
+        },
+        initialData: { title: 'Hi', posts: [] },
+        mode: 'update',
+        onSubmit,
+        onEdgeWrites,
+        onUnchanged,
+      }),
+    )
+
+    act(() => {
+      result.current.handleFieldChange('title', 'Taken')
+      result.current.handleFieldChange('posts', ['p1'])
+    })
+    await act(async () => result.current.handleSubmit(submit))
+    expect(result.current.errors).toEqual({ title: 'Taken' })
+    onSubmit.mockClear()
+    onEdgeWrites.mockClear()
+
+    const target = focusTarget()
+    act(() => void result.current.validity.markInvalid('title', target))
+    await act(async () => result.current.handleSubmit(submit))
+
+    expect(onEdgeWrites).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onUnchanged).not.toHaveBeenCalled()
+    expect(target.current.focus).toHaveBeenCalledTimes(1)
+    expect(result.current.errors).toEqual({ title: 'Taken' })
+    expect(result.current.validity.submitRefused).toBe(true)
+  })
+
+  it('refuses for a name outside its fields rather than ignoring the report', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true as const }))
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { title: text() }, mode: 'create', onSubmit }),
+    )
+
+    const target = focusTarget()
+    act(() => void result.current.validity.markInvalid('elsewhere', target))
+    await act(async () => result.current.handleSubmit(submit))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(target.current.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits, and stops reporting a refusal, once the mark is cleared', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true as const }))
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { title: text() }, mode: 'create', onSubmit }),
+    )
+
+    let clearMark = () => {}
+    act(() => {
+      clearMark = result.current.validity.markInvalid('title', focusTarget())
+    })
+    await act(async () => result.current.handleSubmit(submit))
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    act(() => clearMark())
+    await act(async () => result.current.handleSubmit(submit))
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(result.current.validity.submitRefused).toBe(false)
+  })
+
+  it("keeps a remounted field's mark when the old one clears late", async () => {
+    const onSubmit = vi.fn(async () => ({ success: true as const }))
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { title: text() }, mode: 'create', onSubmit }),
+    )
+
+    act(() => {
+      const clearOld = result.current.validity.markInvalid('title', focusTarget())
+      result.current.validity.markInvalid('title', focusTarget())
+      clearOld()
+    })
+    await act(async () => result.current.handleSubmit(submit))
+
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})

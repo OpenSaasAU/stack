@@ -1,6 +1,7 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useCallback, useMemo, useRef, useState, useTransition } from 'react'
+import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
 export type ItemFormAction = 'create' | 'update'
@@ -332,6 +333,8 @@ export interface UseItemFormResult {
   handleFieldChange: (fieldName: string, value: unknown) => void
   handleSubmit: (e: { preventDefault: () => void }) => void
   setGeneralError: (message: string | null) => void
+  /** Provide through `FieldValidityContext` around the rendered fields. */
+  validity: FieldValidityChannel
 }
 
 /**
@@ -361,6 +364,18 @@ export function useItemForm({
   // the edges that are still outstanding rather than the ones already stored.
   const edgeBaseline = useRef<Record<string, unknown>>(initialData)
   const scalarBaseline = useRef<Record<string, unknown> | null>(null)
+  const invalidFields = useRef(new Map<string, FieldFocusTarget>())
+  const [submitRefused, setSubmitRefused] = useState(false)
+
+  const markInvalid = useCallback((fieldName: string, focusTarget: FieldFocusTarget) => {
+    invalidFields.current.set(fieldName, focusTarget)
+    return () => {
+      if (invalidFields.current.get(fieldName) === focusTarget) {
+        invalidFields.current.delete(fieldName)
+      }
+    }
+  }, [])
+  const validity = useMemo(() => ({ markInvalid, submitRefused }), [markInvalid, submitRefused])
 
   const handleFieldChange = (fieldName: string, value: unknown) => {
     // A field the form rendered read-only has no input to accept: its control
@@ -384,6 +399,18 @@ export function useItemForm({
 
   const handleSubmit = (e: { preventDefault: () => void }) => {
     e.preventDefault()
+
+    const invalid = invalidFields.current
+    if (invalid.size > 0) {
+      const firstDeclared = Object.keys(fields).find((name) => invalid.has(name))
+      const [firstMarked] = invalid.values()
+      const target = firstDeclared === undefined ? firstMarked : invalid.get(firstDeclared)
+      setSubmitRefused(true)
+      target?.current?.focus()
+      return
+    }
+
+    setSubmitRefused(false)
     setErrors({})
     setGeneralError(null)
 
@@ -458,5 +485,6 @@ export function useItemForm({
     handleFieldChange,
     handleSubmit,
     setGeneralError,
+    validity,
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useRef } from 'react'
 import { Input } from '../../primitives/input.js'
 import { cn } from '../../lib/utils.js'
 import {
@@ -11,6 +11,7 @@ import {
   FieldWarning,
   FieldReadValue,
 } from './field-shell.js'
+import { useFieldDraft } from './useFieldDraft.js'
 
 export interface BigIntFieldProps {
   name: string
@@ -46,13 +47,18 @@ export function BigIntField({
   mode = 'edit',
   helpText,
 }: BigIntFieldProps) {
-  const [editingValue, setEditingValue] = useState<string | null>(null)
-  const [parseError, setParseError] = useState<string | undefined>()
-
-  const displayValue = useMemo(() => {
-    if (editingValue !== null) return editingValue
-    return value !== null && value !== undefined ? String(value) : ''
-  }, [value, editingValue])
+  const inputRef = useRef<HTMLInputElement>(null)
+  const {
+    text: displayValue,
+    parseError,
+    setDraftText,
+    endEditing,
+  } = useFieldDraft({
+    name,
+    mode,
+    committedText: value !== null && value !== undefined ? String(value) : '',
+    focusTarget: inputRef,
+  })
 
   if (mode === 'read') {
     return (
@@ -66,26 +72,14 @@ export function BigIntField({
   }
 
   const handleChange = (text: string) => {
-    setEditingValue(text)
-
     const trimmed = text.trim()
-    if (trimmed === '') {
-      onChange(null)
-      setParseError(undefined)
+    if (trimmed !== '' && !BIGINT_PATTERN.test(trimmed)) {
+      setDraftText(text, `${label} must be an integer`)
       return
     }
 
-    if (!BIGINT_PATTERN.test(trimmed)) {
-      setParseError(`${label} must be an integer`)
-      return
-    }
-
-    onChange(BigInt(trimmed))
-    setParseError(undefined)
-  }
-
-  const handleBlur = () => {
-    setEditingValue(null)
+    setDraftText(text)
+    onChange(trimmed === '' ? null : BigInt(trimmed))
   }
 
   return (
@@ -94,13 +88,14 @@ export function BigIntField({
         {label}
       </FieldLabel>
       <Input
+        ref={inputRef}
         id={name}
         name={name}
         type="text"
         inputMode="numeric"
         value={displayValue}
         onChange={(e) => handleChange(e.target.value)}
-        onBlur={handleBlur}
+        onBlur={endEditing}
         placeholder={placeholder}
         disabled={disabled}
         required={required}

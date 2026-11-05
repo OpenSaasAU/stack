@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Textarea } from '../../primitives/textarea.js'
 import { cn } from '../../lib/utils.js'
 import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldWarning } from './field-shell.js'
+import { useFieldDraft } from './useFieldDraft.js'
 
 export interface JsonFieldProps {
   name: string
@@ -34,13 +35,9 @@ export function JsonField({
   formatted = true,
   helpText,
 }: JsonFieldProps) {
-  const [editingValue, setEditingValue] = useState<string | null>(null)
-  const [parseError, setParseError] = useState<string | undefined>()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const displayValue = useMemo(() => {
-    if (editingValue !== null) {
-      return editingValue
-    }
+  const committedText = useMemo(() => {
     try {
       return value !== undefined && value !== null
         ? JSON.stringify(value, null, formatted ? 2 : 0)
@@ -48,33 +45,30 @@ export function JsonField({
     } catch {
       return ''
     }
-  }, [value, formatted, editingValue])
+  }, [value, formatted])
+
+  const {
+    text: displayValue,
+    parseError,
+    setDraftText,
+    endEditing,
+  } = useFieldDraft({ name, mode, committedText, focusTarget: textareaRef })
 
   const handleChange = (text: string) => {
-    setEditingValue(text)
-
     if (text.trim() === '') {
+      setDraftText(text)
       onChange(undefined)
-      setParseError(undefined)
       return
     }
 
     try {
       const parsed = JSON.parse(text)
+      setDraftText(text)
       onChange(parsed)
-      setParseError(undefined)
     } catch (e) {
       // Invalid JSON: leave the last valid value uncommitted instead of clobbering it.
-      if (e instanceof Error) {
-        setParseError(`Invalid JSON: ${e.message}`)
-      } else {
-        setParseError('Invalid JSON')
-      }
+      setDraftText(text, e instanceof Error ? `Invalid JSON: ${e.message}` : 'Invalid JSON')
     }
-  }
-
-  const handleBlur = () => {
-    setEditingValue(null)
   }
 
   if (mode === 'read') {
@@ -97,11 +91,12 @@ export function JsonField({
         {label}
       </FieldLabel>
       <Textarea
+        ref={textareaRef}
         id={name}
         name={name}
         value={displayValue}
         onChange={(e) => handleChange(e.target.value)}
-        onBlur={handleBlur}
+        onBlur={endEditing}
         placeholder={placeholder}
         disabled={disabled}
         required={required}

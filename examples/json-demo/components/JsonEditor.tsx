@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { JsonView, allExpanded, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
 import { Label } from '@opensaas/stack-ui/primitives'
 import { cn } from '@opensaas/stack-ui/lib/utils'
 import { Textarea } from '@opensaas/stack-ui/primitives'
+import { useFieldValidity } from '@opensaas/stack-ui/fields'
 
 export interface JsonEditorProps {
   name: string
@@ -36,6 +37,10 @@ export function JsonEditor({
   // Track the string being edited separately from the prop value
   const [editingValue, setEditingValue] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | undefined>()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Refuse the form's submit while the text doesn't parse, and focus the editor
+  useFieldValidity(name, mode === 'edit' && parseError !== undefined, textareaRef)
 
   // Compute the display value - either what's being edited or the prop value
   const displayValue = useMemo(() => {
@@ -73,8 +78,8 @@ export function JsonEditor({
   }
 
   const handleBlur = () => {
-    // Clear editing state on blur
-    setEditingValue(null)
+    // Clear editing state on blur, keeping text that doesn't parse so it can be corrected
+    if (parseError === undefined) setEditingValue(null)
   }
 
   // Parse current value for tree view
@@ -132,6 +137,7 @@ export function JsonEditor({
         <div className="space-y-2">
           <div className="text-xs font-medium text-muted-foreground">Editor</div>
           <Textarea
+            ref={textareaRef}
             id={name}
             name={name}
             value={displayValue}
