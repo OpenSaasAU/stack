@@ -2407,16 +2407,13 @@ describe('the MCP surface', () => {
     )
 
     /**
-     * The replacement for `prisma-8`'s `'a count-only relation fetches the same
-     * rows as a count-alongside one, never a zero-row placeholder'`, at the
-     * grain the translator left: what a count-only relation *fetches* is no
-     * longer observable from MCP, but what Field Visibility decides against it
-     * is. `gatedComments` grants only when the relation is empty, so a bare
+     * `gatedComments` grants only when the relation is empty, so a bare
      * `count()` — whose stand-in is `[]` whatever the rows are — would grant
-     * for a post that has comments and hand the count back.
+     * for a post that has comments and hand the count back. A count-only read
+     * is paged like every other, so the rule sees nothing and strips.
      */
     test(
-      'a count-only relation is decided against its rows, not against an empty stand-in',
+      'a count-only relation whose rule reads its rows strips, never granting on an empty stand-in',
       async () => {
         const context = await contextFor(schemaConfig())()
         const withComments = await context.db.Post.create({ data: { title: 'gated' } })
@@ -2431,7 +2428,7 @@ describe('the MCP surface', () => {
         })
         const byTitle = new Map(items.map((item) => [item.title, item]))
 
-        expect(byTitle.get('empty')).toHaveProperty('gatedComments', 0)
+        expect(byTitle.get('empty')).not.toHaveProperty('gatedComments')
         expect(byTitle.get('gated')).not.toHaveProperty('gatedComments')
       },
       BOOT,

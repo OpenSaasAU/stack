@@ -927,10 +927,10 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
 
 function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   const masked = maskReductions(row, plans)
-  const narrowed = plans.filter(narrowsWhatARuleSees)
-  if (narrowed.length === 0) return masked
+  const withheld = plans.filter((plan) => narrowsWhatARuleSees(plan) || isRowlessReduction(plan))
+  if (withheld.length === 0) return masked
   const copy: OrmRow = { ...masked }
-  for (const plan of narrowed) delete copy[plan.relation]
+  for (const plan of withheld) delete copy[plan.relation]
   return copy
 }
 
@@ -1001,7 +1001,15 @@ async function narrowUnincludedForeignKeys(
       .map((plan) => plan.relation),
   )
 
-  for (const owner of foreignKeyOwningRelations(ctx)) {
+  const owners = foreignKeyOwningRelations(ctx)
+  const ruleItems =
+    owners.length === 0
+      ? []
+      : rawRows.map((row) =>
+          assembleColumnFields(callerIndependent(row, resolvedIncludes), listConfig.fields),
+        )
+
+  for (const owner of owners) {
     if (alreadyIncluded.has(owner.relation)) continue
     if (!rawRows.some((row) => owner.foreignKey in row)) continue
 
@@ -1019,7 +1027,7 @@ async function narrowUnincludedForeignKeys(
       const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
         session: binding.context.session,
         context: binding.context,
-        item: assembleColumnFields(callerIndependent(raw, resolvedIncludes), listConfig.fields),
+        item: ruleItems[i],
       })
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }
@@ -1114,14 +1122,8 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * relation would otherwise have had.
  *
  * A `combine` that named the relation's rows under one key stands in that
- * array instead of `[]`, so Field Visibility filters those rows for the caller
- * and {@link restoreReductions} writes them back beside the counts. What a
- * `read` rule or a hook sees of them is {@link ruleViewFor}'s decision, the
- * same one an unreduced relation gets: an unshaped rows branch is the rule's
- * view too, and a caller-shaped one is replaced by the unshaped declared rows
- * where the relation is a live declared dependency and removed from the view
- * where it is not. A stripped relation takes its counts with it, because
- * {@link restoreReductions} writes back only the keys that survived.
+ * array instead of `[]`, and {@link restoreReductions} writes it back beside
+ * the counts. What a `read` rule or a hook sees of it is {@link ruleViewFor}'s.
  *
  * A relation that is both reduced and a live declared dependency of a
  * computed field returned alongside it (#1357) is the third case: its
@@ -1139,11 +1141,14 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * Known limits: a relation reduced with NEITHER a rows branch of its own NOR
  * a live declared dependency still stands in `[]`, so a relationship `read`
  * rule inspecting `item.<reducedRelation>` without declaring it via `needs`
- * decides on an empty array rather than on what the count counted — the
- * common `item.posts.length > 0` shape fails closed there, and an inverted
- * `item.posts.length === 0` fails open. A rule that reaches into a relation
- * must declare it, the same requirement `needs` already states for a computed
- * field's `resolveOutput`.
+ * decides on an empty array rather than on what the count counted. Only a
+ * rule that needs a row to exist fails closed there (`item.posts.length > 0`).
+ * `item.posts.every(…)` and `item.posts.length === 0` fail open, so a `count()`
+ * or a `combine` of counts reaches the caller of a relation the plain include
+ * strips, and a `contains` count answers questions about the stripped rows'
+ * text. A rule that reaches into a relation must declare it, the same
+ * requirement `needs` already states for a computed field's `resolveOutput`.
+ * Closing this is tracked in a follow-up.
  *
  * A caller-shaped rows branch with no live declared dependency leaves such a
  * rule looking at nothing, as a shaped plain include does: an `Array.isArray`
@@ -1341,14 +1346,13 @@ async function ruleViewTreeFor(
   return { viewFor: (row) => ruleViewFor(row, plans, unshaped), nested }
 }
 
-/**
- * Whether the value this plan fetched is one the caller narrowed, and so is no
- * basis for a `read` rule. A reduction with no rows branch is not here: its
- * stand-in is `maskReductions`' to choose, whatever its counts composed.
- */
 function narrowsWhatARuleSees(plan: IncludePlan): boolean {
   if (plan.declared || !plan.callerShaped) return false
   return plan.reduce === undefined || hasRowsBranch(plan)
+}
+
+function isRowlessReduction(plan: IncludePlan): boolean {
+  return plan.reduce !== undefined && !hasRowsBranch(plan) && plan.declaredRows === undefined
 }
 
 function ruleViewFor(

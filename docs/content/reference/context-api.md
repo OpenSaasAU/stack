@@ -192,7 +192,7 @@ const rows = await context.db.Post.select('title')
   .all()
 ```
 
-A refinement carries `where`, `orderBy`, `limit`, `offset`, `select`, `include`, `count()` and `combine(spec)`. `limit` and `offset` inside a refinement page the related rows **per parent row**. `count()` reduces a to-many relation to how many rows this session may see; `combine(spec)` gives several independently scoped views of the same relation, at most one of which may be the rows themselves. A relationship's `read` rule decides a `combine` exactly as it decides the plain include of the same rows: narrowing the rows branch never changes what the rule sees, and a relation the rule strips takes its counts with it.
+A refinement carries `where`, `orderBy`, `limit`, `offset`, `select`, `include`, `count()` and `combine(spec)`. `limit` and `offset` inside a refinement page the related rows **per parent row**. `count()` reduces a to-many relation to how many rows this session may see; `combine(spec)` gives several independently scoped views of the same relation, at most one of which may be the rows themselves. A relationship's `read` rule decides a `combine` **that has a rows branch** as it decides the plain include of the same rows: narrowing that branch never changes what the rule sees, and a relation the rule strips takes its counts with it. `count()` and a `combine` of counts alone have no rows to decide on, so a rule inspecting the relation sees an empty array and `item.notes.every(…)` passes where the plain include strips. Tracked in a follow-up.
 
 The related list's `query` access rides in as a refinement `where`, so a scoped-away to-one comes back `null` and a to-many `[]`, with the key present and the parent row kept.
 

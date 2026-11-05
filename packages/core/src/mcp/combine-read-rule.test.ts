@@ -27,6 +27,12 @@ const config: OpenSaasConfig = {
           many: true,
           access: { read: ({ item }) => noPrivateRows(item.notes) },
         }),
+        owner: text(),
+        logs: relationship({
+          ref: 'Log.ticket',
+          many: true,
+          access: { read: ({ item, session }) => item.owner === session?.userId },
+        }),
         noteTotal: virtual({
           type: 'number',
           needs: ['notes'],
@@ -42,6 +48,22 @@ const config: OpenSaasConfig = {
         body: text(),
         public: checkbox(),
         ticket: relationship({ ref: 'Ticket.notes' }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Log: {
+      fields: {
+        body: text(),
+        ticket: relationship({ ref: 'Ticket.logs' }),
+        explodes: virtual({
+          type: 'string',
+          hooks: {
+            resolveOutput: ({ context }) => {
+              if (context.session !== null) throw new Error('a count computed the related list')
+              return 'seeded'
+            },
+          },
+        }),
       },
       access: { operation: { query: () => true, create: () => true } },
     },
@@ -110,7 +132,12 @@ describe('a read rule on a relation counted over MCP', () => {
       ['all-public', true],
       ['mixed', false],
     ] as const) {
-      const ticket = await context.db.Ticket.create({ data: { name } })
+      const ticket = await context.db.Ticket.create({
+        data: { name, owner: name === 'mixed' ? 'someone-else' : 'user-123' },
+      })
+      for (const body of ['one', 'two']) {
+        await context.db.Log.create({ data: { body, ticket: { connect: { id: ticket?.id } } } })
+      }
       await context.db.Note.create({
         data: { body: 'pub', public: true, ticket: { connect: { id: ticket?.id } } },
       })
@@ -150,12 +177,32 @@ describe('a read rule on a relation counted over MCP', () => {
     ['take: 1', { take: 1, orderBy: { body: 'desc' } }],
     ['skip past the rows', { skip: 9 }],
   ])(
-    'a count-only relation is decided against every row under %s',
+    'a rule that reads its rows strips a count-only relation under %s',
     async (_, paging) => {
-      const [allPublic, mixed] = await query({ notes: { count: true, ...paging } })
+      const rows = await query({ notes: { count: true, ...paging } })
 
-      expect(allPublic).toHaveProperty('notes', 2)
-      expect(mixed).not.toHaveProperty('notes')
+      expect(rows.map((row) => 'notes' in row)).toEqual([false, false])
+    },
+    BOOT,
+  )
+
+  test(
+    'a rule that never reads the relation decides a count-only read as usual',
+    async () => {
+      const [own, others] = await query({ logs: { count: true, take: 0 } })
+
+      expect(own).toHaveProperty('logs', 2)
+      expect(others).not.toHaveProperty('logs')
+    },
+    BOOT,
+  )
+
+  test(
+    'a count-only orderBy is checked whatever the relation rule reads',
+    async () => {
+      await expect(query({ notes: { count: true, orderBy: { nope: 'asc' } } })).rejects.toThrow(
+        /nope/,
+      )
     },
     BOOT,
   )

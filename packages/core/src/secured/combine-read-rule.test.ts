@@ -72,6 +72,10 @@ const config: OpenSaasConfig = {
     Case: {
       fields: {
         name: text(),
+        reviewer: relationship({
+          ref: 'Agent',
+          access: { read: ({ item }) => noPrivateRows(item.entries) },
+        }),
         entries: relationship({
           ref: 'Entry.case',
           many: true,
@@ -187,7 +191,9 @@ describe('a read rule on a relation read through combine()', () => {
           assignee: { connect: { id: agent!.id } },
         },
       })
-      const kase = await admin.db.Case.create({ data: { name } })
+      const kase = await admin.db.Case.create({
+        data: { name, reviewer: { connect: { id: agent!.id } } },
+      })
       const shelf = await admin.db.Shelf.create({ data: { name, label: 'LABEL' } })
       for (const [body, isPublic] of [
         [`${name}-1`, true],
@@ -427,6 +433,34 @@ describe('a read rule on a relation read through combine()', () => {
 
         expect(assigned(plain.rows)).toEqual([false, false])
         expect(assigned(reduced.rows)).toEqual([false, false])
+      },
+      BOOT,
+    )
+
+    test.each<readonly [string, Refinement]>([
+      ['count()', (rows) => rows.count()],
+      ['where().count()', (rows) => rows.where(publicOnly).count()],
+      ['a combine of counts', (rows) => rows.combine({ total: rows.count() })],
+      [
+        'a combine of narrowed counts',
+        (rows) => rows.combine({ open: rows.where(publicOnly).count() }),
+      ],
+    ])(
+      'a sibling read as %s opens no foreign key',
+      async (_, reduce) => {
+        const { rows } = await ticketsThrough(reduce)
+
+        expect(assigned(rows)).toEqual([false, false])
+      },
+      BOOT,
+    )
+
+    test(
+      'a sibling read as a count is decided on its declared rows where they exist',
+      async () => {
+        const { rows } = await casesThrough((entries) => entries.count())
+
+        expect(rows.map((row) => row.reviewerId !== null)).toEqual([true, false])
       },
       BOOT,
     )
