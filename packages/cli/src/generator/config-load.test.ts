@@ -159,9 +159,14 @@ describe('loadOpenSaasConfig', () => {
   })
 
   describe('after a load that failed (#2169)', () => {
+    const revisionIn = (config: object): number => {
+      if ('revision' in config && typeof config.revision === 'number') return config.revision
+      throw new Error('The config carries no numeric revision.')
+    }
+
     const revisionOf = async (): Promise<number> => {
       const { config } = await loadOpenSaasConfig(tempDir, configPath)
-      return (config as unknown as { revision: number }).revision
+      return revisionIn(config)
     }
 
     const writeRevision = (revision: number): void => {
@@ -247,7 +252,7 @@ describe('loadOpenSaasConfig', () => {
       )
       const loadRevision = async (): Promise<number> => {
         const { config } = await loadOpenSaasConfig(projectDir, projectConfig)
-        return (config as unknown as { revision: number }).revision
+        return revisionIn(config)
       }
 
       fs.writeFileSync(leafPath, "throw new Error('boom')\n")
@@ -304,13 +309,17 @@ describe('loadOpenSaasConfig', () => {
       )
       const foreignPath = path.join(elsewhere, 'foreign.cjs')
       const dependencyPath = path.join(tempDir, 'node_modules', 'a-dependency', 'index.cjs')
+      const hostPath = path.join(tempDir, 'packages', 'host', 'dist', 'index.cjs')
       fs.writeFileSync(foreignPath, 'module.exports = 1\n')
-      fs.mkdirSync(path.dirname(dependencyPath), { recursive: true })
-      fs.writeFileSync(dependencyPath, 'module.exports = 1\n')
+      for (const file of [dependencyPath, hostPath]) {
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, 'module.exports = 1\n')
+      }
 
       const nodeRequire = createRequire(import.meta.url)
       nodeRequire(foreignPath)
       nodeRequire(dependencyPath)
+      nodeRequire(hostPath)
 
       try {
         writeRevision(1)
@@ -319,11 +328,12 @@ describe('loadOpenSaasConfig', () => {
         await expect(loadOpenSaasConfig(tempDir, configPath)).rejects.toThrow('boom')
 
         expect(Object.keys(nodeRequire.cache)).toEqual(
-          expect.arrayContaining([foreignPath, dependencyPath]),
+          expect.arrayContaining([foreignPath, dependencyPath, hostPath]),
         )
       } finally {
         delete nodeRequire.cache[foreignPath]
         delete nodeRequire.cache[dependencyPath]
+        delete nodeRequire.cache[hostPath]
         fs.rmSync(elsewhere, { recursive: true, force: true })
       }
     })

@@ -238,8 +238,8 @@ export class PartialPromotionError extends Error {
     super(
       `The database was updated, but promoting the staged generation stopped at ${failedOn}. ` +
         `${promoted.length} file(s) already carry the new contract, so the project is split ` +
-        'across two contracts. Re-run `opensaas generate` to rewrite the whole bundle from ' +
-        `the current config. Underlying failure: ${cause instanceof Error ? cause.message : String(cause)}`,
+        'across two contracts. Run `pnpm db:update` (`opensaas db update`) to promote the ' +
+        `whole bundle from the current config. Underlying failure: ${cause instanceof Error ? cause.message : String(cause)}`,
     )
     this.name = 'PartialPromotionError'
     this.promoted = promoted

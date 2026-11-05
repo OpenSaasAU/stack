@@ -41,15 +41,17 @@ export interface LoadedOpenSaasConfig {
   resolvedModules: string[]
 }
 
-function isInNodeModules(modulePath: string): boolean {
-  return modulePath.split(path.sep).includes('node_modules')
-}
-
 /**
  * Load a project's `opensaas.config.ts` the way every command that reads it
  * must: through jiti, under the project's own tsconfig path aliases, awaiting
  * a default export that is a `Promise` whenever the config declares plugins.
- * Every call reads the files' current bytes, including after a load that threw.
+ *
+ * Each load evaluates the config file, and every module it reaches that an
+ * earlier load of this function cached, from their current bytes, including
+ * after a load that threw. Two cases are outside that: a module some other
+ * loader left in the process-wide cache keeps that loader's copy, and a module
+ * first imported once the load has settled (from a plugin hook, or after a
+ * rejected default export) stays cached.
  *
  * @example
  * ```typescript
@@ -64,19 +66,11 @@ export async function loadOpenSaasConfig(
 
   // Module caching is on only long enough to read the resolved import graph back
   // off jiti's cache, which is Node's process-wide `require.cache`: that is why
-  // only entries this project owns are ever deleted, and everything else there
-  // is left alone. jiti does not clean up after an async evaluation that
-  // rejects, so eviction has to run on the failure path too, or the next load
-  // treats the failed load's entries as someone else's and never clears them.
+  // this deletes the config path and the entries this load added, and nothing
+  // else. jiti does not clean up after an async evaluation that rejects, so the
+  // eviction has to run on the failure path too.
   const jiti = createJiti(cwd, { interopDefault: true, alias, moduleCache: true })
-  for (const modulePath of Object.keys(jiti.cache)) {
-    if (
-      modulePath === configPath ||
-      (modulePath.startsWith(`${cwd}${path.sep}`) && !isInNodeModules(modulePath))
-    ) {
-      delete jiti.cache[modulePath]
-    }
-  }
+  delete jiti.cache[configPath]
   const cachedBeforeLoad = new Set(Object.keys(jiti.cache))
 
   let config: OpenSaasConfig
@@ -97,7 +91,8 @@ export async function loadOpenSaasConfig(
   }
 
   const resolvedModules = newlyCached.filter(
-    (modulePath) => modulePath !== configPath && !isInNodeModules(modulePath),
+    (modulePath) =>
+      modulePath !== configPath && !modulePath.split(path.sep).includes('node_modules'),
   )
 
   return { config, aliasWarnings: warnings, resolvedModules }

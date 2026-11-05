@@ -257,7 +257,7 @@ describe('promoting a staged generation', () => {
     expect(thrown).toBeInstanceOf(Error)
     const message = thrown instanceof Error ? thrown.message : ''
     expect(message).toContain(live.types)
-    expect(message).toContain('opensaas generate')
+    expect(message).toContain('pnpm db:update')
     expect(fs.readFileSync(live.contractModule, 'utf-8')).toBe('next')
     expect(fs.existsSync(stagingDir)).toBe(true)
   })
