@@ -432,6 +432,7 @@ describe('devCommand', () => {
       kind: 'result',
       envelope: {
         result: {
+          accessChanges: [],
           plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
         },
       },
@@ -533,6 +534,7 @@ describe('devCommand', () => {
       kind: 'result',
       envelope: {
         result: {
+          accessChanges: [],
           dataLoss: [{ text: 'Post.title' }],
           plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
         },
@@ -687,6 +689,7 @@ describe('devCommand', () => {
       kind: 'result',
       envelope: {
         result: {
+          accessChanges: [],
           plan: { operations: [{ label: 'drop Post.title', operationClass: 'destructive' }] },
         },
       },
@@ -756,7 +759,7 @@ describe('devCommand', () => {
       }
       const plan = JSON.stringify({
         kind: 'result',
-        envelope: { result: { plan: { operations: [] } } },
+        envelope: { result: { accessChanges: [], plan: { operations: [] } } },
       })
       return { exitCode: 0, signal: null, output: plan, stdout: plan }
     })
@@ -897,7 +900,7 @@ describe('devCommand', () => {
       vi.mocked(runPrismaCli).mockImplementation(async () => {
         const plan = JSON.stringify({
           kind: 'result',
-          envelope: { result: { plan: { operations: [] } } },
+          envelope: { result: { accessChanges: [], plan: { operations: [] } } },
         })
         return { exitCode: 0, signal: null, output: plan, stdout: plan }
       })
@@ -988,7 +991,7 @@ describe('devCommand', () => {
       vi.mocked(runPrismaCli).mockImplementation(async () => {
         const plan = JSON.stringify({
           kind: 'result',
-          envelope: { result: { plan: { operations: [] } } },
+          envelope: { result: { accessChanges: [], plan: { operations: [] } } },
         })
         return { exitCode: 0, signal: null, output: plan, stdout: plan }
       })
@@ -1155,7 +1158,7 @@ describe('devCommand', () => {
       vi.mocked(runPrismaCli).mockImplementation(async () => {
         const plan = JSON.stringify({
           kind: 'result',
-          envelope: { result: { plan: { operations: [] } } },
+          envelope: { result: { accessChanges: [], plan: { operations: [] } } },
         })
         return { exitCode: 0, signal: null, output: plan, stdout: plan }
       })
