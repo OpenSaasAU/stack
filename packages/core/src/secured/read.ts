@@ -1871,21 +1871,38 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery<VisibleRow
   }
 }
 
+async function canOrderBy(
+  binding: ReadBinding,
+  ctx: ResolveContext,
+  key: string,
+): Promise<boolean> {
+  try {
+    const orders = await resolveOrderBy([{ [key]: 'asc' }], ctx)
+    collectionFor(binding.ormHandle, binding.listName).orderBy(
+      orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
- * Whether a read of `listKey` may order by `key`: the answer `orderBy` itself
- * gives this session, read off the same resolution and lowering with nothing
- * executed. Every refusal is one `false`, so a field the session cannot read,
- * a field with no column and a column whose codec has no `order` trait are
- * indistinguishable to a caller (ADR-0031, ADR-0055).
+ * Which of `keys` a read of `listKey` may order by: the answer `orderBy` gives
+ * this session, read off the same access check, resolution and lowering with
+ * nothing executed. It never throws. A key it cannot answer for is left out, so
+ * a read-denied key, an absent one and a column with no `order` trait are
+ * indistinguishable to a caller (ADR-0031, ADR-0055), and a real fault is left
+ * for the read itself to report.
  */
-export async function canOrderBy(
+export async function orderableKeys(
   context: AccessContext,
   config: OpenSaasConfig,
   listKey: string,
-  key: string,
-): Promise<boolean> {
+  keys: readonly string[],
+): Promise<ReadonlySet<string>> {
   const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
-  if (listConfig === undefined) return false
+  if (listConfig === undefined) return new Set()
   const binding: ReadBinding = {
     listName: listKey,
     listConfig,
@@ -1893,19 +1910,22 @@ export async function canOrderBy(
     context,
     config,
   }
+  const secured = context._isSudo !== true
   try {
-    const orders = await resolveOrderBy(
-      [{ [key]: 'asc' }],
-      resolveContext(binding, context._isSudo !== true),
-    )
-    collectionFor(binding.ormHandle, listKey).orderBy(
-      orders.map((order) => (model: PredicateAccessor) => lowerOrder(order, model)),
-    )
-    return true
-  } catch (error) {
-    if (error instanceof ValidationError) return false
-    throw error
+    const access = secured
+      ? await checkAccess(listConfig.access?.operation?.query, {
+          session: context.session,
+          context,
+        })
+      : true
+    if (access === false) return new Set()
+  } catch {
+    return new Set()
   }
+  const ctx = resolveContext(binding, secured)
+  const unique = [...new Set(keys)]
+  const answers = await Promise.all(unique.map((key) => canOrderBy(binding, ctx, key)))
+  return new Set(unique.filter((_key, index) => answers[index]))
 }
 
 /**

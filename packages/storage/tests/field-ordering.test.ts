@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { engineContextOf, type OpenSaasConfig } from '@opensaas/stack-core'
-import { canOrderBy } from '@opensaas/stack-core/internal'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { file, image } from '../src/fields/index.js'
 
@@ -36,7 +35,7 @@ describe('an asset field has no order', () => {
     '%s',
     async (key) => {
       const context = engineContextOf(database.context(null))
-      expect(await canOrderBy(context, config, 'Asset', key)).toBe(false)
+      expect(await context._orderableKeys?.('Asset', [key])).toEqual(new Set())
     },
     BOOT,
   )

@@ -30,6 +30,8 @@ const noAccessArgs: FilterAccessArgs = {
   context: { _isSudo: false } as unknown as AccessContext,
 }
 
+const READABLE = { operation: { query: () => true } }
+
 // ─────────────────────────────────────────────────────────────
 // parseFilterQuery — the pure query-string → tokens boundary (ADR-0017)
 // ─────────────────────────────────────────────────────────────
@@ -373,8 +375,9 @@ function makeConfig(): OpenSaasConfig {
   return {
     db: { provider: 'postgresql' },
     lists: {
-      User: list({ fields: { name: text() } }),
+      User: list({ access: READABLE, fields: { name: text() } }),
       Post: list({
+        access: READABLE,
         fields: {
           title: text(),
           views: integer(),
@@ -478,8 +481,8 @@ describe('core field Filter specs', () => {
     const gatedConfig: OpenSaasConfig = {
       db: { provider: 'postgresql' },
       lists: {
-        Ledger: list({ fields: { amount: integer() } }),
-        Entry: list({ fields: { ledger: relationship({ ref: 'Ledger' }) } }),
+        Ledger: list({ access: READABLE, fields: { amount: integer() } }),
+        Entry: list({ access: READABLE, fields: { ledger: relationship({ ref: 'Ledger' }) } }),
       },
     }
     const spec = gatedConfig.lists.Entry.fields.ledger.getFilterSpec!(
@@ -513,10 +516,11 @@ describe('core field Filter specs', () => {
       db: { provider: 'postgresql' },
       lists: {
         Ledger: list({
+          access: READABLE,
           fields: { balance: integer() },
           ui: { labelField: 'balance' },
         }),
-        Entry: list({ fields: { ledger: relationship({ ref: 'Ledger' }) } }),
+        Entry: list({ access: READABLE, fields: { ledger: relationship({ ref: 'Ledger' }) } }),
       },
     }
     const spec = gatedConfig.lists.Entry.fields.ledger.getFilterSpec!(
@@ -539,6 +543,7 @@ describe('core field Filter specs', () => {
       db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
+          access: READABLE,
           fields: {
             name: text(),
             billingAddress: text({ access: { read: () => false } }),
@@ -560,6 +565,7 @@ describe('core field Filter specs', () => {
       db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
+          access: READABLE,
           fields: {
             name: text(),
             billingAddress: text({
@@ -613,6 +619,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
+          access: READABLE,
           fields: {
             name: text(),
             billingAddress: text({ access: { read: () => false } }),
@@ -640,12 +647,14 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
       db: { provider: 'postgresql' },
       lists: {
         User: list({
+          access: READABLE,
           fields: {
             name: text(),
             posts: relationship({ ref: 'Post.author', many: true }),
           },
         }),
         Post: list({
+          access: READABLE,
           fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
         }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal config for unit test
@@ -702,6 +711,7 @@ describe('collectFilterSuggestions', () => {
       db: { provider: 'postgresql' },
       lists: {
         Organisation: list({
+          access: READABLE,
           fields: {
             name: text(),
             billingAddress: text({ access: { read: () => false } }),

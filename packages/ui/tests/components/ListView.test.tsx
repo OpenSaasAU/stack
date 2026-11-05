@@ -13,10 +13,12 @@ import {
   virtual,
 } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
-vi.mock('next/navigation.js', () => ({
+vi.mock('next/navigation.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation.js')>()),
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/fragile',
   useSearchParams: () => new URLSearchParams(),
@@ -31,6 +33,7 @@ vi.mock('next/link.js', () => ({
 const BOOT = 120_000
 const INTERNAL_FAILURE = 'relation "internal_table" does not exist'
 let readsFail = false
+let controlFlow: () => void = () => undefined
 
 function titlesOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -116,7 +119,32 @@ const config: OpenSaasConfig = {
         meta: json(),
         secret: password(),
       },
+      db: { timestamps: false },
       access: { operation: { query: () => true } },
+    },
+    Gated: {
+      fields: {
+        title: text({
+          access: {
+            read: ({ session }) => {
+              if (session === null) throw new TypeError('no session to read')
+              return true
+            },
+          },
+        }),
+      },
+      access: { operation: { query: ({ session }) => session !== null } },
+    },
+    Controlled: {
+      fields: { title: text() },
+      access: {
+        operation: {
+          query: () => {
+            controlFlow()
+            return true
+          },
+        },
+      },
     },
     Fragile: {
       fields: {
@@ -526,6 +554,24 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
     BOOT,
   )
 
+  it.each(['createdAt', 'updatedAt'])(
+    'ignores %s on a list without timestamps, wherever it is named',
+    async (field) => {
+      const sort = { field, direction: 'desc' } as const
+      const fromUrl = await render(ada, { listKey: 'Gadget', sort })
+      expect(fromUrl.items).toHaveLength(2)
+      expect(fromUrl.initialSort).toBeUndefined()
+
+      const fromConfig = await render(ada, { listKey: 'Gadget', initialSort: sort })
+      expect(fromConfig.items).toHaveLength(2)
+
+      const asColumn = await render(ada, { listKey: 'Gadget', columns: ['name', field] })
+      expect(asColumn.items).toHaveLength(2)
+      expect(asColumn.sortableFields).toEqual({ name: true, [field]: false })
+    },
+    BOOT,
+  )
+
   it(
     'falls back to initialSort, and past one that cannot be ordered either',
     async () => {
@@ -645,6 +691,45 @@ describe('ListView when the read fails (#2180)', () => {
 
       expect(logged).toContain(INTERNAL_FAILURE)
       expect(html).not.toContain('internal_table')
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a session denied query empty even when a read rule would throw on it',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const plain = await render(null, { listKey: 'Gated' })
+      const searched = await render(null, { listKey: 'Gated', search: 'title:x' })
+      const logged = log.mock.calls.length
+      log.mockRestore()
+
+      expect(plain.items).toEqual([])
+      expect(plain.total).toBe(0)
+      expect(plain.filterSuggestions).toEqual([])
+      expect(searched.items).toEqual([])
+      expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['redirect()', () => redirect('/sign-in'), 'NEXT_REDIRECT'],
+    ['notFound()', () => notFound(), 'NEXT_HTTP_ERROR_FALLBACK;404'],
+  ])(
+    'lets %s from an access rule through to Next',
+    async (_label, thrower, digest) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      controlFlow = thrower
+      try {
+        await expect(
+          ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Controlled' }),
+        ).rejects.toMatchObject({ digest: expect.stringContaining(digest) })
+        expect(log).not.toHaveBeenCalled()
+      } finally {
+        controlFlow = () => undefined
+        log.mockRestore()
+      }
     },
     BOOT,
   )

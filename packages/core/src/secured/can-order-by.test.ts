@@ -18,7 +18,6 @@ import {
 } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { canOrderBy } from './read.js'
 
 const BOOT = 120_000
 
@@ -52,9 +51,61 @@ const addressField: FieldConfig = {
   }),
 }
 
+const moneyField: FieldConfig = {
+  type: 'money',
+  outputType: 'string',
+  inputType: 'string',
+  getColumnNames: (name) => [name, `${name}_currency`],
+  assembleColumns: (name, row) => row[name],
+  splitColumns: (name, value) => ({ [name]: value, [`${name}_currency`]: null }),
+  getContractField: (name) => ({
+    kind: 'columns',
+    columns: [
+      { name, type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: `${name}_currency`, type: { pack: 'pg', type: 'text' }, nullable: true },
+    ],
+  }),
+}
+
+let readRuleThrows = false
+let readRuleCalls = 0
+
+function readRule(): boolean {
+  readRuleCalls += 1
+  if (readRuleThrows) throw new Error('read rule failed')
+  return true
+}
+
 const config: OpenSaasConfig = {
-  db: { provider: 'postgresql', timestamps: true },
+  db: { provider: 'postgresql' },
   lists: {
+    Bare: {
+      fields: {
+        title: text(),
+        price: moneyField,
+        person: relationship({ ref: 'Person.bare' }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Person: {
+      fields: { name: text(), bare: relationship({ ref: 'Bare.person' }) },
+      access: { operation: { query: () => true } },
+    },
+    Audited: {
+      fields: {
+        title: text(),
+        createdAt: text({ access: { read: () => false } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Scoped: {
+      fields: { name: text(), records: relationship({ ref: 'Record.scoped', many: true }) },
+      access: { operation: { query: () => ({ name: { equals: 'visible' } }) } },
+    },
+    Gated: {
+      fields: { title: text({ access: { read: readRule } }) },
+      access: { operation: { query: ({ session }) => session !== null } },
+    },
     Owner: {
       fields: {
         name: text(),
@@ -85,7 +136,9 @@ const config: OpenSaasConfig = {
           ref: 'Owner.hiddenRecords',
           access: { read: () => false },
         }),
+        scoped: relationship({ ref: 'Scoped.records' }),
       },
+      db: { timestamps: true },
       access: { operation: { query: () => true } },
     },
   },
@@ -97,8 +150,16 @@ function engineContext(): AccessContext {
   return engineContextOf(database.context(null))
 }
 
-function canOrder(context: AccessContext, key: string): Promise<boolean> {
-  return canOrderBy(context, config, 'Record', key)
+async function canOrderBy(
+  context: AccessContext,
+  listKey: string,
+  key: string,
+): Promise<boolean | undefined> {
+  return (await context._orderableKeys?.(listKey, [key]))?.has(key)
+}
+
+function canOrder(context: AccessContext, key: string): Promise<boolean | undefined> {
+  return canOrderBy(context, 'Record', key)
 }
 
 beforeAll(async () => {
@@ -143,6 +204,7 @@ describe('canOrderBy', () => {
     ['a to-one relationship', 'owner'],
     ['a field the session cannot read', 'restricted'],
     ['the foreign key of a relationship the session cannot read', 'hiddenOwnerId'],
+    ['the foreign key of a list whose query access is a filter', 'scopedId'],
     ['an unknown field', 'nope'],
     ['an inherited object member', 'constructor'],
     ['the prototype accessor', '__proto__'],
@@ -161,7 +223,7 @@ describe('canOrderBy', () => {
   test(
     'a to-many relationship has none',
     async () => {
-      expect(await canOrderBy(engineContext(), config, 'Owner', 'records')).toBe(false)
+      expect(await canOrderBy(engineContext(), 'Owner', 'records')).toBe(false)
     },
     BOOT,
   )
@@ -190,8 +252,95 @@ describe('canOrderBy', () => {
   test(
     'a list the config does not declare has no order',
     async () => {
-      expect(await canOrderBy(engineContext(), config, 'Nope', 'title')).toBe(false)
-      expect(await canOrderBy(engineContext(), config, 'constructor', 'title')).toBe(false)
+      expect(await canOrderBy(engineContext(), 'Nope', 'title')).toBe(false)
+      expect(await canOrderBy(engineContext(), 'constructor', 'title')).toBe(false)
+    },
+    BOOT,
+  )
+
+  test.each([
+    ['a timestamp the list does not have', 'Bare', 'createdAt'],
+    ['the other timestamp', 'Bare', 'updatedAt'],
+    ['the inverse side of a one-to-one', 'Person', 'bareId'],
+  ])(
+    '%s resolves but names no model field, so it has none',
+    async (_label, listKey, key) => {
+      const context = engineContext()
+      expect(await canOrderBy(context, listKey, key)).toBe(false)
+      await expect(context.db[listKey].orderBy({ [key]: 'asc' }).all()).rejects.toBeInstanceOf(
+        ValidationError,
+      )
+      await expect(
+        context.db[listKey].where({ [key]: { equals: 'x' } }).all(),
+      ).rejects.toBeInstanceOf(ValidationError)
+    },
+    BOOT,
+  )
+
+  test(
+    'a read-denied createdAt answers exactly as an absent one does',
+    async () => {
+      const context = engineContext()
+      expect(await canOrderBy(context, 'Audited', 'createdAt')).toBe(false)
+      expect(await canOrderBy(context, 'Bare', 'createdAt')).toBe(false)
+      const message = (read: PromiseLike<unknown>) =>
+        Promise.resolve(read).then(
+          () => 'resolved',
+          (error: Error) => error.message.replace(/"(Audited|Bare)"/, '"List"'),
+        )
+      expect(await message(context.db.Audited.orderBy({ createdAt: 'asc' }).all())).toBe(
+        await message(context.db.Bare.orderBy({ createdAt: 'asc' }).all()),
+      )
+    },
+    BOOT,
+  )
+
+  test(
+    'a multi-column field with a part named after it orders by that part',
+    async () => {
+      const context = engineContext()
+      expect(await canOrderBy(context, 'Bare', 'price')).toBe(true)
+      await expect(context.db.Bare.orderBy({ price: 'asc' }).all()).resolves.toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a session denied query has no order, and no field rule is asked',
+    async () => {
+      readRuleCalls = 0
+      const context = engineContext()
+      expect(await context._orderableKeys?.('Gated', ['title'])).toEqual(new Set())
+      await expect(context.db.Gated.all()).resolves.toEqual([])
+      expect(readRuleCalls).toBe(0)
+    },
+    BOOT,
+  )
+
+  test(
+    'a read rule that throws is a no, not a throw',
+    async () => {
+      readRuleThrows = true
+      try {
+        const context = engineContextOf(database.context({ role: 'editor' }))
+        expect(await context._orderableKeys?.('Gated', ['title'])).toEqual(new Set())
+      } finally {
+        readRuleThrows = false
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'answers for several keys at once',
+    async () => {
+      const answer = await engineContext()._orderableKeys?.('Record', [
+        'title',
+        'active',
+        'rank',
+        'title',
+      ])
+      expect(answer).toEqual(new Set(['title', 'rank']))
     },
     BOOT,
   )

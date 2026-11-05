@@ -247,6 +247,13 @@ The list view displays items in a table with search, sorting, and actions.
   ever equal the number of rows the session may page through.
 - Responsive table layout
 
+A column offers a sort only when this session's read can order by it, and a
+`?sort=` naming anything else is ignored. `ListView` works that out on the
+server and hands `ListViewClient` one boolean per column as `sortableFields`.
+If you render the exported `ListViewClient` directly, pass `sortableFields`
+yourself: a column it does not mark `true` has no sort affordance, so omitting
+the prop leaves the table unsortable.
+
 ### Filtering and sorting
 
 The list view's Filter builder and the `?search=` query it serialises are one

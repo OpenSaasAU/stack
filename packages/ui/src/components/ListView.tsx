@@ -1,4 +1,5 @@
 import Link from 'next/link.js'
+import { unstable_rethrow } from 'next/navigation.js'
 import { AlertTriangle, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
@@ -27,7 +28,6 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { SecuredQuery } from '@opensaas/stack-core'
-import { canOrderBy } from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -208,18 +208,16 @@ export async function ListView({
       throw new Error(`Context for ${listKey} not found`)
     }
 
-    const sortable = async (candidate: ListViewSort | undefined) =>
-      candidate && (await canOrderBy(context, config, listKey, candidate.field))
-        ? candidate
-        : undefined
-    activeSort = (await sortable(sort)) ?? (await sortable(initialSort))
+    const orderable =
+      (await context._orderableKeys?.(listKey, [
+        ...displayedColumns,
+        ...[sort, initialSort].flatMap((candidate) => (candidate ? [candidate.field] : [])),
+      ])) ?? new Set<string>()
+    activeSort = [sort, initialSort].find(
+      (candidate) => candidate && orderable.has(candidate.field),
+    )
     sortableFields = Object.fromEntries(
-      await Promise.all(
-        [...displayedColumns].map(async (column): Promise<[string, boolean]> => [
-          column,
-          await canOrderBy(context, config, listKey, column),
-        ]),
-      ),
+      [...displayedColumns].map((column) => [column, orderable.has(column)]),
     )
 
     // Parse the URL filter query into a server-side `where` fragment via the
@@ -263,6 +261,7 @@ export async function ListView({
     items = rows
     total = totals.total
   } catch (error) {
+    unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
     return (
       <div className="p-8">
