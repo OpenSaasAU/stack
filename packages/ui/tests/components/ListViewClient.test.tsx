@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
+import { STICKY_ACTIONS_CELL } from '../../src/lib/tableClasses.js'
 
 // Mock Next.js navigation
 const mockPush = vi.fn()
@@ -39,6 +40,17 @@ describe('ListViewClient', () => {
   })
 
   describe('rendering', () => {
+    it('pins the row actions to the visible edge of a wide table', () => {
+      render(<ListViewClient {...defaultProps} />)
+
+      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
+        ...STICKY_ACTIONS_CELL.split(' '),
+      )
+      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
+        ...STICKY_ACTIONS_CELL.split(' '),
+      )
+    })
+
     it('should render all items in table', () => {
       render(<ListViewClient {...defaultProps} />)
 

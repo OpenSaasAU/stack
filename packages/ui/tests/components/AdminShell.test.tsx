@@ -12,6 +12,10 @@ vi.mock('next/navigation.js', () => ({
 const sidebar = (
   <nav aria-label="Sidebar">
     <a href="/admin/post">Posts</a>
+    <a href="#group">Toggle group</a>
+    <a href="/docs" target="_blank" rel="noreferrer" onClick={(event) => event.preventDefault()}>
+      Docs
+    </a>
     <button type="button">Theme</button>
   </nav>
 )
@@ -76,6 +80,33 @@ describe('AdminShell', () => {
     await userEvent.click(within(dialog).getByRole('link', { name: 'Posts' }))
 
     expect(drawer()).toBeNull()
+  })
+
+  it.each(['Toggle group', 'Docs'])(
+    'stays open for %s, which leaves this tab where it is',
+    async (name) => {
+      renderShell()
+      const dialog = await openDrawer()
+
+      await userEvent.click(within(dialog).getByRole('link', { name }))
+
+      expect(drawer()).not.toBeNull()
+    },
+  )
+
+  it('puts focus on the first link when it opens', async () => {
+    renderShell()
+    const dialog = await openDrawer()
+
+    await waitFor(() => expect(within(dialog).getByRole('link', { name: 'Posts' })).toHaveFocus())
+  })
+
+  it('offers no menu when there is no navigation to show', () => {
+    render(<AdminShell sidebar={false}>Page</AdminShell>)
+
+    expect(screen.queryByRole('button', { name: 'Open navigation' })).toBeNull()
+    expect(screen.queryByRole('banner')).toBeNull()
+    expect(screen.getByRole('main')).toHaveTextContent('Page')
   })
 
   it('stays open for a control in it that is not a link', async () => {

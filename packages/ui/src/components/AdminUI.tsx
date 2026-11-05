@@ -45,7 +45,9 @@ export interface AdminUIProps {
    * Replaces the built-in sidebar wholesale (ADR-0021, the "chrome slot").
    * `AdminUI` keeps routing, the shell, and theme compilation. It renders in
    * the page flow from `md` up, and in the menu button's drawer below that, so
-   * it should not hide itself at narrow widths. `AdminUI` skips
+   * it should not hide itself at narrow widths. Those are two instances, so any
+   * state it holds does not carry between them, and the drawer's resets each
+   * time it opens. `false` renders no navigation at all. `AdminUI` skips
    * `resolveNavCounts` when this is supplied, since host-owned chrome resolves
    * its own access-scoped counts. Takes precedence over `navItems` — if both
    * are supplied, `navigation` renders and `navItems` is ignored with a
@@ -255,7 +257,7 @@ export async function AdminUI({
       <AdminShell
         sidebar={sidebar}
         brand={
-          navigation ? undefined : (
+          navigation !== undefined && navigation !== null ? undefined : (
             <Link
               href={basePath}
               className="truncate font-heading text-lg font-bold tracking-tight"

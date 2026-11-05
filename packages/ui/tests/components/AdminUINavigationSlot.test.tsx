@@ -123,6 +123,20 @@ describe('AdminUI navigation slot (ADR-0021)', () => {
     expect(shellOf(tree).props.brand).toBeUndefined()
   })
 
+  it('renders no chrome at all for `navigation={false}`', async () => {
+    const tree = await AdminUI({
+      context,
+      config: baseConfig,
+      params: [],
+      basePath: '/admin',
+      serverAction: noopServerAction,
+      navigation: false,
+    })
+
+    expect(sidebarOf(tree)).toBe(false)
+    expect(shellOf(tree).props.brand).toBeUndefined()
+  })
+
   it('performs no nav-count resolution when `navigation` is supplied', async () => {
     await harness.context.db.Post.create({ data: { title: 'a' } })
     recorder.clear()

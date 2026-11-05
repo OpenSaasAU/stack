@@ -73,7 +73,7 @@ export function PageHeader({
       className={cn(
         'mb-8',
         gradient &&
-          'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-gradient-from/10 to-gradient-to/10 p-4 md:p-6',
+          'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-gradient-from/10 to-gradient-to/10 p-6 max-md:p-4',
         className,
         classNames?.root,
       )}

@@ -251,7 +251,7 @@ export function RelationshipCreateDrawer({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           data-slot="relationship-create-drawer"
-          className="left-auto right-0 top-0 h-full max-h-none w-full max-w-md translate-x-0 translate-y-0 gap-6 overflow-y-auto rounded-none border-l"
+          className="left-auto right-0 top-0 h-full max-h-none w-full max-w-md translate-x-0 max-md:max-h-none max-md:w-full translate-y-0 gap-6 overflow-y-auto rounded-none border-l"
         >
           <DialogHeader>
             <DialogTitle>Add {title}</DialogTitle>

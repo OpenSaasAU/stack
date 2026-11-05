@@ -1,4 +1,5 @@
 import { cn } from '../lib/utils.js'
+import { AdminFrame } from './AdminFrame.js'
 
 export interface SkeletonLoaderProps {
   className?: string
@@ -151,5 +152,43 @@ export function DashboardSkeleton({ cards = 6 }: { cards?: number }) {
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * The whole admin while a route loads, in the same frame as the admin itself so
+ * the layout holds still at every width. Render it from the admin route's
+ * `loading.tsx`.
+ */
+export function AdminLoading() {
+  return (
+    <AdminFrame
+      topBar={
+        <>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+            <SkeletonLoader variant="rectangular" className="h-6 w-6" />
+          </span>
+          <SkeletonLoader variant="text" className="h-6 w-32" />
+        </>
+      }
+      sidebar={
+        <div className="w-64 border-r border-border bg-card p-6">
+          <SkeletonLoader variant="rectangular" className="mb-8 h-8 w-32" />
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <SkeletonLoader key={i} variant="rectangular" className="h-6 w-full" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <div data-slot="admin-loading" className="p-4 md:p-8">
+        <div className="mb-8 space-y-2">
+          <SkeletonLoader variant="text" className="h-9 w-48" />
+          <SkeletonLoader variant="text" className="h-5 w-24" />
+        </div>
+        <TableSkeleton rows={5} columns={4} />
+      </div>
+    </AdminFrame>
   )
 }

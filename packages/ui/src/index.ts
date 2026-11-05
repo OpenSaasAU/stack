@@ -20,6 +20,7 @@ export { SingletonView } from './components/SingletonView.js'
 export { ConfirmDialog } from './components/ConfirmDialog.js'
 export { LoadingSpinner } from './components/LoadingSpinner.js'
 export {
+  AdminLoading,
   SkeletonLoader,
   TableSkeleton,
   FormSkeleton,

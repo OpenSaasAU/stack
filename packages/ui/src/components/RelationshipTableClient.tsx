@@ -335,7 +335,9 @@ export function RelationshipTableClient({
               )
             })}
             {showRemove && (
-              <TableHead className={cn('w-0 text-right max-md:bg-card', STICKY_ACTIONS_CELL)}>
+              <TableHead
+                className={cn('w-0 text-right max-md:before:bg-card', STICKY_ACTIONS_CELL)}
+              >
                 <span className="sr-only">Actions</span>
               </TableHead>
             )}
@@ -388,7 +390,10 @@ export function RelationshipTableClient({
                   })}
                   {showRemove && (
                     <TableCell
-                      className={cn('text-right align-top max-md:bg-card', STICKY_ACTIONS_CELL)}
+                      className={cn(
+                        'text-right align-top max-md:before:bg-card',
+                        STICKY_ACTIONS_CELL,
+                      )}
                     >
                       <Button
                         type="button"

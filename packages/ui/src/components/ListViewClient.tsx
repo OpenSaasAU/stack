@@ -433,7 +433,9 @@ export function ListViewClient({
                   </TableHead>
                 )
               })}
-              <TableHead className={cn('text-right max-md:bg-background', STICKY_ACTIONS_CELL)}>
+              <TableHead
+                className={cn('text-right max-md:before:bg-background', STICKY_ACTIONS_CELL)}
+              >
                 Actions
               </TableHead>
             </TableRow>
@@ -508,7 +510,7 @@ export function ListViewClient({
                       </TableCell>
                     ))}
                     <TableCell
-                      className={cn('text-right max-md:bg-background', STICKY_ACTIONS_CELL)}
+                      className={cn('text-right max-md:before:bg-background', STICKY_ACTIONS_CELL)}
                     >
                       <Link
                         href={`${basePath}/${urlKey}/${item.id}`}

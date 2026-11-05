@@ -11,7 +11,7 @@ const sources = readdirSync(join(root, 'src'), { recursive: true, encoding: 'utf
 
 const responsiveClasses = [
   ...new Set(
-    sources.flatMap((source) => source.match(/(?<![\w-])(?:max-)?md:[\w./[\]()%-]+/g) ?? []),
+    sources.flatMap((source) => source.match(/(?<![\w-])(?:max-)?md:[\w./:[\]()%*,-]+/g) ?? []),
   ),
 ]
 
@@ -22,7 +22,9 @@ const asSelector = (className: string) =>
 // class missing from it does nothing there, silently.
 describe('the prebuilt stylesheet', () => {
   it('finds the responsive classes to check', () => {
-    expect(responsiveClasses).toEqual(expect.arrayContaining(['md:contents', 'max-md:h-6']))
+    expect(responsiveClasses).toEqual(
+      expect.arrayContaining(['md:contents', 'max-md:**:scroll-mt-24']),
+    )
   })
 
   it.each(responsiveClasses)('carries %s', (className) => {
