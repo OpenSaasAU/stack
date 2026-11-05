@@ -27,6 +27,20 @@ const started: DevDatabase[] = []
 
 const cliEntry = path.join(process.cwd(), 'packages', 'cli', 'bin', 'opensaas.js')
 
+function devLoopOwnsGeneration(projectDir: string): boolean {
+  try {
+    const published: unknown = JSON.parse(
+      fs.readFileSync(path.join(projectDir, '.opensaas', 'dev-loop.json'), 'utf-8'),
+    )
+    if (typeof published !== 'object' || published === null || !('pid' in published)) return false
+    if (typeof published.pid !== 'number') return false
+    process.kill(published.pid, 0)
+    return true
+  } catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'EPERM'
+  }
+}
+
 async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
   const exitCode = await new Promise<number | null>((resolve, reject) => {
     const child = spawn(command, [...args], { cwd, stdio: 'inherit' })
@@ -78,7 +92,9 @@ export async function setupDatabase(projectDir: string): Promise<PreparedDatabas
     throw new Error('The database lookup found nothing after the Dev database was started.')
   }
 
-  await run(process.execPath, [cliEntry, 'generate'], projectDir)
+  if (!devLoopOwnsGeneration(projectDir)) {
+    await run(process.execPath, [cliEntry, 'generate'], projectDir)
+  }
 
   const update = await runPrismaCli(projectDir, ['db', 'update'])
   if (update.exitCode !== 0) {

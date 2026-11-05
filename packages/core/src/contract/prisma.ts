@@ -1,4 +1,4 @@
-import { defineContract, nativeEnum, pg } from '@prisma/orm-postgres/contract-builder'
+import { defineContract, nativeEnum, pg, sql } from '@prisma/orm-postgres/contract-builder'
 import type { NativeEnumHandle, ScalarFieldBuilder } from '@prisma/orm-postgres/contract-builder'
 import {
   charColumn,
@@ -194,6 +194,8 @@ function idField(helpers: AuthoringHelpers, id: ContractIdColumn): ScalarFieldBu
       return field.column(type.Uuid()).id().onCreate(gen.uuid(7))
     case 'cuid2':
       return field.column(type.Cuid2()).id().onCreate(gen.cuid(2))
+    case 'cuid':
+      return field.column(type.String()).id().onCreate(gen.cuid(2))
     case 'int autoincrement':
       return field.column(type.Int()).defaultSql('autoincrement()').id()
     case 'singleton':
@@ -238,13 +240,25 @@ function modelFields(
   }
   // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
-  if (model.timestamps.createdAt)
-    fields.createdAt = helpers.field.column(timestamptzStringColumn).defaultSql('now()')
-  if (model.timestamps.updatedAt)
+  if (model.timestamps.createdAt) {
+    const column =
+      model.timestampType?.type === 'timestamp'
+        ? withPrecision(timestampStringColumn, firstNumber(model.timestampType.args, 0))
+        : withPrecision(timestamptzStringColumn, firstNumber(model.timestampType?.args, 0))
+    fields.createdAt = helpers.field.column(column).defaultSql('now()')
+  }
+  if (model.timestamps.updatedAt) {
+    const updatedColumn =
+      model.timestampType === undefined
+        ? helpers.type.TimestamptzString()
+        : model.timestampType.type === 'timestamp'
+          ? withPrecision(timestampStringColumn, firstNumber(model.timestampType.args, 0))
+          : withPrecision(timestamptzStringColumn, firstNumber(model.timestampType.args, 0))
     fields.updatedAt = helpers.field
-      .column(helpers.type.TimestamptzString())
+      .column(updatedColumn)
       .onCreate(helpers.gen.now())
       .onUpdate(helpers.gen.now())
+  }
   return fields
 }
 
@@ -273,11 +287,19 @@ function baseModel(
   })
 }
 
+function sqlExpression(text: string) {
+  return sql(Object.assign([text], { raw: [text] }))
+}
+
 type ModelToken = ReturnType<typeof baseModel>
 
 function finishModel(base: ModelToken, model: ContractModel, tokens: Record<string, ModelToken>) {
-  const uniqueIndexes = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniqueIndexes = model.indexes.filter(
+    (index) => index.unique && index.where === undefined && !index.asIndex,
+  )
+  const plainIndexes = model.indexes.filter(
+    (index) => !index.unique || index.where !== undefined || index.asIndex === true,
+  )
   const indexedColumns = model.columns.filter((column) => column.index)
   return base
     .attributes(({ fields, constraints }) => ({
@@ -295,17 +317,36 @@ function finishModel(base: ModelToken, model: ContractModel, tokens: Record<stri
         ...plainIndexes.map((index) =>
           constraints.index(
             index.columns.map((column) => cols[column]),
-            index.name !== undefined ? { map: index.name } : {},
+            {
+              ...(index.name !== undefined ? { map: index.name } : {}),
+              ...(index.unique ? { unique: true } : {}),
+              ...(index.where !== undefined ? { where: sqlExpression(index.where) } : {}),
+            },
           ),
         ),
       ],
-      foreignKeys: model.foreignKeys.map((fk) =>
-        constraints.foreignKey(cols[fk.column], tokens[fk.references.model].refs.id, {
-          index: false,
-          ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
-          ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
-        }),
-      ),
+      foreignKeys: [
+        ...model.foreignKeys.map((fk) =>
+          constraints.foreignKey(cols[fk.column], tokens[fk.references.model].refs.id, {
+            index: false,
+            ...(fk.name !== undefined ? { name: fk.name } : {}),
+            ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
+            ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
+          }),
+        ),
+        ...(model.compositeForeignKeys ?? []).map((fk) =>
+          constraints.foreignKey(
+            fk.columns.map((column) => cols[column]),
+            fk.references.columns.map((column) => tokens[fk.references.model].refs[column]),
+            {
+              index: false,
+              ...(fk.name !== undefined ? { name: fk.name } : {}),
+              ...(fk.onDelete !== undefined ? { onDelete: fk.onDelete } : {}),
+              ...(fk.onUpdate !== undefined ? { onUpdate: fk.onUpdate } : {}),
+            },
+          ),
+        ),
+      ],
     }))
 }
 

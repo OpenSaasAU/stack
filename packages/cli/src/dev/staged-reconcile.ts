@@ -21,8 +21,8 @@ export interface ReconcilePlan {
   readonly statements: readonly string[]
   /** The subjects whose data the plan would lose, as `--delete` names them. */
   readonly dataLoss: readonly string[]
-  /** The models whose rows the plan would open to more readers or writers, as `--allow` names them. */
-  readonly accessWidening: readonly string[]
+  /** The models whose access the plan would change, as `--allow` names them. */
+  readonly accessChanges: readonly string[]
   readonly destructive: boolean
 }
 
@@ -46,18 +46,23 @@ const askedSubjectSchema = z.object({ text: z.string() })
 const resultEnvelopeSchema = z.object({
   kind: z.literal('result'),
   envelope: z.object({
-    result: z.object({
-      dataLoss: z.array(askedSubjectSchema).optional(),
-      accessWidening: z.array(askedSubjectSchema).optional(),
-      plan: z
-        .object({
-          operations: z.array(operationSchema).optional(),
-          preview: z
-            .object({ statements: z.array(z.object({ text: z.string() })).optional() })
-            .optional(),
-        })
-        .optional(),
-    }),
+    result: z
+      .object({
+        mode: z.string().optional(),
+        dataLoss: z.array(askedSubjectSchema).optional(),
+        accessChanges: z.array(askedSubjectSchema).optional(),
+        plan: z
+          .object({
+            operations: z.array(operationSchema).optional(),
+            preview: z
+              .object({ statements: z.array(z.object({ text: z.string() })).optional() })
+              .optional(),
+          })
+          .optional(),
+      })
+      .refine((result) => result.mode !== 'dry-run' || result.accessChanges !== undefined, {
+        message: 'a dry-run result must report accessChanges',
+      }),
   }),
 })
 
@@ -67,7 +72,7 @@ const resultEnvelopeSchema = z.object({
  * line is the answer; anything the CLI wrote to stderr is not searched, which
  * is why only stdout is read here.
  */
-function readPlan(stdout: string): ReconcilePlan | undefined {
+export function readPlan(stdout: string): ReconcilePlan | undefined {
   let plan: ReconcilePlan | undefined
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim()
@@ -83,15 +88,15 @@ function readPlan(stdout: string): ReconcilePlan | undefined {
     const { result } = envelope.data.envelope
     const operations = result.plan?.operations ?? []
     const dataLoss = (result.dataLoss ?? []).map((subject) => subject.text)
-    const accessWidening = (result.accessWidening ?? []).map((subject) => subject.text)
+    const accessChanges = (result.accessChanges ?? []).map((subject) => subject.text)
     plan = {
       operations,
       statements: (result.plan?.preview?.statements ?? []).map((statement) => statement.text),
       dataLoss,
-      accessWidening,
+      accessChanges,
       destructive:
         dataLoss.length > 0 ||
-        accessWidening.length > 0 ||
+        accessChanges.length > 0 ||
         operations.some((operation) => operation.operationClass === 'destructive'),
     }
   }
@@ -119,7 +124,7 @@ export async function planDatabaseUpdate(
   const args = ['db', 'update', '--config', configPath, '--json', '--no-interactive']
   if (options.dryRun === true) args.push('--dry-run')
   for (const subject of options.consent?.dataLoss ?? []) args.push('--delete', subject)
-  for (const subject of options.consent?.accessWidening ?? []) args.push('--allow', subject)
+  for (const subject of options.consent?.accessChanges ?? []) args.push('--allow', subject)
 
   const run = await runPrismaCli(cwd, args)
   if (run.exitCode !== 0)
@@ -340,7 +345,7 @@ export function planId(plan: ReconcilePlan): string {
     ...plan.operations.map((operation) => `${operation.operationClass}:${operation.label}`),
     ...plan.statements,
     ...plan.dataLoss.map((subject) => `delete:${subject}`),
-    ...plan.accessWidening.map((subject) => `allow:${subject}`),
+    ...plan.accessChanges.map((subject) => `allow:${subject}`),
   ]
   return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
 }

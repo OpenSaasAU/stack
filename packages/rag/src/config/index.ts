@@ -9,15 +9,6 @@ export function normalizeRAGConfig(config: RAGConfig): NormalizedRAGConfig {
   return {
     provider: config.provider || null,
     providers: config.providers || {},
-    buildTime: config.buildTime
-      ? {
-          enabled: config.buildTime.enabled,
-          outputPath: config.buildTime.outputPath || '.embeddings/embeddings.json',
-          chunkSize: config.buildTime.chunkSize || 500,
-          chunkOverlap: config.buildTime.chunkOverlap || 50,
-          differential: config.buildTime.differential ?? true,
-        }
-      : null,
     enableMcpTools: config.enableMcpTools ?? true,
     batchSize: config.batchSize || 10,
     rateLimit: config.rateLimit || 100,

@@ -75,7 +75,8 @@ function coerceIdCondition(
       continue
     }
     if (operator === 'contains') {
-      if (listIdColumn(config, listKey)?.strategy !== 'cuid2') return null
+      const strategy = listIdColumn(config, listKey)?.strategy
+      if (strategy !== 'cuid2' && strategy !== 'cuid') return null
       operators[operator] = value
       continue
     }

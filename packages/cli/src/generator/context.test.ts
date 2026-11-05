@@ -12,6 +12,18 @@ const config: OpenSaasConfig = {
 const data: ContractData = deriveContract(config)
 
 describe('generateContext', () => {
+  it('quotes an extension specifier so it cannot break out of the import', () => {
+    const hostile: ContractData = {
+      ...data,
+      extensions: [{ name: 'pgvector', from: "pack/x'\nglobalThis.PWNED = true\n//" }],
+    }
+
+    const context = generateContext(config, hostile)
+
+    expect(context).toContain("from 'pack/x\\'\\nglobalThis.PWNED = true\\n///runtime'")
+    expect(context).not.toMatch(/^globalThis\.PWNED/m)
+  })
+
   it('constructs the client from the committed contract artifact', () => {
     const context = generateContext(config, data)
 

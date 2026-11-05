@@ -33,6 +33,9 @@ jobs:
       - name: Test release security audit outcomes
         run: pnpm test:security-audit
 
+      - name: Check the scaffolder has a changeset when the stack ships
+        run: pnpm check:scaffolder-changeset
+
       # Runs against the PR's merge commit (actions/checkout's default ref for
       # pull_request events), which is the only place a two-branch numbering
       # collision becomes visible — each branch is self-consistent on its own.

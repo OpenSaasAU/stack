@@ -21,6 +21,7 @@ import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
+import { assertWhereReachable, queryReachableLists } from './where-reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
@@ -747,6 +748,12 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
+            assertWhereReachable(
+              args.where,
+              config,
+              listKey,
+              await queryReachableLists(config, context),
+            )
             const coercedWhere = coerceWhereIds(
               args.where,
               config,

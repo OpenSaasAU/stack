@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-cli",
-  "version": "0.44.0-alpha.0",
+  "version": "0.44.0-alpha.5",
   "description": "CLI tools for OpenSaas Stack",
   "type": "module",
   "engines": {
@@ -63,13 +63,14 @@
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
     "fs-extra": "^11.4.1",
-    "glob": "^13.0.6",
+    "glob": "^14.0.2",
     "jiti": "^2.7.0",
     "ora": "^9.4.1",
+    "pg": "^8.23.1",
     "prisma": "8.0.0-rc.29",
     "prompts": "^2.4.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@opensaas/stack-rag": "workspace:*",
@@ -78,10 +79,10 @@
     "@prisma/orm-extension-pgvector": "8.0.0-rc.21",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-v8": "5.0.5",
-    "pg": "^8.23.1",
     "vitest": "5.0.5"
   }
 }

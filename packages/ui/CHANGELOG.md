@@ -1,5 +1,25 @@
 # @opensaas/stack-ui
 
+## 0.44.0-alpha.5
+
+No changes in this release.
+
+## 0.44.0-alpha.4
+
+No changes in this release.
+
+## 0.44.0-alpha.3
+
+No changes in this release.
+
+## 0.44.0-alpha.2
+
+No changes in this release.
+
+## 0.44.0-alpha.1
+
+No changes in this release.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

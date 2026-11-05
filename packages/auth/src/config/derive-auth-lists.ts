@@ -453,7 +453,7 @@ function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefine
 /**
  * The OpenSaaS field keys an app-supplied `db.indexes` entry (ADR-0035)
  * claims on this model — every field named in any entry's `fields` array,
- * regardless of that entry's own arity or uniqueness. A claimed column's
+ * regardless of that entry's own arity or uniqueness. A partial entry (`where`) claims nothing: it constrains a subset of rows, so the global constraint stays. A claimed column's
  * derived `isIndexed` (from better-auth's own `unique`/`index` flags) is
  * suppressed so only the app's entry is emitted; suppression is per-column,
  * so a composite entry claiming `identifier` leaves every other derived
@@ -462,6 +462,7 @@ function scalarIsIndexed(upstream: DBFieldAttribute): true | 'unique' | undefine
 function claimedIndexFields(indexes: ListIndex[]): Set<string> {
   const claimed = new Set<string>()
   for (const index of indexes) {
+    if (index.where !== undefined) continue
     for (const fieldRef of index.fields) {
       claimed.add(typeof fieldRef === 'string' ? fieldRef : fieldRef.field)
     }

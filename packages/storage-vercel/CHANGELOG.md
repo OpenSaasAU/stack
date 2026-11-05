@@ -1,5 +1,27 @@
 # @opensaas/stack-storage-vercel
 
+## 0.44.0-alpha.5
+
+No changes in this release.
+
+## 0.44.0-alpha.4
+
+### Patch Changes
+
+- [#2135](https://github.com/OpenSaasAU/stack/pull/2135) [`4c417c0`](https://github.com/OpenSaasAU/stack/commit/4c417c0d60c87997bb3d5ccab72420d93a929aaa) Thanks [@borisno2](https://github.com/borisno2)! - With `generateUniqueFilenames: false`, a rejected write no longer overwrites the stored file: uploads are staged and moved onto the stable key only once the write commits. Storage providers gain an optional `move(from, to)`.
+
+## 0.44.0-alpha.3
+
+No changes in this release.
+
+## 0.44.0-alpha.2
+
+No changes in this release.
+
+## 0.44.0-alpha.1
+
+No changes in this release.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

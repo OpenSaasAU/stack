@@ -1,5 +1,31 @@
 # @opensaas/stack-rag
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+
+## 0.44.0-alpha.4
+
+No changes in this release.
+
+## 0.44.0-alpha.3
+
+### Minor Changes
+
+- [#2122](https://github.com/OpenSaasAU/stack/pull/2122) [`0046efa`](https://github.com/OpenSaasAU/stack/commit/0046efa3b7c1245f3ec3a7553cb244f094c249fd) Thanks [@borisno2](https://github.com/borisno2)! - Remove the `buildTime` option from `ragPlugin()`. It was accepted but never implemented; embeddings are always generated at runtime.
+
+  Migration: delete the `buildTime` key from your `ragPlugin()` options.
+
+## 0.44.0-alpha.2
+
+No changes in this release.
+
+## 0.44.0-alpha.1
+
+No changes in this release.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

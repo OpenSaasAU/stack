@@ -9,6 +9,7 @@ import type { SecuredQuery } from '../secured/read.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
+import { assertWhereReachable, queryReachableLists } from './where-reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
@@ -476,6 +477,12 @@ export async function resolveFieldsProjection(
     // too: it filters the RELATED list's own rows, so a malformed id here
     // refuses the whole request exactly as one at the root does.
     if (entry.where !== undefined) {
+      assertWhereReachable(
+        entry.where as Record<string, unknown>,
+        config,
+        related.listName,
+        await queryReachableLists(config, context),
+      )
       const coercedWhere = coerceWhereIds(
         entry.where as Record<string, unknown>,
         config,

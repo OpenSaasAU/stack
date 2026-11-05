@@ -12,6 +12,7 @@ vi.mock('@aws-sdk/client-s3', () => {
     PutObjectCommand: vi.fn(),
     GetObjectCommand: vi.fn(),
     DeleteObjectCommand: vi.fn(),
+    CopyObjectCommand: vi.fn(),
   }
 })
 
@@ -795,6 +796,31 @@ describe('S3StorageProvider', () => {
       })
 
       expect(config.customDomain).toBe('https://cdn.example.com')
+    })
+  })
+
+  describe('move', () => {
+    it('copies onto the destination key then deletes the source', async () => {
+      const { CopyObjectCommand } = await import('@aws-sdk/client-s3')
+      const provider = new S3StorageProvider({
+        type: 's3',
+        bucket: 'test-bucket',
+        region: 'us-east-1',
+        pathPrefix: 'docs',
+      })
+
+      await provider.move('staging-x-a.pdf', 'a.pdf')
+
+      expect(CopyObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: 'docs/a.pdf',
+        CopySource: 'test-bucket/docs/staging-x-a.pdf',
+        ACL: 'private',
+      })
+      expect(DeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: 'docs/staging-x-a.pdf',
+      })
     })
   })
 })

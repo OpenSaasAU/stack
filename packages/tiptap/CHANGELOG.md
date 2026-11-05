@@ -1,5 +1,37 @@
 # @opensaas/stack-tiptap
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+
+## 0.44.0-alpha.4
+
+No changes in this release.
+
+## 0.44.0-alpha.3
+
+No changes in this release.
+
+## 0.44.0-alpha.2
+
+No changes in this release.
+
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2055](https://github.com/OpenSaasAU/stack/pull/2055) [`7b9e2e6`](https://github.com/OpenSaasAU/stack/commit/7b9e2e6966051376596fb64bc354bc10715a4d9c) Thanks [@borisno2](https://github.com/borisno2)! - Add `RichTextContent`, a server-side read-only renderer for `richText()` documents, from `@opensaas/stack-tiptap/render`.
+
+  ```tsx
+  import { RichTextContent } from '@opensaas/stack-tiptap/render'
+
+  ;<RichTextContent value={post.content} features={features} />
+  ```
+
+  It renders React elements (no `dangerouslySetInnerHTML`), drops nodes, marks and attributes outside the field's feature set instead of throwing, and re-applies the link protocol policy at render time.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

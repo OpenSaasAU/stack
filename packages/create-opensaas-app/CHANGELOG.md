@@ -1,5 +1,31 @@
 # create-opensaas-app
 
+## 0.4.0-alpha.3
+
+### Patch Changes
+
+- [#2139](https://github.com/OpenSaasAU/stack/pull/2139) [`e165820`](https://github.com/OpenSaasAU/stack/commit/e165820f6e3cd01bd7fd23aba046b7bf8321bd0c) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+## 0.4.0-alpha.2
+
+### Patch Changes
+
+- [#2131](https://github.com/OpenSaasAU/stack/pull/2131) [`3658488`](https://github.com/OpenSaasAU/stack/commit/36584881fa1e2aad5697bd3aa699876c9799f5cb) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2132](https://github.com/OpenSaasAU/stack/pull/2132) [`d0a0bbf`](https://github.com/OpenSaasAU/stack/commit/d0a0bbf360512e8b4670eb51a0d95c5bdc378fe4) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2133](https://github.com/OpenSaasAU/stack/pull/2133) [`79c7d2b`](https://github.com/OpenSaasAU/stack/commit/79c7d2b4698d54bde92c69353da8d22f1678d8ee) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+## 0.4.0-alpha.1
+
+### Patch Changes
+
+- [#2121](https://github.com/OpenSaasAU/stack/pull/2121) [`aaa3c4d`](https://github.com/OpenSaasAU/stack/commit/aaa3c4d151c2865ea9d8f6e46ea859392564a864) Thanks [@borisno2](https://github.com/borisno2)! - Scaffolded with-auth template no longer logs password reset URLs in production; the placeholder sender throws instead until a real email transport is configured.
+
+- [#2116](https://github.com/OpenSaasAU/stack/pull/2116) [`b2fcdea`](https://github.com/OpenSaasAU/stack/commit/b2fcdea15201fccab0f50f7fa3d6f0ef66dcb8e8) Thanks [@borisno2](https://github.com/borisno2)! - Republish the scaffolder so its templates stamp the current stack version.
+
 ## 0.4.0-alpha.0
 
 ### Minor Changes

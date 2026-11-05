@@ -1,5 +1,47 @@
 # @opensaas/stack-auth
 
+## 0.44.0-alpha.5
+
+No changes in this release.
+
+## 0.44.0-alpha.4
+
+No changes in this release.
+
+## 0.44.0-alpha.3
+
+No changes in this release.
+
+## 0.44.0-alpha.2
+
+No changes in this release.
+
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2091](https://github.com/OpenSaasAU/stack/pull/2091) [`2bcfdc6`](https://github.com/OpenSaasAU/stack/commit/2bcfdc662c74465669850828f65ddd5f956b8501) Thanks [@borisno2](https://github.com/borisno2)! - `User.email`, and `User.phoneNumber` / `User.username` when their plugins are registered, now ship update-denied on `context.db`, closing a session-confusion path via the owner-update rule. Reopen with `authPlugin({ fieldAccess })`.
+
+  Migration: an app updating these fields through `context.db` now gets a thrown field-access error. Change email and phone through better-auth's own flows, or reopen deliberately:
+
+  ```ts
+  authPlugin({
+    fieldAccess: {
+      user: { email: { update: ({ session, item }) => session?.userId === item.id } },
+    },
+  })
+  ```
+
+### Patch Changes
+
+- [#2103](https://github.com/OpenSaasAU/stack/pull/2103) [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912) Thanks [@borisno2](https://github.com/borisno2)! - Add a `db.idField: 'cuid'` strategy for adopting a live database whose ids are `text` holding cuid v1 values. The column stays `text`, new rows get cuid2 values, and the id boundary accepts both cuid shapes, so no id or foreign-key column is altered.
+
+  ```typescript
+  export default config({ db: { provider: 'postgresql', idField: 'cuid' }, lists: {} })
+  ```
+
+- [#2064](https://github.com/OpenSaasAU/stack/pull/2064) [`bd3fdc4`](https://github.com/OpenSaasAU/stack/commit/bd3fdc46f77b77e7aea7c4eb29ad03bbd89382e3) Thanks [@borisno2](https://github.com/borisno2)! - `extendUserList.fields` now throws at config time when it redeclares `email`, `name`, `image` or `emailVerified`, which previously dropped the unique index, `isRequired` and the lowercase hook on the identity column.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

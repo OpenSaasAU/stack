@@ -1,5 +1,109 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2139](https://github.com/OpenSaasAU/stack/pull/2139) [`e165820`](https://github.com/OpenSaasAU/stack/commit/e165820f6e3cd01bd7fd23aba046b7bf8321bd0c) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas migrate junction-ids` skipping junction lists declared with `foreignKey.map`; the planner now compares and emits physical column names.
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+- Updated dependencies [[`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2)]:
+  - @opensaas/stack-core@0.44.0-alpha.5
+
+## 0.44.0-alpha.4
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @opensaas/stack-core@0.44.0-alpha.4
+
+## 0.44.0-alpha.3
+
+### Patch Changes
+
+- [#2131](https://github.com/OpenSaasAU/stack/pull/2131) [`3658488`](https://github.com/OpenSaasAU/stack/commit/36584881fa1e2aad5697bd3aa699876c9799f5cb) Thanks [@borisno2](https://github.com/borisno2)! - `migrate fk-renames` now also renames multi-column indexes and uniques whose Prisma 7 name was built from a renamed FK column.
+
+- [#2134](https://github.com/OpenSaasAU/stack/pull/2134) [`3696834`](https://github.com/OpenSaasAU/stack/commit/369683444d97d8e68131553f02eed22056a63c62) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas migrate junction-ids` now replaces the composite `("A","B")` primary key of Prisma 6+ implicit many-to-many tables with a surrogate `id` and the pair unique, in one transaction.
+
+- [#2132](https://github.com/OpenSaasAU/stack/pull/2132) [`d0a0bbf`](https://github.com/OpenSaasAU/stack/commit/d0a0bbf360512e8b4670eb51a0d95c5bdc378fe4) Thanks [@borisno2](https://github.com/borisno2)! - Under `db.indexNaming: 'prisma7'`, emit plain uniques as unique indexes so adopting a Prisma 7 database plans no unique drop-and-re-add and composite foreign keys apply.
+
+- [#2133](https://github.com/OpenSaasAU/stack/pull/2133) [`79c7d2b`](https://github.com/OpenSaasAU/stack/commit/79c7d2b4698d54bde92c69353da8d22f1678d8ee) Thanks [@borisno2](https://github.com/borisno2)! - Apply `db.defaults.timestamp` to the auto `updatedAt` as well as `createdAt`, so auth lists no longer plan a type change on `updatedAt`. Adopting a database drops the `updatedAt` database default; see the config reference.
+- Updated dependencies [[`d0a0bbf`](https://github.com/OpenSaasAU/stack/commit/d0a0bbf360512e8b4670eb51a0d95c5bdc378fe4), [`79c7d2b`](https://github.com/OpenSaasAU/stack/commit/79c7d2b4698d54bde92c69353da8d22f1678d8ee)]:
+  - @opensaas/stack-core@0.44.0-alpha.3
+
+## 0.44.0-alpha.2
+
+### Minor Changes
+
+- [#2120](https://github.com/OpenSaasAU/stack/pull/2120) [`ccc2615`](https://github.com/OpenSaasAU/stack/commit/ccc2615a9c0cfdd5e94dcfd7af9e6eb1ab6b450e) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.defaults.timestamp.nativeType`, a config-wide native type for every `timestamp()` column (plugin lists and the auto `createdAt` included). A field's own `db.nativeType` wins. `updatedAt` is not affected.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql', defaults: { timestamp: { nativeType: 'Timestamp(3)' } } },
+    lists: {},
+  })
+  ```
+
+- [#2118](https://github.com/OpenSaasAU/stack/pull/2118) [`289ed00`](https://github.com/OpenSaasAU/stack/commit/289ed00fac642628d0b1d8db77a2eee0f3096101) Thanks [@borisno2](https://github.com/borisno2)! - Add list-level `db.foreignKeys` for composite (multi-column) foreign key constraints that reference a composite unique on the target. Constraint-only: no relationship or include semantics.
+
+  ```ts
+  db: {
+    foreignKeys: [
+      {
+        fields: ['enrolment', 'student', 'lessonTerm'],
+        references: { list: 'Enrolment', fields: ['id', 'student', 'lessonTerm'] },
+        onDelete: 'restrict',
+      },
+    ],
+  }
+  ```
+
+  `db.indexes` also accepts `'id'` so a composite unique can include the primary key.
+
+### Patch Changes
+
+- [#2117](https://github.com/OpenSaasAU/stack/pull/2117) [`c8ed18d`](https://github.com/OpenSaasAU/stack/commit/c8ed18d6aa4e99c86f8e5d7d9c96053f9927bd33) Thanks [@borisno2](https://github.com/borisno2)! - Fix generated `.opensaas/types.ts` importing `../prisma/contract.d.js` regardless of `output.contractModule`/`output.opensaasDir`.
+
+- [#2124](https://github.com/OpenSaasAU/stack/pull/2124) [`bcd16e1`](https://github.com/OpenSaasAU/stack/commit/bcd16e1e46f8ca9fecbb5431791dd4675c160b9e) Thanks [@borisno2](https://github.com/borisno2)! - Quote every import specifier the generator writes and refuse a `db.extensions[].from` that is not a package name.
+- Updated dependencies [[`ccc2615`](https://github.com/OpenSaasAU/stack/commit/ccc2615a9c0cfdd5e94dcfd7af9e6eb1ab6b450e), [`289ed00`](https://github.com/OpenSaasAU/stack/commit/289ed00fac642628d0b1d8db77a2eee0f3096101), [`bcd16e1`](https://github.com/OpenSaasAU/stack/commit/bcd16e1e46f8ca9fecbb5431791dd4675c160b9e)]:
+  - @opensaas/stack-core@0.44.0-alpha.2
+
+## 0.44.0-alpha.1
+
+### Minor Changes
+
+- [#2114](https://github.com/OpenSaasAU/stack/pull/2114) [`b0facf4`](https://github.com/OpenSaasAU/stack/commit/b0facf444455ec402ae3e8c5fe38b7b5e66b00e3) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas migrate junction-ids` to add and backfill the surrogate `id` on existing tables a list is mapped onto that have none, such as Prisma's implicit `_X_y(A, B)` many-to-many tables (ADR-0048).
+  It prints the SQL, writes it with `--out <file>`, or runs it in one transaction with `--apply`; it backfills `uuid7`, `cuid2`/`cuid` and `int autoincrement` ids, then sets the column `NOT NULL` and primary key, and is idempotent.
+
+- [#2101](https://github.com/OpenSaasAU/stack/pull/2101) [`0aac914`](https://github.com/OpenSaasAU/stack/commit/0aac914c03cb1ae9916e47ca990ac1045ed116ca) Thanks [@borisno2](https://github.com/borisno2)! - `db.indexes` entries accept `where`, a raw SQL predicate that makes the entry a partial index (or a partial unique index with `unique: true`), so partial unique invariants are declared rather than planned away.
+
+  ```typescript
+  db: {
+    indexes: [{ fields: ['twilioSid'], unique: true, where: `("twilioSid" <> ''::text)` }],
+  }
+  ```
+
+- [#2113](https://github.com/OpenSaasAU/stack/pull/2113) [`5154e86`](https://github.com/OpenSaasAU/stack/commit/5154e86742ffda5643e63b8ecf04fb43e2bdd0bd) Thanks [@borisno2](https://github.com/borisno2)! - Add `db.indexNaming: 'prisma7'`, which names every derived index, unique constraint and foreign key `<Table>_<cols>_idx` / `_key` / `_fkey` (63-byte truncated), so adopting a Prisma 7 database plans no index renames.
+
+- [#2102](https://github.com/OpenSaasAU/stack/pull/2102) [`d246c15`](https://github.com/OpenSaasAU/stack/commit/d246c15ba54fa84a23cff7a4d6eca8405bf83174) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas migrate fk-renames` to emit the ADR-0069 `<field>` → `<field>Id` foreign-key column renames (plus default-named FK/unique/index constraints) against an existing database.
+  It prints the SQL, writes it with `--out <file>`, or runs it in one transaction with `--apply`; it never drops anything, is idempotent, and refuses when both `<field>` and `<field>Id` exist.
+
+- [#2103](https://github.com/OpenSaasAU/stack/pull/2103) [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912) Thanks [@borisno2](https://github.com/borisno2)! - Add a `db.idField: 'cuid'` strategy for adopting a live database whose ids are `text` holding cuid v1 values. The column stays `text`, new rows get cuid2 values, and the id boundary accepts both cuid shapes, so no id or foreign-key column is altered.
+
+  ```typescript
+  export default config({ db: { provider: 'postgresql', idField: 'cuid' }, lists: {} })
+  ```
+
+### Patch Changes
+
+- [#2092](https://github.com/OpenSaasAU/stack/pull/2092) [`c6f6a1b`](https://github.com/OpenSaasAU/stack/commit/c6f6a1b89f9c02dd85524a39ce37ff90694c938f) Thanks [@borisno2](https://github.com/borisno2)! - Bump `glob` to `^14.0.2` to pick up the GHSA-3g3m-2fjr-6pw4 fix.
+
+- [#2109](https://github.com/OpenSaasAU/stack/pull/2109) [`ced2623`](https://github.com/OpenSaasAU/stack/commit/ced262398a50b4bcab8b72d8bab16255ce125d8f) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` now passes `DATABASE_URL` and `DIRECT_DATABASE_URL` to the app child as empty strings instead of unsetting them, so `.env` cannot refill them and point the app at a database the loop did not reconcile. App code that tests these for `undefined` should test for an empty value.
+
+- [#2112](https://github.com/OpenSaasAU/stack/pull/2112) [`c0612b7`](https://github.com/OpenSaasAU/stack/commit/c0612b75bc5a484e431357ecd1255b054973ef58) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` against a `DATABASE_URL` database now parks every non-empty mid-session schema plan unless started with `--yes`; apply it with `pnpm db:update --plan <id>`.
+- Updated dependencies [[`cd5ea44`](https://github.com/OpenSaasAU/stack/commit/cd5ea4490f83e4a29e95de82243cd8bcd646ff13), [`856b1a4`](https://github.com/OpenSaasAU/stack/commit/856b1a4ba36b0105859c030457a654028d1baa57), [`0aac914`](https://github.com/OpenSaasAU/stack/commit/0aac914c03cb1ae9916e47ca990ac1045ed116ca), [`ffd993f`](https://github.com/OpenSaasAU/stack/commit/ffd993fc02941bbd3ba31957a6d0661975f198e9), [`5970719`](https://github.com/OpenSaasAU/stack/commit/5970719e647f8d33cdb22cac3943482c680b97c5), [`5154e86`](https://github.com/OpenSaasAU/stack/commit/5154e86742ffda5643e63b8ecf04fb43e2bdd0bd), [`aa5d187`](https://github.com/OpenSaasAU/stack/commit/aa5d1876c58806762446922b48b85dfac0491bf2), [`d4a5302`](https://github.com/OpenSaasAU/stack/commit/d4a5302ac09f66f4ca77eb537c2da5977059a14a), [`de62abd`](https://github.com/OpenSaasAU/stack/commit/de62abd46fdd9642d706df960e0ad71139f0b1a1), [`0930c89`](https://github.com/OpenSaasAU/stack/commit/0930c8902260453eb230de36fced121d620c1a91), [`841c88b`](https://github.com/OpenSaasAU/stack/commit/841c88be9bd758ef8ed8bcb07ee82d83a7d0ef4c), [`84e74e2`](https://github.com/OpenSaasAU/stack/commit/84e74e2ab9056f717b28d1a1a0259872a051a192), [`273a682`](https://github.com/OpenSaasAU/stack/commit/273a68276223460f181b63b6dbdf8af47379f912), [`240fce6`](https://github.com/OpenSaasAU/stack/commit/240fce6a25f5d3fb9ddca8f37433624c5191dbd5), [`864da3a`](https://github.com/OpenSaasAU/stack/commit/864da3aba8fc322758be958a9785d19eef021714), [`e275bec`](https://github.com/OpenSaasAU/stack/commit/e275bec13258b15f9af54f3cddd874331d9bb8df)]:
+  - @opensaas/stack-core@0.44.0-alpha.1
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

@@ -6,6 +6,7 @@ import type {
   AdapterFactoryConfig,
   CleanedWhere,
   CustomAdapter,
+  DBAdapter,
 } from 'better-auth/adapters'
 import type { BetterAuthOptions } from 'better-auth'
 import type { CodecRef, Expression, ScopeField } from '@prisma/orm-postgres/relational-core'
@@ -25,6 +26,17 @@ import { applyOrmWhere, AuthWhereError, sqlWhere, type AuthFieldResolution } fro
 
 export { AuthModelUnreachableError } from './surface.js'
 export { AuthWhereError } from './where.js'
+
+function refuseEmptyUpdate(adapter: DBAdapter): DBAdapter {
+  const update = adapter.update.bind(adapter)
+  return {
+    ...adapter,
+    update: async (args) => {
+      requirePredicate('update', args.model, args.where)
+      return await update(args)
+    },
+  }
+}
 
 function requirePredicate(operation: string, model: string, where: readonly unknown[]): void {
   if (where.length === 0) {
@@ -493,6 +505,7 @@ export function opensaasAuthAdapter(
           },
 
           async incrementOne({ model, where, increment, set }) {
+            requirePredicate('incrementOne', model, where)
             const { namespace, table } = at(model)
             const surface = laneOf()
             const plan = authSqlTable(surface, namespace, table)
@@ -558,13 +571,15 @@ export function opensaasAuthAdapter(
   return (betterAuthOptions) => {
     const keepsForcedUuids =
       supportsUUIDs && betterAuthOptions.advanced?.database?.generateId === 'uuid'
-    const boundAdapter = bound(keepsForcedUuids)(betterAuthOptions)
+    const boundAdapter = refuseEmptyUpdate(bound(keepsForcedUuids)(betterAuthOptions))
     const rootBracket: AuthTransactionBracket = (body) => {
       const lane = boundLane.getStore()
       return lane === undefined ? transaction(body) : body(lane)
     }
-    return factoryOn(keepsForcedUuids, laneOf, rootBracket, (callback) =>
-      transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
-    )(betterAuthOptions)
+    return refuseEmptyUpdate(
+      factoryOn(keepsForcedUuids, laneOf, rootBracket, (callback) =>
+        transaction(async (lane) => await boundLane.run(lane, () => callback(boundAdapter))),
+      )(betterAuthOptions),
+    )
   }
 }

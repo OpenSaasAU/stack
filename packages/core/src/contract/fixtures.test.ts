@@ -384,6 +384,22 @@ describe('one-to-one — the owner emits the FK column, constraint and unique; t
   })
 })
 
+describe('db.idField cuid — a text id column minted as cuid2', () => {
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: { Legacy: { fields: { name: text() }, db: { idField: 'cuid' } } },
+  }
+  const contract = buildPrismaContract(deriveContract(config))
+
+  test('the id is a text column with a cuid2 create default', () => {
+    expect(table(contract, 'Legacy').columns.id).toMatchObject({ codecId: 'pg/text@1' })
+    expect(contract.execution?.mutations.defaults).toContainEqual({
+      ref: { namespace: 'public', entry: 'Legacy', field: 'id' },
+      onCreate: { kind: 'generator', id: 'cuid2' },
+    })
+  })
+})
+
 describe('one-to-one — a named unique db.indexes entry on the owning column names the implicit constraint', () => {
   const config: OpenSaasConfig = {
     db: { provider: 'postgresql' },

@@ -7,7 +7,12 @@ import type {
 } from '@opensaas/stack-core/extend'
 import { z } from 'zod'
 import type { ComponentType } from 'react'
-import type { FileMetadata, ImageMetadata, ImageTransformationConfig } from '../config/types.js'
+import type {
+  FileMetadata,
+  ImageMetadata,
+  ImageTransformationConfig,
+  ImageTransformationResult,
+} from '../config/types.js'
 import type { FileValidationOptions } from '../utils/upload.js'
 import {
   assembleFileMetadata,
@@ -28,11 +33,19 @@ import {
 } from '../utils/multi-column.js'
 import { authorizeStoredMetadata } from '../utils/metadata-trust.js'
 import { isAssetReferenced } from '../utils/asset-references.js'
+import { takeStaged } from '../utils/staged.js'
 import { ValidationError, type AccessContext } from '@opensaas/stack-core'
 
-const storedUrlSchema = z.string().regex(/^(https?:\/\/|\/(?![/\\]))/i, {
-  message: 'url must be an http(s) URL or an absolute path',
-})
+const isControlCode = (code: number): boolean => code <= 0x1f || code === 0x7f
+
+const storedUrlSchema = z
+  .string()
+  .refine((url) => !/\s/.test(url) && ![...url].some((char) => isControlCode(char.charCodeAt(0))), {
+    message: 'url must not contain whitespace or control characters',
+  })
+  .regex(/^(https?:\/\/|\/(?![/\\]))/i, {
+    message: 'url must be an http(s) URL or an absolute path',
+  })
 
 /**
  * Multi-column (Keystone-parity) database mode for image()/file() fields.
@@ -336,6 +349,21 @@ function staleAssets<TMetadata extends { filename: string }>(
   return stale.filter((asset): asset is TMetadata => Boolean(asset?.filename))
 }
 
+async function settleStaged<TMetadata extends { filename: string }>(
+  pending: PendingUpload<TMetadata>,
+  status: string,
+): Promise<TMetadata[]> {
+  const staged = pending.uploaded ? takeStaged(pending.uploaded) : undefined
+  if (!staged) return staleAssets(pending, status)
+  try {
+    if (status === 'committed' && !pending.discarded) await staged.promote()
+    else await staged.discard()
+  } catch (error) {
+    console.error(`Failed to settle staged upload: ${pending.uploaded?.filename}`, error)
+  }
+  return staleAssets(pending, status).filter((asset) => asset !== pending.uploaded)
+}
+
 type ReferenceField = Parameters<typeof isAssetReferenced>[3]
 
 function claimStableKeyFor(
@@ -352,6 +380,23 @@ function claimStableKeyFor(
       ])
     }
   }
+}
+
+async function withoutSharedVariants<TMetadata extends ImageMetadata>(
+  context: AccessContext,
+  listKey: string,
+  fieldKey: string,
+  field: ReferenceField,
+  metadata: TMetadata,
+): Promise<TMetadata> {
+  if (!metadata.transformations) return metadata
+  const kept: Record<string, ImageTransformationResult> = {}
+  for (const [name, variant] of Object.entries(metadata.transformations)) {
+    const key = variant.filename ?? variant.url.split('/').pop()
+    if (key && (await isAssetReferenced(context, listKey, fieldKey, field, key))) continue
+    kept[name] = variant
+  }
+  return { ...metadata, transformations: kept }
 }
 
 function previousOnClear(
@@ -514,7 +559,7 @@ export function file<
     }
     const pending = pendingFileUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
           continue
@@ -571,6 +616,7 @@ export function file<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
                 claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
               },
             )) as FileMetadata
@@ -686,7 +732,10 @@ export function image<
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, deleted.filename))
           return
-        await context.storage.deleteImage({ ...deleted, storageProvider: fieldConfig.storage })
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, deleted)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image on delete: ${deleted.filename}`, error)
       }
@@ -694,11 +743,14 @@ export function image<
     }
     const pending = pendingImageUploads.take(inputData, fieldKey)
     if (!pending) return
-    for (const stale of staleAssets(pending, status)) {
+    for (const stale of await settleStaged(pending, status)) {
       try {
         if (await isAssetReferenced(context, listKey, fieldKey, fieldConfig, stale.filename))
           continue
-        await context.storage.deleteImage({ ...stale, storageProvider: fieldConfig.storage })
+        await context.storage.deleteImage({
+          ...(await withoutSharedVariants(context, listKey, fieldKey, fieldConfig, stale)),
+          storageProvider: fieldConfig.storage,
+        })
       } catch (error) {
         console.error(`Failed to cleanup image: ${stale.filename}`, error)
       }
@@ -751,6 +803,7 @@ export function image<
               buffer,
               {
                 validation: fieldConfig.validation,
+                stageStable: true,
                 claimStableKey: claimStableKeyFor(context, listKey, fieldKey, fieldConfig, item),
                 transformations: multiColumn ? undefined : fieldConfig.transformations,
               },

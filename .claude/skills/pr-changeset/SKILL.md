@@ -300,6 +300,7 @@ const context = await getContext({ userId })
 4. **Don't create changesets for examples or non-package changes**
    - Only create changesets for files in `packages/*`
    - Changes to `examples/*` don't need changesets
+   - Exception: whenever a changeset bumps any `@opensaas/stack-*` package, also add a patch changeset for `create-opensaas-app` (it sits outside the fixed group and templates stamp the stack version); `pnpm check:scaffolder-changeset` enforces this in CI
 
 5. **Don't use vague descriptions**
    - Bad: "Fix bug"

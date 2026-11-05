@@ -1,6 +1,6 @@
 {
   "name": "@opensaas/stack-core",
-  "version": "0.44.0-alpha.0",
+  "version": "0.44.0-alpha.5",
   "description": "Core stack for OpenSaas - schema definition, access control, and runtime utilities",
   "type": "module",
   "sideEffects": false,
@@ -116,7 +116,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "pg": "^8.23.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

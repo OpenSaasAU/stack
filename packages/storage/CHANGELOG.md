@@ -1,5 +1,33 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.5
+
+### Patch Changes
+
+- [#2136](https://github.com/OpenSaasAU/stack/pull/2136) [`d4ae4d3`](https://github.com/OpenSaasAU/stack/commit/d4ae4d39411da1ffc7e4463a1d3246f73bef5dc2) Thanks [@borisno2](https://github.com/borisno2)! - Raise the `zod` floor to `^4.6.6`, the release that fixes GHSA-mrhx-c7xc-m3w5.
+
+## 0.44.0-alpha.4
+
+### Patch Changes
+
+- [#2135](https://github.com/OpenSaasAU/stack/pull/2135) [`4c417c0`](https://github.com/OpenSaasAU/stack/commit/4c417c0d60c87997bb3d5ccab72420d93a929aaa) Thanks [@borisno2](https://github.com/borisno2)! - With `generateUniqueFilenames: false`, a rejected write no longer overwrites the stored file: uploads are staged and moved onto the stable key only once the write commits. Storage providers gain an optional `move(from, to)`.
+
+## 0.44.0-alpha.3
+
+No changes in this release.
+
+## 0.44.0-alpha.2
+
+### Patch Changes
+
+- [#2123](https://github.com/OpenSaasAU/stack/pull/2123) [`e4aef82`](https://github.com/OpenSaasAU/stack/commit/e4aef824332f679a62d626d36f67290f2da30c10) Thanks [@borisno2](https://github.com/borisno2)! - `acceptedExtensions` is now checked against the extensions of the effective MIME type (what the file is stored under), not the client filename, so `[".pdf"]` no longer admits an executable declared as `cv.pdf`. Behaviour change: a file whose filename extension disagrees with its declared type is now judged by the type.
+
+## 0.44.0-alpha.1
+
+### Patch Changes
+
+- [#2110](https://github.com/OpenSaasAU/stack/pull/2110) [`73c2474`](https://github.com/OpenSaasAU/stack/commit/73c24742119e111ea82863c8dc4ce5ea22ce3782) Thanks [@borisno2](https://github.com/borisno2)! - With `generateUniqueFilenames: false`, `image()` now claims every transformation variant key with the original and refuses a name another row's original or variant already owns; cleanup keeps variants another row still references.
+
 ## 0.44.0-alpha.0
 
 ### Minor Changes

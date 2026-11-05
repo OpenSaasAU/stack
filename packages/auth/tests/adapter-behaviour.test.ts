@@ -563,7 +563,7 @@ describe('where lowering', () => {
 })
 
 describe('one-row operations refuse an empty where', () => {
-  test.each(['findOne', 'delete', 'consumeOne'] as const)(
+  test.each(['findOne', 'update', 'delete', 'consumeOne', 'incrementOne'] as const)(
     '%s throws AuthWhereError and changes nothing',
     async (operation) => {
       await plain.adapter.create({ model: 'user', data: { email: 'a@example.com', name: 'A' } })
@@ -573,6 +573,14 @@ describe('one-row operations refuse an empty where', () => {
         switch (operation) {
           case 'findOne':
             return plain.adapter.findOne({ model: 'user', where: [] })
+          case 'update':
+            return plain.adapter.update({ model: 'user', where: [], update: { name: 'PWNED' } })
+          case 'incrementOne':
+            return plain.adapter.incrementOne({
+              model: 'rateLimit',
+              where: [],
+              increment: { count: 1 },
+            })
           case 'delete':
             return plain.adapter.delete({ model: 'user', where: [] })
           case 'consumeOne':
@@ -584,4 +592,18 @@ describe('one-row operations refuse an empty where', () => {
       expect(await plain.adapter.count({ model: 'user' })).toBe(2)
     },
   )
+
+  test('update refuses an empty where inside a transaction', async () => {
+    await plain.adapter.create({ model: 'user', data: { email: 'a@example.com', name: 'A' } })
+    await expect(
+      plain.adapter.transaction((tx) =>
+        tx.update({ model: 'user', where: [], update: { name: 'PWNED' } }),
+      ),
+    ).rejects.toThrow(AuthWhereError)
+    const row = await plain.adapter.findOne<{ name: string }>({
+      model: 'user',
+      where: [{ field: 'email', value: 'a@example.com' }],
+    })
+    expect(row?.name).toBe('A')
+  })
 })

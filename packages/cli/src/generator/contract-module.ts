@@ -227,6 +227,8 @@ function idExpression(id: ContractIdColumn): string {
       return 'field.column(type.Uuid()).id().onCreate(gen.uuid(7))'
     case 'cuid2':
       return 'field.column(type.Cuid2()).id().onCreate(gen.cuid(2))'
+    case 'cuid':
+      return 'field.column(type.String()).id().onCreate(gen.cuid(2))'
     case 'int autoincrement':
       return `field.column(type.Int()).defaultSql('autoincrement()').id()`
     case 'singleton':
@@ -252,13 +254,30 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
   // Known limits: createdAt is not .onCreate(gen.now()) alone, which drops the database
   // now() default that inserts outside the ORM rely on. See #1693 and ADR-0048.
   if (model.timestamps.createdAt) {
-    helpers.add('timestamptzStringColumn')
-    fields.push("        createdAt: field.column(timestamptzStringColumn).defaultSql('now()'),")
+    const created = pgColumnExpression(model.name, {
+      name: 'createdAt',
+      nullable: false,
+      type: model.timestampType ?? { pack: 'pg', type: 'timestamptz' },
+    })
+    for (const helper of created.helpers) helpers.add(helper)
+    fields.push(`        createdAt: ${created.expression}.defaultSql('now()'),`)
   }
   if (model.timestamps.updatedAt) {
-    fields.push(
-      '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
-    )
+    if (model.timestampType === undefined) {
+      fields.push(
+        '        updatedAt: field.column(type.TimestamptzString()).onCreate(gen.now()).onUpdate(gen.now()),',
+      )
+    } else {
+      const updated = pgColumnExpression(model.name, {
+        name: 'updatedAt',
+        nullable: false,
+        type: model.timestampType,
+      })
+      for (const helper of updated.helpers) helpers.add(helper)
+      fields.push(
+        `        updatedAt: ${updated.expression}.onCreate(gen.now()).onUpdate(gen.now()),`,
+      )
+    }
   }
 
   const lines = [
@@ -287,8 +306,12 @@ function renderModelDeclaration(model: ContractModel, helpers: Set<ColumnTypeHel
  * rendered module and `buildPrismaContract` reach the builder identically.
  */
 function renderModelAttributes(model: ContractModel): string {
-  const uniques = model.indexes.filter((index) => index.unique)
-  const plainIndexes = model.indexes.filter((index) => !index.unique)
+  const uniques = model.indexes.filter(
+    (index) => index.unique && index.where === undefined && !index.asIndex,
+  )
+  const plainIndexes = model.indexes.filter(
+    (index) => !index.unique || index.where !== undefined || index.asIndex === true,
+  )
   const indexedColumns = model.columns.filter((column) => column.index)
 
   const uniqueEntries = uniques.map((index) => {
@@ -301,17 +324,37 @@ function renderModelAttributes(model: ContractModel): string {
     ...indexedColumns.map((column) => `constraints.index([${member('cols', column.name)}]),`),
     ...plainIndexes.map((index) => {
       const columns = index.columns.map((column) => member('cols', column)).join(', ')
-      const options = index.name !== undefined ? `, { map: ${literal(index.name)} }` : ''
-      return `constraints.index([${columns}]${options}),`
+      const options: string[] = []
+      if (index.name !== undefined) options.push(`map: ${literal(index.name)}`)
+      if (index.unique) options.push('unique: true')
+      if (index.where !== undefined)
+        options.push(
+          `where: sql(Object.assign([${literal(index.where)}], { raw: [${literal(index.where)}] }))`,
+        )
+      return `constraints.index([${columns}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''}),`
     }),
   ]
 
   const foreignKeyEntries = model.foreignKeys.map((fk) => {
     const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
     if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
     if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
     return `constraints.foreignKey(${member('cols', fk.column)}, ${modelBinding(fk.references.model)}.refs.id, { ${options.join(', ')} }),`
   })
+
+  const compositeEntries = (model.compositeForeignKeys ?? []).map((fk) => {
+    const options = ['index: false']
+    if (fk.name !== undefined) options.push(`name: ${literal(fk.name)}`)
+    if (fk.onDelete !== undefined) options.push(`onDelete: ${literal(fk.onDelete)}`)
+    if (fk.onUpdate !== undefined) options.push(`onUpdate: ${literal(fk.onUpdate)}`)
+    const columns = fk.columns.map((column) => member('cols', column)).join(', ')
+    const targets = fk.references.columns
+      .map((column) => `${modelBinding(fk.references.model)}.refs[${literal(column)}]`)
+      .join(', ')
+    return `constraints.foreignKey([${columns}], [${targets}], { ${options.join(', ')} }),`
+  })
+  foreignKeyEntries.push(...compositeEntries)
 
   /** `key: []`, or the entries one per line under it. */
   function block(name: string, entries: string[]): string[] {
@@ -394,6 +437,8 @@ export function renderContractModule(data: ContractData): string {
 
   const usesEnums = data.enums.length > 0
   const builderImports = ['defineContract']
+  if (data.models.some((model) => model.indexes.some((index) => index.where !== undefined)))
+    builderImports.push('sql')
   if (usesEnums) builderImports.push('nativeEnum', 'pg')
 
   const lines: string[] = []
