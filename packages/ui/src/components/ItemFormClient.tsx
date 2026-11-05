@@ -167,7 +167,7 @@ export function ItemFormClient({
         </FieldValidityContext>
       </div>
 
-      <div className="flex items-center justify-between pt-6 border-t border-border">
+      <div className="flex items-center justify-between pt-6 border-t border-border max-md:flex-wrap max-md:gap-3">
         {readOnly ? (
           <div />
         ) : (

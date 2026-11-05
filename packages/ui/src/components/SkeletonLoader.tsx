@@ -66,7 +66,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
 
 export function FormSkeleton({ fields = 4 }: { fields?: number }) {
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-4 md:p-6">
       <div className="space-y-6">
         {Array.from({ length: fields }).map((_, i) => (
           <div key={i} className="space-y-2">
@@ -108,7 +108,7 @@ export function PageHeaderSkeleton({ action = true }: { action?: boolean }) {
  */
 export function ListViewSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
   return (
-    <div data-slot="list-view-skeleton" className="p-8">
+    <div data-slot="list-view-skeleton" className="p-4 md:p-8">
       <PageHeaderSkeleton />
       <div className="space-y-4">
         <SkeletonLoader variant="rectangular" className="h-16 w-full" />
@@ -124,7 +124,7 @@ export function ListViewSkeleton({ rows = 6, columns = 4 }: { rows?: number; col
  */
 export function ItemFormSkeleton({ fields = 5 }: { fields?: number }) {
   return (
-    <div data-slot="item-form-skeleton" className="p-8 max-w-4xl">
+    <div data-slot="item-form-skeleton" className="max-w-4xl p-4 md:p-8">
       <PageHeaderSkeleton action={false} />
       <FormSkeleton fields={fields} />
     </div>
@@ -137,7 +137,7 @@ export function ItemFormSkeleton({ fields = 5 }: { fields?: number }) {
  */
 export function DashboardSkeleton({ cards = 6 }: { cards?: number }) {
   return (
-    <div data-slot="dashboard-skeleton" className="p-8">
+    <div data-slot="dashboard-skeleton" className="p-4 md:p-8">
       <PageHeaderSkeleton action={false} />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Array.from({ length: cards }).map((_, i) => (

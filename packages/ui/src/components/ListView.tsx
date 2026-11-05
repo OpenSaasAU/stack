@@ -163,7 +163,7 @@ export async function ListView({
 
   if (!listConfig) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">List not found</h2>
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
@@ -264,7 +264,7 @@ export async function ListView({
     unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <PageHeader title={formatListName(listKey)} />
         <div role="alert" data-slot="list-view-error">
           <EmptyState
@@ -347,7 +347,7 @@ export async function ListView({
   const { hideCreate, hideDelete } = await resolveListUi(listConfig, context)
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <PageHeader
         title={formatListName(listKey)}
         description={`${total} ${total === 1 ? 'item' : 'items'}`}

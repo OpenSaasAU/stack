@@ -26,6 +26,7 @@ import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField } from '../lib/defaultColumns.js'
+import { STICKY_ACTIONS_CELL, VISIBLE_TABLE_MESSAGE } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 
@@ -432,7 +433,9 @@ export function ListViewClient({
                   </TableHead>
                 )
               })}
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className={cn('text-right max-md:bg-background', STICKY_ACTIONS_CELL)}>
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -445,7 +448,7 @@ export function ListViewClient({
                 >
                   {initialSearch ? (
                     <EmptyState
-                      className="border-0"
+                      className={cn('border-0', VISIBLE_TABLE_MESSAGE)}
                       icon={<SearchX className="h-6 w-6" />}
                       title="No matches found"
                       description={`Nothing matched “${initialSearch}”. Try a different search term.`}
@@ -457,7 +460,7 @@ export function ListViewClient({
                     />
                   ) : (
                     <EmptyState
-                      className="border-0"
+                      className={cn('border-0', VISIBLE_TABLE_MESSAGE)}
                       icon={<Inbox className="h-6 w-6" />}
                       title="No items yet"
                       description={
@@ -504,10 +507,12 @@ export function ListViewClient({
                         {renderCell(column, item)}
                       </TableCell>
                     ))}
-                    <TableCell className="text-right">
+                    <TableCell
+                      className={cn('text-right max-md:bg-background', STICKY_ACTIONS_CELL)}
+                    >
                       <Link
                         href={`${basePath}/${urlKey}/${item.id}`}
-                        className="text-primary hover:underline"
+                        className="text-primary hover:underline max-md:-m-3 max-md:inline-block max-md:p-3"
                       >
                         Edit
                       </Link>
@@ -521,7 +526,7 @@ export function ListViewClient({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between max-md:flex-wrap max-md:gap-2">
           <p className="text-sm tabular-nums text-muted-foreground">
             Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{' '}
             results

@@ -11,6 +11,7 @@ import {
   type TestContext,
 } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
+import { AdminShell, type AdminShellProps } from '../../src/components/AdminShell.js'
 import { Navigation } from '../../src/components/Navigation.js'
 
 // next/link renders an anchor; happy-dom can render it directly.
@@ -32,26 +33,25 @@ vi.mock('next/link.js', () => ({
 const noopServerAction = vi.fn(async () => ({ success: true }))
 
 /**
- * AdminUI returns <> {style?} <div><sidebar/><main>{content}</main></div> </>.
- * Recover whatever the sidebar slot resolved to (built-in `Navigation` or the
- * host-supplied `navigation` node). Uses raw children arrays rather than
- * `React.Children.toArray` — the latter clones elements to assign keys, which
- * breaks `toBe` identity checks against the original `navigation` node.
+ * AdminUI returns <> {style?} <AdminShell sidebar={…}>…</AdminShell> </>. Recover
+ * the shell from raw children arrays rather than `React.Children.toArray`, which
+ * clones elements to assign keys and breaks `toBe` identity checks against the
+ * original `navigation` node.
  */
-function sidebarOf(tree: React.ReactNode): React.ReactNode {
+function shellOf(tree: React.ReactNode): React.ReactElement<AdminShellProps> {
   const fragment = tree as React.ReactElement<{ children: React.ReactNode }>
   const fragmentChildren = fragment.props.children
   const topLevel = Array.isArray(fragmentChildren) ? fragmentChildren : [fragmentChildren]
-  const wrapper = topLevel.find(
-    (child): child is React.ReactElement<{ children: React.ReactNode }> =>
-      React.isValidElement(child) && child.type === 'div',
+  const shell = topLevel.find(
+    (child): child is React.ReactElement<AdminShellProps> =>
+      React.isValidElement(child) && child.type === AdminShell,
   )
-  if (!wrapper) throw new Error('AdminUI layout wrapper not found')
-  const wrapperChildren = wrapper.props.children
-  const items = Array.isArray(wrapperChildren) ? wrapperChildren : [wrapperChildren]
-  const sidebar = items.find((child) => !(React.isValidElement(child) && child.type === 'main'))
-  if (!sidebar) throw new Error('AdminUI sidebar not found')
-  return sidebar
+  if (!shell) throw new Error('AdminShell not found')
+  return shell
+}
+
+function sidebarOf(tree: React.ReactNode): React.ReactNode {
+  return shellOf(tree).props.sidebar
 }
 
 const baseConfig: OpenSaasConfig = {
@@ -120,6 +120,7 @@ describe('AdminUI navigation slot (ADR-0021)', () => {
     })
 
     expect(sidebarOf(tree)).toBe(custom)
+    expect(shellOf(tree).props.brand).toBeUndefined()
   })
 
   it('performs no nav-count resolution when `navigation` is supplied', async () => {

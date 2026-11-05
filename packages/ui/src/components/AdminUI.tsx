@@ -1,6 +1,8 @@
 import * as React from 'react'
+import Link from 'next/link.js'
 import { notFound, redirect } from 'next/navigation.js'
-import { Navigation, NavLink } from './Navigation.js'
+import { ADMIN_WORDMARK, Navigation, NavLink } from './Navigation.js'
+import { AdminShell } from './AdminShell.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
@@ -41,7 +43,9 @@ export interface AdminUIProps {
   onSignOut?: () => Promise<void>
   /**
    * Replaces the built-in sidebar wholesale (ADR-0021, the "chrome slot").
-   * `AdminUI` keeps routing, the shell, and theme compilation; it skips
+   * `AdminUI` keeps routing, the shell, and theme compilation. It renders in
+   * the page flow from `md` up, and in the menu button's drawer below that, so
+   * it should not hide itself at narrow widths. `AdminUI` skips
    * `resolveNavCounts` when this is supplied, since host-owned chrome resolves
    * its own access-scoped counts. Takes precedence over `navItems` — if both
    * are supplied, `navigation` renders and `navItems` is ignored with a
@@ -248,12 +252,21 @@ export async function AdminUI({
   return (
     <>
       {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
-      <div className="flex min-h-screen bg-background">
-        {sidebar}
-        <main className="flex-1 overflow-y-auto">
-          <React.Suspense fallback={fallback}>{content}</React.Suspense>
-        </main>
-      </div>
+      <AdminShell
+        sidebar={sidebar}
+        brand={
+          navigation ? undefined : (
+            <Link
+              href={basePath}
+              className="truncate font-heading text-lg font-bold tracking-tight"
+            >
+              {ADMIN_WORDMARK}
+            </Link>
+          )
+        }
+      >
+        <React.Suspense fallback={fallback}>{content}</React.Suspense>
+      </AdminShell>
     </>
   )
 }

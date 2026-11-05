@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation.js'
 import { cn, formatFieldName, formatListName, isNumericField } from '../lib/utils.js'
+import { STICKY_ACTIONS_CELL, VISIBLE_TABLE_MESSAGE } from '../lib/tableClasses.js'
 import {
   Table,
   TableBody,
@@ -278,9 +279,12 @@ export function RelationshipTableClient({
 
   return (
     <Card data-slot="relationship-table" className="overflow-hidden">
-      <div className="flex items-center justify-between gap-2 border-b border-border p-4">
+      <div className="flex items-center justify-between gap-2 border-b border-border p-4 max-md:flex-wrap">
         <h2 className="font-heading text-lg font-semibold">{title}</h2>
-        <div data-slot="relationship-table-toolbar" className="flex items-center gap-2">
+        <div
+          data-slot="relationship-table-toolbar"
+          className="flex items-center gap-2 max-md:flex-wrap"
+        >
           {linkEdge && fieldName && (
             <RelationshipLinkControl
               parentListKey={parentListKey}
@@ -331,7 +335,7 @@ export function RelationshipTableClient({
               )
             })}
             {showRemove && (
-              <TableHead className="w-0 text-right">
+              <TableHead className={cn('w-0 text-right max-md:bg-card', STICKY_ACTIONS_CELL)}>
                 <span className="sr-only">Actions</span>
               </TableHead>
             )}
@@ -346,7 +350,7 @@ export function RelationshipTableClient({
                 colSpan={Math.max(totalColumns, 1)}
                 className="py-8 text-center text-sm text-muted-foreground"
               >
-                No related {title.toLowerCase()} yet.
+                <div className={VISIBLE_TABLE_MESSAGE}>No related {title.toLowerCase()} yet.</div>
               </TableCell>
             </TableRow>
           ) : (
@@ -383,7 +387,9 @@ export function RelationshipTableClient({
                     )
                   })}
                   {showRemove && (
-                    <TableCell className="text-right align-top">
+                    <TableCell
+                      className={cn('text-right align-top max-md:bg-card', STICKY_ACTIONS_CELL)}
+                    >
                       <Button
                         type="button"
                         variant="ghost"

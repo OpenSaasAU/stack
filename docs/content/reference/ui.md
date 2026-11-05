@@ -182,7 +182,10 @@ hosts building their own chrome entirely. `AdminUI` still owns routing, the
 per-route Suspense skeletons, and theme compilation; the supplied node owns
 its own width/height like the built-in sidebar does. When `navigation` is
 supplied, `AdminUI` skips `resolveNavCounts` — host-owned chrome resolves its
-own access-scoped counts (it's already exported for this):
+own access-scoped counts (it's already exported for this). The node renders in
+the page flow from the `md` breakpoint up and in the menu button's drawer below
+it, so it should not hide itself at narrow widths; following a link in the
+drawer closes it:
 
 ```tsx
 import { NavLink, deriveCurrentPath } from '@opensaas/stack-ui'

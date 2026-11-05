@@ -73,7 +73,7 @@ export function PageHeader({
       className={cn(
         'mb-8',
         gradient &&
-          'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-gradient-from/10 to-gradient-to/10 p-6',
+          'relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-gradient-from/10 to-gradient-to/10 p-4 md:p-6',
         className,
         classNames?.root,
       )}
@@ -83,7 +83,7 @@ export function PageHeader({
           href={backHref}
           data-slot="page-header-back"
           className={cn(
-            'mb-4 inline-flex items-center text-sm text-muted-foreground transition-colors hover:text-foreground',
+            'mb-4 inline-flex items-center text-sm text-muted-foreground transition-colors hover:text-foreground max-md:-my-2 max-md:mb-2 max-md:py-2',
             classNames?.back,
           )}
         >
@@ -115,7 +115,7 @@ export function PageHeader({
           <h1
             data-slot="page-header-title"
             className={cn(
-              'flex items-center gap-2.5 font-heading text-3xl font-bold tracking-tight text-foreground',
+              'flex items-center gap-2.5 font-heading text-3xl font-bold tracking-tight text-foreground max-md:wrap-anywhere',
               classNames?.title,
             )}
           >
@@ -142,7 +142,7 @@ export function PageHeader({
         {actions && (
           <div
             data-slot="page-header-actions"
-            className={cn('flex shrink-0 items-center gap-2', classNames?.actions)}
+            className={cn('flex shrink-0 items-center gap-2 max-md:flex-wrap', classNames?.actions)}
           >
             {actions}
           </div>
