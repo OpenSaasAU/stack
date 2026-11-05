@@ -85,3 +85,45 @@ describe('S3StorageProvider receives the effective type, not the client-declared
     )
   })
 })
+
+describe('S3StorageProvider never receives a raw declared type (issue #2148)', () => {
+  async function multipart(declared: string): Promise<File> {
+    const boundary = 'opensaas-test-boundary'
+    const formData = await new Request('http://localhost/', {
+      method: 'POST',
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      body: `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="x.pdf"\r\nContent-Type: ${declared}\r\n\r\n<script>alert(1)</script>\r\n--${boundary}--\r\n`,
+    }).formData()
+    const file = formData.get('file')
+    if (!(file instanceof File)) throw new Error('the multipart body carried no file')
+    return file
+  }
+
+  it.each(['text/html x', 'text/html,x', 'image/svg+xml x', 'TEXT/HTML x'])(
+    'puts %j as an octet-stream .bin object',
+    async (declared) => {
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const file = await multipart(declared)
+
+      await uploadFile(config, 'docs', { file, buffer: Buffer.from(await file.arrayBuffer()) })
+
+      expect(vi.mocked(PutObjectCommand)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Key: expect.stringMatching(/\.bin$/),
+          ContentType: 'application/octet-stream',
+        }),
+      )
+    },
+  )
+
+  it('puts a parameterised type under its bare essence', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+    const file = await multipart('APPLICATION/PDF; name="text/html"')
+
+    await uploadFile(config, 'docs', { file, buffer: Buffer.from(await file.arrayBuffer()) })
+
+    expect(vi.mocked(PutObjectCommand)).toHaveBeenCalledWith(
+      expect.objectContaining({ ContentType: 'application/pdf' }),
+    )
+  })
+})
