@@ -566,7 +566,14 @@ What this package actually enforces, and what it leaves to you (issues #1625, #1
   `application/xhtml+xml`, `text/xml`, `application/xml` and the JavaScript
   MIME types are refused unless a field's own `acceptedMimeTypes` names the
   exact type — including a `file()`/`image()` with no `validation` config at
-  all.
+  all. So are `text/xsl`, every `+xml` essence, and the essences that make a
+  browser sniff the bytes (`unknown/unknown`, `application/unknown`, `*/*`).
+- **One parser reads a declared type.** The active-content check, the
+  accept-list, the stored extension and the provider `contentType` all take
+  the strict `token/token` essence. A declared type that does not parse
+  (`text/html x`, `text/html,x`) is stored as `application/octet-stream` under
+  `.bin`, and an `acceptedMimeTypes` entry is compared against that normalised
+  type, never the raw string.
 - **No byte-sniffing for `file()`.** It trusts the declared type once the two
   rules above hold: a false declaration then produces a correctly-typed,
   inert file rather than one served same-origin as active content. `image()`

@@ -2,9 +2,11 @@ import mime from 'mime-types'
 
 /**
  * MIME types that browsers or servers can execute as script or render as
- * active markup. Refused by default (issue #1625) unless a field's own
- * `acceptedMimeTypes` names the exact type — an `.html` upload declared as
- * `application/pdf` must not be stored as `text/html` and served same-origin.
+ * active markup, plus the essences that make a browser sniff the bytes
+ * instead (https://mimesniff.spec.whatwg.org/#mime-type-sniffing-algorithm).
+ * Refused by default (issue #1625) unless a field's own `acceptedMimeTypes`
+ * names the exact type — an `.html` upload declared as `application/pdf` must
+ * not be stored as `text/html` and served same-origin.
  */
 export const ACTIVE_MIME_TYPES: ReadonlySet<string> = new Set([
   'text/html',
@@ -12,14 +14,32 @@ export const ACTIVE_MIME_TYPES: ReadonlySet<string> = new Set([
   'image/svg+xml',
   'text/xml',
   'application/xml',
-  'text/javascript',
+  'text/xsl',
+  'application/ecmascript',
   'application/javascript',
+  'application/x-ecmascript',
   'application/x-javascript',
+  'text/ecmascript',
+  'text/javascript',
+  'text/javascript1.0',
+  'text/javascript1.1',
+  'text/javascript1.2',
+  'text/javascript1.3',
+  'text/javascript1.4',
+  'text/javascript1.5',
+  'text/jscript',
+  'text/livescript',
+  'text/x-ecmascript',
+  'text/x-javascript',
+  'unknown/unknown',
+  'application/unknown',
+  '*/*',
 ])
 
+/** A type that does not parse as a strict essence counts as active. */
 export function isActiveMimeType(type: string): boolean {
   const essence = mimeEssence(type)
-  return ACTIVE_MIME_TYPES.has(essence) || essence.endsWith('+xml')
+  return essence === null || ACTIVE_MIME_TYPES.has(essence) || essence.endsWith('+xml')
 }
 
 export interface FileValidationOptions {
@@ -82,31 +102,33 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+const HTTP_TOKEN = "[A-Za-z0-9!#$%&'*+.^_`|~-]+"
+const STRICT_ESSENCE = new RegExp(`^${HTTP_TOKEN}/${HTTP_TOKEN}$`)
+const SURROUNDING_HTTP_WHITESPACE = /^[\t\n\r ]+|[\t\n\r ]+$/g
+
 /**
- * The bare MIME type, with any `; charset=...`-style parameters and
- * surrounding whitespace stripped, lowercased. A declared `type` of
- * `text/html; charset=utf-8` must still be caught by the active-type set and
- * the accept-list, both of which compare against the bare essence — checking
- * the raw string let a parameterized active type slip past both, while
- * `mime.extension` (used for the stored extension) already strips parameters
- * internally, so the file would still land on disk as `.html`.
+ * The lowercased `token/token` essence of a MIME type, or `null` for anything
+ * else. Every reader of a type goes through this: `mime.extension` cuts at
+ * whitespace and `;` and would call `text/html x` html, while a browser reads
+ * `text/html,x` as html too.
  */
-function mimeEssence(type: string): string {
+function mimeEssence(type: string): string | null {
   const semicolon = type.indexOf(';')
-  const essence = semicolon === -1 ? type : type.slice(0, semicolon)
-  return essence.trim().toLowerCase()
+  const bare = semicolon === -1 ? type : type.slice(0, semicolon)
+  const essence = bare.replace(SURROUNDING_HTTP_WHITESPACE, '')
+  return STRICT_ESSENCE.test(essence) ? essence.toLowerCase() : null
 }
 
 /**
- * The MIME type an upload is validated and stored under: the client's
- * declared `type` (its bare essence, parameters stripped), or the type
- * looked up from the filename when none is declared. Never the sniffed
- * bytes — that is `image()`'s own job, since only an image has bytes sharp
- * can read back a format from.
+ * The MIME type an upload is validated and stored under: the bare essence of
+ * the client's declared `type`, `application/octet-stream` when that does not
+ * parse, or the type looked up from the filename when none is declared. Never
+ * the sniffed bytes — that is `image()`'s own job, since only an image has
+ * bytes sharp can read back a format from.
  */
 export function resolveEffectiveMimeType(file: { name: string; type: string }): string {
-  const declared = file.type ? mimeEssence(file.type) : ''
-  return declared || getMimeType(file.name)
+  if (!file.type) return getMimeType(file.name)
+  return mimeEssence(file.type) ?? 'application/octet-stream'
 }
 
 /**
@@ -191,7 +213,8 @@ export function getMimeType(filename: string): string {
  * must reflect the validated type, not what the upload was named.
  */
 export function extensionForMimeType(mimeType: string): string | undefined {
-  const ext = mime.extension(mimeType)
+  const essence = mimeEssence(mimeType)
+  const ext = essence === null ? false : mime.extension(essence)
   return ext ? `.${ext}` : undefined
 }
 
