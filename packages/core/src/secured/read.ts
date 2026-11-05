@@ -1458,7 +1458,7 @@ export type WrittenRowRead =
 
 /** Whether a computed field on this list declares a relation a write's return must fetch. */
 export function writeReturnReadsRelations(binding: Omit<ReadBinding, 'lock'>): boolean {
-  return declaredRelations(resolveContext(binding, binding.context._isSudo !== true)).length > 0
+  return declaredRelations(binding).length > 0
 }
 
 /** Runs on the binding's own handle: the write's transaction, never a second connection. */

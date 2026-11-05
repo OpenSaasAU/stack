@@ -122,6 +122,27 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Sealed: {
+      fields: {
+        name: text(),
+        seals: relationship({ ref: 'Seal.sealed', many: true }),
+        tally: virtual({
+          type: 'number',
+          needs: ['seals'],
+          hooks: {
+            resolveOutput: ({ item }) => {
+              hookRuns.push('tally')
+              return Array.isArray(item.seals) ? item.seals.length : -1
+            },
+          },
+        }),
+      },
+      access: { operation: { ...open, query: () => false } },
+    },
+    Seal: {
+      fields: { sealed: relationship({ ref: 'Sealed.seals', db: { onDelete: 'cascade' } }) },
+      access: { operation: open },
+    },
     Coin: {
       fields: { vault: relationship({ ref: 'Vault.coins', db: { onDelete: 'cascade' } }) },
       access: { operation: { ...open, query: () => false } },
@@ -455,6 +476,22 @@ describe('a write returns a needs: [relation] field exactly as a read of that ro
 
     expect(await stranger.db.Vault.update({ where: { id }, data: {} })).toEqual({ id })
     expect(await stranger.db.Vault.delete({ where: { id } })).toEqual({ id })
+    expect(hookRuns).toEqual([])
+  })
+
+  test('a list the session may never query returns its system fields, computing nothing', async () => {
+    const created = await staff.db.Sealed.create({ data: { name: 'a' } })
+    const id = idOf(created)
+    await staff.sudo().db.Seal.create({ data: { sealed: { connect: { id } } } })
+
+    const updated = await staff.db.Sealed.update({ where: { id }, data: { name: 'b' } })
+    const deleted = await staff.db.Sealed.delete({ where: { id } })
+
+    expect({ created, updated, deleted }).toEqual({
+      created: { id },
+      updated: { id },
+      deleted: { id },
+    })
     expect(hookRuns).toEqual([])
   })
 
