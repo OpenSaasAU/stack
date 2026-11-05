@@ -19,6 +19,7 @@ import {
   loadOpenSaasConfig,
   loadProjectEnvFile,
 } from '../generator/index.js'
+import { hasLiveDevLoop } from '../dev/control.js'
 import type { ResolvedWritePaths } from '../generator/index.js'
 import {
   OpenSaasConfig,
@@ -111,6 +112,8 @@ export interface GenerateCommandOptions {
    * running Dev database cannot carry without touching the live tree.
    */
   checkConfig?: (config: OpenSaasConfig) => void
+  /** Set by the dev loop's own boot generation, which is exempt from the live-loop refusal. */
+  ownedByLoop?: boolean
 }
 
 /** Where one generation put its files, and how to point Prisma at them. */
@@ -147,6 +150,13 @@ export async function generateCommand(
     console.error(chalk.red('❌ Error: opensaas.config.ts not found in current directory'))
     console.error(chalk.gray('   Please run this command from your project root'))
     throw new GenerationFailedError('opensaas.config.ts not found')
+  }
+
+  if (options.stagingDir === undefined && !options.ownedByLoop && hasLiveDevLoop(cwd)) {
+    const message =
+      '`opensaas dev` is running for this project and owns generation; save the config to let it regenerate, or run `opensaas db update` to apply a parked change.'
+    console.error(chalk.red('❌ Error:'), message)
+    throw new GenerationFailedError(message)
   }
 
   loadProjectEnvFile(cwd)
