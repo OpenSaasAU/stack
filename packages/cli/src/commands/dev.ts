@@ -367,6 +367,14 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     if (trimmed.length > 0) say(trimmed)
   }
 
+  const readConfigSource = (): string | undefined => {
+    try {
+      return fs.readFileSync(configPath, 'utf-8')
+    } catch {
+      return undefined
+    }
+  }
+
   const sessionConsent = options.yes === true || process.env.OPENSAAS_DEV_YES === '1'
 
   const onConfigChange = async (): Promise<void> => {
@@ -479,12 +487,16 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     reconciledSource = undefined
     reconciledModules = new Map()
 
+    const source = readConfigSource()
+    const modulesAtRequest = snapshotModules(watchedModules)
+
     const generation = await stage(say)
     if (generation === undefined) {
       restoreMigrationRefs(cwd, refs)
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
       return
     }
+    const generatedModules = modulesGeneratedFrom(generation, modulesAtRequest)
 
     const planned = await planDatabaseUpdate(cwd, generation.prismaConfig, { dryRun: true })
     if (!planned.ok) {
@@ -525,6 +537,18 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         planned.plan.operations.length === 0
           ? `Plan ${requestedPlanId} is no longer current: the database already matches the config, so nothing was applied.`
           : `Plan ${requestedPlanId} is not the current plan, so nothing was applied. To apply the config as it stands, run \`pnpm db:update\`.`,
+      )
+      return
+    }
+
+    // Only ever refuses: the id check above is what makes a plan valid, and this
+    // narrows the time a save can land between that plan and the apply.
+    if (
+      readConfigSource() !== source ||
+      !moduleSnapshotsEqual(snapshotModules([...generatedModules.keys()]), generatedModules)
+    ) {
+      refuse(
+        'The config changed while this request was planning, so nothing was applied. Run the command again to plan from the config as it stands.',
       )
       return
     }

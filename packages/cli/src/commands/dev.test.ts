@@ -909,6 +909,61 @@ describe('devCommand', () => {
       },
     )
 
+    it('refuses to apply when a module is reverted during the dry run', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+      const id = parkedId()
+      duringDryRun = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('refuses to apply when the config is reverted during the dry run', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      duringDryRun = () => fs.writeFileSync(configFile(), original)
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('refuses to apply when a module this request first reached is reverted during the dry run', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      saveLists(['body'])
+      fs.writeFileSync(configFile(), splitConfigSource)
+      duringDryRun = () => saveLists(['title'])
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (m) => replied.push(m))).toBe(false)
+
+      expect(replied.join('\n')).toContain('config changed')
+      expect(destructiveApplies()).toHaveLength(0)
+    })
+
+    it('does not refuse a request whose inputs did not move', async () => {
+      await splitTheConfig()
+      await save(() => saveLists(['body']))
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, parkedId(), (m) => replied.push(m))).toBe(true)
+      expect(replied.join('\n')).not.toContain('config changed')
+
+      child.emit('exit', 0, null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
     it('watches a module first reached by a generation a request parked', async () => {
       saveLists(['body'])
       fs.writeFileSync(configFile(), splitConfigSource)
