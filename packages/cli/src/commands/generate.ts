@@ -154,7 +154,7 @@ export async function generateCommand(
 
   if (options.stagingDir === undefined && !options.ownedByLoop && hasLiveDevLoop(cwd)) {
     const message =
-      '`opensaas dev` is running for this project and owns generation; save the config to let it regenerate, or run `opensaas db update` to apply a parked change.'
+      '`opensaas dev` is running for this project and owns generation; save the config to let it regenerate, or run `opensaas db update` to apply a parked change. If no loop is running, delete .opensaas/dev-loop.json.'
     console.error(chalk.red('❌ Error:'), message)
     throw new GenerationFailedError(message)
   }

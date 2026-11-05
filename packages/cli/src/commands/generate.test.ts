@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -660,7 +661,8 @@ describe('Generate Command Integration', () => {
     })
 
     it('proceeds when the control file is stale', async () => {
-      writeControlFile(2 ** 22 + 12345)
+      const exited = spawnSync(process.execPath, ['-e', '0'])
+      writeControlFile(exited.pid)
 
       await expect(generateCommand(reachesCheckConfig)).rejects.toThrow('past the guard')
     })
