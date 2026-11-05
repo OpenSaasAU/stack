@@ -19,7 +19,7 @@
     "@opensaas/stack-auth": "workspace:*",
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.21",
+    "@prisma/orm-postgres": "8.0.0-rc.22",
     "@tailwindcss/postcss": "^4.3.3",
     "better-auth": "^1.7.10",
     "next": "^16.4.2",
