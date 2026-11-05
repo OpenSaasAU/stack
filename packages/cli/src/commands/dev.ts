@@ -447,7 +447,20 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     const refs = snapshotMigrationRefs(cwd)
 
-    const generation = staged ?? (await stage(say))
+    let source: string | undefined
+    try {
+      source = fs.readFileSync(configPath, 'utf-8')
+    } catch {
+      source = undefined
+    }
+
+    // A save still inside the watcher's settle window has not re-staged yet, so
+    // the parked generation is only good if it was made from what is on disk.
+    const stagedIsCurrent =
+      source === reconciledSource &&
+      moduleSnapshotsEqual(snapshotModules(watchedModules), reconciledModules)
+
+    const generation = (stagedIsCurrent ? staged : undefined) ?? (await stage(say))
     if (generation === undefined) {
       restoreMigrationRefs(cwd, refs)
       reply.finish(false, 'Nothing was staged: generation refused the current config.')
@@ -462,23 +475,37 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       return
     }
 
-    if (planned.plan.destructive) {
-      const id = planId(planned.plan)
-      if (requestedPlanId !== id) {
-        restoreMigrationRefs(cwd, refs)
-        staged = generation
-        parkedPlanId = id
-        say('This change would destroy data, so it was not applied:')
-        for (const line of describePlan(planned.plan)) say(line)
-        say(`Plan id: ${id}`)
-        reply.finish(
-          false,
-          requestedPlanId === undefined
-            ? `Destructive changes need the plan's id. ${parkedRoute(id).trim()}`
-            : `Plan ${requestedPlanId} is not the current plan. ${parkedRoute(id).trim()}`,
-        )
-        return
-      }
+    const id = planId(planned.plan)
+
+    if (planned.plan.destructive && requestedPlanId !== id) {
+      restoreMigrationRefs(cwd, refs)
+      staged = generation
+      parkedPlanId = id
+      reconciledSource = source
+      syncWatchedModules(generation.resolvedModules)
+      reconciledModules = snapshotModules(watchedModules)
+      say('This change would destroy data, so it was not applied:')
+      for (const line of describePlan(planned.plan)) say(line)
+      say(`Plan id: ${id}`)
+      reply.finish(
+        false,
+        requestedPlanId === undefined
+          ? `Destructive changes need the plan's id. ${parkedRoute(id).trim()}`
+          : `Plan ${requestedPlanId} is not the current plan. ${parkedRoute(id).trim()}`,
+      )
+      return
+    }
+
+    if (requestedPlanId !== undefined && requestedPlanId !== id) {
+      restoreMigrationRefs(cwd, refs)
+      if (staged === undefined) fs.rmSync(stagingDir, { recursive: true, force: true })
+      reply.finish(
+        false,
+        planned.plan.operations.length === 0
+          ? `Plan ${requestedPlanId} is no longer current: the database already matches the config, so nothing was applied.`
+          : `Plan ${requestedPlanId} is not the current plan, so nothing was applied. To apply the config as it stands, run \`pnpm db:update\`.`,
+      )
+      return
     }
 
     const applied = await planDatabaseUpdate(cwd, generation.prismaConfig, {
@@ -495,15 +522,7 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     promote(generation)
     syncWatchedModules(generation.resolvedModules)
     reconciledModules = snapshotModules(watchedModules)
-    // Best-effort: this request did not read the config itself, so this is
-    // the freshest bytes available for what the loop just generated from. A
-    // config deleted out from under a running loop is caught the same way
-    // the watcher's own read of it already is — by leaving nothing reconciled.
-    try {
-      reconciledSource = fs.readFileSync(configPath, 'utf-8')
-    } catch {
-      reconciledSource = undefined
-    }
+    reconciledSource = source
 
     for (const line of describePlan(applied.plan)) say(line)
 

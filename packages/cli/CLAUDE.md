@@ -107,7 +107,7 @@ opensaas db update
 opensaas db update --plan <id>   # apply the destructive plan the loop printed
 ```
 
-Runs **through the loop** rather than beside it: the loop holds the database, the staged generation and the app child, so this command opens no connection of its own and errors when nothing is listening. A destructive plan needs `--plan <id>`, the id the loop printed; the loop supplies Prisma's own consent for the connected database.
+Runs **through the loop** rather than beside it: the loop holds the database, the staged generation and the app child, so this command opens no connection of its own and errors when nothing is listening. A destructive plan needs `--plan <id>`, the id the loop printed; the loop supplies Prisma's own consent for the connected database. The id is checked against what the config on disk wants at that moment: a parked generation the config has moved on from is regenerated first, and a `--plan` naming anything but the current plan applies nothing.
 
 ## Generated Files
 

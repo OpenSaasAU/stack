@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DevDatabaseInUseError, startDevDatabase } from '@opensaas/stack-core/dev-database'
 import { findDatabaseConnection } from '@opensaas/stack-core/internal'
 import { CONTROL_FILE, requestDatabaseUpdate } from '../dev/control.js'
+import { loadOpenSaasConfig as loadConfigFromDisk } from '../generator/config-load.js'
 import { runPrismaCli } from '../generator/index.js'
 import { resolveOutputPaths, stageWritePaths } from '../generator/output-paths.js'
 import { devCommand } from './dev.js'
@@ -585,6 +586,199 @@ describe('devCommand', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     child.emit('exit', 0, null)
     await pendingLoop
+  })
+
+  /**
+   * The loop over the real config loader: a staged generation is whatever the
+   * config on disk evaluates to, and the plan is a drop whenever that lost
+   * `title` — so a stale load is visible as a stale contract (#2169).
+   */
+  describe('generating from what is on disk', () => {
+    const planFor = (operations: { label: string; operationClass: string }[]): string =>
+      JSON.stringify({
+        kind: 'result',
+        envelope: {
+          result: {
+            accessChanges: [],
+            dataLoss: operations
+              .filter((operation) => operation.operationClass === 'destructive')
+              .map((operation) => ({ text: operation.label })),
+            plan: { operations },
+          },
+        },
+      })
+
+    let said: string[]
+    let live: ReturnType<typeof resolveOutputPaths>['paths']
+    let staged: ReturnType<typeof stageWritePaths>
+    let stagedGenerations: number
+
+    const configFile = (): string => path.join(tempDir, 'opensaas.config.ts')
+
+    const saveFields = (fields: readonly string[]): void => {
+      fs.writeFileSync(configFile(), `export default { fields: ${JSON.stringify(fields)} }\n`)
+    }
+
+    /** Fires a save and waits for the reconcile it started to settle. */
+    const save = async (write: () => void): Promise<void> => {
+      const before = said.length
+      write()
+      watcherHandlers.get('change')?.()
+      await until(() =>
+        said
+          .slice(before)
+          .some((line) => /promoted|Plan id:|keeps serving the contract/.test(line)),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
+    const destructiveApplies = (): string[][] =>
+      vi
+        .mocked(runPrismaCli)
+        .mock.calls.map(([, args]) => [...args])
+        .filter((args) => args.includes('--delete'))
+
+    const parkedId = (): string | undefined => /Plan id: ([0-9a-f]+)/.exec(said.join('\n'))?.[1]
+
+    beforeEach(async () => {
+      child.hold = true
+      said = []
+      stagedGenerations = 0
+      vi.spyOn(console, 'log').mockImplementation((...parts: unknown[]) => {
+        said.push(parts.map((part) => String(part)).join(' '))
+      })
+
+      live = resolveOutputPaths(tempDir).paths
+      staged = stageWritePaths(live, path.join(tempDir, '.opensaas', 'staged'))
+
+      vi.mocked(generateCommand).mockImplementation(async (options = {}) => {
+        if (options.stagingDir === undefined) {
+          return {
+            paths: live,
+            livePaths: live,
+            prismaConfig: live.prismaConfig,
+            resolvedModules: [],
+          }
+        }
+        const { config, resolvedModules } = await loadConfigFromDisk(tempDir, configFile())
+        stagedGenerations += 1
+        fs.mkdirSync(path.dirname(staged.contractModule), { recursive: true })
+        fs.writeFileSync(staged.contractModule, JSON.stringify(config), 'utf-8')
+        return {
+          paths: staged,
+          livePaths: live,
+          prismaConfig: staged.prismaConfig,
+          resolvedModules,
+        }
+      })
+
+      vi.mocked(runPrismaCli).mockImplementation(async () => {
+        const contract = fs.existsSync(staged.contractModule)
+          ? fs.readFileSync(staged.contractModule, 'utf-8')
+          : 'title'
+        const stdout = planFor(
+          contract.includes('title')
+            ? []
+            : [{ label: 'drop Post.title', operationClass: 'destructive' }],
+        )
+        return { exitCode: 0, signal: null, output: stdout, stdout }
+      })
+
+      saveFields(['title'])
+      startLoop({ appCommand: ['node', 'server.mjs'] })
+      await until(() => fs.existsSync(path.join(tempDir, CONTROL_FILE)))
+    })
+
+    it('keeps following the config after a save that failed to load', async () => {
+      const contract = (): string => fs.readFileSync(live.contractModule, 'utf-8')
+
+      await save(() => fs.writeFileSync(configFile(), 'export default {{{\n'))
+      expect(said.join('\n')).toContain('Generation failed')
+
+      await save(() => saveFields(['title', 'c']))
+      expect(contract()).toContain('"c"')
+
+      await save(() => saveFields(['title', 'c', 'd']))
+      expect(contract()).toContain('"d"')
+
+      await save(() => saveFields(['title', 'c', 'd', 'e']))
+      expect(contract()).toContain('"e"')
+    })
+
+    it('cancels a parked drop when the config is reverted', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+
+      await save(() => fs.writeFileSync(configFile(), "throw new Error('boom')\n"))
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      said.length = 0
+      await save(() => fs.writeFileSync(configFile(), original))
+      expect(said.join('\n')).not.toContain('Plan id:')
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('title')
+
+      const replied: string[] = []
+      expect(await requestDatabaseUpdate(tempDir, id, (message) => replied.push(message))).toBe(
+        false,
+      )
+      expect(replied.join('\n')).toContain('no longer current')
+      expect(destructiveApplies()).toHaveLength(0)
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('title')
+    })
+
+    it('refuses a parked plan whose revert the watcher has not reported yet', async () => {
+      const original = fs.readFileSync(configFile(), 'utf-8')
+
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+      expect(id).toBeDefined()
+
+      fs.writeFileSync(configFile(), original)
+
+      const generationsBefore = stagedGenerations
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(false)
+      expect(stagedGenerations).toBe(generationsBefore + 1)
+      expect(destructiveApplies()).toHaveLength(0)
+      expect(fs.existsSync(live.contractModule)).toBe(false)
+    })
+
+    it('applies a parked plan when the config still wants it', async () => {
+      await save(() => saveFields(['body']))
+      const id = parkedId()
+
+      expect(await requestDatabaseUpdate(tempDir, id, () => {})).toBe(true)
+      expect(destructiveApplies()).toHaveLength(1)
+      expect(fs.readFileSync(live.contractModule, 'utf-8')).toContain('body')
+
+      child.emit('exit', 0, null)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      child.emit('exit', 0, null)
+      await pendingLoop
+    })
+
+    it('refuses an id that is not the current plan even when the plan is additive', async () => {
+      const additive = planFor([{ label: 'add Post.body', operationClass: 'additive' }])
+      vi.mocked(runPrismaCli).mockImplementation(async () => ({
+        exitCode: 0,
+        signal: null,
+        output: additive,
+        stdout: additive,
+      }))
+      vi.mocked(runPrismaCli).mockClear()
+
+      const replied: string[] = []
+      expect(
+        await requestDatabaseUpdate(tempDir, 'deadbeef', (message) => replied.push(message)),
+      ).toBe(false)
+
+      expect(replied.join('\n')).toContain('not the current plan')
+      expect(
+        vi.mocked(runPrismaCli).mock.calls.filter(([, args]) => !args.includes('--dry-run')),
+      ).toHaveLength(0)
+      expect(fs.existsSync(path.join(tempDir, '.opensaas', 'staged'))).toBe(false)
+      expect(await requestDatabaseUpdate(tempDir, undefined, () => {})).toBe(true)
+    })
   })
 
   describe('an additive mid-session change against an environment database', () => {
@@ -1168,7 +1362,7 @@ describe('devCommand', () => {
 
       // No prior config edit — `staged` is undefined, so this drives its own
       // fresh stage rather than reusing a parked one.
-      const ok = await requestDatabaseUpdate(tempDir, 'abc', () => {})
+      const ok = await requestDatabaseUpdate(tempDir, undefined, () => {})
       expect(ok).toBe(true)
 
       expect(watcherApi.add).toHaveBeenCalledWith([moduleB])
