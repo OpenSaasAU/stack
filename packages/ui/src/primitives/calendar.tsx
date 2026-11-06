@@ -13,9 +13,12 @@ import {
   isSameMonth,
   isSameDay,
   isToday,
+  type Day,
 } from 'date-fns'
 import { cn } from '../lib/utils.js'
 import { Button } from './button.js'
+
+const WEEK: { weekStartsOn: Day } = { weekStartsOn: 1 }
 
 export interface CalendarProps {
   selected?: Date
@@ -30,8 +33,8 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(monthStart)
-  const startDate = startOfWeek(monthStart)
-  const endDate = endOfWeek(monthEnd)
+  const startDate = startOfWeek(monthStart, WEEK)
+  const endDate = endOfWeek(monthEnd, WEEK)
 
   const handlePrevMonth = () => {
     setCurrentMonth(subMonths(currentMonth, 1))
@@ -126,9 +129,12 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((day) => (
-              <th key={day} className="text-muted-foreground text-xs font-normal h-9 w-9 p-0">
-                {day}
+            {rows[0]?.map((day) => (
+              <th
+                key={day.getDay()}
+                className="text-muted-foreground text-xs font-normal h-9 w-9 p-0"
+              >
+                {format(day, 'EEEEEE')}
               </th>
             ))}
           </tr>
