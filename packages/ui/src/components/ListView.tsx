@@ -165,7 +165,7 @@ export async function ListView({
     return (
       <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-2">List not found</h2>
+          <h1 className="text-lg font-semibold mb-2">List not found</h1>
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
@@ -388,6 +388,7 @@ export async function ListView({
         canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}
         canCreate={!hideCreate}
         avatarColumn={avatarColumn}
+        labelColumn={getLabelFieldName(listConfig)}
         bulkActions={bulkActions}
       />
     </div>

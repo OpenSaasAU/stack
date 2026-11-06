@@ -89,6 +89,8 @@ export function ItemFormClient({
     handleSubmit,
     setGeneralError,
     validity,
+    formRef,
+    errorBannerRef,
   } = useItemForm({
     fields,
     initialData,
@@ -136,11 +138,17 @@ export function ItemFormClient({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => (readOnly ? event.preventDefault() : handleSubmit(event))}
       className="space-y-6"
     >
       {generalError && (
-        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4">
+        <div
+          ref={errorBannerRef}
+          role="alert"
+          tabIndex={-1}
+          className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 outline-none"
+        >
           <p className="text-sm font-medium">{generalError}</p>
         </div>
       )}

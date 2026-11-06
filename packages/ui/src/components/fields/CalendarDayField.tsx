@@ -3,10 +3,22 @@
 import { format } from 'date-fns'
 import { DatePicker } from '../../primitives/date-picker.js'
 import { parseCalendarDay, toCalendarDay } from '../../lib/calendarDay.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+} from './field-shell.js'
 
 export interface CalendarDayFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   /** `YYYY-MM-DD`, the wire format of a `calendarDay()` value in both directions. */
   value: string | null
   onChange: (value: string | null) => void
@@ -21,6 +33,7 @@ export interface CalendarDayFieldProps {
 
 export function CalendarDayField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -46,17 +59,21 @@ export function CalendarDayField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel id={fieldLabelId(id)} htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <DatePicker
+        id={id}
+        labelId={fieldLabelId(id)}
+        label={label}
         value={dateValue}
         onChange={(date) => onChange(date ? toCalendarDay(date) : null)}
         disabled={disabled}
         placeholder={placeholder}
+        {...describeField(id, { error, helpText })}
       />
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

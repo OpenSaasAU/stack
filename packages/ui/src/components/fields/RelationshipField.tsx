@@ -6,6 +6,8 @@ import type { ServerActionInput } from '../../server/types.js'
 
 export interface RelationshipFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string | string[] | null
   onChange: (value: string | string[] | null) => void
   label: string
@@ -27,6 +29,7 @@ export interface RelationshipFieldProps {
 
 export function RelationshipField({
   name,
+  id,
   value,
   onChange,
   label,
@@ -47,6 +50,7 @@ export function RelationshipField({
     return (
       <RelationshipManager
         name={name}
+        id={id}
         value={Array.isArray(value) ? value : []}
         onChange={onChange}
         label={label}
@@ -68,6 +72,7 @@ export function RelationshipField({
   return (
     <ComboboxField
       name={name}
+      id={id}
       value={typeof value === 'string' ? value : null}
       onChange={onChange}
       label={label}

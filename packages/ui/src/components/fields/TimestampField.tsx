@@ -2,10 +2,22 @@
 
 import { DateTimePicker } from '../../primitives/datetime-picker.js'
 import { format } from 'date-fns'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+} from './field-shell.js'
 
 export interface TimestampFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: Date | string | null
   onChange: (value: Date | null) => void
   label: string
@@ -18,6 +30,7 @@ export interface TimestampFieldProps {
 
 export function TimestampField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -40,12 +53,20 @@ export function TimestampField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel id={fieldLabelId(id)} htmlFor={id} required={required}>
         {label}
       </FieldLabel>
-      <DateTimePicker value={dateValue} onChange={onChange} disabled={disabled} />
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      <DateTimePicker
+        id={id}
+        labelId={fieldLabelId(id)}
+        label={label}
+        value={dateValue}
+        onChange={onChange}
+        disabled={disabled}
+        {...describeField(id, { error, helpText })}
+      />
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

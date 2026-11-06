@@ -13,6 +13,8 @@ import '../styles/tiptap.css'
 
 export interface TiptapFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: JSONContent | null
   onChange: (value: JSONContent) => void
   label: string
@@ -32,6 +34,7 @@ export interface TiptapFieldProps {
  */
 export function TiptapField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -98,6 +101,26 @@ export function TiptapField({
     editor.commands.setContent(value ?? '', { emitUpdate: false })
   }, [editor, value])
 
+  const labelId = `${id}-label`
+  const errorId = `${id}-error`
+
+  useEffect(() => {
+    if (!editor) return
+    editor.setOptions({
+      editorProps: {
+        attributes: {
+          class: 'tiptap',
+          role: 'textbox',
+          'aria-multiline': 'true',
+          'aria-labelledby': labelId,
+          ...(required ? { 'aria-required': 'true' } : {}),
+          ...(isEditable ? {} : { 'aria-readonly': 'true' }),
+          ...(error ? { 'aria-invalid': 'true', 'aria-describedby': errorId } : {}),
+        },
+      },
+    })
+  }, [editor, labelId, errorId, required, error, isEditable])
+
   useEffect(() => {
     if (!editor) return
     // `setEditable`'s second argument is `emitUpdate`, defaulted to true: it
@@ -109,7 +132,9 @@ export function TiptapField({
   if (mode === 'read') {
     return (
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground">{label}</label>
+        <label id={labelId} className="text-sm font-medium text-foreground">
+          {label}
+        </label>
         <div className="tiptap-read-only">
           <EditorContent editor={editor} />
         </div>
@@ -119,7 +144,12 @@ export function TiptapField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium text-foreground flex items-center gap-1">
+      {/* A `for` cannot reach the contenteditable, which takes its name through `aria-labelledby`. */}
+      <label
+        id={labelId}
+        onClick={() => editor?.commands.focus()}
+        className="text-sm font-medium text-foreground flex items-center gap-1"
+      >
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
@@ -308,7 +338,11 @@ export function TiptapField({
         </div>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p id={errorId} className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

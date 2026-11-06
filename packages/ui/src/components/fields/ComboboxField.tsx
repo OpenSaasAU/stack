@@ -13,10 +13,23 @@ import {
 } from '../../primitives/combobox.js'
 import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
 import type { ServerActionInput } from '../../server/types.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+  fieldValueId,
+} from './field-shell.js'
 
 export interface ComboboxFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string | null
   onChange: (value: string | null) => void
   label: string
@@ -38,6 +51,7 @@ export interface ComboboxFieldProps {
 
 export function ComboboxField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -80,37 +94,37 @@ export function ComboboxField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel id={fieldLabelId(id)} htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <Combobox open={open} onOpenChange={setOpen}>
-        <ComboboxTrigger disabled={disabled || isLoading}>
-          <span className={!selectedLabel ? 'text-muted-foreground' : ''}>
+        <ComboboxTrigger
+          id={id}
+          disabled={disabled || isLoading}
+          aria-labelledby={`${fieldLabelId(id)} ${fieldValueId(id)}`}
+          {...describeField(id, { error, helpText })}
+        >
+          <span id={fieldValueId(id)} className={!selectedLabel ? 'text-muted-foreground' : ''}>
             {isLoading ? 'Loading...' : selectedLabel || placeholder}
           </span>
         </ComboboxTrigger>
-        <ComboboxContent>
+        <ComboboxContent aria-label={label}>
           <ComboboxSearch
+            aria-label={`Search ${label}`}
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              // Prevent form submission on Enter
-              if (e.key === 'Enter') {
-                e.preventDefault()
-              }
-            }}
           />
-          <ComboboxList>
-            {isSearching ? (
-              <ComboboxEmpty>Searching...</ComboboxEmpty>
-            ) : searchResults.length === 0 ? (
-              <ComboboxEmpty />
-            ) : (
+          <ComboboxEmpty>
+            {isSearching ? 'Searching...' : searchResults.length === 0 ? 'No results found.' : null}
+          </ComboboxEmpty>
+          <ComboboxList aria-label={label}>
+            {!isSearching && searchResults.length > 0 && (
               <>
                 {!required && value && (
                   <>
                     <ComboboxItem
+                      auxiliary
                       onClick={() => {
                         onChange(null)
                         setOpen(false)
@@ -140,8 +154,8 @@ export function ComboboxField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

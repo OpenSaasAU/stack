@@ -79,7 +79,7 @@ describe('CalendarDayField', () => {
     )
 
     await user.click(screen.getByRole('button', { name: /11\/09\/2026/ }))
-    await user.click(screen.getByRole('button', { name: '15' }))
+    await user.click(screen.getByRole('button', { name: /September 15th/ }))
 
     expect(onChange).toHaveBeenCalledWith('2026-09-15')
   })

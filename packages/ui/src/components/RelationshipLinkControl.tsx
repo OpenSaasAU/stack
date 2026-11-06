@@ -166,31 +166,23 @@ export function RelationshipLinkControl({
         <ComboboxTrigger disabled={pending} className="h-9 px-3">
           <span>{pending ? 'Linking…' : `Link ${targetListTitle}`}</span>
         </ComboboxTrigger>
-        <ComboboxContent>
+        <ComboboxContent aria-label={`Link ${targetListTitle}`}>
           <ComboboxSearch
+            aria-label={`Search ${targetListTitle}`}
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') e.preventDefault()
-            }}
           />
-          <ComboboxList>
-            {isSearching ? (
-              <ComboboxEmpty>Searching...</ComboboxEmpty>
-            ) : searchResults.length === 0 ? (
-              <ComboboxEmpty>No results found</ComboboxEmpty>
-            ) : (
+          <ComboboxEmpty>
+            {isSearching ? 'Searching...' : searchResults.length === 0 ? 'No results found' : null}
+          </ComboboxEmpty>
+          <ComboboxList aria-label={targetListTitle}>
+            {!isSearching &&
               searchResults.map((item) => (
-                <ComboboxItem
-                  key={item.id}
-                  data-disabled={pending ? '' : undefined}
-                  onClick={() => void link(item.id)}
-                >
+                <ComboboxItem key={item.id} disabled={pending} onClick={() => void link(item.id)}>
                   {item.label}
                 </ComboboxItem>
-              ))
-            )}
+              ))}
           </ComboboxList>
         </ComboboxContent>
       </Combobox>

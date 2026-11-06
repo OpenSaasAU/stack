@@ -3,11 +3,22 @@
 import { useRef } from 'react'
 import { Input } from '../../primitives/input.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 import { useFieldDraft } from './useFieldDraft.js'
 
 export interface BigIntFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: bigint | string | null
   onChange: (value: bigint | null) => void
   label: string
@@ -30,6 +41,7 @@ const BIGINT_PATTERN = /^-?\d+$/
  */
 export function BigIntField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -77,12 +89,12 @@ export function BigIntField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <Input
         ref={inputRef}
-        id={name}
+        id={id}
         name={name}
         type="text"
         inputMode="numeric"
@@ -93,10 +105,14 @@ export function BigIntField({
         disabled={disabled}
         required={required}
         className={cn('tabular-nums', (error || parseError) && 'border-destructive')}
+        {...describeField(id, { error: parseError || error, helpText })}
       />
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {parseError && <FieldError>{parseError}</FieldError>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {(parseError || error) && (
+        <FieldError id={fieldErrorId(id)}>
+          {[parseError, error].filter(Boolean).join(' ')}
+        </FieldError>
+      )}
     </FieldRoot>
   )
 }

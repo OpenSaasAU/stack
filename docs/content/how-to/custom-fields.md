@@ -37,6 +37,7 @@ import { cn } from '@opensaas/stack-ui/lib/utils'
 
 export interface ColorPickerFieldProps {
   name: string
+  id?: string
   value: string
   onChange: (value: string) => void
   label: string
@@ -48,6 +49,7 @@ export interface ColorPickerFieldProps {
 
 export function ColorPickerField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -75,13 +77,13 @@ export function ColorPickerField({
   // Edit mode - interactive
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium flex items-center gap-1">
+      <label htmlFor={id} className="text-sm font-medium flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
       <div className="flex items-center gap-3">
         <input
-          id={name}
+          id={id}
           type="color"
           value={value || '#000000'}
           onChange={(e) => onChange(e.target.value)}
@@ -93,6 +95,7 @@ export function ColorPickerField({
         />
         <input
           type="text"
+          aria-label={`${label} hex value`}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder="#000000"
@@ -214,6 +217,7 @@ import { cn } from '@opensaas/stack-ui/lib/utils'
 
 export interface SlugFieldProps {
   name: string
+  id?: string
   value: string
   onChange: (value: string) => void
   label: string
@@ -225,6 +229,7 @@ export interface SlugFieldProps {
 
 export function SlugField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -255,14 +260,14 @@ export function SlugField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium flex items-center gap-1">
+      <label htmlFor={id} className="text-sm font-medium flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">/</span>
         <input
-          id={name}
+          id={id}
           type="text"
           value={value || ''}
           onChange={(e) => {
@@ -331,6 +336,7 @@ Every custom field component receives these props. `FieldComponentProps` is expo
 ```typescript
 type FieldComponentProps = {
   name: string
+  id?: string
   value: unknown
   onChange: (value: unknown) => void
   label: string
@@ -370,12 +376,19 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 type HexColorFieldProps = {
   name: string
+  id?: string
   value?: string | null
   onChange: (value: string | null) => void
   mode?: 'read' | 'edit'
 }
 
-export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColorFieldProps) {
+export function HexColorField({
+  name,
+  id = name,
+  value,
+  onChange,
+  mode = 'edit',
+}: HexColorFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [text, setText] = useState(value ?? '')
   const isInvalid = text !== '' && !HEX_COLOR.test(text)
@@ -386,7 +399,7 @@ export function HexColorField({ name, value, onChange, mode = 'edit' }: HexColor
     <>
       <input
         ref={inputRef}
-        id={name}
+        id={id}
         value={text}
         onChange={(e) => {
           const next = e.target.value
@@ -598,10 +611,12 @@ import { cn } from '@opensaas/stack-ui/lib/utils'
 Follow accessibility best practices:
 
 ```tsx
-<label htmlFor={name}>{label}</label>
-<input id={name} aria-invalid={!!error} aria-describedby={error ? `${name}-error` : undefined} />
-{error && <p id={`${name}-error`} role="alert">{error}</p>}
+<label htmlFor={id}>{label}</label>
+<input id={id} aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} />
+{error && <p id={`${id}-error`} role="alert">{error}</p>}
 ```
+
+`FieldRenderer` passes an `id` that is unique to the form, so a create drawer and the form beneath it can share a field name. Use it, not `name`, for the control's `id`. After a failed submit the form focuses the first control marked `aria-invalid` in the first field with an error, so mark the control that should take focus.
 
 ### 4. Mode Handling
 

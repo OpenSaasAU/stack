@@ -55,6 +55,41 @@ const TableFooter = React.forwardRef<
 ))
 TableFooter.displayName = 'TableFooter'
 
+export interface TableSortButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  /** The column's current direction, shown as an arrow. Omit it while the column isn't sorted. */
+  direction?: 'asc' | 'desc'
+  /** Right-aligns the label, for a numeric column. */
+  numeric?: boolean
+}
+
+/**
+ * A sortable column's control. Put it in a `TableHead` with `className="p-0"` so
+ * it fills the cell, and set `aria-sort` on that `TableHead`.
+ */
+const TableSortButton = React.forwardRef<HTMLButtonElement, TableSortButtonProps>(
+  ({ className, children, direction, numeric, ...props }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      data-slot="table-sort-button"
+      className={cn(
+        'flex min-h-12 w-full cursor-pointer items-center space-x-1 bg-transparent px-4 font-medium outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+        numeric && 'justify-end text-right',
+        className,
+      )}
+      {...props}
+    >
+      <span>{children}</span>
+      {direction && (
+        <span aria-hidden="true" className="text-primary">
+          {direction === 'asc' ? '↑' : '↓'}
+        </span>
+      )}
+    </button>
+  ),
+)
+TableSortButton.displayName = 'TableSortButton'
+
 const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(
   ({ className, ...props }, ref) => (
     <tr
@@ -112,4 +147,14 @@ const TableCaption = React.forwardRef<
 ))
 TableCaption.displayName = 'TableCaption'
 
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption }
+export {
+  TableSortButton,
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+}

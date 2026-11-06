@@ -1098,6 +1098,7 @@ packages/my-field/
    ```typescript
    export interface MyFieldProps {
      name: string
+     id?: string // Unique to the form; use it for the control's `id`, defaulting to `name`
      value: string | null
      onChange: (value: string | null) => void
      label: string

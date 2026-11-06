@@ -11,6 +11,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSortButton,
 } from '../../primitives/table.js'
 import { EmptyState } from '../EmptyState.js'
 import { CellRenderer } from '../cells/CellRenderer.js'
@@ -171,23 +172,33 @@ export function ListTable({
                 return (
                   <TableHead
                     key={column}
-                    className={cn(
-                      sortable && 'cursor-pointer transition-colors hover:bg-muted/70',
-                      classNames?.headerCell,
-                    )}
-                    onClick={() => handleSort(column)}
+                    className={cn(sortable && 'p-0', classNames?.headerCell)}
+                    aria-sort={
+                      sortable && sortBy === column
+                        ? sortOrder === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : undefined
+                    }
                   >
-                    <div
-                      className={cn(
-                        'flex items-center space-x-1',
-                        numeric && 'justify-end text-right',
-                      )}
-                    >
-                      <span>{formatFieldName(column)}</span>
-                      {sortable && sortBy === column && (
-                        <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
+                    {sortable ? (
+                      <TableSortButton
+                        numeric={numeric}
+                        direction={sortBy === column ? sortOrder : undefined}
+                        onClick={() => handleSort(column)}
+                      >
+                        {formatFieldName(column)}
+                      </TableSortButton>
+                    ) : (
+                      <div
+                        className={cn(
+                          'flex items-center space-x-1',
+                          numeric && 'justify-end text-right',
+                        )}
+                      >
+                        <span>{formatFieldName(column)}</span>
+                      </div>
+                    )}
                   </TableHead>
                 )
               })}

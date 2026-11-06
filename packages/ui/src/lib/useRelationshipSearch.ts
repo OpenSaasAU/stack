@@ -87,7 +87,10 @@ export function useRelationshipSearch({
   // Only ever written from a resolved server search response — never derived
   // from render inputs — so it's a legitimate piece of state, not a value
   // that belongs in an effect-driven copy of props.
-  const [liveResults, setLiveResults] = useState<RelationshipSearchOption[] | null>(null)
+  const [liveResults, setLiveResults] = useState<{
+    query: string
+    options: RelationshipSearchOption[]
+  } | null>(null)
   // The deferred empty-query window (#1365), distinct from `liveResults` so
   // clearing the search box falls back to it rather than to `initialItems` —
   // which a `loadOnOpen` caller leaves empty on purpose.
@@ -98,11 +101,15 @@ export function useRelationshipSearch({
   // while the other is still pending flashes "no results" over a search
   // that hasn't actually finished.
   const [pendingRequests, setPendingRequests] = useState(0)
-  const isSearching = pendingRequests > 0
   const [fetchedLabels, setFetchedLabels] = useState<Map<string, string>>(new Map())
 
   const canSearchServer = Boolean(serverAction && listKey && fieldName)
   const trimmedQuery = searchQuery.trim()
+  // Includes the debounce wait, while `liveResults` still answers the previous
+  // query: Enter there would otherwise pick a row the new query never matched.
+  const awaitingResults =
+    canSearchServer && trimmedQuery !== '' && liveResults?.query !== trimmedQuery
+  const isSearching = pendingRequests > 0 || awaitingResults
 
   // Props that change often (inline callbacks, freshly-derived arrays) are
   // read from a ref inside the debounced callback so the search effect only
@@ -120,7 +127,9 @@ export function useRelationshipSearch({
       ? initialItems.filter((item) => item.label.toLowerCase().includes(trimmedQuery.toLowerCase()))
       : initialItems
     : trimmedQuery
-      ? (liveResults ?? [])
+      ? awaitingResults
+        ? []
+        : (liveResults?.options ?? [])
       : (openResults ?? initialItems)
 
   // The debounced server search is the one genuine side effect — it
@@ -149,13 +158,13 @@ export function useRelationshipSearch({
         .then((result) => {
           if (cancelled) return
           const options = extractOptions(result)
-          setLiveResults(options)
+          setLiveResults({ query: trimmedQuery, options })
           setFetchedLabels((prev) => mergeFetchedLabels(prev, options))
         })
         .catch((error: unknown) => {
           if (cancelled) return
           console.error('Failed to search relationship options:', error)
-          setLiveResults([])
+          setLiveResults({ query: trimmedQuery, options: [] })
         })
         // Unconditional: a superseded request still leaves the flight it
         // started, and `pendingRequests` counts flights, not results — only

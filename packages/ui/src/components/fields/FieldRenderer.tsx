@@ -40,6 +40,8 @@ function FieldRendererInner({
   serverAction,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }: FieldRendererProps & { Component: React.ComponentType<any> }) {
+  // A create drawer can sit over a form holding a field of the same name.
+  const id = `${React.useId()}-${fieldName}`
   const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
   const isRequired =
     (fieldConfig as Record<string, unknown>).validation &&
@@ -51,6 +53,7 @@ function FieldRendererInner({
 
   const baseProps = {
     name: fieldName,
+    id,
     value,
     onChange,
     label,
@@ -91,7 +94,11 @@ function FieldRendererInner({
   }
 
   const allProps = { ...baseProps, ...specificProps }
-  return <Component {...allProps} />
+  return (
+    <div data-field-name={fieldName}>
+      <Component {...allProps} />
+    </div>
+  )
 }
 
 /**

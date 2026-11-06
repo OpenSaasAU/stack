@@ -159,7 +159,7 @@ describe("the item form's to-many edges are writes against the related list", ()
     await renderUserForm(allowed, config, seeded.userId)
 
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await user.click(screen.getByRole('button', { name: /^Remove/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))
@@ -186,7 +186,7 @@ describe("the item form's to-many edges are writes against the related list", ()
     })
 
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await user.click(screen.getByRole('button', { name: /^Remove/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText(/linked elsewhere/)).toBeInTheDocument()
@@ -278,7 +278,7 @@ describe('an integer-keyed related list round-trips its ids through the form', (
     expect(prepared.initialData.posts).toEqual([postId])
 
     const actor = userEvent.setup()
-    await actor.click(screen.getByRole('button', { name: 'Remove' }))
+    await actor.click(screen.getByRole('button', { name: /^Remove/ }))
     await actor.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))

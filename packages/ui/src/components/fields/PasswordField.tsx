@@ -5,10 +5,23 @@ import { Button } from '../../primitives/button.js'
 import { cn } from '../../lib/utils.js'
 import { useRef, useState } from 'react'
 import { useFieldValidity } from '../../lib/fieldValidity.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+  fieldValueId,
+} from './field-shell.js'
 
 export interface PasswordFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string | { isSet: boolean }
   onChange: (value: string | { isSet: boolean } | undefined) => void
   label: string
@@ -23,6 +36,7 @@ export interface PasswordFieldProps {
 
 export function PasswordField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -44,6 +58,7 @@ export function PasswordField({
   const [passwordValue, setPasswordValue] = useState('')
   const [confirmValue, setConfirmValue] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [cancelledChange, setCancelledChange] = useState(false)
   const confirmRef = useRef<HTMLInputElement>(null)
 
   const isEditing = mode === 'edit' && (isChangingPassword || sentinel === null)
@@ -62,22 +77,30 @@ export function PasswordField({
   if (!isEditing) {
     return (
       <FieldRoot>
-        <FieldLabel>{label}</FieldLabel>
+        <FieldLabel id={fieldLabelId(id)} htmlFor={id}>
+          {label}
+        </FieldLabel>
         <div>
           <Button
+            id={id}
             type="button"
             variant="outline"
+            autoFocus={cancelledChange}
             onClick={() => setIsChangingPassword(true)}
             disabled={disabled}
+            aria-labelledby={`${fieldLabelId(id)} ${fieldValueId(id)}`}
+            {...describeField(id, { error, helpText })}
           >
-            {isPasswordSet ? 'Change Password' : 'Set Password'}
+            <span id={fieldValueId(id)}>{isPasswordSet ? 'Change Password' : 'Set Password'}</span>
           </Button>
         </div>
-        {helpText && <FieldHelp>{helpText}</FieldHelp>}
+        {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+        {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
       </FieldRoot>
     )
   }
 
+  const confirmId = `${id}-confirm`
   let confirmError: string | undefined
   if (isUnconfirmed && confirmValue !== '') confirmError = 'Passwords do not match'
   else if (isUnconfirmed && submitRefused)
@@ -85,6 +108,7 @@ export function PasswordField({
 
   const handleCancel = () => {
     setIsChangingPassword(false)
+    setCancelledChange(true)
     setPasswordValue('')
     setConfirmValue('')
     setShowPassword(false)
@@ -111,41 +135,45 @@ export function PasswordField({
   return (
     <div className="space-y-4">
       <FieldRoot>
-        <FieldLabel htmlFor={name} required={required && !isPasswordSet}>
+        <FieldLabel htmlFor={id} required={required && !isPasswordSet}>
           {label}
         </FieldLabel>
         <div className="relative">
           <Input
-            id={name}
+            id={id}
             name={name}
             type={showPassword ? 'text' : 'password'}
+            autoFocus={isChangingPassword}
             value={passwordValue}
             onChange={(e) => handlePasswordChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
             required={required && !isPasswordSet}
             className={cn('pr-10', error && 'border-destructive')}
+            {...describeField(id, { error, helpText })}
           />
           <button
             type="button"
+            aria-label={showPassword ? `Hide ${label}` : `Show ${label}`}
+            aria-pressed={showPassword}
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           >
-            {showPassword ? '👁️' : '👁️‍🗨️'}
+            <span aria-hidden="true">{showPassword ? '👁️' : '👁️‍🗨️'}</span>
           </button>
         </div>
-        {helpText && <FieldHelp>{helpText}</FieldHelp>}
-        {error && <FieldError>{error}</FieldError>}
+        {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+        {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
       </FieldRoot>
 
       {showConfirm && (
         <FieldRoot>
-          <FieldLabel htmlFor={`${name}-confirm`} required={required && !isPasswordSet}>
+          <FieldLabel htmlFor={confirmId} required={required && !isPasswordSet}>
             Confirm {label}
           </FieldLabel>
           <Input
             ref={confirmRef}
-            id={`${name}-confirm`}
+            id={confirmId}
             name={`${name}-confirm`}
             type={showPassword ? 'text' : 'password'}
             value={confirmValue}
@@ -154,8 +182,9 @@ export function PasswordField({
             disabled={disabled}
             required={required && !isPasswordSet}
             className={cn(confirmError && 'border-destructive')}
+            {...describeField(confirmId, { error: confirmError })}
           />
-          {confirmError && <FieldError>{confirmError}</FieldError>}
+          {confirmError && <FieldError id={fieldErrorId(confirmId)}>{confirmError}</FieldError>}
         </FieldRoot>
       )}
 

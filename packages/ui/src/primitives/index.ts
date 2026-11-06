@@ -12,6 +12,7 @@ export {
   TableBody,
   TableFooter,
   TableHead,
+  TableSortButton,
   TableRow,
   TableCell,
   TableCaption,

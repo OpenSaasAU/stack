@@ -5,10 +5,20 @@ import type { FileMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Upload, X, File, Check } from 'lucide-react'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 
 export interface FileFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: File | FileMetadata | null
   onChange: (value: File | FileMetadata | null) => void
   label?: string
@@ -20,12 +30,37 @@ export interface FileFieldProps {
   placeholder?: string
 }
 
+export interface FileReplaceInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string
+}
+
+/**
+ * The file input a field shows once it holds a file. It carries the field's id,
+ * so its label and any error have a real control to land on, rather than Remove.
+ */
+export function FileReplaceInput({ label, ...props }: FileReplaceInputProps) {
+  return (
+    <div className="relative inline-block shrink-0 rounded-md focus-within:ring-2 focus-within:ring-ring">
+      <span className="inline-flex h-9 items-center rounded-md border border-input bg-background px-3 text-sm">
+        Replace
+      </span>
+      <Input
+        type="file"
+        aria-label={label ? undefined : 'Replace file'}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        {...props}
+      />
+    </div>
+  )
+}
+
 /**
  * Stores File objects in form state — the actual upload happens server-side
  * during form submission via field hooks.
  */
 export function FileField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -37,6 +72,8 @@ export function FileField({
   placeholder = 'Choose a file or drag and drop',
 }: FileFieldProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  // Choosing or removing a file swaps the focused input for another.
+  const [focusInput, setFocusInput] = useState(false)
 
   const handleFileSelect = useCallback(
     (file: File) => {
@@ -74,6 +111,7 @@ export function FileField({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || [])
       if (files.length > 0) {
+        setFocusInput(true)
         handleFileSelect(files[0])
       }
     },
@@ -81,6 +119,7 @@ export function FileField({
   )
 
   const handleRemove = useCallback(() => {
+    setFocusInput(true)
     onChange(null)
   }, [onChange])
 
@@ -95,11 +134,7 @@ export function FileField({
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
-        {label && (
-          <FieldLabel htmlFor={name} required={required}>
-            {label}
-          </FieldLabel>
-        )}
+        {label && <FieldLabel required={required}>{label}</FieldLabel>}
         {isFileMetadata ? (
           <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
             <File className="h-4 w-4" />
@@ -132,7 +167,7 @@ export function FileField({
   return (
     <FieldRoot>
       {label && (
-        <FieldLabel htmlFor={name} required={required}>
+        <FieldLabel htmlFor={id} required={required}>
           {label}
         </FieldLabel>
       )}
@@ -162,14 +197,23 @@ export function FileField({
               View
             </Button>
           )}
+          <FileReplaceInput
+            id={id}
+            label={label}
+            autoFocus={focusInput}
+            disabled={disabled}
+            onChange={handleInputChange}
+            {...describeField(id, { error, helpText })}
+          />
           <Button
             type="button"
             variant="ghost"
             size="sm"
+            aria-label={`Remove ${label ?? 'file'}`}
             onClick={handleRemove}
             disabled={disabled}
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -177,7 +221,7 @@ export function FileField({
           <div
             className={`
               relative border-2 border-dashed rounded-md p-6
-              transition-colors cursor-pointer
+              transition-colors cursor-pointer focus-within:ring-2 focus-within:ring-ring
               ${isDragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
               ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-primary/5'}
             `}
@@ -186,10 +230,13 @@ export function FileField({
             onDrop={handleDrop}
           >
             <Input
-              id={name}
+              id={id}
               type="file"
+              aria-label={label ? undefined : placeholder}
+              autoFocus={focusInput}
               onChange={handleInputChange}
               disabled={disabled}
+              {...describeField(id, { error, helpText })}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
 
@@ -201,8 +248,8 @@ export function FileField({
         </>
       )}
 
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

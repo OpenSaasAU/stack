@@ -10,6 +10,7 @@ import { useFieldValidity } from '@opensaas/stack-ui/fields'
 
 export interface JsonEditorProps {
   name: string
+  id?: string
   value: unknown
   onChange: (value: unknown) => void
   label: string
@@ -24,6 +25,7 @@ export interface JsonEditorProps {
 
 export function JsonEditor({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -126,7 +128,7 @@ export function JsonEditor({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={name}>
+      <Label htmlFor={id}>
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
       </Label>
@@ -137,7 +139,9 @@ export function JsonEditor({
           <div className="text-xs font-medium text-muted-foreground">Editor</div>
           <Textarea
             ref={textareaRef}
-            id={name}
+            aria-invalid={error || parseError ? true : undefined}
+            aria-describedby={error || parseError ? `${id}-error` : undefined}
+            id={id}
             name={name}
             value={displayValue}
             onChange={(e) => handleChange(e.target.value)}
@@ -151,8 +155,11 @@ export function JsonEditor({
               (error || parseError) && 'border-destructive',
             )}
           />
-          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {(error || parseError) && (
+            <p id={`${id}-error`} className="text-xs text-destructive">
+              {[parseError, error].filter(Boolean).join(' ')}
+            </p>
+          )}
         </div>
 
         {/* Preview panel */}

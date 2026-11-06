@@ -207,7 +207,7 @@ describe('which field the form focuses', () => {
 
 describe('a password that is not confirmed', () => {
   async function startChange(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole('button', { name: 'Change Password' }))
+    await user.click(screen.getByRole('button', { name: /Change Password/ }))
   }
 
   it('refuses a mismatch and focuses the confirm box', async () => {
@@ -264,7 +264,7 @@ describe('a password that is not confirmed', () => {
 
     const [cancelPasswordChange] = screen.getAllByRole('button', { name: 'Cancel' })
     await user.click(cancelPasswordChange)
-    expect(screen.getByRole('button', { name: 'Change Password' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Change Password/ })).toBeInTheDocument()
     await user.click(save())
 
     expect(serverAction).not.toHaveBeenCalled()

@@ -3,11 +3,21 @@
 import { useMemo, useRef } from 'react'
 import { Textarea } from '../../primitives/textarea.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 import { useFieldDraft } from './useFieldDraft.js'
 
 export interface JsonFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: unknown
   onChange: (value: unknown) => void
   label: string
@@ -23,6 +33,7 @@ export interface JsonFieldProps {
 
 export function JsonField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -87,12 +98,12 @@ export function JsonField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <Textarea
         ref={textareaRef}
-        id={name}
+        id={id}
         name={name}
         value={displayValue}
         onChange={(e) => handleChange(e.target.value)}
@@ -102,10 +113,14 @@ export function JsonField({
         required={required}
         rows={rows}
         className={cn('font-mono text-sm', (error || parseError) && 'border-destructive')}
+        {...describeField(id, { error: parseError || error, helpText })}
       />
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {parseError && <FieldError>{parseError}</FieldError>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {(parseError || error) && (
+        <FieldError id={fieldErrorId(id)}>
+          {[parseError, error].filter(Boolean).join(' ')}
+        </FieldError>
+      )}
     </FieldRoot>
   )
 }

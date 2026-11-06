@@ -4,6 +4,7 @@ import { cn } from '@opensaas/stack-ui/lib/utils'
 
 export interface ColorPickerFieldProps {
   name: string
+  id?: string
   value: string
   onChange: (value: string) => void
   label: string
@@ -19,6 +20,7 @@ export interface ColorPickerFieldProps {
  */
 export function ColorPickerField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -44,13 +46,13 @@ export function ColorPickerField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium text-foreground flex items-center gap-1">
+      <label htmlFor={id} className="text-sm font-medium text-foreground flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
       <div className="flex items-center gap-3">
         <input
-          id={name}
+          id={id}
           type="color"
           value={value || '#000000'}
           onChange={(e) => onChange(e.target.value)}
@@ -62,6 +64,7 @@ export function ColorPickerField({
         />
         <input
           type="text"
+          aria-label={`${label} hex value`}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder="#000000"

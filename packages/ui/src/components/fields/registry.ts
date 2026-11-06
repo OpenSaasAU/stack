@@ -16,6 +16,8 @@ import { VirtualField } from './VirtualField.js'
 
 export type FieldComponentProps = {
   name: string
+  /** The control's DOM id, unique to the form. Use it rather than `name`, which a drawer's form can share. */
+  id?: string
   value: unknown
   onChange: (value: unknown) => void
   label: string

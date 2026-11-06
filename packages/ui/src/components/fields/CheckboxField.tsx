@@ -1,10 +1,21 @@
 'use client'
 
 import { Checkbox } from '../../primitives/checkbox.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 
 export interface CheckboxFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: boolean
   onChange: (value: boolean) => void
   label: string
@@ -16,6 +27,7 @@ export interface CheckboxFieldProps {
 
 export function CheckboxField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -37,18 +49,19 @@ export function CheckboxField({
     <FieldRoot>
       <div className="flex items-center space-x-2">
         <Checkbox
-          id={name}
+          id={id}
           name={name}
           checked={value || false}
           onCheckedChange={(checked) => onChange(checked === true)}
           disabled={disabled}
+          {...describeField(id, { error, helpText })}
         />
-        <FieldLabel htmlFor={name} className="leading-none">
+        <FieldLabel htmlFor={id} className="leading-none">
           {label}
         </FieldLabel>
       </div>
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

@@ -127,9 +127,9 @@ export function Navigation({
       {/* Solid wordmark — same gradient-reservation rule as NavLink's active state. */}
       <div className="border-b border-border p-6">
         <Link href={basePath} className="block">
-          <h1 className="font-heading text-xl font-bold tracking-tight text-foreground">
+          <p className="font-heading text-xl font-bold tracking-tight text-foreground">
             {ADMIN_WORDMARK}
-          </h1>
+          </p>
         </Link>
       </div>
 

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link.js'
 import {
   Table,
@@ -24,7 +24,18 @@ import { Button } from '../../primitives/button.js'
 import { useRelationshipSearch } from '../../lib/useRelationshipSearch.js'
 import type { ServerActionInput } from '../../server/types.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldError, FieldHelp, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldError,
+  FieldHelp,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+  fieldValueId,
+} from './field-shell.js'
 
 /**
  * Per-part `classNames` slots for `RelationshipManager` (issue #709). Each merges
@@ -53,6 +64,8 @@ export interface RelationshipManagerClassNames {
 
 export interface RelationshipManagerProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string[]
   onChange: (value: string[]) => void
   label: string
@@ -77,6 +90,7 @@ export interface RelationshipManagerProps {
 
 export function RelationshipManager({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -95,6 +109,7 @@ export function RelationshipManager({
   classNames,
 }: RelationshipManagerProps) {
   const [showConnectModal, setShowConnectModal] = useState(false)
+  const connectTriggerRef = useRef<HTMLButtonElement>(null)
 
   const selectedIds = Array.isArray(value) ? value : []
 
@@ -129,7 +144,8 @@ export function RelationshipManager({
   }
 
   const handleRemove = (itemId: string) => {
-    onChange(selectedIds.filter((id) => id !== itemId))
+    connectTriggerRef.current?.focus()
+    onChange(selectedIds.filter((selectedId) => selectedId !== itemId))
   }
 
   const handleConnect = (itemId: string) => {
@@ -140,7 +156,12 @@ export function RelationshipManager({
 
   return (
     <FieldRoot data-slot="relationship-manager" className={classNames?.root}>
-      <FieldLabel required={required} className={classNames?.label}>
+      <FieldLabel
+        id={fieldLabelId(id)}
+        htmlFor={id}
+        required={required}
+        className={classNames?.label}
+      >
         {label}
       </FieldLabel>
 
@@ -176,6 +197,7 @@ export function RelationshipManager({
                       type="button"
                       variant="ghost"
                       size="sm"
+                      aria-label={`Remove ${item.label}`}
                       onClick={() => handleRemove(item.id)}
                       disabled={disabled}
                     >
@@ -207,41 +229,51 @@ export function RelationshipManager({
       >
         <Combobox open={showConnectModal} onOpenChange={setShowConnectModal}>
           <ComboboxTrigger
+            ref={connectTriggerRef}
+            id={id}
             disabled={disabled || isLoading}
             className={cn('h-9 px-3', classNames?.connectButton)}
+            aria-labelledby={`${fieldLabelId(id)} ${fieldValueId(id)}`}
+            {...describeField(id, { error, helpText })}
           >
-            <span>{isLoading ? 'Loading...' : 'Connect Existing'}</span>
+            <span id={fieldValueId(id)}>{isLoading ? 'Loading...' : 'Connect Existing'}</span>
           </ComboboxTrigger>
-          <ComboboxContent>
+          <ComboboxContent aria-label={label}>
             <ComboboxSearch
+              aria-label={`Search ${label}`}
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                }
-              }}
             />
-            <ComboboxList>
-              {isSearching ? (
-                <ComboboxEmpty>Searching...</ComboboxEmpty>
-              ) : availableItems.length === 0 ? (
-                <ComboboxEmpty>No results found</ComboboxEmpty>
-              ) : (
+            <ComboboxEmpty>
+              {isSearching
+                ? 'Searching...'
+                : availableItems.length === 0
+                  ? 'No results found'
+                  : null}
+            </ComboboxEmpty>
+            <ComboboxList aria-label={label}>
+              {!isSearching &&
                 availableItems.map((item) => (
                   <ComboboxItem key={item.id} onClick={() => handleConnect(item.id)}>
                     {item.label}
                   </ComboboxItem>
-                ))
-              )}
+                ))}
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
       </div>
 
-      {helpText && <FieldHelp className="mt-2">{helpText}</FieldHelp>}
-      {error && <FieldError className={cn('mt-2', classNames?.error)}>{error}</FieldError>}
+      {helpText && (
+        <FieldHelp id={fieldHelpId(id)} className="mt-2">
+          {helpText}
+        </FieldHelp>
+      )}
+      {error && (
+        <FieldError id={fieldErrorId(id)} className={cn('mt-2', classNames?.error)}>
+          {error}
+        </FieldError>
+      )}
     </FieldRoot>
   )
 }
