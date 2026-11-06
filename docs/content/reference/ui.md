@@ -226,8 +226,10 @@ active-state highlighting doesn't have to re-derive the rule.
 ### Route loading state
 
 `AdminLoading` is the whole admin while a route loads, in the same frame as the
-admin itself, so the layout holds still at every width. Render it from the admin
-route's `loading.tsx`:
+built-in chrome, so with the built-in sidebar the layout holds still at every
+width. It always draws that chrome, so under a custom `navigation` or
+`navigation={false}` the layout shifts while a route loads. Render it from the
+admin route's `loading.tsx`:
 
 ```tsx
 import { AdminLoading } from '@opensaas/stack-ui'

@@ -51,6 +51,17 @@ describe('ListViewClient', () => {
       )
     })
 
+    it('backs the pinned actions with the surface behind the table', () => {
+      render(<ListViewClient {...defaultProps} />)
+
+      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
+        'max-md:before:bg-background',
+      )
+      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
+        'max-md:before:bg-background',
+      )
+    })
+
     it('should render all items in table', () => {
       render(<ListViewClient {...defaultProps} />)
 

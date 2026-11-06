@@ -30,4 +30,15 @@ describe('the prebuilt stylesheet', () => {
   it.each(responsiveClasses)('carries %s', (className) => {
     expect(stylesheet).toContain(asSelector(className))
   })
+
+  it.each(['min-h-screen', 'h-screen', 'max-h-96', 'gap-8', 'mt-8'])(
+    'keeps %s for apps that use it with no Tailwind of their own',
+    (className) => {
+      expect(stylesheet).toContain(asSelector(className))
+    },
+  )
+
+  it.each(['max-w-2xl', 'm-8', 'h-20'])('takes nothing from the tests, such as %s', (className) => {
+    expect(stylesheet).not.toContain(asSelector(className))
+  })
 })

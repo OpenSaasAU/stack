@@ -50,21 +50,6 @@ export function AdminShell({ brand, sidebar, children }: AdminShellProps) {
     }
   }, [open])
 
-  const hasTopBar = Boolean(sidebar)
-  React.useEffect(() => {
-    if (!hasTopBar) return
-    // Focusing a text surface scrolls its caret into view, not the element, and the
-    // caret is out of reach of the `scroll-margin` that keeps inputs clear of the bar.
-    const revealTextSurface = ({ target }: FocusEvent) => {
-      if (window.matchMedia(DESKTOP_QUERY).matches || !(target instanceof Element)) return
-      if (target.matches('main textarea, main [contenteditable]')) {
-        target.scrollIntoView({ block: 'nearest' })
-      }
-    }
-    document.addEventListener('focusin', revealTextSurface)
-    return () => document.removeEventListener('focusin', revealTextSurface)
-  }, [hasTopBar])
-
   if (!sidebar) return <AdminFrame>{children}</AdminFrame>
 
   return (

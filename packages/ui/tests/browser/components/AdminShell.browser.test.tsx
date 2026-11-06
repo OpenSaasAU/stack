@@ -191,32 +191,14 @@ describe('the admin under the prebuilt stylesheet', () => {
 
       await expectClearOfTopBar()
     })
-
-    it('clears the top bar when tabbing back up into a textarea', async () => {
-      render(
-        <AdminShell sidebar={sidebar}>
-          <div style={{ height: 600 }} />
-          <textarea aria-label="Notes" className="block h-20 w-full" />
-          <div style={{ height: 2000 }} />
-        </AdminShell>,
-      )
-      const textarea = screen.getByRole('textbox', { name: 'Notes' })
-      window.scrollBy(0, textarea.getBoundingClientRect().top + 12)
-
-      textarea.focus()
-
-      await waitFor(() =>
-        expect(textarea.getBoundingClientRect().top).toBeGreaterThanOrEqual(TOP_BAR + LABEL),
-      )
-    })
   })
 
   describe('sticky actions cell', () => {
-    const renderRow = (rowClass: string) =>
+    const renderRow = (rowColor?: string) =>
       render(
         <Table>
           <TableBody>
-            <TableRow className={rowClass}>
+            <TableRow style={{ backgroundColor: rowColor }}>
               <TableCell>{'unbroken'.repeat(60)}</TableCell>
               <TableCell
                 data-testid="actions"
@@ -234,7 +216,7 @@ describe('the admin under the prebuilt stylesheet', () => {
     })
 
     it('stays on screen while the table scrolls under it', () => {
-      renderRow('')
+      renderRow()
       const cell = screen.getByTestId('actions')
 
       expect(getComputedStyle(cell).position).toBe('sticky')
@@ -242,7 +224,7 @@ describe('the admin under the prebuilt stylesheet', () => {
     })
 
     it('shows the row colour over an opaque surface', () => {
-      renderRow('[background-color:rgba(15,23,42,0.5)]')
+      renderRow('rgba(15, 23, 42, 0.5)')
       const cell = screen.getByTestId('actions')
 
       const surface = getComputedStyle(cell, '::before')
@@ -260,12 +242,13 @@ describe('the admin under the prebuilt stylesheet', () => {
   describe('Checkbox on a phone', () => {
     it('takes a tap beyond its box, at whatever size a caller gives it', async () => {
       await page.viewport(375, 667)
-      render(<Checkbox aria-label="Row" className="m-8 h-5 w-5" />)
+      render(<Checkbox aria-label="Row" className="h-5 w-5" style={{ margin: 32 }} />)
       const checkbox = screen.getByRole('checkbox', { name: 'Row' })
       const { left, top, width } = checkbox.getBoundingClientRect()
 
       expect(width).toBe(20)
-      expect(document.elementFromPoint(left - 6, top - 6)).toBe(checkbox)
+      expect(document.elementFromPoint(left - 8, top - 8)).toBe(checkbox)
+      expect(document.elementFromPoint(left - 9, top - 9)).not.toBe(checkbox)
     })
   })
 
@@ -288,9 +271,14 @@ describe('the admin under the prebuilt stylesheet', () => {
 
     it('stays two thirds of the window at md, whatever max-width a caller sets', async () => {
       await page.viewport(768, 800)
-      renderDialog('max-w-2xl')
+      const cap = document.createElement('style')
+      cap.textContent = '.caller-cap { max-width: 42rem; }'
+      document.head.append(cap)
+      renderDialog('caller-cap')
 
       expect(widthOf(screen.getByRole('dialog'))).toBe(512)
+
+      cap.remove()
     })
   })
 

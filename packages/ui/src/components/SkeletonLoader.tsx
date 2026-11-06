@@ -156,9 +156,10 @@ export function DashboardSkeleton({ cards = 6 }: { cards?: number }) {
 }
 
 /**
- * The whole admin while a route loads, in the same frame as the admin itself so
- * the layout holds still at every width. Render it from the admin route's
- * `loading.tsx`.
+ * The whole admin while a route loads, in the same frame as the built-in admin
+ * chrome. Render it from the admin route's `loading.tsx`. It always draws that
+ * chrome, so the layout shifts during a load under a custom `navigation` or
+ * `navigation={false}`.
  */
 export function AdminLoading() {
   return (
