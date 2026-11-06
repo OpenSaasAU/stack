@@ -60,6 +60,11 @@ export interface RelationshipTableClientProps {
    * count. Always ≥ `count`; 0 for a denied related list (never a leaked total).
    */
   total?: number
+  /**
+   * The read withheld this relation, so nothing here is known about it: not
+   * that it is empty, and not how many rows it has.
+   */
+  unavailable?: boolean
   /** Columns summed in the footer (explicit opt-in only). */
   sumColumns: string[]
   /** Per-column footer sum, rendered through that column's Cell. */
@@ -175,6 +180,7 @@ export function RelationshipTableClient({
   rows,
   count,
   total,
+  unavailable = false,
   sumColumns,
   sums,
   removeMode,
@@ -212,7 +218,7 @@ export function RelationshipTableClient({
   const pendingCreatedRows = createdRows.filter((row) => !realRowIds.has(String(row.id)))
 
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
-  const countLabel = formatCountLabel(count, total)
+  const countLabel = unavailable ? '' : formatCountLabel(count, total)
   const showRemove = removeMode !== null
   const removeVerb = removeMode === 'delete' ? 'Delete' : 'Disconnect'
   const totalColumns = columns.length + (showRemove ? 1 : 0)
@@ -352,7 +358,11 @@ export function RelationshipTableClient({
                 colSpan={Math.max(totalColumns, 1)}
                 className="py-8 text-center text-sm text-muted-foreground"
               >
-                <div className={VISIBLE_TABLE_MESSAGE}>No related {title.toLowerCase()} yet.</div>
+                <div className={VISIBLE_TABLE_MESSAGE}>
+                  {unavailable
+                    ? `${title} can't be shown here.`
+                    : `No related ${title.toLowerCase()} yet.`}
+                </div>
               </TableCell>
             </TableRow>
           ) : (
@@ -448,7 +458,7 @@ export function RelationshipTableClient({
                       {index === 0 && (
                         <span className="text-sm text-muted-foreground">{countLabel}</span>
                       )}
-                      {isSummed && (
+                      {isSummed && !unavailable && (
                         <span className={cn('font-medium', index === 0 && 'ml-2')}>
                           <CellRenderer
                             value={sums[column]}

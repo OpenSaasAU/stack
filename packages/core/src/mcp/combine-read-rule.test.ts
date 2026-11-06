@@ -42,6 +42,21 @@ const config: OpenSaasConfig = {
           many: true,
           access: { read: ({ item, session }) => item.owner === session?.userId },
         }),
+        memos: relationship({
+          ref: 'Memo.ticket',
+          many: true,
+          access: {
+            read: ({ item }) =>
+              !(item.memos as readonly { public: boolean }[] | undefined)?.some(
+                (memo) => !memo.public,
+              ),
+          },
+        }),
+        audits: relationship({
+          ref: 'Audit.ticket',
+          many: true,
+          access: { read: ({ item }) => (item.audits as readonly unknown[]).length === 0 },
+        }),
         noteTotal: virtual({
           type: 'number',
           needs: ['notes'],
@@ -58,6 +73,18 @@ const config: OpenSaasConfig = {
         public: checkbox(),
         ticket: relationship({ ref: 'Ticket.notes' }),
       },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Memo: {
+      fields: {
+        body: text(),
+        public: checkbox(),
+        ticket: relationship({ ref: 'Ticket.memos' }),
+      },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Audit: {
+      fields: { body: text(), ticket: relationship({ ref: 'Ticket.audits' }) },
       access: { operation: { query: () => true, create: () => true } },
     },
     Log: {
@@ -162,6 +189,12 @@ describe('a read rule on a relation counted over MCP', () => {
       await context.db.Note.create({
         data: { body: 'other', public: secondIsPublic, ticket: { connect: { id: ticket?.id } } },
       })
+      await context.db.Memo.create({
+        data: { body: 'memo', public: secondIsPublic, ticket: { connect: { id: ticket?.id } } },
+      })
+      await context.db.Audit.create({
+        data: { body: 'audit', ticket: { connect: { id: ticket?.id } } },
+      })
     }
   })
 
@@ -252,6 +285,32 @@ describe('a read rule on a relation counted over MCP', () => {
       const rows = await query({ notes: { count: true, where: { public: { equals: true } } } })
 
       expect(rows.map((row) => 'notes' in row)).toEqual([false, false])
+    },
+    BOOT,
+  )
+
+  test.each([
+    ['rows', { fields: { body: true }, take: 50 }],
+    ['a count', { count: true }],
+    ['a narrowed count', { count: true, where: { public: { equals: false } } }],
+    ['rows beside a count', { fields: { body: true }, take: 50, count: true }],
+  ])(
+    'a rule reading absence as permission denies %s it was not given',
+    async (_, selection) => {
+      const rows = await query({ memos: selection })
+
+      expect(rows.map((row) => 'memos' in row)).toEqual([false, false])
+    },
+    BOOT,
+  )
+
+  test(
+    'an unguarded rule denies a count rather than failing the query',
+    async () => {
+      const rows = await query({ audits: { count: true } })
+
+      expect(rows.map((row) => row.name)).toEqual(['all-public', 'mixed'])
+      expect(rows.map((row) => 'audits' in row)).toEqual([false, false])
     },
     BOOT,
   )

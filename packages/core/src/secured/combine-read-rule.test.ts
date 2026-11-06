@@ -286,14 +286,14 @@ describe('a read rule on a relation read through combine()', () => {
     )
 
     test(
-      'a bare count keeps the stand-in its Known limits describe',
+      'a bare count leaves the rule nothing to read, so it strips',
       async () => {
         const { rows, views: seen } = await ticketsThrough((notes) =>
           notes.where(publicOnly).count(),
         )
 
-        expect(rows.map((row) => Reflect.get(row, 'notes'))).toEqual([2, 1])
-        expect([...seen.values()]).toEqual([[], []])
+        expect(rows.map((row) => 'notes' in row)).toEqual([false, false])
+        expect([...seen.values()]).toEqual(['absent', 'absent'])
       },
       BOOT,
     )

@@ -9,11 +9,14 @@ import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '..
 import {
   assertAccessFilterConstrains,
   checkAccess,
-  checkFieldAccess,
+  checkRowRead,
   filterReadableFields,
   getRelatedListConfig,
+  NO_RULE_VIEWS,
+  ruleRowOf,
+  type RuleView,
+  type RuleViewTree,
 } from '../access/index.js'
-import type { RuleView, RuleViewTree } from '../access/field-visibility.js'
 import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
@@ -926,15 +929,6 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
   return assembled
 }
 
-function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
-  const masked = maskReductions(row, plans)
-  const withheld = plans.filter((plan) => narrowsWhatARuleSees(plan) || isRowlessReduction(plan))
-  if (withheld.length === 0) return masked
-  const copy: OrmRow = { ...masked }
-  for (const plan of withheld) delete copy[plan.relation]
-  return copy
-}
-
 /**
  * Narrow the foreign-key column of every to-one relationship this read did
  * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
@@ -943,8 +937,8 @@ function callerIndependent(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
  *
  * The column is on the row regardless of `include` (ADR-0043), so it needs
  * its own visibility decision: the owning relationship field's own `read`
- * rule, evaluated per row against the RAW row (before Field Visibility
- * strips anything else), and the related list's own `query` access — `true`
+ * rule, evaluated per row against the row Field Visibility's rules see, and
+ * the related list's own `query` access — `true`
  * leaves the column as the plain pass-through value it already is, `false`
  * nulls it outright, and a filter is resolved with one batched existence
  * check per relation across the whole page, keyed off the column's own value
@@ -993,6 +987,7 @@ async function narrowUnincludedForeignKeys(
   listName: string,
   listConfig: ListConfig<TypeInfo>,
   resolvedIncludes: readonly IncludePlan[],
+  ruleViews: RuleViewTree,
 ): Promise<void> {
   if (binding.context._isSudo === true) return
   const ctx = relatedResolveContext(binding, listName, listConfig)
@@ -1003,11 +998,17 @@ async function narrowUnincludedForeignKeys(
   )
 
   const owners = foreignKeyOwningRelations(ctx)
-  const ruleItems =
+  const ruleRows =
     owners.length === 0
       ? []
       : rawRows.map((row) =>
-          assembleColumnFields(callerIndependent(row, resolvedIncludes), listConfig.fields),
+          ruleRowOf(
+            assembleColumnFields(maskReductions(row, resolvedIncludes), listConfig.fields),
+            ruleViews,
+            listConfig.fields,
+            binding.config,
+            listName,
+          ),
         )
 
   for (const owner of owners) {
@@ -1025,11 +1026,11 @@ async function narrowUnincludedForeignKeys(
     for (let i = 0; i < filteredRows.length; i++) {
       const raw = rawRows[i]
       if (!(owner.foreignKey in raw) || !(owner.foreignKey in filteredRows[i])) continue
-      const canReadField = await checkFieldAccess(owner.fieldConfig.access, 'read', {
-        session: binding.context.session,
-        context: binding.context,
-        item: ruleItems[i],
-      })
+      const canReadField = await checkRowRead(
+        owner.fieldConfig.access,
+        { session: binding.context.session, context: binding.context },
+        ruleRows[i],
+      )
       if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
     }
 
@@ -1100,6 +1101,7 @@ async function narrowUnincludedForeignKeys(
       plan.relatedListName,
       relatedListConfig,
       plan.includes,
+      ruleViews.nested[plan.relation] ?? NO_RULE_VIEWS,
     )
   }
 }
@@ -1124,7 +1126,8 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  *
  * A `combine` that named the relation's rows under one key stands in that
  * array instead of `[]`, and {@link restoreReductions} writes it back beside
- * the counts. What a `read` rule or a hook sees of it is {@link ruleViewFor}'s.
+ * the counts. What a `read` rule or a hook sees of it is {@link ruleViewFor}'s,
+ * and it takes a `[]` standing in for rows nobody fetched back out (ADR-0082).
  *
  * A relation that is both reduced and a live declared dependency of a
  * computed field returned alongside it (#1357) is the third case: its
@@ -1138,24 +1141,6 @@ function reduces(plans: readonly IncludePlan[]): boolean {
  * this key as a raw pass-through, and {@link restoreReductions} overwrites it
  * with the reduction's own value regardless of what Field Visibility computed
  * for it.
- *
- * Known limits: a relation reduced with NEITHER a rows branch of its own NOR
- * a live declared dependency still stands in `[]`, so a relationship `read`
- * rule inspecting `item.<reducedRelation>` without declaring it via `needs`
- * decides on an empty array rather than on what the count counted. Only a
- * rule that needs a row to exist fails closed there (`item.posts.length > 0`).
- * `item.posts.every(…)` and `item.posts.length === 0` fail open, so a `count()`
- * or a `combine` of counts reaches the caller of a relation the plain include
- * strips, and a `contains` count answers questions about the stripped rows'
- * text. A `read` rule on a scalar field that inspects the relation opens the
- * same way, on the same stand-in. A rule that reaches into a relation must
- * declare it, the same requirement `needs` already states for a computed
- * field's `resolveOutput`. Closing this is tracked in #2210.
- *
- * A caller-shaped rows branch with no live declared dependency leaves such a
- * rule looking at nothing, as a shaped plain include does: an `Array.isArray`
- * guard fails closed, and a rule that reads absence as permission
- * (`!item.posts?.some(…)`) fails open on both paths alike.
  */
 function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
   if (!reduces(plans)) return row
@@ -1357,6 +1342,12 @@ function isRowlessReduction(plan: IncludePlan): boolean {
   return plan.reduce !== undefined && !hasRowsBranch(plan) && plan.declaredRows === undefined
 }
 
+/** A to-one reading `null` for a row the session cannot see. Inverse sides cannot be told apart. */
+function isScopedAway(row: OrmRow, plan: IncludePlan, value: unknown): boolean {
+  if (plan.arity !== 'one' || value !== null) return false
+  return plan.foreignKey === undefined ? plan.accessScoped : row[plan.foreignKey] !== null
+}
+
 function ruleViewFor(
   row: OrmRow,
   plans: readonly IncludePlan[],
@@ -1364,12 +1355,17 @@ function ruleViewFor(
 ): RuleView {
   const removed = new Set<string>()
   const declared: Record<string, unknown> = {}
+  const scopedAway = new Set<string>()
   for (const plan of plans) {
     const values = unshaped.get(plan.relation)
-    if (values !== undefined) declared[plan.relation] = values.get(String(row['id']))
-    else if (narrowsWhatARuleSees(plan)) removed.add(plan.relation)
+    const rows = values?.get(String(row['id']))
+    if (isScopedAway(row, plan, rows ?? row[plan.relation])) scopedAway.add(plan.relation)
+    if (rows !== undefined) declared[plan.relation] = rows
+    else if (values !== undefined || narrowsWhatARuleSees(plan) || isRowlessReduction(plan)) {
+      removed.add(plan.relation)
+    }
   }
-  return { removed, declared }
+  return { removed, declared, scopedAway }
 }
 
 /**
@@ -1409,7 +1405,15 @@ async function visibleRows(
       return filtered
     }),
   )
-  await narrowUnincludedForeignKeys(binding, results, rows, listName, listConfig, plan.includes)
+  await narrowUnincludedForeignKeys(
+    binding,
+    results,
+    rows,
+    listName,
+    listConfig,
+    plan.includes,
+    ruleViews,
+  )
   return results as VisibleRow[]
 }
 
@@ -1516,7 +1520,15 @@ export async function visibleWrittenRow(
     0,
     listName,
   )
-  await narrowUnincludedForeignKeys(binding, [filtered], [row], listName, listConfig, [])
+  await narrowUnincludedForeignKeys(
+    binding,
+    [filtered],
+    [row],
+    listName,
+    listConfig,
+    [],
+    NO_RULE_VIEWS,
+  )
   return filtered
 }
 

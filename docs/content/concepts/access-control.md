@@ -147,6 +147,113 @@ field, from `session`, the fetched `item` and — on `create`/`update` — the
 defaulting to allow, so filter-returning helpers cannot be reused here.
 {% /callout %}
 
+### What a read rule sees
+
+A `read` rule runs on the row the read fetched, so a rule that asks about a
+relation depends on whether that relation arrived. The engine does not let the
+answer depend on what the caller happened to ask for: **a rule that reaches for a
+relation the row does not carry denies**, whatever it returns and whatever it
+throws.
+
+A relation is withheld from a rule when the read:
+
+- never named it, as on a bare read
+- narrowed it, with `where`, `limit`, `offset`, `orderBy`, `select` or a nested
+  `include`
+- reduced it to counts with no rows, through `count()` or a `combine` of counts
+
+The same rule holds one level down: `item.project.tickets` denies when `tickets`
+did not arrive on the project.
+
+| Rule                                  | Plain `include('notes')` | Not delivered |
+| ------------------------------------- | ------------------------ | ------------- |
+| `item.ownerId === session?.userId`    | Decides                  | Decides       |
+| `item.notes.every((n) => n.public)`   | Decides                  | Denies        |
+| `!item.notes?.some((n) => n.private)` | Decides                  | Denies        |
+| `Array.isArray(item.notes)`           | `true`                   | Denies        |
+| `item.notes.length === 0`             | Decides                  | Denies        |
+
+A rule that never reads the relation is unaffected. A to-one with no foreign key
+set is `null`, and an unshaped to-many with no rows is `[]`: both are real
+answers. A `null` that stands for a row the session cannot see is not one, so an
+included to-one the related list's access left out is withheld as well. On the
+inverse side of a one-to-one there is no column to tell the two apart, so a rule
+reading it denies whenever the related list's access can leave a row out.
+
+So a count cannot open a rule, and neither can a `limit`. It also means a rule
+reading a relation denies on every read that does not bring the relation whole,
+including the rows it would have granted. The admin item view pages every
+Relationship table, so such a rule leaves that table showing it can't be shown,
+and the list view shows no count for it.
+
+**A rule cannot depend on rows the session cannot see.** Every way of looking at a
+related row runs as the session: an `include()`, a declared dependency, a
+`context.db` read inside the rule, and a relation predicate in an Access Filter.
+The rule's `context` has no `sudo` and no `unsafe`. So where the related list is
+scoped, finding nothing proves nothing: a rule granting on "no private notes" passes
+for the session that cannot see the private note, and denies its author. Never
+grant on an absence there. Two shapes hold.
+
+**Grant on a row the session can see.** Hiding the row can then only deny, so the
+filter on the related list works with the rule rather than against it. This is the
+shape of [Cross-List Access Checks](#cross-list-access-checks).
+
+**Keep the fact in a column on the row.** A column reads the same for every
+session and on every read. The session writing the related row needs `update` on
+this row, so the column has to refuse that same session lowering it, or the flag
+is undone by whoever it hides from. Let it only rise:
+
+```typescript
+fields: {
+  hasPrivateNote: checkbox({
+    access: { update: ({ inputData }) => inputData?.hasPrivateNote === true },
+  }),
+  summary: text({ access: { read: ({ item }) => item.hasPrivateNote !== true } }),
+}
+```
+
+Write it where the related row is written, and fail the write if it cannot be
+recorded, so the two cannot drift apart:
+
+```typescript
+hooks: {
+  afterOperation: async (args) => {
+    if (args.operation === 'delete' || args.item.private !== true) return
+    if (args.item.ticketId === null) return
+    const marked = await args.context.db.Ticket.update({
+      where: { id: args.item.ticketId },
+      data: { hasPrivateNote: true },
+    })
+    if (marked === null) throw new ValidationError(['The ticket could not be marked.'])
+  },
+}
+```
+
+The hook runs in the write's own transaction and as the session writing the note,
+so that session needs `update` access on the ticket, or the note is refused. Three
+things follow from the shape:
+
+- **The flag only rises.** Deleting the note, moving it or making it public leaves
+  the flag set, which is stale but safe. Any session that can write a private note
+  can therefore hide the summary for good.
+- **Lowering it is not something a session does.** No rule or hook can: the field
+  refuses every session, and a hook's `context` has no `sudo`. It belongs to trusted
+  server code, under `context.sudo()`, that recounts the rows first, inside a
+  `context.transaction` holding `.forUpdate()` on the ticket.
+- **Rows that predate the column read as unflagged,** so backfill it before the rule
+  ships. It also tells anyone who can read it that a private note exists, as the
+  stripped `summary` does; give it a `read` rule if that matters.
+
+`item` looks like a plain object, with two exceptions. Enumerating the row a rule
+was handed while it withholds a relation (`Object.keys`, a spread, `JSON.stringify`)
+denies, because a copy would otherwise hide the absence from the check. Writing
+through `item`, at any depth, denies and changes nothing, so use `toSorted()` rather
+than `sort()` on a relation. A rule that throws because of a withheld relation denies
+if the throw is the `TypeError` of reading it; any other error fails the read, which
+includes passing a withheld value on, such as `undefined` into the rule's own `where`.
+See
+[ADR-0082](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0082-a-read-rule-that-reaches-for-a-withheld-key-denies.md).
+
 ## Access Functions
 
 An operation-level rule is called with exactly three arguments. `session` is the

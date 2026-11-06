@@ -8,6 +8,7 @@ import { isComputedField } from '../config/field-kind.js'
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
+import { guardedRuleItem, type RuleRow } from './rule-item.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
 import { isSystemFieldName } from './system-fields.js'
 
@@ -59,26 +60,47 @@ class PredicateTimeItemAccessError extends Error {}
  * `isFieldReadableForPredicate` to detect a read rule that depends on the
  * fetched row: there is no row yet at predicate-evaluation time (see that
  * function's doc), so any rule that reaches into `item` at all cannot be
- * answered here.
+ * answered here. The touch is recorded as well as thrown, because a rule can
+ * catch what it threw.
  */
-function createPoisonedItem(): Record<string, unknown> {
-  return new Proxy(
+function createPoisonedItem(): {
+  readonly item: Record<string, unknown>
+  readonly touched: () => boolean
+} {
+  let touched = false
+  const poison = (prop: string | symbol): never => {
+    touched = true
+    throw new PredicateTimeItemAccessError(String(prop))
+  }
+  const item = new Proxy(
     {},
     {
-      get(_target, prop) {
-        throw new PredicateTimeItemAccessError(String(prop))
-      },
-      has(_target, prop) {
-        throw new PredicateTimeItemAccessError(String(prop))
-      },
-      ownKeys() {
-        throw new PredicateTimeItemAccessError('ownKeys')
-      },
-      getOwnPropertyDescriptor(_target, prop) {
-        throw new PredicateTimeItemAccessError(String(prop))
-      },
+      get: (_target, prop) => poison(prop),
+      has: (_target, prop) => poison(prop),
+      ownKeys: () => poison('ownKeys'),
+      getOwnPropertyDescriptor: (_target, prop) => poison(prop),
     },
   ) as Record<string, unknown>
+  return { item, touched: () => touched }
+}
+
+/**
+ * What a rule answers when it has no row to ask about. A rule that touched the
+ * poison is row-dependent whatever it then returned or threw. A non-boolean
+ * answer is a distinct, louder failure (ADR-0030) and propagates.
+ */
+async function answerWithoutRow(
+  ask: (poisoned: Record<string, unknown>) => Promise<boolean>,
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  const { item, touched } = createPoisonedItem()
+  try {
+    const answer = await ask(item)
+    if (touched()) return 'row-dependent'
+    return answer ? 'allow' : 'deny'
+  } catch (err) {
+    if (touched() && !(err instanceof InvalidFieldAccessResultError)) return 'row-dependent'
+    throw err
+  }
 }
 
 /**
@@ -168,6 +190,47 @@ export async function checkFieldAccess(
 }
 
 /**
+ * A field's `read` rule answered for a fetched row. A rule that reaches for a
+ * relation the row does not carry, or writes through the row, denies whatever
+ * it returned, so `item.logs.length` on a withheld relation is a denial rather
+ * than a `TypeError`. Only a `TypeError` is taken for that: it is what
+ * dereferencing the `undefined` it was handed raises, and anything else the
+ * rule threw is its own failure and propagates (ADR-0082).
+ *
+ * Synchronous where there is nothing to evaluate, because this runs for every
+ * field on every row.
+ */
+export function checkRowRead(
+  fieldAccess: FieldAccess | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+  row: RuleRow,
+): boolean | Promise<boolean> {
+  if (args.context._isSudo || !fieldAccess?.read) return true
+  return evaluateRowRead(fieldAccess, args, row)
+}
+
+async function evaluateRowRead(
+  fieldAccess: FieldAccess,
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+  row: RuleRow,
+): Promise<boolean> {
+  const { item, tripped } = guardedRuleItem(row)
+  try {
+    const readable = await checkFieldAccess(fieldAccess, 'read', { ...args, item })
+    return readable && !tripped()
+  } catch (err) {
+    if (err instanceof TypeError && tripped()) return false
+    throw err
+  }
+}
+
+/**
  * Whether a field's `read` access allows it to be NAMED in a `where`/`orderBy`
  * predicate, evaluated BEFORE the query runs (#915).
  *
@@ -232,21 +295,13 @@ export async function classifyRowIndependentRead(
     context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<'allow' | 'deny' | 'row-dependent'> {
-  try {
-    const readable = await checkFieldAccess(fieldAccess, 'read', {
+  return await answerWithoutRow((item) =>
+    checkFieldAccess(fieldAccess, 'read', {
       session: args.session,
       context: args.context,
-      item: createPoisonedItem(),
-    })
-    return readable ? 'allow' : 'deny'
-  } catch (err) {
-    // Only the poisoned-item signal means "row-dependent". Anything else —
-    // including `InvalidFieldAccessResultError` and a genuine bug in the rule
-    // itself — propagates unchanged rather than being silently folded into an
-    // ordinary denial (found in review of #925).
-    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
-    throw err
-  }
+      item,
+    }),
+  )
 }
 
 /**
@@ -269,18 +324,14 @@ export async function classifyRowIndependentWrite(
     context: AccessContext & { _isSudo?: boolean }
   },
 ): Promise<'allow' | 'deny' | 'row-dependent'> {
-  try {
-    const writable = await checkFieldAccess(fieldAccess, operation, {
+  return await answerWithoutRow((poisoned) =>
+    checkFieldAccess(fieldAccess, operation, {
       session: args.session,
       context: args.context,
-      item: createPoisonedItem(),
-      inputData: createPoisonedItem(),
-    })
-    return writable ? 'allow' : 'deny'
-  } catch (err) {
-    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
-    throw err
-  }
+      item: poisoned,
+      inputData: poisoned,
+    }),
+  )
 }
 
 /**
@@ -309,17 +360,14 @@ export async function classifyRowIndependentCreateAccess(
     context: AccessContext
   },
 ): Promise<'allow' | 'deny' | 'row-dependent'> {
-  try {
-    const result = await checkAccess(accessControl, {
-      session: args.session,
-      context: args.context,
-      item: createPoisonedItem(),
-    })
-    return result === true ? 'allow' : 'deny'
-  } catch (err) {
-    if (err instanceof PredicateTimeItemAccessError) return 'row-dependent'
-    throw err
-  }
+  return await answerWithoutRow(
+    async (item) =>
+      (await checkAccess(accessControl, {
+        session: args.session,
+        context: args.context,
+        item,
+      })) === true,
+  )
 }
 
 export async function filterWritableFields<T extends Record<string, unknown>>(

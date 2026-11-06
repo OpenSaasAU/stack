@@ -268,6 +268,7 @@ async function ItemViewLayoutView({
         rows={rows}
         // M for "showing N of M" — see {@link readAccessScopedTotal}.
         total={readAccessScopedTotal(sectionValue, rows.length)}
+        unavailable={sectionValue === undefined}
         basePath={basePath}
         context={context}
         parentListKey={listKey}

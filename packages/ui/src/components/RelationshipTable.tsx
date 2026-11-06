@@ -43,6 +43,8 @@ export interface RelationshipTableProps {
    * and 0 (never a leaked true total) for a denied related list.
    */
   total: number
+  /** The read withheld this relation, so `rows` and `total` say nothing about it. */
+  unavailable?: boolean
   basePath: string
   /**
    * The access-scoped context, used to evaluate the related list's own access
@@ -352,6 +354,7 @@ export async function RelationshipTable({
   section,
   rows,
   total,
+  unavailable = false,
   basePath,
   context: appContext,
   parentListKey,
@@ -433,6 +436,7 @@ export async function RelationshipTable({
       rows={serializedRows}
       count={rows.length}
       total={total}
+      unavailable={unavailable}
       sumColumns={section.sumColumns}
       sums={sums}
       removeMode={removeMode}

@@ -424,6 +424,14 @@ type FieldAccessBase<
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
 > = {
+  /**
+   * Whether this session may read the field on this row. A rule that reaches
+   * for a relation the read did not deliver whole, enumerates a row withholding
+   * one, or writes through `item` denies, whatever it returns. Everything a rule
+   * can see of a related list is what this session can see, so never grant on an
+   * absence there: grant on a row the session can see, or read a column on the
+   * row (ADR-0082).
+   */
   read?: (
     args: Extract<FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput>, { operation: 'read' }>,
   ) => boolean | Promise<boolean>
