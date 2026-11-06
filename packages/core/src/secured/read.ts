@@ -1343,8 +1343,8 @@ function isRowlessReduction(plan: IncludePlan): boolean {
 }
 
 /** A to-one reading `null` for a row the session cannot see. Inverse sides cannot be told apart. */
-function isScopedAway(row: OrmRow, plan: IncludePlan): boolean {
-  if (plan.arity !== 'one' || row[plan.relation] !== null) return false
+function isScopedAway(row: OrmRow, plan: IncludePlan, value: unknown): boolean {
+  if (plan.arity !== 'one' || value !== null) return false
   return plan.foreignKey === undefined ? plan.accessScoped : row[plan.foreignKey] !== null
 }
 
@@ -1357,9 +1357,9 @@ function ruleViewFor(
   const declared: Record<string, unknown> = {}
   const scopedAway = new Set<string>()
   for (const plan of plans) {
-    if (isScopedAway(row, plan)) scopedAway.add(plan.relation)
     const values = unshaped.get(plan.relation)
     const rows = values?.get(String(row['id']))
+    if (isScopedAway(row, plan, rows ?? row[plan.relation])) scopedAway.add(plan.relation)
     if (rows !== undefined) declared[plan.relation] = rows
     else if (values !== undefined || narrowsWhatARuleSees(plan) || isRowlessReduction(plan)) {
       removed.add(plan.relation)

@@ -199,20 +199,27 @@ filter on the related list works with the rule rather than against it. This is t
 shape of [Cross-List Access Checks](#cross-list-access-checks).
 
 **Keep the fact in a column on the row.** A column reads the same for every
-session and on every read. Write it where the related row is written, and fail the
-write if it cannot be recorded, so the two cannot drift apart:
+session and on every read. The session writing the related row needs `update` on
+this row, so the column has to refuse that same session lowering it, or the flag
+is undone by whoever it hides from. Let it only rise:
 
 ```typescript
 fields: {
-  hasPrivateNote: checkbox(),
+  hasPrivateNote: checkbox({
+    access: { update: ({ inputData }) => inputData?.hasPrivateNote === true },
+  }),
   summary: text({ access: { read: ({ item }) => item.hasPrivateNote !== true } }),
 }
 ```
+
+Write it where the related row is written, and fail the write if it cannot be
+recorded, so the two cannot drift apart:
 
 ```typescript
 hooks: {
   afterOperation: async (args) => {
     if (args.operation === 'delete' || args.item.private !== true) return
+    if (args.item.ticketId === null) return
     const marked = await args.context.db.Ticket.update({
       where: { id: args.item.ticketId },
       data: { hasPrivateNote: true },
@@ -223,14 +230,28 @@ hooks: {
 ```
 
 The hook runs in the write's own transaction and as the session writing the note,
-so that session needs `update` access on the ticket, or the note is refused.
+so that session needs `update` access on the ticket, or the note is refused. Three
+things follow from the shape:
+
+- **The flag only rises.** Deleting the note, moving it or making it public leaves
+  the flag set, which is stale but safe. Any session that can write a private note
+  can therefore hide the summary for good.
+- **Lowering it is not something a session does.** No rule or hook can: the field
+  refuses every session, and a hook's `context` has no `sudo`. It belongs to trusted
+  server code, under `context.sudo()`, that recounts the rows first, inside a
+  `context.transaction` holding `.forUpdate()` on the ticket.
+- **Rows that predate the column read as unflagged,** so backfill it before the rule
+  ships. It also tells anyone who can read it that a private note exists, as the
+  stripped `summary` does; give it a `read` rule if that matters.
 
 `item` looks like a plain object, with two exceptions. Enumerating the row a rule
 was handed while it withholds a relation (`Object.keys`, a spread, `JSON.stringify`)
 denies, because a copy would otherwise hide the absence from the check. Writing
 through `item`, at any depth, denies and changes nothing, so use `toSorted()` rather
 than `sort()` on a relation. A rule that throws because of a withheld relation denies
-if the throw is the `TypeError` of reading it; any other error fails the read. See
+if the throw is the `TypeError` of reading it; any other error fails the read, which
+includes passing a withheld value on, such as `undefined` into the rule's own `where`.
+See
 [ADR-0082](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0082-a-read-rule-that-reaches-for-a-withheld-key-denies.md).
 
 ## Access Functions

@@ -1196,6 +1196,24 @@ describe('a rule that catches the poison on `item`', () => {
     ).resolves.toBe('row-dependent')
   })
 
+  it('a non-boolean answer after the touch stays the loud failure it is', async () => {
+    const answersAFilter = (({ item }: { item: Record<string, unknown> }) => {
+      try {
+        void item.ownerId
+      } catch {
+        return { ownerId: { equals: 'x' } }
+      }
+      return true
+    }) as unknown as NonNullable<FieldAccess['read']>
+
+    await expect(
+      classifyRowIndependentRead(
+        { read: answersAFilter },
+        { session: null, context: nonSudoContext() },
+      ),
+    ).rejects.toBeInstanceOf(InvalidFieldAccessResultError)
+  })
+
   it('a rule that never touches `item` still answers', async () => {
     await expect(
       classifyRowIndependentRead(

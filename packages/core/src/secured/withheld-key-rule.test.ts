@@ -228,6 +228,14 @@ const config: OpenSaasConfig = {
       fields: {
         name: text(),
         children: relationship({ ref: 'BrokenChild.parent', many: true }),
+        ownTypeError: text({
+          access: {
+            read: ({ item }) => {
+              if (item.name === 'd') throw new TypeError('a TypeError of the rule’s own')
+              return true
+            },
+          },
+        }),
         afterWithheld: text({
           access: {
             read: ({ item }) => {
@@ -937,6 +945,19 @@ describe('a read rule that reaches for a key withheld from it', () => {
 
         await expect(db.context({}).db.Broken.select('name', 'ownBug').all()).rejects.toThrow(
           'a bug of the rule’s own',
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'propagates a TypeError that no withheld key caused',
+      async () => {
+        const admin = db.context({}).sudo()
+        await admin.db.Broken.create({ data: { name: 'd', ownTypeError: 'x' } })
+
+        await expect(db.context({}).db.Broken.select('name', 'ownTypeError').all()).rejects.toThrow(
+          'a TypeError of the rule’s own',
         )
       },
       BOOT,

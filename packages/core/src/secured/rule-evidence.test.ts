@@ -120,7 +120,6 @@ const config: OpenSaasConfig = {
     Dossier: {
       fields: {
         name: text(),
-        hasPrivateRemark: checkbox(),
         remarks: relationship({ ref: 'Remark.dossier', many: true }),
         clearances: relationship({ ref: 'Clearance.dossier', many: true }),
         fromOwnRead: text({
@@ -141,7 +140,6 @@ const config: OpenSaasConfig = {
               item.remarks.every((remark: unknown) => isRecord(remark) && remark.private !== true),
           },
         }),
-        fromColumn: text({ access: { read: ({ item }) => item.hasPrivateRemark !== true } }),
         fromEvidence: text({
           access: {
             read: async ({ session, item, context }) => {
@@ -156,9 +154,7 @@ const config: OpenSaasConfig = {
           },
         }),
       },
-      access: {
-        operation: { ...open, update: ({ session }) => session?.userId !== 'read-only' },
-      },
+      access: { operation: open },
     },
     Folder: {
       fields: {
@@ -205,14 +201,48 @@ const config: OpenSaasConfig = {
           }),
         },
       },
+    },
+    // The column shape exactly as `access-control.md` documents it.
+    Ticket: {
+      fields: {
+        name: text(),
+        hasPrivateNote: checkbox({
+          access: { update: ({ inputData }) => inputData?.hasPrivateNote === true },
+        }),
+        summary: text({ access: { read: ({ item }) => item.hasPrivateNote !== true } }),
+        notes: relationship({ ref: 'Note.ticket', many: true }),
+      },
+      access: {
+        operation: { ...open, update: ({ session }) => session?.userId !== 'read-only' },
+      },
+    },
+    Note: {
+      fields: {
+        body: text(),
+        author: text(),
+        private: checkbox(),
+        ticket: relationship({ ref: 'Ticket.notes' }),
+      },
+      access: {
+        operation: {
+          ...open,
+          query: ({ session }) => ({
+            OR: [
+              { private: { equals: false } },
+              { author: { equals: typeof session?.userId === 'string' ? session.userId : '' } },
+            ],
+          }),
+        },
+      },
       hooks: {
         afterOperation: async (args) => {
           if (args.operation === 'delete' || args.item.private !== true) return
-          const recorded = await args.context.db.Dossier.update({
-            where: { id: String(args.item.dossierId) },
-            data: { hasPrivateRemark: true },
+          if (args.item.ticketId === null) return
+          const marked = await args.context.db.Ticket.update({
+            where: { id: String(args.item.ticketId) },
+            data: { hasPrivateNote: true },
           })
-          if (recorded === null) throw new ValidationError(['The dossier could not be marked.'])
+          if (marked === null) throw new ValidationError(['The ticket could not be marked.'])
         },
       },
     },
@@ -402,6 +432,23 @@ describe('what a read rule can rest on', () => {
     )
 
     test(
+      'the declared row decides, not the value the caller shaped away',
+      async () => {
+        const read = (userId: string) =>
+          db
+            .context({ userId })
+            .db.Claim.orderBy({ name: 'asc' })
+            .select('name', 'detail', 'ownerState')
+            .include('owner', (owner) => owner.where({ owner: { equals: 'nobody' } }))
+            .all()
+
+        expect((await read('ann')).map((row) => 'detail' in row)).toEqual([true, false, true])
+        expect((await read('bob')).map((row) => 'detail' in row)).toEqual([false, false, true])
+      },
+      BOOT,
+    )
+
+    test(
       'a hook declaring it still reads null (ADR-0058)',
       async () => {
         const rows = await db.context({ userId: 'bob' }).db.Claim.orderBy({ name: 'asc' }).all()
@@ -449,7 +496,7 @@ describe('what a read rule can rest on', () => {
   describe('a rule about rows the session may not be able to see', () => {
     const fields = async (userId: string) => {
       const row = await db.context({ userId }).db.Dossier.include('remarks').first()
-      return ['fromOwnRead', 'fromInclude', 'fromColumn', 'fromEvidence'].filter(
+      return ['fromOwnRead', 'fromInclude', 'fromEvidence'].filter(
         (key) => row !== null && key in row,
       )
     }
@@ -461,7 +508,6 @@ describe('what a read rule can rest on', () => {
           name: 'd',
           fromOwnRead: 'x',
           fromInclude: 'x',
-          fromColumn: 'x',
           fromEvidence: 'x',
         },
       })
@@ -499,59 +545,191 @@ describe('what a read rule can rest on', () => {
     )
 
     test(
-      'a column on the row answers the same for every session',
-      async () => {
-        expect(await fields('stranger')).not.toContain('fromColumn')
-        expect(await fields('author')).not.toContain('fromColumn')
-      },
-      BOOT,
-    )
-
-    test(
-      'a column survives every read shape, the relation included',
-      async () => {
-        const context = db.context({ userId: 'stranger' })
-        const bare = await context.db.Dossier.first()
-        const counted = await context.db.Dossier.include('remarks', (rows) => rows.count()).first()
-
-        expect(bare).not.toHaveProperty('fromColumn')
-        expect(counted).not.toHaveProperty('fromColumn')
-      },
-      BOOT,
-    )
-
-    test(
-      'a write that cannot record the fact fails rather than leaving it stale',
-      async () => {
-        const context = db.context({ userId: 'read-only' })
-        const dossier = await context.sudo().db.Dossier.create({ data: { name: 'e' } })
-
-        await expect(
-          context.db.Remark.create({
-            data: {
-              body: 'unrecorded',
-              author: 'read-only',
-              private: true,
-              dossier: { connect: { id: dossier!.id } },
-            },
-          }),
-        ).rejects.toThrow('could not be marked')
-
-        const remarks = await context
-          .sudo()
-          .db.Remark.where({ body: { equals: 'unrecorded' } })
-          .all()
-        expect(remarks).toEqual([])
-      },
-      BOOT,
-    )
-
-    test(
       'a grant resting on a row the session can see cannot be opened by hiding it',
       async () => {
         expect(await fields('cleared')).toContain('fromEvidence')
         expect(await fields('stranger')).not.toContain('fromEvidence')
         expect(await fields('author')).not.toContain('fromEvidence')
+      },
+      BOOT,
+    )
+  })
+
+  describe('a column on the row, as the docs write it', () => {
+    let ticketId: string
+
+    const summaryFor = async (userId: string) => {
+      const row = await db
+        .context({ userId })
+        .db.Ticket.where({ id: { equals: ticketId } })
+        .first()
+      return row?.summary
+    }
+
+    beforeEach(async () => {
+      const admin = db.context({}).sudo()
+      const ticket = await admin.db.Ticket.create({ data: { name: 't', summary: 'SECRET' } })
+      ticketId = String(ticket!.id)
+      await db.context({ userId: 'author' }).db.Note.create({
+        data: {
+          body: 'hidden',
+          author: 'author',
+          private: true,
+          ticket: { connect: { id: ticketId } },
+        },
+      })
+    })
+
+    test(
+      'answers the same for every session, on every read shape',
+      async () => {
+        expect(await summaryFor('stranger')).toBeUndefined()
+        expect(await summaryFor('author')).toBeUndefined()
+
+        const counted = await db
+          .context({ userId: 'stranger' })
+          .db.Ticket.include('notes', (rows) => rows.count())
+          .first()
+        expect(counted).not.toHaveProperty('summary')
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['false', false],
+      ['null', null],
+    ])(
+      'a writer clearing the flag with %s is refused and still cannot read the secret',
+      async (_, value) => {
+        await expect(
+          db.context({ userId: 'bob' }).db.Ticket.update({
+            where: { id: ticketId },
+            data: { hasPrivateNote: value },
+          }),
+        ).rejects.toThrow(/hasPrivateNote/)
+
+        expect(await summaryFor('bob')).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'an ordinary write to the row still goes through',
+      async () => {
+        const updated = await db
+          .context({ userId: 'bob' })
+          .db.Ticket.update({ where: { id: ticketId }, data: { name: 'renamed' } })
+
+        expect(updated).toMatchObject({ name: 'renamed' })
+      },
+      BOOT,
+    )
+
+    test(
+      'an unflagged row reads, so the rule has a row it grants',
+      async () => {
+        const admin = db.context({}).sudo()
+        const clean = await admin.db.Ticket.create({ data: { name: 'c', summary: 'OPEN' } })
+
+        const row = await db
+          .context({ userId: 'stranger' })
+          .db.Ticket.where({ id: { equals: String(clean!.id) } })
+          .first()
+
+        expect(row).toMatchObject({ summary: 'OPEN' })
+      },
+      BOOT,
+    )
+
+    test(
+      'a note that goes private later raises it',
+      async () => {
+        const admin = db.context({}).sudo()
+        const clean = await admin.db.Ticket.create({ data: { name: 'c', summary: 'OPEN' } })
+        const context = db.context({ userId: 'author' })
+        const note = await context.db.Note.create({
+          data: {
+            body: 'b',
+            author: 'author',
+            private: false,
+            ticket: { connect: { id: String(clean!.id) } },
+          },
+        })
+        await context.db.Note.update({ where: { id: String(note!.id) }, data: { private: true } })
+
+        const row = await context.db.Ticket.where({ id: { equals: String(clean!.id) } }).first()
+        expect(row).not.toHaveProperty('summary')
+      },
+      BOOT,
+    )
+
+    test(
+      'a private note with no ticket is allowed, and raises it when connected',
+      async () => {
+        const admin = db.context({}).sudo()
+        const clean = await admin.db.Ticket.create({ data: { name: 'c', summary: 'OPEN' } })
+        const context = db.context({ userId: 'author' })
+        const note = await context.db.Note.create({
+          data: { body: 'loose', author: 'author', private: true },
+        })
+        expect(note).toMatchObject({ body: 'loose' })
+
+        await context.db.Note.update({
+          where: { id: String(note!.id) },
+          data: { ticket: { connect: { id: String(clean!.id) } } },
+        })
+
+        const row = await context.db.Ticket.where({ id: { equals: String(clean!.id) } }).first()
+        expect(row).not.toHaveProperty('summary')
+      },
+      BOOT,
+    )
+
+    test(
+      'deleting the note leaves it set, stale and safe',
+      async () => {
+        const admin = db.context({}).sudo()
+        const [note] = await admin.db.Note.where({ body: { equals: 'hidden' } }).all()
+        await admin.db.Note.delete({ where: { id: String(note.id) } })
+
+        expect(await summaryFor('stranger')).toBeUndefined()
+      },
+      BOOT,
+    )
+
+    test(
+      'trusted server code under sudo can lower it',
+      async () => {
+        await db
+          .context({})
+          .sudo()
+          .db.Ticket.update({ where: { id: ticketId }, data: { hasPrivateNote: false } })
+
+        expect(await summaryFor('stranger')).toBe('SECRET')
+      },
+      BOOT,
+    )
+
+    test(
+      'a write that cannot record the fact is refused whole',
+      async () => {
+        await expect(
+          db.context({ userId: 'read-only' }).db.Note.create({
+            data: {
+              body: 'unrecorded',
+              author: 'read-only',
+              private: true,
+              ticket: { connect: { id: ticketId } },
+            },
+          }),
+        ).rejects.toThrow('could not be marked')
+
+        const notes = await db
+          .context({})
+          .sudo()
+          .db.Note.where({ body: { equals: 'unrecorded' } })
+          .all()
+        expect(notes).toEqual([])
       },
       BOOT,
     )
